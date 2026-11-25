@@ -11304,6 +11304,39 @@ impl ExecutionState {
         );
     }
 
+    pub(crate) fn prepare_interface_join_point(
+        &mut self,
+        arms: [&Self; 2],
+        split: &Self,
+        other_abstraction: Option<&Self>,
+    ) {
+        self.memory.pending_steps = None;
+        if let Some(other) = other_abstraction {
+            self.point = other.point.clone();
+        } else {
+            self.join_program_points(arms[0], arms[1], split.path_link());
+        }
+    }
+
+    pub(in crate::kernel) fn has_interface_join_point(
+        &self,
+        arms: [&Self; 2],
+        split: &Self,
+    ) -> bool {
+        let [left, right] = self.point.predecessors() else {
+            return false;
+        };
+        left.id() == arms[0].program_point().id()
+            && right.id() == arms[1].program_point().id()
+            && self
+                .point
+                .split()
+                .and_then(super::program_point::PathLink::id)
+                == split.program_point_id()
+            && self.point.memory().map(super::SharedMemory::arena_id)
+                == Some(super::intern_memory_ref(&self.memory).arena_id())
+    }
+
     /// Apply a loop-head local replacement and its normal resource
     /// invalidation. Publish the accumulated effects once at the head.
     pub(in crate::kernel) fn replace_loop_head_local_cell(

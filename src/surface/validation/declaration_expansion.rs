@@ -308,7 +308,6 @@ const IMPLICIT_LIBRARY_MODULES: &[&str] = &[
     "library/list.click",
     "library/option.click",
     "library/result.click",
-    "library/c/builtins.interface.click",
 ];
 
 /// The `library/` identities of the implicit Click library modules.
@@ -1639,9 +1638,9 @@ fn expand_declared_resource_tactic(
         | ProofTactic::Preserve(_)
         | ProofTactic::Rewrite(_)
         | ProofTactic::Transport { .. }
-        | ProofTactic::CompatibilityFactTransport { .. }
         | ProofTactic::SolveUsing(_)
-        | ProofTactic::NormalizeUsing(_)) => {
+        | ProofTactic::NormalizeUsing(_)
+        | ProofTactic::CloseBounds(_)) => {
             expand_declared_resource_tactic_with_propositions(tactic, resource_definitions)
         }
         tactic @ (ProofTactic::UnfoldResource(_)
@@ -1971,18 +1970,6 @@ fn expand_declared_resource_tactic_with_propositions(
             source: expand_declared_resource_proposition(source, resource_definitions)?,
             target: expand_declared_resource_proposition(target, resource_definitions)?,
         }),
-        ProofTactic::CompatibilityFactTransport {
-            source,
-            target,
-            premises,
-        } => Ok(ProofTactic::CompatibilityFactTransport {
-            source: expand_declared_resource_proposition(source, resource_definitions)?,
-            target: expand_declared_resource_proposition(target, resource_definitions)?,
-            premises: premises
-                .into_iter()
-                .map(|premise| expand_declared_resource_proposition(premise, resource_definitions))
-                .collect::<Result<Vec<_>, _>>()?,
-        }),
         ProofTactic::SolveUsing(solve) => Ok(ProofTactic::SolveUsing(ProofSolveUsing {
             premises: solve
                 .premises
@@ -1990,6 +1977,12 @@ fn expand_declared_resource_tactic_with_propositions(
                 .map(|premise| expand_declared_resource_proposition(premise, resource_definitions))
                 .collect::<Result<Vec<_>, _>>()?,
         })),
+        ProofTactic::CloseBounds(premises) => Ok(ProofTactic::CloseBounds(
+            premises
+                .into_iter()
+                .map(|premise| expand_declared_resource_proposition(premise, resource_definitions))
+                .collect::<Result<_, _>>()?,
+        )),
         ProofTactic::NormalizeUsing(premises) => Ok(ProofTactic::NormalizeUsing(
             premises
                 .into_iter()

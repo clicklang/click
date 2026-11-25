@@ -155,7 +155,7 @@ fn prove_next_contract_closing_goal<'a>(
             _ if error.kind() == ClickErrorKind::Internal
                 || error.proof_refusal() == Some(crate::surface::ProofRefusal::IncompleteProof) => error,
             ClosingProofMode::Explicit => error.with_context(format!("this tactic could not prove the {} obligation while closing the contract", kind.description())),
-            ClosingProofMode::Implicit => error.with_context(format!("the implicit solver could not prove the {} obligation while closing the contract; write an explicit proof or establish the required facts and resources before closing", kind.description())),
+            ClosingProofMode::Implicit => error.with_context(format!("contract finalization could not prove the {} obligation; establish the required facts and resources before closing", kind.description())),
         })?;
     check_verification_deadline()?;
     *outcome_proof = Some(proved);
@@ -4431,6 +4431,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     | ProofTactic::Close
                                     | ProofTactic::Enumerate
                                     | ProofTactic::Normalize
+                                    | ProofTactic::CloseBounds(_)
                                     | ProofTactic::NormalizeUsing(_)
                                     | ProofTactic::CompatibilityNormalize(_)
                                     | ProofTactic::ArithmeticUsing(_)
@@ -4530,6 +4531,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             PostExecutionTactic::SolveUsing(_) => Some("close() using"),
                             PostExecutionTactic::Leaf(
                                 tactic @ (ProofTactic::Normalize
+                                | ProofTactic::CloseBounds(_)
                                 | ProofTactic::NormalizeUsing(_)
                                 | ProofTactic::CompatibilityNormalize(_)
                                 | ProofTactic::ArithmeticUsing(_)
@@ -5121,6 +5123,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 | ProofTactic::Close
                                 | ProofTactic::Enumerate
                                 | ProofTactic::Normalize
+                                | ProofTactic::CloseBounds(_)
                                 | ProofTactic::NormalizeUsing(_)
                                 | ProofTactic::CompatibilityNormalize(_)
                                 | ProofTactic::ArithmeticUsing(_)
@@ -5284,10 +5287,18 @@ pub(super) fn finish_ordered_proof<'a>(
                                         // Same rule for the explicit arithmetic
                                         // closer: its premises are cited against
                                         // a return state this path does not have.
-                                        if matches!(closer_step, ProofStep::ArithmeticUsing(_)) {
-                                            return Err(ClickError::new(
-                                                "`arithmetic using` requires a return-state proposition; use `close()` for a divergent path",
-                                            ));
+                                        match closer_step {
+                                            ProofStep::ArithmeticUsing(_) => {
+                                                return Err(ClickError::new(
+                                                    "`arithmetic using` requires a return-state proposition; use `close()` for a divergent path",
+                                                ));
+                                            }
+                                            ProofStep::CloseBounds(_) => {
+                                                return Err(ClickError::new(
+                                                    "`close() using bounds` requires a return-state proposition; use `close()` for a divergent path",
+                                                ));
+                                            }
+                                            _ => {}
                                         }
                                         record_claim_closure(
                                             &mut outcome_proof,
@@ -5599,28 +5610,6 @@ pub(super) fn finish_ordered_proof<'a>(
                             | PostExecutionTactic::ImplicitSolve
                             | PostExecutionTactic::SolveUsing(_) => {
                                 solve_outcome!();
-                                if matches!(post_tactic, PostExecutionTactic::ImplicitSolve)
-                                    && !super::proof_object::implicit_solve_disabled()
-                                {
-                                    while prove_next_contract_closing_goal(
-                                        &mut outcome_proof,
-                                        &mut closing_input,
-                                        &completed_execution,
-                                        path_index,
-                                        has_return_resource_rewrite,
-                                        &post_return_facts,
-                                        ClosingProofMode::Implicit,
-                                    )? {
-                                        record_post_execution_surface_tactic(
-                                            &mut path_grouped_surface_closers,
-                                            &mut path_deferred_capture_tactics,
-                                            path_capture,
-                                            post_execution_index,
-                                            *tactic_index,
-                                            ProofTactic::Known,
-                                        );
-                                    }
-                                }
                                 continue;
                             }
                             // Every other leaf advances the path's outcome
@@ -5932,21 +5921,6 @@ pub(super) fn finish_ordered_proof<'a>(
                         }
                     }
 
-                    if !require_explicit_closers && !super::proof_object::implicit_solve_disabled()
-                    {
-                        while prove_next_contract_closing_goal(
-                            &mut outcome_proof,
-                            &mut closing_input,
-                            &completed_execution,
-                            path_index,
-                            has_return_resource_rewrite,
-                            &post_return_facts,
-                            ClosingProofMode::Implicit,
-                        )? {
-                            path_grouped_surface_closers.push(ProofTactic::Known);
-                        }
-                    }
-
                     if let Some((claim_index, claim)) = main_goal_claim(&outcome_proof, &closures)?
                         .map(|claim_index| (claim_index, &claims[claim_index]))
                     {
@@ -5961,17 +5935,18 @@ pub(super) fn finish_ordered_proof<'a>(
                             .with_proof_refusal(crate::surface::ProofRefusal::IncompleteProof));
                     }
 
-                    if let Some(root) = &outcome_proof
-                        && let Some(crate::kernel::proof::OutcomeGoal::Closing(kind)) =
-                            root.first_open_outcome_goal()?
-                    {
-                        return Err(root
-                            .step_error(format!(
-                                "outcome still owes contract closing: {}",
-                                kind.description()
-                            ))
-                            .with_proof_refusal(crate::surface::ProofRefusal::IncompleteProof));
-                    }
+                    // The checked outcome supplies everything these finalization
+                    // operations read. Replay performs them at the same point,
+                    // so no surface steps are needed for omitted closing goals.
+                    while prove_next_contract_closing_goal(
+                        &mut outcome_proof,
+                        &mut closing_input,
+                        &completed_execution,
+                        path_index,
+                        has_return_resource_rewrite,
+                        &post_return_facts,
+                        ClosingProofMode::Implicit,
+                    )? {}
 
                     // The checked execution producer owns the specification.
                     // Return-resource rewrites advance that same publication;

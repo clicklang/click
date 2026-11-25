@@ -2384,10 +2384,6 @@ fn integer_type_bits(interface_type: InterfaceType) -> Option<u32> {
     }
 }
 
-/// The standard-library function a `__builtin_constant_p` call lowers to.
-/// Its contract leaves the result an unknown 0 or 1.
-pub(crate) const CONSTANT_P_UNKNOWN: &str = "__click_constant_p_unknown";
-
 /// C's null pointer constant: the integer constant `0`, or that constant
 /// cast to `void *`.
 fn is_null_pointer_constant(expression: &CExpression) -> bool {
@@ -2606,6 +2602,11 @@ pub enum CStatement {
         /// result of step N: the value of a postfix `p++`.
         prior_result: Option<u32>,
         /// Where the source statement was written; see [`CSite`].
+        site: CSite,
+    },
+    /// The compiler decides whether the builtin operand is constant.
+    BuiltinConstantP {
+        step: u32,
         site: CSite,
     },
     /// A call inside an expression of the statement that follows it. Its
@@ -2905,6 +2906,10 @@ pub enum CExpression {
     /// that holds it: one `List<VarArg>` value, the call's last argument
     /// (`crate::languages::c::variadic`).
     VariableArguments(Vec<(&'static str, CExpression)>),
+    /// A GNU builtin with an unevaluated operand.
+    BuiltinConstantP {
+        position: Option<SourcePosition>,
+    },
     /// A C function call that is still embedded in an expression. The
     /// parser lowers it to a call step before the AST reaches the kernel,
     /// so the kernel executes calls only as checked statement transitions.
@@ -4042,6 +4047,7 @@ impl CStatement {
             | Self::DeclareStructValue { site, .. }
             | Self::Assign { site, .. }
             | Self::Call { site, .. }
+            | Self::BuiltinConstantP { site, .. }
             | Self::CallResult { site, .. }
             | Self::IndirectCall { site, .. }
             | Self::HeapAllocate { site, .. }
@@ -4076,6 +4082,7 @@ impl CStatement {
             | Self::DeclareStructValue { site, .. }
             | Self::Assign { site, .. }
             | Self::Call { site, .. }
+            | Self::BuiltinConstantP { site, .. }
             | Self::CallResult { site, .. }
             | Self::IndirectCall { site, .. }
             | Self::HeapAllocate { site, .. }
@@ -4158,6 +4165,9 @@ impl CStatement {
         targets: &BTreeMap<String, (crate::kernel::ControlTargetId, usize)>,
     ) -> crate::kernel::ProgramStatement {
         match self {
+            Self::BuiltinConstantP { step, .. } => {
+                crate::kernel::ProgramStatement::BuiltinConstantP { step: *step }
+            }
             Self::StepValue {
                 aggregate_layout,
                 steps,
@@ -4526,7 +4536,7 @@ impl CExpression {
                     .iter()
                     .map(|(variant, argument)| (*variant, argument.lower_expression())),
             ),
-            Self::Call { .. } => {
+            Self::BuiltinConstantP { .. } | Self::Call { .. } => {
                 unreachable!("call expressions must be lowered before kernel conversion")
             }
             Self::IndirectCall { .. } => {
@@ -5185,6 +5195,7 @@ fn validate_function_returns(
         CStatement::Label { statement, .. } => validate_function_returns(statement, return_type),
         CStatement::EndAggregateLifetimes { .. }
         | CStatement::FillArrayTail { .. }
+        | CStatement::BuiltinConstantP { .. }
         | CStatement::Skip
         | CStatement::Break
         | CStatement::Continue
@@ -5742,6 +5753,7 @@ fn statement_contains_control_transfer(statement: &CStatement) -> bool {
             .any(|case| statement_contains_control_transfer(&case.body)),
         CStatement::EndAggregateLifetimes { .. }
         | CStatement::FillArrayTail { .. }
+        | CStatement::BuiltinConstantP { .. }
         | CStatement::Skip
         | CStatement::Declare { .. }
         | CStatement::DeclareStructValue { .. }
@@ -6327,6 +6339,7 @@ fn evaluate_static_integer_expression(
         | CExpression::Void
         | CExpression::Variable(_)
         | CExpression::StepResult { .. }
+        | CExpression::BuiltinConstantP { .. }
         | CExpression::Call { .. }
         | CExpression::IndirectCall { .. }
         | CExpression::Assignment { .. }
@@ -7059,7 +7072,9 @@ fn contains_aggregate_value(expression: &CExpression) -> bool {
         // while they are parsed. In particular, a direct aggregate lvalue is
         // valid when the corresponding parameter is a copyable struct, so it
         // must not be rejected again by the enclosing expression check.
-        CExpression::Call { .. } | CExpression::IndirectCall { .. } => false,
+        CExpression::BuiltinConstantP { .. }
+        | CExpression::Call { .. }
+        | CExpression::IndirectCall { .. } => false,
         CExpression::AddressOf(_) => false,
         CExpression::Cast { expression, .. }
         | CExpression::FloatNegate(expression)
@@ -9818,6 +9833,7 @@ impl Parser {
             receiver_calls: Vec::new(),
             program_entry_state: None,
             prelowered_kernel_function: None,
+            opaque_exception_constructor: None,
             parameters: header.parameters,
             body,
             callback_statement_sources: std::sync::Arc::new(
@@ -13593,7 +13609,33 @@ impl Parser {
     ) -> Result<CStatement, CSyntaxError> {
         self.scalar_struct_value_layout(target_struct)?;
         let is_step_result = matches!(expression, CExpression::StepResult { .. });
-        let (source_pointer, source_struct) = match expression {
+        let (source_pointer, source_struct) = self.aggregate_copy_source(expression)?;
+        if target_struct != source_struct {
+            return Err(self.error_here(format!(
+                "cannot copy `struct {source_struct}` into `struct {target_struct}`"
+            )));
+        }
+        let layout = self
+            .structs
+            .get(target_struct)
+            .expect("validated struct value has a layout");
+        if is_step_result || !layout.aggregate_unions.is_empty() {
+            return Ok(CStatement::AggregateCopy {
+                target: target_pointer,
+                source: source_pointer,
+                layout: layout.clone(),
+                site: CSite::NONE,
+            });
+        }
+        self.aggregate_field_stores(target_pointer, source_pointer, layout)
+    }
+
+    /// The pointer an aggregate copy reads from, and the struct it holds.
+    fn aggregate_copy_source(
+        &self,
+        expression: CExpression,
+    ) -> Result<(CExpression, String), CSyntaxError> {
+        Ok(match expression {
             expression @ CExpression::StepResult { .. } => {
                 let struct_name = self.aggregate_struct_name(&expression).ok_or_else(|| {
                     self.error_here("aggregate copy requires an aggregate step result")
@@ -13625,24 +13667,15 @@ impl Parser {
                     "aggregate copies require another struct value or a direct struct lvalue load",
                 ));
             }
-        };
-        if target_struct != source_struct {
-            return Err(self.error_here(format!(
-                "cannot copy `struct {source_struct}` into `struct {target_struct}`"
-            )));
-        }
-        let layout = self
-            .structs
-            .get(target_struct)
-            .expect("validated struct value has a layout");
-        if is_step_result || !layout.aggregate_unions.is_empty() {
-            return Ok(CStatement::AggregateCopy {
-                target: target_pointer,
-                source: source_pointer,
-                layout: layout.clone(),
-                site: CSite::NONE,
-            });
-        }
+        })
+    }
+
+    fn aggregate_field_stores(
+        &self,
+        target_pointer: CExpression,
+        source_pointer: CExpression,
+        layout: &RecordLayout,
+    ) -> Result<CStatement, CSyntaxError> {
         let mut stores = Vec::new();
         for field in layout.aggregate_fields() {
             let (element_type, element_count) = match field.interface_type {
@@ -14280,6 +14313,9 @@ impl Parser {
         struct_name: String,
     ) -> Result<(Vec<CStatement>, CExpression), CSyntaxError> {
         let (mut prefix, arguments) = self.lower_call_arguments(arguments)?;
+        let (binding, arguments, prepared) =
+            self.prepare_by_value_arguments(&function_name, arguments)?;
+        prefix.extend(binding);
         let call = self.next_call_result;
         self.next_call_result = self.next_call_result.saturating_add(1);
         // Value returns already materialize independent aggregate storage.
@@ -14297,6 +14333,7 @@ impl Parser {
             site: CSite::NONE,
             callee: None,
         });
+        prefix.extend(Self::end_prepared_arguments(prepared));
         Ok((
             prefix,
             CExpression::StepResult {
@@ -14724,6 +14761,7 @@ impl Parser {
             | CExpression::StringLiteral(_)
             | CExpression::Void
             | CExpression::FunctionAddress(_)
+            | CExpression::BuiltinConstantP { .. }
             | CExpression::Int32Literal(_)
             | CExpression::UInt8Literal(_)
             | CExpression::UInt32Literal(_)
@@ -14770,7 +14808,8 @@ impl Parser {
         match expression {
             CExpression::VariableArguments(_) => false,
             CExpression::ScalarUpdate { .. } => false,
-            CExpression::Call { .. }
+            CExpression::BuiltinConstantP { .. }
+            | CExpression::Call { .. }
             | CExpression::IndirectCall { .. }
             | CExpression::StatementExpression { .. }
             | CExpression::AddressOf(_)
@@ -14997,6 +15036,7 @@ impl Parser {
                 CStatement::Label { statement, .. } => statements.push(statement),
                 CStatement::EndAggregateLifetimes { .. }
                 | CStatement::FillArrayTail { .. }
+                | CStatement::BuiltinConstantP { .. }
                 | CStatement::Skip
                 | CStatement::Break
                 | CStatement::Continue
@@ -15028,7 +15068,8 @@ impl Parser {
                 CExpression::VariableArguments(arguments) => {
                     expressions.extend(arguments.iter().map(|(_, argument)| argument));
                 }
-                CExpression::Call { .. }
+                CExpression::BuiltinConstantP { .. }
+                | CExpression::Call { .. }
                 | CExpression::IndirectCall { .. }
                 | CExpression::Assignment { .. }
                 | CExpression::ScalarUpdate { .. }
@@ -15095,7 +15136,8 @@ impl Parser {
                 CExpression::VariableArguments(arguments) => {
                     expressions.extend(arguments.iter().map(|(_, argument)| argument));
                 }
-                CExpression::Call { .. }
+                CExpression::BuiltinConstantP { .. }
+                | CExpression::Call { .. }
                 | CExpression::IndirectCall { .. }
                 | CExpression::Assignment { .. }
                 | CExpression::ScalarUpdate { .. }
@@ -15175,6 +15217,7 @@ impl Parser {
             CExpression::StepResult { .. } => false,
             CExpression::StringLiteral(_)
             | CExpression::Void
+            | CExpression::BuiltinConstantP { .. }
             | CExpression::Call { .. }
             | CExpression::IndirectCall { .. }
             | CExpression::FunctionAddress(_)
@@ -15586,6 +15629,7 @@ impl Parser {
         match statement {
             CStatement::EndAggregateLifetimes { .. }
             | CStatement::FillArrayTail { .. }
+            | CStatement::BuiltinConstantP { .. }
             | CStatement::Skip
             | CStatement::Break
             | CStatement::Continue
@@ -15712,16 +15756,21 @@ impl Parser {
                 site,
                 callee,
             } => {
-                let (prefix, arguments) = self.lower_call_arguments(arguments)?;
-                Ok(prepend_statements(
-                    prefix,
-                    CStatement::Call {
-                        function_name,
-                        arguments,
-                        site,
-                        callee,
-                    },
-                ))
+                let (mut prefix, arguments) = self.lower_call_arguments(arguments)?;
+                let (binding, arguments, prepared) =
+                    self.prepare_by_value_arguments(&function_name, arguments)?;
+                prefix.extend(binding);
+                let call = CStatement::Call {
+                    function_name,
+                    arguments,
+                    site,
+                    callee,
+                };
+                let call = match Self::end_prepared_arguments(prepared) {
+                    Some(end) => CStatement::Seq(Box::new(call), Box::new(end)),
+                    None => call,
+                };
+                Ok(prepend_statements(prefix, call))
             }
             statement @ CStatement::CallResult { .. } => Ok(statement),
             CStatement::IndirectCall {
@@ -15882,6 +15931,103 @@ impl Parser {
                 unreachable!("nested statements are lowered by lower_statement_calls")
             }
         }
+    }
+
+    /// Binds each by-value aggregate argument of a call to `function_name`
+    /// as C does: the argument is copied into a fresh parameter object, which
+    /// the call then receives. The copy is its own atomic region, so the
+    /// call's entry is the callee's entry, with the parameter object already
+    /// initialized. The object's lifetime ends when the call returns; the
+    /// caller ends it with the statement [`Self::end_prepared_arguments`]
+    /// returns.
+    #[inline(never)]
+    fn prepare_by_value_arguments(
+        &mut self,
+        function_name: &str,
+        arguments: Vec<CExpression>,
+    ) -> Result<(Vec<CStatement>, Vec<CExpression>, Vec<BindingName>), CSyntaxError> {
+        let by_value = self
+            .function_declaration_for_call(function_name)
+            .map(|function| {
+                function
+                    .parameters
+                    .iter()
+                    .map(|parameter| {
+                        let spelling = match &parameter.name {
+                            BindingName::Named(name) => Some(name.to_string()),
+                            name => name
+                                .local_id()
+                                .and_then(LocalBindingId::spelling)
+                                .map(str::to_owned),
+                        };
+                        parameter
+                            .is_struct_value()
+                            .then(|| parameter.struct_name.clone().zip(spelling))
+                            .flatten()
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        if by_value.iter().all(Option::is_none) {
+            return Ok((Vec::new(), arguments, Vec::new()));
+        }
+        let mut prefix = Vec::new();
+        let mut prepared = Vec::new();
+        let mut lowered = Vec::with_capacity(arguments.len());
+        for (index, argument) in arguments.into_iter().enumerate() {
+            let Some(Some((struct_name, parameter))) = by_value.get(index).cloned() else {
+                lowered.push(argument);
+                continue;
+            };
+            let layout = self.scalar_struct_value_layout(&struct_name)?;
+            let (source, source_struct) = self.aggregate_copy_source(argument)?;
+            if source_struct != struct_name {
+                return Err(self.error_here(format!(
+                    "cannot pass `struct {source_struct}` as a `struct {struct_name}` argument"
+                )));
+            }
+            let owner = self.binding_function.clone().ok_or_else(|| {
+                self.error_here("a by-value struct argument requires a function body")
+            })?;
+            let ordinal = self.next_local_binding;
+            self.next_local_binding = ordinal.checked_add(1).expect("binding ordinal fits u32");
+            let name: BindingName =
+                LocalBindingId::prepared_argument_for(owner, ordinal, &parameter)
+                    .with_scope_depth(self.scopes.len() as u32)
+                    .into();
+            self.variable_types
+                .insert(name.clone(), record_value_type(&layout));
+            self.variable_structs
+                .insert(name.clone(), struct_name.clone());
+            self.variable_struct_values
+                .insert(name.clone(), struct_name.clone());
+            self.local_struct_values
+                .insert(name.clone(), Some(struct_name));
+            prefix.push(CStatement::DeclareStructValue {
+                name: name.clone().into(),
+                layout: layout.clone(),
+                site: CSite::NONE,
+            });
+            prefix.push(CStatement::AggregateCopy {
+                target: CExpression::Variable(name.clone()),
+                source,
+                layout,
+                site: CSite::NONE,
+            });
+            lowered.push(CExpression::Variable(name.clone()));
+            prepared.push(name);
+        }
+        Ok((prefix, lowered, prepared))
+    }
+
+    /// Ends the parameter objects [`Self::prepare_by_value_arguments`]
+    /// created, once their call has returned.
+    fn end_prepared_arguments(prepared: Vec<BindingName>) -> Option<CStatement> {
+        (!prepared.is_empty()).then(|| CStatement::EndAggregateLifetimes {
+            names: prepared,
+            steps: Vec::new(),
+            site: CSite::NONE,
+        })
     }
 
     fn lower_call_arguments(
@@ -16492,6 +16638,23 @@ impl Parser {
                 });
                 Ok((prefix, CExpression::Variable(name)))
             }
+            CExpression::BuiltinConstantP { .. } => {
+                let step = self.next_call_result;
+                self.next_call_result = self.next_call_result.saturating_add(1);
+                Ok((
+                    vec![CStatement::BuiltinConstantP {
+                        step,
+                        site: CSite::NONE,
+                    }],
+                    CExpression::StepResult {
+                        step,
+                        origin: crate::kernel::StepOrigin::BuiltinConstantP,
+                        interface_type: Some(InterfaceType::Int32),
+                        pointee_constant: false,
+                        struct_name: None,
+                    },
+                ))
+            }
             CExpression::Call {
                 function_name,
                 arguments,
@@ -16507,6 +16670,9 @@ impl Parser {
                     ));
                 }
                 let (mut prefix, arguments) = self.lower_call_arguments(arguments)?;
+                let (binding, arguments, prepared) =
+                    self.prepare_by_value_arguments(&function_name, arguments)?;
+                prefix.extend(binding);
                 let return_struct_name = self
                     .function_declaration(&function_name)
                     .and_then(|function| function.return_struct_name.clone());
@@ -16528,6 +16694,7 @@ impl Parser {
                         callee: None,
                         site: CSite::NONE,
                     });
+                    prefix.extend(Self::end_prepared_arguments(prepared));
                     return Ok((
                         prefix,
                         CExpression::StepResult {
@@ -16559,9 +16726,6 @@ impl Parser {
                             signature.return_pointee_constant,
                             signature.return_struct_name.clone(),
                         )
-                    } else if function_name == CONSTANT_P_UNKNOWN {
-                        // `__builtin_constant_p` has type `int`.
-                        (Some(InterfaceType::Int32), false, None)
                     } else {
                         (None, false, None)
                     };
@@ -16576,6 +16740,7 @@ impl Parser {
                     site: CSite::NONE,
                     callee: None,
                 });
+                prefix.extend(Self::end_prepared_arguments(prepared));
                 Ok((
                     prefix,
                     CExpression::StepResult {
@@ -18883,11 +19048,8 @@ impl Parser {
                         // The operand is not evaluated. Whether the compiler
                         // folds it to a constant depends on optimization, so
                         // the result is an unknown 0 or 1 and both outcomes
-                        // are checked; the standard library's contract for
-                        // this name says only that.
-                        expression = CExpression::Call {
-                            function_name: CONSTANT_P_UNKNOWN.to_string(),
-                            arguments: Vec::new(),
+                        // are checked.
+                        expression = CExpression::BuiltinConstantP {
                             position: call_position.clone(),
                         };
                         continue;
@@ -19254,6 +19416,7 @@ impl Parser {
             }
             CExpression::StringLiteral(_)
             | CExpression::Void
+            | CExpression::BuiltinConstantP { .. }
             | CExpression::Call { .. }
             | CExpression::IndirectCall { .. }
             | CExpression::FunctionAddress(_)
@@ -19684,7 +19847,9 @@ impl Parser {
                 .function_declaration_for_call(function_name)
                 .map(|header| header.return_type),
             CExpression::IndirectCall { signature, .. } => Some(signature.return_type),
-            CExpression::Int32Literal(_) => Some(InterfaceType::Int32),
+            CExpression::BuiltinConstantP { .. } | CExpression::Int32Literal(_) => {
+                Some(InterfaceType::Int32)
+            }
             CExpression::UInt8Literal(_) => Some(InterfaceType::UInt8),
             CExpression::UInt32Literal(_) => Some(InterfaceType::UInt32),
             CExpression::Int64Literal(_) => Some(InterfaceType::Int64(LongRank::Long)),
@@ -21694,6 +21859,7 @@ fn first_embedded_call_position(expression: &CExpression) -> Option<SourcePositi
             .iter()
             .find_map(|(_, argument)| first_embedded_call_position(argument)),
         CExpression::ScalarUpdate { .. } => None,
+        CExpression::BuiltinConstantP { position } => position.clone(),
         CExpression::Call {
             position,
             arguments,
@@ -21857,6 +22023,7 @@ fn first_assignment_position(expression: &CExpression) -> Option<SourcePosition>
         CExpression::StringLiteral(_)
         | CExpression::Void
         | CExpression::Variable(_)
+        | CExpression::BuiltinConstantP { .. }
         | CExpression::StepResult { .. }
         | CExpression::FunctionAddress(_)
         | CExpression::Int32Literal(_)
@@ -21898,6 +22065,7 @@ fn expression_reads_runtime_value(expression: &CExpression) -> bool {
         | CExpression::SizeOfType { .. } => false,
         CExpression::Variable(_)
         | CExpression::StepResult { .. }
+        | CExpression::BuiltinConstantP { .. }
         | CExpression::Call { .. }
         | CExpression::IndirectCall { .. }
         | CExpression::StatementExpression { .. }

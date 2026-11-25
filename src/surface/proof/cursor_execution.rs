@@ -6,6 +6,9 @@ use std::sync::Arc;
 
 pub(super) struct BranchInterfaceJoinInputs<'a, 'proof> {
     pub(super) sibling_states: &'a [&'a ExecutionState; 2],
+    pub(super) arm_endpoints: [&'a ExecutionState; 2],
+    pub(super) split_state: &'a ExecutionState,
+    pub(super) other_abstraction: Option<&'a ExecutionState>,
     pub(super) recorded_states: &'a RecordedStates,
     pub(super) proof: &'a Proof<'proof>,
     pub(super) entry_facts: &'a PureFactStore,
@@ -275,6 +278,13 @@ pub(super) fn apply_branch_interface_with_proof_facts(
         }
     }
     abstract_state = abstract_state.with_resource_context(exported_resources.clone());
+    // An observation at the abstract successor names the same point in both
+    // arms, even when their concrete memory histories ended at different points.
+    abstract_state.prepare_interface_join_point(
+        join_inputs.arm_endpoints,
+        join_inputs.split_state,
+        join_inputs.other_abstraction,
+    );
     let interface_records = execution.presentation.recorded_states.for_branch_interface(
         join_inputs.recorded_states,
         target,
@@ -1742,27 +1752,6 @@ pub(super) fn checked_returned_call_value(
     .cloned()
 }
 
-fn record_call_parameters(
-    execution: &mut ExecutionProofState,
-    function_block: &FunctionBlock,
-    statement_index: usize,
-    call_parameters: Option<&crate::kernel::CallParameters>,
-) {
-    if let Some(parameters) = call_parameters {
-        record_statement_program_state(
-            &mut execution.presentation.recorded_states,
-            function_block,
-            statement_index,
-            ProgramPointKind::Parameters,
-            parameters.state().clone(),
-        );
-        execution.presentation.surface_record.last_call_parameters = Some(ProgramPointRef {
-            region: CodeRegionRef::Region(statement_index),
-            kind: ProgramPointKind::Parameters,
-        });
-    }
-}
-
 /// Record one of the two transitions retained by
 /// [`prepare_call_outcome_split`].  This is intentionally a recorder, not an
 /// evaluator: the theorem, outcome, facts, and borrow evidence all come from
@@ -1851,13 +1840,6 @@ pub(super) fn apply_prepared_call_outcome_transition(
         prepared.statement_index,
         ProgramPointKind::Exit,
         *next_state.clone(),
-    );
-
-    record_call_parameters(
-        execution,
-        function_block,
-        prepared.statement_index,
-        transition.call_parameters.as_ref(),
     );
 
     if is_throw {
@@ -3188,12 +3170,6 @@ fn execute_step_from_frontier_position_selecting_path(
             .presentation
             .recorded_states
             .record_read_events(statement_index, &execution_pure_facts);
-        record_call_parameters(
-            execution,
-            function_block,
-            statement_index,
-            transition.call_parameters.as_ref(),
-        );
         if matches!(outcome, StatementOutcome::Normal(_))
             && let Some(result) = &transition.call_result
         {
@@ -4224,6 +4200,7 @@ pub(super) fn describe_statement_head(statement: &ProgramStatement) -> String {
         ProgramStatement::Assert { condition, .. } => {
             format!("assert({})", describe_program_expression(condition))
         }
+        ProgramStatement::BuiltinConstantP { .. } => "__builtin_constant_p(…)".into(),
         ProgramStatement::StepValue { expression, .. } => {
             format!("value {}", describe_program_expression(expression))
         }

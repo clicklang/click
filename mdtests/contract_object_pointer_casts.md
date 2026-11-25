@@ -43,9 +43,20 @@ void sized_copy(struct rb_node* rb_old, struct rb_node* rb_new) {
 } by {
     step_until(statement(2).entry);
     have contains(memory(new->size), memory((&new->size)[0..1])) by { close(); }
-    have contains(memory(old->size), memory(old->size)) by { apply(click::separation::contains_refl(memory(old->size))); }
+    have contains(memory(old->size), memory((&old->size)[0..1])) by { close(); }
+    have separate(memory((&new->size)[0..1]), memory((&old->size)[0..1])) by {
+        apply(click::separation::separate_restrict(memory(new->size), memory(old->size), memory((&new->size)[0..1]), memory((&old->size)[0..1])));
+    }
+    have contains(memory(old->size), memory(old->size)) by {
+        apply(click::separation::contains_refl(memory(old->size)));
+    }
     have separate(memory((&new->size)[0..1]), memory(old->size)) by {
         apply(click::separation::separate_restrict(memory(new->size), memory(old->size), memory((&new->size)[0..1]), memory(old->size)));
+    }
+    step();
+    have separate(statement(2).footprint, memory((&old->size)[0..1])) by { close(); }
+    have old->size == at(statement(2).entry, old->size) by {
+        preserve(memory((&old->size)[0..1]), statement(2));
     }
 }
 struct sized_node* identity(struct rb_node* p) {

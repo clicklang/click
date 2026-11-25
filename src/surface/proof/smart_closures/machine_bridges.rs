@@ -940,11 +940,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(goal) = input.goal() else {
             return Ok(None);
         };
-        let mathematical = integer_affine_claim(goal).is_some();
-        let narrow_native = matches!(goal, Proposition::ConditionIs(condition, _)
-            if condition.operand_view().comparison().is_some_and(|(format, _, _)| format.format().bits() < 32));
+        // The arithmetic planner can observe a native comparison as Integer.
+        // Arm equations must keep the native type of the conditional itself.
+        let native = matches!(goal, Proposition::ConditionIs(condition, _)
+            if condition.operand_view().comparison().is_some());
+        let mathematical = !native && integer_affine_claim(goal).is_some();
         if !mathematical
-            && !narrow_native
+            && !native
             && !non_numeric_conditional_goal(goal)
             && !crate::kernel::machine_integer::comparison::integer_readings_with_promotions(goal)
                 .iter()
@@ -1066,6 +1068,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     else {
                         continue;
                     };
+                    // A final arm equation can already discharge the goal.
+                    if equation.focused_discharged() {
+                        sources.push(equality);
+                        return Ok(Some((equation, sources)));
+                    }
                     let rewritten = equation
                         .driver()
                         .apply_step(ProofStep::Rewrite(equality.clone()))?;

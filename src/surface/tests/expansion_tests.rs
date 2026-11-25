@@ -4408,6 +4408,22 @@ fn call_field_requirements_substitute_actual_arguments_in_expansion() {
     }
 }
 
+#[test]
+fn pointer_output_definedness_expands_through_return_cleanup() {
+    let (source, sources) =
+        mdtest_sources("mdtests/call_result_assignment_retains_defined_pointer_output.md");
+    let sources = sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c_claim_source_by_label(&source, &sources, "caller.contract")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    without_implicit_solve_for_claim("caller.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}"));
+}
+
 /// The int64 postcondition's domain is owed only where `result == 1`, and
 /// that guard establishes it from the call's postcondition without a written
 /// step. Its expanded claim contains only simple proof steps.
@@ -23195,14 +23211,7 @@ fn outcome_instantiation_expands_and_closes_without_search() {
     let (source, sources) = mdtest_sources("mdtests/instantiate_at_function_exit.md");
     let sources = crate::cli::source_refs(&sources);
     let label = "at_exit.contract";
-    // Close the three contract bookkeeping goals after the last proposition.
-    let explicit = source
-        .replace("step_until(function.exit);", "step();")
-        .trim_end()
-        .strip_suffix('}')
-        .unwrap()
-        .to_owned()
-        + "    close();\n    close();\n    close();\n}\n";
+    let explicit = source.replace("step_until(function.exit);", "step();");
     for source in [
         explicit,
         expand_c_claim_source_by_label(&source, &sources, label)
@@ -25447,6 +25456,19 @@ fn store_index_separation_expands_and_replays() {
         "read_first",
         "read_first.ensures_0",
     );
+}
+
+#[test]
+fn step_until_needs_the_same_store_separation_as_written_steps() {
+    let (source, inputs) = mdtest_sources("mdtests/signed_byte_swap_uses_a_selected_frame.md");
+    let inputs = crate::cli::source_refs(&inputs);
+    let prerequisite = "have ((n - 1u64) as uint64) != 0u64 by close();";
+    assert!(source.contains(prerequisite));
+    verify_c_sources(&source, &inputs).expect("the stated index disequality keeps the cell");
+    let missing = source.replace(prerequisite, "have 0u64 < n - 1u64 by close();");
+    let error = verify_c_sources(&missing, &inputs)
+        .expect_err("step_until should require the same store separation as step");
+    assert!(error.message().contains("could not establish"), "{error}");
 }
 
 // The same for a `size_t` index: the retained `have` is the `uint64` word

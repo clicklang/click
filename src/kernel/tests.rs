@@ -151,8 +151,10 @@ pub(in crate::kernel) fn explicit_frame(
         other => panic!("unsupported test observation: {other:?}"),
     };
     let result = Proposition::condition_is(condition, true);
-    crate::kernel::proof::preservation::apply(&separation, None, &result, |p| p == &separation)
-        .expect("explicit preservation");
+    crate::kernel::proof::preservation::apply(&separation, None, &result, None, |p| {
+        p == &separation
+    })
+    .expect("explicit preservation");
     Some((old, new, result))
 }
 

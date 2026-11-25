@@ -1564,6 +1564,10 @@ id = "tactic-form.close-using"
 path = "reference/tactics/index.md#proposition-reasoning"
 
 [[item]]
+id = "tactic-form.close-bounds"
+path = "reference/tactics/index.md#checked-bounds"
+
+[[item]]
 id = "cli.verify.command"
 path = "reference/cli/verify.md#click-verify-command"
 
@@ -2346,10 +2350,6 @@ path = "reference/library/index.md#stringlen_has_prefix"
 [[item]]
 id = "library.theorem.string::len_has_terminator"
 path = "reference/library/index.md#stringlen_has_terminator"
-
-[[item]]
-id = "primitive.extern.__click_constant_p_unknown"
-path = "reference/language/index.md#__click_constant_p_unknown"
 
 [[item]]
 id = "library.theorem.stdout_non_null"
@@ -5776,3 +5776,19 @@ path = "reference/library/index.md#float_orderfloat64_scale_negative_right_lower
 [[item]]
 id = "library.theorem.float_order::float64_scale_negative_right_upper"
 path = "reference/library/index.md#float_orderfloat64_scale_negative_right_upper"
+
+[[item]]
+id = "library.theorem.float_order::float32_add_finite_monotone"
+path = "reference/library/index.md#float_orderfloat32_add_finite_monotone"
+
+[[item]]
+id = "library.theorem.float_order::float64_add_finite_monotone"
+path = "reference/library/index.md#float_orderfloat64_add_finite_monotone"
+
+[[item]]
+id = "library.theorem.float_order::float32_subtract_finite_monotone"
+path = "reference/library/index.md#float_orderfloat32_subtract_finite_monotone"
+
+[[item]]
+id = "library.theorem.float_order::float64_subtract_finite_monotone"
+path = "reference/library/index.md#float_orderfloat64_subtract_finite_monotone"

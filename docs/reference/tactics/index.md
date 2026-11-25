@@ -96,11 +96,14 @@ when the default misses or when a proof must not search.
   or write `close()` to close the first open goal and continue. Use
   `close() using { ... }` to restrict proof search to listed facts.
   For a proof that must replay without search, use `click verify --checked-only`.
-- **Equalities and states: `rewrite`, `transport`.** `rewrite(from, to)` is the
-  default: it rewrites the goal with an equality at the current state.
+- **Equalities and states.** `rewrite(from, to)` rewrites the goal with an
+  equality at the current state.
   `transport(P, Q)` carries a fact stated at an earlier state to the current
-  one when `step` did not carry it; its `using` form, which lists the frame
-  evidence, is expansion output. `close()` tries both within its bounds.
+  one when `step` did not carry it. For explicit frame evidence, establish
+  it with `have`, use `preserve` for a read across a separated footprint,
+  and apply the resulting equality with `rewrite`. Expansion emits these
+  ordinary steps when it has a replayable derivation. `close()` tries
+  rewriting and frame reasoning within its bounds.
   A full pointer-value equality also rewrites displaced copies such as `p + i`,
   retaining their selected bounds. An equality of `address(p)` and `address(q)`
   supplies numeric addresses without transferring object identity or bounds.
@@ -192,8 +195,8 @@ A C store into an array keeps a cached element of that array only on a
 stated disequality of the two index words, compared as `int32`, or as
 `uint64` or `int64` for two 64-bit indices of that signedness such as
 `size_t` ones (see [Verifier design](../../internals/verifier-design.md));
-otherwise it drops the element. When a statement the implicit tail or
-`step_until` runs drops such an element, the tail writes that disequality
+otherwise it drops the element. When a statement the implicit tail runs
+drops such an element, the tail writes that disequality
 from the two index words, `((m - 1) as int32) != 0`,
 `((n - 1u64) as uint64) != 0u64` or `j != 0u64` say,
 proves it at the statement's pre-state, retains it as a `have`,
@@ -663,7 +666,9 @@ leaves an open claim to the report that names it
 
 `step_until` repeats `step()` up to the target, walking any loop the facts
 decide, and never splits: an undecided branch before the target refuses it, as
-it refuses `step()`. The parser refuses the removed form `execute_until`
+it refuses `step()`. Its only proof search is the ordinary closer for each
+step's obligations. State any index disequality a store needs before it runs.
+The parser refuses the removed form `execute_until`
 and names `step_until`.
 
 **Specialized.** Write it to stop execution at a chosen statement, loop, or read
@@ -1120,6 +1125,7 @@ step is still checked.
 | `all { P => { ... } Q => { ... } }` | control | Expansion output | Prove each conjunct. | [Reference](#conjunctions) |
 | `outcomes { returned => { ... } threw => { ... } }` | control | Specialized | Prove each returned or exceptional outcome. | [Reference](#execution-outcomes) |
 | `close() using { P; ... }` | smart | Specialized | Close one goal from written premises only. | [Reference](#simplification-with-selected-premises) |
+| `close() using bounds { P; ... }` | simple | Expansion output | Check a float bound or signed product range bound from exact citations. | [Reference](#checked-bounds) |
 | `check_termination_local("f")` | simple | Expansion output | Establish the generated local descent classification. | [Reference](#termination-checks) |
 | `check_termination_component("f", mode)` | simple | Expansion output | Classify a generated recursive component using established premises. | [Reference](#termination-checks) |
 | `check_termination_callbacks()` | simple | Expansion output | Classify callback safety using established strict return premises. | [Reference](#termination-checks) |
@@ -1215,8 +1221,8 @@ Expansion preserves the application.
 
 `enumerate` is how an explicit proof closes a finite case analysis over a
 constant-bounded universal, such as a `sorted(p, 3)` postcondition: the
-expanded proof spells one `have` per non-vacuous instance (typically closed by
-`intro`, `instantiate(...)`, an explicit transport, and `close()`),
+expanded proof spells one `have` per non-vacuous instance (typically using
+`intro`, `instantiate(...)`, and `close()` with any needed frame proofs),
 and `enumerate()` checks exactly those instances against the goal's own
 guard-derived ranges. A goal stated as a predicate call is unfolded to the
 body that binds the instances, and proof search proves nearest pairs
@@ -1270,15 +1276,15 @@ cursor forward, `v = v + cs`, carries `v == b + k` across the pass this way
 
 When a smart `have` needs memory permissions merely to lower its goal, its
 expanded proof retains the relevant viewability and order facts through
-explicit transports, rewrites, intermediate facts, or named theorem applications. A
+preservation steps, rewrites, intermediate facts, or named theorem applications. A
 context-free-looking result such as a normalized equality is not emitted as
 bare `normalize()` if checking still needs those premises to interpret an
 indexed load. A `close() using` equality may be selected through a bounded chain
 of exact equality facts whose intermediate load variables are kernel-internal
 names for the same user-level loads. When frame evidence is needed to relate an
-earlier load origin to the current one, the expanded proof first establishes the
-current surface form with an explicit `transport`; simple `rewrite` checking
-never searches for an equivalent equality. Expansion and audit verify the
+earlier load origin to the current one, the expanded proof first establishes
+the needed equality with ordinary proof steps. The `rewrite` step uses
+that exact equality. Expansion and audit verify the
 complete rewritten surface proof through the ordinary entry point.
 
 ### Conjunctions
@@ -1459,8 +1465,6 @@ A goal that held at function entry or at one of the eight most recently
 recorded points can use the frame evidence for that state. Lowering keeps
 an aliased read as written
 ([`fold_argument_reads_through_model_pointer.md`](https://github.com/clicklang/click/blob/master/mdtests/fold_argument_reads_through_model_pointer.md)).
-If verification needs a legacy frame check and search finds no ordinary
-proof, expansion reports that it is unavailable for the claim.
 
 A goal that is one disjunct of an available disjunction whose every other
 disjunct an exact fact refutes is proved by `cases` over that disjunction, the
@@ -1499,9 +1503,24 @@ search plus leaves.
 
 **Checked examples:** [`solve_postconditions.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_postconditions.md)
 
+### Checked bounds
+
+**Form:** `close() using bounds { P; ... }`
+
+Check one floating-point bound or a signed product range bound. Each cited
+premise must already be available. The checker matches the goal and those
+premises against fixed rules for rounded bounds, float interval operations
+and finiteness, or a signed product constrained by a quotient guard. Expansion
+uses this form when it selects one of those rules. Replay checks the explicit
+premises and does no proof search.
+
 ### Simplification with selected premises
 
 **Form:** `close() using { P; ... }`
+
+The listed premises must supply the branch condition. The rejection fixture
+`mdtests/close_using_rejects_ambient_condition.md` shows a condition held in
+the surrounding proof and omitted from the list.
 
 **Specialized.** Write it when `close()` picks the wrong premises or searches too
 long, to restrict it to the named facts. On a proposition goal, including a
@@ -2147,7 +2166,7 @@ Expansion retains the normalization step and cited evidence; checking
 reconstructs the graph from the surrounding checked proof context. Work
 follows the selected expression and premises.
 
-**Checked examples:** [`normalize_using_rejects_ambient.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_rejects_ambient.md), [`normalize_using_decides_conditions_without_substituting.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_decides_conditions_without_substituting.md), [`uint64_int32_exact_index_alias.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_int32_exact_index_alias.md), [`uint64_int32_low_word_is_not_address_equality.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_int32_low_word_is_not_address_equality.md)
+**Checked examples:** [`normalize_using_decides_conditions_without_substituting.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_decides_conditions_without_substituting.md), [`uint64_int32_exact_index_alias.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_int32_exact_index_alias.md), [`uint64_int32_low_word_is_not_address_equality.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_int32_low_word_is_not_address_equality.md)
 
 ### Arithmetic search
 
@@ -2350,8 +2369,9 @@ field and must match the constructed equality.
 
 For `defined(read)`, the separated resource must be the complete typed cell.
 The tactic looks up the exact `defined(read)` fact at the footprint's entry
-and constructs it at the exit. The footprint supplies both points; the
-separated cell supplies the address. Missing old definedness is a local refusal,
+and constructs it at the exit. At a checked function return, it can carry
+the fact through a recorded cleanup that retires a distinct automatic object.
+The separated cell supplies the address. Missing old definedness is a local refusal,
 not a request to search memory history. This rule preserves definedness; it
 does not establish initialization from ownership or value equality alone.
 

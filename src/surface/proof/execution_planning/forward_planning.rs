@@ -869,15 +869,6 @@ fn advance_execution_proof_statement(
                 if let Some(result) = &transition.call_result {
                     recorded_states.record_call_transition_result(statement_index, result.clone());
                 }
-                if let Some(parameters) = &transition.call_parameters {
-                    record_code_region_program_state(
-                        &mut recorded_states,
-                        environment.function_block,
-                        CodeRegion::Statement(statement_index),
-                        ProgramPointKind::Parameters,
-                        parameters.state().clone(),
-                    );
-                }
             }
             if matches!(statement, ProgramStatement::Loop { .. }) {
                 let loop_index = loop_index.expect("a loop statement has a checked loop index");

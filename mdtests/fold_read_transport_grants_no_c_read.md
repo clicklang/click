@@ -65,7 +65,7 @@ int32 set_then_read(int32 *v, int32 i) {
                     apply(click::separation::separate_elements(v, i, k));
                 }
                 have separate(statement(0).footprint, memory(v[k])) by {
-                    normalize() using { separate(memory(v[i]), memory(v[k])); };
+                    close() using { separate(memory(v[i]), memory(v[k])); };
                 }
                 preserve(memory(v[k]), statement(0));
             }

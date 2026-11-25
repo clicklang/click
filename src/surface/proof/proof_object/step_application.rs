@@ -339,9 +339,7 @@ fn unsigned_order_names_a_variable(goal: &crate::kernel::Proposition) -> bool {
 fn chosen_step_text(step: &ProofStep) -> Option<String> {
     if !matches!(
         step,
-        ProofStep::ApplyTheoremUsing { .. }
-            | ProofStep::ApplyPlannedTheorem { .. }
-            | ProofStep::CompatibilityFactTransport { .. }
+        ProofStep::ApplyTheoremUsing { .. } | ProofStep::ApplyPlannedTheorem { .. }
     ) {
         return None;
     }
@@ -813,6 +811,20 @@ impl<'a> Proof<'a> {
                 }
                 _ => unreachable!("kernel returned an unrelated known error"),
             })
+    }
+
+    #[inline(never)]
+    pub(super) fn apply_close_bounds(
+        &self,
+        surface_premises: &[SyntaxProposition],
+    ) -> Result<KernelProofHandle, ClickError> {
+        let premises = surface_premises
+            .iter()
+            .map(|premise| self.lower_cited_surface_proposition(premise, "selected bound"))
+            .collect::<Result<Vec<_>, _>>()?;
+        self.state
+            .apply_close_bounds(&premises)
+            .map_err(|message| self.step_error(message))
     }
 
     // Preserve the rule/dispatcher frame boundary described above.

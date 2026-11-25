@@ -54,13 +54,11 @@ fn source_contract_application(name: &str, arguments: &[SyntaxTerm]) -> Option<S
     })
 }
 
-/// Click source that parses back. Every spelling is chosen by its caller;
-/// no output depends on who else is printing.
-/// Diagnostic spelling for a kernel conjunction without complete Surface labels.
-pub(super) const COMPATIBILITY_FACT_TRANSPORT: &str = "<verification-only fact transport>";
 pub(super) const COMPATIBILITY_NORMALIZATION: &str = "<verification-only normalization>";
+/// Diagnostic spelling for a kernel conjunction without complete Surface labels.
 pub(super) const UNRAISED_CONJUNCT: &str = "<unraised conjunct>";
 
+/// Click source that parses back. The caller supplies the spelling.
 pub(in crate::surface) fn source_click_proposition(proposition: &SyntaxProposition) -> String {
     with_lexical_binder_names(|| identity_click_proposition(proposition))
 }
@@ -1333,6 +1331,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ProofTactic::CompatibilityNormalize(_) => {
             line(output, &prefix, COMPATIBILITY_NORMALIZATION)
         }
+        ProofTactic::CloseBounds(premises) => write_selected_bounds(output, premises, indent),
         ProofTactic::Normalize => line(output, &prefix, "normalize();"),
         ProofTactic::NormalizeUsing(premises) => {
             write_using_premises(output, "normalize()", premises, indent)
@@ -1389,9 +1388,6 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 source_click_proposition(target)
             ),
         ),
-        ProofTactic::CompatibilityFactTransport { .. } => {
-            line(output, &prefix, COMPATIBILITY_FACT_TRANSPORT)
-        }
         ProofTactic::Instantiate {
             quantified,
             arguments,
@@ -1470,6 +1466,13 @@ fn write_proof(output: &mut String, proof: &SourceProof, indent: usize) {
     write_tactics(output, tactics, indent + 1);
     output.push_str(&"    ".repeat(indent));
     output.push('}');
+}
+
+fn write_selected_bounds(output: &mut String, premises: &[SyntaxProposition], indent: usize) {
+    let prefix = "    ".repeat(indent);
+    line(output, &prefix, "close() using bounds {");
+    write_premise_list(output, premises, indent + 1);
+    line(output, &prefix, "};");
 }
 
 fn write_using_premises(

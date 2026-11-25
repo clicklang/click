@@ -51,11 +51,12 @@ fn last(n: u32) -> u32 {
             }
         }
     }
-    have iter.n == 0u32;
+    // The loop invariant describes the state before the final call to next.
+    have at(loop(0).call(Countdown_next, 0).entry, iter.n) == 0u32 by { close(); }
     have last == 0u32 by {
         cases {
-            iter.n == n and last == 0u32 => { close(); }
-            last == iter.n => { close(); }
+            at(loop(0).call(Countdown_next, 0).entry, iter.n) == n and last == 0u32 => { close(); }
+            last == at(loop(0).call(Countdown_next, 0).entry, iter.n) => { close(); }
         }
     }
     step_until(function.exit);

@@ -7,6 +7,7 @@ pub(crate) fn apply(
     separation: &Proposition,
     field: Option<typed_reads::FieldSelection>,
     result: &Proposition,
+    return_state: Option<&ExecutionState>,
     available: impl Fn(&Proposition) -> bool,
 ) -> Result<(), String> {
     crate::instrumentation::record_deterministic_work(1);
@@ -33,7 +34,8 @@ pub(crate) fn apply(
         }
         after
     } else if let Proposition::MemoryReadDefined { value_type, .. } = result {
-        let (before, after) = preserve_definedness(separation, *value_type).ok_or(
+        let (before, after) = preserve_definedness(separation, *value_type, return_state, result)
+            .ok_or(
             "preserve definedness requires a footprint separated from a complete typed cell",
         )?;
         if !available(&before) {
@@ -196,11 +198,13 @@ fn preserve_footprint(
     observation_equality(footprint, address, observed, kind)
 }
 
-/// The footprint and separated cell determine both endpoints. The goal selects
-/// only the read type; it cannot supply a different address or state.
+/// The footprint and separated cell determine the typed observation. A
+/// published return can supply its endpoint when checked cleanup follows.
 fn preserve_definedness(
     separation: &Proposition,
     value_type: ProgramType,
+    outcome_state: Option<&ExecutionState>,
+    result: &Proposition,
 ) -> Option<(Proposition, Proposition)> {
     crate::instrumentation::record_deterministic_work(1);
     let Proposition::ResourceSeparate { left, right } = separation else {
@@ -224,10 +228,25 @@ fn preserve_definedness(
         pointer: pointer.clone(),
         value_type,
     };
-    Some((
-        defined(&footprint.before_point, &footprint.before),
-        defined(&footprint.after_point, &footprint.after),
-    ))
+    let before = defined(&footprint.before_point, &footprint.before);
+    let after = defined(&footprint.after_point, &footprint.after);
+    if &after != result
+        && let Some(outcome) = outcome_state
+        && footprint.viewability_survives_return_cleanup(outcome.memory(), &pointer)
+    {
+        // The focused return judgment supplies its observation point. The
+        // memory derivation checks that cleanup retired a distinct object.
+        return Some((
+            before,
+            Proposition::MemoryReadDefined {
+                at: outcome.observation_point_id(),
+                memory: outcome.memory().clone(),
+                pointer,
+                value_type,
+            },
+        ));
+    }
+    Some((before, after))
 }
 
 // Resource field values are retained by the persistent resource contexts.
@@ -444,7 +463,7 @@ mod tests {
         let entry_view = range.loadable_fact(state.memory());
         let goal = range.loadable_fact(&state.memory().without_local_block(&local.base));
         assert_eq!(
-            apply(&separation, None, &goal, |fact| {
+            apply(&separation, None, &goal, None, |fact| {
                 fact == &separation || fact == &entry_view
             }),
             Err("preserve's constructed result does not match the goal".into())
@@ -462,7 +481,7 @@ mod tests {
             &self,
             available: impl Fn(&Proposition) -> bool,
         ) -> Result<Proposition, String> {
-            super::apply(&self.separation, self.field, &self.result, available)?;
+            super::apply(&self.separation, self.field, &self.result, None, available)?;
             Ok(self.result.clone())
         }
         pub fn points(&self) -> (&ProgramPoint, &ProgramPoint) {
@@ -621,7 +640,10 @@ mod tests {
                 unreachable!()
             };
             std::mem::swap(left, right);
-            assert_eq!(preserve_definedness(&swapped, ty), Some((old, goal)));
+            assert_eq!(
+                preserve_definedness(&swapped, ty, None, &goal),
+                Some((old, goal))
+            );
         }
     }
 
@@ -1238,7 +1260,8 @@ mod tests {
             ))),
         };
         assert_eq!(
-            apply(&separation, None, &expected, |fact| fact == &separation),
+            apply(&separation, None, &expected, None, |fact| fact
+                == &separation),
             Ok(())
         );
         if bytes < 4 {
@@ -1257,7 +1280,7 @@ mod tests {
                 true,
             );
             assert_eq!(observation_type(comparison_type, bytes, &mixed), None);
-            assert!(apply(&separation, None, &mixed, |fact| fact == &separation).is_err());
+            assert!(apply(&separation, None, &mixed, None, |fact| fact == &separation).is_err());
         }
     }
 

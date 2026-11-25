@@ -39,6 +39,10 @@ The double-precision scaling bounds
 `float_order::float64_scale_negative_upper`,
 `float_order::float64_scale_negative_right_lower`,
 `float_order::float64_scale_negative_right_upper`
+`float_order::float32_add_finite_monotone`
+`float_order::float64_add_finite_monotone`
+`float_order::float32_subtract_finite_monotone`
+`float_order::float64_subtract_finite_monotone`
 are exercised in
 [`float64_multiplication_by_literal.md`](float64_multiplication_by_literal.md).
 The rounded division bounds `float_order::float32_divide_positive_lower` and
@@ -124,10 +128,6 @@ The external catalog symbols `memcmp` and `strlen` are verified in
 [`byte_representation_scalar_copy.md`](byte_representation_scalar_copy.md),
 and `memset`'s fill conversion is checked at a call in
 [`c_builtin_memset_header_checks_its_contract.md`](c_builtin_memset_header_checks_its_contract.md).
-
-The external catalog symbol `__click_constant_p_unknown`, the value of the C
-builtin `__builtin_constant_p`, is verified in
-[`c_builtin_constant_p.md`](c_builtin_constant_p.md).
 
 The linked `stdout` value and the exported `stdout_non_null` theorem are used in
 [`hosted_stdout_uses_its_library_value.md`](hosted_stdout_uses_its_library_value.md).
@@ -2480,6 +2480,38 @@ theorem use_bytes_comparison_equal(left: uint8[], right: uint8[], length: uint64
     requires bytes::comparison(left, right, length, cmp);
     requires bytes::equal(left, 0u64, right, 0u64, length);
     ensures cmp == 0 by apply(bytes::comparison_zero_when_equal(left, right, length, cmp));
+}
+
+theorem use_float32_add_finite_monotone(c: float, a: float, b: float) {
+    requires a <= b;
+    requires isfinite(c);
+    ensures a + c <= b + c and c + a <= c + b by {
+        apply(click::float_order::float32_add_finite_monotone(c, a, b));
+    }
+}
+
+theorem use_float64_add_finite_monotone(c: double, a: double, b: double) {
+    requires a <= b;
+    requires isfinite(c);
+    ensures a + c <= b + c and c + a <= c + b by {
+        apply(click::float_order::float64_add_finite_monotone(c, a, b));
+    }
+}
+
+theorem use_float32_subtract_finite_monotone(c: float, a: float, b: float) {
+    requires a <= b;
+    requires isfinite(c);
+    ensures a - c <= b - c and c - b <= c - a by {
+        apply(click::float_order::float32_subtract_finite_monotone(c, a, b));
+    }
+}
+
+theorem use_float64_subtract_finite_monotone(c: double, a: double, b: double) {
+    requires a <= b;
+    requires isfinite(c);
+    ensures a - c <= b - c and c - b <= c - a by {
+        apply(click::float_order::float64_subtract_finite_monotone(c, a, b));
+    }
 }
 
 ```

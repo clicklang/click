@@ -701,10 +701,6 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
         include_str!("../library/bytes.click"),
     ),
     (
-        "library/c/builtins.interface.click",
-        include_str!("../library/c/builtins.interface.click"),
-    ),
-    (
         "library/integer.click",
         include_str!("../library/integer.click"),
     ),
@@ -4683,6 +4679,57 @@ impl RecordedStates {
         }
     }
 
+    /// The object the call `region` names receives as its by-value
+    /// aggregate parameter `name`, with its layout: what
+    /// `<region>.parameter(name)` names.
+    pub(crate) fn region_parameter(
+        &self,
+        region: &CodeRegionRef,
+        name: &str,
+    ) -> Result<(crate::kernel::BindingName, crate::kernel::AggregateLayout), String> {
+        let fallback;
+        let layout = match &self.source_layout {
+            Some(layout) => layout,
+            None => {
+                fallback = diagnostics::spelling_layout()
+                    .ok_or("`.parameter(name)` names a call of a function body being executed")?;
+                &fallback
+            }
+        };
+        let index = match region {
+            CodeRegionRef::Path(steps) => {
+                layout.source_path_region(steps, ProgramPointKind::Exit)?
+            }
+            CodeRegionRef::Region(index) => *index,
+            _ => return Err("`.parameter(name)` names a call's region".to_string()),
+        };
+        let (object, aggregate) = layout.call_parameter_object(index, name).ok_or_else(|| {
+            format!(
+                "the call at `{}` has no by-value aggregate parameter `{name}`",
+                diagnostics::describe_code_region_ref(region)
+            )
+        })?;
+        Ok((object.clone(), aggregate.clone()))
+    }
+
+    /// The call region selector, parameter, and layout of a prepared
+    /// argument object: it is spelled `<region>.parameter(name)`.
+    pub(crate) fn prepared_parameter(
+        &self,
+        object: &crate::kernel::BindingName,
+    ) -> Option<(CodeRegionRef, String, crate::kernel::AggregateLayout)> {
+        let fallback;
+        let layout = match &self.source_layout {
+            Some(layout) => layout,
+            None => {
+                fallback = diagnostics::spelling_layout()?;
+                &fallback
+            }
+        };
+        let (region, parameter, aggregate) = layout.prepared_parameter(object)?;
+        Some((region, parameter.to_owned(), aggregate.clone()))
+    }
+
     /// Records the pass count `iterations` of loop `loop_index`'s head,
     /// which the facts of a path past the loop state over.
     #[cfg(test)]
@@ -6250,7 +6297,6 @@ pub struct CertifiedStatementTransition {
     pub(crate) call_result: Option<RetainedProgramValue>,
     /// The call's by-value aggregate parameters as it bound them, recorded
     /// as the call region's parameter point (`R.parameter(name)`).
-    pub(crate) call_parameters: Option<crate::kernel::CallParameters>,
     pub(crate) theorem: Theorem,
     /// The kernel fact context the theorem was proved under; retained with
     /// the theorem so the proof object checks its premises against exactly that.
@@ -6389,6 +6435,7 @@ pub enum ProofTactic {
     CheckTerminationCallbacks,
     Close,
     Known,
+    CloseBounds(Vec<SyntaxProposition>),
     Normalize,
     NormalizeUsing(Vec<SyntaxProposition>),
     /// A compatibility check used in verification. It has no expansion spelling.
@@ -6412,12 +6459,6 @@ pub enum ProofTactic {
     Transport {
         source: SyntaxProposition,
         target: SyntaxProposition,
-    },
-    /// A legacy frame check with no ordinary Surface expansion.
-    CompatibilityFactTransport {
-        source: SyntaxProposition,
-        target: SyntaxProposition,
-        premises: Vec<SyntaxProposition>,
     },
     /// Substitute consecutive universal binders, preserving the residual body and guards.
     Instantiate {
@@ -6835,6 +6876,11 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "smart",
     },
     PublicTacticForm {
+        id: "close-bounds",
+        syntax: "close() using bounds",
+        class: "simple",
+    },
+    PublicTacticForm {
         id: "check-termination-local",
         syntax: "check_termination_local(",
         class: "simple",
@@ -6982,7 +7028,7 @@ impl ProofTactic {
             Self::CheckTerminationLocal(_)
             | Self::CheckTerminationComponent { .. }
             | Self::CheckTerminationCallbacks => TacticClass::Simple(SimpleTactic::Termination),
-            Self::Known => TacticClass::Simple(SimpleTactic::Known),
+            Self::Known | Self::CloseBounds(_) => TacticClass::Simple(SimpleTactic::Known),
             Self::Normalize | Self::NormalizeUsing(_) | Self::CompatibilityNormalize(_) => {
                 TacticClass::Simple(SimpleTactic::Normalize)
             }
@@ -6999,9 +7045,6 @@ impl ProofTactic {
             Self::StepProved { .. } => TacticClass::Control(ControlTactic::StepProofs),
             Self::Rewrite(_) => TacticClass::Simple(SimpleTactic::Rewrite),
             Self::Transport { .. } => TacticClass::Smart(SmartSite::FactTransport),
-            Self::CompatibilityFactTransport { .. } => {
-                TacticClass::Simple(SimpleTactic::FactTransport)
-            }
             Self::Instantiate { .. } => TacticClass::Simple(SimpleTactic::Instantiate),
             Self::FoldResource(_) => TacticClass::Simple(SimpleTactic::FoldResource),
             Self::ReleaseView(_) => TacticClass::Simple(SimpleTactic::ReleaseView),
@@ -7801,10 +7844,6 @@ pub struct ProgramPointRef {
 pub enum ProgramPointKind {
     Entry,
     Exit,
-    /// A call region's by-value aggregate parameters as the call bound them:
-    /// the memory just after each argument was copied into its parameter
-    /// object. Only `R.parameter(name)` reads at it.
-    Parameters,
 }
 
 /// A destination for forward execution. A loop back edge selects the

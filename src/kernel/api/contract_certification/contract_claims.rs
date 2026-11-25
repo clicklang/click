@@ -329,7 +329,6 @@ mod cached_read_completion_tests {
         let specification =
             program_function_specification(state.clone(), vec![], vec![], outcome.clone());
         let path = SymbolicExecutionPath {
-            call_parameters: None,
             descent_step: None,
             completion_origin: Some(outcome.clone()),
             call_result: None,
@@ -3505,7 +3504,6 @@ mod checked_proposition_index_tests {
         };
         let fact = ExecutionPureFact::new(body_fact.clone());
         let path = SymbolicExecutionPath {
-            call_parameters: None,
             descent_step: None,
             completion_origin: None,
             call_result: None,

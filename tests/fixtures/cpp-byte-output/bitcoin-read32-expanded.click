@@ -166,7 +166,52 @@ void FixtureReader::read(std::span<std::byte> dst) {
     step();
     step() by {
         have at(function.entry, 1u64) < at(function.entry, load<uint64>(byte_offset(dst, 8))) by {
-            rewrite(at(function.entry, dst->_M_extent._M_extent_value), at(function.entry, 4u64));
+            have at(function.entry, to_integer(1u64)) < at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) by {
+                have (at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + -4) == 0 by {
+                    have (at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) - 4) == 0 by {
+                        apply(click::integer::equal_difference(at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))), 4));
+                    }
+                    have (at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + -4) == (at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) - 4) by {
+                        close();
+                    }
+                    apply(click::integer::equal_substitute((at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) - 4), 0, (at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + -4), 0));
+                }
+                have (-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 4) <= 0 by {
+                    have -(at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + -4) == -(0 : Integer) by {
+                        apply(click::integer::equal_negate((at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + -4), 0));
+                    }
+                    have (-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 4) == 0 by {
+                        have (-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 4) == -(at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + -4) by {
+                            close();
+                        }
+                        have 0 == -(0 : Integer) by {
+                            close();
+                        }
+                        apply(click::integer::equal_substitute(-(at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + -4), -(0 : Integer), (-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 4), 0));
+                    }
+                    apply(click::integer::equal_le((-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 4), 0));
+                }
+                have (-2 : Integer) <= 0 by {
+                    close();
+                }
+                have (-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 2) <= 0 by {
+                    have (-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 4 + -2) <= (0 + 0) by {
+                        apply(click::integer::add_le((-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 4), 0, -2, 0));
+                    }
+                    have (-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 2) == (-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 4 + -2) by {
+                        close();
+                    }
+                    have (0 : Integer) == (0 + 0) by {
+                        close();
+                    }
+                    apply(click::integer::le_substitute((-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 4 + -2), (0 + 0), (-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 2), 0));
+                }
+                have (-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 2) == ((at(function.entry, to_integer(1u64)) + 1) - at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8))))) by {
+                    close();
+                }
+                apply(click::integer::difference_le((at(function.entry, to_integer(1u64)) + 1), at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))), (-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 2)));
+                apply(click::integer::step_le_lt(at(function.entry, to_integer(1u64)), at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8))))));
+            }
             close();
         }
         close();
@@ -299,7 +344,52 @@ void FixtureReader::read(std::span<std::byte> dst) {
     step();
     step() by {
         have at(function.entry, 2u64) < at(function.entry, load<uint64>(byte_offset(dst, 8))) by {
-            rewrite(at(function.entry, dst->_M_extent._M_extent_value), at(function.entry, 4u64));
+            have at(function.entry, to_integer(2u64)) < at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) by {
+                have (at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + -4) == 0 by {
+                    have (at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) - 4) == 0 by {
+                        apply(click::integer::equal_difference(at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))), 4));
+                    }
+                    have (at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + -4) == (at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) - 4) by {
+                        close();
+                    }
+                    apply(click::integer::equal_substitute((at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) - 4), 0, (at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + -4), 0));
+                }
+                have (-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 4) <= 0 by {
+                    have -(at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + -4) == -(0 : Integer) by {
+                        apply(click::integer::equal_negate((at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + -4), 0));
+                    }
+                    have (-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 4) == 0 by {
+                        have (-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 4) == -(at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + -4) by {
+                            close();
+                        }
+                        have 0 == -(0 : Integer) by {
+                            close();
+                        }
+                        apply(click::integer::equal_substitute(-(at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + -4), -(0 : Integer), (-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 4), 0));
+                    }
+                    apply(click::integer::equal_le((-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 4), 0));
+                }
+                have (-1 : Integer) <= 0 by {
+                    close();
+                }
+                have (-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 3) <= 0 by {
+                    have (-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 4 + -1) <= (0 + 0) by {
+                        apply(click::integer::add_le((-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 4), 0, -1, 0));
+                    }
+                    have (-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 3) == (-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 4 + -1) by {
+                        close();
+                    }
+                    have (0 : Integer) == (0 + 0) by {
+                        close();
+                    }
+                    apply(click::integer::le_substitute((-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 4 + -1), (0 + 0), (-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 3), 0));
+                }
+                have (-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 3) == ((at(function.entry, to_integer(2u64)) + 1) - at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8))))) by {
+                    close();
+                }
+                apply(click::integer::difference_le((at(function.entry, to_integer(2u64)) + 1), at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))), (-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 3)));
+                apply(click::integer::step_le_lt(at(function.entry, to_integer(2u64)), at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8))))));
+            }
             close();
         }
         close();
@@ -449,7 +539,37 @@ void FixtureReader::read(std::span<std::byte> dst) {
     step();
     step() by {
         have at(function.entry, 3u64) < at(function.entry, load<uint64>(byte_offset(dst, 8))) by {
-            rewrite(at(function.entry, dst->_M_extent._M_extent_value), at(function.entry, 4u64));
+            have at(function.entry, to_integer(3u64)) < at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) by {
+                have (at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + -4) == 0 by {
+                    have (at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) - 4) == 0 by {
+                        apply(click::integer::equal_difference(at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))), 4));
+                    }
+                    have (at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + -4) == (at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) - 4) by {
+                        close();
+                    }
+                    apply(click::integer::equal_substitute((at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) - 4), 0, (at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + -4), 0));
+                }
+                have (-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 4) <= 0 by {
+                    have -(at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + -4) == -(0 : Integer) by {
+                        apply(click::integer::equal_negate((at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + -4), 0));
+                    }
+                    have (-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 4) == 0 by {
+                        have (-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 4) == -(at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + -4) by {
+                            close();
+                        }
+                        have 0 == -(0 : Integer) by {
+                            close();
+                        }
+                        apply(click::integer::equal_substitute(-(at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + -4), -(0 : Integer), (-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 4), 0));
+                    }
+                    apply(click::integer::equal_le((-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 4), 0));
+                }
+                have (-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 4) == ((at(function.entry, to_integer(3u64)) + 1) - at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8))))) by {
+                    close();
+                }
+                apply(click::integer::difference_le((at(function.entry, to_integer(3u64)) + 1), at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))), (-at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8)))) + 4)));
+                apply(click::integer::step_le_lt(at(function.entry, to_integer(3u64)), at(function.entry, to_integer(load<uint64>(byte_offset(dst, 8))))));
+            }
             close();
         }
         close();
@@ -865,7 +985,7 @@ void FixtureReader::read(std::span<std::byte> dst) {
         close();
     }
     have to_integer(this->remaining) == (to_integer(old(this->remaining)) - to_integer(4u64)) by {
-        have (to_integer(((at(region(12).entry, load<uint64>(byte_offset(this, 8))) - 4u64) as uint64)) : Integer) == (to_integer(old((load<uint64>(byte_offset(this, 8)) as uint64))) - 4) by {
+        have to_integer(((at(region(12).entry, load<uint64>(byte_offset(this, 8))) - 4u64) as uint64)) == (to_integer(old((load<uint64>(byte_offset(this, 8)) as uint64))) - 4) by {
             have 0 <= (to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) - 4) by {
                 have 0 <= (to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) - 4) by {
                     have (-old(to_integer(this->remaining)) + at(region(12).exit, to_integer(this->remaining))) == 0 by {
@@ -959,7 +1079,7 @@ void FixtureReader::read(std::span<std::byte> dst) {
                 }
                 close();
             }
-            have (to_integer(((at(region(12).entry, load<uint64>(byte_offset(this, 8))) - 4u64) as uint64)) : Integer) == (to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) - 4) by {
+            have to_integer(((at(region(12).entry, load<uint64>(byte_offset(this, 8))) - 4u64) as uint64)) == (to_integer(at(region(12).entry, load<uint64>(byte_offset(this, 8)))) - 4) by {
                 close();
             }
             close();
@@ -993,9 +1113,6 @@ void FixtureReader::read(std::span<std::byte> dst) {
     close();
     close();
     close();
-    close();
-    close();
-    close();
 }
 
 uint32 le32toh_internal(uint32 little_endian_32bits) {
@@ -1005,9 +1122,6 @@ uint32 le32toh_internal(uint32 little_endian_32bits) {
         have result == little_endian_32bits by {
             close();
         }
-        close();
-        close();
-        close();
         close();
     }
 }
@@ -1057,15 +1171,19 @@ uint32 ser_readdata32<FixtureReader>(struct FixtureReader& s) {
             close();
         }
         requires separate(memory(at(call(2).entry, call(2).parameter(dst)._M_ptr)[0..4]), memory(s.data[0..4])) by {
-            transport(at(function.entry, separate(memory(at(call(2).entry, call(2).parameter(dst)._M_ptr)[0..4]), memory(s.data[0..4]))), separate(memory(at(call(2).entry, call(2).parameter(dst)._M_ptr)[0..4]), memory(s.data[0..4])));
+            have at(call(2).entry, call(2).parameter(dst)._M_ptr) == (&obj as (uint8 *)) by {
+                close();
+            }
+            rewrite(at(call(2).entry, call(2).parameter(dst)._M_ptr), (&obj as (uint8 *)));
+            close();
         }
         requires separate(memory(at(call(2).entry, load<uint8*>(region(4).result))[0..4]), memory(s.data[0..4])) by {
             close();
         }
-        requires separate(memory((&s as (int32 *))[0..2]), memory((s.data as (uint8 *))[0..4])) by {
+        requires separate(memory((&s as (int32 *))[0..2]), memory(at(region(0).entry, (s.data as (uint8 *)))[0..4])) by {
             close();
         }
-        requires separate(memory((&s as (uint64 *))[1..2]), memory((s.data as (uint8 *))[0..4])) by {
+        requires separate(memory((&s as (uint64 *))[1..2]), memory(at(region(0).entry, (s.data as (uint8 *)))[0..4])) by {
             close();
         }
     }
@@ -1100,9 +1218,6 @@ uint32 ser_readdata32<FixtureReader>(struct FixtureReader& s) {
     have to_integer(s.remaining) == (to_integer(old(s.remaining)) - to_integer(4u64)) by {
         close();
     }
-    close();
-    close();
-    close();
     close();
     close();
     close();
@@ -1160,7 +1275,23 @@ uint32 probe(struct FixtureReader& stream) {
     close();
     close();
     close();
-    close();
-    close();
+}
+
+termination by {
+    check_termination_local("le32toh_internal");
+    check_termination_component("le32toh_internal", normal);
+    check_termination_local("__cpp_q_I3_std_X53_61735f7772697461626c655f62797465733c756e7369676e656420696e742c2031383434363734343037333730393535313631353e");
+    check_termination_component("__cpp_q_I3_std_X53_61735f7772697461626c655f62797465733c756e7369676e656420696e742c2031383434363734343037333730393535313631353e", normal);
+    check_termination_local("__cpp_q_I3_std_X18_7370616e3c756e7369676e656420696e743e_X20_7370616e3c756e7369676e656420696e74202a3e");
+    check_termination_component("__cpp_q_I3_std_X18_7370616e3c756e7369676e656420696e743e_X20_7370616e3c756e7369676e656420696e74202a3e", normal);
+    check_termination_local("__cpp_q_I3_std_X15_7370616e3c7374643a3a627974653e_X10_6f70657261746f725b5d");
+    check_termination_component("__cpp_q_I3_std_X15_7370616e3c7374643a3a627974653e_X10_6f70657261746f725b5d", normal);
+    check_termination_local("__cpp_q_I13_FixtureReader_I4_read");
+    check_termination_component("__cpp_q_I13_FixtureReader_I4_read", normal);
+    check_termination_local("__cpp_q_X29_7365725f726561646461746133323c466978747572655265616465723e");
+    check_termination_component("__cpp_q_X29_7365725f726561646461746133323c466978747572655265616465723e", normal);
+    check_termination_local("probe");
+    check_termination_component("probe", normal);
+    check_termination_callbacks();
     close();
 }

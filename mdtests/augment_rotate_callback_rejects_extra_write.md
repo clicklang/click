@@ -110,35 +110,35 @@ struct node* rotate_left(
     unfold(shape(node->right));
     // Carry the untouched link reads across each store before folding.
     step_until(statement(2).entry);
-    have defined(node->left) by { normalize(); }
+    have defined(node->left) by { close(); }
     have separate(memory(node->left), memory(node->right)) by { close(); }
-    have defined(pivot->right) by { normalize(); }
+    have defined(pivot->right) by { close(); }
     have separate(memory(pivot->right), memory(node->right)) by { close(); }
     mark before_right;
     step_until(statement(3).entry);
     have separate(statement(2).footprint, memory(node->left)) by {
-        normalize() using { at(before_right, separate(memory(node->left), memory(node->right))); };
+        close() using { at(before_right, separate(memory(node->left), memory(node->right))); };
     }
     have defined(node->left) by { preserve(memory(node->left), statement(2)); }
     have separate(statement(2).footprint, memory(pivot->right)) by {
-        normalize() using { at(before_right, separate(memory(pivot->right), memory(node->right))); };
+        close() using { at(before_right, separate(memory(pivot->right), memory(node->right))); };
     }
     have defined(pivot->right) by { preserve(memory(pivot->right), statement(2)); }
 
     have separate(memory(node->left), memory(pivot->left)) by { close(); }
-    have defined(node->right) by { normalize(); }
-    have node->right == middle by { normalize(); }
+    have defined(node->right) by { close(); }
+    have node->right == middle by { close(); }
     have separate(memory(node->right), memory(pivot->left)) by { close(); }
-    have defined(pivot->right) by { normalize(); }
+    have defined(pivot->right) by { close(); }
     have separate(memory(pivot->right), memory(pivot->left)) by { close(); }
     mark before_left;
     step_until(statement(4).entry);
     have separate(statement(3).footprint, memory(node->left)) by {
-        normalize() using { at(before_left, separate(memory(node->left), memory(pivot->left))); };
+        close() using { at(before_left, separate(memory(node->left), memory(pivot->left))); };
     }
     have defined(node->left) by { preserve(memory(node->left), statement(3)); }
     have separate(statement(3).footprint, memory(node->right)) by {
-        normalize() using { at(before_left, separate(memory(node->right), memory(pivot->left))); };
+        close() using { at(before_left, separate(memory(node->right), memory(pivot->left))); };
     }
     have defined(node->right) by { preserve(memory(node->right), statement(3)); }
     have node->right == at(before_left, node->right) by { preserve(memory(node->right), statement(3)); }
@@ -146,12 +146,12 @@ struct node* rotate_left(
         rewrite(node->right, at(before_left, node->right));
         close();
     }
-    have pivot->left == node by { normalize(); }
+    have pivot->left == node by { close(); }
     have separate(statement(3).footprint, memory(pivot->right)) by {
-        normalize() using { at(before_left, separate(memory(pivot->right), memory(pivot->left))); };
+        close() using { at(before_left, separate(memory(pivot->right), memory(pivot->left))); };
     }
     have defined(pivot->right) by { preserve(memory(pivot->right), statement(3)); }
-    have defined(pivot->left) by { normalize(); }
+    have defined(pivot->left) by { close(); }
     fold(shape(node));
     fold(shape(pivot));
     step();

@@ -37,11 +37,11 @@ fn explicit_contract_closing_uses_ordinary_known_steps() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_00")]
-fn implicit_contract_closing_expands_into_explicit_steps() {
+fn expansion_retains_the_claim_closer_without_finalization_steps() {
     let source = proof("close();");
     verify_c_sources(&source, C).unwrap();
     let expanded = expand_function_proof_source(&source, C, "value").unwrap();
-    assert!(!expanded.contains("solve();"), "{expanded}");
+    assert_eq!(expanded.matches("close();").count(), 1, "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, C))
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }
@@ -59,60 +59,46 @@ fn per_clause_contract_closing_expands_after_its_source_proof() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_00")]
-fn omitted_closing_steps_leave_their_obligations_open() {
-    for (count, goal) in [
-        (0, "joint returned resources"),
-        (1, "allocation lifetime"),
-        (2, "write footprint"),
-    ] {
-        let source = proof(&format!("normalize(); {}", "close(); ".repeat(count)));
-        let error = without_implicit_solve(|| verify_c_sources(&source, C))
-            .expect_err("ordinary completion cannot supply an omitted proof");
-        assert_eq!(
-            error.proof_refusal(),
-            Some(crate::surface::ProofRefusal::IncompleteProof)
-        );
-        assert!(
-            error
-                .message()
-                .contains(&format!("outcome still owes contract closing: {goal}")),
-            "{error}"
-        );
-        verify_c_sources(&source, C)
-            .expect("the implicit solver supplies the same omitted operations");
+fn omitted_finalization_steps_run_in_checked_only_replay() {
+    for count in 0..=3 {
+        let source = proof(&format!("normalize(); {}", "close(); ".repeat(count)))
+            .replace("step_until(function.exit);", "step();");
+        crate::surface::check_audit_claim("value.contract", true, || {
+            verify_c_sources(&source, C).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{error}\n{source}"));
     }
+    let source = proof("").replace("step_until(function.exit);", "step();");
+    let error = crate::surface::check_audit_claim("value.contract", true, || {
+        verify_c_sources(&source, C).map_err(|error| error.report())
+    })
+    .unwrap_err();
+    assert!(
+        error.contains("checked-only verification forbids implicit tail"),
+        "{error}"
+    );
 }
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_01")]
-fn written_solve_closes_only_one_selected_closing_goal() {
-    let source = proof("normalize(); close();");
+fn written_close_closes_only_one_selected_closing_goal() {
+    let source = proof("normalize(); close(); normalize();");
     let error = without_implicit_solve(|| verify_c_sources(&source, C)).unwrap_err();
     assert!(
         error
             .message()
-            .contains("outcome still owes contract closing: allocation lifetime"),
+            .contains("current contract-closing goal is allocation lifetime"),
         "{error}"
     );
 }
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_01")]
-fn expansion_writes_each_closing_step_and_requires_them_when_cold() {
+fn expansion_omits_finalization_after_an_explicit_claim_proof() {
     let source = proof("normalize();");
     let expanded = expand_function_proof_source(&source, C, "value").unwrap();
-    assert_eq!(expanded.matches("close();").count(), 3, "{expanded}");
+    assert!(!expanded.contains("close();"), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, C)).unwrap();
-    let last = expanded.rfind("close();").unwrap();
-    let mut missing = expanded.clone();
-    missing.replace_range(last..last + "close();".len(), "");
-    let error = without_implicit_solve(|| verify_c_sources(&missing, C)).unwrap_err();
-    assert!(
-        error
-            .message()
-            .contains("outcome still owes contract closing: write footprint"),
-        "{error}"
-    );
 }
 
 #[test]
@@ -166,7 +152,7 @@ fn proposition_closers_name_the_pending_closing_goal() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_01")]
-fn footprint_refusal_names_the_goal_and_the_solver_that_failed() {
+fn footprint_refusal_names_the_goal_and_the_closing_operation() {
     let inputs = [(
         "writes.c",
         "int counter; int write(void) { counter = 9; return 0; }",
@@ -174,7 +160,7 @@ fn footprint_refusal_names_the_goal_and_the_solver_that_failed() {
     for (steps, expected) in [
         (
             "normalize();",
-            "the implicit solver could not prove the write footprint obligation",
+            "contract finalization could not prove the write footprint obligation",
         ),
         (
             "normalize(); close(); close(); close();",
@@ -184,7 +170,7 @@ fn footprint_refusal_names_the_goal_and_the_solver_that_failed() {
         let source = format!(
             r#"verifying "writes.c";
             int32 write() {{ ensures result == 0; }} by {{
-                step_until(function.exit); {steps}
+                step(); step(); {steps}
             }}"#
         );
         let error = verify_c_sources(&source, &inputs).unwrap_err();
@@ -193,6 +179,12 @@ fn footprint_refusal_names_the_goal_and_the_solver_that_failed() {
             error.message().contains("outside the mutable footprint"),
             "{error}"
         );
+        let replay = crate::surface::check_audit_claim("write.contract", true, || {
+            verify_c_sources(&source, &inputs).map_err(|error| error.report())
+        })
+        .unwrap_err();
+        assert!(replay.contains(expected), "{replay}");
+        assert!(replay.contains("outside the mutable footprint"), "{replay}");
     }
 }
 
@@ -372,15 +364,15 @@ test_batches! {
     marker: "contract_closing_batch_",
     contract_closing_batch_00: [
         explicit_contract_closing_uses_ordinary_known_steps,
-        implicit_contract_closing_expands_into_explicit_steps,
+        expansion_retains_the_claim_closer_without_finalization_steps,
         per_clause_contract_closing_expands_after_its_source_proof,
-        omitted_closing_steps_leave_their_obligations_open,
+        omitted_finalization_steps_run_in_checked_only_replay,
     ],
     contract_closing_batch_01: [
-        written_solve_closes_only_one_selected_closing_goal,
-        expansion_writes_each_closing_step_and_requires_them_when_cold,
+        written_close_closes_only_one_selected_closing_goal,
+        expansion_omits_finalization_after_an_explicit_claim_proof,
         proposition_closers_name_the_pending_closing_goal,
-        footprint_refusal_names_the_goal_and_the_solver_that_failed,
+        footprint_refusal_names_the_goal_and_the_closing_operation,
     ],
     contract_closing_batch_02: [
         grouped_source_only_claims_complete_and_expand_as_ordinary_proofs,

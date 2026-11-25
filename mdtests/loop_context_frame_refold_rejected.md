@@ -205,7 +205,7 @@ struct tree_node* tree_leftmost(struct tree_node* root) {
             have heap_left(HeapTree::Node(identity, value, left_model, right_model))
                 == left_model by {
                 unfold(heap_left(HeapTree::Node(identity, value, left_model, right_model)));
-                normalize();
+                close();
             }
             let sub = fold(tree_at(root), {
                 model: HeapTree::Node(identity, value, left_model, right_model),

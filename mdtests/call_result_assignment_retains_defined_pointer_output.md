@@ -38,7 +38,8 @@ int32 caller(int32 **slot) {
         preserve(memory(*slot), statement(1).assignment(ignored, 0));
     }
     step_until(function.exit);
-    have defined(*slot) by { close(); }
+    have separate(statement(2).footprint, memory(*slot)) by { close(); }
+    have defined(*slot) by { preserve(memory(*slot), statement(2)); }
 }
 ```
 

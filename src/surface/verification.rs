@@ -3147,15 +3147,15 @@ fn verification_required_functions_with_blocks(
 
 /// What the assumption report's closure walk records beside the closure.
 struct AssumptionWalk<'a> {
-    /// The allocator functions the closure calls.
-    allocator: &'a mut BTreeSet<&'static str>,
+    /// Built-in operations the closure uses.
+    operations: &'a mut BTreeSet<(ModelFamily, &'static str)>,
     /// Every `extern` function, by name.
     externals: &'a BTreeMap<String, ModelFamily>,
 }
 
 /// The closure [`verification_required_functions_with_blocks`] computes.
-/// With `report`, the walk also records the allocator functions the closure
-/// calls and follows the calls of a body a typed frontend lowered itself, so
+/// With `report`, the walk also records the built-in operations the closure
+/// uses and follows the calls of a body a typed frontend lowered itself, so
 /// that a C++ or Rust function's library interfaces are reported.
 fn required_functions(
     parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
@@ -3221,10 +3221,13 @@ fn required_functions(
             continue;
         };
         pending.extend(
-            c_statement_calls_recording(parsed, report.allocator)
+            c_statement_calls_recording(parsed, report.operations)
                 .into_iter()
                 .flatten(),
         );
+        if let Some(constructor) = parsed.opaque_exception_constructor {
+            report.operations.insert((ModelFamily::CppStd, constructor));
+        }
         if let Some(lowered) = parsed.prelowered_kernel_function() {
             pending.extend(
                 crate::kernel::program_function_callees(lowered)
@@ -3446,8 +3449,7 @@ pub enum ModelFamily {
     CppStd,
     /// A Rust core-method contract.
     RustCore,
-    /// The contract of a verifier primitive in `library/c/builtins.interface.click`:
-    /// the value of `__builtin_constant_p`.
+    /// The kernel model of a compiler builtin such as `__builtin_constant_p`.
     Primitive,
 }
 
@@ -3500,8 +3502,8 @@ impl ModelAssumption {
 }
 
 /// Each function's assumptions, from the call closure targeted verification
-/// already computes: the `extern` contracts it reaches, tagged by where each
-/// comes from, and the allocator functions its closure calls.
+/// already computes: the `extern` contracts it reaches and the built-in
+/// operations it uses, tagged by where each model comes from.
 fn program_assumptions_parsed(
     file: &ClickFile,
     parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
@@ -3523,11 +3525,7 @@ fn program_assumptions_parsed(
         .map(|(index, function)| {
             let name = function.signature().name();
             let family = if index < library_blocks {
-                if name == syntax::CONSTANT_P_UNKNOWN {
-                    ModelFamily::Primitive
-                } else {
-                    ModelFamily::CLibrary
-                }
+                ModelFamily::CLibrary
             } else if let Some((function, _)) =
                 crate::languages::c::formatted_output::function_format(name)
             {
@@ -3554,14 +3552,14 @@ fn program_assumptions_parsed(
         .iter()
         .filter(|function| !function.is_external())
     {
-        let mut allocator = BTreeSet::new();
+        let mut operations = BTreeSet::new();
         let required = required_functions(
             parsed_sources,
             function.signature().name(),
             &function_blocks,
             file.selected_thread_runtime(),
             Some(AssumptionWalk {
-                allocator: &mut allocator,
+                operations: &mut operations,
                 externals: &external_families,
             }),
         )?;
@@ -3573,10 +3571,14 @@ fn program_assumptions_parsed(
                     name: name.clone(),
                 })
             })
-            .chain(allocator.into_iter().map(|name| ModelAssumption {
-                family: ModelFamily::Allocator,
-                name: name.to_string(),
-            }))
+            .chain(
+                operations
+                    .into_iter()
+                    .map(|(family, name)| ModelAssumption {
+                        family,
+                        name: name.to_string(),
+                    }),
+            )
             .collect::<Vec<_>>();
         for name in file.c_library_values.keys() {
             if required.iter().any(|callee| {
@@ -3711,8 +3713,6 @@ pub(in crate::surface) fn c_statement_calls(
     c_statement_calls_recording(function, &mut BTreeSet::new())
 }
 
-/// [`c_statement_calls`], also recording in `allocator` each allocator
-/// function the body calls, which is not a call dependency.
 fn source_struct_names(
     bindings: &BTreeMap<crate::kernel::BindingName, String>,
 ) -> BTreeMap<String, String> {
@@ -3740,9 +3740,10 @@ fn source_struct_names(
         .collect()
 }
 
+/// [`c_statement_calls`], with built-in operations recorded beside call dependencies.
 fn c_statement_calls_recording(
     function: &crate::languages::interface::ImportedFunction,
-    allocator: &mut BTreeSet<&'static str>,
+    operations: &mut BTreeSet<(ModelFamily, &'static str)>,
 ) -> Vec<BTreeSet<String>> {
     fn collect_function_pointer_names(
         statement: &syntax::CStatement,
@@ -3817,6 +3818,7 @@ fn c_statement_calls_recording(
             | syntax::CStatement::AggregateCopy { .. }
             | syntax::CStatement::Update { .. }
             | syntax::CStatement::Assert { .. }
+            | syntax::CStatement::BuiltinConstantP { .. }
             | syntax::CStatement::StepValue { .. }
             | syntax::CStatement::LoopTest { .. } => {}
         }
@@ -3930,6 +3932,7 @@ fn c_statement_calls_recording(
             | CExpression::Void
             | syntax::CExpression::Variable(_)
             | syntax::CExpression::StepResult { .. }
+            | syntax::CExpression::BuiltinConstantP { .. }
             | syntax::CExpression::Int32Literal(_)
             | syntax::CExpression::UInt8Literal(_)
             | syntax::CExpression::UInt32Literal(_)
@@ -3960,22 +3963,26 @@ fn c_statement_calls_recording(
         statement: &syntax::CStatement,
         calls: &mut Vec<BTreeSet<String>>,
         function_pointer_names: &BTreeSet<String>,
-        allocator: &mut BTreeSet<&'static str>,
+        operations: &mut BTreeSet<(ModelFamily, &'static str)>,
     ) {
         match statement {
             syntax::CStatement::EndAggregateLifetimes { .. }
             | syntax::CStatement::Skip
             | syntax::CStatement::Break
             | syntax::CStatement::Continue => {}
+            syntax::CStatement::BuiltinConstantP { .. } => {
+                operations.insert((ModelFamily::Primitive, "__builtin_constant_p"));
+                calls.push(BTreeSet::new());
+            }
             syntax::CStatement::Goto { .. } | syntax::CStatement::FillArrayTail { .. } => {
                 calls.push(BTreeSet::new());
             }
             syntax::CStatement::Label { statement, .. } => {
-                visit(statement, calls, function_pointer_names, allocator)
+                visit(statement, calls, function_pointer_names, operations)
             }
             syntax::CStatement::Seq(first, second) => {
-                visit(first, calls, function_pointer_names, allocator);
-                visit(second, calls, function_pointer_names, allocator);
+                visit(first, calls, function_pointer_names, operations);
+                visit(second, calls, function_pointer_names, operations);
             }
             syntax::CStatement::If {
                 condition,
@@ -3986,8 +3993,8 @@ fn c_statement_calls_recording(
                 let mut dependencies = BTreeSet::new();
                 collect_function_addresses(condition, &mut dependencies);
                 calls.push(dependencies);
-                visit(then_branch, calls, function_pointer_names, allocator);
-                visit(else_branch, calls, function_pointer_names, allocator);
+                visit(then_branch, calls, function_pointer_names, operations);
+                visit(else_branch, calls, function_pointer_names, operations);
             }
             syntax::CStatement::While {
                 test,
@@ -4006,11 +4013,11 @@ fn c_statement_calls_recording(
                 calls.push(dependencies);
                 let post_test = matches!(statement, syntax::CStatement::DoWhile { .. });
                 if !post_test && let Some(test) = test {
-                    visit(test, calls, function_pointer_names, allocator);
+                    visit(test, calls, function_pointer_names, operations);
                 }
-                visit(body, calls, function_pointer_names, allocator);
+                visit(body, calls, function_pointer_names, operations);
                 if post_test && let Some(test) = test {
-                    visit(test, calls, function_pointer_names, allocator);
+                    visit(test, calls, function_pointer_names, operations);
                 }
             }
             syntax::CStatement::For {
@@ -4024,12 +4031,12 @@ fn c_statement_calls_recording(
                 let mut dependencies = BTreeSet::new();
                 collect_function_addresses(condition, &mut dependencies);
                 calls.push(dependencies);
-                visit(initializer, calls, function_pointer_names, allocator);
+                visit(initializer, calls, function_pointer_names, operations);
                 if let Some(test) = test {
-                    visit(test, calls, function_pointer_names, allocator);
+                    visit(test, calls, function_pointer_names, operations);
                 }
-                visit(body, calls, function_pointer_names, allocator);
-                visit(step, calls, function_pointer_names, allocator);
+                visit(body, calls, function_pointer_names, operations);
+                visit(step, calls, function_pointer_names, operations);
             }
             syntax::CStatement::Switch {
                 expression, cases, ..
@@ -4038,7 +4045,7 @@ fn c_statement_calls_recording(
                 collect_function_addresses(expression, &mut dependencies);
                 calls.push(dependencies);
                 for case in cases {
-                    visit(case.body(), calls, function_pointer_names, allocator);
+                    visit(case.body(), calls, function_pointer_names, operations);
                 }
             }
             syntax::CStatement::Call {
@@ -4061,7 +4068,7 @@ fn c_statement_calls_recording(
                 } else if !function_pointer_names.contains(function_name) {
                     match c_allocator_function(function_name) {
                         Some(function) => {
-                            allocator.insert(function);
+                            operations.insert((ModelFamily::Allocator, function));
                         }
                         None => {
                             dependencies.insert(function_name.clone());
@@ -4112,10 +4119,13 @@ fn c_statement_calls_recording(
             | syntax::CStatement::Return(expression, _) => {
                 match statement {
                     syntax::CStatement::HeapAllocate { zeroed, .. } => {
-                        allocator.insert(if *zeroed { "calloc" } else { "malloc" });
+                        operations.insert((
+                            ModelFamily::Allocator,
+                            if *zeroed { "calloc" } else { "malloc" },
+                        ));
                     }
                     syntax::CStatement::HeapFree { .. } => {
-                        allocator.insert("free");
+                        operations.insert((ModelFamily::Allocator, "free"));
                     }
                     _ => {}
                 }
@@ -4167,7 +4177,7 @@ fn c_statement_calls_recording(
         function.body(),
         &mut calls,
         &function_pointer_names,
-        allocator,
+        operations,
     );
     calls
 }
@@ -7672,6 +7682,7 @@ pub(in crate::surface) fn validate_loop_initialization_tactics(
             | ProofTactic::Close
             | ProofTactic::Normalize
             | ProofTactic::NormalizeUsing(_)
+            | ProofTactic::CloseBounds(_)
             | ProofTactic::CompatibilityNormalize(_)
             | ProofTactic::Rewrite(_)
             | ProofTactic::Solve => {}

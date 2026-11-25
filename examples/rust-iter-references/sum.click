@@ -45,7 +45,15 @@ fn sum(bytes: &[u8]) -> i32 {
                 mark iteration;
                 have bytes.len() - iter.len() < bytes.len();
                 have to_integer((bytes.len() - iter.len())) <= 1000 by {
-                    normalize() using { iter.len() <= bytes.len(); bytes.len() <= 1000u64; };
+                    have to_integer(iter.len()) <= to_integer(bytes.len());
+                    apply(click::integer::uint64_subtract_to_integer(bytes.len(), iter.len()));
+                    have 0 <= to_integer(iter.len());
+                    have to_integer(bytes.len()) <= 1000;
+                    close() using {
+                        to_integer(bytes.len() - iter.len()) == to_integer(bytes.len()) - to_integer(iter.len());
+                        0 <= to_integer(iter.len());
+                        to_integer(bytes.len()) <= 1000;
+                    };
                 }
                 have (bytes.len() - iter.len()) < 1000u64;
                 have (bytes.len() - iter.len()) < 18446744073709551615u64;

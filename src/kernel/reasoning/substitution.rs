@@ -992,6 +992,7 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
 ) -> ProgramStatement {
     match statement {
         ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::BuiltinConstantP { .. }
         | ProgramStatement::Skip
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
@@ -2670,6 +2671,7 @@ pub(in crate::kernel) fn collect_execution_statement_bound_variables(
 ) {
     match statement {
         ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::BuiltinConstantP { .. }
         | ProgramStatement::Skip
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break

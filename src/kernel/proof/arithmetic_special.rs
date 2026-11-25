@@ -1138,32 +1138,39 @@ fn integer_rule_holds(
 
 /// Fixed local rules over the goal and the caller's ordered explicit inputs.
 /// Polynomial search and signed-domain planning deliberately do not live here.
-pub(super) fn normalizes_selected(goal: &Proposition, premises: &[Proposition]) -> bool {
-    if !matches!(goal, Proposition::ConditionIs(..) | Proposition::Not(..)) {
-        return false;
-    }
-    let selected = |required: &[Proposition]| {
-        premises.len() == required.len()
-            && required.iter().all(|goal| {
-                premises.iter().any(|premise| {
-                    use super::fact_reasoning::order_claim_equivalent;
-                    order_claim_equivalent(premise, goal)
+fn matches_selected_guards(premises: &[Proposition], required: &[Proposition]) -> bool {
+    use super::fact_reasoning::order_claim_equivalent;
+    premises.len() == required.len()
+        && required.iter().all(|goal| {
+            premises.iter().any(|premise| {
+                order_claim_equivalent(premise, goal)
                     || crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
                         premise,
                     )
                     .iter()
                     .any(|reading| order_claim_equivalent(reading, goal))
-                })
             })
-    };
+        })
+}
+
+pub(crate) fn checks_signed_product_guards(goal: &Proposition, premises: &[Proposition]) -> bool {
+    matches!(premises.len(), 2 | 3)
+        && signed_product_guard_candidates(goal)
+            .any(|required| matches_selected_guards(premises, &required))
+}
+
+pub(super) fn normalizes_selected(goal: &Proposition, premises: &[Proposition]) -> bool {
+    if !matches!(goal, Proposition::ConditionIs(..) | Proposition::Not(..)) {
+        return false;
+    }
+    let selected = |required: &[Proposition]| matches_selected_guards(premises, required);
     if signed_quotient_bridge_requirement(goal).is_some_and(|guard| selected(&[guard]))
         || (matches!(premises.len(), 1 | 2)
             && shifted_one_bounds(goal, premises.len() == 2)
                 .is_some_and(|bounds| selected(&bounds)))
         || (matches!(premises.len(), 1 | 2)
             && shift_count_mask_requirements(goal).is_some_and(|required| selected(&required)))
-        || (matches!(premises.len(), 2 | 3)
-            && signed_product_guard_candidates(goal).any(|required| selected(&required)))
+        || checks_signed_product_guards(goal, premises)
     {
         return true;
     }
@@ -4358,6 +4365,28 @@ pub(crate) fn float_finiteness_bounds(goal: &Proposition) -> Option<[Proposition
     ])
 }
 
+/// The largest finite endpoints give an inclusive interval for finiteness.
+pub(crate) fn float_finite_interval(
+    goal: &Proposition,
+) -> Option<(KernelFloatType, [Proposition; 2])> {
+    let operand = float_finiteness_operand(goal)?;
+    let format = operand.format();
+    let maximum = float_infinity(format) - 1;
+    Some((
+        format,
+        [
+            float_bound_proposition(
+                format,
+                operand,
+                maximum | float_sign_bit(format),
+                true,
+                false,
+            )?,
+            float_bound_proposition(format, operand, maximum, false, false)?,
+        ],
+    ))
+}
+
 /// Finite self-subtraction gives zero. Finite, nonzero self-division gives
 /// one, including when the shared operand is subnormal.
 pub(super) fn float_self_operation_bounds(
@@ -4603,11 +4632,18 @@ pub(crate) fn float_pair_bound_weakening(
     ))
 }
 
+pub(crate) enum FloatLiteralSumOperation {
+    Add,
+    AddAtInfinity,
+    Subtract,
+    SubtractAtInfinity,
+}
+
 /// An addition or subtraction law can use reflexive order for a literal operand.
 pub(crate) fn float_literal_sum_or_difference_bound(
     source: &Proposition,
     goal: &Proposition,
-) -> Option<(FloatBoundWeakening, u64, bool, bool)> {
+) -> Option<(FloatBoundWeakening, u64, bool, FloatLiteralSumOperation)> {
     use crate::kernel::FloatBinaryOperator::{Add, Subtract};
     let input = float_bound(source)?;
     let result = float_bound(goal)?;
@@ -4624,12 +4660,19 @@ pub(crate) fn float_literal_sum_or_difference_bound(
     if !same_float_operand(input.operand, operand) || !float_bound_weakens(source, goal) {
         return None;
     }
+    let infinite = input.endpoint & !float_sign_bit(input.format) == float_infinity(input.format);
+    let law = match (operator == Subtract, infinite) {
+        (false, false) => FloatLiteralSumOperation::Add,
+        (false, true) => FloatLiteralSumOperation::AddAtInfinity,
+        (true, false) => FloatLiteralSumOperation::Subtract,
+        (true, true) => FloatLiteralSumOperation::SubtractAtInfinity,
+    };
     let (endpoint, strict) = operation.apply(result.format, input.endpoint, false);
     Some((
         FloatBoundWeakening::from_goal(goal, endpoint, strict)?,
         literal,
         literal_on_left,
-        operator == Subtract,
+        law,
     ))
 }
 

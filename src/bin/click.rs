@@ -3302,7 +3302,10 @@ theorem implements_zero() { ensures Zero(&f); }
             verify(" by { step_until(function.exit); close(); close(); close(); close(); }");
         assert!(error.starts_with("tactic error:\n"), "{error}");
         assert!(error.contains("write to `&counter`"), "{error}");
-        assert!(error.contains("refused by: `known`"), "{error}");
+        assert!(
+            error.contains("tactic@") && error.contains("close();"),
+            "{error}"
+        );
         assert!(!error.contains("refused by: implicit step"), "{error}");
     }
 

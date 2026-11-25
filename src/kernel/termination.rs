@@ -1383,6 +1383,7 @@ fn collect_address_taken_locals(statement: &ProgramStatement, names: &mut BTreeS
         |expression: &ProgramExpression| expression_address_taken_locals(expression, names);
     match statement {
         ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::BuiltinConstantP { .. }
         | ProgramStatement::Skip
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
@@ -1817,6 +1818,7 @@ fn statement_calls_visiting(
             }
         }
         ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::BuiltinConstantP { .. }
         | ProgramStatement::Skip
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
@@ -1908,6 +1910,7 @@ fn statement_declared_variables(statement: &ProgramStatement, names: &mut BTreeS
             }
         }
         ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::BuiltinConstantP { .. }
         | ProgramStatement::Skip
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
@@ -3680,6 +3683,7 @@ fn collect_loops_in_order<'a>(
         | ProgramStatement::TypedStore { .. }
         | ProgramStatement::CopyAggregate { .. }
         | ProgramStatement::InitializeScalarArray { .. }
+        | ProgramStatement::BuiltinConstantP { .. }
         | ProgramStatement::Update { .. } => {}
     }
 }
@@ -3929,6 +3933,7 @@ fn collect_loops<'a>(statement: &'a ProgramStatement, loops: &mut Vec<&'a Progra
             }
         }
         ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::BuiltinConstantP { .. }
         | ProgramStatement::Skip
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
@@ -4185,6 +4190,7 @@ fn visit_loop_obligations(
             Ok(())
         }
         ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::BuiltinConstantP { .. }
         | ProgramStatement::Skip
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
@@ -4472,6 +4478,7 @@ fn statement_function_addresses(statement: &ProgramStatement, taken: &mut BTreeS
         |expression: &ProgramExpression| expression_function_addresses(expression, taken);
     match statement {
         ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::BuiltinConstantP { .. }
         | ProgramStatement::Skip
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break
@@ -4862,6 +4869,7 @@ fn self_call_loop_indices(
         // number the same loops only while they descend into the same
         // statements, so a new statement kind must be placed in all of them.
         ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::BuiltinConstantP { .. }
         | ProgramStatement::Skip
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break

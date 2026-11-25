@@ -1322,10 +1322,9 @@ Supported C surface includes:
   the operand to a constant depends on optimization, so its value is an
   unknown 0 or 1: a function is verified only if its claims hold for both,
   and no claim depends on which arm the compiler kept. The operand is not
-  evaluated and must be free of side effects. The unknown value comes from
-  the verifier primitive [`__click_constant_p_unknown`](index.md#__click_constant_p_unknown), whose `extern` contract
-  `click verify` lists among the assumptions as a `primitive`. See
-  `mdtests/c_builtin_constant_p.md`
+  evaluated and must be free of side effects. `click verify` lists the
+  [builtin](index.md#__builtin_constant_p) among the assumptions as a
+  `primitive`. See `mdtests/c_builtin_constant_p.md`.
 - `sizeof(expression)` for an operand of scalar, pointer, or modeled struct
   type, or a named complete array object such as a local array or a string
   literal, whose size is the whole array's. The operand is not evaluated;

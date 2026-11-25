@@ -12093,48 +12093,92 @@ int32 probe() {{
     // Naming its two historical reads has a separate version-walk cost.
 }
 
-#[test]
-fn struct_value_equality_costs_what_its_field_equalities_cost() {
+fn check_struct_value_equality_cost(fields: usize) {
     use crate::instrumentation::measure_deterministic_work;
     // `*dst == *src` is its fields' equalities: forming the two values and
     // comparing them is linear in the fields, as writing the comparisons
     // out is.
     verify_c_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
-    let mut samples = Vec::new();
-    for fields in [2usize, 4, 6] {
-        let names = (0..fields).map(|i| format!("f{i}")).collect::<Vec<_>>();
-        let declaration = names
-            .iter()
-            .map(|name| format!("int32 {name};"))
-            .collect::<String>();
-        let copies = names
-            .iter()
-            .map(|name| format!("dst->{name} = src->{name};"))
-            .collect::<String>();
-        let program = format!(
-            "struct wide {{ {declaration} }}; void copy(struct wide* dst, const struct wide* src) {{ {copies} }}"
+    let names = (0..fields).map(|i| format!("f{i}")).collect::<Vec<_>>();
+    let declaration = names
+        .iter()
+        .map(|name| format!("int32 {name};"))
+        .collect::<String>();
+    let copies = names
+        .iter()
+        .map(|name| format!("dst->{name} = src->{name};"))
+        .collect::<String>();
+    let program = format!(
+        "struct wide {{ {declaration} }}; void copy(struct wide* dst, const struct wide* src) {{ {copies} }}"
+    );
+    let written = names
+        .iter()
+        .map(|name| format!("dst->{name} == src->{name}"))
+        .collect::<Vec<_>>()
+        .join(" and ");
+    let mut pair = Vec::new();
+    for claim in ["*dst == *src".to_string(), written] {
+        let source = format!(
+            "verifying \"probe.c\"; void copy(struct wide* dst, const struct wide* src) {{ owns *dst; views *src; requires separate(memory(*dst), memory(*src)); ensures {claim}; }}"
         );
-        let written = names
-            .iter()
-            .map(|name| format!("dst->{name} == src->{name}"))
-            .collect::<Vec<_>>()
-            .join(" and ");
-        let mut pair = Vec::new();
-        for claim in ["*dst == *src".to_string(), written] {
-            let source = format!(
-                "verifying \"probe.c\"; void copy(struct wide* dst, const struct wide* src) {{ owns *dst; views *src; requires separate(memory(*dst), memory(*src)); ensures {claim}; }}"
-            );
-            let (result, work) = measure_deterministic_work(|| {
-                verify_c_sources(&source, &[("probe.c", program.as_str())])
-            });
-            result.unwrap_or_else(|error| panic!("{fields} fields: {}", error.message()));
-            pair.push(work);
-        }
-        assert!(
-            pair[0] <= pair[1] * 2,
-            "struct value equality over {fields} fields: {pair:?}"
-        );
-        samples.push((fields, pair));
+        let (result, work) = measure_deterministic_work(|| {
+            verify_c_sources(&source, &[("probe.c", program.as_str())])
+        });
+        result.unwrap_or_else(|error| panic!("{fields} fields: {}", error.message()));
+        pair.push(work);
     }
-    eprintln!("struct value equality work (fields, [value, written]): {samples:?}");
+    assert!(
+        pair[0] <= pair[1] * 2,
+        "struct value equality over {fields} fields: {pair:?}"
+    );
+    eprintln!("struct value equality work over {fields} fields (value, written): {pair:?}");
+}
+
+#[test]
+fn struct_value_equality_costs_what_its_two_field_equalities_cost() {
+    check_struct_value_equality_cost(2);
+}
+
+#[test]
+fn struct_value_equality_costs_what_its_four_field_equalities_cost() {
+    check_struct_value_equality_cost(4);
+}
+
+#[test]
+fn struct_value_equality_costs_what_its_six_field_equalities_cost() {
+    check_struct_value_equality_cost(6);
+}
+
+#[test]
+fn struct_copy_field_equalities_expand_and_replay() {
+    let program = r#"
+        struct frame_record { int32 f0; int32 f1; int32 f2; int32 f3; };
+        void copy_frame(struct frame_record* dst, const struct frame_record* src) {
+            dst->f0 = src->f0;
+            dst->f1 = src->f1;
+            dst->f2 = src->f2;
+            dst->f3 = src->f3;
+        }
+    "#;
+    let sources = [("copy_frame.c", program)];
+    for claim in [
+        "*dst == *src",
+        "dst->f0 == src->f0 and dst->f1 == src->f1 and dst->f2 == src->f2 and dst->f3 == src->f3",
+    ] {
+        let source = format!(
+            r#"verifying "copy_frame.c";
+            void copy_frame(struct frame_record* dst, const struct frame_record* src) {{
+                owns *dst;
+                views *src;
+                requires separate(memory(*dst), memory(*src));
+                ensures {claim};
+            }}"#
+        );
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "copy_frame.contract")
+            .unwrap_or_else(|error| panic!("{claim}: {}", error.report()));
+        crate::surface::without_implicit_solve_for_claim("copy_frame.contract", || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{claim}: {error}"));
+    }
 }

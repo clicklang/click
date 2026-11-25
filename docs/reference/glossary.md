@@ -748,7 +748,7 @@ is the meaning of those memory resources, not a separate proof-state store.
 
 ### Point
 
-Also *program point*. A node in the code's region tree: `function.entry`, the parameter point,
+Also *program point*. A node in the code's region tree: `function.entry`,
 `function.exit`, `region(N).entry` and `.exit`, statement entry and exit,
 labels, and `mark` names. Every point has a written name, even one with no
 token range such as `function.exit`. A point is only an identity; it holds no

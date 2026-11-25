@@ -98,6 +98,51 @@ fn observed_reordered_indicator_sum(surface: &SyntaxProposition) -> Option<Synta
     })
 }
 
+fn is_field_observation(term: &SyntaxTerm) -> bool {
+    match term {
+        SyntaxTerm::Field { .. } => true,
+        SyntaxTerm::At { expression, .. } => {
+            matches!(expression.as_ref(), SyntaxTerm::Field { .. })
+        }
+        _ => false,
+    }
+}
+
+fn field_at_two_points<'a>(
+    left: &'a SyntaxTerm,
+    right: &'a SyntaxTerm,
+) -> Option<(&'a SyntaxTerm, &'a SyntaxTerm)> {
+    fn anchor(term: &SyntaxTerm) -> (Option<&ProgramPointSelector>, &SyntaxTerm) {
+        match term {
+            SyntaxTerm::At {
+                selector:
+                    selector @ ProgramPointSelector::ProgramPoint(ProgramPointRef {
+                        region: CodeRegionRef::Region(_) | CodeRegionRef::Path(_),
+                        kind: ProgramPointKind::Entry | ProgramPointKind::Exit,
+                    }),
+                expression,
+            } => (Some(selector), expression),
+            _ => (None, term),
+        }
+    }
+    for (earlier, current) in [(left, right), (right, left)] {
+        let (earlier_point, earlier_read) = anchor(earlier);
+        let (current_point, current_read) = anchor(current);
+        let across_entry = earlier_point.is_some()
+            && earlier_point == current_point
+            && matches!(earlier_read, SyntaxTerm::Old(read) if read.as_ref() == current_read);
+        let across_named_points = earlier_point.is_some()
+            && current_point.is_some()
+            && earlier_point != current_point
+            && earlier_read == current_read;
+        if matches!(current_read, SyntaxTerm::Field { .. }) && (across_entry || across_named_points)
+        {
+            return Some((earlier, current_read));
+        }
+    }
+    None
+}
+
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// Retain a computational `known` leaf when possible, otherwise the exact
     /// legacy normalizer requested by this search route. Premise-restricted
@@ -3739,21 +3784,19 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         let step = if proof.goal().is_some_and(|goal| {
             use crate::kernel::proof::arithmetic_special::{
-                checks_selected_float_bounds, positive_divisor_product_guards,
+                checks_selected_float_bounds, checks_signed_product_guards,
             };
             checks_selected_float_bounds(goal, requirements)
-                || [false, true].into_iter().any(|swap| {
-                    positive_divisor_product_guards(goal, swap).as_deref() == Some(requirements)
-                })
+                || checks_signed_product_guards(goal, requirements)
         }) {
-            ProofStep::NormalizeUsing(surfaces)
+            ProofStep::CloseBounds(surfaces)
         } else {
             ProofStep::CompatibilityNormalize(Some(surfaces))
         };
         attempt::candidate_outcome(proof.driver().apply_step(step))
     }
 
-    fn establish_arithmetic_bounds(
+    pub(super) fn establish_arithmetic_bounds(
         input: &Proof<'a>,
         requirements: &[Proposition],
         introduced_surfaces: &[SyntaxProposition],
@@ -4070,8 +4113,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_float_literal_sum_or_difference_bound");
         use crate::kernel::KernelFloatType;
-        use crate::kernel::proof::arithmetic_special::float_literal_sum_or_difference_bound;
-        let Some((plan, bits, literal_on_left, subtract)) =
+        use crate::kernel::proof::arithmetic_special::{
+            FloatLiteralSumOperation::{AddAtInfinity, Subtract, SubtractAtInfinity},
+            float_literal_sum_or_difference_bound,
+        };
+        let Some((plan, bits, literal_on_left, operation)) =
             float_literal_sum_or_difference_bound(source, goal)
         else {
             return Ok(None);
@@ -4082,6 +4128,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             KernelFloatType::Float64 => crate::kernel::program_expression::float64_literal(bits),
         });
+        if matches!(operation, AddAtInfinity | SubtractAtInfinity) {
+            return Self::try_float_sum_or_difference_at_infinite_bound(
+                input,
+                &plan,
+                matches!(operation, SubtractAtInfinity),
+                literal,
+                source_surface,
+            );
+        }
         let reflexive = SyntaxProposition::Comparison {
             left: literal.clone(),
             operator: ComparisonOperator::LessEqual,
@@ -4092,7 +4147,83 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         } else {
             [source_surface.clone(), reflexive]
         };
-        Self::try_apply_float_pair_bound(input, &plan, subtract, premises)
+        Self::try_apply_float_pair_bound(input, &plan, matches!(operation, Subtract), premises)
+    }
+
+    fn try_float_sum_or_difference_at_infinite_bound(
+        input: &Proof<'a>,
+        plan: &crate::kernel::proof::arithmetic_special::FloatBoundWeakening,
+        subtract: bool,
+        literal: SyntaxTerm,
+        source: &SyntaxProposition,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_float_sum_or_difference_at_infinite_bound");
+        use crate::kernel::KernelFloatType;
+        let Some(intermediate) = input.structural_proposition_candidate(&plan.intermediate) else {
+            return Ok(None);
+        };
+        let Some((proof, ordered, left, right)) =
+            Self::prepare_float_bound(input, plan.format, source.clone())?
+        else {
+            return Ok(None);
+        };
+        let less_equal = SyntaxProposition::Comparison {
+            left: left.clone(),
+            operator: ComparisonOperator::LessEqual,
+            right: right.clone(),
+        };
+        let proof = if ordered == less_equal {
+            proof
+        } else {
+            let step =
+                super::super::wide_arithmetic::have(less_equal.clone(), vec![ProofStep::Known]);
+            let Some(retained) = attempt::candidate_outcome(proof.driver().apply_step(step))?
+            else {
+                return Ok(None);
+            };
+            retained
+        };
+        let finite = SyntaxProposition::FloatClassification {
+            expression: literal.clone(),
+            classification: syntax::CFloatClassification::Finite,
+        };
+        let name = match (plan.format, subtract) {
+            (KernelFloatType::Float32, false) => "click::float_order::float32_add_finite_monotone",
+            (KernelFloatType::Float64, false) => "click::float_order::float64_add_finite_monotone",
+            (KernelFloatType::Float32, true) => {
+                "click::float_order::float32_subtract_finite_monotone"
+            }
+            (KernelFloatType::Float64, true) => {
+                "click::float_order::float64_subtract_finite_monotone"
+            }
+        };
+        let application = ProofStep::ApplyPlannedTheorem {
+            application: TheoremApplication {
+                name: name.into(),
+                arguments: vec![literal, left, right],
+            },
+            premises: vec![less_equal, finite],
+        };
+        let Some(scope) =
+            attempt::candidate_outcome(proof.driver().open_have(intermediate.clone()))?
+        else {
+            return Ok(None);
+        };
+        let Some(mut scope) = attempt::candidate_outcome(scope.driver().apply_step(application))?
+        else {
+            return Ok(None);
+        };
+        if !scope.is_complete() {
+            // The theorem gives both operand orders. Close the focused one.
+            let Some(closed) =
+                attempt::candidate_outcome(scope.driver().apply_step(ProofStep::Known))?
+            else {
+                return Ok(None);
+            };
+            scope = closed;
+        }
+        Self::try_float_bound_weakening(&scope.join()?, plan, intermediate)
     }
 
     pub(super) fn retain_float_adjacent_bound(
@@ -4447,7 +4578,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             let step = if checks_selected_float_bounds(bound, std::slice::from_ref(previous_bound))
             {
-                ProofStep::NormalizeUsing(vec![previous])
+                ProofStep::CloseBounds(vec![previous])
             } else {
                 ProofStep::CompatibilityNormalize(Some(vec![previous]))
             };
@@ -4467,7 +4598,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let step = if proof.goal().is_some_and(|goal| {
             checks_selected_float_bounds(goal, std::slice::from_ref(previous_bound))
         }) {
-            ProofStep::NormalizeUsing(vec![previous])
+            ProofStep::CloseBounds(vec![previous])
         } else {
             ProofStep::CompatibilityNormalize(Some(vec![previous]))
         };
@@ -4484,9 +4615,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_bounded_arithmetic_closure");
         use crate::kernel::proof::arithmetic_special::{
-            checks_selected_float_bounds, float_compound_bound_operand, float_finiteness_bounds,
-            float_finiteness_source, float_zero_product_premise, is_float_bound,
-            positive_divisor_product_guards, promoted_right_shift_bound,
+            checks_selected_float_bounds, checks_signed_product_guards,
+            float_compound_bound_operand, float_finiteness_source, float_zero_product_premise,
+            is_float_bound, positive_divisor_product_guards, promoted_right_shift_bound,
             shift_count_mask_requirements, shifted_one_bounds, signed_max_shift_count_bound,
             signed_product_guard_candidates, signed_quotient_bridge_requirement,
             signed_shift_bound_mask_identity,
@@ -4707,8 +4838,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let Some(surfaces) = surfaces else {
                 continue;
             };
-            let step = if checks_selected_float_bounds(goal, &premises) {
-                ProofStep::NormalizeUsing(surfaces)
+            let step = if checks_selected_float_bounds(goal, &premises)
+                || checks_signed_product_guards(goal, &premises)
+            {
+                ProofStep::CloseBounds(surfaces)
             } else {
                 ProofStep::CompatibilityNormalize(Some(surfaces))
             };
@@ -4718,15 +4851,23 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 return Ok(Some(closed));
             }
         }
+        if let Some(source) =
+            float_finiteness_source(goal).or_else(|| float_zero_product_premise(goal))
+            && let Some((proof, _)) =
+                Self::establish_arithmetic_bounds(search_input, &[source], introduced_surfaces)?
+            && let Some(closed) =
+                attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))?
+        {
+            return Ok(Some(closed));
+        }
+        if let Some(closed) =
+            Self::try_float_finite_interval(search_input, goal, introduced_surfaces)?
+        {
+            return Ok(Some(closed));
+        }
         let derived_requirements = [false, true]
             .into_iter()
             .filter_map(|swap| positive_divisor_product_guards(goal, swap))
-            .chain(
-                float_finiteness_source(goal)
-                    .or_else(|| float_zero_product_premise(goal))
-                    .map(|premise| vec![premise]),
-            )
-            .chain(float_finiteness_bounds(goal).map(Vec::from))
             .chain(float_compound_bound_operand(goal).map(|bound| vec![bound]));
         for requirements in derived_requirements {
             if let Some(closed) = Self::try_normalize_after_arithmetic_bounds(
@@ -7574,9 +7715,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(source) = premises.next() else {
             return Ok(None);
         };
-        // The source is itself one of the available equalities. The shared
-        // planner checks and minimizes the list, and returns the checked
-        // transport in the exact form recorded for expansion.
+        // The source is itself one of the available equalities. Use the
+        // selected facts to construct an ordinary proof.
         Self::try_fixed_state_fact_transport(
             search_input,
             &source,
@@ -7593,6 +7733,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_struct_field_equalities");
+        if let Some(goal @ SyntaxProposition::And(..)) = search_input.surface_goal() {
+            return Self::try_written_field_equalities(search_input, goal);
+        }
         let Some(SyntaxProposition::Comparison {
             left:
                 SyntaxTerm::AlgebraicConstructor {
@@ -7617,6 +7760,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(None);
         }
+        if let Some(read) = right_fields.first()
+            && let Some(proof) = Self::try_unchanged_struct_operand(search_input, read)?
+        {
+            return Ok(Some(proof));
+        }
 
         let mut proof = search_input.clone();
         for (left, right) in left_fields.iter().zip(right_fields) {
@@ -7639,6 +7787,87 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))
     }
 
+    fn try_written_field_equalities(
+        search_input: &Proof<'a>,
+        target: &SyntaxProposition,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_written_field_equalities");
+        let mut pending = vec![target];
+        let mut fields = Vec::new();
+        while let Some(proposition) = pending.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            match proposition {
+                SyntaxProposition::And(left, right) => {
+                    pending.push(right);
+                    pending.push(left);
+                }
+                SyntaxProposition::Comparison {
+                    left,
+                    operator: ComparisonOperator::Equal,
+                    right: SyntaxTerm::Field { .. },
+                } if is_field_observation(left) => fields.push(proposition),
+                _ => return Ok(None),
+            }
+        }
+        if let Some(SyntaxProposition::Comparison { right, .. }) = fields.first()
+            && let Some(proof) = Self::try_unchanged_struct_operand(search_input, right)?
+        {
+            return Ok(Some(proof));
+        }
+        let mut proof = search_input.clone();
+        for field in fields {
+            check_verification_deadline()?;
+            let Some(scope) = attempt::candidate_outcome(proof.driver().open_have(field.clone()))?
+            else {
+                return Ok(None);
+            };
+            let Some(closed) = scope.driver().try_struct_field_equality(field)? else {
+                return Ok(None);
+            };
+            proof = closed.join()?;
+        }
+        attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))
+    }
+
+    /// Make the unchanged source read available before checking the group.
+    /// The other field reads may already have indexed versions at this point.
+    fn try_unchanged_struct_operand(
+        search_input: &Proof<'a>,
+        read: &SyntaxTerm,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_unchanged_struct_operand");
+        let SyntaxTerm::Field { .. } = read else {
+            return Ok(None);
+        };
+        let Some(anchor) = search_input
+            .focused_outcome_data()
+            .and_then(|outcome| outcome.premise_anchor.as_ref())
+        else {
+            return Ok(None);
+        };
+        let at = |expression| SyntaxTerm::At {
+            selector: ProgramPointSelector::ProgramPoint(anchor.clone()),
+            expression: Box::new(expression),
+        };
+        let unchanged = SyntaxProposition::Comparison {
+            left: at(SyntaxTerm::Old(Box::new(read.clone()))),
+            operator: ComparisonOperator::Equal,
+            right: at(read.clone()),
+        };
+        let Some(scope) =
+            attempt::candidate_outcome(search_input.driver().open_have(unchanged.clone()))?
+        else {
+            return Ok(None);
+        };
+        let Some(closed) = scope.driver().try_struct_field_equality(&unchanged)? else {
+            return Ok(None);
+        };
+        let proof = closed.join()?;
+        attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))
+    }
+
     pub(in crate::surface::proof) fn try_struct_field_equality(
         search_input: &Proof<'a>,
         equality: &SyntaxProposition,
@@ -7650,27 +7879,37 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(Some(known));
         }
-        if let Some(read) = Self::try_struct_field_store_bridge(search_input, equality)? {
+        if let Some(read) = Self::try_struct_field_store_bridge(search_input, equality, true)? {
             return Ok(Some(read));
         }
         Self::try_struct_field_equalities(search_input)
     }
 
-    /// Select a recorded store across which one operand is unchanged.
-    /// The mixed-state equality is checked first, so unsuccessful candidates
-    /// do not need to search for footprint separation.
-    fn try_struct_field_store_bridge(
+    /// Retain a chain of checked field equalities across recent disjoint stores.
+    /// At each entry, also try the mixed-state equality with the other operand.
+    pub(in crate::surface::proof) fn try_struct_field_store_bridge(
         search_input: &Proof<'a>,
         equality: &SyntaxProposition,
+        allow_distinct_fields: bool,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_struct_field_store_bridge");
         let SyntaxProposition::Comparison {
-            left: other @ SyntaxTerm::Field { .. },
+            left,
             operator: ComparisonOperator::Equal,
-            right: read @ SyntaxTerm::Field { .. },
+            right,
         } = equality
         else {
+            return Ok(None);
+        };
+        let (other, read) = if allow_distinct_fields
+            && matches!(right, SyntaxTerm::Field { .. })
+            && is_field_observation(left)
+        {
+            (left, right)
+        } else if let Some(pair) = field_at_two_points(left, right) {
+            pair
+        } else {
             return Ok(None);
         };
         let Some((
@@ -7713,6 +7952,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let records = view.fixed_state.recorded_states;
         let known =
             ProofCertificate::from_steps(vec![ProofStep::Known]).expect("ordinary equality");
+        let mut proof = search_input.clone();
         for (selector, _) in records.recent(MAX_TRANSPORT_SOURCE_POINTS) {
             check_verification_deadline()?;
             let ProgramPointSelector::ProgramPoint(ProgramPointRef {
@@ -7741,17 +7981,18 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 operator: ComparisonOperator::Equal,
                 right: entry.clone(),
             };
-            let Some(stored) =
-                attempt::candidate_outcome(search_input.driver().apply_have_step(&stored, &known))?
-            else {
-                continue;
-            };
+            let stored =
+                attempt::candidate_outcome(proof.driver().apply_have_step(&stored, &known))?;
             let separation = SyntaxProposition::Separate {
                 left: ResourceSubject::Footprint(region.clone()),
                 right: kept.clone(),
             };
-            let Some(separated) =
-                Self::try_memory_footprint_separation(&stored, &footprint, &kept, &separation)?
+            let Some(separated) = Self::try_memory_footprint_separation(
+                stored.as_ref().unwrap_or(&proof),
+                &footprint,
+                &kept,
+                &separation,
+            )?
             else {
                 continue;
             };
@@ -7762,13 +8003,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             };
             let preserve = ProofCertificate::from_steps(vec![ProofStep::Preserve(separation)])
                 .expect("ordinary field preservation");
-            let candidate = separated
-                .driver()
-                .apply_have_step(&bridge, &preserve)
-                .and_then(|preserved| preserved.driver().apply_step(ProofStep::Known));
-            if let Some(proof) = attempt::candidate_outcome(candidate)? {
-                return Ok(Some(proof));
+            let Some(preserved) =
+                attempt::candidate_outcome(separated.driver().apply_have_step(&bridge, &preserve))?
+            else {
+                continue;
+            };
+            if let Some(closed) =
+                attempt::candidate_outcome(preserved.driver().apply_step(ProofStep::Known))?
+            {
+                return Ok(Some(closed));
             }
+            proof = preserved;
         }
         Ok(None)
     }
@@ -12292,30 +12537,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(Some(proof));
         }
-        let separations = premises
-            .iter()
-            .filter(|premise| {
-                matches!(
-                    premise,
-                    SyntaxProposition::Separate {
-                        left: ResourceSubject::Footprint(_),
-                        ..
-                    }
-                )
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-        if let Some(steps) = statement_preservation_steps(source, target, &separations)
-            .or_else(|| comparison_preservation_steps(source, target, &separations))
-            .or_else(|| implication_preservation_steps(source, target, &separations))
-            .or_else(|| conjunction_preservation_steps(source, target, &separations))
-            .or_else(|| conjunction_projection_preservation_steps(source, target, &separations))
-            && let Some(proof) = attempt::candidate_outcome(
-                search_input
-                    .driver()
-                    .apply_ordinary_transport_steps(target, steps),
-            )?
-        {
+        if let Some(proof) = Self::try_direct_selected_fact_transport(
+            search_input,
+            source,
+            target,
+            premises,
+            &source_fact,
+        )? {
             return Ok(Some(proof));
         }
         if search_input.surface_goal() != Some(target) {
@@ -12405,6 +12633,104 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(Some(proof));
         }
         attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))
+    }
+
+    /// Apply the local checked rules for the candidate's named evidence.
+    pub(in crate::surface::proof) fn try_direct_selected_fact_transport(
+        search_input: &Proof<'a>,
+        source: &SyntaxProposition,
+        target: &SyntaxProposition,
+        premises: &[SyntaxProposition],
+        source_fact: &Proposition,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_direct_selected_fact_transport");
+        // A single named footprint whose exit is current can state the
+        // equality directly. Older footprints use the ordinary chain below.
+        if search_input.surface_goal() == Some(target)
+            && let Some(separation) =
+                single_statement_preservation_premise(source, target, premises)
+            && let Some(execution) = search_input.execution()
+            && let Some(Proposition::ResourceSeparate { left, .. }) = attempt::candidate_outcome(
+                search_input.lower_surface_proposition_direct(&separation, "transport separation"),
+            )?
+            && let crate::kernel::Resource::Footprint(footprint) = left.as_ref()
+            && crate::kernel::MemoryStateIdentity::of(&footprint.after)
+                == crate::kernel::MemoryStateIdentity::of(execution.core.state.memory())
+            && footprint
+                .after_resources
+                .shares_storage_with(execution.core.state.resources())
+            && let Some(proof) = attempt::candidate_outcome(
+                search_input
+                    .driver()
+                    .apply_step(ProofStep::Preserve(separation)),
+            )?
+        {
+            return Ok(Some(proof));
+        }
+        if let Some((steps, narrow_range)) = viewability_restriction_steps(source, target, premises)
+            && let Some(target_fact) = attempt::candidate_outcome(
+                search_input.lower_surface_proposition_direct(target, "transport target"),
+            )?
+        {
+            let same_state = match (source_fact, &target_fact) {
+                (
+                    Proposition::MemoryLoadable {
+                        memory: left,
+                        wide: false,
+                        ..
+                    },
+                    Proposition::MemoryLoadable {
+                        memory: right,
+                        wide: false,
+                        ..
+                    },
+                ) if narrow_range => left == right,
+                (
+                    Proposition::ResourceViewable { memory: left, .. }
+                    | Proposition::MemoryLoadable { memory: left, .. },
+                    Proposition::ResourceViewable { memory: right, .. }
+                    | Proposition::MemoryLoadable { memory: right, .. },
+                ) if !narrow_range => left == right,
+                _ => false,
+            };
+            if same_state
+                && let Some(proof) = attempt::candidate_outcome(
+                    search_input
+                        .driver()
+                        .apply_ordinary_transport_steps(target, steps),
+                )?
+            {
+                return Ok(Some(proof));
+            }
+        }
+        let separations = premises
+            .iter()
+            .filter(|premise| {
+                matches!(
+                    premise,
+                    SyntaxProposition::Separate {
+                        left: ResourceSubject::Footprint(_),
+                        ..
+                    }
+                )
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        if let Some(steps) = statement_preservation_steps(source, target, &separations)
+            .or_else(|| comparison_preservation_steps(source, target, &separations))
+            .or_else(|| implication_preservation_steps(source, target, &separations))
+            .or_else(|| conjunction_preservation_steps(source, target, &separations))
+            .or_else(|| conjunction_projection_preservation_steps(source, target, &separations))
+            && let Some(proof) = attempt::candidate_outcome(
+                search_input
+                    .driver()
+                    .apply_ordinary_transport_steps(target, steps),
+            )?
+        {
+            return Ok(Some(proof));
+        }
+        Ok(None)
     }
 
     /// Tries available universal facts when the atomic decision cannot name
@@ -13523,9 +13849,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         None
     }
 
-    /// Use only selected viewability and condition premises. A fixed
-    /// descriptor can normalize its containment directly. A computed range
-    /// first proves its endpoint comparisons with selected arithmetic.
+    /// Use only selected viewability and condition premises. Prove the
+    /// endpoint comparisons separately and apply the range containment law.
     fn try_selected_viewability_containment(
         search_input: &Proof<'a>,
         surfaces: &[SyntaxProposition],
@@ -13538,16 +13863,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return None;
         };
-        let conditions = surfaces
-            .iter()
-            .filter(|surface| {
-                matches!(
-                    search_input.lower_cited_surface_proposition(surface, "view premise"),
-                    Ok(Proposition::ConditionIs(..))
-                )
-            })
-            .cloned()
-            .collect::<Vec<_>>();
         let child = ResourceSubject::Memory(target_segment.clone());
         for source in surfaces {
             let mut descriptor = source;
@@ -13599,10 +13914,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 child: child.clone(),
             };
             let prepared = (|| {
+                // A fixed byte span can cross element widths, where the
+                // element-range theorem below does not apply.
                 let scope = view_proof.driver().open_have(containment.clone()).ok()?;
-                if let Ok(closed) = scope
-                    .driver()
-                    .apply_step(ProofStep::NormalizeUsing(conditions.clone()))
+                if scope.goal().is_some_and(normalizes_context_free)
+                    && let Ok(closed) = scope.driver().apply_step(ProofStep::Known)
                 {
                     return closed.join().ok();
                 }
@@ -13987,6 +14303,18 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Some(closed);
         }
         if typed_first && let Some(closed) = try_typed_derivation() {
+            return Some(closed);
+        }
+        if (crate::kernel::proof::arithmetic_special::checks_selected_float_bounds(
+            goal,
+            &restricted,
+        ) || crate::kernel::proof::arithmetic_special::checks_signed_product_guards(
+            goal,
+            &restricted,
+        )) && let Ok(closed) = proof
+            .driver()
+            .apply_step(ProofStep::CloseBounds(surfaces.to_vec()))
+        {
             return Some(closed);
         }
         if crate::kernel::proof::fact_reasoning::is_single_normalization_condition(goal)

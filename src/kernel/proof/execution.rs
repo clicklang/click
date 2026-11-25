@@ -6109,6 +6109,10 @@ impl CheckedCallOutcomeSplit {
 }
 
 impl CheckedBranchSplit {
+    pub(crate) fn state(&self) -> &ExecutionState {
+        &self.state
+    }
+
     pub(crate) fn check(
         state: ExecutionState,
         branch_statement: ProgramStatement,
@@ -10056,6 +10060,12 @@ impl ExecutionProofCore {
             .interface
             .as_ref()
             .expect("an interface join retains its interface");
+        if !join
+            .joined_state
+            .has_interface_join_point(arms.map(|(arm, _)| arm.reached_state()), &join.start_state)
+        {
+            return Err("the interface point does not join the checked cases");
+        }
         let effect_facts = interface.effect_facts.clone();
         let joined_state = join.joined_state.clone();
         self.advance_kernel_variable_mark(interface.next_kernel_variable)?;
@@ -11966,7 +11976,11 @@ impl ExecutionProofCore {
             [trace] => trace,
             _ => return Err("the interface parent does not have one execution trace"),
         };
-        let split_point = split.state.path_link().clone();
+        if !joined_state
+            .has_interface_join_point(arms.map(ExecutionProofCore::reached_state), &split.state)
+        {
+            return Err("the interface point does not join the checked branch");
+        }
         let branch = CheckedExecutionBranch::construct_interface(
             split,
             root_facts,
@@ -11984,12 +11998,7 @@ impl ExecutionProofCore {
             old_reference,
         )?;
         let interface_effect_facts = branch.interface_effect_facts().clone();
-        let mut joined_state = branch.joined_state().clone();
-        joined_state.join_program_points(
-            arms[0].reached_state(),
-            arms[1].reached_state(),
-            &split_point,
-        );
+        let joined_state = branch.joined_state().clone();
         // The kernel recomputed the abstraction, so it also knows where the
         // abstraction left the counter. Installing that mark here is what
         // makes the successor's counter kernel-owned: a caller cannot take
@@ -12493,7 +12502,6 @@ impl ExecutionProofCore {
                 candidate.obligations(),
             ));
             let path = crate::kernel::SymbolicExecutionPath {
-                call_parameters: None,
                 descent_step: None,
                 completion_origin: Some(candidate.outcome().clone()),
                 call_result: None,

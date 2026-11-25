@@ -53,7 +53,7 @@ fn viewability_preservation_checks_only_the_selected_transition_and_facts() {
             }
             let facts = crate::kernel::proof::PureFactStore::from_ordered(&ambient);
             let (result, cost) = crate::instrumentation::measure_deterministic_work(|| {
-                apply(&separation, None, &goal, |p| facts.contains(p))
+                apply(&separation, None, &goal, None, |p| facts.contains(p))
             });
             if entry_present {
                 result.unwrap();

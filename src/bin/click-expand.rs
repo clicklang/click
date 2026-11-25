@@ -964,7 +964,7 @@ int32 identity(int32 x) {
     }
 
     #[test]
-    fn check_normalize_removal_rejects_written_generated_and_compatibility_steps() {
+    fn check_normalize_removal_replays_checked_bounds_and_nested_conditionals() {
         let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("mdtests/arithmetic_expression_float_bound_composition.md");
         let check = |path: &Path, claim: &str| {
@@ -1211,30 +1211,149 @@ theorem rounding_can_merge(x: float) {
             assert!(expanded.contains(law), "{expanded}");
         }
 
-        let finiteness = directory.path().join("finiteness.click");
+        let finiteness = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/float_finiteness_from_interval.md");
+        for (claim, law) in [
+            ("finite_identity.ensures_0", "float64_finite_between"),
+            ("finite_between.ensures_0", "float32_finite_between"),
+            ("strict_infinities.ensures_0", "float64_finite_between"),
+            ("inclusive_bounds.ensures_0", "float32_finite_between"),
+            ("finite_negated.ensures_0", "float64_finite_between"),
+            ("finite_widened.ensures_0", "float32_finite_between"),
+            (
+                "zero_product_with_ordered_operand.ensures_0",
+                "float64_finite_between",
+            ),
+        ] {
+            let expanded = check(&finiteness, claim).unwrap();
+            assert!(expanded.contains(law), "{claim}: {expanded}");
+        }
+
+        let infinite_sum = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/float_addition_at_infinite_bounds.md");
+        for (claim, law) in [
+            ("add_at_infinity.ensures_0", "float64_add_finite_monotone"),
+            ("positive_right.ensures_0", "float32_add_finite_monotone"),
+            ("negative_left.ensures_0", "float32_add_finite_monotone"),
+            ("positive_left.ensures_0", "float64_add_finite_monotone"),
+            ("negative_right.ensures_0", "float64_add_finite_monotone"),
+        ] {
+            let expanded = check(&infinite_sum, claim).unwrap();
+            assert!(expanded.contains(law), "{claim}: {expanded}");
+        }
+
+        let infinite_difference = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/float_subtraction_at_infinite_bounds.md");
+        for (claim, law) in [
+            (
+                "subtract_at_infinity.ensures_0",
+                "float64_subtract_finite_monotone",
+            ),
+            (
+                "positive_right.ensures_0",
+                "float32_subtract_finite_monotone",
+            ),
+            (
+                "negative_left.ensures_0",
+                "float32_subtract_finite_monotone",
+            ),
+            (
+                "positive_left.ensures_0",
+                "float64_subtract_finite_monotone",
+            ),
+            (
+                "negative_right.ensures_0",
+                "float64_subtract_finite_monotone",
+            ),
+        ] {
+            let expanded = check(&infinite_difference, claim).unwrap();
+            assert!(expanded.contains(law), "{claim}: {expanded}");
+        }
+
+        let infinity = directory.path().join("infinity.click");
         fs::write(
-            &finiteness,
-            r#"theorem finite_between(x: float) {
-    requires x > float32_from_bits(0xbf800000);
-    requires x < float32_from_bits(0x3f800000);
+            &infinity,
+            r#"theorem may_be_infinite(x: double) {
+    requires x >= float64_from_bits(0xfff0000000000000u64);
+    requires x < float64_from_bits(0x7ff0000000000000u64);
     ensures isfinite(x) by close();
+}
+theorem opposite_infinities(x: double) {
+    requires x >= float64_from_bits(0x7ff0000000000000u64);
+    ensures x + float64_from_bits(0xfff0000000000000u64)
+        >= float64_from_bits(0x7ff0000000000000u64) by close();
+}
+theorem indeterminate_difference(x: double) {
+    requires x >= float64_from_bits(0x7ff0000000000000u64);
+    ensures x - float64_from_bits(0x7ff0000000000000u64)
+        >= float64_from_bits(0x7ff0000000000000u64) by close();
+}
+theorem rejects_nan_subtrahend(a: float, b: float) {
+    requires a <= b;
+    ensures a - float32_from_bits(0x7fc00000)
+        <= b - float32_from_bits(0x7fc00000) by {
+        apply(click::float_order::float32_subtract_finite_monotone(
+            float32_from_bits(0x7fc00000), a, b));
+    }
+}
+theorem rounded_uint64_cast(x: uint64) {
+    requires x <= 1024u64;
+    ensures (x as float) <= float32_from_bits(0x44800000) by close();
+}
+theorem unchecked_cast_bound(x: uint64) {
+    requires x <= 2048u64;
+    ensures (x as float) <= float32_from_bits(0x44800000) by {
+        close() using bounds { x <= 1024u64; };
+    }
 }
 "#,
         )
         .unwrap();
-        let generated = check(&finiteness, "finite_between.ensures_0").unwrap_err();
+        let missing_bound = check(&infinity, "may_be_infinite.ensures_0").unwrap_err();
         assert!(
-            generated.contains("Expanded proof still contains normalize()"),
-            "{generated}"
+            missing_bound.contains("unsuccessful search"),
+            "{missing_bound}"
+        );
+        let opposite = check(&infinity, "opposite_infinities.ensures_0").unwrap_err();
+        assert!(opposite.contains("unsuccessful search"), "{opposite}");
+        let difference = check(&infinity, "indeterminate_difference.ensures_0").unwrap_err();
+        assert!(difference.contains("unsuccessful search"), "{difference}");
+        let nan = check(&infinity, "rejects_nan_subtrahend.ensures_0").unwrap_err();
+        assert!(
+            nan.contains("unproved obligation: `isfinite(float32_from_bits(0x7fc00000))`"),
+            "{nan}"
+        );
+        let rounded = check(&infinity, "rounded_uint64_cast.ensures_0").unwrap();
+        let (cast_proof, _) = rounded.split_once("theorem unchecked_cast_bound").unwrap();
+        assert!(cast_proof.contains("close() using bounds"), "{rounded}");
+        let returning =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("mdtests/close_with_checked_bounds.md");
+        let expanded = check(&returning, "return_cast.ensures_0").unwrap();
+        let (return_proof, _) = expanded.split_once("theorem rounded_upper").unwrap();
+        assert!(return_proof.contains("close() using bounds"), "{expanded}");
+        let missing = check(&infinity, "unchecked_cast_bound.ensures_0").unwrap_err();
+        assert!(missing.contains("not exactly available"), "{missing}");
+
+        let range = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/viewable_restrict_transport_expansion.md");
+        let expanded = check(&range, "first.contract").unwrap();
+        assert!(
+            expanded.contains("separation::viewable_restrict"),
+            "{expanded}"
+        );
+        let expanded = check(&range, "cross_width.ensures_0").unwrap();
+        assert!(
+            expanded.contains("separation::viewable_restrict"),
+            "{expanded}"
         );
 
         let guard_spellings = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("mdtests/normalize_using_reads_every_spelling_of_a_cited_premise.md");
         check(&guard_spellings, "integer_mirror.ensures_0").unwrap();
 
-        let hidden = directory.path().join("nested.click");
+        let nested_source = directory.path().join("nested.click");
         fs::write(
-            &hidden,
+            &nested_source,
             r#"theorem nested(x: int32, y: int32) {
     requires x < y;
     requires y == 5;
@@ -1245,11 +1364,8 @@ theorem rounding_can_merge(x: float) {
 "#,
         )
         .unwrap();
-        let compatibility = check(&hidden, "nested.ensures_0").unwrap_err();
-        assert!(
-            compatibility.contains("used legacy normalization"),
-            "{compatibility}"
-        );
+        let nested = check(&nested_source, "nested.ensures_0").unwrap();
+        assert!(nested.contains("rewrite("), "{nested}");
     }
 
     #[test]

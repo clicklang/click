@@ -1,23 +1,11 @@
 use super::*;
 
 #[test]
-fn verification_only_fact_transport_has_no_source_expansion() {
-    let proposition = SyntaxProposition::Defined {
-        expression: SyntaxTerm::IntegerLiteral("0".into()),
-    };
-    let tactics = [ProofTactic::CompatibilityFactTransport {
-        source: proposition.clone(),
-        target: proposition,
-        premises: Vec::new(),
-    }];
+fn verification_only_normalization_has_no_source_expansion() {
+    let tactics = [ProofTactic::CompatibilityNormalize(None)];
     let rendered = printing::format_partial_tactic_sequence(&tactics);
-    assert!(!rendered.contains("transport("), "{rendered}");
     let error = require_surface_expansion(rendered).unwrap_err();
-    assert!(
-        error
-            .message()
-            .contains("a legacy frame check has no ordinary proof")
-    );
+    assert!(error.message().contains("used legacy normalization"));
 }
 
 // Read proof fixtures at runtime, as the markdown harness does, so editing a
@@ -28,6 +16,26 @@ fn mdtest_markdown(name: &str) -> String {
         .join(name);
     std::fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("failed to read `{}`: {error}", path.display()))
+}
+
+#[test]
+fn c_builtin_constant_p_expands_using_its_source_region() {
+    let name = "c_builtin_constant_p.md";
+    let fixture = crate::cli::parse_mdtest(std::path::Path::new(name), &mdtest_markdown(name))
+        .expect("read the builtin's proof fixture");
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c_claim_source_by_label(source, &sources, "flag.contract").unwrap();
+    assert!(!expanded.contains("step_until("), "{expanded}");
+    assert!(
+        expanded.contains("statement(0).region(0).result"),
+        "{expanded}"
+    );
+    verify_c_sources(&expanded, &sources).unwrap();
 }
 
 #[cfg(feature = "fast-gate")]
@@ -3533,6 +3541,73 @@ fn load_equality_chain_across_a_call_expands_and_replays() {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())
     })
     .unwrap();
+}
+
+#[test]
+fn selected_bounds_and_cross_width_viewability_expand_and_replay() {
+    let source = r#"
+        theorem cast_bound(x: uint64) {
+            requires x <= 1024u64;
+            ensures (x as float) <= float32_from_bits(0x44800000) by close();
+        }
+        theorem cross_width(p: int32[]) {
+            requires viewable(p[0..1]);
+            ensures viewable((p as (uint8 *))[0..4]) by {
+                close() using { viewable(p[0..1]); };
+            }
+        }
+    "#;
+    for (label, expected) in [
+        ("cast_bound.ensures_0", "close() using bounds"),
+        ("cross_width.ensures_0", "separation::viewable_restrict"),
+    ] {
+        let expanded = expand_c_claim_source_by_label(source, &[], label)
+            .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
+        assert!(expanded.contains(expected), "{expanded}");
+        assert!(!expanded.contains("normalize()"), "{expanded}");
+        crate::surface::check_audit_claim(label, true, || {
+            verify_c_sources(&expanded, &[]).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+}
+
+#[test]
+fn nested_machine_arms_replay_with_only_the_cited_guards() {
+    let filename = "nested_machine_conditionals.md";
+    let fixture =
+        crate::cli::parse_mdtest(std::path::Path::new(filename), &mdtest_markdown(filename))
+            .unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    for label in [
+        "nested_true.ensures_0",
+        "nested_false.ensures_0",
+        "nested_wide.ensures_0",
+    ] {
+        let expanded = expand_c_claim_source_by_label(source, &[], label)
+            .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
+        assert!(expanded.contains("rewrite("), "{expanded}");
+        assert!(!expanded.contains("normalize()"), "{expanded}");
+        crate::surface::check_audit_claim(label, true, || {
+            verify_c_sources(&expanded, &[]).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+
+    let omitted = r#"
+        theorem omitted(x: int32, y: int32) {
+            requires x < y;
+            requires y == 5;
+            ensures (if x < y { if y == 5 { 8 } else { 3 } } else { 0 }) == 8 by {
+                close() using { x < y; };
+            }
+        }
+    "#;
+    let error = expand_c_claim_source_by_label(omitted, &[], "omitted.ensures_0").unwrap_err();
+    assert!(
+        error.message().contains("from only its listed premises"),
+        "{error:?}"
+    );
 }
 
 #[test]

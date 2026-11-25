@@ -2767,8 +2767,7 @@ fn body_safety_proofs_have_one_auditable_source_site() {
 /// audit, including cold verification with implicit solving disabled.
 #[test]
 fn a_fully_explicit_script_has_an_auditable_fixed_point() {
-    // The contract closes with one written `close()` per closing goal:
-    // returned resources, allocation lifetime, and write footprint.
+    // The written steps discharge the claim before automatic finalization.
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("explicit_identity.md");
     fs::write(
@@ -2776,7 +2775,7 @@ fn a_fully_explicit_script_has_an_auditable_fixed_point() {
         "```c filename=explicit_identity.c\nint32 identity(int32 x) {\n    return x;\n}\n```\n\n\
          ```click\nverifying \"explicit_identity.c\";\n\n\
          int32 identity(int32 x) {\n    ensures result == x;\n} by {\n    step();\n    \
-         normalize();\n    close();\n    close();\n    close();\n}\n```\n\n\
+         normalize();\n}\n```\n\n\
          ```expect\npass\n```\n",
     )
     .unwrap();

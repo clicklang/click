@@ -256,7 +256,7 @@ const NIGHTLY: &[&str] = &[
     "named_root_call_preserves_aliased_pointer_field.md",                      // 6.8s
     "named_root_call_preserves_wide_field_read_congruence.md",                 // 1.2s
     "nested_loop_cursor_view_authority.md",                                    // 0.8s
-    "normalize_using_rejects_changed_pointer_value.md",                        // 0.6s
+    "recorded_pointer_rejects_changed_link.md",                                // 0.6s
     "opaque_call_scoped_composite_reallocation.md",                            // 1.9s
     "opaque_reallocating_call_does_not_carry_an_unstated_value.md",            // 0.8s
     "pointer_field_frame_after_descriptor_and_backing_writes.md",              // 2.9s

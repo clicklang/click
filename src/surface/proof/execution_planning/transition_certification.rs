@@ -728,6 +728,7 @@ pub(in crate::surface::proof) fn statement_contains_call(statement: &ProgramStat
             cases.iter().any(|case| statement_contains_call(&case.body))
         }
         ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::BuiltinConstantP { .. }
         | ProgramStatement::Skip
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -1130,7 +1131,6 @@ fn certified_transitions_from_execution(
                 return Ok(CertifiedStatementTransition {
                     native_step: Arc::new(path.clone()),
                 call_result: path.call_result().cloned().map(|value| RetainedProgramValue::from(value.into_value())),
-                call_parameters: path.call_parameters().cloned(),
                     theorem: path.theorem().clone(),
                     context: executed_under.clone(),
                     outcome: outcome.clone(),
@@ -1155,7 +1155,6 @@ fn certified_transitions_from_execution(
             Ok(CertifiedStatementTransition {
                     native_step: Arc::new(path.clone()),
                 call_result: path.call_result().cloned().map(|value| RetainedProgramValue::from(value.into_value())),
-                call_parameters: path.call_parameters().cloned(),
                 theorem: path.theorem().clone(),
                 context: executed_under.clone(),
                 outcome: outcome.clone(),

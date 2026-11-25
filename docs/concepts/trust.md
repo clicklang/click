@@ -158,7 +158,7 @@ theorem certification consumes checks that theorem once. A proved library
 theorem is trusted to the extent that the check of its proof is; a kernel
 standard theorem is trusted to the extent that its builder is.
 
-The library also declares 148 `axiom`s, which are trusted, not proved.
+The library also declares 152 `axiom`s, which are trusted, not proved.
 Seven are the laws of the primitive type `Vec<T>` in
 `library/rust/vec.click`, which relate its bodyless operations `vec::len`,
 `vec::get`, `vec::push` and `vec::set`
@@ -263,6 +263,12 @@ The finiteness laws infer a finite value between two finite endpoints,
 which supplies the guard on multiplication by zero. The square laws give
 a zero lower bound and use the larger rounded endpoint square above.
 
+The finite-operand order axioms in `library/float_order.click` cover
+rounded addition and subtraction in both operand positions. Subtraction
+preserves order in the minuend and reverses it in the subtrahend. The
+input comparison excludes NaNs, and finiteness of the fixed operand
+prevents indeterminate operations on infinities.
+
 The floating reciprocal laws in `library/float_order.click` use a positive
 finite numerator and a positive bound on the divisor. An infinite positive
 divisor gives positive zero. The signed variants use a finite numerator
@@ -304,9 +310,9 @@ proved. Each family is an assumption in the same sense:
 | Hosted standard output | `stdout`, `stdout_non_null` | The const stream handle and its non-null guarantee | `library/c/stdio.interface.click` |
 | Formatted stream output | `printf` | The `fprintf` transition on the hosted `stdout` stream | `library/c/printf.interface.click` |
 | Formatted stream output | `fprintf` | The same transition on the stream identified by the `FILE *` argument, for a format of ordinary characters and `%%`, stated with `click::c::stdio`'s format functions | `library/c/fprintf.interface.click` |
-| C++ standard library | `C++ std` | The catalog contract of each `std::span`, `std::array`, `std::as_writable_bytes` and selected `std::vector` function an import calls, plus the C++ `memcpy` interface, and the explicitly pinned opaque exception constructor in the `ios_failure` profile | `library/cpp/span.interface.click` (`std::span<T>` and static-extent `std::span<T, N>`), `library/cpp/span_state.click` (logical descriptor state), `library/cpp/span_state_contracts.interface.click` (logical copy construction and `empty()` for dynamic `std::span<int>`), `library/cpp/array.interface.click` (`std::array<T, N>`, its `const` and mutable overloads), and `library/cpp/as_writable_bytes.interface.click` (`std::as_writable_bytes<T, N>`), `library/cpp/vector.interface.click` and `library/cpp/vector_state.click` (logical descriptor, read-only queries, and const subscript of an existing byte vector), `library/cpp/memcpy.interface.click` (byte copy through native `void*` parameters), and Click templates written out at each called element type and extent; `src/languages/cpp/standard_library.rs` keeps the name table and the opaque exception factory contract |
+| C++ standard library | `C++ std` | The catalog contract of each `std::span`, `std::array`, `std::as_writable_bytes` and selected `std::vector` function an import calls, plus the C++ `memcpy` interface, and the explicitly pinned opaque exception constructor in the `ios_failure` profile | `library/cpp/span.interface.click` (`std::span<T>` and static-extent `std::span<T, N>`), `library/cpp/span_state.click` (logical descriptor state), `library/cpp/span_state_contracts.interface.click` (logical copy construction and `empty()` for dynamic `std::span<int>`), `library/cpp/array.interface.click` (`std::array<T, N>`, its `const` and mutable overloads), and `library/cpp/as_writable_bytes.interface.click` (`std::as_writable_bytes<T, N>`), `library/cpp/vector.interface.click` and `library/cpp/vector_state.click` (logical descriptor, read-only queries, and const subscript of an existing byte vector), `library/cpp/memcpy.interface.click` (byte copy through native `void*` parameters), and Click templates written out at each called element type and extent; `src/languages/cpp/standard_library.rs` keeps the standard-library name table |
 | Rust core library | `Rust core` | The contract of each core method an import calls: integer methods (`u32::min`), `Vec`, slice, `str`, and `Option`/`Result` unwrapping ([core library methods](../reference/rust.md#core-library-methods)), with the 7 `axiom`s above | `library/rust/core.interface.click` (`Vec`, `slice::swap<T>`, `Option`/`Result` unwrapping contracts, generic contracts written out at each called type, with only a name table in `src/languages/rust/standard_library.rs`) and `library/rust/integers.interface.click` (one contract per integer method and type, stating its result with the specification function of the same path in `library/rust/<type>.click`; only the called methods' lines are appended), and `library/rust/str.interface.click` (one contract per `str` method, `str::len`, stated over the string slice's byte length; only the called methods' lines are appended) |
-| Verifier primitive | `primitive` | `__click_constant_p_unknown`, the value of `__builtin_constant_p`, is 0 or 1 ([verifier primitives](../reference/language/index.md#verifier-primitives)): it stands for a compiler decision, not a library function | `library/c/builtins.interface.click` |
+| Verifier primitive | `primitive` | The compiler decides the value of [`__builtin_constant_p`](../reference/language/index.md#__builtin_constant_p), which is 0 or 1 | The C frontend and the kernel |
 | Thread runtime | `runtime` | The selected `modeled-pthread` specification: create/join, shared mutex calls and one-shot atomic publication obey it | `src/languages/c/thread_runtime.rs` |
 
 The hosted C target supplies a stable, nonnull standard output handle when
@@ -321,9 +327,9 @@ memory effects. Its message, representation and `what()` are unavailable to
 proofs. The runtime owns the exception storage and its trusted standard-library
 destruction. Allocation failure terminates, so `std::bad_alloc` does not
 propagate; running without that behavior is outside this profile. The
-constructor and its default argument are an explicit library assumption, not
-a verified implementation. Internally the model is the reserved external
-`__click_cpp_decl_ios_failure`, reported as `C++ std` when called.
+constructor and its default argument are an explicit library assumption.
+The model produces the opaque payload at the throw. `click verify` reports
+`std::ios_base::failure::failure` under `C++ std` for functions that rely on it.
 
 A Rust core contract states the method's result with the library function
 of the same path in `library/rust/`, `click::rust::u32::min`, and so trusts

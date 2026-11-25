@@ -374,7 +374,6 @@ pub(super) fn execute_program_call_paths(
     )?
     .into_iter()
     .map(|path| StatementExecutionPath {
-        call_parameters: path.call_parameters.clone(),
         loop_invariant_correspondence: Default::default(),
         call_result: match &path.outcome {
             FunctionOutcome::Return { value, .. } if value.program_type() != ProgramType::Void => {
@@ -877,7 +876,6 @@ fn execute_modeled_pthread_mutex_paths(
             }
         };
         paths.push(StatementExecutionPath {
-            call_parameters: None,
             loop_invariant_correspondence: Default::default(),
             call_result: matches!(outcome, StatementOutcome::Normal(_))
                 .then(|| ProgramValue::Int32(OldMachineTerm::constant(0)).into()),
@@ -1284,7 +1282,6 @@ fn indirect_call_statement_paths(paths: Vec<FunctionPath>) -> Vec<StatementExecu
     paths
         .into_iter()
         .map(|path| StatementExecutionPath {
-            call_parameters: path.call_parameters.clone(),
             loop_invariant_correspondence: Default::default(),
             call_result: match &path.outcome {
                 FunctionOutcome::Return { value, .. }
@@ -1486,7 +1483,6 @@ fn execute_program_indirect_call_paths(
                 call_path.facts = merged_facts;
                 call_path.obligations = merged_obligations;
                 paths.push(FunctionPath {
-                    call_parameters: None,
                     outcome: call_path.outcome,
                     facts: call_path.facts,
                     obligations: call_path.obligations,
@@ -2582,7 +2578,6 @@ fn join_loop_exits(
         Default::default()
     };
     Some(StatementExecutionPath {
-        call_parameters: None,
         loop_invariant_correspondence,
         call_result: None,
         outcome: StatementOutcome::Normal(Box::new(exit_state)),
@@ -4559,7 +4554,6 @@ fn execute_program_loop_exit_paths(
     // `return` reach contract certification at all.
     for exit in return_exits {
         paths.push(StatementExecutionPath {
-            call_parameters: None,
             loop_invariant_correspondence: Default::default(),
             call_result: None,
             outcome: StatementOutcome::Return {
@@ -5710,7 +5704,6 @@ pub(super) fn collect_loop_preservation_summary(
                                 &final_path_obligations,
                             );
                             final_exit_paths.push(StatementExecutionPath {
-                                call_parameters: None,
                                 loop_invariant_correspondence: Default::default(),
                                 call_result: None,
                                 outcome: StatementOutcome::Normal(Box::new(
@@ -5788,7 +5781,6 @@ pub(super) fn collect_loop_preservation_summary(
                                 &exit_obligations,
                             );
                             final_exit_paths.push(StatementExecutionPath {
-                                call_parameters: None,
                                 loop_invariant_correspondence: Default::default(),
                                 call_result: None,
                                 outcome: StatementOutcome::Return {
@@ -5823,7 +5815,6 @@ pub(super) fn collect_loop_preservation_summary(
                                 &exit_obligations,
                             );
                             final_exit_paths.push(StatementExecutionPath {
-                                call_parameters: None,
                                 loop_invariant_correspondence: Default::default(),
                                 call_result: None,
                                 outcome: StatementOutcome::Jump {
@@ -9131,6 +9122,7 @@ pub(super) fn statement_may_write_memory(
 ) -> bool {
     match statement {
         ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::BuiltinConstantP { .. }
         | ProgramStatement::Skip
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -9222,6 +9214,7 @@ pub(super) fn collect_loop_modified_locals(
             names.extend(retired.iter().cloned())
         }
         ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::BuiltinConstantP { .. }
         | ProgramStatement::Skip
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -9470,6 +9463,7 @@ fn for_each_statement_expression<'a>(
     match statement {
         ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::BuiltinConstantP { .. }
         | ProgramStatement::Skip
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -9591,6 +9585,7 @@ pub(crate) fn collect_address_taken_locals(
     match statement {
         ProgramStatement::EndAutomaticLifetimes { .. } => {}
         ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::BuiltinConstantP { .. }
         | ProgramStatement::Skip
         | ProgramStatement::Break
         | ProgramStatement::Continue

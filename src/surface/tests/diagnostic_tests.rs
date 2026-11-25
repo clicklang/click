@@ -3863,18 +3863,16 @@ fn known_transport_trace_retains_its_written_source_occurrence() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_20")]
 fn a_trace_marks_searched_steps_and_their_chosen_arguments() {
-    let source = format!(
-        r#"verifying "f.c";
-        void f(int32 *p) {{ owns p[0]; requires p[0] == 7; ensures true; }} by {{
+    let source = r#"verifying "f.c";
+        void f(int32 *p) { owns p[0]; requires p[0] == 7; ensures true; } by {
             step(); mark saved;
             transport(at(saved, p[0] == 7), p[0] == 7);
             step_until(function.exit); close();
-        }}
-    "#
-    );
+        }
+    "#;
     with_proof_trace("f", || {
         verify_c_sources(
-            &source,
+            source,
             &[("f.c", "void f(int32 *p) { int32 y = 0; return; }")],
         )
         .expect("identity transport should verify");

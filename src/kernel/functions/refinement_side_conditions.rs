@@ -1148,6 +1148,7 @@ pub(super) fn statement_writes_aggregate_parameter(
             }
         }
         ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::BuiltinConstantP { .. }
         | ProgramStatement::Skip
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break

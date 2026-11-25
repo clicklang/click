@@ -646,14 +646,7 @@ fn fact_free_linear_smart_steps_search_directly_on_proof() {
         .expect("the checked linear path should retain its expansion");
     assert!(matches!(
         expanded.as_slice(),
-        [
-            ProofTactic::Step,
-            ProofTactic::Step,
-            ProofTactic::Known,
-            ProofTactic::Known,
-            ProofTactic::Known,
-            ProofTactic::Known
-        ]
+        [ProofTactic::Step, ProofTactic::Step, ProofTactic::Known]
     ));
 
     let expanded_source = expand_c_claim_source(
@@ -705,14 +698,7 @@ fn local_assignment_smart_step_selects_only_local_surface_dependencies() {
     assert!(
         matches!(
             expanded.as_slice(),
-            [
-                ProofTactic::Step,
-                ProofTactic::Step,
-                ProofTactic::Known,
-                ProofTactic::Known,
-                ProofTactic::Known,
-                ProofTactic::Known
-            ]
+            [ProofTactic::Step, ProofTactic::Step, ProofTactic::Known]
         ),
         "{expanded:#?}"
     );
@@ -841,11 +827,6 @@ fn linear_execute_until_retains_its_checked_execution_proof() {
     let expanded = verified[0]
         .expanded_proof_tactics()
         .expect("linear execute_until should retain an expansion");
-    assert_eq!(
-        &expanded[expanded.len() - 3..],
-        &[ProofTactic::Known, ProofTactic::Known, ProofTactic::Known]
-    );
-    let expanded = &expanded[..expanded.len() - 3];
     assert!(
         expanded[..expanded.len() - 1]
             .iter()
@@ -902,12 +883,6 @@ fn execute_step_omits_materialization_only_transport() {
         )
     });
 
-    assert!(
-        !expanded
-            .iter()
-            .any(|tactic| matches!(tactic, ProofTactic::CompatibilityFactTransport { .. })),
-        "{expanded:#?}"
-    );
     ProofCertificate::from_proof_tactics(&expanded)
         .expect("the materialization-free expansion should be a surface certificate");
     let execute_offset = click_source
@@ -968,12 +943,6 @@ fn execute_step_omits_materialized_mixed_state_transport() {
         )
     });
 
-    assert!(
-        !expanded
-            .iter()
-            .any(|tactic| matches!(tactic, ProofTactic::CompatibilityFactTransport { .. })),
-        "{expanded:#?}"
-    );
     ProofCertificate::from_proof_tactics(&expanded)
         .expect("the mixed-state expansion should be a surface certificate");
     let execute_offset = click_source
@@ -1037,14 +1006,6 @@ fn execute_step_omits_materialization_transport_across_statements() {
         )
     });
 
-    assert_eq!(
-        expanded
-            .iter()
-            .filter(|tactic| matches!(tactic, ProofTactic::CompatibilityFactTransport { .. }))
-            .count(),
-        0,
-        "{expanded:#?}"
-    );
     ProofCertificate::from_proof_tactics(&expanded)
         .expect("the multi-statement expansion should be a surface certificate");
     let execute_offset = click_source

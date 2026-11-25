@@ -554,6 +554,9 @@ impl<'a> Proof<'a> {
                 Ok(FrontierResult::Local(target))
             }
             ProgramStatement::CallResult { call, .. } => Ok(FrontierResult::Retained(call)),
+            ProgramStatement::BuiltinConstantP { step } if allow_non_call => {
+                Ok(FrontierResult::Retained(step))
+            }
             ProgramStatement::StepValue { aggregate_layout: None, steps, .. }
                 if allow_non_call && !steps.is_empty() =>
             {
@@ -1335,52 +1338,6 @@ impl<'a> Proof<'a> {
         self.state
             .replace_frontier_presentation(presentation)
             .map_err(|error| self.execution_update_error("`mark`", error))
-    }
-
-    /// This frontier with the by-value parameters of the call `candidate`
-    /// prepared, as that preparation bound them: the call's parameter point
-    /// (`R.parameter(name)`), copied from the candidate's recorded states.
-    /// The call's requirements read those parameters, so a step proves them
-    /// here, at its pre-state, with that point named. Only the presentation
-    /// changes; the facts and the proof node are this frontier's.
-    pub(in crate::surface::proof) fn with_prepared_call_parameters(
-        &self,
-        candidate: &Self,
-    ) -> Self {
-        let (Some(execution), Some(prepared)) = (self.execution(), candidate.execution()) else {
-            return self.clone();
-        };
-        let Some(point) = &prepared.presentation.surface_record.last_call_parameters else {
-            return self.clone();
-        };
-        let Some(bound) = prepared.presentation.recorded_states.get(point) else {
-            return self.clone();
-        };
-        if execution.presentation.recorded_states.get(point) == Some(bound)
-            && execution
-                .presentation
-                .surface_record
-                .last_call_parameters
-                .as_ref()
-                == Some(point)
-        {
-            return self.clone();
-        }
-        let point = point.clone();
-        let mut presentation = execution.presentation.clone();
-        presentation
-            .recorded_states
-            .insert(point.clone(), bound.clone());
-        presentation.surface_record.last_call_parameters = Some(point);
-        let Ok(state) = self.state.replace_frontier_presentation(presentation) else {
-            return self.clone();
-        };
-        Self {
-            site: self.site.clone(),
-            context: self.context.clone(),
-            state,
-            node: self.node.clone(),
-        }
     }
 
     /// Publish a prepared operation after its caller has proved

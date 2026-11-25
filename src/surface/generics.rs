@@ -1266,6 +1266,12 @@ fn instantiate_proof_tactic(
                 })
                 .transpose()?,
         ),
+        ProofTactic::CloseBounds(premises) => ProofTactic::CloseBounds(
+            premises
+                .iter()
+                .map(proposition)
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
         ProofTactic::NormalizeUsing(premises) => ProofTactic::NormalizeUsing(
             premises
                 .iter()
@@ -1277,18 +1283,6 @@ fn instantiate_proof_tactic(
         ProofTactic::Transport { source, target } => ProofTactic::Transport {
             source: proposition(source)?,
             target: proposition(target)?,
-        },
-        ProofTactic::CompatibilityFactTransport {
-            source,
-            target,
-            premises,
-        } => ProofTactic::CompatibilityFactTransport {
-            source: proposition(source)?,
-            target: proposition(target)?,
-            premises: premises
-                .iter()
-                .map(proposition)
-                .collect::<Result<Vec<_>, _>>()?,
         },
         ProofTactic::Instantiate {
             quantified,
