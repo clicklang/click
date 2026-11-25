@@ -73,7 +73,10 @@ fn omitted_finalization_steps_run_in_checked_only_replay() {
         verify_c_sources(&source, C).map_err(|error| error.report())
     })
     .unwrap_err();
-    assert!(error.contains("checked-only verification forbids implicit tail"), "{error}");
+    assert!(
+        error.contains("checked-only verification forbids implicit tail"),
+        "{error}"
+    );
 }
 
 #[test]
