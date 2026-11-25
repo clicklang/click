@@ -70,6 +70,7 @@ impl ProgramStatement {
     fn clone_shell(&self) -> Self {
         match self {
             Self::Skip => Self::Skip,
+            Self::BuiltinConstantP { step } => Self::BuiltinConstantP { step: *step },
             Self::ThrowOpaque(payload) => Self::ThrowOpaque(*payload),
             Self::Break => Self::Break,
             Self::Continue => Self::Continue,

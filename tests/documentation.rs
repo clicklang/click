@@ -869,10 +869,7 @@ fn markdown_links(source: &str) -> Vec<String> {
 /// The `library/` modules that declare verifier primitives. Their
 /// declarations are language, documented in the language reference under
 /// `primitive.` inventory IDs rather than in the library reference.
-const PRIMITIVE_MODULES: &[&str] = &[
-    "library/primitives.click",
-    "library/c/builtins.interface.click",
-];
+const PRIMITIVE_MODULES: &[&str] = &["library/primitives.click"];
 
 /// The Click library files an importer appends to a sidecar, with the
 /// inventory kind of their contracts. They are not modules, so no import or

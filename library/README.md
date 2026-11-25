@@ -14,7 +14,6 @@ imports with `import click::...;`, and the modules those import:
 | `result.click` | implicit | `Result<T, E>`, the value of a Rust `Result` |
 | `permutation.click` | `import click::permutation;` | `permutation::count`, generic over the element type, and `permutation::permutation` over `int32[]` |
 | `bytes.click` | `import click::bytes;`, or with `c/string` | `bytes::count`, `bytes::equal` and the other byte-range predicates over `uint8[]` |
-| `c/builtins.click` | implicit | Verifier primitive `__click_constant_p_unknown`, the value of `__builtin_constant_p` |
 | `c/string.click` | `import click::c::string;`, or when the C declares or calls a modeled string function | `memcpy`, `memcmp`, `memset` and `strlen` contracts, C-string predicates and theorems, and the `cstr_at` resource |
 | `c/stdio.click` | `import click::c::stdio;`, or with the projected `<stdio.h>` | `stream`, `write_requests` and decimal formatting functions and theorems |
 | `c/stream_output.click.in` | for checked literal `printf` and `fprintf` calls | One C stream-write contract, instantiated for the requested bytes |
@@ -34,7 +33,7 @@ imports with `import click::...;`, and the modules those import:
 
 Each declaration is in one layer, which sets its trust:
 
-- **Verifier primitives** (`primitives.click`, `c/builtins.click`) are part of
+- **Verifier primitives** (`primitives.click`) are part of
   the language. The kernel or the C front end gives them their meaning; they are
   written here only so the parser declares them. The language reference
   documents them (`docs/reference/language/index.md#verifier-primitives`), with

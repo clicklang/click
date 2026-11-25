@@ -10,6 +10,26 @@ fn mdtest_markdown(name: &str) -> String {
         .unwrap_or_else(|error| panic!("failed to read `{}`: {error}", path.display()))
 }
 
+#[test]
+fn c_builtin_constant_p_expands_using_its_source_region() {
+    let name = "c_builtin_constant_p.md";
+    let fixture = crate::cli::parse_mdtest(std::path::Path::new(name), &mdtest_markdown(name))
+        .expect("read the builtin's proof fixture");
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c_claim_source_by_label(source, &sources, "flag.contract").unwrap();
+    assert!(!expanded.contains("step_until("), "{expanded}");
+    assert!(
+        expanded.contains("statement(0).region(0).result"),
+        "{expanded}"
+    );
+    verify_c_sources(&expanded, &sources).unwrap();
+}
+
 #[cfg(feature = "fast-gate")]
 crate::surface::tests::test_batches! {
     file: "tests.rs",

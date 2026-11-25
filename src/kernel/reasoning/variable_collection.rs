@@ -1140,6 +1140,7 @@ pub(in crate::kernel) fn collect_execution_statement_bitvector_variables(
 ) {
     match statement {
         ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::BuiltinConstantP { .. }
         | ProgramStatement::Skip
         | ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::Break

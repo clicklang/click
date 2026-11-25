@@ -5492,14 +5492,11 @@ fn pinned_bitcoin_read32_serialization_expanded_source_checks_strict_cold() {
     let (root, import, _) = pinned_bitcoin_read32_fixture("bitcoin-read32-cold");
     fs::write(root.join("byte.click"), BITCOIN_READ32_EXPANDED).unwrap();
     let project = read_click_project(&root.join("byte.click"), BITCOIN_READ32_EXPANDED).unwrap();
-    assert!(
-        project_smart_tactic_source_sites(&project, &ProgramInputs::program(&import))
-            .unwrap()
-            .is_empty(),
-        "every source body must be fully expanded"
-    );
-    click::surface::without_implicit_solve(|| verify_program_prepared_project(&project, &import))
-        .unwrap_or_else(|error| panic!("{}", error.report()));
+    // Generated `close()` calls can consume checked facts without searching.
+    click::surface::without_proof_search(|| {
+        verify_program_prepared_project(&project, &import).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}"));
     fs::remove_dir_all(root).unwrap();
 }
 

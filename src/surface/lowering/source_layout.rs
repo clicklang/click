@@ -849,7 +849,9 @@ impl SourceExecutionLayout {
                             .aggregate_results
                             .insert(statement_index, aggregate_result_fields(&result.layout));
                     }
-                    if let ProgramStatement::CallResult { call, .. } = statement {
+                    if let ProgramStatement::CallResult { call, .. }
+                    | ProgramStatement::BuiltinConstantP { step: call } = statement
+                    {
                         layout.call_numbers.insert(statement_index, *call);
                         layout.step_regions.insert(*call, statement_index);
                     }
@@ -1185,7 +1187,9 @@ impl SourceExecutionLayout {
                     .aggregate_results
                     .insert(owner, aggregate_result_fields(&value_layout));
             }
-            if let syntax::CStatement::CallResult { call, .. } = statement {
+            if let syntax::CStatement::CallResult { call, .. }
+            | syntax::CStatement::BuiltinConstantP { step: call, .. } = statement
+            {
                 layout.call_numbers.insert(index, *call);
                 layout.step_regions.insert(*call, index);
             }
