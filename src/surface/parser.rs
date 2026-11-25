@@ -276,6 +276,10 @@ pub(in crate::surface) struct ProgramLayouts {
     pub(in crate::surface) program_object_names: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
     /// Library-provided C values with stable identities in the selected profile.
     pub(in crate::surface) hosted_stdout: BTreeMap<String, ProgramValue>,
+    /// Native declarations that can supply a const library value, with a
+    /// stable symbol index for this set of translation units.
+    pub(in crate::surface) c_library_globals:
+        std::sync::Arc<BTreeMap<String, (syntax::CGlobal, u64)>>,
     /// The other members of each function's recursive C component, for the
     /// functions in a component of two or more. An expression `decreases`
     /// measure ranks calls to these functions too.
@@ -644,6 +648,7 @@ pub(super) fn parse_file_items_for_module(
     imported_proposition_functions: &BTreeSet<String>,
     imported_pointer_functions: &BTreeSet<String>,
     imported_integer_parameters: &BTreeMap<String, Vec<usize>>,
+    imported_c_library_values: BTreeMap<String, CLibraryValue>,
     layouts: ProgramLayouts,
     catalog: Option<&str>,
     imported_models: &ObjectModels,
@@ -656,6 +661,7 @@ pub(super) fn parse_file_items_for_module(
         imported_models,
     )?;
     parser.symbols.import_declarations(imported_declarations)?;
+    parser.c_library_values = imported_c_library_values;
     let imported_tactics = parser
         .symbols
         .imported_names(names::DeclarationKind::Tactic)
@@ -1040,6 +1046,9 @@ struct Parser {
     program_object_names_by_function: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
     hosted_stdout_by_function: BTreeMap<String, ProgramValue>,
     hosted_stdout: Option<ProgramValue>,
+    c_library_globals: std::sync::Arc<BTreeMap<String, (syntax::CGlobal, u64)>>,
+    c_library_values: BTreeMap<String, CLibraryValue>,
+    in_pure_theorem: bool,
     recursion_peers_by_function: BTreeMap<String, Vec<String>>,
     /// Click library modules the program's C declarations bring.
     implied_library_modules: BTreeSet<&'static str>,
@@ -1882,6 +1891,7 @@ impl Parser {
         parser.string_literal_owners = layouts.string_literal_owners;
         parser.program_object_names_by_function = layouts.program_object_names;
         parser.hosted_stdout_by_function = layouts.hosted_stdout;
+        parser.c_library_globals = layouts.c_library_globals;
         parser.rust_enum_types = layouts.rust_enum_types;
         parser.recursion_peers_by_function = layouts.recursion_peers;
         parser
@@ -2271,6 +2281,9 @@ impl Parser {
             program_object_names_by_function: BTreeMap::new(),
             hosted_stdout_by_function: BTreeMap::new(),
             hosted_stdout: None,
+            c_library_globals: Default::default(),
+            c_library_values: BTreeMap::new(),
+            in_pure_theorem: false,
             recursion_peers_by_function: BTreeMap::new(),
             implied_library_modules: path_library_modules,
             library_module,
@@ -2630,14 +2643,26 @@ impl Parser {
         {
             return Err(self.error("a C library value must use a supported scalar or pointer type"));
         }
-        Ok((
-            name,
-            CLibraryValue {
-                interface_type: ty.interface_type,
-                struct_name: ty.struct_name,
-                pointee_constant: ty.pointee_constant,
-            },
-        ))
+        let mut declaration = CLibraryValue {
+            interface_type: ty.interface_type,
+            struct_name: ty.struct_name,
+            pointee_constant: ty.pointee_constant,
+            linked_value: None,
+        };
+        if let Some((global, ordinal)) = self.c_library_globals.get(&name)
+            && declaration.matches_global(global)
+        {
+            declaration.linked_value = Some(global.hosted_stdout().unwrap_or_else(|| {
+                crate::kernel::symbolic_call_result(
+                    declaration.interface_type.to_kernel_type(),
+                    crate::kernel::Variable::produced(
+                        crate::kernel::Producer::CLibraryValue,
+                        *ordinal,
+                    ),
+                )
+            }));
+        }
+        Ok((name, declaration))
     }
 
     fn parse_file_items(
@@ -2807,9 +2832,14 @@ impl Parser {
                 self.parse_rust_trait_block(&mut function_blocks)?;
             } else if self.c_library_value_follows() {
                 let (name, declaration) = self.parse_c_library_value()?;
-                if c_library_values.insert(name.clone(), declaration).is_some() {
+                if self
+                    .c_library_values
+                    .insert(name.clone(), declaration.clone())
+                    .is_some()
+                {
                     return Err(self.error(format!("duplicate C library value `{name}`")));
                 }
+                c_library_values.insert(name, declaration);
             } else {
                 function_blocks.push(self.parse_function_block(self.in_interface_file())?);
             }
@@ -4938,6 +4968,8 @@ impl Parser {
                 "axiom `{name}` relates pure values; it cannot state an execution"
             )));
         }
+        let previous_pure_theorem =
+            std::mem::replace(&mut self.in_pure_theorem, executes.is_none());
         let mut target_instances = Vec::new();
         let body_open = self.here();
         let first_implicit_proof = self.implicit_proof_spans.len();
@@ -5172,6 +5204,7 @@ impl Parser {
                 }
             }
         }
+        self.in_pure_theorem = previous_pure_theorem;
         let body_close = self.here();
         self.expect(Token::RBrace)?;
         self.names.struct_params = previous_struct_params;
@@ -6852,6 +6885,21 @@ impl Parser {
         self.refuse_unknown_loop_value(&name)?;
         if let Some(expression) = self.take_rust_vec_method(&name)? {
             return Ok(expression);
+        }
+        if self.in_pure_theorem
+            && let Some(declaration) = self.c_library_values.get(&name)
+        {
+            let Some(value) = &declaration.linked_value else {
+                return Err(self
+                    .error(format!(
+                        "C library value `{name}` requires a matching linked const declaration"
+                    ))
+                    .with_kind(ClickErrorKind::Type));
+            };
+            return Ok(SurfaceTerm::QualifiedC {
+                name,
+                lowered: ProgramExpression::Value(value.clone()),
+            });
         }
         if name == "stdout"
             && let Some(value) = &self.hosted_stdout

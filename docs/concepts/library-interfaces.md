@@ -31,6 +31,11 @@ the handle, and access to the pointee still requires the ordinary memory
 authority. A pointer's type alone gives no non-null guarantee. The linked
 object is reported as a C library assumption.
 
+A standalone theorem can refer to a const library object declared in its
+module or an imported interface. The linked C declaration supplies the same
+symbolic value to the theorem and to C execution. The theorem can relate or
+compare that value without taking a snapshot of the program's memory.
+
 ## Principles
 
 1. **Click defines the interface; the implementation is never used.** A

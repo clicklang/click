@@ -102,13 +102,7 @@ pub(super) fn link_c_units(
                         "C library value `{name}` is also defined by a verifying source"
                     )));
                 }
-                if global.interface_type() != value.interface_type
-                    || global.struct_name() != value.struct_name.as_deref()
-                    || global.pointee_is_constant() != value.pointee_constant
-                    || !global.is_constant()
-                    || global.is_volatile()
-                    || global.pointee_is_volatile()
-                {
+                if !value.matches_global(global) {
                     return Err(link_error(format!(
                         "C library value `{name}` does not match the const declaration in `{source_path}`"
                     )));
@@ -192,18 +186,15 @@ pub(super) fn link_c_units(
             }
         }
     }
-    for (ordinal, (name, declaration)) in library_values.iter().enumerate() {
+    for (name, declaration) in library_values {
         if let Some(global) = globals.get(name)
             && !global.is_hosted_stdout()
         {
-            let identity = crate::kernel::Variable::produced(
-                crate::kernel::Producer::CLibraryValue,
-                ordinal as u64,
-            );
-            let value = crate::kernel::symbolic_call_result(
-                declaration.interface_type.to_kernel_type(),
-                identity,
-            );
+            let value = declaration.linked_value.clone().ok_or_else(|| {
+                link_error(format!(
+                    "C library value `{name}` requires a matching linked const declaration"
+                ))
+            })?;
             globals.insert(name.clone(), global.clone().with_library_value(value));
         }
     }
@@ -866,6 +857,19 @@ pub(super) fn c_layouts(
     let mut frontend_contracts = BTreeMap::<String, String>::new();
     for source_path in verifying_paths {
         let unit = parse_c_source_unit(&source_path, c_sources, target)?;
+        for global in unit.globals.values().filter(|global| {
+            global.is_constant()
+                && !global.is_file_static()
+                && !global.is_defined()
+                && !global.is_volatile()
+                && !global.pointee_is_volatile()
+        }) {
+            let values = std::sync::Arc::make_mut(&mut tables.c_library_globals);
+            let ordinal = values.len() as u64;
+            values
+                .entry(global.name().to_owned())
+                .or_insert_with(|| (global.clone(), ordinal));
+        }
         if unit
             .globals
             .get("stdout")

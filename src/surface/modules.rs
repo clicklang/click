@@ -159,6 +159,12 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
             .filter_map(|imported| locals.get(imported))
             .flat_map(module_declarations)
             .collect::<Vec<_>>();
+        let imported_c_library_values = imported_ids
+            .iter()
+            .filter_map(|imported| locals.get(imported))
+            .flat_map(|file| file.c_library_values.iter())
+            .map(|(name, declaration)| (name.clone(), declaration.clone()))
+            .collect();
         let catalog = library_contracts
             .as_deref()
             .filter(|_| identity == project.entry());
@@ -178,6 +184,7 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
             &imported_proposition_functions,
             &imported_pointer_functions,
             &imported_integer_parameters,
+            imported_c_library_values,
             layouts.clone(),
             catalog,
             &imported_models,
@@ -1391,6 +1398,77 @@ FILE* via_library() { ensures result == stdout; }
         );
         let error = verify("", native, sidecar).expect_err("missing library declaration");
         assert!(error.message().contains("but has no definition"), "{error}");
+    }
+
+    #[test]
+    fn standalone_theorems_share_linked_library_values_with_c() {
+        let interface = r#"FILE *const default_stream;
+theorem default_nonnull() {
+    ensures default_stream != 0;
+}
+"#;
+        let caller = r#"import "values.interface.click";
+verifying "caller.c";
+
+theorem linked_stream_is_nonnull() {
+    ensures default_stream != 0 by {
+        apply(default_nonnull());
+        close();
+    }
+}
+
+theorem a_parameter_can_shadow_a_library_value(default_stream: int32) {
+    requires default_stream == 0;
+    ensures default_stream == 0 by { close(); }
+}
+
+FILE* output() {
+    ensures result != 0;
+} by {
+    step_until(function.exit);
+    apply(default_nonnull());
+    close();
+}
+"#;
+        let native = r#"typedef struct stream { int count; } FILE;
+extern FILE *const default_stream;
+FILE *output(void) { return default_stream; }
+"#;
+        let project = ClickProject::new(
+            "caller.click",
+            [
+                ClickModuleSource::new("values.interface.click", interface, []),
+                ClickModuleSource::new(
+                    "caller.click",
+                    caller,
+                    ["values.interface.click".to_string()],
+                ),
+            ],
+        );
+        let sources = ProgramInputs::Bundle(vec![("caller.c", native)]);
+        let (summary, verified) = verify_project_with_summary(&project, &sources).unwrap();
+        verified.unwrap_or_else(|error| panic!("{error}"));
+        assert!(
+            summary
+                .interface_theorem_assumptions
+                .contains("default_nonnull")
+        );
+        assert!(summary.assumptions["output"].iter().any(|assumption| {
+            assumption.name == "default_stream" && assumption.family == ModelFamily::CLibrary
+        }));
+
+        let mutable = native.replace("FILE *const default_stream", "FILE *default_stream");
+        let error = verify_project_with_summary(
+            &project,
+            &ProgramInputs::Bundle(vec![("caller.c", &mutable)]),
+        )
+        .expect_err("an interface theorem cannot assume a mutable object is stable");
+        assert!(
+            error
+                .message()
+                .contains("requires a matching linked const declaration"),
+            "{error}"
+        );
     }
 
     #[test]

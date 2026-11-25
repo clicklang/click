@@ -861,6 +861,18 @@ struct CLibraryValue {
     interface_type: InterfaceType,
     struct_name: Option<String>,
     pointee_constant: bool,
+    linked_value: Option<ProgramValue>,
+}
+
+impl CLibraryValue {
+    fn matches_global(&self, global: &crate::languages::c::syntax::CGlobal) -> bool {
+        global.interface_type() == self.interface_type
+            && global.struct_name() == self.struct_name.as_deref()
+            && global.pointee_is_constant() == self.pointee_constant
+            && global.is_constant()
+            && !global.is_volatile()
+            && !global.pointee_is_volatile()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
