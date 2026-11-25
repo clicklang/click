@@ -45,12 +45,7 @@ theorem negative_quotient(x: float, y: float) {
     requires y >= float32_from_bits(0xc0000000);
     requires y <= float32_from_bits(0xbf800000);
     ensures x / y >= float32_from_bits(0xc0000000) by {
-        normalize() using {
-            y <= float32_from_bits(0xbf800000);
-            x >= float32_from_bits(0x3f800000);
-            y >= float32_from_bits(0xc0000000);
-            x <= float32_from_bits(0x40000000);
-        };
+        close();
     }
 }
 theorem product_lower32(x: float, y: float) {
