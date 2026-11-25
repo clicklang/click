@@ -4,7 +4,7 @@
 theorem invalid_right_shift(z: uint64, y: uint64) {
     requires (z >> 7) < y;
     ensures (if (z >> 7) < y { z >> 64 } else { z }) == z by {
-        normalize() using { (z >> 7) < y; };
+        close() using { (z >> 7) < y; };
     }
 }
 ```

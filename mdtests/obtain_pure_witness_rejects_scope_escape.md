@@ -12,7 +12,7 @@ theorem scoped_witness(x: int32) {
         }
         have k == x by close();
         witness(x);
-        normalize();
+        close();
     }
 }
 ```

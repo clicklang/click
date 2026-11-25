@@ -30,7 +30,7 @@ int pick(int a, int b, int c) {
 } by {
     have c == c by {
         rewrite(a, b);
-        normalize();
+        close();
     }
 }
 ```

@@ -29,7 +29,7 @@ void release(struct object* obj) {
     unfold(reference(obj));
     unfold(authority(reference(obj)));
     step_until(function.exit);
-    normalize();
+    close();
 }
 ```
 

@@ -21,7 +21,7 @@ int spin(int n) {
 } by {
     have n + 1 > 500 by {
         close();
-        normalize();
+        close();
     }
 }
 ```

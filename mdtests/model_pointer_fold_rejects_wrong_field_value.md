@@ -38,7 +38,7 @@ void recombine(struct node *p) {
  unfold(links(qid,rid));
  have qid->left == rid by close();
  let check = fold(fields(qid), { model: Triple::At(pid,qid,pid) });
- step_until(function.exit); normalize();
+ step_until(function.exit); close();
  }, }
 }
 ```

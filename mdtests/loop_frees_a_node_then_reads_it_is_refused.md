@@ -37,7 +37,7 @@ theorem links_len_is_nonnegative(m: Links) {
         match m {
             Links::Nil => {
                 unfold(links_len(Links::Nil));
-                normalize();
+                close();
             }
             Links::Cons(rest) => {
                 apply(ih(rest));
