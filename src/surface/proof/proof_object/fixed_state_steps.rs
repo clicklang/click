@@ -2497,9 +2497,9 @@ impl<'a> Proof<'a> {
             self.state
                 .apply_instantiate(quantified, argument)
                 .map_err(|error| match error {
-                    PropositionCloseError::NotProposition => self.step_error(
-                        "`instantiate` requires a proposition goal or execution frontier",
-                    ),
+                    PropositionCloseError::NotProposition => {
+                        self.step_error("`instantiate` requires an open proof branch")
+                    }
                     PropositionCloseError::InstantiateQuantifiedUnavailable => {
                         self.step_error(format!(
                             "`instantiate` quantified fact is not exactly available: {}",

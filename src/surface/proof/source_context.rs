@@ -97,6 +97,7 @@ impl SourceContext {
                     | ProofTactic::ApplyTheoremUsing { .. }
                     | ProofTactic::Choose(_)
                     | ProofTactic::LetSatisfy(_)
+                    | ProofTactic::Instantiate { .. }
                     | ProofTactic::Witness(_)
                     | ProofTactic::Intro
                     | ProofTactic::IntroAs(_)

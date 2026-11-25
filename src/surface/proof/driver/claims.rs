@@ -4678,6 +4678,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                                 | ProofTactic::UnfoldFunction(_)
                                                 | ProofTactic::Rewrite(_)
                                                 | ProofTactic::LetSatisfy(_)
+                                                | ProofTactic::Instantiate { .. }
                                         )
                                     || unfolds_outcome_goal(
                                         tactic,
@@ -4733,7 +4734,10 @@ pub(super) fn finish_ordered_proof<'a>(
                                     refreshed.driver().apply_step(step)?
                                 };
                                 let certificate = proof.certificate_since(&before)?;
-                                if matches!(tactic, ProofTactic::IntroBlock { .. }) {
+                                if matches!(tactic, ProofTactic::IntroBlock { .. })
+                                    || matches!(tactic, ProofTactic::Instantiate { .. })
+                                        && proof.is_complete()
+                                {
                                     let claim_index = opened.claim_index;
                                     record_claim_closure(
                                         &mut outcome_proof,
@@ -5703,7 +5707,67 @@ pub(super) fn finish_ordered_proof<'a>(
                                         .unwrap_or(usize::MAX);
                                     deferred_locals.record(&evolving, &applied, binding, end);
                                 }
-                                outcome_proof = Some(applied);
+                                if matches!(tactic, ProofTactic::Instantiate { .. })
+                                    && !applied.added_facts().is_empty()
+                                    && let Some(crate::kernel::proof::OutcomeGoal::Claim {
+                                        position,
+                                        ..
+                                    }) = applied.first_open_outcome_goal()?
+                                    && matches!(
+                                        claims[position].clause().ensure(),
+                                        Ensure::Proposition(_)
+                                    )
+                                {
+                                    // The instance is already available on the outcome. Only an
+                                    // exact match closes the current claim, using its checked goal.
+                                    let focused = crate::surface::without_implicit_solve(|| {
+                                        begin_outcome_claim_proof(
+                                            &applied,
+                                            function,
+                                            contract_pre_state,
+                                            arguments,
+                                            &outcome,
+                                            claims,
+                                            &rewrite_claim_equalities,
+                                            "instantiate",
+                                        )
+                                    });
+                                    match focused {
+                                        Ok((index, _, focused))
+                                            if focused.goal().is_some_and(|goal| {
+                                                applied.added_facts().contains(goal)
+                                            }) =>
+                                        {
+                                            let completed =
+                                                focused.driver().apply_step(ProofStep::Known)?;
+                                            outcome_proof = Some(applied.clone());
+                                            record_claim_closure(
+                                                &mut outcome_proof,
+                                                &mut closures,
+                                                claims,
+                                                &completed_execution,
+                                                path_index,
+                                                index,
+                                                ClaimClosure::by_continued_proposition(
+                                                    claims[index].key(),
+                                                    path_index,
+                                                    Vec::new(),
+                                                    completed.completed_proposition()?,
+                                                ),
+                                            )?;
+                                        }
+                                        Err(error)
+                                            if error.verification_stopped()
+                                                || error.kind() == ClickErrorKind::Internal =>
+                                        {
+                                            return Err(error);
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                                if outcome_proof.is_none() {
+                                    outcome_proof = Some(applied);
+                                }
                                 for tactic in surface_tactics {
                                     record_post_execution_surface_tactic(
                                         &mut path_surface_post_tactics,
