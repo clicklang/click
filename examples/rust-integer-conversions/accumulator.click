@@ -1,5 +1,14 @@
 verifying "accumulator.rs";
 
+theorem widen_u16_successor(value: u16) {
+    requires to_integer(value) <= 65534;
+    ensures to_integer(((value + 1u16) as u16) as u32) == to_integer(value) + 1 by {
+        have 0 <= to_integer(value) + 1;
+        have to_integer(value) + 1 <= 65535;
+        close() using { 0 <= to_integer(value) + 1; to_integer(value) + 1 <= 65535; };
+    }
+}
+
 fn update(state: &mut Accumulator, byte: u8) {
     requires state.a == 65520;
     requires state.b == 65520;
@@ -28,7 +37,10 @@ fn bump(value: &mut u16) {
         apply(click::integer::add_le(old(to_integer(*value)), 65534, 1, 1));
     }
     have to_integer(*value as u32) == old(to_integer(*value)) + 1 by {
-        normalize() using { 0 <= old(to_integer(*value)) + 1; old(to_integer(*value)) + 1 <= 65535; };
+        have *value == (old(*value) + 1u16) as u16;
+        apply(widen_u16_successor(old(*value)));
+        rewrite(*value, (old(*value) + 1u16) as u16);
+        close();
     }
     close();
 }
@@ -47,7 +59,10 @@ fn bump_a(state: &mut Accumulator) {
         apply(click::integer::add_le(old(to_integer(state.a)), 65534, 1, 1));
     }
     have to_integer(state.a as u32) == old(to_integer(state.a)) + 1 by {
-        normalize() using { 0 <= old(to_integer(state.a)) + 1; old(to_integer(state.a)) + 1 <= 65535; };
+        have state.a == (old(state.a) + 1u16) as u16;
+        apply(widen_u16_successor(old(state.a)));
+        rewrite(state.a, (old(state.a) + 1u16) as u16);
+        close();
     }
     close();
 }
