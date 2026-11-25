@@ -48,6 +48,5 @@ of them are fast and which search, and what each may cost.
 - [Mutex operations as resource contracts (proposal)](mutex-resource-contracts.md)
 - [User-defined tactics (design)](user-defined-tactics.md)
 
-The roadmap is to complete P1, verify rbtree, and launch publicly with rbtree
-as the key demo. It describes intended work, not accepted syntax or a stability
-promise. The technical reference remains authoritative for current behavior.
+The roadmap tracks active work, including verification of rbtree for the
+launch demonstration. The technical reference describes current behavior.

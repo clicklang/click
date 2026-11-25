@@ -73,8 +73,8 @@ not establish the whole semantic or scaling boundary.
 Concurrency is an independent test of the resource model. The modeled shared
 counter and one-shot release/acquire publication demonstrations are complete;
 Linux RCU, broader memory orders and real platform/runtime bindings remain
-separate requirements in [Concurrency](../roadmap/concurrency-and-atomics.md).
-The [compiler/ABI item](../roadmap/multiple-compilers.md) owns additional targets.
+separate semantic requirements. See the [concurrency model](../docs/internals/concurrency-contracts-and-diagnostics.md#remaining-gaps)
+and [C ABI documentation](../docs/internals/kernel.md#c-abi-and-memory-layout).
 
 ## History
 

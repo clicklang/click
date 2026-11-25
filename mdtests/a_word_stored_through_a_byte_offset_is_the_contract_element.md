@@ -35,7 +35,7 @@ void set(int32_t* q, int i, int32_t v) {
         close();
     }
     have q[i] == v by {
-        close() using {
+        normalize() using {
             at(statement(2).exit, exact(*((program::b + i * 4) as (int32 *))) == v);
             at(statement(2).exit, address(q + i) == address(((program::b + i * 4) as (int32 *))));
         };

@@ -1,13 +1,11 @@
 # KernelTerm / SurfaceTerm: finish the representation split
 
-Priority: P1.
-
 Soundness: incomplete. Native expression bridges can preserve proof rules that
 the common representation does not yet handle directly. Removing a bridge
 before its callers move can lose proofs or prevent checked expansion.
 
-P1 by maintainer direction (2026-11-24): recurring verifier bugs keep tracing
-back to the unfinished split.
+The maintainer made this launch work on 2026-11-24 because recurring verifier
+bugs trace back to the unfinished split.
 
 ## Goal
 
@@ -54,10 +52,9 @@ later merges retain fold, stored-value and machine-quantity readers.
 
 ## Validation for closure
 
-A rewritten algebraic equality can retain a match on a known constructor.
-Lowering its Surface spelling may select the arm and lose the written match.
 The `selected_both_sides` claim in [the bound-guards fixture][bound-guards]
-exhibits this round-trip gap.
+checks that a rewritten algebraic equality retains a known-constructor match
+with a total guard when raised and lowered.
 
 - Check exact term round trips, successful and refused proofs, checked expansion
   and replay, binder scope, historical read identities and branch isolation.

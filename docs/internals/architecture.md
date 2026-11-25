@@ -143,6 +143,11 @@ frontier, path state, and surface record it owns are the execution model, and
 the only cursor it carries is where a source tactic's expansion is being
 captured.
 
+For a tactic admitted in multiple contexts, its checked meaning and expansion
+should agree. The context supplies the frontier and admission rules. Expansion
+reads the checked steps, including each arm's steps and the facts common to
+the arms that rejoin.
+
 `ProofCertificate` is the current structured form for a surface-expressible
 explicit proof. In the intended architecture it is serialization: expansion
 extracts attributed operations from checked `Proof` lineage only when proof
@@ -204,7 +209,10 @@ through them as statements; the proof cursor and evidence checking enter it as
 an `ExceptionalEntry::Unwind` frame, distinct from a source `try`'s
 `ExceptionalEntry::Catch(binding)`. The language frontends decide which edges are
 legal; the kernel does not infer cleanup or borrow recovery from lexical scope
-alone.
+alone. Extending this model to more edge shapes must keep edge checking shared
+and legality language-specific. Rust conditional drops and borrow expiration
+are distinct effects. A return value is captured before cleanup, and the
+certificate retains the source attribution of implicit effects.
 
 The `scalar_int32` C++ exception profile is deliberately closed: C++20 on the pinned
 Clang/LLVM 19.1.7 `x86_64-unknown-linux-gnu` profile, exceptions enabled,

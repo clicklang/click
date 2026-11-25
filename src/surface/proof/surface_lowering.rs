@@ -8,23 +8,25 @@ use super::pure_theorems::{
 use super::*;
 
 pub(super) fn promote_integer_expression(
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
-    surface_bindings: &PersistentBinderMap<ContractExpression>,
-) -> ContractExpression {
+    surface_bindings: &PersistentBinderMap<SurfaceTerm>,
+) -> SurfaceTerm {
     match expression {
-        ContractExpression::IntegerContext(value) => ContractExpression::IntegerContext(Box::new(
+        SurfaceTerm::IntegerContext(value) => SurfaceTerm::IntegerContext(Box::new(
             promote_integer_expression(value, integer_values, surface_bindings),
         )),
-        ContractExpression::ProgramExpression(ProgramExpression::Variable(
+        SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) if integer_values.get(name).is_some() && surface_bindings.get(name).is_none() => {
-            ContractExpression::Binding(name.clone())
+            SurfaceTerm::Binding(name.clone())
         }
-        ContractExpression::Negate(inner) => ContractExpression::Negate(Box::new(
-            promote_integer_expression(inner, integer_values, surface_bindings),
-        )),
-        ContractExpression::Add(left, right) => ContractExpression::Add(
+        SurfaceTerm::Negate(inner) => SurfaceTerm::Negate(Box::new(promote_integer_expression(
+            inner,
+            integer_values,
+            surface_bindings,
+        ))),
+        SurfaceTerm::Add(left, right) => SurfaceTerm::Add(
             Box::new(promote_integer_expression(
                 left,
                 integer_values,
@@ -36,7 +38,7 @@ pub(super) fn promote_integer_expression(
                 surface_bindings,
             )),
         ),
-        ContractExpression::Subtract(left, right) => ContractExpression::Subtract(
+        SurfaceTerm::Subtract(left, right) => SurfaceTerm::Subtract(
             Box::new(promote_integer_expression(
                 left,
                 integer_values,
@@ -48,7 +50,7 @@ pub(super) fn promote_integer_expression(
                 surface_bindings,
             )),
         ),
-        ContractExpression::Multiply(left, right) => ContractExpression::Multiply(
+        SurfaceTerm::Multiply(left, right) => SurfaceTerm::Multiply(
             Box::new(promote_integer_expression(
                 left,
                 integer_values,
@@ -60,7 +62,7 @@ pub(super) fn promote_integer_expression(
                 surface_bindings,
             )),
         ),
-        ContractExpression::Call { name, arguments } => ContractExpression::Call {
+        SurfaceTerm::Call { name, arguments } => SurfaceTerm::Call {
             name: name.clone(),
             arguments: arguments
                 .iter()
@@ -69,13 +71,15 @@ pub(super) fn promote_integer_expression(
                 })
                 .collect(),
         },
-        ContractExpression::Old(inner) => ContractExpression::Old(Box::new(
-            promote_integer_expression(inner, integer_values, surface_bindings),
-        )),
-        ContractExpression::At {
+        SurfaceTerm::Old(inner) => SurfaceTerm::Old(Box::new(promote_integer_expression(
+            inner,
+            integer_values,
+            surface_bindings,
+        ))),
+        SurfaceTerm::At {
             selector,
             expression,
-        } => ContractExpression::At {
+        } => SurfaceTerm::At {
             selector: selector.clone(),
             expression: Box::new(promote_integer_expression(
                 expression,
@@ -95,7 +99,7 @@ pub(super) fn promote_integer_expression(
 /// is what a reader needs: the proof is standing before the statement that
 /// gives it a value.
 pub(in crate::surface::proof) fn unassigned_local_read_by(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     state: &crate::kernel::ExecutionState,
 ) -> Option<String> {
     let mut names = BTreeSet::new();
@@ -106,21 +110,21 @@ pub(in crate::surface::proof) fn unassigned_local_read_by(
 }
 
 pub(super) fn promote_integer_comparison(
-    surface: &ClickProposition,
+    surface: &SurfaceProposition,
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
-    surface_bindings: &PersistentBinderMap<ContractExpression>,
-) -> ClickProposition {
+    surface_bindings: &PersistentBinderMap<SurfaceTerm>,
+) -> SurfaceProposition {
     match surface {
-        ClickProposition::Comparison {
+        SurfaceProposition::Comparison {
             left,
             operator,
             right,
-        } => ClickProposition::Comparison {
+        } => SurfaceProposition::Comparison {
             left: promote_integer_expression(left, integer_values, surface_bindings),
             operator: *operator,
             right: promote_integer_expression(right, integer_values, surface_bindings),
         },
-        ClickProposition::And(left, right) => ClickProposition::And(
+        SurfaceProposition::And(left, right) => SurfaceProposition::And(
             Box::new(promote_integer_comparison(
                 left,
                 integer_values,
@@ -132,7 +136,7 @@ pub(super) fn promote_integer_comparison(
                 surface_bindings,
             )),
         ),
-        ClickProposition::Or(left, right) => ClickProposition::Or(
+        SurfaceProposition::Or(left, right) => SurfaceProposition::Or(
             Box::new(promote_integer_comparison(
                 left,
                 integer_values,
@@ -144,7 +148,7 @@ pub(super) fn promote_integer_comparison(
                 surface_bindings,
             )),
         ),
-        ClickProposition::Implies(left, right) => ClickProposition::Implies(
+        SurfaceProposition::Implies(left, right) => SurfaceProposition::Implies(
             Box::new(promote_integer_comparison(
                 left,
                 integer_values,
@@ -156,15 +160,13 @@ pub(super) fn promote_integer_comparison(
                 surface_bindings,
             )),
         ),
-        ClickProposition::Not(body) => ClickProposition::Not(Box::new(promote_integer_comparison(
-            body,
-            integer_values,
-            surface_bindings,
-        ))),
-        ClickProposition::At {
+        SurfaceProposition::Not(body) => SurfaceProposition::Not(Box::new(
+            promote_integer_comparison(body, integer_values, surface_bindings),
+        )),
+        SurfaceProposition::At {
             selector,
             proposition,
-        } => ClickProposition::At {
+        } => SurfaceProposition::At {
             selector: selector.clone(),
             proposition: Box::new(promote_integer_comparison(
                 proposition,
@@ -177,7 +179,7 @@ pub(super) fn promote_integer_comparison(
 }
 
 fn integer_values_for_surface_proposition(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     theorem_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     local_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     retained_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
@@ -198,7 +200,7 @@ fn integer_values_for_surface_proposition(
 }
 
 fn algebraic_values_for_surface_proposition(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     theorem_values: &BTreeMap<String, crate::kernel::SpecAlgebraicExpression>,
     local_values: &PersistentBinderMap<crate::kernel::SpecAlgebraicExpression>,
     retained_values: &PersistentBinderMap<crate::kernel::SpecAlgebraicExpression>,
@@ -221,7 +223,7 @@ fn algebraic_values_for_surface_proposition(
 impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn lower_surface_proposition(
         &self,
-        surface: &ClickProposition,
+        surface: &SurfaceProposition,
         description: &str,
     ) -> Result<Proposition, ClickError> {
         match self.context.as_ref() {
@@ -330,11 +332,11 @@ impl<'a> Proof<'a> {
                 // state. Fully anchored spellings are different: their
                 // recorded identity deliberately names that historical fact.
                 let explicitly_anchored = match &surface {
-                    ClickProposition::At { .. } => true,
-                    ClickProposition::PredicateCall { arguments, .. } => {
-                        matches!(arguments.first(), Some(ContractExpression::At { selector, .. })
+                    SurfaceProposition::At { .. } => true,
+                    SurfaceProposition::PredicateCall { arguments, .. } => {
+                        matches!(arguments.first(), Some(SurfaceTerm::At { selector, .. })
                             if arguments.iter().all(|argument| matches!(argument,
-                                ContractExpression::At { selector: other, .. } if other == selector)))
+                                SurfaceTerm::At { selector: other, .. } if other == selector)))
                     }
                     _ => false,
                 };
@@ -429,14 +431,14 @@ impl<'a> Proof<'a> {
 
     pub(in crate::surface::proof) fn lower_conjunct_label(
         &self,
-        surface: &ClickProposition,
+        surface: &SurfaceProposition,
     ) -> Result<Proposition, ClickError> {
         self.lower_direct_proposition(surface, "`all` arm label", true)
     }
 
     fn lower_direct_proposition(
         &self,
-        surface: &ClickProposition,
+        surface: &SurfaceProposition,
         description: &str,
         is_conjunct_label: bool,
     ) -> Result<Proposition, ClickError> {
@@ -584,7 +586,7 @@ impl<'a> Proof<'a> {
     /// surface `P` that independently lowers to another.
     pub(super) fn lower_surface_goal(
         &self,
-        surface: &ClickProposition,
+        surface: &SurfaceProposition,
         description: &str,
     ) -> Result<Proposition, ClickError> {
         self.lower_surface_goal_recording_introductions(surface, description)
@@ -598,7 +600,7 @@ impl<'a> Proof<'a> {
     /// correspondence rather than from a lowering performed here.
     pub(super) fn lower_surface_goal_recording_introductions(
         &self,
-        surface: &ClickProposition,
+        surface: &SurfaceProposition,
         description: &str,
     ) -> Result<(Proposition, Option<crate::kernel::LoweringIntroductions>), ClickError> {
         match self.context.as_ref() {
@@ -736,7 +738,7 @@ impl<'a> Proof<'a> {
     /// independently chosen value.
     pub(in crate::surface::proof) fn lower_cited_surface_proposition(
         &self,
-        surface: &ClickProposition,
+        surface: &SurfaceProposition,
         description: &str,
     ) -> Result<Proposition, ClickError> {
         if let Some(goal) = self.proposition_obligation()
@@ -787,7 +789,7 @@ impl<'a> Proof<'a> {
     pub(super) fn fixed_state_local_substitutions(
         &self,
         names: impl IntoIterator<Item = SurfaceBinder>,
-    ) -> BTreeMap<SurfaceBinder, ContractExpression> {
+    ) -> BTreeMap<SurfaceBinder, SurfaceTerm> {
         let surface_bindings = self
             .proposition_obligation()
             .map(|goal| &goal.surface_bindings);
@@ -797,7 +799,7 @@ impl<'a> Proof<'a> {
             .focused_outcome_data()
             .filter(|data| data.core.is_exceptional)
             .map(|data| {
-                ContractExpression::ProgramExpression(ProgramExpression::Value(
+                SurfaceTerm::ProgramExpression(ProgramExpression::Value(
                     data.core.result.clone().into_native(),
                 ))
             });
@@ -835,8 +837,8 @@ impl<'a> Proof<'a> {
 
     pub(super) fn substitute_fixed_state_locals_in_proposition(
         &self,
-        proposition: &ClickProposition,
-    ) -> Result<ClickProposition, ClickError> {
+        proposition: &SurfaceProposition,
+    ) -> Result<SurfaceProposition, ClickError> {
         let mut names = BinderSet::new();
         collect_click_proposition_referenced_binders(proposition, &mut names);
         let substitutions = self.fixed_state_local_substitutions(names);
@@ -856,7 +858,7 @@ impl<'a> Proof<'a> {
     /// Whether a name `proposition` reads is bound by this goal's retained
     /// binders or the scoped proof's locals, and so means something other
     /// than what the theorem's own requirements wrote.
-    fn rebinds_a_referenced_name(&self, proposition: &ClickProposition) -> bool {
+    fn rebinds_a_referenced_name(&self, proposition: &SurfaceProposition) -> bool {
         let mut names = BinderSet::new();
         collect_click_proposition_referenced_binders(proposition, &mut names);
         let surface_bindings = self
@@ -870,8 +872,8 @@ impl<'a> Proof<'a> {
 
     pub(super) fn substitute_goal_surface_bindings_in_proposition(
         &self,
-        proposition: &ClickProposition,
-    ) -> Result<ClickProposition, ClickError> {
+        proposition: &SurfaceProposition,
+    ) -> Result<SurfaceProposition, ClickError> {
         let Some(goal) = self.proposition_obligation() else {
             return Ok(proposition.clone());
         };
@@ -908,8 +910,8 @@ impl<'a> Proof<'a> {
     /// lowering resolves theorem parameters and declaration bindings itself.
     pub(super) fn substitute_pure_proof_locals_in_proposition(
         &self,
-        proposition: &ClickProposition,
-    ) -> Result<ClickProposition, ClickError> {
+        proposition: &SurfaceProposition,
+    ) -> Result<SurfaceProposition, ClickError> {
         let surface_bindings = self
             .proposition_obligation()
             .map(|goal| &goal.surface_bindings);
@@ -925,12 +927,14 @@ impl<'a> Proof<'a> {
                         ProofContext::Pure(context)
                             if self.local_integer_values().get(&name).is_none()
                                 && self.known_algebraic_value(&name).is_none() =>
-                            name.written().and_then(|name| context.theorem_context.declaration_bindings.get(name)),
+                        {
+                            name.written().and_then(|name| {
+                                context.theorem_context.declaration_bindings.get(name)
+                            })
+                        }
                         _ => None,
                     })
-                    .filter(|value| {
-                        !matches!(value, ContractExpression::Binding(bound) if *bound == name)
-                    })
+                    .filter(|value| !matches!(value, SurfaceTerm::Binding(bound) if *bound == name))
                     .cloned()
                     .map(|value| (name, value))
             })
@@ -964,8 +968,8 @@ impl<'a> Proof<'a> {
 
     pub(super) fn substitute_fixed_state_locals_in_expression(
         &self,
-        expression: &ContractExpression,
-    ) -> Result<ContractExpression, ClickError> {
+        expression: &SurfaceTerm,
+    ) -> Result<SurfaceTerm, ClickError> {
         let mut names = BinderSet::new();
         collect_contract_expression_referenced_binders(expression, &mut names);
         let substitutions = self.fixed_state_local_substitutions(names);
@@ -1008,9 +1012,9 @@ impl<'a> Proof<'a> {
                             state.locals().get(&name).map(|value| {
                                 (
                                     name,
-                                    ContractExpression::ProgramExpression(
-                                        ProgramExpression::Value(value.clone().into_native()),
-                                    ),
+                                    SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+                                        value.clone().into_native(),
+                                    )),
                                 )
                             })
                         })

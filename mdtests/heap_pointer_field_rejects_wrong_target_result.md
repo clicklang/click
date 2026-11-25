@@ -45,7 +45,7 @@ int32 run() {
             step();
             have defined(h->target) by {
                 have separate(region(12).footprint, memory(h->target)) by {
-                    normalize() using {};
+                    close() using {};
                 }
                 preserve(memory(h->target), region(12));
             }
@@ -53,7 +53,7 @@ int32 run() {
             step();
             have defined(h->target) by {
                 have separate(region(13).footprint, memory(h->target)) by {
-                    normalize() using {};
+                    close() using {};
                 }
                 preserve(memory(h->target), region(13));
             }

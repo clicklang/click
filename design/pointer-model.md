@@ -34,7 +34,7 @@ one creating event produced, such as a variable instance, a `malloc` or
   (C11 6.5.6p8-9), and a member array is an array object inside its
   allocation. Today's "subobject bounds" become this part of C provenance.
 - **Rust:** the allocation. A borrow tag can be added later with Rust's
-  aliasing model (`roadmap/unsafe-rust.md`).
+  aliasing model (see [Rust raw pointers](#rust-raw-pointers)).
 
 A provenance whose creation the kernel did not see, such as a parameter or a
 pointer loaded from memory, is opaque. It is named by where the pointer came
@@ -234,10 +234,21 @@ Each step is one PR, measured with the gate and the raise-lower audit.
    byte-offset case (`byte_offset(binder, n)`). Treat any pointer that cannot
    be raised as a defect.
 6. **Language constructors** as their source constructs are supported:
-   Rust's `with_addr` and exposed provenance (`roadmap/unsafe-rust.md`), and
+   Rust's `with_addr` and [exposed provenance](#rust-raw-pointers), and
    C's integer-to-pointer conversion.
 7. **Documents.** Rewrite `docs/concepts/memory-model.md` ("Blocks and
    pointers") and the reference sections, and remove the superseded designs.
+
+## Rust raw pointers
+
+Admitting unsafe Rust requires an aliasing model such as Stacked Borrows or
+Tree Borrows, or a subset sound under both. Raw pointer bounds at formation
+must follow that model. In particular, reaching a sibling field through a
+raw pointer derived from a field reference can differ between the models.
+Keep reference and raw-pointer access permissions in the resource layer.
+An exposed-provenance conversion needs explicit evidence of a live exposed
+allocation, or a refusal naming the API. Initialization and Rust value
+validity still apply when raw memory is read.
 
 ## Superseded or revised documents
 
@@ -251,7 +262,6 @@ Each step is one PR, measured with the gate and the raise-lower audit.
 | `docs/internals/equality-closure.md` | update with step 3 |
 | `docs/reference/language/index.md`: `same_object`, pointer equality, `address` | update in steps 2 and 7 |
 | `roadmap/kernel-term-split.md`, complete-pointer equality items | update with step 3 |
-| `roadmap/unsafe-rust.md` | consistent; it is this model's Rust half |
 
 ## Decisions
 

@@ -4,8 +4,8 @@ use super::*;
 fn disjunction_proof(
     proof: &Proof<'_>,
     source: &Proposition,
-    surface: &ClickProposition,
-) -> Result<(ClickProposition, Vec<ProofTactic>), ClickError> {
+    surface: &SurfaceProposition,
+) -> Result<(SurfaceProposition, Vec<ProofTactic>), ClickError> {
     if let Proposition::Or(left, right) = source {
         // Keep the selected source's state selectors and comparison types.
         // Compact forms such as sequence membership instead need their
@@ -25,7 +25,7 @@ fn disjunction_proof(
         };
         let (left, left_body) = disjunction_proof(proof, left, &left_surface)?;
         let (right, right_body) = disjunction_proof(proof, right, &right_surface)?;
-        let surface = ClickProposition::Or(Box::new(left), Box::new(right));
+        let surface = SurfaceProposition::Or(Box::new(left), Box::new(right));
         let body = vec![ProofTactic::Cases(ProofCases::from_binary(
             &surface, left_body, right_body,
         ))];
@@ -56,7 +56,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// leaves. Each runs under the current work budget without recursive solve.
     pub(in crate::surface::proof) fn publish_selected_fact(
         search_input: &Proof<'a>,
-        surface: &ClickProposition,
+        surface: &SurfaceProposition,
     ) -> Result<Proof<'a>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("publish_selected_fact");

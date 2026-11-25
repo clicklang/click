@@ -1964,7 +1964,9 @@ A product's lower bound can instead cite two strictly positive lower
 endpoints. Multiplication by a literal signed zero can cite a finite
 operand or its two finite bounds. `close()` accepts the exact
 `isfinite` premise for the zero product. Negation and exact widening
-from `float` to `double` preserve finiteness.
+from `float` to `double` preserve finiteness. A finiteness goal
+can cite two ordered bounds that exclude both infinities. An integer
+of up to 64 bits always converts to a finite `float` or `double`.
 For an integer converted to `float` or `double`, `close()` can check
 the rounded limits of the source type. A tighter bound can cite a constant
 integer endpoint. The check rounds that endpoint at the destination precision.
@@ -1972,6 +1974,10 @@ integer endpoint. The check rounds that endpoint at the destination precision.
 For other supported shapes it can still expand to `normalize() using` with
 those premises.
 
+
+For a positive signed divisor `y`, cite `y > 0` and `x <= MAX / y`
+to bound `x * y` above by `MAX`. Cite `y > 0` and `x >= MIN / y`
+to bound it below by `MIN`. Either bound applies to any sign of `x`.
 
 For two negative signed operands, `x < 0`, `y < 0`, and
 `x >= MAX / y` bound their product by `MAX`. This guard permits
@@ -1981,7 +1987,10 @@ using `MIN / y` with a negative divisor still needs `y < -1`.
 For an unsigned left shift of one, citing the count bound proves the result
 is nonzero. For example, `normalize() using { d < 32u32; }` proves
 `(1u32 << d) != 0u32`. This also discharges the divisor obligation for
-C division and remainder.
+C division and remainder. An odd literal multiplier also preserves nonzero
+in a wrapping unsigned word. For example,
+`normalize() using { x != 0u32; }` proves `((x * 3u32) as uint32) != 0u32`.
+The cast names the wrapping multiplication used by C.
 
 An in-range operation or cast identity also accepts exactly two ordered
 Integer bounds on its exact result: the lower bound, then the upper bound.
@@ -2134,7 +2143,7 @@ Expansion retains the normalization step and cited evidence; checking
 reconstructs the graph from the surrounding checked proof context. Work
 follows the selected expression and premises.
 
-**Checked examples:** [`normalize_using.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using.md), [`normalize_using_graph_conditions.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_graph_conditions.md), [`normalize_using_rejects_ambient.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_rejects_ambient.md), [`normalize_using_decides_conditions_without_substituting.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_decides_conditions_without_substituting.md), [`uint64_int32_exact_index_alias.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_int32_exact_index_alias.md), [`uint64_int32_low_word_is_not_address_equality.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_int32_low_word_is_not_address_equality.md)
+**Checked examples:** [`normalize_using_pointer_addition.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_pointer_addition.md), [`normalize_using_rejects_ambient.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_rejects_ambient.md), [`normalize_using_decides_conditions_without_substituting.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_decides_conditions_without_substituting.md), [`uint64_int32_exact_index_alias.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_int32_exact_index_alias.md), [`uint64_int32_low_word_is_not_address_equality.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_int32_low_word_is_not_address_equality.md)
 
 ### Arithmetic search
 
@@ -3549,7 +3558,7 @@ mathematical product.
 | Form | Class | Audience | Purpose | Details |
 | --- | --- | --- | --- | --- |
 | `transport(P, Q)` | smart | Specialized | Carry a fact from an earlier memory state. | [Reference](#fact-transport) |
-| `transport(P, Q) using { R; ... }` | simple | Expansion output | Carry a fact using explicit frame evidence. | [Reference](#transport-with-selected-premises) |
+| `transport(P, Q) using { R; ... }` | simple | Specialized | Carry a fact using explicit frame evidence. | [Reference](#transport-with-selected-premises) |
 | `unfold(predicate(args))` | simple | Core | Open one selected predicate application. | [Reference](#unfolding-predicates) |
 | `unfold(resource(args))` | simple | Core | Open an owned resource instance. | [Reference](#unfolding-resources) |
 | `fold(resource)` | simple | Core | Assemble a composite or create an ordinary token at return. | [Reference](#folding-resources) |
@@ -3574,19 +3583,18 @@ steps and transport the unfolded definition.
 **Specialized.** Write it when a fact stated at an earlier state is needed at
 the current one and neither `step` nor `close()` carried it. When exact source `P`
 is available, derive target `Q` at another certified point, citing `P` alone
-as frame evidence. No other available fact is searched for: a frame that needs
-more premises is written in the `using` form below.
+as frame evidence. For additional premises, use `have` to establish the relevant
+facts. Prove unchanged reads across named footprints with `preserve` and use
+`rewrite` to relate them.
 
 **Failure, checking, and tools:**
 
 Unrelated propositions, unsafe writes, or a source that does not carry the
 target alone fail. The refusal is the one the same transport gets with its
 source listed in `using`: it names the effects
-between the two states and, for a quantified fact, the leaf the frame could
-not carry. It ends by calling the miss a search miss: if the target holds,
-list the facts that carry the source in the `using` form. Click checks the
-chosen transport; expansion adds `using`, and profiling reports search and
-leaves.
+between the two states and, for a quantified fact, the leaf still needing
+proof. Expansion writes the ordinary checks, such as `preserve` and
+`rewrite`, when it records a replayable derivation.
 
 **Checked examples:** [`known_value_transport_expansion.md`](https://github.com/clicklang/click/blob/master/mdtests/known_value_transport_expansion.md), [`transport_model_pointer_binding.md`](https://github.com/clicklang/click/blob/master/mdtests/transport_model_pointer_binding.md)
 
@@ -3594,13 +3602,13 @@ leaves.
 
 **Form:** `transport(P, Q) using { R; ... }`
 
-**Expansion output.** `click expand` writes it; by hand, prefer the bare form
-when the source alone carries the target, and list more premises here when it
-does not. Derive target proposition `Q` from exact
-source `P` using only the listed point and frame evidence. Available in a
-pure theorem too, where the listed premises are all there is to read.
+**Specialized.** Existing execution proofs can derive target proposition `Q`
+from source `P` using the listed point and frame evidence. Write intermediate
+facts with `have`, and use `preserve` across named footprints and `rewrite`
+to carry the fact to its new state. Pure proofs use `have`, `rewrite`, or
+`close() using`.
 
-**Accepts**, in a C proof or a pure theorem, when:
+**Accepts** in an execution proof when:
 
 - Every listed `R` is an available fact, read as every `using` list reads
   premises: exactly, under another form of the same order claim, or true
@@ -3614,9 +3622,7 @@ pure theorem too, where the listed premises are all there is to read.
   completed return outcome `P` may instead be any held fact, up to its
   binder's name.
 - The target `Q` is already available, or the frame carries `P` to it as
-  described below. In a pure theorem, which has no state, `Q` must follow from
-  `P` and the listed premises alone: `a == 1` with `a == b` listed reaches
-  `b == 1`, and `A and B` reaches `A`.
+  described below.
 
 It adds `Q` as a fact and closes the goal when `Q` is the goal.
 

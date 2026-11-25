@@ -257,7 +257,6 @@ pub fn inventory(path: &str, file: &syn::File) -> BTreeMap<String, usize> {
                 caller.as_str(),
                 "apply_planned_fact_transport_inner"
                     | "apply_planned_outcome_fact_transport"
-                    | "apply_pure_transport_using"
                     | "apply_step_without_outcome_wrapping"
                     | "apply_theorem_application"
                     | "certified_fact_transport_reaches"

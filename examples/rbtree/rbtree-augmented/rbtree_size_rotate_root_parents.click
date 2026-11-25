@@ -23,21 +23,21 @@ void insert::__rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
     ensures new->__rb_parent_color == 1;
     ensures root->rb_node == new;
 } by {
-    have 0 <= color by { rewrite(color, 0); normalize(); }
-    have color <= 1 by { rewrite(color, 0); normalize(); }
+    have 0 <= color by { rewrite(color, 0); close(); }
+    have color <= 1 by { rewrite(color, 0); close(); }
     step(); step(); step(); // Assign the result of rb_parent to parent.
-    have parent == 0 by { normalize(); }
+    have parent == 0 by { close(); }
     step();
     have new->__rb_parent_color == 1 by { close(); }
     have ((new->__rb_parent_color & ~3) as (struct rb_node *)) == 0 by {
-        rewrite(new->__rb_parent_color, 1); normalize();
+        rewrite(new->__rb_parent_color, 1); close();
     }
     let promoted = fold(sized_root_rotation_parent_word(new, 0), { bits: 1u64 });
     step();
     have old->__rb_parent_color == (address(new) | color) by { close(); }
     have old->__rb_parent_color == address(new) by {
         rewrite(old->__rb_parent_color, (address(new) | color));
-        rewrite(color, 0); normalize();
+        rewrite(color, 0); close();
     }
     have (old->__rb_parent_color & ~3) == address(new) by {
         rewrite(old->__rb_parent_color, address(new));

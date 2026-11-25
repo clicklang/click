@@ -2,8 +2,8 @@ use super::*;
 
 #[test]
 fn verification_only_fact_transport_has_no_source_expansion() {
-    let proposition = ClickProposition::Defined {
-        expression: ContractExpression::IntegerLiteral("0".into()),
+    let proposition = SurfaceProposition::Defined {
+        expression: SurfaceTerm::IntegerLiteral("0".into()),
     };
     let tactics = [ProofTactic::CompatibilityFactTransport {
         source: proposition.clone(),

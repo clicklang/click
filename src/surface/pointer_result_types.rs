@@ -225,12 +225,12 @@ impl Analysis<'_> {
 
     fn expression(
         &mut self,
-        expression: &ContractExpression,
+        expression: &SurfaceTerm,
         bindings: &mut BinderMap<Origins>,
     ) -> Origins {
         // One lexical context per source expression. Reusing the origin when
         // validating enclosing calls avoids revisiting nested argument trees.
-        let key = expression as *const ContractExpression as usize;
+        let key = expression as *const SurfaceTerm as usize;
         if let Some(origin) = self.expressions.get(&key) {
             return origin.clone();
         }
@@ -242,22 +242,22 @@ impl Analysis<'_> {
 
     fn expression_inner(
         &mut self,
-        expression: &ContractExpression,
+        expression: &SurfaceTerm,
         bindings: &mut BinderMap<Origins>,
     ) -> Origins {
         match expression {
-            ContractExpression::IntegerLiteral(value) if value == "0" => Some(null_origins()),
-            ContractExpression::Binding(name) | ContractExpression::ProgramBinding(name) => {
+            SurfaceTerm::IntegerLiteral(value) if value == "0" => Some(null_origins()),
+            SurfaceTerm::Binding(name) | SurfaceTerm::ProgramBinding(name) => {
                 bindings.get(name).cloned().flatten()
             }
-            ContractExpression::ProgramExpression(expression) => {
+            SurfaceTerm::ProgramExpression(expression) => {
                 Self::program_expression(expression, bindings)
             }
-            ContractExpression::CUnary {
+            SurfaceTerm::CUnary {
                 operand,
                 lowered: ProgramExpression::Cast { target_type, .. },
             } if target_type.is_object_pointer() => self.expression(operand, bindings),
-            ContractExpression::If {
+            SurfaceTerm::If {
                 then_branch,
                 else_branch,
                 ..
@@ -269,7 +269,7 @@ impl Analysis<'_> {
                 );
                 Some(Arc::new(result))
             }
-            ContractExpression::Let {
+            SurfaceTerm::Let {
                 name, value, body, ..
             } => {
                 let value = self.expression(value, bindings);
@@ -278,7 +278,7 @@ impl Analysis<'_> {
                 restore(bindings, name, previous);
                 result
             }
-            ContractExpression::AlgebraicMatch { arms, .. } => {
+            SurfaceTerm::AlgebraicMatch { arms, .. } => {
                 let mut result = (*null_origins()).clone();
                 for arm in arms {
                     let model = *self.models.get(arm.type_name.as_str())?;
@@ -304,7 +304,7 @@ impl Analysis<'_> {
                 }
                 (!arms.is_empty()).then(|| Arc::new(result))
             }
-            ContractExpression::Call { name, arguments } => {
+            SurfaceTerm::Call { name, arguments } => {
                 let callee = self.function(name)?;
                 let mut result = PurePointerResult {
                     classes: callee.classes.clone(),
@@ -362,7 +362,7 @@ impl Analysis<'_> {
 
     fn require_class(
         &mut self,
-        expression: &ContractExpression,
+        expression: &SurfaceTerm,
         class: &CAccessClass,
         bindings: &mut BinderMap<Origins>,
         definition: &ClickFunctionDefinition,
@@ -393,24 +393,24 @@ impl Analysis<'_> {
 
     fn check_expression(
         &mut self,
-        expression: &ContractExpression,
+        expression: &SurfaceTerm,
         bindings: &mut BinderMap<Origins>,
         definition: &ClickFunctionDefinition,
     ) -> Result<(), String> {
         crate::instrumentation::record_deterministic_work(1);
         match expression {
-            ContractExpression::IntegerContext(value) => {
+            SurfaceTerm::IntegerContext(value) => {
                 self.check_expression(value, bindings, definition)?;
             }
 
-            ContractExpression::Proposition(proposition) => {
+            SurfaceTerm::Proposition(proposition) => {
                 self.check_proposition(proposition, bindings, definition)?
             }
-            ContractExpression::Resource(_) => {}
-            ContractExpression::Lambda { body, .. } => {
+            SurfaceTerm::Resource(_) => {}
+            SurfaceTerm::Lambda { body, .. } => {
                 self.check_expression(body, bindings, definition)?
             }
-            ContractExpression::Apply {
+            SurfaceTerm::Apply {
                 function,
                 arguments,
             } => {
@@ -420,7 +420,7 @@ impl Analysis<'_> {
                 }
             }
 
-            ContractExpression::AlgebraicConstructor {
+            SurfaceTerm::AlgebraicConstructor {
                 algebraic_type,
                 variant,
                 arguments,
@@ -449,7 +449,7 @@ impl Analysis<'_> {
                     self.check_expression(argument, bindings, definition)?;
                 }
             }
-            ContractExpression::MethodCall {
+            SurfaceTerm::MethodCall {
                 receiver,
                 arguments,
                 ..
@@ -459,7 +459,7 @@ impl Analysis<'_> {
                     self.check_expression(argument, bindings, definition)?;
                 }
             }
-            ContractExpression::Call { name, arguments } => {
+            SurfaceTerm::Call { name, arguments } => {
                 if let Some(callee) = self
                     .functions
                     .get(generic_instance_source_name(name))
@@ -481,7 +481,7 @@ impl Analysis<'_> {
                     self.check_expression(argument, bindings, definition)?;
                 }
             }
-            ContractExpression::AlgebraicMatch { scrutinee, arms } => {
+            SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
                 self.check_expression(scrutinee, bindings, definition)?;
                 for arm in arms {
                     let fields = self
@@ -510,7 +510,7 @@ impl Analysis<'_> {
                     checked?;
                 }
             }
-            ContractExpression::Let {
+            SurfaceTerm::Let {
                 name, value, body, ..
             } => {
                 self.check_expression(value, bindings, definition)?;
@@ -520,7 +520,7 @@ impl Analysis<'_> {
                 restore(bindings, name, previous);
                 checked?;
             }
-            ContractExpression::If {
+            SurfaceTerm::If {
                 condition,
                 then_branch,
                 else_branch,
@@ -529,7 +529,7 @@ impl Analysis<'_> {
                 self.check_expression(then_branch, bindings, definition)?;
                 self.check_expression(else_branch, bindings, definition)?;
             }
-            ContractExpression::RangeFold {
+            SurfaceTerm::RangeFold {
                 start,
                 end,
                 initial,
@@ -549,110 +549,109 @@ impl Analysis<'_> {
                 restore(bindings, accumulator, old_accumulator);
                 checked?;
             }
-            ContractExpression::CUnary { operand: inner, .. }
-            | ContractExpression::MemoryLoad { pointer: inner, .. }
-            | ContractExpression::Negate(inner)
-            | ContractExpression::BitwiseNot(inner)
-            | ContractExpression::Old(inner)
-            | ContractExpression::Exact(inner)
-            | ContractExpression::At {
+            SurfaceTerm::CUnary { operand: inner, .. }
+            | SurfaceTerm::MemoryLoad { pointer: inner, .. }
+            | SurfaceTerm::Negate(inner)
+            | SurfaceTerm::BitwiseNot(inner)
+            | SurfaceTerm::Old(inner)
+            | SurfaceTerm::Exact(inner)
+            | SurfaceTerm::At {
                 expression: inner, ..
             }
-            | ContractExpression::Field { base: inner, .. } => {
+            | SurfaceTerm::Field { base: inner, .. } => {
                 self.check_expression(inner, bindings, definition)?;
             }
-            binary_contract_expression!(left, right)
-            | ContractExpression::SequenceConcat(left, right) => {
+            binary_contract_expression!(left, right) | SurfaceTerm::SequenceConcat(left, right) => {
                 self.check_expression(left, bindings, definition)?;
                 self.check_expression(right, bindings, definition)?;
             }
-            ContractExpression::SequenceLiteral(values) => {
+            SurfaceTerm::SequenceLiteral(values) => {
                 for value in values {
                     self.check_expression(value, bindings, definition)?;
                 }
             }
-            ContractExpression::ArrayIndex { base, indexes, .. } => {
+            SurfaceTerm::ArrayIndex { base, indexes, .. } => {
                 self.check_expression(base, bindings, definition)?;
                 for index in indexes {
                     self.check_expression(index, bindings, definition)?;
                 }
             }
-            ContractExpression::ResourceCount(resource) => {
+            SurfaceTerm::ResourceCount(resource) => {
                 if let ResourceClause::Declared { arguments, .. } = resource.as_ref() {
                     for argument in arguments {
                         self.check_expression(argument, bindings, definition)?;
                     }
                 }
             }
-            ContractExpression::IntegerLiteral(_)
-            | ContractExpression::QualifiedC { .. }
-            | ContractExpression::ResourceField(_)
-            | ContractExpression::ResourceWildcard
-            | ContractExpression::AlgebraicVariable { .. }
-            | ContractExpression::Binding(_)
-            | ContractExpression::ProgramBinding(_)
-            | ContractExpression::RegionResult(_)
-            | ContractExpression::RegionAllocation(_)
-            | ContractExpression::RegionParameter { .. }
-            | ContractExpression::ProgramExpression(_) => {}
+            SurfaceTerm::IntegerLiteral(_)
+            | SurfaceTerm::QualifiedC { .. }
+            | SurfaceTerm::ResourceField(_)
+            | SurfaceTerm::ResourceWildcard
+            | SurfaceTerm::AlgebraicVariable { .. }
+            | SurfaceTerm::Binding(_)
+            | SurfaceTerm::ProgramBinding(_)
+            | SurfaceTerm::RegionResult(_)
+            | SurfaceTerm::RegionAllocation(_)
+            | SurfaceTerm::RegionParameter { .. }
+            | SurfaceTerm::ProgramExpression(_) => {}
         }
         Ok(())
     }
 
     fn check_proposition(
         &mut self,
-        proposition: &ClickProposition,
+        proposition: &SurfaceProposition,
         bindings: &mut BinderMap<Origins>,
         definition: &ClickFunctionDefinition,
     ) -> Result<(), String> {
         match proposition {
-            ClickProposition::Value(expression) => {
+            SurfaceProposition::Value(expression) => {
                 self.check_expression(expression, bindings, definition)?;
             }
-            ClickProposition::Comparison { left, right, .. } => {
+            SurfaceProposition::Comparison { left, right, .. } => {
                 self.check_expression(left, bindings, definition)?;
                 self.check_expression(right, bindings, definition)?;
             }
-            ClickProposition::FloatClassification { expression, .. }
-            | ClickProposition::Defined { expression }
-            | ClickProposition::IsA {
+            SurfaceProposition::FloatClassification { expression, .. }
+            | SurfaceProposition::Defined { expression }
+            | SurfaceProposition::IsA {
                 pointer: expression,
                 ..
             } => {
                 self.check_expression(expression, bindings, definition)?;
             }
-            ClickProposition::PredicateCall { arguments, .. } => {
+            SurfaceProposition::PredicateCall { arguments, .. } => {
                 for argument in arguments {
                     self.check_expression(argument, bindings, definition)?;
                 }
             }
-            ClickProposition::And(left, right)
-            | ClickProposition::Or(left, right)
-            | ClickProposition::Implies(left, right) => {
+            SurfaceProposition::And(left, right)
+            | SurfaceProposition::Or(left, right)
+            | SurfaceProposition::Implies(left, right) => {
                 self.check_proposition(left, bindings, definition)?;
                 self.check_proposition(right, bindings, definition)?;
             }
-            ClickProposition::Not(body)
-            | ClickProposition::At {
+            SurfaceProposition::Not(body)
+            | SurfaceProposition::At {
                 proposition: body, ..
             } => {
                 self.check_proposition(body, bindings, definition)?;
             }
-            ClickProposition::ForAll { name, body, .. }
-            | ClickProposition::Exists { name, body, .. } => {
+            SurfaceProposition::ForAll { name, body, .. }
+            | SurfaceProposition::Exists { name, body, .. } => {
                 let previous = bindings.insert(name.clone(), None);
                 let checked = self.check_proposition(body, bindings, definition);
                 restore(bindings, name, previous);
                 checked?;
             }
-            ClickProposition::RangeAll {
+            SurfaceProposition::RangeAll {
                 start,
                 end,
                 item,
                 body,
                 ..
             }
-            | ClickProposition::RangeAny {
+            | SurfaceProposition::RangeAny {
                 start,
                 end,
                 item,
@@ -668,10 +667,10 @@ impl Analysis<'_> {
             }
             // These query resources; their arguments cannot return a value
             // into the enclosing function's result or lexical bindings.
-            ClickProposition::Separate { .. }
-            | ClickProposition::ResourceViewable { .. }
-            | ClickProposition::Contains { .. }
-            | ClickProposition::Loadable { .. } => {}
+            SurfaceProposition::Separate { .. }
+            | SurfaceProposition::ResourceViewable { .. }
+            | SurfaceProposition::Contains { .. }
+            | SurfaceProposition::Loadable { .. } => {}
         }
         Ok(())
     }

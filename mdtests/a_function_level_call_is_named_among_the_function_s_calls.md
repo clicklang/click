@@ -83,6 +83,21 @@ int32 f(int32 a) {
             to_integer(call(twice, 1).result) + 1 <= 2147483647;
         };
     }
+    have to_integer(call(twice, 1).result) == to_integer(b) + to_integer(b);
+    have to_integer(c) == 4 * to_integer(a) + 3 by {
+        rewrite(to_integer(c), to_integer(call(twice, 1).result) + 1);
+        rewrite(to_integer(call(twice, 1).result), to_integer(b) + to_integer(b));
+        rewrite(to_integer(b), to_integer(first) + 1);
+        rewrite(to_integer(first), to_integer(a) + to_integer(a));
+        normalize() using {};
+    }
+    step();
+    have to_integer(result) == to_integer(4 * a + 3) by {
+        have to_integer(4 * a + 3) == 4 * to_integer(a) + 3;
+        rewrite(to_integer(4 * a + 3), 4 * to_integer(a) + 3);
+        close();
+    }
+    close();
 }
 ```
 

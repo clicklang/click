@@ -71,6 +71,19 @@ pub(super) fn algebraic_equal(left: &AlgebraicTerm, right: &AlgebraicTerm) -> bo
     Comparison::default().algebraic(left, right)
 }
 
+pub(super) fn stored_algebraic_equal(
+    left: &StoredAlgebraicTerm,
+    right: &StoredAlgebraicTerm,
+) -> bool {
+    let mut comparison = Comparison::default();
+    match (left.root(), right.root()) {
+        (Some(left), Some(right)) => comparison.common_algebraic(left, right),
+        (Some(left), None) => comparison.mixed_algebraic(left, right.native_compat()),
+        (None, Some(right)) => comparison.mixed_algebraic(right, left.native_compat()),
+        (None, None) => algebraic_equal(left.native_compat(), right.native_compat()),
+    }
+}
+
 impl Comparison {
     fn algebraic(&mut self, left: &AlgebraicTerm, right: &AlgebraicTerm) -> bool {
         use crate::kernel::AlgebraicTermNode as T;

@@ -180,7 +180,7 @@ state's fact or goal, needs no Surface form.
 
 ## Shared term migration
 
-`SurfaceTerm` is the source expression AST; `ContractExpression` remains a
+`SurfaceTerm` is the source expression AST; `SurfaceTerm` remains a
 compatibility alias. `KernelTerm` is an immutable typed expression DAG whose
 arithmetic and call operands are themselves `KernelTerm`s. Its structural
 identity is independent of equality-graph classes: constructing `1 + 1`

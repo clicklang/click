@@ -122,9 +122,8 @@ use proof_object::*;
 #[cfg(test)]
 pub(in crate::surface) use pure_theorems::PROVED_THEOREMS;
 pub(super) use pure_theorems::{
-    assumed_theorem_certification_authorities, is_kernel_standard_theorem_name,
-    pure_theorem_array_refs, pure_theorem_parameter_values, verify_theorem_definition,
-    verify_theorem_definitions,
+    is_kernel_standard_theorem_name, pure_theorem_array_refs, pure_theorem_parameter_values,
+    verify_theorem_definition, verify_theorem_definitions,
 };
 #[cfg(test)]
 use pure_theorems::{lower_pure_theorem_proposition, pure_theorem_context};
@@ -273,15 +272,15 @@ mod certificate_tests {
 
     #[test]
     fn state_annotation_rejects_deep_logic_without_using_the_native_stack() {
-        let mut surface = ClickProposition::Comparison {
-            left: ContractExpression::ProgramBinding("value".to_string()),
+        let mut surface = SurfaceProposition::Comparison {
+            left: SurfaceTerm::ProgramBinding("value".to_string()),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::ProgramExpression(ProgramExpression::Value(
-                ProgramValue::Int32(MachineTerm::constant(0)),
-            )),
+            right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
+                MachineTerm::constant(0),
+            ))),
         };
         for _ in 0..=PROGRAM_POINT_ANNOTATION_DEPTH_LIMIT {
-            surface = ClickProposition::Not(Box::new(surface));
+            surface = SurfaceProposition::Not(Box::new(surface));
         }
         let point = ProgramPointRef {
             region: CodeRegionRef::Region(0),
@@ -438,10 +437,10 @@ mod certificate_tests {
     #[test]
     fn timing_classifies_a_have_with_only_simple_tactics_as_simple() {
         let have = ProofTactic::Have(ProofHave {
-            proposition: ClickProposition::Comparison {
-                left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
+            proposition: SurfaceProposition::Comparison {
+                left: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(1))),
                 operator: ComparisonOperator::Equal,
-                right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
+                right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(1))),
             },
             proof: SourceProof::Script(vec![ProofTactic::Known]),
         });
@@ -451,10 +450,10 @@ mod certificate_tests {
 
     #[test]
     fn timing_classifies_smart_and_structural_have_sites_separately() {
-        let proposition = ClickProposition::Comparison {
-            left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
+        let proposition = SurfaceProposition::Comparison {
+            left: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(1))),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
+            right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(1))),
         };
         let smart = ProofTactic::Have(ProofHave {
             proposition: proposition.clone(),
@@ -478,10 +477,10 @@ mod certificate_tests {
     #[test]
     fn post_execution_timing_charges_have_as_control() {
         let have = PostExecutionTactic::Have(ProofHave {
-            proposition: ClickProposition::Comparison {
-                left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
+            proposition: SurfaceProposition::Comparison {
+                left: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(1))),
                 operator: ComparisonOperator::Equal,
-                right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
+                right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(1))),
             },
             proof: SourceProof::Script(vec![ProofTactic::Known]),
         });
@@ -657,12 +656,12 @@ mod certificate_tests {
 
     #[test]
     fn path_aligned_certificates_preserve_branch_structure() {
-        let condition = ClickProposition::Comparison {
-            left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+        let condition = SurfaceProposition::Comparison {
+            left: SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 ("x".to_string()).into(),
             )),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
+            right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
         };
         let known = ProofCertificate::from_proof_tactics(&[ProofTactic::Known])
             .expect("known is a certificate");
@@ -712,19 +711,19 @@ mod certificate_tests {
 
     #[test]
     fn path_aligned_certificates_reject_incompatible_frontiers() {
-        let condition = ClickProposition::Comparison {
-            left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+        let condition = SurfaceProposition::Comparison {
+            left: SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 ("x".to_string()).into(),
             )),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
+            right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
         };
-        let other = ClickProposition::Comparison {
-            left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+        let other = SurfaceProposition::Comparison {
+            left: SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 ("y".to_string()).into(),
             )),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
+            right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
         };
         let known = ProofCertificate::from_proof_tactics(&[ProofTactic::Known])
             .expect("known is a certificate");
@@ -790,7 +789,7 @@ enum InternalProofNode {
     If {
         index: usize,
         source_index: usize,
-        condition: ClickProposition,
+        condition: SurfaceProposition,
         ensuring: Option<Vec<ProofAssertion>>,
         then_branch: Box<InternalProofNode>,
         else_branch: Box<InternalProofNode>,
@@ -803,7 +802,7 @@ enum InternalProofNode {
     Cases {
         index: usize,
         source_index: usize,
-        disjunction: ClickProposition,
+        disjunction: SurfaceProposition,
         then_branch: Box<InternalProofNode>,
         else_branch: Box<InternalProofNode>,
         continuation: Box<InternalProofNode>,
@@ -1770,9 +1769,9 @@ pub(super) fn initial_claim_context(
 
 /// The surface spelling `name as int32 == 0 or name as int32 == 1` of a
 /// `bool` parameter's range entry fact (rule C1).
-fn bool_range_surface(name: &str) -> ClickProposition {
-    let cast = ContractExpression::CUnary {
-        operand: Box::new(ContractExpression::ProgramBinding(name.to_string())),
+fn bool_range_surface(name: &str) -> SurfaceProposition {
+    let cast = SurfaceTerm::CUnary {
+        operand: Box::new(SurfaceTerm::ProgramBinding(name.to_string())),
         lowered: ProgramExpression::Cast {
             expression: Box::new(ProgramExpression::Variable(name.into())),
             target_type: crate::kernel::ProgramType::Int32,
@@ -1784,12 +1783,12 @@ fn bool_range_surface(name: &str) -> ClickProposition {
             explicit_qualification: false,
         },
     };
-    let equals = |constant: &str| ClickProposition::Comparison {
+    let equals = |constant: &str| SurfaceProposition::Comparison {
         left: cast.clone(),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::IntegerLiteral(constant.to_string()),
+        right: SurfaceTerm::IntegerLiteral(constant.to_string()),
     };
-    ClickProposition::Or(Box::new(equals("0")), Box::new(equals("1")))
+    SurfaceProposition::Or(Box::new(equals("0")), Box::new(equals("1")))
 }
 
 /// The hosted boundary supplies the one stream exported by the projected
@@ -2045,7 +2044,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         ) {
             let surface = match &function_block.requires()[lowered.source_ordinal] {
                 Requirement::Proposition(proposition) => Some(proposition.clone()),
-                Requirement::LoadableSegment { segment } => Some(ClickProposition::Loadable {
+                Requirement::LoadableSegment { segment } => Some(SurfaceProposition::Loadable {
                     segment: segment.clone(),
                 }),
                 Requirement::Resource(_) => None,
@@ -2560,34 +2559,34 @@ fn entry_pure_fact_without_unconditional_loadability(
 /// its checked read view can be supplied to the kernel entry evaluator without
 /// lowering or authorizing the surrounding logical proposition.
 fn collect_conjunctive_loadability_segments(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     segments: &mut Vec<ContractSegment>,
 ) {
     match proposition {
-        ClickProposition::Value(_) => {}
-        ClickProposition::Loadable { segment } => segments.push(segment.clone()),
-        ClickProposition::And(left, right) => {
+        SurfaceProposition::Value(_) => {}
+        SurfaceProposition::Loadable { segment } => segments.push(segment.clone()),
+        SurfaceProposition::And(left, right) => {
             collect_conjunctive_loadability_segments(left, segments);
             collect_conjunctive_loadability_segments(right, segments);
         }
         // A loadability atom under a branch, negation, quantifier, state,
         // or range binder is not unconditional entry authority.
-        ClickProposition::Comparison { .. }
-        | ClickProposition::FloatClassification { .. }
-        | ClickProposition::Separate { .. }
-        | ClickProposition::ResourceViewable { .. }
-        | ClickProposition::Contains { .. }
-        | ClickProposition::Defined { .. }
-        | ClickProposition::IsA { .. }
-        | ClickProposition::At { .. }
-        | ClickProposition::Or(..)
-        | ClickProposition::Not(..)
-        | ClickProposition::Implies(..)
-        | ClickProposition::ForAll { .. }
-        | ClickProposition::Exists { .. }
-        | ClickProposition::RangeAll { .. }
-        | ClickProposition::RangeAny { .. }
-        | ClickProposition::PredicateCall { .. } => {}
+        SurfaceProposition::Comparison { .. }
+        | SurfaceProposition::FloatClassification { .. }
+        | SurfaceProposition::Separate { .. }
+        | SurfaceProposition::ResourceViewable { .. }
+        | SurfaceProposition::Contains { .. }
+        | SurfaceProposition::Defined { .. }
+        | SurfaceProposition::IsA { .. }
+        | SurfaceProposition::At { .. }
+        | SurfaceProposition::Or(..)
+        | SurfaceProposition::Not(..)
+        | SurfaceProposition::Implies(..)
+        | SurfaceProposition::ForAll { .. }
+        | SurfaceProposition::Exists { .. }
+        | SurfaceProposition::RangeAll { .. }
+        | SurfaceProposition::RangeAny { .. }
+        | SurfaceProposition::PredicateCall { .. } => {}
     }
 }
 
@@ -2630,7 +2629,8 @@ fn explicit_entry_loadability_facts(
                 let mut segments = Vec::new();
                 collect_conjunctive_loadability_segments(proposition, &mut segments);
                 for segment in segments {
-                    let loadable = Requirement::Proposition(ClickProposition::Loadable { segment });
+                    let loadable =
+                        Requirement::Proposition(SurfaceProposition::Loadable { segment });
                     let lowered = lower_one(&loadable)?;
                     for fact in lowered {
                         if matches!(fact, Proposition::MemoryLoadable { .. })
@@ -2922,41 +2922,41 @@ fn evaluate_entry_resource_context(
     Ok((state, entry_quantity_facts))
 }
 
-fn click_proposition_mentions_defined(proposition: &ClickProposition) -> bool {
+fn click_proposition_mentions_defined(proposition: &SurfaceProposition) -> bool {
     match proposition {
-        ClickProposition::Value(expression) => {
+        SurfaceProposition::Value(expression) => {
             let mut found = false;
             fixed_state_proofs::conversion_conditions::walk_written_expressions(
                 expression,
                 &mut |term| {
-                    if let ContractExpression::Proposition(body) = term {
+                    if let SurfaceTerm::Proposition(body) = term {
                         found |= click_proposition_mentions_defined(body);
                     }
                 },
             );
             found
         }
-        ClickProposition::Defined { .. } => true,
-        ClickProposition::At { proposition, .. } | ClickProposition::Not(proposition) => {
+        SurfaceProposition::Defined { .. } => true,
+        SurfaceProposition::At { proposition, .. } | SurfaceProposition::Not(proposition) => {
             click_proposition_mentions_defined(proposition)
         }
-        ClickProposition::And(left, right)
-        | ClickProposition::Or(left, right)
-        | ClickProposition::Implies(left, right) => {
+        SurfaceProposition::And(left, right)
+        | SurfaceProposition::Or(left, right)
+        | SurfaceProposition::Implies(left, right) => {
             click_proposition_mentions_defined(left) || click_proposition_mentions_defined(right)
         }
-        ClickProposition::ForAll { body, .. }
-        | ClickProposition::Exists { body, .. }
-        | ClickProposition::RangeAll { body, .. }
-        | ClickProposition::RangeAny { body, .. } => click_proposition_mentions_defined(body),
-        ClickProposition::Comparison { .. }
-        | ClickProposition::FloatClassification { .. }
-        | ClickProposition::Separate { .. }
-        | ClickProposition::ResourceViewable { .. }
-        | ClickProposition::Contains { .. }
-        | ClickProposition::Loadable { .. }
-        | ClickProposition::IsA { .. }
-        | ClickProposition::PredicateCall { .. } => false,
+        SurfaceProposition::ForAll { body, .. }
+        | SurfaceProposition::Exists { body, .. }
+        | SurfaceProposition::RangeAll { body, .. }
+        | SurfaceProposition::RangeAny { body, .. } => click_proposition_mentions_defined(body),
+        SurfaceProposition::Comparison { .. }
+        | SurfaceProposition::FloatClassification { .. }
+        | SurfaceProposition::Separate { .. }
+        | SurfaceProposition::ResourceViewable { .. }
+        | SurfaceProposition::Contains { .. }
+        | SurfaceProposition::Loadable { .. }
+        | SurfaceProposition::IsA { .. }
+        | SurfaceProposition::PredicateCall { .. } => false,
     }
 }
 

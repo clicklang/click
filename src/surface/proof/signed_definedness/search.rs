@@ -5,23 +5,23 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_signed_definedness_bounds(
         search_input: &Proof<'a>,
         width: SignedDefinedWidth,
-        premises: Vec<ClickProposition>,
+        premises: Vec<SurfaceProposition>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_signed_definedness_bounds");
         let Some((left, right)) = search_input.signed_definedness_surface_operands() else {
             return Ok(None);
         };
-        let Some(ClickProposition::Defined { expression }) = search_input.surface_goal() else {
+        let Some(SurfaceProposition::Defined { expression }) = search_input.surface_goal() else {
             return Ok(None);
         };
-        let observe = |term: &ContractExpression| super::super::wide_arithmetic::to_integer(term);
+        let observe = |term: &SurfaceTerm| super::super::wide_arithmetic::to_integer(term);
         let exact = match expression {
-            ContractExpression::Add(..) => {
-                ContractExpression::Add(Box::new(observe(left)), Box::new(observe(right)))
+            SurfaceTerm::Add(..) => {
+                SurfaceTerm::Add(Box::new(observe(left)), Box::new(observe(right)))
             }
-            ContractExpression::Subtract(..) => {
-                ContractExpression::Subtract(Box::new(observe(left)), Box::new(observe(right)))
+            SurfaceTerm::Subtract(..) => {
+                SurfaceTerm::Subtract(Box::new(observe(left)), Box::new(observe(right)))
             }
             _ => return Ok(None),
         };
@@ -29,7 +29,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             SignedDefinedWidth::Int32 => (i64::from(i32::MIN), i64::from(i32::MAX)),
             SignedDefinedWidth::Int64 => (i64::MIN, i64::MAX),
         };
-        let le = |a, b| ClickProposition::Comparison {
+        let le = |a, b| SurfaceProposition::Comparison {
             left: a,
             operator: ComparisonOperator::LessEqual,
             right: b,
@@ -39,7 +39,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // Establish both read operands before deriving bounds: initialized
         // resource reads have explicit domains independent of overflow.
         for operand in [left, right] {
-            let domain = ClickProposition::Defined {
+            let domain = SurfaceProposition::Defined {
                 expression: operand.clone(),
             };
             let kernel = proof.lower_cited_surface_proposition(&domain, "signed operand domain")?;
@@ -86,15 +86,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // Unary negation has the same exact domain as subtraction from
         // zero. Retain that ordinary domain proof rather than invoking the
         // signed interval compatibility checker.
-        if let Some(ClickProposition::Defined {
-            expression: ContractExpression::Negate(operand),
+        if let Some(SurfaceProposition::Defined {
+            expression: SurfaceTerm::Negate(operand),
         }) = search_input.surface_goal()
         {
-            let domain = ClickProposition::Defined {
-                expression: ContractExpression::Subtract(
-                    Box::new(signed_literal(0)),
-                    operand.clone(),
-                ),
+            let domain = SurfaceProposition::Defined {
+                expression: SurfaceTerm::Subtract(Box::new(signed_literal(0)), operand.clone()),
             };
             let scope = search_input.driver().open_have(domain)?;
             if let Some(closed) = scope.driver().try_signed_definedness_closure()? {
@@ -151,8 +148,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn signed_operand_bound_premises(
         search_input: &Proof<'a>,
         width: SignedDefinedWidth,
-        operands: [(&MachineTerm, &ContractExpression); 2],
-    ) -> Vec<ClickProposition> {
+        operands: [(&MachineTerm, &SurfaceTerm); 2],
+    ) -> Vec<SurfaceProposition> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("signed_operand_bound_premises");
         let assumptions = search_input.facts().assumptions();
@@ -179,7 +176,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_signed_definedness_with_operand_definedness(
         search_input: &Proof<'a>,
         width: SignedDefinedWidth,
-        operands: [(&MachineTerm, &ContractExpression); 2],
+        operands: [(&MachineTerm, &SurfaceTerm); 2],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_signed_definedness_with_operand_definedness");
@@ -196,7 +193,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if signed_width_constant(width, term).is_some() {
                 continue;
             }
-            let defined = ClickProposition::Defined {
+            let defined = SurfaceProposition::Defined {
                 expression: surface.clone(),
             };
             if premises.contains(&defined) {
@@ -223,13 +220,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_signed_definedness_after_operand_substitution(
         search_input: &Proof<'a>,
         width: SignedDefinedWidth,
-        operands: [(&MachineTerm, &ContractExpression); 2],
+        operands: [(&MachineTerm, &SurfaceTerm); 2],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery(
             "try_signed_definedness_after_operand_substitution",
         );
-        let Some(ClickProposition::Defined { expression }) = search_input.surface_goal() else {
+        let Some(SurfaceProposition::Defined { expression }) = search_input.surface_goal() else {
             return Ok(None);
         };
         let assumptions = search_input.facts().assumptions();
@@ -248,7 +245,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 restated.push(surface.clone());
                 continue;
             };
-            let equality = ClickProposition::Comparison {
+            let equality = SurfaceProposition::Comparison {
                 left: surface.clone(),
                 operator: ComparisonOperator::Equal,
                 right: simpler.clone(),
@@ -270,15 +267,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if equalities.is_empty() {
             return Ok(None);
         }
-        let [left, right]: [ContractExpression; 2] = restated
+        let [left, right]: [SurfaceTerm; 2] = restated
             .try_into()
             .expect("one restated spelling per operand");
-        let defined = ClickProposition::Defined {
+        let defined = SurfaceProposition::Defined {
             expression: match expression {
-                ContractExpression::Subtract(_, _) => {
-                    ContractExpression::Subtract(Box::new(left), Box::new(right))
+                SurfaceTerm::Subtract(_, _) => {
+                    SurfaceTerm::Subtract(Box::new(left), Box::new(right))
                 }
-                _ => ContractExpression::Add(Box::new(left), Box::new(right)),
+                _ => SurfaceTerm::Add(Box::new(left), Box::new(right)),
             },
         };
         let Ok(scope) = proof.driver().open_have(defined) else {
@@ -304,21 +301,18 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// exactly the listed premises that bound an operand by a constant.
     pub(in crate::surface::proof) fn try_restricted_signed_definedness_closure(
         search_input: &Proof<'a>,
-        premise_pairs: &[(Proposition, ClickProposition)],
+        premise_pairs: &[(Proposition, SurfaceProposition)],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_restricted_signed_definedness_closure");
         // Negation shares subtraction-from-zero's domain. Keep the selected
         // premises when proving that ordinary subtraction domain.
-        if let Some(ClickProposition::Defined {
-            expression: ContractExpression::Negate(operand),
+        if let Some(SurfaceProposition::Defined {
+            expression: SurfaceTerm::Negate(operand),
         }) = search_input.surface_goal()
         {
-            let domain = ClickProposition::Defined {
-                expression: ContractExpression::Subtract(
-                    Box::new(signed_literal(0)),
-                    operand.clone(),
-                ),
+            let domain = SurfaceProposition::Defined {
+                expression: SurfaceTerm::Subtract(Box::new(signed_literal(0)), operand.clone()),
             };
             let scope = search_input.driver().open_have(domain)?;
             let Some(closed) = scope

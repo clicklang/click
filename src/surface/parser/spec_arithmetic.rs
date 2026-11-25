@@ -123,7 +123,7 @@ impl Parser {
         &mut self,
         name: impl Into<SurfaceBinder>,
         click_type: Option<&ClickType>,
-        value: Option<&ContractExpression>,
+        value: Option<&SurfaceTerm>,
     ) -> ShadowedLet {
         let name = name.into();
         let previous_nominal = match click_type {
@@ -137,20 +137,20 @@ impl Parser {
             Some(ClickType::Proposition) => Some(SpecificationBinding::Proposition),
             Some(_) => None,
             None => value.and_then(|value| match value {
-                ContractExpression::Lambda { result, .. } => Some(SpecificationBinding::Function {
+                SurfaceTerm::Lambda { result, .. } => Some(SpecificationBinding::Function {
                     proposition_result: *result == ClickType::Proposition,
                 }),
-                ContractExpression::Proposition(_) => Some(SpecificationBinding::Proposition),
-                ContractExpression::Call { name, .. }
+                SurfaceTerm::Proposition(_) => Some(SpecificationBinding::Proposition),
+                SurfaceTerm::Call { name, .. }
                     if self.proposition_function_names.contains(name) =>
                 {
                     Some(SpecificationBinding::Proposition)
                 }
-                ContractExpression::Apply { function, .. } => {
+                SurfaceTerm::Apply { function, .. } => {
                     let proposition_result = match function.as_ref() {
-                        ContractExpression::Binding(name)
-                        | ContractExpression::ProgramBinding(name)
-                        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                        SurfaceTerm::Binding(name)
+                        | SurfaceTerm::ProgramBinding(name)
+                        | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                             crate::kernel::BindingName::Named(name),
                         )) => matches!(
                             self.specification_binding_kind(name),
@@ -164,9 +164,9 @@ impl Parser {
                     };
                     proposition_result.then_some(SpecificationBinding::Proposition)
                 }
-                ContractExpression::Binding(name)
-                | ContractExpression::ProgramBinding(name)
-                | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                SurfaceTerm::Binding(name)
+                | SurfaceTerm::ProgramBinding(name)
+                | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                     crate::kernel::BindingName::Named(name),
                 )) => self.specification_binding_kind(name),
                 _ => None,
@@ -283,11 +283,11 @@ impl Parser {
 
     /// Whether `value` is a value with only a C meaning: a pointer or a
     /// floating-point value, or arithmetic on one.
-    fn c_only_value(&self, value: &ContractExpression) -> bool {
+    fn c_only_value(&self, value: &SurfaceTerm) -> bool {
         match value {
-            ContractExpression::Binding(name)
-            | ContractExpression::ProgramBinding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::Binding(name)
+            | SurfaceTerm::ProgramBinding(name)
+            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) if self.local_operand(&LocalOperands::new(), name).is_some() => {
                 self.local_operand(&LocalOperands::new(), name) == Some(LocalOperand::COnly)
@@ -318,9 +318,9 @@ impl Parser {
     /// meaning.
     pub(super) fn reads_as_integer_comparison(
         &self,
-        left: &ContractExpression,
+        left: &SurfaceTerm,
         operator: ComparisonOperator,
-        right: &ContractExpression,
+        right: &SurfaceTerm,
     ) -> bool {
         if !self.integer_arithmetic || operator == ComparisonOperator::In {
             return false;
@@ -338,18 +338,18 @@ impl Parser {
 
     pub(super) fn specification_comparison(
         &self,
-        left: ContractExpression,
+        left: SurfaceTerm,
         operator: ComparisonOperator,
-        right: ContractExpression,
-    ) -> ClickProposition {
+        right: SurfaceTerm,
+    ) -> SurfaceProposition {
         if self.reads_as_integer_comparison(&left, operator, &right) {
-            return ClickProposition::Comparison {
+            return SurfaceProposition::Comparison {
                 left: self.observe_machine_operands(left),
                 operator,
                 right: self.observe_machine_operands(right),
             };
         }
-        ClickProposition::Comparison {
+        SurfaceProposition::Comparison {
             left,
             operator,
             right,
@@ -358,7 +358,7 @@ impl Parser {
 
     /// `expression` read where an Integer is expected: its arithmetic, if
     /// it does any on values with an Integer observation, is exact.
-    pub(super) fn at_integer_position(&self, expression: ContractExpression) -> ContractExpression {
+    pub(super) fn at_integer_position(&self, expression: SurfaceTerm) -> SurfaceTerm {
         if self.integer_arithmetic
             && has_arithmetic_spine(&expression)
             && !self.has_c_only_operand(&expression)
@@ -375,7 +375,7 @@ impl Parser {
     pub(super) fn refuse_untyped_machine_arithmetic(
         &self,
         name: &str,
-        value: &ContractExpression,
+        value: &SurfaceTerm,
     ) -> Result<(), ClickError> {
         if !self.integer_arithmetic
             || !has_arithmetic_spine(value)
@@ -407,7 +407,7 @@ impl Parser {
         &self,
         name: &str,
         interface_type: InterfaceType,
-        value: &ContractExpression,
+        value: &SurfaceTerm,
     ) -> Result<(), ClickError> {
         if !matches!(
             interface_type,
@@ -422,17 +422,17 @@ impl Parser {
         let mut pending = vec![value];
         while let Some(expression) = pending.pop() {
             match expression {
-                ContractExpression::Add(left, right)
-                | ContractExpression::Subtract(left, right)
-                | ContractExpression::Multiply(left, right)
-                | ContractExpression::BitwiseAnd(left, right)
-                | ContractExpression::BitwiseOr(left, right)
-                | ContractExpression::BitwiseXor(left, right) => {
+                SurfaceTerm::Add(left, right)
+                | SurfaceTerm::Subtract(left, right)
+                | SurfaceTerm::Multiply(left, right)
+                | SurfaceTerm::BitwiseAnd(left, right)
+                | SurfaceTerm::BitwiseOr(left, right)
+                | SurfaceTerm::BitwiseXor(left, right) => {
                     pending.push(right);
                     pending.push(left);
                 }
-                ContractExpression::BitwiseNot(operand) => pending.push(operand),
-                ContractExpression::IntegerLiteral(_) => {}
+                SurfaceTerm::BitwiseNot(operand) => pending.push(operand),
+                SurfaceTerm::IntegerLiteral(_) => {}
                 leaf => {
                     if let Some(actual) = self.machine_operand_type(leaf)
                         && actual != interface_type
@@ -482,12 +482,12 @@ impl Parser {
         &self,
         name: &str,
         interface_type: InterfaceType,
-        value: ContractExpression,
-    ) -> Result<ContractExpression, ClickError> {
+        value: SurfaceTerm,
+    ) -> Result<SurfaceTerm, ClickError> {
         let (digits, negative) = match &value {
-            ContractExpression::IntegerLiteral(digits) => (digits, false),
-            ContractExpression::Negate(inner) => match inner.as_ref() {
-                ContractExpression::IntegerLiteral(digits) => (digits, true),
+            SurfaceTerm::IntegerLiteral(digits) => (digits, false),
+            SurfaceTerm::Negate(inner) => match inner.as_ref() {
+                SurfaceTerm::IntegerLiteral(digits) => (digits, true),
                 _ => return Ok(value),
             },
             _ => return Ok(value),
@@ -500,9 +500,9 @@ impl Parser {
             suffix: Some(suffix),
         };
         match literal.native_value(negative) {
-            Ok(fixed) => Ok(ContractExpression::ProgramExpression(
-                ProgramExpression::Value(fixed),
-            )),
+            Ok(fixed) => Ok(SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+                fixed,
+            ))),
             Err(_) => {
                 let (least, greatest) = suffix.range();
                 let spelling = self.machine_type_spelling(interface_type);
@@ -517,13 +517,13 @@ impl Parser {
 
     /// Whether `expression` is already an exact Integer: an Integer
     /// binding, a `to_integer` observation, or arithmetic over them.
-    pub(super) fn integer_operand(&self, expression: &ContractExpression) -> bool {
+    pub(super) fn integer_operand(&self, expression: &SurfaceTerm) -> bool {
         self.integer_operand_in_scope(expression, &mut LocalOperands::new())
     }
 
     fn integer_operand_in_scope(
         &self,
-        expression: &ContractExpression,
+        expression: &SurfaceTerm,
         scope: &mut LocalOperands,
     ) -> bool {
         if let Some(id) = expression.generated_binder() {
@@ -531,20 +531,20 @@ impl Parser {
         }
 
         match expression {
-            ContractExpression::IntegerContext(_) => true,
+            SurfaceTerm::IntegerContext(_) => true,
 
-            ContractExpression::Add(left, right)
-            | ContractExpression::Subtract(left, right)
-            | ContractExpression::Multiply(left, right) => {
+            SurfaceTerm::Add(left, right)
+            | SurfaceTerm::Subtract(left, right)
+            | SurfaceTerm::Multiply(left, right) => {
                 self.integer_operand_in_scope(left, scope)
                     || self.integer_operand_in_scope(right, scope)
             }
-            ContractExpression::Negate(inner)
-            | ContractExpression::Old(inner)
-            | ContractExpression::At {
+            SurfaceTerm::Negate(inner)
+            | SurfaceTerm::Old(inner)
+            | SurfaceTerm::At {
                 expression: inner, ..
             } => self.integer_operand_in_scope(inner, scope),
-            ContractExpression::Let {
+            SurfaceTerm::Let {
                 name,
                 click_type,
                 value,
@@ -566,7 +566,7 @@ impl Parser {
             }
             // A match or a conditional is an Integer when a value it can
             // produce is one.
-            ContractExpression::If {
+            SurfaceTerm::If {
                 then_branch,
                 else_branch,
                 ..
@@ -574,15 +574,15 @@ impl Parser {
                 self.integer_operand_in_scope(then_branch, scope)
                     || self.integer_operand_in_scope(else_branch, scope)
             }
-            ContractExpression::AlgebraicMatch { arms, .. } => arms.iter().any(|arm| {
+            SurfaceTerm::AlgebraicMatch { arms, .. } => arms.iter().any(|arm| {
                 with_locals(scope, self.arm_operands(arm), |scope| {
                     self.integer_operand_in_scope(&arm.body, scope)
                 })
             }),
             // `program::name` is the program's binding, never a Click Integer.
-            ContractExpression::ProgramBinding(_) => false,
-            ContractExpression::Binding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::ProgramBinding(_) => false,
+            SurfaceTerm::Binding(name)
+            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) => match self.local_operand(scope, name) {
                 Some(operand) => operand == LocalOperand::Integer,
@@ -592,16 +592,16 @@ impl Parser {
         }
     }
 
-    fn integer_leaf(&self, expression: &ContractExpression) -> bool {
+    fn integer_leaf(&self, expression: &SurfaceTerm) -> bool {
         match expression {
-            ContractExpression::Call { name, .. } => {
+            SurfaceTerm::Call { name, .. } => {
                 name == "to_integer"
                     || crate::surface::integer_truncation::is_integer_truncation(name)
                     || self.integer_function_names.contains(name)
             }
-            ContractExpression::ProgramBinding(_) => false,
-            ContractExpression::Binding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::ProgramBinding(_) => false,
+            SurfaceTerm::Binding(name)
+            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) => {
                 self.names.contains_any(NameKind::INTEGERS, name)
@@ -612,7 +612,7 @@ impl Parser {
                     )
             }
             // A fold is an Integer when a value it can produce is one.
-            ContractExpression::RangeFold { initial, body, .. } => {
+            SurfaceTerm::RangeFold { initial, body, .. } => {
                 self.integer_operand(initial) || self.integer_operand(body)
             }
             _ => false,
@@ -652,28 +652,28 @@ impl Parser {
     /// Whether an arithmetic operand of `expression` has only a C meaning:
     /// a pointer parameter, an `address(p)` of a pointer, or a floating-point
     /// value, which has no Integer observation.
-    pub(super) fn has_c_only_operand(&self, expression: &ContractExpression) -> bool {
+    pub(super) fn has_c_only_operand(&self, expression: &SurfaceTerm) -> bool {
         self.has_c_only_operand_in_scope(expression, &mut LocalOperands::new())
     }
 
     fn has_c_only_operand_in_scope(
         &self,
-        expression: &ContractExpression,
+        expression: &SurfaceTerm,
         scope: &mut LocalOperands,
     ) -> bool {
         match expression {
-            ContractExpression::Add(left, right)
-            | ContractExpression::Subtract(left, right)
-            | ContractExpression::Multiply(left, right) => {
+            SurfaceTerm::Add(left, right)
+            | SurfaceTerm::Subtract(left, right)
+            | SurfaceTerm::Multiply(left, right) => {
                 self.has_c_only_operand_in_scope(left, scope)
                     || self.has_c_only_operand_in_scope(right, scope)
             }
-            ContractExpression::Negate(inner)
-            | ContractExpression::Old(inner)
-            | ContractExpression::At {
+            SurfaceTerm::Negate(inner)
+            | SurfaceTerm::Old(inner)
+            | SurfaceTerm::At {
                 expression: inner, ..
             } => self.has_c_only_operand_in_scope(inner, scope),
-            ContractExpression::If {
+            SurfaceTerm::If {
                 then_branch,
                 else_branch,
                 ..
@@ -681,21 +681,21 @@ impl Parser {
                 self.has_c_only_operand_in_scope(then_branch, scope)
                     || self.has_c_only_operand_in_scope(else_branch, scope)
             }
-            ContractExpression::AlgebraicMatch { arms, .. } => arms.iter().any(|arm| {
+            SurfaceTerm::AlgebraicMatch { arms, .. } => arms.iter().any(|arm| {
                 with_locals(scope, self.arm_operands(arm), |scope| {
                     self.has_c_only_operand_in_scope(&arm.body, scope)
                 })
             }),
-            ContractExpression::Binding(name)
-            | ContractExpression::ProgramBinding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::Binding(name)
+            | SurfaceTerm::ProgramBinding(name)
+            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) if self.local_operand(scope, name).is_some() => {
                 self.local_operand(scope, name) == Some(LocalOperand::COnly)
             }
-            ContractExpression::Binding(name)
-            | ContractExpression::ProgramBinding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::Binding(name)
+            | SurfaceTerm::ProgramBinding(name)
+            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) if matches!(
                 self.names.arm_binding_types.get(name),
@@ -705,7 +705,7 @@ impl Parser {
                 true
             }
             // A call of a pure function that returns a pointer.
-            ContractExpression::Call { name, .. }
+            SurfaceTerm::Call { name, .. }
                 if self.pointer_result_functions.contains(name)
                     || names::library_pointer_result_functions().contains(name) =>
             {
@@ -713,24 +713,22 @@ impl Parser {
             }
             // A method that is a library function returning a pointer,
             // `s.as_ptr()`.
-            ContractExpression::MethodCall { method, .. }
+            SurfaceTerm::MethodCall { method, .. }
                 if names::library_pointer_result_methods().contains(method.as_str()) =>
             {
                 true
             }
             // An address, `&r->arr[0]`, or a cast to a pointer or float type.
-            ContractExpression::ProgramExpression(
+            SurfaceTerm::ProgramExpression(
                 ProgramExpression::AddressOf(_) | ProgramExpression::CheckedObjectAddress(_),
             )
-            | ContractExpression::CUnary {
+            | SurfaceTerm::CUnary {
                 lowered:
                     ProgramExpression::AddressOf(_) | ProgramExpression::CheckedObjectAddress(_),
                 ..
             } => true,
-            ContractExpression::ProgramExpression(ProgramExpression::Cast {
-                target_type, ..
-            })
-            | ContractExpression::CUnary {
+            SurfaceTerm::ProgramExpression(ProgramExpression::Cast { target_type, .. })
+            | SurfaceTerm::CUnary {
                 lowered: ProgramExpression::Cast { target_type, .. },
                 ..
             } if target_type.is_pointer()
@@ -738,15 +736,15 @@ impl Parser {
             {
                 true
             }
-            ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
+            SurfaceTerm::ProgramExpression(ProgramExpression::Value(value)) => {
                 matches!(
                     value.program_type(),
                     ProgramType::Float32 | ProgramType::Float64
                 )
             }
-            ContractExpression::Binding(name)
-            | ContractExpression::ProgramBinding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::Binding(name)
+            | SurfaceTerm::ProgramBinding(name)
+            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) => {
                 let c_only = |interface_type: &InterfaceType| {
@@ -771,24 +769,21 @@ impl Parser {
                             .as_ref()
                             .is_some_and(c_only))
             }
-            ContractExpression::ProgramExpression(ProgramExpression::TypedLoad {
-                value_type,
-                ..
-            })
-            | ContractExpression::MemoryLoad { value_type, .. }
-            | ContractExpression::CUnary {
+            SurfaceTerm::ProgramExpression(ProgramExpression::TypedLoad { value_type, .. })
+            | SurfaceTerm::MemoryLoad { value_type, .. }
+            | SurfaceTerm::CUnary {
                 lowered: ProgramExpression::TypedLoad { value_type, .. },
                 ..
             }
-            | ContractExpression::Field {
+            | SurfaceTerm::Field {
                 lowered: ProgramExpression::TypedLoad { value_type, .. },
                 ..
             } => {
                 value_type.is_pointer()
                     || matches!(value_type, ProgramType::Float32 | ProgramType::Float64)
             }
-            ContractExpression::ProgramExpression(cast @ ProgramExpression::Cast { .. })
-            | ContractExpression::CUnary {
+            SurfaceTerm::ProgramExpression(cast @ ProgramExpression::Cast { .. })
+            | SurfaceTerm::CUnary {
                 lowered: cast @ ProgramExpression::Cast { .. },
                 ..
             } => self.address_casts.contains(cast),
@@ -800,94 +795,89 @@ impl Parser {
     /// with `to_integer`, in every arm of a match and branch of a conditional
     /// it produces. Unsuffixed literals take the Integer type from context,
     /// and Integer operands are left as they are.
-    pub(super) fn observe_machine_operands(
-        &self,
-        expression: ContractExpression,
-    ) -> ContractExpression {
+    pub(super) fn observe_machine_operands(&self, expression: SurfaceTerm) -> SurfaceTerm {
         self.observe_machine_operands_in_scope(expression, &mut LocalOperands::new())
     }
 
     fn observe_machine_operands_in_scope(
         &self,
-        expression: ContractExpression,
+        expression: SurfaceTerm,
         scope: &mut LocalOperands,
-    ) -> ContractExpression {
-        let observe = |expression: Box<ContractExpression>, scope: &mut LocalOperands| {
+    ) -> SurfaceTerm {
+        let observe = |expression: Box<SurfaceTerm>, scope: &mut LocalOperands| {
             Box::new(self.observe_machine_operands_in_scope(*expression, scope))
         };
         match expression {
-            ContractExpression::Add(left, right) => {
-                ContractExpression::Add(observe(left, scope), observe(right, scope))
+            SurfaceTerm::Add(left, right) => {
+                SurfaceTerm::Add(observe(left, scope), observe(right, scope))
             }
-            ContractExpression::Subtract(left, right) => {
-                ContractExpression::Subtract(observe(left, scope), observe(right, scope))
+            SurfaceTerm::Subtract(left, right) => {
+                SurfaceTerm::Subtract(observe(left, scope), observe(right, scope))
             }
-            ContractExpression::Multiply(left, right) => {
-                ContractExpression::Multiply(observe(left, scope), observe(right, scope))
+            SurfaceTerm::Multiply(left, right) => {
+                SurfaceTerm::Multiply(observe(left, scope), observe(right, scope))
             }
-            ContractExpression::Negate(inner) => ContractExpression::Negate(observe(inner, scope)),
-            ContractExpression::Old(inner) if has_arithmetic_spine(&inner) => {
-                ContractExpression::Old(observe(inner, scope))
+            SurfaceTerm::Negate(inner) => SurfaceTerm::Negate(observe(inner, scope)),
+            SurfaceTerm::Old(inner) if has_arithmetic_spine(&inner) => {
+                SurfaceTerm::Old(observe(inner, scope))
             }
-            ContractExpression::At {
+            SurfaceTerm::At {
                 selector,
                 expression,
             } if has_arithmetic_spine(&expression)
                 || self.integer_operand_in_scope(&expression, scope) =>
             {
-                ContractExpression::At {
+                SurfaceTerm::At {
                     selector,
                     expression: observe(expression, scope),
                 }
             }
             // Each branch is in the position the conditional is in; the
             // condition is a proposition, read as it was parsed.
-            ContractExpression::If {
+            SurfaceTerm::If {
                 condition,
                 then_branch,
                 else_branch,
-            } => ContractExpression::If {
+            } => SurfaceTerm::If {
                 condition,
                 then_branch: observe(then_branch, scope),
                 else_branch: observe(else_branch, scope),
             },
             // Each arm is in the position the match is in.
-            ContractExpression::AlgebraicMatch { scrutinee, arms } => {
-                ContractExpression::AlgebraicMatch {
-                    scrutinee,
-                    arms: arms
-                        .into_iter()
-                        .map(|arm| {
-                            let bound = self.arm_operands(&arm);
-                            let AlgebraicMatchArm {
-                                type_name,
-                                variant,
-                                bindings,
-                                body,
-                            } = arm;
-                            let body = with_locals(scope, bound, |scope| {
-                                self.observe_machine_operands_in_scope(body, scope)
-                            });
-                            AlgebraicMatchArm {
-                                type_name,
-                                variant,
-                                bindings,
-                                body,
-                            }
-                        })
-                        .collect(),
-                }
-            }
-            ContractExpression::IntegerLiteral(value) => ContractExpression::IntegerLiteral(value),
-            ContractExpression::Binding(ref name)
-            | ContractExpression::ProgramBinding(ref name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::AlgebraicMatch { scrutinee, arms } => SurfaceTerm::AlgebraicMatch {
+                scrutinee,
+                arms: arms
+                    .into_iter()
+                    .map(|arm| {
+                        let bound = self.arm_operands(&arm);
+                        let AlgebraicMatchArm {
+                            type_name,
+                            variant,
+                            bindings,
+                            body,
+                        } = arm;
+                        let body = with_locals(scope, bound, |scope| {
+                            self.observe_machine_operands_in_scope(body, scope)
+                        });
+                        AlgebraicMatchArm {
+                            type_name,
+                            variant,
+                            bindings,
+                            body,
+                        }
+                    })
+                    .collect(),
+            },
+            SurfaceTerm::IntegerLiteral(value) => SurfaceTerm::IntegerLiteral(value),
+            SurfaceTerm::Binding(ref name)
+            | SurfaceTerm::ProgramBinding(ref name)
+            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(ref name),
             )) if self.local_operand(scope, name) == Some(LocalOperand::Unknown) => expression,
             // An Integer operand, including one under `old` or `at`, is
             // already exact.
             leaf if self.integer_operand_in_scope(&leaf, scope) => leaf,
-            leaf => ContractExpression::Call {
+            leaf => SurfaceTerm::Call {
                 name: "to_integer".to_string(),
                 arguments: vec![leaf],
             },
@@ -898,36 +888,36 @@ impl Parser {
     /// branches, that is a machine value.
     fn machine_spine_operand<'a>(
         &self,
-        expression: &'a ContractExpression,
+        expression: &'a SurfaceTerm,
         scope: &mut LocalOperands,
-    ) -> Option<&'a ContractExpression> {
+    ) -> Option<&'a SurfaceTerm> {
         match expression {
-            ContractExpression::Add(left, right)
-            | ContractExpression::Subtract(left, right)
-            | ContractExpression::Multiply(left, right) => self
+            SurfaceTerm::Add(left, right)
+            | SurfaceTerm::Subtract(left, right)
+            | SurfaceTerm::Multiply(left, right) => self
                 .machine_spine_operand(left, scope)
                 .or_else(|| self.machine_spine_operand(right, scope)),
-            ContractExpression::Negate(inner) => self.machine_spine_operand(inner, scope),
-            ContractExpression::Old(inner)
-            | ContractExpression::At {
+            SurfaceTerm::Negate(inner) => self.machine_spine_operand(inner, scope),
+            SurfaceTerm::Old(inner)
+            | SurfaceTerm::At {
                 expression: inner, ..
             } if has_arithmetic_spine(inner) => self.machine_spine_operand(inner, scope),
-            ContractExpression::If {
+            SurfaceTerm::If {
                 then_branch,
                 else_branch,
                 ..
             } => self
                 .machine_spine_operand(then_branch, scope)
                 .or_else(|| self.machine_spine_operand(else_branch, scope)),
-            ContractExpression::AlgebraicMatch { arms, .. } => arms.iter().find_map(|arm| {
+            SurfaceTerm::AlgebraicMatch { arms, .. } => arms.iter().find_map(|arm| {
                 with_locals(scope, self.arm_operands(arm), |scope| {
                     self.machine_spine_operand(&arm.body, scope)
                 })
             }),
-            ContractExpression::IntegerLiteral(_) => None,
-            ContractExpression::Binding(name)
-            | ContractExpression::ProgramBinding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::IntegerLiteral(_) => None,
+            SurfaceTerm::Binding(name)
+            | SurfaceTerm::ProgramBinding(name)
+            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) if self.local_operand(scope, name).is_some() => (self.local_operand(scope, name)
                 == Some(LocalOperand::Machine))
@@ -943,20 +933,20 @@ impl Parser {
 
     /// The machine type of an arithmetic operand, where its spelling shows
     /// it: a parameter, `result`, a suffixed constant, a load or a cast.
-    fn machine_operand_type(&self, operand: &ContractExpression) -> Option<InterfaceType> {
+    fn machine_operand_type(&self, operand: &SurfaceTerm) -> Option<InterfaceType> {
         if let Some(id) = operand.generated_binder() {
             return self.let_operands.machine_types.get(&id).copied();
         }
 
         match operand {
-            ContractExpression::Old(inner)
-            | ContractExpression::Exact(inner)
-            | ContractExpression::At {
+            SurfaceTerm::Old(inner)
+            | SurfaceTerm::Exact(inner)
+            | SurfaceTerm::At {
                 expression: inner, ..
             } => self.machine_operand_type(inner),
-            ContractExpression::Binding(name)
-            | ContractExpression::ProgramBinding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::Binding(name)
+            | SurfaceTerm::ProgramBinding(name)
+            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) => self
                 .names
@@ -970,30 +960,31 @@ impl Parser {
                         .then_some(self.current_result_interface_type)
                         .flatten()
                 }),
-            ContractExpression::ProgramExpression(lowered)
-            | ContractExpression::CUnary { lowered, .. } => match lowered {
-                ProgramExpression::Variable(name) if name.named().is_none() => name
-                    .program_type()
-                    .map(crate::surface::generics::interface_type_from_program_type),
-                ProgramExpression::Value(value) => {
-                    Some(crate::surface::generics::interface_type_from_program_type(
-                        value.program_type(),
-                    ))
+            SurfaceTerm::ProgramExpression(lowered) | SurfaceTerm::CUnary { lowered, .. } => {
+                match lowered {
+                    ProgramExpression::Variable(name) if name.named().is_none() => name
+                        .program_type()
+                        .map(crate::surface::generics::interface_type_from_program_type),
+                    ProgramExpression::Value(value) => {
+                        Some(crate::surface::generics::interface_type_from_program_type(
+                            value.program_type(),
+                        ))
+                    }
+                    ProgramExpression::TypedLoad { value_type, .. }
+                    | ProgramExpression::Cast {
+                        target_type: value_type,
+                        ..
+                    } => Some(crate::surface::generics::interface_type_from_program_type(
+                        *value_type,
+                    )),
+                    _ => None,
                 }
-                ProgramExpression::TypedLoad { value_type, .. }
-                | ProgramExpression::Cast {
-                    target_type: value_type,
-                    ..
-                } => Some(crate::surface::generics::interface_type_from_program_type(
-                    *value_type,
-                )),
-                _ => None,
-            },
-            ContractExpression::Field {
+            }
+            SurfaceTerm::Field {
                 lowered: ProgramExpression::TypedLoad { value_type, .. },
                 ..
             }
-            | ContractExpression::MemoryLoad { value_type, .. } => Some(
+            | SurfaceTerm::MemoryLoad { value_type, .. } => Some(
                 crate::surface::generics::interface_type_from_program_type(*value_type),
             ),
             _ => None,
@@ -1003,16 +994,16 @@ impl Parser {
 
 /// Whether `expression` is `+ - * & | ^ ~` at its root, the arithmetic a
 /// narrow position makes its type's own (decision G2).
-pub(in crate::surface) fn is_narrow_arithmetic(expression: &ContractExpression) -> bool {
+pub(in crate::surface) fn is_narrow_arithmetic(expression: &SurfaceTerm) -> bool {
     matches!(
         expression,
-        ContractExpression::Add(..)
-            | ContractExpression::Subtract(..)
-            | ContractExpression::Multiply(..)
-            | ContractExpression::BitwiseAnd(..)
-            | ContractExpression::BitwiseOr(..)
-            | ContractExpression::BitwiseXor(..)
-            | ContractExpression::BitwiseNot(..)
+        SurfaceTerm::Add(..)
+            | SurfaceTerm::Subtract(..)
+            | SurfaceTerm::Multiply(..)
+            | SurfaceTerm::BitwiseAnd(..)
+            | SurfaceTerm::BitwiseOr(..)
+            | SurfaceTerm::BitwiseXor(..)
+            | SurfaceTerm::BitwiseNot(..)
     )
 }
 
@@ -1035,17 +1026,13 @@ pub(in crate::surface) fn mixed_narrow_arithmetic_message(
 
 /// Whether `expression` or an operand of its arithmetic is a population
 /// count, looking through `old`.
-pub(super) fn has_count_operand(expression: &ContractExpression) -> bool {
+pub(super) fn has_count_operand(expression: &SurfaceTerm) -> bool {
     match expression {
-        ContractExpression::ResourceCount(_) => true,
-        ContractExpression::Add(left, right)
-        | ContractExpression::Subtract(left, right)
-        | ContractExpression::Multiply(left, right) => {
-            has_count_operand(left) || has_count_operand(right)
-        }
-        ContractExpression::Negate(inner) | ContractExpression::Old(inner) => {
-            has_count_operand(inner)
-        }
+        SurfaceTerm::ResourceCount(_) => true,
+        SurfaceTerm::Add(left, right)
+        | SurfaceTerm::Subtract(left, right)
+        | SurfaceTerm::Multiply(left, right) => has_count_operand(left) || has_count_operand(right),
+        SurfaceTerm::Negate(inner) | SurfaceTerm::Old(inner) => has_count_operand(inner),
         _ => false,
     }
 }
@@ -1053,25 +1040,21 @@ pub(super) fn has_count_operand(expression: &ContractExpression) -> bool {
 /// Whether `expression` does `+`, `-`, `*` or negation at its top, looking
 /// through `old`, `at`, the arms of a match and the branches of a
 /// conditional, each of which is in the position the whole is in.
-pub(in crate::surface) fn has_arithmetic_spine(expression: &ContractExpression) -> bool {
+pub(in crate::surface) fn has_arithmetic_spine(expression: &SurfaceTerm) -> bool {
     match expression {
-        ContractExpression::Add(..)
-        | ContractExpression::Subtract(..)
-        | ContractExpression::Multiply(..) => true,
+        SurfaceTerm::Add(..) | SurfaceTerm::Subtract(..) | SurfaceTerm::Multiply(..) => true,
         // A negative literal, `-128`, is a constant, not arithmetic.
-        ContractExpression::Negate(inner) => {
-            !matches!(inner.as_ref(), ContractExpression::IntegerLiteral(_))
-        }
-        ContractExpression::Old(inner)
-        | ContractExpression::At {
+        SurfaceTerm::Negate(inner) => !matches!(inner.as_ref(), SurfaceTerm::IntegerLiteral(_)),
+        SurfaceTerm::Old(inner)
+        | SurfaceTerm::At {
             expression: inner, ..
         } => has_arithmetic_spine(inner),
-        ContractExpression::If {
+        SurfaceTerm::If {
             then_branch,
             else_branch,
             ..
         } => has_arithmetic_spine(then_branch) || has_arithmetic_spine(else_branch),
-        ContractExpression::AlgebraicMatch { arms, .. } => {
+        SurfaceTerm::AlgebraicMatch { arms, .. } => {
             arms.iter().any(|arm| has_arithmetic_spine(&arm.body))
         }
         _ => false,
@@ -1138,14 +1121,14 @@ impl Parser {
     pub(super) fn observe_integer_arguments(
         &self,
         name: &str,
-        mut arguments: Vec<ContractExpression>,
-    ) -> Vec<ContractExpression> {
+        mut arguments: Vec<SurfaceTerm>,
+    ) -> Vec<SurfaceTerm> {
         let Some(positions) = self.integer_parameters_of(name) else {
             return arguments;
         };
         for &position in positions {
             if let Some(argument) = arguments.get_mut(position) {
-                let written = std::mem::replace(argument, ContractExpression::ResourceWildcard);
+                let written = std::mem::replace(argument, SurfaceTerm::ResourceWildcard);
                 *argument = self.at_integer_position(written);
             }
         }
@@ -1158,8 +1141,8 @@ impl Parser {
         &self,
         type_name: &str,
         variant: &str,
-        mut arguments: Vec<ContractExpression>,
-    ) -> Vec<ContractExpression> {
+        mut arguments: Vec<SurfaceTerm>,
+    ) -> Vec<SurfaceTerm> {
         let Some(fields) = self
             .algebraic_variant_fields
             .get(&(type_name.to_string(), variant.to_string()))
@@ -1168,7 +1151,7 @@ impl Parser {
         };
         for (argument, field) in arguments.iter_mut().zip(fields) {
             if *field == AlgebraicFieldType::Integer {
-                let written = std::mem::replace(argument, ContractExpression::ResourceWildcard);
+                let written = std::mem::replace(argument, SurfaceTerm::ResourceWildcard);
                 *argument = self.at_integer_position(written);
             }
         }

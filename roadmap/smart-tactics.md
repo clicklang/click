@@ -1,7 +1,5 @@
 # Smart tactics: fast checking and enforceable search boundaries
 
-Priority: P1.
-
 Soundness: incomplete. A cell named once by a selected program point and once
 by its memory state gets two terms no rule relates, so a fact stated with one
 does not prove a goal stated with the other: Click can refuse a true claim.
@@ -200,6 +198,5 @@ checked steps.
 **Acceptance.** No written `transport` remains in `examples/`, `library/`,
 `mdtests/`, `tests/` or docs; the parser, dispatcher, `PostExecutionTactic::Transport`
 and the uncharged transition-context route are deleted; negative fixtures
-keep their semantic refusals; the boundary test passes. Coordinate with
-[one tactic interpreter](one-tactic-interpreter.md), whose context-agreement
-tests include `transport`.
+keep their semantic refusals across proof contexts, and the boundary test
+passes.

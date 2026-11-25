@@ -4,7 +4,7 @@ fn entry_tree(start: usize, end: usize) -> LoopEntryBranches {
     }
     let middle = (start + end) / 2;
     LoopEntryBranches::Split {
-        condition: ClickProposition::PredicateCall {
+        condition: SurfaceProposition::PredicateCall {
             name: format!("guard_{start}_{end}"),
             arguments: vec![],
         },

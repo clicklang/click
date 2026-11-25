@@ -87,13 +87,13 @@ fn boolean_local_synthesis_round_trips_and_scales_with_local_population() {
         let surface = surface.expect("a normalized Boolean local has its source spelling");
         assert_eq!(
             surface,
-            ContractExpression::ProgramExpression(ProgramExpression::Variable("z_bool".into()))
+            SurfaceTerm::ProgramExpression(ProgramExpression::Variable("z_bool".into()))
         );
         assert!(
             work >= size && work <= size + 64,
             "{size} locals: {work} work"
         );
-        let equality = ClickProposition::Comparison {
+        let equality = SurfaceProposition::Comparison {
             left: surface.clone(),
             operator: ComparisonOperator::Equal,
             right: surface,
@@ -225,7 +225,7 @@ fn integer_division_synthesis_work_tracks_the_selected_expression() {
                 .expect("the selected quotient/remainder chain is spellable");
         let mut cursor = &surface;
         for level in (0..size).rev() {
-            let ContractExpression::Call { name, arguments } = cursor else {
+            let SurfaceTerm::Call { name, arguments } = cursor else {
                 panic!("the selected division node lost its spelling");
             };
             assert_eq!(
@@ -237,10 +237,10 @@ fn integer_division_synthesis_work_tracks_the_selected_expression() {
                 }
             );
             assert_eq!(arguments.len(), 2);
-            assert_eq!(arguments[1], ContractExpression::IntegerLiteral("4".into()));
+            assert_eq!(arguments[1], SurfaceTerm::IntegerLiteral("4".into()));
             cursor = &arguments[0];
         }
-        assert_eq!(*cursor, ContractExpression::Binding("n".into()));
+        assert_eq!(*cursor, SurfaceTerm::Binding("n".into()));
         let work = SURFACE_SYNTHESIS_BUDGET.with(|slot| {
             let slot = slot.borrow();
             let budget = slot.as_ref().unwrap();

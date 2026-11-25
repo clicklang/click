@@ -42,11 +42,11 @@ int32 write_one(struct buffer* buffer) {
     match prefix.tag {
         PrefixTag::End(end) => {
             have 0 <= 0 by {
-                normalize();
+                close();
             }
             have 0 < end by {
                 rewrite(end, 1);
-                normalize();
+                close();
             }
             have buffer->data[0] == 0 by {
                 instantiate(forall (k: int32) {

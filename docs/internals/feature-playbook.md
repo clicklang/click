@@ -65,7 +65,7 @@ Checklist:
 Search for all matches on:
 
 ```console
-rg -n "ClickProposition|ContractExpression" src/surface.rs
+rg -n "SurfaceProposition|SurfaceTerm" src/surface.rs
 ```
 
 ## Adding C syntax

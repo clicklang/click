@@ -26,7 +26,7 @@ theorem head_nonnegative(a: int32[], n: int32) {
     requires 0 < n;
     requires forall (k: int32) { 0 <= k and k < n implies a[k] >= 0 };
     ensures a[0] >= 0 by {
-        have 0 <= 0 by normalize();
+        have 0 <= 0 by close();
         instantiate(forall (k: int32) { 0 <= k and k < n implies a[k] >= 0 }, 0);
         close();
     }

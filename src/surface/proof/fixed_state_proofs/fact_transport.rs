@@ -9,26 +9,24 @@ use crate::surface::proof_diagnostics::render;
 
 /// The premises a bare `transport` writes: its source, when that is an
 /// available fact and carries the target, or none when the target already
-/// follows without it. No other available fact is a candidate: a frame that
-/// needs more premises is written as `transport(P, Q) using { ... }`, and the
-/// bare form's miss says so. The final `TransportUsing` step checks all the
-/// ordinary frame routes.
+/// follows without it. This planner does not select additional premises.
+/// The ordinary proof route checks the selected frame evidence.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface::proof) fn plan_explicit_fact_transport(
-    surface_source: &ClickProposition,
+    surface_source: &SurfaceProposition,
     source: &Proposition,
     target: &Proposition,
     available_facts: &PureFactStore,
     effect_facts: &(impl ExecutionFactSource + ?Sized),
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-) -> Result<Vec<ClickProposition>, ClickError> {
+) -> Result<Vec<SurfaceProposition>, ClickError> {
     let available = available_facts.to_vec();
     let mut selected = Vec::new();
     if exact_fact_is_available(source, &available) {
         selected.push((source.clone(), surface_source.clone()));
     }
-    let check_premises = |selected: &[(Proposition, ClickProposition)]| {
+    let check_premises = |selected: &[(Proposition, SurfaceProposition)]| {
         let explicit = selected
             .iter()
             .map(|(kernel, _)| kernel.clone())
@@ -108,7 +106,7 @@ pub(in crate::surface::proof) fn plan_explicit_fact_transport(
         )
     };
 
-    let checks = |selected: &[(Proposition, ClickProposition)]| {
+    let checks = |selected: &[(Proposition, SurfaceProposition)]| {
         crate::instrumentation::measure_operation(
             "surface",
             "fact transport",
@@ -116,9 +114,8 @@ pub(in crate::surface::proof) fn plan_explicit_fact_transport(
             || check_premises(selected),
         )
     };
-    // The candidate is the source alone. Search over the other available
-    // facts is gone: a premise the frame needs beyond the source is written
-    // in the `using` form, which this planner never scans for.
+    // The source is the only candidate. State any additional facts in an
+    // ordinary proof before applying preservation or rewriting.
     if !checks(&selected) {
         let _render_timing = crate::instrumentation::OperationTiming::new(
             "surface",
@@ -160,9 +157,9 @@ pub(in crate::surface::proof) struct CheckedFixedStateFactTransport {
 /// exact checked source and target for those owners to record atomically.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface::proof) fn check_fixed_state_fact_transport_using_facts(
-    surface_source: &ClickProposition,
-    surface_target: &ClickProposition,
-    surface_premises: &[ClickProposition],
+    surface_source: &SurfaceProposition,
+    surface_target: &SurfaceProposition,
+    surface_premises: &[SurfaceProposition],
     claim_label: &str,
     tactic_index: usize,
     available: &PureFactStore,
@@ -218,9 +215,9 @@ pub(in crate::surface::proof) fn check_fixed_state_fact_transport_using_facts(
 
 #[allow(clippy::too_many_arguments)]
 fn check_fixed_state_fact_transport_using_facts_inner(
-    surface_source: &ClickProposition,
-    surface_target: &ClickProposition,
-    surface_premises: &[ClickProposition],
+    surface_source: &SurfaceProposition,
+    surface_target: &SurfaceProposition,
+    surface_premises: &[SurfaceProposition],
     claim_label: &str,
     tactic_index: usize,
     available: &PureFactStore,
@@ -782,10 +779,10 @@ const NO_FRAME_EVIDENCE: &str =
 /// Include every frontier effect: a truncated list can hide the missing frame.
 /// The name a quantified proposition's source gives its binder: the written
 /// spelling when hygiene renamed it, through any `at(...)` around it.
-fn quantifier_binder_name(surface: &ClickProposition) -> Option<String> {
+fn quantifier_binder_name(surface: &SurfaceProposition) -> Option<String> {
     match surface {
-        ClickProposition::At { proposition, .. } => quantifier_binder_name(proposition),
-        ClickProposition::ForAll {
+        SurfaceProposition::At { proposition, .. } => quantifier_binder_name(proposition),
+        SurfaceProposition::ForAll {
             name, written_name, ..
         } => Some(
             written_name
@@ -793,7 +790,7 @@ fn quantifier_binder_name(surface: &ClickProposition) -> Option<String> {
                 .or_else(|| name.written().map(str::to_owned))
                 .unwrap_or_else(|| "value".into()),
         ),
-        ClickProposition::RangeAll {
+        SurfaceProposition::RangeAll {
             item, written_item, ..
         } => Some(
             written_item
@@ -808,8 +805,8 @@ fn quantifier_binder_name(surface: &ClickProposition) -> Option<String> {
 fn describe_unreachable_fact_transport(
     claim_label: &str,
     tactic_index: usize,
-    surface_source: &ClickProposition,
-    surface_target: &ClickProposition,
+    surface_source: &SurfaceProposition,
+    surface_target: &SurfaceProposition,
     source: &Proposition,
     target: &Proposition,
     transition_facts: &(impl ExecutionFactSource + ?Sized),
@@ -884,37 +881,37 @@ fn describe_unreachable_fact_transport(
     rendered
 }
 
-fn surface_predicate_call_name(proposition: &ClickProposition) -> Option<&str> {
+fn surface_predicate_call_name(proposition: &SurfaceProposition) -> Option<&str> {
     match proposition {
-        ClickProposition::Value(_) => None,
-        ClickProposition::PredicateCall { name, .. } => Some(name),
-        ClickProposition::At { proposition, .. }
-        | ClickProposition::Not(proposition)
-        | ClickProposition::ForAll {
+        SurfaceProposition::Value(_) => None,
+        SurfaceProposition::PredicateCall { name, .. } => Some(name),
+        SurfaceProposition::At { proposition, .. }
+        | SurfaceProposition::Not(proposition)
+        | SurfaceProposition::ForAll {
             body: proposition, ..
         }
-        | ClickProposition::Exists {
+        | SurfaceProposition::Exists {
             body: proposition, ..
         }
-        | ClickProposition::RangeAll {
+        | SurfaceProposition::RangeAll {
             body: proposition, ..
         }
-        | ClickProposition::RangeAny {
+        | SurfaceProposition::RangeAny {
             body: proposition, ..
         } => surface_predicate_call_name(proposition),
-        ClickProposition::And(left, right)
-        | ClickProposition::Or(left, right)
-        | ClickProposition::Implies(left, right) => {
+        SurfaceProposition::And(left, right)
+        | SurfaceProposition::Or(left, right)
+        | SurfaceProposition::Implies(left, right) => {
             surface_predicate_call_name(left).or_else(|| surface_predicate_call_name(right))
         }
-        ClickProposition::Comparison { .. }
-        | ClickProposition::FloatClassification { .. }
-        | ClickProposition::Separate { .. }
-        | ClickProposition::ResourceViewable { .. }
-        | ClickProposition::Contains { .. }
-        | ClickProposition::Loadable { .. }
-        | ClickProposition::Defined { .. }
-        | ClickProposition::IsA { .. } => None,
+        SurfaceProposition::Comparison { .. }
+        | SurfaceProposition::FloatClassification { .. }
+        | SurfaceProposition::Separate { .. }
+        | SurfaceProposition::ResourceViewable { .. }
+        | SurfaceProposition::Contains { .. }
+        | SurfaceProposition::Loadable { .. }
+        | SurfaceProposition::Defined { .. }
+        | SurfaceProposition::IsA { .. } => None,
     }
 }
 
@@ -927,8 +924,8 @@ fn surface_predicate_call_name(proposition: &ClickProposition) -> Option<&str> {
 /// between the two states, so it is the answer: the planner's own failure
 /// says only that no premise selection helped.
 pub(in crate::surface::proof) fn fact_transport_planning_failure(
-    source: &ClickProposition,
-    target: &ClickProposition,
+    source: &SurfaceProposition,
+    target: &SurfaceProposition,
     error: &ClickError,
     source_refusal: Option<&ClickError>,
 ) -> String {
@@ -958,10 +955,8 @@ pub(in crate::surface::proof) fn fact_transport_planning_failure(
 }
 
 /// The line a bare `transport` adds when its premise planner finds no frame
-/// evidence. The planner is a search, so finding nothing is a search miss:
-/// the fix is the evidence written in the explicit form, which searches
-/// nothing and whose refusal is the frame check's own.
-const TRANSPORT_SEARCH_MISS: &str = "\n  this is a search miss, not a refusal; if the target holds, list the facts that carry the source in `transport(P, Q) using { ... }`, stating any that is not available with `have` first";
+/// evidence. A proof can name the missing links with ordinary steps.
+const TRANSPORT_SEARCH_MISS: &str = "\n  this is a search miss, not a refusal; use `have` to state the facts that carry the source, `preserve` to prove unchanged reads across named footprints, and `rewrite` to relate those reads";
 
 /// Erases every embedded memory state from a comparison proposition so
 /// two forms of the same comparison at different states compare

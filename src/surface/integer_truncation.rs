@@ -7,8 +7,8 @@ pub(in crate::surface) fn is_integer_truncation(name: &str) -> bool {
 
 pub(super) fn integer_truncation_arguments<'a>(
     name: &str,
-    arguments: &'a [ContractExpression],
-) -> Result<(&'a ContractExpression, &'a ContractExpression), String> {
+    arguments: &'a [SurfaceTerm],
+) -> Result<(&'a SurfaceTerm, &'a SurfaceTerm), String> {
     let [left, right] = arguments else {
         return Err(format!("{name} expects two Integer arguments"));
     };

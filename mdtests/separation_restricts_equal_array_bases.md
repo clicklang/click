@@ -23,7 +23,10 @@ theorem selected(A: Resource, p: int32*, q: int32*, i: int32, cap: int32) {
         have separate(A, memory(q[i..i+1])) by {
             apply(separation::separate_restrict(A, memory(q[0..cap]), A, memory(q[i..i+1])));
         }
-        have contains(memory(q[i..i+1]), memory(q[i])) by { normalize(); }
+        have contains(memory(q[i..i+1]), memory(q[i])) by {
+            have i < ((i + 1) as int32) by close() using { i <= 2147483646; };
+            apply(separation::contains_element(q, i, i + 1, i));
+        }
         apply(separation::separate_restrict(A, memory(q[i..i+1]), A, memory(q[i])));
     }
 }

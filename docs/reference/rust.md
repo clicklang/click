@@ -41,9 +41,7 @@ show the expected identity and the bounded identity actually reported. A
 and the source-build setup command. Hosts without a packaged bundle are
 reported as unavailable rather than being given an install command that
 cannot supply their platform.
-Linux x86-64 GNU is the agreed launch host scope. The P1 frontend delivery
-milestone is complete for that scope; additional host bundles and broader Rust
-coverage are optional future work.
+The Rust front end currently ships a Linux x86-64 GNU bundle.
 
 Rust project units use this frontend automatically. `CLICK_CHARON` is a
 contributor override: a bundle directory selects that bundle, while an

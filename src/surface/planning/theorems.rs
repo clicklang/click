@@ -10,17 +10,17 @@ enum ExpressionHead {
     Node(&'static str),
 }
 
-fn parameter_name(expression: &ContractExpression) -> Option<&str> {
+fn parameter_name(expression: &SurfaceTerm) -> Option<&str> {
     match expression {
-        ContractExpression::AlgebraicVariable { name, .. } => name.written(),
-        ContractExpression::Binding(name) => Some(name),
-        ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => name.named(),
+        SurfaceTerm::AlgebraicVariable { name, .. } => name.written(),
+        SurfaceTerm::Binding(name) => Some(name),
+        SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name)) => name.named(),
         _ => None,
     }
 }
 
-fn expression_head(expression: &ContractExpression) -> ExpressionHead {
-    use ContractExpression as E;
+fn expression_head(expression: &SurfaceTerm) -> ExpressionHead {
+    use SurfaceTerm as E;
     ExpressionHead::Node(match expression {
         E::Call { name, .. } => return ExpressionHead::Call(name.clone()),
         E::AlgebraicConstructor {
@@ -59,14 +59,10 @@ fn expression_head(expression: &ContractExpression) -> ExpressionHead {
 /// Operand reversal preserves float comparisons too, including NaNs. Do not
 /// turn negated orders into complementary relations here.
 fn comparison_view<'a>(
-    left: &'a ContractExpression,
+    left: &'a SurfaceTerm,
     operator: ComparisonOperator,
-    right: &'a ContractExpression,
-) -> (
-    ComparisonOperator,
-    &'a ContractExpression,
-    &'a ContractExpression,
-) {
+    right: &'a SurfaceTerm,
+) -> (ComparisonOperator, &'a SurfaceTerm, &'a SurfaceTerm) {
     match operator {
         ComparisonOperator::GreaterThan => (ComparisonOperator::LessThan, right, left),
         ComparisonOperator::GreaterEqual => (ComparisonOperator::LessEqual, right, left),
@@ -91,10 +87,10 @@ enum ConclusionHead {
 }
 
 fn conclusion_head(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     parameters: &BTreeSet<&str>,
 ) -> Option<ConclusionHead> {
-    let head = |expression: &ContractExpression| {
+    let head = |expression: &SurfaceTerm| {
         if parameter_name(expression).is_some_and(|name| parameters.contains(name)) {
             None
         } else {
@@ -102,7 +98,7 @@ fn conclusion_head(
         }
     };
     Some(match proposition {
-        ClickProposition::Comparison {
+        SurfaceProposition::Comparison {
             left,
             operator,
             right,
@@ -110,13 +106,13 @@ fn conclusion_head(
             let (operator, left, right) = comparison_view(left, *operator, right);
             ConclusionHead::Comparison(operator as u8, head(left), head(right))
         }
-        ClickProposition::PredicateCall { name, .. } => ConclusionHead::Predicate(name.clone()),
-        ClickProposition::Defined { expression } => ConclusionHead::Defined(head(expression)),
-        ClickProposition::Value(expression) => ConclusionHead::Value(head(expression)),
-        ClickProposition::And(..) => ConclusionHead::Logical(0),
-        ClickProposition::Or(..) => ConclusionHead::Logical(1),
-        ClickProposition::Not(..) => ConclusionHead::Logical(2),
-        ClickProposition::Implies(..) => ConclusionHead::Logical(3),
+        SurfaceProposition::PredicateCall { name, .. } => ConclusionHead::Predicate(name.clone()),
+        SurfaceProposition::Defined { expression } => ConclusionHead::Defined(head(expression)),
+        SurfaceProposition::Value(expression) => ConclusionHead::Value(head(expression)),
+        SurfaceProposition::And(..) => ConclusionHead::Logical(0),
+        SurfaceProposition::Or(..) => ConclusionHead::Logical(1),
+        SurfaceProposition::Not(..) => ConclusionHead::Logical(2),
+        SurfaceProposition::Implies(..) => ConclusionHead::Logical(3),
         _ => return None,
     })
 }
@@ -171,7 +167,7 @@ impl TheoremConclusionIndex {
 
     pub(in crate::surface) fn candidates<'a>(
         &'a self,
-        goal: &ClickProposition,
+        goal: &SurfaceProposition,
         end: usize,
     ) -> impl Iterator<Item = &'a TheoremCandidate> {
         let mut keys = Vec::new();
@@ -236,7 +232,7 @@ pub(in crate::surface) enum TheoremConclusionMatch<'a> {
 pub(in crate::surface) fn match_theorem_conclusion<'a>(
     theorem: &'a TheoremDefinition,
     ensure: usize,
-    goal: &'a ClickProposition,
+    goal: &'a SurfaceProposition,
 ) -> impl Iterator<Item = TheoremApplication> + 'a {
     theorem_conclusion_matches(theorem, ensure, goal).filter_map(|outcome| match outcome {
         TheoremConclusionMatch::Application(application) => Some(application),
@@ -250,10 +246,10 @@ pub(in crate::surface) fn match_theorem_conclusion<'a>(
 pub(in crate::surface) fn theorem_conclusion_matches<'a>(
     theorem: &'a TheoremDefinition,
     ensure: usize,
-    goal: &'a ClickProposition,
+    goal: &'a SurfaceProposition,
 ) -> impl Iterator<Item = TheoremConclusionMatch<'a>> + 'a {
-    use ClickProposition as P;
-    use ContractExpression as E;
+    use SurfaceProposition as P;
+    use SurfaceTerm as E;
     #[derive(Clone, Copy)]
     enum Pair<'a> {
         Expression(&'a E, &'a E),
@@ -275,7 +271,7 @@ pub(in crate::surface) fn theorem_conclusion_matches<'a>(
         .into_iter()
         .map(|conclusion| {
             (
-                BTreeMap::<&str, &ContractExpression>::new(),
+                BTreeMap::<&str, &SurfaceTerm>::new(),
                 vec![Pair::Proposition(conclusion, goal)],
             )
         })

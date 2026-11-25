@@ -114,9 +114,9 @@ impl Carrier {
 
     /// Preserve the comparison's implicit promotion when emitting arguments
     /// for a bridge whose binders explicitly require a 64-bit value.
-    pub(super) fn typed_literals(self, expression: &ContractExpression) -> ContractExpression {
+    pub(super) fn typed_literals(self, expression: &SurfaceTerm) -> SurfaceTerm {
         match expression {
-            ContractExpression::IntegerLiteral(text) => {
+            SurfaceTerm::IntegerLiteral(text) => {
                 let value = match self {
                     Self::UInt64 => text
                         .parse::<u64>()
@@ -132,25 +132,23 @@ impl Carrier {
                         .map(|value| ProgramValue::UInt32(MachineTerm::uint32_constant(value))),
                 };
                 value
-                    .map(|value| {
-                        ContractExpression::ProgramExpression(ProgramExpression::Value(value))
-                    })
+                    .map(|value| SurfaceTerm::ProgramExpression(ProgramExpression::Value(value)))
                     .unwrap_or_else(|| expression.clone())
             }
-            ContractExpression::Add(left, right) => ContractExpression::Add(
+            SurfaceTerm::Add(left, right) => SurfaceTerm::Add(
                 Box::new(self.typed_literals(left)),
                 Box::new(self.typed_literals(right)),
             ),
-            ContractExpression::Subtract(left, right) => ContractExpression::Subtract(
+            SurfaceTerm::Subtract(left, right) => SurfaceTerm::Subtract(
                 Box::new(self.typed_literals(left)),
                 Box::new(self.typed_literals(right)),
             ),
-            ContractExpression::At {
+            SurfaceTerm::At {
                 selector,
                 expression,
             } => {
                 let read = at_operand(selector, expression);
-                if matches!(read, ContractExpression::At { .. }) {
+                if matches!(read, SurfaceTerm::At { .. }) {
                     read
                 } else {
                     self.typed_literals(&read)
@@ -191,9 +189,9 @@ pub(super) enum Relation {
 /// holds of every pair of values of one integer type. The last part says
 /// whether the proposition is written in the bridge's own form.
 pub(super) fn relation_parts(
-    proposition: &ClickProposition,
-) -> Option<(ContractExpression, ContractExpression, Relation, bool)> {
-    if let ClickProposition::At {
+    proposition: &SurfaceProposition,
+) -> Option<(SurfaceTerm, SurfaceTerm, Relation, bool)> {
+    if let SurfaceProposition::At {
         selector,
         proposition,
     } = proposition
@@ -207,10 +205,10 @@ pub(super) fn relation_parts(
         ));
     }
     let (proposition, negated) = match proposition {
-        ClickProposition::Not(body) => (body.as_ref(), true),
+        SurfaceProposition::Not(body) => (body.as_ref(), true),
         other => (other, false),
     };
-    let ClickProposition::Comparison {
+    let SurfaceProposition::Comparison {
         left,
         operator,
         right,
@@ -237,8 +235,8 @@ pub(super) fn relation_parts(
 /// exact observations, `to_integer(a) <= to_integer(b)`, is that native
 /// comparison of `a` and `b`, and is read as it.
 fn native_relation_parts(
-    proposition: &ClickProposition,
-) -> Option<(ContractExpression, ContractExpression, Relation, bool)> {
+    proposition: &SurfaceProposition,
+) -> Option<(SurfaceTerm, SurfaceTerm, Relation, bool)> {
     let (lower, upper, relation, forward) = relation_parts(proposition)?;
     if let (Some(lower), Some(upper)) = (observed(&lower), observed(&upper)) {
         return Some((lower, upper, relation, forward));
@@ -247,9 +245,9 @@ fn native_relation_parts(
 }
 
 /// The machine expression `expression` observes, when it is `to_integer(e)`.
-fn observed(expression: &ContractExpression) -> Option<ContractExpression> {
+fn observed(expression: &SurfaceTerm) -> Option<SurfaceTerm> {
     match expression {
-        ContractExpression::Call { name, arguments } if name == "to_integer" => {
+        SurfaceTerm::Call { name, arguments } if name == "to_integer" => {
             match arguments.as_slice() {
                 [argument] => Some(argument.clone()),
                 _ => None,
@@ -260,39 +258,36 @@ fn observed(expression: &ContractExpression) -> Option<ContractExpression> {
 }
 
 /// Whether `proposition` compares two exact observations.
-pub(super) fn compares_observations(proposition: &ClickProposition) -> bool {
+pub(super) fn compares_observations(proposition: &SurfaceProposition) -> bool {
     let proposition = match proposition {
-        ClickProposition::Not(body) => body.as_ref(),
+        SurfaceProposition::Not(body) => body.as_ref(),
         other => other,
     };
-    matches!(proposition, ClickProposition::Comparison { left, right, .. }
+    matches!(proposition, SurfaceProposition::Comparison { left, right, .. }
         if observed(left).is_some() && observed(right).is_some())
 }
 
 /// Read linear arithmetic in its named state. Constants are independent
 /// of memory; each other operand retains the selector checked by lowering.
-fn at_operand(
-    selector: &ProgramPointSelector,
-    expression: &ContractExpression,
-) -> ContractExpression {
+fn at_operand(selector: &ProgramPointSelector, expression: &SurfaceTerm) -> SurfaceTerm {
     match expression {
-        ContractExpression::IntegerLiteral(_)
-        | ContractExpression::ProgramExpression(ProgramExpression::Value(
+        SurfaceTerm::IntegerLiteral(_)
+        | SurfaceTerm::ProgramExpression(ProgramExpression::Value(
             ProgramValue::UInt64(uint64_constant!(_))
             | ProgramValue::Int64(int64_constant!(_))
             | ProgramValue::UInt32(bits32_constant!(_)),
         ))
-        | ContractExpression::At { .. }
-        | ContractExpression::Old(_) => expression.clone(),
-        ContractExpression::Add(left, right) => ContractExpression::Add(
+        | SurfaceTerm::At { .. }
+        | SurfaceTerm::Old(_) => expression.clone(),
+        SurfaceTerm::Add(left, right) => SurfaceTerm::Add(
             Box::new(at_operand(selector, left)),
             Box::new(at_operand(selector, right)),
         ),
-        ContractExpression::Subtract(left, right) => ContractExpression::Subtract(
+        SurfaceTerm::Subtract(left, right) => SurfaceTerm::Subtract(
             Box::new(at_operand(selector, left)),
             Box::new(at_operand(selector, right)),
         ),
-        _ => ContractExpression::At {
+        _ => SurfaceTerm::At {
             selector: selector.clone(),
             expression: Box::new(expression.clone()),
         },
@@ -300,11 +295,11 @@ fn at_operand(
 }
 
 pub(super) fn relate(
-    lower: ContractExpression,
-    upper: ContractExpression,
+    lower: SurfaceTerm,
+    upper: SurfaceTerm,
     relation: Relation,
-) -> ClickProposition {
-    ClickProposition::Comparison {
+) -> SurfaceProposition {
+    SurfaceProposition::Comparison {
         left: lower,
         operator: match relation {
             Relation::Less => ComparisonOperator::LessThan,
@@ -315,7 +310,7 @@ pub(super) fn relate(
     }
 }
 
-fn order(lower: ContractExpression, upper: ContractExpression, strict: bool) -> ClickProposition {
+fn order(lower: SurfaceTerm, upper: SurfaceTerm, strict: bool) -> SurfaceProposition {
     relate(
         lower,
         upper,
@@ -330,54 +325,49 @@ fn order(lower: ContractExpression, upper: ContractExpression, strict: bool) -> 
 /// The exact Integer observation of a `uint64` expression. A literal is
 /// written as the Integer it is: the Integer certificate reads a premise as
 /// it is spelled, and `to_integer(2u64)` spelled out is an atom to it.
-pub(super) fn to_integer(expression: &ContractExpression) -> ContractExpression {
+pub(super) fn to_integer(expression: &SurfaceTerm) -> SurfaceTerm {
     // A value read at a state is observed there: `at(s, to_integer(i))`.
     // A literal is the same at every state.
-    if let ContractExpression::At {
+    if let SurfaceTerm::At {
         selector,
         expression,
     } = expression
     {
         return match to_integer(expression) {
-            literal @ ContractExpression::IntegerLiteral(_) => literal,
-            observed => ContractExpression::At {
+            literal @ SurfaceTerm::IntegerLiteral(_) => literal,
+            observed => SurfaceTerm::At {
                 selector: selector.clone(),
                 expression: Box::new(observed),
             },
         };
     }
-    if let ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt64(
-        value,
-    ))) = expression
+    if let SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt64(value))) =
+        expression
         && let Some(constant) = value.uint64_as_const()
     {
-        return ContractExpression::IntegerLiteral(constant.to_string());
+        return SurfaceTerm::IntegerLiteral(constant.to_string());
     }
-    if let ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int64(
-        value,
-    ))) = expression
+    if let SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Int64(value))) =
+        expression
         && let Some(constant) = value.int64_as_const()
     {
-        return ContractExpression::IntegerLiteral(constant.to_string());
+        return SurfaceTerm::IntegerLiteral(constant.to_string());
     }
-    if let ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt32(
-        value,
-    ))) = expression
+    if let SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt32(value))) =
+        expression
         && let Some(constant) = value.as_const()
     {
-        return ContractExpression::IntegerLiteral(constant.to_string());
+        return SurfaceTerm::IntegerLiteral(constant.to_string());
     }
-    ContractExpression::Call {
+    SurfaceTerm::Call {
         name: "to_integer".to_string(),
         arguments: vec![expression.clone()],
     }
 }
 
 /// The sums and differences inside `expression`, innermost first.
-fn collect_operations(expression: &ContractExpression, operations: &mut Vec<ContractExpression>) {
-    if let ContractExpression::Add(left, right) | ContractExpression::Subtract(left, right) =
-        expression
-    {
+fn collect_operations(expression: &SurfaceTerm, operations: &mut Vec<SurfaceTerm>) {
+    if let SurfaceTerm::Add(left, right) | SurfaceTerm::Subtract(left, right) = expression {
         collect_operations(left, operations);
         collect_operations(right, operations);
         if !operations.contains(expression) {
@@ -389,18 +379,17 @@ fn collect_operations(expression: &ContractExpression, operations: &mut Vec<Cont
 /// The operands of the sums and differences in `expression` that are not
 /// themselves one, and are not literals: the values whose type range the
 /// Integer claim may need.
-fn collect_atoms(expression: &ContractExpression, atoms: &mut Vec<ContractExpression>) {
+fn collect_atoms(expression: &SurfaceTerm, atoms: &mut Vec<SurfaceTerm>) {
     match expression {
-        ContractExpression::Add(left, right) | ContractExpression::Subtract(left, right) => {
+        SurfaceTerm::Add(left, right) | SurfaceTerm::Subtract(left, right) => {
             collect_atoms(left, atoms);
             collect_atoms(right, atoms);
         }
-        ContractExpression::ProgramExpression(ProgramExpression::Value(
+        SurfaceTerm::ProgramExpression(ProgramExpression::Value(
             ProgramValue::UInt64(value) | ProgramValue::Int64(value),
         )) if value.uint64_as_const().is_some() || value.int64_as_const().is_some() => {}
-        ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt32(
-            value,
-        ))) if value.as_const().is_some() => {}
+        SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt32(value)))
+            if value.as_const().is_some() => {}
         atom => {
             if !atoms.contains(atom) {
                 atoms.push(atom.clone());
@@ -414,44 +403,44 @@ fn collect_atoms(expression: &ContractExpression, atoms: &mut Vec<ContractExpres
 /// is not a linear claim, and an equality over one is left to the families
 /// that read those operations. Such an operation inside a sum is an operand
 /// like any other: `(n - n % 4u64) - r` is linear in `n`, `n % 4u64` and `r`.
-fn linear(expression: &ContractExpression) -> bool {
+fn linear(expression: &SurfaceTerm) -> bool {
     !matches!(
         expression,
-        ContractExpression::Multiply(..)
-            | ContractExpression::Divide(..)
-            | ContractExpression::Remainder(..)
-            | ContractExpression::ShiftLeft(..)
-            | ContractExpression::RustShiftLeft(..)
-            | ContractExpression::ShiftRight(..)
-            | ContractExpression::RustShiftRight(..)
-            | ContractExpression::BitwiseAnd(..)
-            | ContractExpression::BitwiseOr(..)
-            | ContractExpression::BitwiseXor(..)
-            | ContractExpression::BitwiseNot(..)
-            | ContractExpression::Negate(..)
-            | ContractExpression::CUnary { .. }
-            | ContractExpression::MemoryLoad { .. }
-            | ContractExpression::If { .. }
+        SurfaceTerm::Multiply(..)
+            | SurfaceTerm::Divide(..)
+            | SurfaceTerm::Remainder(..)
+            | SurfaceTerm::ShiftLeft(..)
+            | SurfaceTerm::RustShiftLeft(..)
+            | SurfaceTerm::ShiftRight(..)
+            | SurfaceTerm::RustShiftRight(..)
+            | SurfaceTerm::BitwiseAnd(..)
+            | SurfaceTerm::BitwiseOr(..)
+            | SurfaceTerm::BitwiseXor(..)
+            | SurfaceTerm::BitwiseNot(..)
+            | SurfaceTerm::Negate(..)
+            | SurfaceTerm::CUnary { .. }
+            | SurfaceTerm::MemoryLoad { .. }
+            | SurfaceTerm::If { .. }
     )
 }
 
 /// The 64-bit type a literal written in `expression` has, if one is.
-fn literal_carrier(expression: &ContractExpression) -> Option<Carrier> {
+fn literal_carrier(expression: &SurfaceTerm) -> Option<Carrier> {
     match expression {
-        ContractExpression::Add(left, right) | ContractExpression::Subtract(left, right) => {
+        SurfaceTerm::Add(left, right) | SurfaceTerm::Subtract(left, right) => {
             literal_carrier(left).or_else(|| literal_carrier(right))
         }
-        ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt64(
-            _,
-        ))) => Some(Carrier::UInt64),
-        ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int64(_))) => {
+        SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt64(_))) => {
+            Some(Carrier::UInt64)
+        }
+        SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Int64(_))) => {
             Some(Carrier::Int64)
         }
         _ => None,
     }
 }
 
-pub(super) fn have(proposition: ClickProposition, proof: Vec<ProofStep>) -> ProofStep {
+pub(super) fn have(proposition: SurfaceProposition, proof: Vec<ProofStep>) -> ProofStep {
     ProofStep::Have {
         proposition,
         proof: Box::new(ProofCertificate::from_validated_steps(proof)),
@@ -459,15 +448,15 @@ pub(super) fn have(proposition: ClickProposition, proof: Vec<ProofStep>) -> Proo
 }
 
 /// Check the observed machine value's intrinsic type range.
-pub(super) fn type_range(_bound: ClickProposition) -> ProofStep {
+pub(super) fn type_range(_bound: SurfaceProposition) -> ProofStep {
     ProofStep::Known
 }
 
 /// Check the machine identity after its two exact-result bounds were proved.
 pub(super) fn operation_identity(
-    _lower: ClickProposition,
-    _upper: ClickProposition,
-    _identity: ClickProposition,
+    _lower: SurfaceProposition,
+    _upper: SurfaceProposition,
+    _identity: SurfaceProposition,
 ) -> ProofStep {
     ProofStep::Known
 }

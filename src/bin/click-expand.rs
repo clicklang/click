@@ -972,30 +972,77 @@ int32 identity(int32 x) {
             ])?)
         };
 
-        // The input has normalization in sibling theorems.
         check(&fixture, "scale_twice.ensures_0").unwrap();
-        let written = check(&fixture, "negative_divisor_bound.ensures_0").unwrap_err();
+        let negative = check(&fixture, "negative_divisor_bound.ensures_0").unwrap();
+        assert!(
+            negative.contains("float32_divide_negative_upper"),
+            "{negative}"
+        );
+        let negative_fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/float_division_by_negative_literal.md");
+        let negative_cast = check(&negative_fixture, "divide_negative_two.ensures_0").unwrap();
+        for law in [
+            "float32_divide_negative_lower",
+            "float32_divide_negative_upper",
+        ] {
+            assert!(negative_cast.contains(law), "{negative_cast}");
+        }
+        let division = check(&fixture, "divide_two.ensures_0").unwrap();
+        for law in [
+            "float32_divide_positive_lower",
+            "float32_divide_positive_upper",
+        ] {
+            assert!(division.contains(law), "{division}");
+        }
+        check(&fixture, "add_one.ensures_0").unwrap();
+
+        let directory = tempfile::tempdir().unwrap();
+        let written_normalize = directory.path().join("written_normalize.click");
+        fs::write(
+            &written_normalize,
+            "theorem written() { ensures 1 == 1 by normalize(); }",
+        )
+        .unwrap();
+        let written = check(&written_normalize, "written.ensures_0").unwrap_err();
         assert!(
             written.contains("Selected proof still contains normalize()"),
             "{written}"
         );
-        let generated = check(&fixture, "divide_two.ensures_0").unwrap_err();
+
+        let double_divisor = directory.path().join("double_divisor.click");
+        fs::write(
+            &double_divisor,
+            r#"theorem double_divisor_bound(x: double) {
+    requires x >= float64_from_bits(0xc024000000000000u64);
+    ensures x / float64_from_bits(0xc000000000000000u64) <= float64_from_bits(0x4014000000000000u64) by close();
+}
+"#,
+        )
+        .unwrap();
+        let generated = check(&double_divisor, "double_divisor_bound.ensures_0").unwrap_err();
         assert!(
             generated.contains("Expanded proof still contains normalize()"),
             "{generated}"
         );
 
-        let directory = tempfile::tempdir().unwrap();
-        let hidden = directory.path().join("mirror.click");
+        let guard_spellings = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/normalize_using_reads_every_spelling_of_a_cited_premise.md");
+        check(&guard_spellings, "integer_mirror.ensures_0").unwrap();
+
+        let hidden = directory.path().join("nested.click");
         fs::write(
             &hidden,
-            "theorem integer_mirror(i: Integer, j: Integer) {\n\
-                requires i < j;\n\
-                ensures (if j > i { 1 } else { 2 }) == 1 by { close() using { i < j; }; }\n\
-            }\n",
+            r#"theorem nested(x: int32, y: int32) {
+    requires x < y;
+    requires y == 5;
+    ensures (if x < y { if y == 5 { 8 } else { 3 } } else { 0 }) == 8 by {
+        close() using { x < y; y == 5; };
+    }
+}
+"#,
         )
         .unwrap();
-        let compatibility = check(&hidden, "integer_mirror.ensures_0").unwrap_err();
+        let compatibility = check(&hidden, "nested.ensures_0").unwrap_err();
         assert!(
             compatibility.contains("used legacy normalization"),
             "{compatibility}"
@@ -1458,6 +1505,21 @@ int32 identity(int32 x) {
         assert!(!expanded.contains("step_until(function.exit);"));
         assert!(!expanded.contains("solve();"));
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn expands_memory_with_a_current_pointer_and_saved_index() {
+        let click_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/borrowed_window_returns_what_was_lent.md");
+        run(&Arguments {
+            click_path,
+            selection: Selection::Claim("push.contract".to_string()),
+            limits: RunLimits::expand(),
+            output: None,
+            in_place: false,
+            check_normalize_removal: false,
+        })
+        .expect("the generated preservation proof should parse and verify");
     }
 
     #[test]

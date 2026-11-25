@@ -751,7 +751,11 @@ Unary opaque-use helper restrictions above must not be read as restrictions
 on every typed mutex permission. Current typed payload, helper, authority and
 transfer rules belong to [Mutex resource contracts](mutex-resource-contracts.md).
 Named storage transfer and destruction's named state output remain proposals.
-Broader loop/escaping-guard and synchronization coverage belongs to the
-[concurrency roadmap](https://github.com/clicklang/click/blob/master/roadmap/concurrency-and-atomics.md).
-A future extension still needs exact acquisition/lifetime identity, current
-protected observations, checked authority recovery and bounded selected work.
+Extensions need exact acquisition and lifetime identity, current protected
+observations, checked authority recovery, and bounded work. A condition
+variable needs a checked release, wait, and reacquire protocol. Reader/writer
+locks need shared-reader authority. Detached threads need a lifetime argument
+beyond a parent join. Reclaiming storage requires evidence that no thread can
+still access it. Any additional atomic order or operation needs a memory
+model that accounts for interference and races. Deadlock freedom, fairness,
+and termination each need a separate progress argument.

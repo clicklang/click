@@ -979,6 +979,12 @@ refuses a narrow modulus.
 
 ## C ABI and memory layout
 
+Layout-sensitive evidence must match the compiler, target ABI, and
+ABI-affecting flags used to build the program. Additional profiles need an
+explicit layout in parsing and checking, with its identity carried through
+capture artifacts and any proof reuse. Evidence from one profile cannot
+justify sizes, alignment, offsets, or strides in another.
+
 The C front end models one explicit ABI: LP64. In that ABI, `int8` has size and alignment 1, `int16` and
 `uint16` have size and alignment 2, `int32` has size and alignment 4, `uint8`
 has size and alignment 1, `uint32` has size and alignment 4, `int64` and
@@ -1315,8 +1321,8 @@ source-level precondition or branch.
 This is not a target-independent C model. Packed structs,
 non-LP64 targets, and field types outside documented supported C are not
 silently approximated; they must remain unsupported until their ABI rules are
-represented explicitly. Bitfields and other compiler-dependent layout rules
-are tracked in `roadmap/multiple-compilers.md`.
+represented explicitly. That requirement also applies to bitfields and
+other compiler-dependent layout rules.
 
 Untyped pointer operations likewise do not infer an `int32` pointee. An
 untyped load, index, or pointer addition whose pointee type cannot be recovered
@@ -2179,7 +2185,7 @@ store width only from pointer syntax; the operation type is what determines
 whether an access needs one byte or four bytes.
 
 When adding a new Click expression or proposition form, search all existing enum
-matches for `ContractExpression` and `ClickProposition`. Missing one context
+matches for `SurfaceTerm` and `SurfaceProposition`. Missing one context
 usually causes either a compiler error or an unsupported-feature diagnostic.
 
 ## Parser and validation

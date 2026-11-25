@@ -6,14 +6,14 @@ impl Proof<'_> {
     /// interpreting later propositions.
     pub(super) fn apply_local_predicate_unfold(
         &self,
-        target: &ClickProposition,
+        target: &SurfaceProposition,
     ) -> Result<CheckedFocusedTransition, ClickError> {
         let definitions = match self.context.as_ref() {
             ProofContext::Pure(context) => context.spec_definitions,
             ProofContext::FixedState(context) => context.spec_definitions,
             ProofContext::Execution(context) => context.spec_definitions,
         };
-        if let ClickProposition::PredicateCall { name, arguments } = target
+        if let SurfaceProposition::PredicateCall { name, arguments } = target
             && definitions.predicates.get(name).is_none()
             && definitions.functions.get(name).is_some()
         {
@@ -24,11 +24,11 @@ impl Proof<'_> {
         }
         // `unfold(at(p, f(args)))` of a pure function: its defining
         // equation at that program point.
-        if let ClickProposition::Value(ContractExpression::At {
+        if let SurfaceProposition::Value(SurfaceTerm::At {
             selector,
             expression,
         }) = target
-            && let ContractExpression::Call { name, arguments } = expression.as_ref()
+            && let SurfaceTerm::Call { name, arguments } = expression.as_ref()
             && definitions.predicates.get(name).is_none()
             && definitions.functions.get(name).is_some()
         {
@@ -42,12 +42,12 @@ impl Proof<'_> {
         }
         // A non-`Bool` application in proposition position is read as its
         // truth, `at(p, f(args) != 0)`; the unfolded application is the call.
-        if let ClickProposition::At {
+        if let SurfaceProposition::At {
             selector,
             proposition,
         } = target
-            && let ClickProposition::Comparison { left, .. } = proposition.as_ref()
-            && let ContractExpression::Call { name, arguments } = left
+            && let SurfaceProposition::Comparison { left, .. } = proposition.as_ref()
+            && let SurfaceTerm::Call { name, arguments } = left
             && definitions.predicates.get(name).is_none()
             && definitions.functions.get(name).is_some()
         {
@@ -59,11 +59,11 @@ impl Proof<'_> {
                 Some(selector),
             );
         }
-        if let ClickProposition::At {
+        if let SurfaceProposition::At {
             selector,
             proposition,
         } = target
-            && let ClickProposition::PredicateCall { name, arguments } = proposition.as_ref()
+            && let SurfaceProposition::PredicateCall { name, arguments } = proposition.as_ref()
             && definitions.predicates.get(name).is_none()
             && definitions.functions.get(name).is_some()
         {
@@ -89,7 +89,7 @@ impl Proof<'_> {
             self.goal()
                 .expect("a Surface goal has a kernel judgment")
                 .clone()
-        } else if matches!(target, ClickProposition::At { .. })
+        } else if matches!(target, SurfaceProposition::At { .. })
             && let Some(recorded) = self.execution().and_then(|execution| {
                 execution
                     .presentation
@@ -128,12 +128,12 @@ impl Proof<'_> {
             facts = facts.with_kernel_checked_fact(body.clone());
             added.push(body.clone());
         }
-        let equivalence_surface = ClickProposition::And(
-            Box::new(ClickProposition::Implies(
+        let equivalence_surface = SurfaceProposition::And(
+            Box::new(SurfaceProposition::Implies(
                 Box::new(target.clone()),
                 Box::new(body_surface.clone()),
             )),
-            Box::new(ClickProposition::Implies(
+            Box::new(SurfaceProposition::Implies(
                 Box::new(body_surface.clone()),
                 Box::new(target.clone()),
             )),
@@ -212,7 +212,7 @@ impl Proof<'_> {
 
     fn unfold_selected_surface_goal(
         &self,
-        proposition: &mut ClickProposition,
+        proposition: &mut SurfaceProposition,
         selected: &Proposition,
         predicates: &PredicateEnvironment,
         names: &[String],
@@ -224,7 +224,7 @@ impl Proof<'_> {
         // Only the root proposition or matching application leaves can be
         // selected. Never repeatedly lower or copy connective subtrees.
         let application = matches!(selected, Proposition::Predicate { .. })
-            && matches!(proposition, ClickProposition::PredicateCall { name, .. } if names.contains(name));
+            && matches!(proposition, SurfaceProposition::PredicateCall { name, .. } if names.contains(name));
         if root || application {
             let mut referenced = BTreeSet::new();
             if !bound.is_empty() {
@@ -236,7 +236,7 @@ impl Proof<'_> {
             if referenced.is_disjoint(bound) {
                 let mut scoped = proposition.clone();
                 for selector in scopes.iter().rev() {
-                    scoped = ClickProposition::At {
+                    scoped = SurfaceProposition::At {
                         selector: selector.clone(),
                         proposition: Box::new(scoped),
                     };
@@ -251,7 +251,7 @@ impl Proof<'_> {
                         .unfold_goal_surface(predicates, &scoped, names)
                         .map_err(|message| self.step_error(message))?;
                     for _ in scopes.iter() {
-                        let ClickProposition::At { proposition, .. } = body else {
+                        let SurfaceProposition::At { proposition, .. } = body else {
                             unreachable!("unfold retains explicit snapshots")
                         };
                         body = *proposition;
@@ -263,21 +263,21 @@ impl Proof<'_> {
             }
         }
         match proposition {
-            ClickProposition::Value(expression) => {
-                if !matches!(expression, ContractExpression::Proposition(_)) {
+            SurfaceProposition::Value(expression) => {
+                if !matches!(expression, SurfaceTerm::Proposition(_)) {
                     *expression = crate::surface::lambdas::reduce_head_fully(expression)
                         .map_err(|message| self.step_error(message))?
                         .into_owned();
                 }
-                if let ContractExpression::Proposition(body) = expression {
+                if let SurfaceTerm::Proposition(body) = expression {
                     self.unfold_selected_surface_goal(
                         body, selected, predicates, names, scopes, bound, changed, false,
                     )?;
                 }
             }
-            ClickProposition::And(left, right)
-            | ClickProposition::Or(left, right)
-            | ClickProposition::Implies(left, right) => {
+            SurfaceProposition::And(left, right)
+            | SurfaceProposition::Or(left, right)
+            | SurfaceProposition::Implies(left, right) => {
                 self.unfold_selected_surface_goal(
                     left, selected, predicates, names, scopes, bound, changed, false,
                 )?;
@@ -285,10 +285,10 @@ impl Proof<'_> {
                     right, selected, predicates, names, scopes, bound, changed, false,
                 )?;
             }
-            ClickProposition::Not(body) => self.unfold_selected_surface_goal(
+            SurfaceProposition::Not(body) => self.unfold_selected_surface_goal(
                 body, selected, predicates, names, scopes, bound, changed, false,
             )?,
-            ClickProposition::At {
+            SurfaceProposition::At {
                 selector,
                 proposition,
             } => {
@@ -305,8 +305,8 @@ impl Proof<'_> {
                 )?;
                 scopes.pop();
             }
-            ClickProposition::ForAll { name, body, .. }
-            | ClickProposition::Exists { name, body, .. } => {
+            SurfaceProposition::ForAll { name, body, .. }
+            | SurfaceProposition::Exists { name, body, .. } => {
                 let inserted = bound.insert(name.kernel_name());
                 self.unfold_selected_surface_goal(
                     body, selected, predicates, names, scopes, bound, changed, false,
@@ -315,8 +315,8 @@ impl Proof<'_> {
                     bound.remove(&name.kernel_name());
                 }
             }
-            ClickProposition::RangeAll { item, body, .. }
-            | ClickProposition::RangeAny { item, body, .. } => {
+            SurfaceProposition::RangeAll { item, body, .. }
+            | SurfaceProposition::RangeAny { item, body, .. } => {
                 let inserted = bound.insert(item.kernel_name());
                 self.unfold_selected_surface_goal(
                     body, selected, predicates, names, scopes, bound, changed, false,

@@ -193,14 +193,14 @@ impl CallOutcomeEdge {
 /// `A or B or C` parses.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::surface::proof) enum ProofCaseCondition {
-    If(ClickProposition),
-    Cases(ClickProposition),
+    If(SurfaceProposition),
+    Cases(SurfaceProposition),
 }
 
 impl ProofCaseCondition {
     /// The written proposition: the `if` condition, or the `cases`
     /// disjunction. It names the split in recorded routes.
-    pub(in crate::surface::proof) fn proposition(&self) -> &ClickProposition {
+    pub(in crate::surface::proof) fn proposition(&self) -> &SurfaceProposition {
         match self {
             Self::If(condition) | Self::Cases(condition) => condition,
         }
@@ -476,7 +476,7 @@ pub(super) struct ProofScope<'a> {
 #[derive(Clone)]
 enum ProofScopeStructure {
     Have {
-        proposition: ClickProposition,
+        proposition: SurfaceProposition,
         kernel: Proposition,
     },
     Open {
@@ -526,7 +526,7 @@ impl CheckedFocusedTransition {
 /// the counter is branch-local scalar freshness state.
 #[derive(Clone, Default)]
 struct ProofLocals {
-    values: PersistentBinderMap<ContractExpression>,
+    values: PersistentBinderMap<SurfaceTerm>,
     value_names: binding_names::BindingNames,
     integer_values: PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     algebraic_values: PersistentBinderMap<crate::kernel::SpecAlgebraicExpression>,
@@ -552,7 +552,7 @@ struct ProofLocals {
 pub(in crate::surface::proof) mod binding_names;
 
 impl ProofLocals {
-    fn set_values(&mut self, values: PersistentBinderMap<ContractExpression>) {
+    fn set_values(&mut self, values: PersistentBinderMap<SurfaceTerm>) {
         self.value_names.update_values(&self.values, &values);
         self.values = values;
     }
@@ -604,7 +604,7 @@ pub(in crate::surface::proof) struct ExecutionProofPresentation {
     /// name these too. The list is what execution recorded on this path; it
     /// is never a search over ambient facts, and a join restores the parent's
     /// list with the arms' entries dropped.
-    pub(in crate::surface::proof) path_branch_premises: PersistentSequence<ClickProposition>,
+    pub(in crate::surface::proof) path_branch_premises: PersistentSequence<SurfaceProposition>,
     /// Frontier-local loop clauses, paired with the kernel-owned verified
     /// rules and migrated across joins as arm deltas.
     pub(in crate::surface::proof) frontier_loop_clauses: FrontierLoopClauses,
@@ -715,7 +715,7 @@ pub(in crate::surface::proof) struct StoreSeparationMiss {
     /// The cell the store wrote.
     pub(in crate::surface::proof) store: crate::kernel::Address,
     /// The spelled disequality the search tried at the statement's pre-state.
-    pub(in crate::surface::proof) fact: ClickProposition,
+    pub(in crate::surface::proof) fact: SurfaceProposition,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -732,7 +732,7 @@ pub(in crate::surface::proof) struct ExistentialProjection {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface::proof) struct ExistentialProjectionLeaf {
     pub(in crate::surface::proof) connective_path: Vec<usize>,
-    pub(in crate::surface::proof) surface: ClickProposition,
+    pub(in crate::surface::proof) surface: SurfaceProposition,
     pub(in crate::surface::proof) kernel: Proposition,
 }
 
@@ -1007,15 +1007,15 @@ impl LoopRuleEnvironment {
 /// spelling is unambiguous is written by that spelling whether the condition
 /// holds its typed identity (raised by the checker) or its name (parsed from
 /// a proof), so conditions that differ only that way are one condition.
-fn branch_condition_spelling(condition: &ClickProposition) -> String {
+fn branch_condition_spelling(condition: &SurfaceProposition) -> String {
     crate::surface::printing::identity_click_proposition(condition)
 }
 
 /// Whether two branch conditions are the same Click condition; see
 /// [`branch_condition_spelling`].
 pub(in crate::surface::proof) fn same_branch_condition(
-    left: &ClickProposition,
-    right: &ClickProposition,
+    left: &SurfaceProposition,
+    right: &SurfaceProposition,
 ) -> bool {
     left == right || branch_condition_spelling(left) == branch_condition_spelling(right)
 }
@@ -1023,7 +1023,7 @@ pub(in crate::surface::proof) fn same_branch_condition(
 #[derive(Clone)]
 struct ExecutionBranchDecision {
     fingerprint: std::sync::OnceLock<u64>,
-    condition: ClickProposition,
+    condition: SurfaceProposition,
     value: bool,
 }
 
@@ -1050,7 +1050,7 @@ struct ExecutionBranchDecisions {
 }
 
 impl ExecutionBranchDecisions {
-    fn key(condition: &ClickProposition) -> u64 {
+    fn key(condition: &SurfaceProposition) -> u64 {
         use std::hash::{Hash, Hasher};
         struct CountedHasher(std::collections::hash_map::DefaultHasher);
         impl Hasher for CountedHasher {
@@ -1085,13 +1085,13 @@ impl ExecutionBranchDecisions {
     }
 
     #[cfg(test)]
-    fn value(&self, condition: &ClickProposition) -> Result<Option<bool>, ClickError> {
+    fn value(&self, condition: &SurfaceProposition) -> Result<Option<bool>, ClickError> {
         self.value_for_key(condition, Self::key(condition))
     }
 
     fn value_for_key(
         &self,
-        condition: &ClickProposition,
+        condition: &SurfaceProposition,
         key: u64,
     ) -> Result<Option<bool>, ClickError> {
         let mut result = None;
@@ -1123,7 +1123,7 @@ impl ExecutionBranchDecisions {
     fn value_for_route(
         &self,
         route: usize,
-        condition: &ClickProposition,
+        condition: &SurfaceProposition,
     ) -> Result<bool, ClickError> {
         let decision = self
             .by_route
@@ -1441,9 +1441,7 @@ fn proof_local_program_values(
         .values
         .iter()
         .filter_map(|(name, expression)| match expression {
-            ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
-                Some((name, value))
-            }
+            SurfaceTerm::ProgramExpression(ProgramExpression::Value(value)) => Some((name, value)),
             _ => None,
         })
 }
@@ -1464,9 +1462,7 @@ fn goal_binder_program_values(
         .into_iter()
         .flatten()
         .filter_map(|(name, expression)| match expression {
-            ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
-                Some((name, value))
-            }
+            SurfaceTerm::ProgramExpression(ProgramExpression::Value(value)) => Some((name, value)),
             _ => None,
         })
 }
@@ -1562,10 +1558,10 @@ impl Proof<'_> {
             .filter(|(name, _)| !shadowing.contains(name))
             .filter_map(|(name, expression)| {
                 let variable = match expression {
-                    ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
+                    SurfaceTerm::ProgramExpression(ProgramExpression::Value(value)) => {
                         variable(value)?
                     }
-                    ContractExpression::AlgebraicVariable { binder_index, .. } => {
+                    SurfaceTerm::AlgebraicVariable { binder_index, .. } => {
                         crate::surface::lowering::algebraic_binder_variable(*binder_index).ok()?
                     }
                     _ => return None,
@@ -1875,6 +1871,10 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
             .map(|(label, fact, _)| (*label, fact.as_ref()))
     }
 
+    fn failed_requirement_source(&self) -> Option<&str> {
+        self.5.as_ref()?.2.as_deref()
+    }
+
     fn proposed_hidden_record(&self) -> Option<&crate::kernel::ResourceInstance> {
         self.11.as_deref()
     }
@@ -1917,7 +1917,7 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         }
     }
 
-    fn written_pointer_goal(&self) -> Option<&ClickProposition> {
+    fn written_goal(&self) -> Option<&SurfaceProposition> {
         let branch = self
             .0
             .state()
@@ -1926,12 +1926,9 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         let Obligation::Proposition(goal) = &branch.obligation else {
             return None;
         };
-        if goal.generated_surface
-            || !matches!(&goal.proposition(), condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::PointerEqual(left, right), _)) if left != right && left.address() == right.address()))
-        {
-            return None;
-        }
-        goal.surface.as_deref()
+        (!goal.generated_surface)
+            .then_some(goal.surface.as_deref())
+            .flatten()
     }
 
     fn premises(&self, limit: usize) -> Vec<&Proposition> {
@@ -2248,7 +2245,7 @@ impl Proof<'_> {
         marker: &Arc<ProofNode>,
         arms: [BranchId; 2],
         path_facts: &[Vec<Proposition>; 2],
-        _condition: &ClickProposition,
+        _condition: &SurfaceProposition,
     ) {
         if !crate::surface::proof_trace::enabled_for(self.claim_label()) {
             return;
@@ -2340,35 +2337,42 @@ impl Proof<'_> {
 }
 
 impl Proof<'_> {
-    /// `proposition` spelled for a refusal's own text, with the names the
-    /// report's `goal:` line uses for the same variables.
-    /// The Click text of `proposition` when it raises to a Surface form that
-    /// lowers back to it in this proof's context, the round trip the
-    /// raise-lower audit checks. Diagnostics print it in preference to the
-    /// renderer's spelling, which has no recorded points and names some
-    /// values only by placeholders. A raised form that lowers to another
-    /// fact would misname it, so it is never printed. Uncharged: it runs only
-    /// while a diagnostic is built.
+    /// A proof-visible proposition spelled in this context. Prefer its
+    /// retained source, then raise structurally from current names. A
+    /// spelling that lowers to another proposition is never used here.
     pub(in crate::surface::proof) fn round_trip_source_text(
         &self,
         proposition: &Proposition,
     ) -> Option<String> {
-        if !matches!(self.context.as_ref(), ProofContext::Pure(_))
-            && self.premise_fixed_state_view().is_none()
-        {
-            return None;
-        }
         let scope = crate::surface::proof::attempt::search_scope("diagnostic spelling");
         let text = crate::instrumentation::without_charging(|| {
-            let surface = self.structural_proposition_candidate(proposition)?;
-            let lowered =
-                crate::surface::proof::execution_planning::without_open_obligation_probe(|| {
-                    self.lower_surface_proposition_direct(&surface, "diagnostic spelling")
-                })
-                .ok()?;
-            (&lowered == proposition)
-                .then(|| crate::surface::printing::source_click_proposition(&surface))
-                .filter(|text| !text.contains("__click_"))
+            let text = |surface: &SurfaceProposition| {
+                let text = crate::surface::printing::source_click_proposition(surface);
+                (!text.contains("__click_")
+                    && crate::surface::parser::has_valid_source_tokens(&text))
+                .then_some(text)
+            };
+            let exact_source = |surface: &SurfaceProposition| {
+                let text = text(surface)?;
+                let lowered = self.lower_proposition_spelling(surface).ok()?;
+                crate::kernel::fact_stability::same_up_to_binders(&lowered, proposition)
+                    .then_some(text)
+            };
+            if self.goal() == Some(proposition)
+                && let Some(text) = self.surface_goal().and_then(exact_source)
+            {
+                return Some(text);
+            }
+            if let Some(text) = self
+                .local_surface_facts()
+                .recorded_surface(proposition)
+                .or_else(|| self.premise_surface_facts()?.recorded_surface(proposition))
+                .and_then(exact_source)
+            {
+                return Some(text);
+            }
+            let surface = self.structural_goal_spelling(proposition)?;
+            text(&surface)
         });
         drop(scope.finish());
         text
@@ -2451,8 +2455,7 @@ impl Proof<'_> {
                         .declaration_bindings
                         .iter()
                         .filter_map(|(name, expression)| {
-                            let ContractExpression::AlgebraicVariable { binder_index, .. } =
-                                expression
+                            let SurfaceTerm::AlgebraicVariable { binder_index, .. } = expression
                             else {
                                 return None;
                             };
@@ -2629,7 +2632,7 @@ pub(in crate::surface::proof) struct OutcomeProofPresentation {
     /// Typed outcome evidence uses this persistent index to recover an exact
     /// function-entry Surface premise without scanning unrelated facts.
     pub(in crate::surface::proof) requirement_surfaces:
-        Arc<PersistentMap<Proposition, ClickProposition>>,
+        Arc<PersistentMap<Proposition, SurfaceProposition>>,
     branch_decisions: ExecutionBranchDecisions,
     /// The checked call edges this outcome took, outermost `outcomes`
     /// first, with their checked call payloads.
@@ -2644,7 +2647,7 @@ pub(in crate::surface::proof) struct OutcomeProofPresentation {
 /// The arm a deferred `match` took on one outcome path, by the match's
 /// source occurrence: its index among the written arms and its bindings.
 pub(in crate::surface::proof) type OutcomeMatchArms =
-    PersistentMap<usize, (usize, PersistentBinderMap<ContractExpression>)>;
+    PersistentMap<usize, (usize, PersistentBinderMap<SurfaceTerm>)>;
 
 pub(in crate::surface::proof) type OutcomeProofData =
     KernelOutcomeProofState<OutcomeProofPresentation>;
@@ -2658,7 +2661,7 @@ type OpenBranch = ProofBranch<Obligation, ExecutionProofState>;
 /// smart search must not carry a second caller-owned description of its goal.
 #[derive(Clone, Default)]
 pub(in crate::surface::proof) struct PropositionPresentation {
-    pub(in crate::surface::proof) surface: Option<Arc<ClickProposition>>,
+    pub(in crate::surface::proof) surface: Option<Arc<SurfaceProposition>>,
     /// The producer synthesized this display for an existing kernel goal.
     /// Its logical children may keep their kernel goals without a spelling;
     /// a user-written claim still requires exact presentation correspondence.
@@ -2666,7 +2669,7 @@ pub(in crate::surface::proof) struct PropositionPresentation {
     /// Surface names introduced while refining this exact proposition goal.
     /// Universal binders are goal-local: sibling goals share the persistent
     /// map root at a split, then refine independently without leaking names.
-    pub(in crate::surface::proof) surface_bindings: PersistentBinderMap<ContractExpression>,
+    pub(in crate::surface::proof) surface_bindings: PersistentBinderMap<SurfaceTerm>,
     /// What the kernel lowering recorded about this goal's outermost nodes.
     /// An introduction reads it instead of inferring the Surface-to-kernel
     /// correspondence from a shape the written syntax happens to share.
@@ -2691,7 +2694,7 @@ pub(in crate::surface::proof) struct PropositionPresentation {
 #[derive(Clone)]
 pub(in crate::surface::proof) struct BothChildPresentation {
     pub(in crate::surface::proof) kernel: Proposition,
-    pub(in crate::surface::proof) surface: Option<ClickProposition>,
+    pub(in crate::surface::proof) surface: Option<SurfaceProposition>,
     pub(in crate::surface::proof) introductions: Arc<crate::kernel::LoweringIntroductions>,
 }
 
@@ -2745,14 +2748,14 @@ impl GoalIntroductions {
 /// bucket keeps the written form so a citation is accepted only on exact
 /// Surface equality, never on a rendering collision.
 pub(in crate::surface::proof) type IntroducedAntecedents =
-    PersistentMap<String, Arc<Vec<(ClickProposition, Proposition)>>>;
+    PersistentMap<String, Arc<Vec<(SurfaceProposition, Proposition)>>>;
 
 /// The retained kernel form of `surface`, when an introduction on this goal
 /// added it. Work is one indexed lookup plus exact comparison inside the
 /// selected bucket.
 pub(in crate::surface::proof) fn retained_introduced_antecedent<'a>(
     retained: &'a IntroducedAntecedents,
-    surface: &ClickProposition,
+    surface: &SurfaceProposition,
 ) -> Option<&'a Proposition> {
     retained
         .get(&format!("{surface:?}"))?
@@ -2766,7 +2769,7 @@ pub(in crate::surface::proof) fn retained_introduced_antecedent<'a>(
 /// recorded pair remains an exact account of the introduction.
 pub(in crate::surface::proof) fn retain_introduced_antecedent(
     retained: &IntroducedAntecedents,
-    surface: &ClickProposition,
+    surface: &SurfaceProposition,
     kernel: &Proposition,
 ) -> IntroducedAntecedents {
     let key = format!("{surface:?}");
@@ -2804,13 +2807,13 @@ trait OpenBranchConstruction {
     fn surface_proposition_in(
         state: BranchState,
         kernel: Proposition,
-        surface: ClickProposition,
+        surface: SurfaceProposition,
     ) -> Self;
     fn surface_proposition_at_outcome(
         state: BranchState,
         outcome: Arc<OutcomeProofData>,
         kernel: Proposition,
-        surface: ClickProposition,
+        surface: SurfaceProposition,
     ) -> Self;
 }
 
@@ -2840,7 +2843,7 @@ impl OpenBranchConstruction for OpenBranch {
     fn surface_proposition_in(
         state: BranchState,
         kernel: Proposition,
-        surface: ClickProposition,
+        surface: SurfaceProposition,
     ) -> Self {
         Self::new(
             Obligation::Proposition(PropositionObligation::new(
@@ -2861,7 +2864,7 @@ impl OpenBranchConstruction for OpenBranch {
         state: BranchState,
         outcome: Arc<OutcomeProofData>,
         kernel: Proposition,
-        surface: ClickProposition,
+        surface: SurfaceProposition,
     ) -> Self {
         Self::new(
             Obligation::Proposition(PropositionObligation::at_outcome(
@@ -2884,9 +2887,9 @@ impl OpenBranchConstruction for OpenBranch {
 /// authority for whether execution effects and result derivation permit the
 /// transport.
 pub(in crate::surface::proof) fn old_reflexive_transport_source(
-    goal: &ClickProposition,
-) -> Option<ClickProposition> {
-    let ClickProposition::Comparison {
+    goal: &SurfaceProposition,
+) -> Option<SurfaceProposition> {
+    let SurfaceProposition::Comparison {
         left,
         operator: ComparisonOperator::Equal,
         right,
@@ -2897,13 +2900,13 @@ pub(in crate::surface::proof) fn old_reflexive_transport_source(
     // An `old(..)` side first, then a side read at a marked program point:
     // either names the earlier state the other side's reads frame to.
     let old = match (left, right) {
-        (_, ContractExpression::Old(_)) => right,
-        (ContractExpression::Old(_), _) => left,
-        (_, ContractExpression::At { .. }) => right,
-        (ContractExpression::At { .. }, _) => left,
+        (_, SurfaceTerm::Old(_)) => right,
+        (SurfaceTerm::Old(_), _) => left,
+        (_, SurfaceTerm::At { .. }) => right,
+        (SurfaceTerm::At { .. }, _) => left,
         _ => return None,
     };
-    Some(ClickProposition::Comparison {
+    Some(SurfaceProposition::Comparison {
         left: old.clone(),
         operator: ComparisonOperator::Equal,
         right: old.clone(),
@@ -3007,7 +3010,7 @@ impl<'a> Proof<'a> {
     /// for later premise lookups in a pure proof.
     pub(super) fn with_local_surface_fact(
         &self,
-        surface: &ClickProposition,
+        surface: &SurfaceProposition,
         kernel: &Proposition,
     ) -> Result<Self, ClickError> {
         let mut locals = self.state.locals().clone();
@@ -3118,14 +3121,14 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn local_binding<Q: binders::BinderKey + ?Sized>(
         &self,
         name: &Q,
-    ) -> Option<&ContractExpression> {
+    ) -> Option<&SurfaceTerm> {
         self.state().locals().values.get(name)
     }
 
     /// Every proof local in scope at this point, by name: a proof `match`
     /// arm's bindings, `let { ... } = unfold(...)` names, call-result binders, loop
     /// binders. Loop clauses written in this scope are resolved through it.
-    pub(in crate::surface::proof) fn proof_local_values(&self) -> BinderMap<ContractExpression> {
+    pub(in crate::surface::proof) fn proof_local_values(&self) -> BinderMap<SurfaceTerm> {
         self.state()
             .locals()
             .values
@@ -3178,7 +3181,7 @@ impl<'a> Proof<'a> {
         &self,
         state: BranchState,
         kernel: Proposition,
-        surface: Option<ClickProposition>,
+        surface: Option<SurfaceProposition>,
         witness_refinement: bool,
     ) -> OpenBranch {
         let outcome = self.refinement_outcome();
@@ -3201,7 +3204,7 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn spelled_goal(
         &self,
         goal: &Proposition,
-    ) -> Option<ClickProposition> {
+    ) -> Option<SurfaceProposition> {
         if crate::instrumentation::smart_tactic_active() {
             return self.structural_goal_spelling(goal);
         }
@@ -3269,23 +3272,30 @@ impl<'a> Proof<'a> {
         })
     }
 
+    /// Lower a presentation in the current proof without contributing
+    /// obligations to an enclosing verification operation.
+    pub(in crate::surface::proof) fn lower_proposition_spelling(
+        &self,
+        candidate: &SurfaceProposition,
+    ) -> Result<Proposition, ClickError> {
+        super::execution_planning::without_open_obligation_probe(|| {
+            self.lower_surface_proposition_direct(candidate, "proposition spelling")
+        })
+    }
+
     pub(in crate::surface::proof) fn structural_goal_spelling(
         &self,
         goal: &Proposition,
-    ) -> Option<ClickProposition> {
+    ) -> Option<SurfaceProposition> {
         let candidate = self.structural_proposition_candidate(goal)?;
-        // This compares presentation, not proof authority: rewriting already
-        // produced the successor. A spelling must retain its exact term.
-        self.lower_surface_proposition_direct(&candidate, "structural goal raising")
-            .ok()
-            .filter(|lowered| lowered == goal)
-            .map(|_| candidate)
+        let lowered = self.lower_proposition_spelling(&candidate).ok()?;
+        crate::kernel::fact_stability::same_up_to_binders(&lowered, goal).then_some(candidate)
     }
 
     pub(in crate::surface::proof) fn conjunct_goal_spelling(
         &self,
         goal: &Proposition,
-    ) -> Option<ClickProposition> {
+    ) -> Option<SurfaceProposition> {
         let mut candidate = self.structural_proposition_candidate(goal)?;
         super::surface_synthesis::spell_conjunct_observations(goal, &mut candidate);
         self.lower_conjunct_label(&candidate)
@@ -3304,7 +3314,7 @@ impl<'a> Proof<'a> {
 
     fn refinement_presentation(
         &self,
-        surface: Option<ClickProposition>,
+        surface: Option<SurfaceProposition>,
         witness_refinement_kernel: Option<Proposition>,
     ) -> PropositionPresentation {
         // A refinement replaces the claim, so the head chain the lowering
@@ -3363,7 +3373,7 @@ impl<'a> Proof<'a> {
         }
     }
 
-    pub(in crate::surface::proof) fn surface_goal(&self) -> Option<&ClickProposition> {
+    pub(in crate::surface::proof) fn surface_goal(&self) -> Option<&SurfaceProposition> {
         match self.focused_obligation() {
             Some(Obligation::Proposition(goal)) => goal.surface.as_deref(),
             _ => None,
@@ -3380,7 +3390,7 @@ impl<'a> Proof<'a> {
     pub(super) fn focus_fixed_state_goal_with_surface(
         &self,
         goal: Proposition,
-        surface_goal: Option<ClickProposition>,
+        surface_goal: Option<SurfaceProposition>,
     ) -> Result<Self, ClickError> {
         self.focus_fixed_state_goal_for_claim(goal, surface_goal, None)
     }
@@ -3391,7 +3401,7 @@ impl<'a> Proof<'a> {
     pub(super) fn focus_fixed_state_goal_for_claim(
         &self,
         goal: Proposition,
-        surface_goal: Option<ClickProposition>,
+        surface_goal: Option<SurfaceProposition>,
         claim_goal: Option<&crate::kernel::ContractClaimGoal>,
     ) -> Result<Self, ClickError> {
         self.focus_fixed_state_goal_for_cell(goal, surface_goal, claim_goal, None)
@@ -3400,7 +3410,7 @@ impl<'a> Proof<'a> {
     fn focus_fixed_state_goal_for_cell(
         &self,
         goal: Proposition,
-        surface_goal: Option<ClickProposition>,
+        surface_goal: Option<SurfaceProposition>,
         claim_goal: Option<&crate::kernel::ContractClaimGoal>,
         source_claim: Option<&FunctionContractClaimKey>,
     ) -> Result<Self, ClickError> {
@@ -3506,7 +3516,7 @@ impl<'a> Proof<'a> {
     /// fact but owns a fresh lineage for that obligation's closing steps.
     pub(super) fn focus_fixed_state_surface_goal(
         &self,
-        goal: &ClickProposition,
+        goal: &SurfaceProposition,
     ) -> Result<Self, ClickError> {
         let kernel = self.lower_surface_goal(goal, "fixed-state obligation")?;
         self.focus_fixed_state_goal_with_surface(kernel, Some(goal.clone()))
@@ -3517,7 +3527,7 @@ impl<'a> Proof<'a> {
     pub(super) fn focus_source_contract_claim(
         &self,
         key: &FunctionContractClaimKey,
-        goal: &ClickProposition,
+        goal: &SurfaceProposition,
     ) -> Result<Self, ClickError> {
         let kernel = self.lower_surface_goal(goal, "source contract clause")?;
         self.focus_fixed_state_goal_for_cell(kernel, Some(goal.clone()), None, Some(key))
@@ -3589,14 +3599,14 @@ impl<'a> Proof<'a> {
 
     fn apply_contradiction(
         &self,
-        surface: &ClickProposition,
+        surface: &SurfaceProposition,
     ) -> Result<KernelProofHandle, ClickError> {
         let fact = self.lower_cited_surface_proposition(surface, "`contradiction` fact")?;
         self.state
             .apply_contradiction(&fact)
             .map_err(|error| match error {
                 PropositionCloseError::ContradictionUnavailable { .. }
-                    if matches!(surface, ClickProposition::Value(value)
+                    if matches!(surface, SurfaceProposition::Value(value)
                         if bool_literal_value(value) == Some(false)) =>
                 {
                     self.step_error("`contradiction()` requires an established `false` fact")
@@ -4090,7 +4100,7 @@ impl ExecutionProofPresentation {
         tactic_index: usize,
         source_index: usize,
         tactic: PostExecutionTactic,
-        lexical_bindings: Option<PersistentBinderMap<ContractExpression>>,
+        lexical_bindings: Option<PersistentBinderMap<SurfaceTerm>>,
     ) {
         let reads_deferred_obtain = tactic.reads_deferred_obtain(&self.deferred_obtain_names);
         if let PostExecutionTactic::Leaf(ProofTactic::LetSatisfy(binding)) = &tactic {

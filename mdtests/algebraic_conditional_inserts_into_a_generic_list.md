@@ -6,9 +6,8 @@ contains the value and conses the value on otherwise. Its laws hold for every
 element type: afterwards the list contains the value, and when the value was
 absent its length is one more.
 
-To select a branch, unfold the function and cite the condition or its
-negation. A C contract may also state
-an algebraic conditional.
+Unfold the function to prove the equation for the selected branch, then rewrite
+the call using that equation. A C contract may also state an algebraic conditional.
 
 ```c filename=keep.c
 void keep(int *p, int n) {
@@ -34,8 +33,12 @@ theorem insert_absent<T>(xs: List<T>, x: T) {
 theorem insert_contains<T>(xs: List<T>, x: T) {
     ensures list::contains(insert(xs, x), x) by {
         if list::contains(xs, x) {
-            unfold(insert(xs, x));
-            normalize() using { list::contains(xs, x); };
+            have insert(xs, x) == xs by {
+                unfold(insert(xs, x));
+                close();
+            }
+            rewrite(insert(xs, x), xs);
+            close();
         } else {
             have insert(xs, x) == List<T>::Cons(x, xs) by {
                 unfold(insert(xs, x));

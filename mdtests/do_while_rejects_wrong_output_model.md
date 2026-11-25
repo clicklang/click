@@ -66,7 +66,7 @@ void walk(struct Node* p, int32* marker) {
             }
         }
     }
-    have c.model != Path::Top by normalize();
+    have c.model != Path::Top by close();
     match c.model {
         Path::Top => { contradiction(c.model == Path::Top); },
         Path::Step(identity, before) => {
@@ -82,7 +82,7 @@ void walk(struct Node* p, int32* marker) {
                 },
                 Chain::Node(next_identity, rest) => {
                     have t.model != Chain::Empty by {
-                        rewrite(t.model, Chain::Node(next_identity, rest)); normalize();
+                        rewrite(t.model, Chain::Node(next_identity, rest)); close();
                     }
                     contradiction(t.model == Chain::Empty);
                 },

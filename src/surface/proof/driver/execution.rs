@@ -140,7 +140,7 @@ fn defer_post_execution_case_split<'a>(
     proof: Proof<'a>,
     index: usize,
     source_index: usize,
-    condition: &ClickProposition,
+    condition: &SurfaceProposition,
     disjunction: bool,
     then_branch: &InternalProofNode,
     else_branch: &InternalProofNode,
@@ -1117,7 +1117,7 @@ fn deferred_post_execution_match(
 }
 
 fn deferred_post_execution_if_is_explicit_path_cursor(
-    condition: &ClickProposition,
+    condition: &SurfaceProposition,
     then_tactics: &[DeferredPostExecutionTactic],
     else_tactics: &[DeferredPostExecutionTactic],
 ) -> bool {
@@ -4769,7 +4769,7 @@ struct AdvancedBranchArms<'a> {
 fn advance_checked_branch_arms<'a>(
     split: Proof<'a>,
     record: &ExecutionSplit<'a>,
-    expanded_condition: Option<&ClickProposition>,
+    expanded_condition: Option<&SurfaceProposition>,
     ensuring: &Option<Vec<ProofAssertion>>,
     then_branch: &InternalProofNode,
     else_branch: &InternalProofNode,
@@ -4993,7 +4993,7 @@ fn checked_expanded_execution_arm_prefix<'a, 'r>(
     proof: &Proof<'a>,
     record: &ExecutionSplit<'a>,
     take_then: bool,
-    condition: &ClickProposition,
+    condition: &SurfaceProposition,
     region: &'r InternalProofNode,
 ) -> Result<(Proof<'a>, &'r [IndexedTactic], &'r InternalProofNode), ClickError> {
     let expected =
@@ -5456,8 +5456,8 @@ pub(in crate::surface::proof) fn introduce_proof_case_assumption(
     proof_context: &ExecutionProofContext<'_>,
     available: &PureFactStore,
     structured_branch_history: bool,
-    condition: &ClickProposition,
-    lowering_condition: &ClickProposition,
+    condition: &SurfaceProposition,
+    lowering_condition: &SurfaceProposition,
     value: bool,
 ) -> Result<Option<Option<Proposition>>, ClickError> {
     let tactic_index = proof_context.tactic_index;
@@ -5612,46 +5612,43 @@ fn holds_exact_negation(available: &PureFactStore, fact: &Proposition) -> bool {
     })
 }
 
-fn proof_case_is_stable_program_point_condition(proposition: &ClickProposition) -> bool {
-    let expression_is_stable = |expression: &ContractExpression| {
-        matches!(
-            expression,
-            ContractExpression::At { .. } | ContractExpression::Old(_)
-        )
+fn proof_case_is_stable_program_point_condition(proposition: &SurfaceProposition) -> bool {
+    let expression_is_stable = |expression: &SurfaceTerm| {
+        matches!(expression, SurfaceTerm::At { .. } | SurfaceTerm::Old(_))
     };
     fn stable(
-        proposition: &ClickProposition,
-        expression_is_stable: &impl Fn(&ContractExpression) -> bool,
+        proposition: &SurfaceProposition,
+        expression_is_stable: &impl Fn(&SurfaceTerm) -> bool,
     ) -> bool {
         match proposition {
-            ClickProposition::Value(expression) => expression_is_stable(expression),
-            ClickProposition::Comparison { left, right, .. } => {
+            SurfaceProposition::Value(expression) => expression_is_stable(expression),
+            SurfaceProposition::Comparison { left, right, .. } => {
                 expression_is_stable(left) && expression_is_stable(right)
             }
-            ClickProposition::FloatClassification { expression, .. } => {
+            SurfaceProposition::FloatClassification { expression, .. } => {
                 expression_is_stable(expression)
             }
-            ClickProposition::Defined { expression }
-            | ClickProposition::IsA {
+            SurfaceProposition::Defined { expression }
+            | SurfaceProposition::IsA {
                 pointer: expression,
                 ..
             } => expression_is_stable(expression),
-            ClickProposition::At { .. } => true,
-            ClickProposition::And(left, right)
-            | ClickProposition::Or(left, right)
-            | ClickProposition::Implies(left, right) => {
+            SurfaceProposition::At { .. } => true,
+            SurfaceProposition::And(left, right)
+            | SurfaceProposition::Or(left, right)
+            | SurfaceProposition::Implies(left, right) => {
                 stable(left, expression_is_stable) && stable(right, expression_is_stable)
             }
-            ClickProposition::Not(body) => stable(body, expression_is_stable),
-            ClickProposition::Separate { .. }
-            | ClickProposition::ResourceViewable { .. }
-            | ClickProposition::Contains { .. }
-            | ClickProposition::Loadable { .. }
-            | ClickProposition::ForAll { .. }
-            | ClickProposition::Exists { .. }
-            | ClickProposition::RangeAll { .. }
-            | ClickProposition::RangeAny { .. }
-            | ClickProposition::PredicateCall { .. } => false,
+            SurfaceProposition::Not(body) => stable(body, expression_is_stable),
+            SurfaceProposition::Separate { .. }
+            | SurfaceProposition::ResourceViewable { .. }
+            | SurfaceProposition::Contains { .. }
+            | SurfaceProposition::Loadable { .. }
+            | SurfaceProposition::ForAll { .. }
+            | SurfaceProposition::Exists { .. }
+            | SurfaceProposition::RangeAll { .. }
+            | SurfaceProposition::RangeAny { .. }
+            | SurfaceProposition::PredicateCall { .. } => false,
         }
     }
     stable(proposition, &expression_is_stable)
@@ -5898,10 +5895,10 @@ mod tests {
         InternalProofNode::If {
             index: 0,
             source_index: 0,
-            condition: ClickProposition::Comparison {
-                left: ContractExpression::IntegerLiteral("1".into()),
+            condition: SurfaceProposition::Comparison {
+                left: SurfaceTerm::IntegerLiteral("1".into()),
                 operator: ComparisonOperator::Equal,
-                right: ContractExpression::IntegerLiteral("0".into()),
+                right: SurfaceTerm::IntegerLiteral("0".into()),
             },
             ensuring: None,
             then_branch: Box::new(then_branch),

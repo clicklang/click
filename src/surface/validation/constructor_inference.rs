@@ -196,23 +196,23 @@ impl ConstructorTypes {
 
     /// Whether `expression` still has an unapplied constructor in a
     /// position whose type is the expression's own.
-    fn pending(&self, expression: &ContractExpression) -> bool {
+    fn pending(&self, expression: &SurfaceTerm) -> bool {
         match expression {
-            ContractExpression::AlgebraicConstructor { algebraic_type, .. } => {
+            SurfaceTerm::AlgebraicConstructor { algebraic_type, .. } => {
                 self.unapplied(algebraic_type)
             }
-            ContractExpression::If {
+            SurfaceTerm::If {
                 then_branch,
                 else_branch,
                 ..
             } => self.pending(then_branch) || self.pending(else_branch),
-            ContractExpression::AlgebraicMatch { arms, .. } => {
+            SurfaceTerm::AlgebraicMatch { arms, .. } => {
                 arms.iter().any(|arm| self.pending(&arm.body))
             }
-            ContractExpression::Let { body, .. } => self.pending(body),
-            ContractExpression::Old(inner)
-            | ContractExpression::Exact(inner)
-            | ContractExpression::At {
+            SurfaceTerm::Let { body, .. } => self.pending(body),
+            SurfaceTerm::Old(inner)
+            | SurfaceTerm::Exact(inner)
+            | SurfaceTerm::At {
                 expression: inner, ..
             } => self.pending(inner),
             _ => false,
@@ -221,35 +221,35 @@ impl ConstructorTypes {
 
     /// The type `expression` has without looking at its surroundings, when
     /// inference can read it off directly.
-    fn known_type(&self, expression: &ContractExpression) -> Option<ClickType> {
+    fn known_type(&self, expression: &SurfaceTerm) -> Option<ClickType> {
         if let Some(id) = expression.generated_binder() {
             return self.variables.borrow().get(&id).cloned().flatten();
         }
         match expression {
-            ContractExpression::IntegerContext(_) => Some(ClickType::Integer),
-            ContractExpression::AlgebraicConstructor { algebraic_type, .. }
-            | ContractExpression::AlgebraicVariable { algebraic_type, .. } => (!self
+            SurfaceTerm::IntegerContext(_) => Some(ClickType::Integer),
+            SurfaceTerm::AlgebraicConstructor { algebraic_type, .. }
+            | SurfaceTerm::AlgebraicVariable { algebraic_type, .. } => (!self
                 .unapplied(algebraic_type))
             .then(|| ClickType::Algebraic(algebraic_type.clone())),
-            ContractExpression::ResourceField(access) => access.click_type.clone(),
-            ContractExpression::Binding(name)
-            | ContractExpression::ProgramBinding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::ResourceField(access) => access.click_type.clone(),
+            SurfaceTerm::Binding(name)
+            | SurfaceTerm::ProgramBinding(name)
+            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) => self.variables.borrow().get(name).cloned().flatten(),
-            ContractExpression::Old(inner)
-            | ContractExpression::Exact(inner)
-            | ContractExpression::At {
+            SurfaceTerm::Old(inner)
+            | SurfaceTerm::Exact(inner)
+            | SurfaceTerm::At {
                 expression: inner, ..
             } => self.known_type(inner),
-            ContractExpression::If {
+            SurfaceTerm::If {
                 then_branch,
                 else_branch,
                 ..
             } => self
                 .known_type(then_branch)
                 .or_else(|| self.known_type(else_branch)),
-            ContractExpression::Call { name, arguments } => {
+            SurfaceTerm::Call { name, arguments } => {
                 let signature = self.functions.get(name)?;
                 let result = signature.result.as_ref()?;
                 if signature.type_parameters.is_empty() {
@@ -267,7 +267,7 @@ impl ConstructorTypes {
     fn call_substitution(
         &self,
         signature: &Signature,
-        arguments: &[ContractExpression],
+        arguments: &[SurfaceTerm],
     ) -> TypeSubstitution {
         let allowed = signature
             .type_parameters
@@ -288,11 +288,11 @@ impl ConstructorTypes {
     /// Fill in an unapplied constructor's type arguments from its own
     /// arguments, then push field types into arguments that are still
     /// unapplied. Called once per constructor, after its arguments.
-    pub(super) fn resolve_constructor(&self, expression: &mut ContractExpression) {
+    pub(super) fn resolve_constructor(&self, expression: &mut SurfaceTerm) {
         if !self.active {
             return;
         }
-        let ContractExpression::AlgebraicConstructor {
+        let SurfaceTerm::AlgebraicConstructor {
             algebraic_type,
             variant,
             arguments,
@@ -353,7 +353,7 @@ impl ConstructorTypes {
         &self,
         application: &AlgebraicTypeApplication,
         variant: &str,
-        arguments: &mut [ContractExpression],
+        arguments: &mut [SurfaceTerm],
     ) {
         if !arguments.iter().any(|argument| self.pending(argument)) {
             return;
@@ -375,7 +375,7 @@ impl ConstructorTypes {
 
     /// Give the unapplied constructors in `expression`'s own result
     /// positions the type `expected`.
-    pub(super) fn push_expected(&self, expression: &mut ContractExpression, expected: &ClickType) {
+    pub(super) fn push_expected(&self, expression: &mut SurfaceTerm, expected: &ClickType) {
         if !self.active {
             return;
         }
@@ -383,7 +383,7 @@ impl ConstructorTypes {
             return;
         };
         match expression {
-            ContractExpression::AlgebraicConstructor {
+            SurfaceTerm::AlgebraicConstructor {
                 algebraic_type,
                 variant,
                 arguments,
@@ -405,7 +405,7 @@ impl ConstructorTypes {
                 }
                 self.push_into_fields(algebraic_type, variant, arguments);
             }
-            ContractExpression::If {
+            SurfaceTerm::If {
                 then_branch,
                 else_branch,
                 ..
@@ -413,15 +413,15 @@ impl ConstructorTypes {
                 self.push_expected(then_branch, expected);
                 self.push_expected(else_branch, expected);
             }
-            ContractExpression::AlgebraicMatch { arms, .. } => {
+            SurfaceTerm::AlgebraicMatch { arms, .. } => {
                 for arm in arms {
                     self.push_expected(&mut arm.body, expected);
                 }
             }
-            ContractExpression::Let { body, .. } => self.push_expected(body, expected),
-            ContractExpression::Old(inner)
-            | ContractExpression::Exact(inner)
-            | ContractExpression::At {
+            SurfaceTerm::Let { body, .. } => self.push_expected(body, expected),
+            SurfaceTerm::Old(inner)
+            | SurfaceTerm::Exact(inner)
+            | SurfaceTerm::At {
                 expression: inner, ..
             } => self.push_expected(inner, expected),
             _ => {}
@@ -430,12 +430,7 @@ impl ConstructorTypes {
 
     /// Push each parameter type of `name`'s signature into the call
     /// arguments still unapplied, once the other arguments fix it.
-    pub(super) fn resolve_call(
-        &self,
-        kind: CallKind,
-        name: &str,
-        arguments: &mut [ContractExpression],
-    ) {
+    pub(super) fn resolve_call(&self, kind: CallKind, name: &str, arguments: &mut [SurfaceTerm]) {
         if !self.active || !arguments.iter().any(|argument| self.pending(argument)) {
             return;
         }
@@ -482,10 +477,10 @@ impl ConstructorTypes {
     /// whose type has no such method is refused with the type and method.
     pub(super) fn resolve_method(
         &self,
-        receiver: ContractExpression,
+        receiver: SurfaceTerm,
         method: &str,
-        arguments: Vec<ContractExpression>,
-    ) -> Result<ContractExpression, ClickError> {
+        arguments: Vec<SurfaceTerm>,
+    ) -> Result<SurfaceTerm, ClickError> {
         let receiver_type = self.known_type(&receiver);
         let slice_type = match &receiver_type {
             Some(ClickType::Algebraic(application)) if application.name == "Slice" => {
@@ -508,7 +503,7 @@ impl ConstructorTypes {
                 && method == "[]"
                 && let [index] = arguments.as_slice()
             {
-                return Ok(ContractExpression::Call {
+                return Ok(SurfaceTerm::Call {
                     name: "click::rust::vec::get".to_string(),
                     arguments: vec![receiver, index.clone()],
                 });
@@ -517,7 +512,7 @@ impl ConstructorTypes {
             // the receiver's type: `v.len()` is `vec::len(v)`.
             if let Some(function) = self.library_method(&application.name, method, arguments.len())
             {
-                return Ok(ContractExpression::Call {
+                return Ok(SurfaceTerm::Call {
                     name: function.to_string(),
                     arguments: std::iter::once(receiver).chain(arguments).collect(),
                 });
@@ -529,18 +524,17 @@ impl ConstructorTypes {
             && let [index] = arguments.as_slice()
             && !matches!(&receiver_type, Some(ClickType::Algebraic(_)))
         {
-            return Ok(ContractExpression::Index(
+            return Ok(SurfaceTerm::Index(
                 Box::new(receiver),
                 Box::new(index.clone()),
             ));
         }
-        let written = crate::surface::diagnostics::describe_contract_expression(
-            &ContractExpression::MethodCall {
+        let written =
+            crate::surface::diagnostics::describe_contract_expression(&SurfaceTerm::MethodCall {
                 receiver: Box::new(receiver),
                 method: method.to_string(),
                 arguments,
-            },
-        );
+            });
         Err(ClickError::new(match receiver_type {
             Some(click_type) => format!(
                 "`{written}`: `{}` has no method `{method}`",
@@ -554,11 +548,7 @@ impl ConstructorTypes {
     }
 
     /// An unapplied side of a comparison takes the other side's type.
-    pub(super) fn resolve_comparison(
-        &self,
-        left: &mut ContractExpression,
-        right: &mut ContractExpression,
-    ) {
+    pub(super) fn resolve_comparison(&self, left: &mut SurfaceTerm, right: &mut SurfaceTerm) {
         if !self.active {
             return;
         }
@@ -577,7 +567,7 @@ impl ConstructorTypes {
     /// known; an unknown binding shadows whatever the name meant outside.
     pub(super) fn arm_binding_types(
         &self,
-        scrutinee: &ContractExpression,
+        scrutinee: &SurfaceTerm,
         arm: &AlgebraicMatchArm,
     ) -> Vec<Option<ClickType>> {
         let scrutinee = if self.active {
@@ -598,7 +588,7 @@ impl ConstructorTypes {
     }
 
     /// The type of the scrutinee of a proof `match`.
-    pub(super) fn scrutinee_type(&self, scrutinee: &ContractExpression) -> Option<ClickType> {
+    pub(super) fn scrutinee_type(&self, scrutinee: &SurfaceTerm) -> Option<ClickType> {
         if !self.active {
             return None;
         }
@@ -645,7 +635,7 @@ impl ConstructorTypes {
     }
 
     /// The type of `expression` for a `let` binding it initializes.
-    pub(super) fn binding_type(&self, expression: &ContractExpression) -> Option<ClickType> {
+    pub(super) fn binding_type(&self, expression: &SurfaceTerm) -> Option<ClickType> {
         if !self.active {
             return None;
         }
@@ -707,11 +697,9 @@ pub(in crate::surface) fn unapplied_constructor_message(
 /// The data pointer and length a slice built from its parts was built
 /// with: a `Slice::Slice(p, n)` constructor or a `slice::from_raw_parts(p,
 /// n)` call.
-fn slice_parts(
-    receiver: &ContractExpression,
-) -> Option<(&ContractExpression, &ContractExpression)> {
+fn slice_parts(receiver: &SurfaceTerm) -> Option<(&SurfaceTerm, &SurfaceTerm)> {
     match receiver {
-        ContractExpression::AlgebraicConstructor {
+        SurfaceTerm::AlgebraicConstructor {
             algebraic_type,
             variant,
             arguments,
@@ -719,7 +707,7 @@ fn slice_parts(
             [pointer, length] => Some((pointer, length)),
             _ => None,
         },
-        ContractExpression::Call { name, arguments }
+        SurfaceTerm::Call { name, arguments }
             if matches!(
                 name.as_str(),
                 "slice::from_raw_parts" | "click::rust::slice::from_raw_parts"
@@ -738,11 +726,11 @@ fn slice_parts(
 /// a slice built from its parts whose element type is not known here.
 fn slice_method(
     application: Option<&AlgebraicTypeApplication>,
-    receiver: ContractExpression,
+    receiver: SurfaceTerm,
     method: &str,
-    arguments: Vec<ContractExpression>,
-) -> Option<ContractExpression> {
-    let call = |name: &str, arguments| ContractExpression::Call {
+    arguments: Vec<SurfaceTerm>,
+) -> Option<SurfaceTerm> {
+    let call = |name: &str, arguments| SurfaceTerm::Call {
         name: format!("click::rust::slice::{name}"),
         arguments,
     };
@@ -756,11 +744,11 @@ fn slice_method(
         ),
     };
     // A bound is a `usize`, as in Rust.
-    let usize_bound = |bound: ContractExpression| match &bound {
-        ContractExpression::IntegerLiteral(text) => text
+    let usize_bound = |bound: SurfaceTerm| match &bound {
+        SurfaceTerm::IntegerLiteral(text) => text
             .parse::<u64>()
             .map(|value| {
-                ContractExpression::ProgramExpression(ProgramExpression::Value(
+                SurfaceTerm::ProgramExpression(ProgramExpression::Value(
                     crate::kernel::ProgramValue::UInt64(
                         crate::kernel::MachineTerm::uint64_constant(value),
                     ),
@@ -776,12 +764,10 @@ fn slice_method(
         // spelling `bytes[1..3][1]`: it reads through `slice::as_ptr`.
         ("[]", [index]) => {
             let pointer = match &receiver {
-                ContractExpression::AlgebraicConstructor { .. } => {
-                    call("as_ptr", vec![receiver.clone()])
-                }
+                SurfaceTerm::AlgebraicConstructor { .. } => call("as_ptr", vec![receiver.clone()]),
                 _ => pointer,
             };
-            return Some(ContractExpression::Index(
+            return Some(SurfaceTerm::Index(
                 Box::new(pointer),
                 Box::new(index.clone()),
             ));
@@ -795,11 +781,11 @@ fn slice_method(
         ),
         _ => return None,
     };
-    let zero = ContractExpression::ProgramExpression(ProgramExpression::Value(
+    let zero = SurfaceTerm::ProgramExpression(ProgramExpression::Value(
         crate::kernel::ProgramValue::UInt64(crate::kernel::MachineTerm::uint64_constant(0)),
     ));
     let data = match &start {
-        Some(start) => ContractExpression::Add(Box::new(pointer), Box::new(start.clone())),
+        Some(start) => SurfaceTerm::Add(Box::new(pointer), Box::new(start.clone())),
         None => pointer,
     };
     let end = end.unwrap_or_else(|| length.clone());
@@ -807,7 +793,7 @@ fn slice_method(
     // The constructor, so its fields select at once; with no element type
     // known here, the library's constructor call.
     Some(match application {
-        Some(application) => ContractExpression::AlgebraicConstructor {
+        Some(application) => SurfaceTerm::AlgebraicConstructor {
             algebraic_type: application.clone(),
             variant: "Slice".to_string(),
             arguments: vec![data, count],

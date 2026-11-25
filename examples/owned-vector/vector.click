@@ -6,19 +6,10 @@ theorem selected_array_cell(whole: Resource, kept: Resource, p: int32*, len: int
     requires 0 <= i;
     requires i < len;
     ensures separate(kept, memory(p[i])) by {
-        have i <= 2147483646 by { close() using { i < len; }; }
-        have defined(i + 1) by { close() using { 0 <= i; i <= 2147483646; }; }
-        have i <= ((i + 1) as int32) by { close() using { 0 <= i; i < len; }; }
-        have ((i + 1) as int32) <= len by { close() using { 0 <= i; i < len; }; }
-        have contains(memory(p[0..len]), memory(p[i..i + 1])) by {
-            apply(separation::contains_subrange(p, 0, len, i, i + 1));
+        have contains(memory(p[0..len]), memory(p[i])) by {
+            apply(separation::contains_element(p, 0, len, i));
         }
-        have separate(kept, memory(p[i..i + 1])) by {
-            apply(separation::separate_restrict(whole, memory(p[0..len]), kept, memory(p[i..i + 1])));
-        }
-        have contains(kept, kept) by { apply(click::separation::contains_refl(kept)); }
-        have contains(memory(p[i..i + 1]), memory(p[i])) by { normalize(); }
-        apply(separation::separate_restrict(kept, memory(p[i..i + 1]), kept, memory(p[i])));
+        apply(separation::separate_restrict(whole, memory(p[0..len]), kept, memory(p[i])));
     }
 }
 
@@ -440,13 +431,9 @@ int32 vector_grow(struct vector* owner) {
                         rewrite(old(owner->data[k]), at(statement(10).call(vector_copy, 0).entry, old_data[k]));
                         close();
                     }
-                    have &owner->data[k] == &new_data[k] by {
-                        close();
-                    }
                     have owner->data[k] == new_data[k] by {
-                        transport(new_data[k] == new_data[k], owner->data[k] == new_data[k]) using {
-                            &owner->data[k] == &new_data[k];
-                        };
+                        rewrite(owner->data, new_data);
+                        close();
                     }
                     rewrite(owner->data[k], new_data[k]);
                     close();
@@ -1089,12 +1076,12 @@ int32 vector_fill(struct vector* owner, int32 value) {
         maintain by {
             mark before_fill;
             have i < owner->cap;
-            have contains(memory(*owner), memory(owner->data)) by { normalize(); }
+            have contains(memory(*owner), memory(owner->data)) by { close(); }
             have separate(memory(owner->data), memory(owner->data[i])) by {
                 apply(selected_array_cell(memory(*owner), memory(owner->data),
                     owner->data, owner->cap, i));
             }
-            have contains(memory(*owner), memory(owner->len)) by { normalize(); }
+            have contains(memory(*owner), memory(owner->len)) by { close(); }
             have separate(memory(owner->len), memory(owner->data[i])) by {
                 apply(selected_array_cell(memory(*owner), memory(owner->len), owner->data, owner->cap, i));
             }

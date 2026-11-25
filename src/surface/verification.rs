@@ -3,6 +3,7 @@ use super::*;
 use crate::languages::PreparedProgram;
 use crate::languages::c::compiler_import::PreparedCImport;
 use crate::languages::c::target::CTarget;
+use crate::languages::interface::RecordLayout;
 use sha2::{Digest, Sha256};
 #[cfg(test)]
 use std::cell::Cell;
@@ -534,76 +535,6 @@ fn theorem_has_certification_binders(theorem: &TheoremDefinition) -> bool {
     })
 }
 
-/// Records verified pure theorems over supported kernel binders as closed
-/// universally-quantified facts with their kernel authority, so kernel
-/// contract certification can discharge obligations the surface proof
-/// established by `apply`.
-fn record_theorem_certification_authority(
-    verified_theorems: &[VerifiedPureTheorem],
-    facts: &mut BTreeMap<String, Vec<Proposition>>,
-    authorities: &mut BTreeMap<String, Vec<KernelVerifiedPureTheorem>>,
-) {
-    for theorem in verified_theorems.iter().filter(|theorem| {
-        theorem.kernel_authority.is_some()
-            && theorem_has_certification_binders(&theorem.theorem_definition)
-    }) {
-        let implication = theorem
-            .requires
-            .iter()
-            .rev()
-            .fold(theorem.conclusion.clone(), |body, requirement| {
-                Proposition::Implies(Box::new(requirement.clone()), Box::new(body))
-            });
-        let fact = theorem
-            .theorem_definition
-            .parameters()
-            .iter()
-            .enumerate()
-            .map(|(index, parameter)| {
-                let sort = match parameter.interface_type() {
-                    InterfaceType::Int32 => crate::kernel::Sort::ProgramInt32,
-                    InterfaceType::FunctionPointer(_) => crate::kernel::Sort::ProgramPointer(
-                        parameter.interface_type().to_kernel_type(),
-                    ),
-                    _ => unreachable!("the theorem binder filter admits only supported types"),
-                };
-                (
-                    crate::kernel::BinderName::written(parameter.name()),
-                    crate::kernel::Variable(index as u64),
-                    sort,
-                )
-            })
-            .collect::<Vec<_>>();
-        let fact = crate::kernel::quantifiers::close_foralls(&fact, &implication);
-        let Some(fact) = fact else {
-            continue;
-        };
-        facts
-            .entry(theorem.theorem_definition.name().to_string())
-            .or_default()
-            .push(fact);
-        let authority = theorem
-            .kernel_authority
-            .as_ref()
-            .expect("theorem certification facts require kernel authority");
-        authorities
-            .entry(theorem.theorem_definition.name().to_string())
-            .or_default()
-            .push(authority.clone());
-    }
-}
-
-fn record_assumed_theorem_certification_authority(
-    assumed: Vec<(String, Proposition, KernelVerifiedPureTheorem)>,
-    facts: &mut BTreeMap<String, Vec<Proposition>>,
-    authorities: &mut BTreeMap<String, Vec<KernelVerifiedPureTheorem>>,
-) {
-    for (name, fact, authority) in assumed {
-        facts.entry(name.clone()).or_default().push(fact);
-        authorities.entry(name).or_default().push(authority);
-    }
-}
-
 /// The entry module's theorem proofs selected by the CLI scope. Imported
 /// theorem statements and unselected local statements are interfaces; using
 /// one does not recursively select its proof body.
@@ -713,9 +644,10 @@ pub(in crate::surface) fn verify_click_theorem_context(
     theorem_name: &str,
 ) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
     let layouts = parse_c_layouts(click_source, sources)?;
+    let struct_layouts = layouts.struct_layouts.clone();
     let file =
         parser::parse_with_interface_catalog(click_source, layouts, sources.library_contracts())?;
-    verify_click_file_theorem_context(file, sources, theorem_name)
+    verify_click_file_theorem_context(file, sources, theorem_name, &struct_layouts)
 }
 
 pub(in crate::surface) fn verify_click_project_theorem_context(
@@ -723,7 +655,12 @@ pub(in crate::surface) fn verify_click_project_theorem_context(
     sources: &ProgramSourceContext<'_>,
     theorem_name: &str,
 ) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
-    let file = resolve_click_project_context(project, sources)?;
+    let _timing = VerificationTimingPhase::new("source resolution");
+    let layouts = parse_click_project_layouts(project, sources)?;
+    let struct_layouts = layouts.struct_layouts.clone();
+    let file =
+        modules::resolve_click_project_with_layouts(project, sources.library_contracts(), layouts)?;
+    drop(_timing);
     if let Some(theorem) = file
         .theorem_definitions()
         .iter()
@@ -735,13 +672,14 @@ pub(in crate::surface) fn verify_click_project_theorem_context(
             "theorem `{theorem_name}` is declared by an imported module, not the selected entry module"
         )));
     }
-    verify_click_file_theorem_context(file, sources, theorem_name)
+    verify_click_file_theorem_context(file, sources, theorem_name, &struct_layouts)
 }
 
 fn verify_click_file_theorem_context(
     file: ClickFile,
     sources: &ProgramSourceContext<'_>,
     theorem_name: &str,
+    struct_layouts: &BTreeMap<String, RecordLayout>,
 ) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
     modules::reject_theorem_justification_cycles(&file)?;
     let parsed_sources = parse_verified_sources_context(&file, sources)?;
@@ -768,7 +706,8 @@ fn verify_click_file_theorem_context(
     let spec_definitions =
         SpecDefinitions::new(&predicate_environment, &click_function_environment)
             .with_struct_sizes(&file.struct_sizes);
-    let resource_environment = ResourceEnvironment::new(&resource_definitions);
+    let resource_environment =
+        ResourceEnvironment::with_struct_layouts(&resource_definitions, struct_layouts);
     let external_and_user_function_blocks = combined_external_function_blocks(&file)?;
     let mut function_environment = build_function_environment(
         &parsed_sources,
@@ -837,7 +776,7 @@ fn contract_refinement_targets(file: &ClickFile, theorem_name: &str) -> BTreeSet
         return targets;
     };
     for ensure in theorem.ensures() {
-        let Ensure::Proposition(ClickProposition::PredicateCall { name, arguments }) =
+        let Ensure::Proposition(SurfaceProposition::PredicateCall { name, arguments }) =
             ensure.ensure()
         else {
             continue;
@@ -1161,6 +1100,14 @@ pub(in crate::surface) fn resolve_click_project_context(
     sources: &ProgramSourceContext<'_>,
 ) -> Result<ClickFile, ClickError> {
     let _timing = VerificationTimingPhase::new("source resolution");
+    let layouts = parse_click_project_layouts(project, sources)?;
+    modules::resolve_click_project_with_layouts(project, sources.library_contracts(), layouts)
+}
+
+fn parse_click_project_layouts(
+    project: &ClickProject,
+    sources: &ProgramSourceContext<'_>,
+) -> Result<parser::ProgramLayouts, ClickError> {
     let click_source = project
         .entry_source()
         .ok_or_else(|| ClickError::new(format!("missing entry module `{}`", project.entry())))?;
@@ -1170,7 +1117,7 @@ pub(in crate::surface) fn resolve_click_project_context(
         super::selected_project_c_target(project)?,
     )?;
     check_verification_deadline()?;
-    modules::resolve_click_project_with_layouts(project, sources.library_contracts(), layouts)
+    Ok(layouts)
 }
 
 /// Verifies exactly the proofs owned by a loaded entry module. Imported
@@ -2248,8 +2195,6 @@ fn verify_program_in_context(
         click_function_environment,
         resource_environment,
         mut function_environment,
-        mut theorem_certification_facts,
-        mut theorem_certification_authorities,
         theorem_environment,
         program_contracts,
     ) = {
@@ -2401,7 +2346,7 @@ fn verify_program_in_context(
             )
         })?;
         drop(_timing);
-        let verified_theorems = verify_theorem_definitions(
+        verify_theorem_definitions(
             theorem_dependencies,
             &theorem_definitions,
             spec_definitions,
@@ -2414,29 +2359,6 @@ fn verify_program_in_context(
                 .map_or(error.clone(), |identity| error.with_context(identity))
         })?;
         let _timing = VerificationTimingPhase::new("environment");
-        let mut theorem_certification_facts = BTreeMap::<String, Vec<Proposition>>::new();
-        let mut theorem_certification_authorities =
-            BTreeMap::<String, Vec<KernelVerifiedPureTheorem>>::new();
-        // Theorem-only verification uses the theorem environment above and
-        // needs no program-body certification assumptions.
-        if selected_functions
-            .as_ref()
-            .is_none_or(|selected| !selected.is_empty())
-        {
-            record_theorem_certification_authority(
-                &verified_theorems,
-                &mut theorem_certification_facts,
-                &mut theorem_certification_authorities,
-            );
-            record_assumed_theorem_certification_authority(
-                assumed_theorem_certification_authorities(
-                    &unselected_theorem_definitions,
-                    spec_definitions,
-                )?,
-                &mut theorem_certification_facts,
-                &mut theorem_certification_authorities,
-            );
-        }
         let theorem_environment =
             TheoremEnvironment::with_standard_library(file.theorem_definitions())?
                 .with_discovery_library(&file)?;
@@ -2446,8 +2368,6 @@ fn verify_program_in_context(
             click_function_environment,
             resource_environment,
             function_environment,
-            theorem_certification_facts,
-            theorem_certification_authorities,
             theorem_environment,
             program_contracts,
         )
@@ -2722,10 +2642,10 @@ fn verify_program_in_context(
         let implicit_safety_clause = EnsureClause {
             proof_bindings: Vec::new(),
             name: None,
-            ensure: Ensure::Proposition(ClickProposition::Comparison {
-                left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
+            ensure: Ensure::Proposition(SurfaceProposition::Comparison {
+                left: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
                 operator: ComparisonOperator::Equal,
-                right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
+                right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
             }),
             proof: SourceProof::Tactic(SmartTactic::ImplicitTail),
             borrowed: false,
@@ -2869,12 +2789,11 @@ fn verify_program_in_context(
             }
         }
         for name in dependencies {
-            if !theorem_certification_facts.contains_key(&name)
-                && checked_standard_library_theorems.insert(name.clone())
+            if checked_standard_library_theorems.insert(name.clone())
                 && let Some(index) = standard_library_theorem_index(&name)
                 && theorem_has_certification_binders(&standard_library_theorems[index])
             {
-                let dependency = verify_theorem_definitions(
+                verify_theorem_definitions(
                     TheoremEnvironment::with_full_library_prefix(index, &[])?,
                     &standard_library_theorems[index..=index],
                     spec_definitions,
@@ -2882,11 +2801,6 @@ fn verify_program_in_context(
                     &resource_environment,
                     function_source_registry.clone(),
                 )?;
-                record_theorem_certification_authority(
-                    &dependency,
-                    &mut theorem_certification_facts,
-                    &mut theorem_certification_authorities,
-                );
             }
         }
         // The parent is an ordinary proof root opened with the entry. Child
@@ -4369,8 +4283,8 @@ fn termination_refusal_report(
 /// the plan and the loop head render the same clause, so the two agree by
 /// construction. It exists so a diagnostic can print what the user wrote,
 /// since a lowered specification expression has no source spelling.
-pub(in crate::surface) fn termination_measure_source(expression: &ContractExpression) -> String {
-    let binary = |left: &ContractExpression, right: &ContractExpression, operator: &str| {
+pub(in crate::surface) fn termination_measure_source(expression: &SurfaceTerm) -> String {
+    let binary = |left: &SurfaceTerm, right: &SurfaceTerm, operator: &str| {
         format!(
             "{} {operator} {}",
             termination_measure_source(left),
@@ -4378,19 +4292,17 @@ pub(in crate::surface) fn termination_measure_source(expression: &ContractExpres
         )
     };
     match expression {
-        ContractExpression::IntegerLiteral(literal) => literal.clone(),
-        ContractExpression::Binding(name)
-        | ContractExpression::ProgramBinding(name)
-        | ContractExpression::QualifiedC { name, .. } => name.clone(),
-        ContractExpression::ProgramExpression(expression) => {
-            crate::kernel::ranking_measure_identity(
-                &crate::kernel::RankingComponent::ProgramExpression(expression.clone()),
-            )
-        }
-        ContractExpression::Field { base, field, .. } => {
+        SurfaceTerm::IntegerLiteral(literal) => literal.clone(),
+        SurfaceTerm::Binding(name)
+        | SurfaceTerm::ProgramBinding(name)
+        | SurfaceTerm::QualifiedC { name, .. } => name.clone(),
+        SurfaceTerm::ProgramExpression(expression) => crate::kernel::ranking_measure_identity(
+            &crate::kernel::RankingComponent::ProgramExpression(expression.clone()),
+        ),
+        SurfaceTerm::Field { base, field, .. } => {
             format!("{}.{field}", termination_measure_source(base))
         }
-        ContractExpression::Call { name, arguments } => format!(
+        SurfaceTerm::Call { name, arguments } => format!(
             "{name}({})",
             crate::surface::diagnostics::slice_call_arguments(
                 name,
@@ -4398,11 +4310,11 @@ pub(in crate::surface) fn termination_measure_source(expression: &ContractExpres
             )
             .join(", ")
         ),
-        ContractExpression::ResourceField(access) => {
+        SurfaceTerm::ResourceField(access) => {
             format!("{}.{}", access.owner, access.field)
         }
-        ContractExpression::Old(inner) => format!("old({})", termination_measure_source(inner)),
-        ContractExpression::At {
+        SurfaceTerm::Old(inner) => format!("old({})", termination_measure_source(inner)),
+        SurfaceTerm::At {
             selector,
             expression,
         } => format!(
@@ -4410,13 +4322,13 @@ pub(in crate::surface) fn termination_measure_source(expression: &ContractExpres
             crate::surface::diagnostics::describe_program_point_selector(selector),
             termination_measure_source(expression)
         ),
-        ContractExpression::Negate(inner) => format!("-{}", termination_measure_source(inner)),
-        ContractExpression::Add(left, right) => binary(left, right, "+"),
-        ContractExpression::Subtract(left, right) => binary(left, right, "-"),
-        ContractExpression::Multiply(left, right) => binary(left, right, "*"),
-        ContractExpression::Divide(left, right) => binary(left, right, "/"),
-        ContractExpression::Remainder(left, right) => binary(left, right, "%"),
-        ContractExpression::Index(base, index) => format!(
+        SurfaceTerm::Negate(inner) => format!("-{}", termination_measure_source(inner)),
+        SurfaceTerm::Add(left, right) => binary(left, right, "+"),
+        SurfaceTerm::Subtract(left, right) => binary(left, right, "-"),
+        SurfaceTerm::Multiply(left, right) => binary(left, right, "*"),
+        SurfaceTerm::Divide(left, right) => binary(left, right, "/"),
+        SurfaceTerm::Remainder(left, right) => binary(left, right, "%"),
+        SurfaceTerm::Index(base, index) => format!(
             "{}[{}]",
             termination_measure_source(base),
             termination_measure_source(index)
@@ -4453,9 +4365,9 @@ fn termination_measure_binder_name(measure: &TerminationMeasure) -> Option<&str>
         return None;
     };
     match component {
-        ContractExpression::Binding(name)
-        | ContractExpression::ProgramBinding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+        SurfaceTerm::Binding(name)
+        | SurfaceTerm::ProgramBinding(name)
+        | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) => Some(name),
         _ => None,
@@ -6274,7 +6186,7 @@ pub(super) fn function_resource_summary_with_entry_ranges(
         };
         let result_binding = BTreeMap::from([(
             "result".to_string(),
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::CONTRACT_RESULT,
             )),
         )]);
@@ -6413,7 +6325,7 @@ pub(in crate::surface) fn function_resource_constructors(
         .map(|resource| {
             let result_binding = BTreeMap::from([(
                 "result".to_string(),
-                ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                     crate::kernel::CONTRACT_RESULT,
                 )),
             )]);
@@ -6836,7 +6748,7 @@ fn resource_clause_to_resource_specs_with_metadata(
         retained_state,
         pointer_element_types,
     )?;
-    fn declared_arguments(resource: &ResourceClause) -> Option<&[ContractExpression]> {
+    fn declared_arguments(resource: &ResourceClause) -> Option<&[SurfaceTerm]> {
         match resource {
             ResourceClause::Named { resource, .. }
             | ResourceClause::Quantified { resource, .. } => declared_arguments(resource),
@@ -7422,7 +7334,7 @@ pub(in crate::surface) fn substitute_contract_segment(
             base, start, end, ..
         } = &surface
     {
-        let lower = |original: &ProgramExpression, source: &ContractExpression| {
+        let lower = |original: &ProgramExpression, source: &SurfaceTerm| {
             let rewritten = substitute_program_expression_in(original, substitutions)?;
             if rewritten == *original {
                 return Ok(original.clone());

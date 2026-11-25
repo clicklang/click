@@ -5,7 +5,7 @@ use super::*;
 
 /// SymbolicMemory state selection belongs around application, not inside its delayed body.
 /// Check source literals too, since declaration aliases may be unused.
-pub(super) fn validate_body_state(body: &ContractExpression) -> Result<(), ClickError> {
+pub(super) fn validate_body_state(body: &SurfaceTerm) -> Result<(), ClickError> {
     if contains_old_expression(body) || contains_at_expression(body) {
         return Err(ClickError::new(
             "specification lambda bodies cannot select retained_states with old or at; select the state at application instead",
@@ -25,15 +25,15 @@ pub(super) fn has_function_parameters(definition: &ClickFunctionDefinition) -> b
 /// All captures and simultaneous argument binding use ordinary beta elaboration.
 pub(super) fn specialize_call(
     definition: &ClickFunctionDefinition,
-    arguments: &[ContractExpression],
-) -> Result<Option<ContractExpression>, String> {
+    arguments: &[SurfaceTerm],
+) -> Result<Option<SurfaceTerm>, String> {
     if !has_function_parameters(definition) && definition.return_type() != &ClickType::Proposition {
         return Ok(None);
     }
     for (parameter, argument) in definition.parameters().iter().zip(arguments) {
         if matches!(parameter.click_type(), ClickType::Function { .. }) {
             let value = reduce_head_fully(argument)?;
-            let ContractExpression::Lambda {
+            let SurfaceTerm::Lambda {
                 parameters, result, ..
             } = value.as_ref()
             else {
@@ -82,13 +82,13 @@ pub(super) fn signature(
 
 /// Application may already be elaborated into typed argument/result lets
 /// when a surrounding proposition alias is substituted.
-pub(super) fn is_proposition_value(expression: &ContractExpression) -> bool {
+pub(super) fn is_proposition_value(expression: &SurfaceTerm) -> bool {
     match expression {
-        ContractExpression::Proposition(_) => true,
-        ContractExpression::Apply { function, .. } => {
+        SurfaceTerm::Proposition(_) => true,
+        SurfaceTerm::Apply { function, .. } => {
             application_result_type(function) == Ok(ClickType::Proposition)
         }
-        ContractExpression::Let {
+        SurfaceTerm::Let {
             name,
             click_type,
             value,
@@ -104,7 +104,7 @@ pub(super) fn is_proposition_value(expression: &ContractExpression) -> bool {
                 is_proposition_value(body)
             }
         }
-        ContractExpression::At { expression, .. } | ContractExpression::Old(expression) => {
+        SurfaceTerm::At { expression, .. } | SurfaceTerm::Old(expression) => {
             is_proposition_value(expression)
         }
         _ => false,
@@ -113,18 +113,18 @@ pub(super) fn is_proposition_value(expression: &ContractExpression) -> bool {
 
 /// Range predicates use ordinary application under the existing quantifier.
 pub(super) fn range_proposition(
-    start: ContractExpression,
-    end: ContractExpression,
-    predicate: ContractExpression,
+    start: SurfaceTerm,
+    end: SurfaceTerm,
+    predicate: SurfaceTerm,
     all: bool,
-) -> ClickProposition {
+) -> SurfaceProposition {
     let item = SurfaceBinder::fresh();
-    let body = Box::new(ClickProposition::Value(ContractExpression::Apply {
+    let body = Box::new(SurfaceProposition::Value(SurfaceTerm::Apply {
         function: Box::new(predicate),
         arguments: vec![item.reference()],
     }));
     if all {
-        ClickProposition::RangeAll {
+        SurfaceProposition::RangeAll {
             start,
             end,
             item,
@@ -132,7 +132,7 @@ pub(super) fn range_proposition(
             body,
         }
     } else {
-        ClickProposition::RangeAny {
+        SurfaceProposition::RangeAny {
             start,
             end,
             item,
@@ -142,13 +142,13 @@ pub(super) fn range_proposition(
     }
 }
 
-pub(super) fn range_predicate(proposition: &ClickProposition) -> Option<&ContractExpression> {
+pub(super) fn range_predicate(proposition: &SurfaceProposition) -> Option<&SurfaceTerm> {
     let (item, body) = match proposition {
-        ClickProposition::RangeAll { item, body, .. }
-        | ClickProposition::RangeAny { item, body, .. } => (item, body),
+        SurfaceProposition::RangeAll { item, body, .. }
+        | SurfaceProposition::RangeAny { item, body, .. } => (item, body),
         _ => return None,
     };
-    let ClickProposition::Value(ContractExpression::Apply {
+    let SurfaceProposition::Value(SurfaceTerm::Apply {
         function,
         arguments,
     }) = body.as_ref()
@@ -169,18 +169,18 @@ pub(super) fn range_predicate(proposition: &ClickProposition) -> Option<&Contrac
 /// values. Fresh binders keep the step's lexical captures outside that scope.
 /// The primitive remains the common lowering target for the older shorthand.
 pub(super) fn range_fold(
-    start: ContractExpression,
-    end: ContractExpression,
-    initial: ContractExpression,
-    step: ContractExpression,
-) -> ContractExpression {
+    start: SurfaceTerm,
+    end: SurfaceTerm,
+    initial: SurfaceTerm,
+    step: SurfaceTerm,
+) -> SurfaceTerm {
     let accumulator = SurfaceBinder::fresh();
     let item = SurfaceBinder::fresh();
-    let body = ContractExpression::Apply {
+    let body = SurfaceTerm::Apply {
         function: Box::new(step),
         arguments: vec![accumulator.reference(), item.reference()],
     };
-    ContractExpression::RangeFold {
+    SurfaceTerm::RangeFold {
         start: Box::new(start),
         end: Box::new(end),
         initial: Box::new(initial),
@@ -193,8 +193,8 @@ pub(super) fn range_fold(
 /// Recognize the step application without exposing the primitive's binder
 /// names in printed source. A legacy body that closes over either binder
 /// cannot be moved outside that binder's scope.
-pub(super) fn range_fold_step(expression: &ContractExpression) -> Option<&ContractExpression> {
-    let ContractExpression::RangeFold {
+pub(super) fn range_fold_step(expression: &SurfaceTerm) -> Option<&SurfaceTerm> {
+    let SurfaceTerm::RangeFold {
         accumulator,
         item,
         body,
@@ -203,7 +203,7 @@ pub(super) fn range_fold_step(expression: &ContractExpression) -> Option<&Contra
     else {
         return None;
     };
-    let ContractExpression::Apply {
+    let SurfaceTerm::Apply {
         function,
         arguments,
     } = body.as_ref()
@@ -223,8 +223,8 @@ pub(super) fn range_fold_step(expression: &ContractExpression) -> Option<&Contra
 
 /// Read the explicit result carrier without erasing the caller's Integer
 /// scope. Full argument/body checking belongs to scoped expression typing.
-pub(super) fn application_result_type(function: &ContractExpression) -> Result<ClickType, String> {
-    if let ContractExpression::Lambda { result, .. } = function {
+pub(super) fn application_result_type(function: &SurfaceTerm) -> Result<ClickType, String> {
+    if let SurfaceTerm::Lambda { result, .. } = function {
         return Ok(result.clone());
     }
     if let Some(reduced) = reduce_head(function)? {
@@ -236,8 +236,8 @@ pub(super) fn application_result_type(function: &ContractExpression) -> Result<C
 /// Expose a value's outer form after elaborating local lambda aliases.
 /// Fold-law inspection must see the same body as ordinary value lowering.
 pub(super) fn reduce_head_fully(
-    expression: &ContractExpression,
-) -> Result<std::borrow::Cow<'_, ContractExpression>, String> {
+    expression: &SurfaceTerm,
+) -> Result<std::borrow::Cow<'_, SurfaceTerm>, String> {
     let mut value = std::borrow::Cow::Borrowed(expression);
     while let Some(reduced) = reduce_head(&value)? {
         value = std::borrow::Cow::Owned(reduced);
@@ -247,11 +247,9 @@ pub(super) fn reduce_head_fully(
 
 /// Only a literal closure has an executable body in this first slice.
 /// Function parameters and opaque function results are a later extension.
-pub(super) fn reduce_head(
-    expression: &ContractExpression,
-) -> Result<Option<ContractExpression>, String> {
+pub(super) fn reduce_head(expression: &SurfaceTerm) -> Result<Option<SurfaceTerm>, String> {
     match expression {
-        ContractExpression::Let {
+        SurfaceTerm::Let {
             name,
             click_type,
             value,
@@ -263,13 +261,13 @@ pub(super) fn reduce_head(
             )
             .map(Some)
         }
-        ContractExpression::Let {
+        SurfaceTerm::Let {
             name,
             click_type,
             value,
             body,
-        } if matches!(value.as_ref(), ContractExpression::Lambda { .. }) => {
-            let ContractExpression::Lambda {
+        } if matches!(value.as_ref(), SurfaceTerm::Lambda { .. }) => {
+            let SurfaceTerm::Lambda {
                 parameters, result, ..
             } = value.as_ref()
             else {
@@ -291,20 +289,20 @@ pub(super) fn reduce_head(
             )
             .map(Some)
         }
-        ContractExpression::Apply {
+        SurfaceTerm::Apply {
             function,
             arguments,
         } => {
             let reduced = reduce_head(function)?;
             let function = reduced.as_ref().unwrap_or(function);
-            let ContractExpression::Lambda {
+            let SurfaceTerm::Lambda {
                 parameters,
                 result,
                 body,
             } = function
             else {
                 if reduced.is_some() {
-                    return Ok(Some(ContractExpression::Apply {
+                    return Ok(Some(SurfaceTerm::Apply {
                         function: Box::new(function.clone()),
                         arguments: arguments.clone(),
                     }));
@@ -328,9 +326,9 @@ pub(super) fn reduce_head(
 fn apply_lambda(
     parameters: impl ExactSizeIterator<Item = (crate::kernel::BindingName, ClickType)>,
     result: &ClickType,
-    body: &ContractExpression,
-    arguments: &[ContractExpression],
-) -> Result<ContractExpression, String> {
+    body: &SurfaceTerm,
+    arguments: &[SurfaceTerm],
+) -> Result<SurfaceTerm, String> {
     if parameters.len() != arguments.len() {
         return Err(format!(
             "lambda expects {} arguments, got {}",
@@ -363,14 +361,14 @@ fn apply_lambda(
         .map(|(old, new, _)| (old.clone(), new.reference()))
         .collect::<BTreeMap<_, _>>();
     let body = lowering::substitute_contract_expression(body, &replacements)?;
-    let mut applied = ContractExpression::Let {
+    let mut applied = SurfaceTerm::Let {
         name: result_name.clone(),
         click_type: Some(result.clone()),
         value: Box::new(body),
         body: Box::new(result_name.reference()),
     };
     for ((_, name, ty), argument) in bindings.into_iter().zip(arguments).rev() {
-        applied = ContractExpression::Let {
+        applied = SurfaceTerm::Let {
             name,
             click_type: Some(ty),
             value: Box::new(argument.clone()),

@@ -70,7 +70,7 @@ impl<'a> Proof<'a> {
     /// a logical split.
     pub(in crate::surface::proof) fn frontier_is_execution_branch(
         &self,
-        surface_condition: &ClickProposition,
+        surface_condition: &SurfaceProposition,
     ) -> Result<bool, ClickError> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Ok(false);
@@ -252,12 +252,12 @@ impl<'a> Proof<'a> {
             Some(&execution.presentation.recorded_states),
         )?;
         let mut operand_condition = &source_condition;
-        while let ClickProposition::Not(inner) = operand_condition {
+        while let SurfaceProposition::Not(inner) = operand_condition {
             operand_condition = inner;
         }
         let short_circuit = matches!(
             operand_condition,
-            ClickProposition::And(..) | ClickProposition::Or(..)
+            SurfaceProposition::And(..) | SurfaceProposition::Or(..)
         );
         let selector = (repeated_value.is_some() || short_circuit)
             .then(|| {
@@ -807,7 +807,7 @@ impl<'a> Proof<'a> {
         // The C branch the arms came from, or `None` with
         // `proof_case_condition` when they are the cases of a proof `if`.
         checked_condition_split: Option<CheckedBranchSplit>,
-        proof_case_condition: Option<ClickProposition>,
+        proof_case_condition: Option<SurfaceProposition>,
         assertions: Vec<ProofAssertion>,
         arms: [CheckedExecutionJoinArm<'_>; 2],
     ) -> Result<CheckedExecutionJoinParts, ClickError> {
@@ -1518,12 +1518,12 @@ impl<'a> Proof<'a> {
         };
         let (surface_condition, empty_source_arms, direct_returns) = if call_outcomes {
             (
-                ClickProposition::Comparison {
-                    left: ContractExpression::ProgramExpression(ProgramExpression::Value(
+                SurfaceProposition::Comparison {
+                    left: SurfaceTerm::ProgramExpression(ProgramExpression::Value(
                         crate::kernel::api::int32(0),
                     )),
                     operator: ComparisonOperator::Equal,
-                    right: ContractExpression::ProgramExpression(ProgramExpression::Value(
+                    right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(
                         crate::kernel::api::int32(0),
                     )),
                 },
@@ -3216,7 +3216,7 @@ impl<'a> Proof<'a> {
     #[cfg(test)]
     fn try_focused_execute_cases_to_exit(
         &self,
-        condition: ClickProposition,
+        condition: SurfaceProposition,
         enclosing: &[&ExecutionSplit<'a>],
         retried_requirements: &mut BTreeSet<PropositionIdentityKey>,
         steps: &mut usize,
@@ -3245,7 +3245,7 @@ impl<'a> Proof<'a> {
 
     fn prepare_focused_execute_cases(
         &self,
-        condition: ClickProposition,
+        condition: SurfaceProposition,
     ) -> Result<(Self, ExecutionProofCaseSplit<'a>), ClickError> {
         // This selector will also surround deferred path-dependent closers
         // after return. Read it where the case was checked, rather than from
@@ -3286,7 +3286,7 @@ impl<'a> Proof<'a> {
         // Splitting that condition again makes no progress and can exhaust
         // the native stack before the execution work budget is reached.
         let opposite = proof.lower_surface_proposition(
-            &ClickProposition::Not(Box::new(condition.clone())),
+            &SurfaceProposition::Not(Box::new(condition.clone())),
             "execute case negation",
         )?;
         if proof.facts().contains(&original) || proof.facts().contains(&opposite) {
@@ -3313,7 +3313,7 @@ impl<'a> Proof<'a> {
         &self,
         record: &ExecutionSplit<'a>,
         take_then: bool,
-        surface_condition: Option<&ClickProposition>,
+        surface_condition: Option<&SurfaceProposition>,
     ) -> Result<Vec<ProofStep>, ClickError> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             unreachable!("execution branch retained a non-execution context")
@@ -3377,7 +3377,7 @@ impl<'a> Proof<'a> {
         &self,
         record: &ExecutionSplit<'a>,
         take_then: bool,
-        surface_condition: &ClickProposition,
+        surface_condition: &SurfaceProposition,
         steps: &[ProofStep],
     ) -> Result<Option<(Self, usize)>, ClickError> {
         let expected = self.checked_expanded_execution_arm_entry_steps(
@@ -4086,16 +4086,16 @@ mod progress_tests {
             SpecDefinitions::new(&predicates, &click_functions),
             &theorems,
         );
-        let written = ClickProposition::Comparison {
-            left: ContractExpression::ProgramExpression(ProgramExpression::Variable("x".into())),
+        let written = SurfaceProposition::Comparison {
+            left: SurfaceTerm::ProgramExpression(ProgramExpression::Variable("x".into())),
             operator: ComparisonOperator::LessThan,
-            right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(10))),
+            right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(10))),
         };
         let assertions = [
-            ProofAssertion::Fact(ClickProposition::Comparison {
-                left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
+            ProofAssertion::Fact(SurfaceProposition::Comparison {
+                left: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
                 operator: ComparisonOperator::Equal,
-                right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
+                right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
             }),
             ProofAssertion::Fact(written),
         ];
@@ -4198,12 +4198,12 @@ mod progress_tests {
             MachineTerm::Variable(Variable(71_000)),
         ))];
         let function_environment = ExecutionEnvironment::new();
-        let condition = ClickProposition::Comparison {
-            left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
+        let condition = SurfaceProposition::Comparison {
+            left: SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 ("x".to_string()).into(),
             )),
             operator: ComparisonOperator::GreaterEqual,
-            right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
+            right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
         };
 
         for size in [8_u32, 32, 128] {

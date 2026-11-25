@@ -30,7 +30,8 @@ uint64 seed(uint64 word, uint64 len) {
    have to_integer(word) == observe(count(old(len), len), to_integer(decode(old(word)))) by {
     rewrite(count(old(len), len), 0);
     rewrite(word, decode(old(word)));
-    close() using { observe(0, to_integer(decode(old(word)))) == to_integer(decode(old(word))); };
+    rewrite(observe(0, to_integer(decode(old(word)))), to_integer(decode(old(word))));
+    close();
    }
    close();
   }

@@ -32,7 +32,8 @@ theorem weaken_float32_bound(x: float) {
 theorem cite_float32_bound(x: float) {
     requires x > float32_from_bits(0x80000000);
     ensures x >= float32_from_bits(0) by {
-        normalize() using { x > float32_from_bits(0x80000000); };
+        apply(click::float_order::float32_lt_to_le(float32_from_bits(0x80000000), x));
+        close();
     }
 }
 ```

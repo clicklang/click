@@ -96,15 +96,15 @@ void release_run(struct arena* arena, int32 start, int32 end) {
     have 0 <= arena->capacity by { close(); }
     have separate(memory(arena->occupied[0..arena->capacity]), memory(*arena)) by { close(); }
     have contains(memory(arena->occupied[0..arena->capacity]), memory(arena->occupied[0..arena->capacity])) by { apply(click::separation::contains_refl(memory(arena->occupied[0..arena->capacity]))); }
-    have contains(memory(*arena), memory(arena->data)) by { normalize(); }
+    have contains(memory(*arena), memory(arena->data)) by { close(); }
     have separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data)) by {
         apply(separation::separate_restrict(memory(arena->occupied[0..arena->capacity]), memory(*arena), memory(arena->occupied[0..arena->capacity]), memory(arena->data)));
     }
-    have contains(memory(*arena), memory(arena->occupied)) by { normalize(); }
+    have contains(memory(*arena), memory(arena->occupied)) by { close(); }
     have separate(memory(arena->occupied[0..arena->capacity]), memory(arena->occupied)) by {
         apply(separation::separate_restrict(memory(arena->occupied[0..arena->capacity]), memory(*arena), memory(arena->occupied[0..arena->capacity]), memory(arena->occupied)));
     }
-    have contains(memory(*arena), memory(arena->capacity)) by { normalize(); }
+    have contains(memory(*arena), memory(arena->capacity)) by { close(); }
     have separate(memory(arena->occupied[0..arena->capacity]), memory(arena->capacity)) by {
         apply(separation::separate_restrict(memory(arena->occupied[0..arena->capacity]), memory(*arena), memory(arena->occupied[0..arena->capacity]), memory(arena->capacity)));
     }

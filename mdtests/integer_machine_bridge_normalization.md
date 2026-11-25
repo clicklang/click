@@ -1,4 +1,4 @@
-# Machine bridges normalize with explicit Integer bounds
+# Machine bridges use explicit Integer bounds
 
 A machine operation or cast is related to its exact Integer value using the
 two stated bounds on that value. A product bound names both operands' ranges.
@@ -7,10 +7,7 @@ two stated bounds on that value. A product bound names both operands' ranges.
 theorem signed_add(x: int64) {
     requires defined(x + 1i64);
     ensures to_integer(x + 1i64) == to_integer(x) + 1 by {
-        normalize() using {
-            -9223372036854775808 <= to_integer(x) + 1;
-            to_integer(x) + 1 <= 9223372036854775807;
-        };
+        close();
     }
 }
 

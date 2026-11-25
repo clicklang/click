@@ -2048,9 +2048,9 @@ fn unfolded_algebraic_field_keeps_its_captured_model() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_12")]
 fn unheld_field_without_a_checked_consumption_does_not_invent_one() {
-    let proposition = ClickProposition::Comparison {
+    let proposition = SurfaceProposition::Comparison {
         operator: ComparisonOperator::Equal,
-        left: ContractExpression::ResourceField(ResourceFieldAccess {
+        left: SurfaceTerm::ResourceField(ResourceFieldAccess {
             owner: "absent".into(),
             resource_name: "cell".into(),
             identity: InstanceId::from_variable(Variable(999)).into(),
@@ -2059,9 +2059,7 @@ fn unheld_field_without_a_checked_consumption_does_not_invent_one() {
             field_index: 0,
             click_type: Some(ClickType::Program(InterfaceType::Int32)),
         }),
-        right: ContractExpression::ProgramExpression(ProgramExpression::Value(
-            crate::kernel::int32(0),
-        )),
+        right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(crate::kernel::int32(0))),
     };
     let message = crate::surface::diagnostics::describe_consumed_instance_field_read(
         &proposition,
@@ -3818,50 +3816,40 @@ fn failed_final_known_preserves_its_checked_trace_context() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_20")]
 fn known_transport_trace_retains_its_written_source_occurrence() {
-    for suffix in ["", " using { at(saved, p[0] == 7); }"] {
-        let source = format!(
-            r#"verifying "f.c";
-            void f(int32 *p) {{ owns p[0]; requires p[0] == 7; ensures true; }} by {{
-                step(); mark saved;
-                transport(at(saved, p[0] == 7), p[0] == 7){suffix};
-                step_until(function.exit); close();
-            }}
-        "#
+    let source = r#"verifying "f.c";
+        void f(int32 *p) { owns p[0]; requires p[0] == 7; ensures true; } by {
+            step(); mark saved;
+            transport(at(saved, p[0] == 7), p[0] == 7);
+            step_until(function.exit); close();
+        }
+    "#;
+    with_proof_trace("f", || {
+        verify_c_sources(
+            source,
+            &[("f.c", "void f(int32 *p) { int32 y = 0; return; }")],
+        )
+        .expect("identity transport should verify");
+        let trace = accepted_proof_trace(&|_, _| None, &|_, _, _| None, &|_, _, _| false, None)
+            .expect("accepted transport retains its trace");
+        let expected = "have p[0] == 7 (from `transport`)";
+        assert!(trace.contains(&format!("tactic 2: {expected}")), "{trace}");
+        assert!(!trace.contains("checked transport target:"), "{trace}");
+        let focused = accepted_proof_trace(
+            &|_, path| {
+                let line = path.first()? + 1;
+                Some((format!("tactic@{line}"), SourcePosition::new(line, 1)))
+            },
+            &|_, _, _| None,
+            &|_, _, _| false,
+            Some(&SourcePosition::new(3, 1)),
+        )
+        .expect("the written transport source occurrence remains traceable");
+        assert!(
+            focused.contains(&format!("tactic@3: {expected}")),
+            "{focused}"
         );
-        with_proof_trace("f", || {
-            verify_c_sources(
-                &source,
-                &[("f.c", "void f(int32 *p) { int32 y = 0; return; }")],
-            )
-            .expect("identity transport should verify");
-            let trace = accepted_proof_trace(&|_, _| None, &|_, _, _| None, &|_, _, _| false, None)
-                .expect("accepted transport retains its trace");
-            // The target is already known: its retained proof is an ordinary
-            // lookup, not a legacy transport node with two checked operands.
-            let expected = if suffix.is_empty() {
-                "have p[0] == 7 (from `transport`)"
-            } else {
-                "transport"
-            };
-            assert!(trace.contains(&format!("tactic 2: {expected}")), "{trace}");
-            assert!(!trace.contains("checked transport target:"), "{trace}");
-            let focused = accepted_proof_trace(
-                &|_, path| {
-                    let line = path.first()? + 1;
-                    Some((format!("tactic@{line}"), SourcePosition::new(line, 1)))
-                },
-                &|_, _, _| None,
-                &|_, _, _| false,
-                Some(&SourcePosition::new(3, 1)),
-            )
-            .expect("the written transport source occurrence remains traceable");
-            assert!(
-                focused.contains(&format!("tactic@3: {expected}")),
-                "{focused}"
-            );
-            assert!(!focused.contains("checked transport target:"), "{focused}");
-        });
-    }
+        assert!(!focused.contains("checked transport target:"), "{focused}");
+    });
 }
 
 /// A step a search produced names the smart tactic or elided form it came

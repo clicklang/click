@@ -4,7 +4,7 @@
 theorem signed_words(x: int32, y: int32) {
     ensures forall (unused: Integer) {
         (if 1 == 1 { x } else { y }) == x
-    } by { intro() { normalize(); } }
+    } by { intro() { close(); } }
     ensures forall (unused: Integer) {
         (if 1 != 1 { x } else { y }) == y
     } by { intro() { close(); } }

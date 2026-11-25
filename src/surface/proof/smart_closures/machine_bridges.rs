@@ -6,7 +6,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// Discovery does not borrow omitted bounds or guards from ambient facts.
     pub(in crate::surface::proof) fn known_bridge_using(
         input: &Proof<'a>,
-        premises: &[ClickProposition],
+        premises: &[SurfaceProposition],
     ) -> Result<bool, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("known_bridge_using");
@@ -67,47 +67,47 @@ fn integer_parts(
     }
 }
 
-fn number(value: impl Into<BigInt>) -> ContractExpression {
+fn number(value: impl Into<BigInt>) -> SurfaceTerm {
     super::super::surface_synthesis::integer_typed_expression(surface_signed_integer_literal(
         &value.into(),
     ))
 }
-fn observe(value: ContractExpression) -> ContractExpression {
-    ContractExpression::Call {
+fn observe(value: SurfaceTerm) -> SurfaceTerm {
+    SurfaceTerm::Call {
         name: "to_integer".into(),
         arguments: vec![value],
     }
 }
 fn compare(
-    left: ContractExpression,
+    left: SurfaceTerm,
     operator: ComparisonOperator,
-    right: ContractExpression,
-) -> ClickProposition {
-    ClickProposition::Comparison {
+    right: SurfaceTerm,
+) -> SurfaceProposition {
+    SurfaceProposition::Comparison {
         left,
         operator,
         right,
     }
 }
-fn le(left: ContractExpression, right: ContractExpression) -> ClickProposition {
+fn le(left: SurfaceTerm, right: SurfaceTerm) -> SurfaceProposition {
     compare(left, ComparisonOperator::LessEqual, right)
 }
-fn eq(left: ContractExpression, right: ContractExpression) -> ClickProposition {
+fn eq(left: SurfaceTerm, right: SurfaceTerm) -> SurfaceProposition {
     compare(left, ComparisonOperator::Equal, right)
 }
-fn mul(left: ContractExpression, right: ContractExpression) -> ContractExpression {
-    ContractExpression::Multiply(Box::new(left), Box::new(right))
+fn mul(left: SurfaceTerm, right: SurfaceTerm) -> SurfaceTerm {
+    SurfaceTerm::Multiply(Box::new(left), Box::new(right))
 }
-fn add(left: ContractExpression, right: ContractExpression) -> ContractExpression {
-    ContractExpression::Add(Box::new(left), Box::new(right))
+fn add(left: SurfaceTerm, right: SurfaceTerm) -> SurfaceTerm {
+    SurfaceTerm::Add(Box::new(left), Box::new(right))
 }
-fn neg(value: ContractExpression) -> ContractExpression {
-    ContractExpression::Negate(Box::new(value))
+fn neg(value: SurfaceTerm) -> SurfaceTerm {
+    SurfaceTerm::Negate(Box::new(value))
 }
 fn application(
     name: &str,
-    arguments: Vec<ContractExpression>,
-    premises: Vec<ClickProposition>,
+    arguments: Vec<SurfaceTerm>,
+    premises: Vec<SurfaceProposition>,
 ) -> ProofStep {
     ProofStep::ApplyPlannedTheorem {
         application: TheoremApplication {
@@ -122,55 +122,55 @@ fn application(
 // wrappers are put on its operand, never replaced by a different point.
 fn written_operands(
     input: &Proof<'_>,
-    expression: &ContractExpression,
-) -> Option<(ContractExpression, ContractExpression)> {
+    expression: &SurfaceTerm,
+) -> Option<(SurfaceTerm, SurfaceTerm)> {
     written_operands_inner(input, expression, &mut std::collections::HashSet::new())
 }
 fn written_operands_inner(
     input: &Proof<'_>,
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     aliases: &mut std::collections::HashSet<String>,
-) -> Option<(ContractExpression, ContractExpression)> {
+) -> Option<(SurfaceTerm, SurfaceTerm)> {
     match expression {
-        ContractExpression::Call { name, arguments } if name == "to_integer" => {
+        SurfaceTerm::Call { name, arguments } if name == "to_integer" => {
             written_operands_inner(input, arguments.first()?, aliases)
         }
-        ContractExpression::Binding(name) => {
+        SurfaceTerm::Binding(name) => {
             if !aliases.insert(name.clone()) {
                 return None;
             }
             written_operands_inner(input, input.local_binding(name)?, aliases)
         }
-        ContractExpression::CUnary { operand, .. }
-        | ContractExpression::MemoryLoad {
+        SurfaceTerm::CUnary { operand, .. }
+        | SurfaceTerm::MemoryLoad {
             pointer: operand, ..
         } => written_operands_inner(input, operand, aliases),
-        ContractExpression::ShiftLeft(left, right)
-        | ContractExpression::ShiftRight(left, right)
-        | ContractExpression::BitwiseAnd(left, right) => {
+        SurfaceTerm::ShiftLeft(left, right)
+        | SurfaceTerm::ShiftRight(left, right)
+        | SurfaceTerm::BitwiseAnd(left, right) => {
             Some((left.as_ref().clone(), right.as_ref().clone()))
         }
-        ContractExpression::At {
+        SurfaceTerm::At {
             selector,
             expression,
         } => {
             let (left, right) = written_operands_inner(input, expression, aliases)?;
             Some((
-                ContractExpression::At {
+                SurfaceTerm::At {
                     selector: selector.clone(),
                     expression: Box::new(left),
                 },
-                ContractExpression::At {
+                SurfaceTerm::At {
                     selector: selector.clone(),
                     expression: Box::new(right),
                 },
             ))
         }
-        ContractExpression::Old(expression) => {
+        SurfaceTerm::Old(expression) => {
             let (left, right) = written_operands_inner(input, expression, aliases)?;
             Some((
-                ContractExpression::Old(Box::new(left)),
-                ContractExpression::Old(Box::new(right)),
+                SurfaceTerm::Old(Box::new(left)),
+                SurfaceTerm::Old(Box::new(right)),
             ))
         }
         _ => None,
@@ -217,20 +217,20 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         }
 
-        let Some(ClickProposition::Comparison { left, right, .. }) = input
+        let Some(SurfaceProposition::Comparison { left, right, .. }) = input
             .surface_goal()
             .and_then(integer_composition::canonical_surface)
         else {
             return Ok(None);
         };
         let mut source = if upper { left } else { right };
-        while let ContractExpression::IntegerContext(inner) = source {
+        while let SurfaceTerm::IntegerContext(inner) = source {
             source = *inner;
         }
-        let ContractExpression::Add(a_source, b_source) = source else {
+        let SurfaceTerm::Add(a_source, b_source) = source else {
             return Ok(None);
         };
-        let spelling = |term: &IntegerTerm, source: ContractExpression| {
+        let spelling = |term: &IntegerTerm, source: SurfaceTerm| {
             term.as_const()
                 .map_or(source, |value| number(value.clone()))
         };
@@ -306,7 +306,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// the sum's int64 range follows from its operands' uint32 type ranges.
     pub(in crate::surface::proof) fn try_widened_unsigned_sum_using(
         input: &Proof<'a>,
-        premises: &[ClickProposition],
+        premises: &[SurfaceProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_widened_unsigned_sum_using");
@@ -388,7 +388,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// Carry the bound to Integer and use antisymmetry with the type minimum.
     fn try_uint64_zero_equality_using(
         input: &Proof<'a>,
-        premises: &[ClickProposition],
+        premises: &[SurfaceProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_uint64_zero_equality_using");
@@ -435,7 +435,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let observed = observed_native_surface_comparison(&kernel, surface);
-        let Some(ClickProposition::Comparison {
+        let Some(SurfaceProposition::Comparison {
             left: value,
             operator: ComparisonOperator::LessEqual,
             ..
@@ -475,7 +475,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// facts. The arithmetic in this route uses only the ordinary emitter.
     pub(in crate::surface::proof) fn try_machine_bridge_using(
         input: &Proof<'a>,
-        premises: &[ClickProposition],
+        premises: &[SurfaceProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_machine_bridge_using");
@@ -505,7 +505,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(canonical) = integer_composition::canonical_surface(&observed_goal) else {
             return Ok(None);
         };
-        let ClickProposition::Comparison {
+        let SurfaceProposition::Comparison {
             left,
             operator,
             right,
@@ -570,7 +570,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 continue;
             };
             let source = if commuted { right } else { left };
-            let source = observe(ContractExpression::CUnary {
+            let source = observe(SurfaceTerm::CUnary {
                 operand: Box::new(source),
                 lowered: ProgramExpression::Cast {
                     expression: Box::new(ProgramExpression::Value(int32(0))),
@@ -588,8 +588,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let mut cited = premises.to_vec();
             // Every new fact is retained by the ordinary have driver.
             let known = |proof: &mut Proof<'a>,
-                         cited: &mut Vec<ClickProposition>,
-                         claim: ClickProposition|
+                         cited: &mut Vec<SurfaceProposition>,
+                         claim: SurfaceProposition|
              -> Result<(), ClickError> {
                 *proof = proof
                     .driver()
@@ -648,7 +648,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         ]);
                         for bound in bounds {
                             let scope = proof.driver().open_have(bound.clone())?;
-                            let closed = if matches!(bound, ClickProposition::Comparison { ref left, ref right, .. } if matches!(left,ContractExpression::Multiply(..)) || matches!(right, ContractExpression::Multiply(..)))
+                            let closed = if matches!(bound, SurfaceProposition::Comparison { ref left, ref right, .. } if matches!(left,SurfaceTerm::Multiply(..)) || matches!(right, SurfaceTerm::Multiply(..)))
                             {
                                 scope.driver().try_product_bound_using(&cited)?
                             } else {
@@ -858,12 +858,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
 // mathematical/native context is retained so a native arm equation does not
 // accidentally become an Integer conditional with different branch types.
 pub(super) fn conditional_candidates<'s>(
-    left: &'s ContractExpression,
-    right: &'s ContractExpression,
+    left: &'s SurfaceTerm,
+    right: &'s SurfaceTerm,
     mathematical: bool,
     remaining: &mut usize,
-) -> Result<Vec<(&'s ContractExpression, bool)>, &'static str> {
-    use ContractExpression as E;
+) -> Result<Vec<(&'s SurfaceTerm, bool)>, &'static str> {
+    use SurfaceTerm as E;
     let mut pending = vec![(right, mathematical, 0), (left, mathematical, 0)];
     let mut result = Vec::new();
     while let Some((expression, mathematical, depth)) = pending.pop() {
@@ -937,8 +937,8 @@ pub(super) fn non_numeric_conditional_goal(goal: &Proposition) -> bool {
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn rewrite_conditional_arms_using(
         input: &Proof<'a>,
-        premises: &[ClickProposition],
-    ) -> Result<Option<(Proof<'a>, Vec<ClickProposition>)>, ClickError> {
+        premises: &[SurfaceProposition],
+    ) -> Result<Option<(Proof<'a>, Vec<SurfaceProposition>)>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("rewrite_conditional_arms_using");
         let Some(goal) = input.goal() else {
@@ -956,7 +956,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(None);
         }
-        let Some(ClickProposition::Comparison { left, right, .. }) = input
+        let Some(SurfaceProposition::Comparison { left, right, .. }) = input
             .surface_goal()
             .and_then(integer_composition::canonical_surface)
         else {
@@ -985,7 +985,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let mut sources = premises.to_vec();
         let mut changed = false;
         for _ in 0..64 {
-            let Some(ClickProposition::Comparison { left, right, .. }) = proof
+            let Some(SurfaceProposition::Comparison { left, right, .. }) = proof
                 .surface_goal()
                 .and_then(integer_composition::canonical_surface)
             else {
@@ -995,7 +995,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .map_err(|message| proof.step_error(message))?;
             let mut next = None;
             'candidate: for (expression, mathematical) in candidates {
-                let ContractExpression::If {
+                let SurfaceTerm::If {
                     condition,
                     then_branch,
                     else_branch,
@@ -1005,13 +1005,51 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 };
                 for (guard, arm) in [
                     (condition.as_ref().clone(), then_branch),
-                    (ClickProposition::Not(condition.clone()), else_branch),
+                    (SurfaceProposition::Not(condition.clone()), else_branch),
                 ] {
                     let lowered = proof
                         .lower_cited_surface_proposition(&guard, "conditional bridge guard")?;
                     if !facts.pure_known_available(&lowered)
                         && !crate::surface::planning::solve::computes_with_known(&lowered)
                     {
+                        // Arm equality checks use the guard as written. If a
+                        // cited Integer order spells it differently, publish
+                        // the exact guard before checking the selected arm.
+                        use crate::kernel::proof::fact_reasoning::{
+                            known_bridge_leaf, order_claim_forms,
+                        };
+                        if matches!(
+                            lowered.condition_native(),
+                            Some((
+                                ConditionTerm::IntegerLessThan(..)
+                                    | ConditionTerm::IntegerLessEqual(..)
+                                    | ConditionTerm::IntegerGreaterThan(..)
+                                    | ConditionTerm::IntegerGreaterEqual(..),
+                                _
+                            ))
+                        ) && order_claim_forms(&lowered)
+                            .iter()
+                            .any(|form| facts.contains(form))
+                            && proof.goal().is_some_and(|goal| {
+                                known_bridge_leaf(goal, &|premise| {
+                                    premise == &lowered || facts.pure_known_available(premise)
+                                })
+                            })
+                        {
+                            let guarded =
+                                proof
+                                    .driver()
+                                    .apply_step(super::super::wide_arithmetic::have(
+                                        guard,
+                                        vec![ProofStep::Known],
+                                    ))?;
+                            let closed = if guarded.focused_discharged() {
+                                guarded
+                            } else {
+                                guarded.driver().apply_step(ProofStep::Known)?
+                            };
+                            return Ok(Some((closed, sources)));
+                        }
                         continue;
                     }
                     let left = if mathematical {
@@ -1060,7 +1098,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
 
     pub(in crate::surface::proof) fn try_conditional_bridge_using(
         input: &Proof<'a>,
-        premises: &[ClickProposition],
+        premises: &[SurfaceProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_conditional_bridge_using");
@@ -1099,11 +1137,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// written guard and close each branch from its explicit evidence.
     pub(super) fn try_conditional_bound_using(
         input: &Proof<'a>,
-        premises: &[ClickProposition],
+        premises: &[SurfaceProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_conditional_bound_using");
-        let Some(ClickProposition::Comparison {
+        let Some(SurfaceProposition::Comparison {
             left,
             operator:
                 ComparisonOperator::LessEqual
@@ -1123,7 +1161,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let candidates = conditional_candidates(&left, &right, false, &mut remaining)
             .map_err(|message| input.step_error(message))?;
         let Some((
-            expression @ ContractExpression::If {
+            expression @ SurfaceTerm::If {
                 condition,
                 then_branch,
                 else_branch,
@@ -1149,7 +1187,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         for (id, (guard, arm)) in ids.into_iter().zip([
             (condition.clone(), then_branch),
             (
-                ClickProposition::Not(Box::new(condition.clone())),
+                SurfaceProposition::Not(Box::new(condition.clone())),
                 else_branch,
             ),
         ]) {

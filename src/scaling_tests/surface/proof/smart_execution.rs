@@ -11,22 +11,22 @@ fn prepared_pure_application_ignores_unrelated_facts() {
     ).unwrap();
     let application = TheoremApplication {
         name: "accept".into(),
-        arguments: vec![ContractExpression::AlgebraicConstructor {
+        arguments: vec![SurfaceTerm::AlgebraicConstructor {
             algebraic_type: AlgebraicTypeApplication {
                 rigid: false,
                 name: "Count".into(),
                 arguments: vec![],
             },
             variant: "At".into(),
-            arguments: vec![ContractExpression::Subtract(
-                Box::new(ContractExpression::Binding("x".into())),
-                Box::new(ContractExpression::IntegerLiteral("1".into())),
+            arguments: vec![SurfaceTerm::Subtract(
+                Box::new(SurfaceTerm::Binding("x".into())),
+                Box::new(SurfaceTerm::IntegerLiteral("1".into())),
             )],
         }],
     };
-    let guard = ClickProposition::Defined {
+    let guard = SurfaceProposition::Defined {
         expression: match &application.arguments[0] {
-            ContractExpression::AlgebraicConstructor { arguments, .. } => arguments[0].clone(),
+            SurfaceTerm::AlgebraicConstructor { arguments, .. } => arguments[0].clone(),
             _ => unreachable!(),
         },
     };
@@ -64,10 +64,10 @@ fn prepared_pure_application_ignores_unrelated_facts() {
                 crate::kernel::Variable(100_000 + index as u64),
             ));
             values.insert(name.clone(), value);
-            let surface = ClickProposition::Comparison {
-                left: ContractExpression::Binding(name),
+            let surface = SurfaceProposition::Comparison {
+                left: SurfaceTerm::Binding(name),
                 operator: ComparisonOperator::Equal,
-                right: ContractExpression::IntegerLiteral(index.to_string()),
+                right: SurfaceTerm::IntegerLiteral(index.to_string()),
             };
             let fact = lower_pure_theorem_proposition(
                 "unrelated guard fact",

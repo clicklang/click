@@ -26,10 +26,9 @@ Delivery landed in [#1086](https://github.com/clicklang/click/pull/1086),
 [#1095](https://github.com/clicklang/click/pull/1095),
 [#1109](https://github.com/clicklang/click/pull/1109),
 [#1118](https://github.com/clicklang/click/pull/1118) and
-[#1134](https://github.com/clicklang/click/pull/1134). The completed P1 roadmap
-entry has been removed. Additional release hosts and third-party dependencies
-are now P1 under the linked Rust support item; other language coverage follows
-the current roadmap. Shared project configuration is described under
+[#1134](https://github.com/clicklang/click/pull/1134). The linked Rust support
+item describes the current launch hosts and third-party dependency work.
+Shared project configuration is described under
 [Project units](../docs/reference/cli/capture.md#project-units).
 
 The compiler investigation below is historical evidence. Current production

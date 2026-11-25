@@ -40,14 +40,14 @@ void subtract_assign(struct FeeFrac* self, struct FeeFrac* other) {
     ensures self->size == 0;
 } by {
     apply(click::separation::separate_adjacent_ranges(self as (int32 *), 0, 2, 4));
-    have contains(memory(self->size), memory((&self->size)[0..1])) by { normalize(); }
+    have contains(memory(self->size), memory((&self->size)[0..1])) by { close(); }
     apply(click::separation::contains_refl(memory(self->fee)));
     apply(click::separation::separate_restrict(memory(self->fee), memory(self->size),
         memory(self->fee), memory((&self->size)[0..1])));
     mark before_store;
     step();
     have separate(statement(0).footprint, memory((&self->size)[0..1])) by {
-        normalize() using { at(before_store, separate(memory(self->fee), memory((&self->size)[0..1]))); };
+        close() using { at(before_store, separate(memory(self->fee), memory((&self->size)[0..1]))); };
     }
     have exact(self->size) == at(statement(0).entry, exact(self->size)) by {
         preserve(memory((&self->size)[0..1]), statement(0));
@@ -72,14 +72,14 @@ void add_assign(struct FeeFrac* self, struct FeeFrac* other) {
     ensures to_integer(self->size) == to_integer(old(self->size) + old(self->size));
 } by {
     apply(click::separation::separate_adjacent_ranges(self as (int32 *), 0, 2, 4));
-    have contains(memory(self->size), memory((&self->size)[0..1])) by { normalize(); }
+    have contains(memory(self->size), memory((&self->size)[0..1])) by { close(); }
     apply(click::separation::contains_refl(memory(self->fee)));
     apply(click::separation::separate_restrict(memory(self->fee), memory(self->size),
         memory(self->fee), memory((&self->size)[0..1])));
     mark before_store;
     step();
     have separate(statement(0).footprint, memory((&self->size)[0..1])) by {
-        normalize() using { at(before_store, separate(memory(self->fee), memory((&self->size)[0..1]))); };
+        close() using { at(before_store, separate(memory(self->fee), memory((&self->size)[0..1]))); };
     }
     have exact(self->size) == at(statement(0).entry, exact(self->size)) by {
         preserve(memory((&self->size)[0..1]), statement(0));

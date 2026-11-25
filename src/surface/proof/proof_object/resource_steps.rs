@@ -893,7 +893,7 @@ impl<'a> Proof<'a> {
                     if *field.click_type() == ClickType::Integer
                         && let Some(value) = written.get_mut(field.name())
                     {
-                        *value = ContractExpression::IntegerContext(Box::new(value.clone()));
+                        *value = SurfaceTerm::IntegerContext(Box::new(value.clone()));
                     } else if let Some(value) = written.get_mut(field.name()) {
                         // The kernel evaluates the initializer at the field's
                         // declared type. Keep that same conversion in the
@@ -917,10 +917,8 @@ impl<'a> Proof<'a> {
                 match &body.matched {
                     None => Some(context.resource_environment.fold_source(name)?.body.clone()),
                     Some(matched) => match written.get(&matched.field) {
-                        Some(ContractExpression::AlgebraicConstructor {
-                            variant,
-                            arguments,
-                            ..
+                        Some(SurfaceTerm::AlgebraicConstructor {
+                            variant, arguments, ..
                         }) => {
                             let (bindings, arm) = context
                                 .resource_environment
@@ -939,7 +937,7 @@ impl<'a> Proof<'a> {
                             written.extend(bindings.iter().cloned().zip(arguments).map(
                                 |((name, click_type), argument)| {
                                     let value = if click_type == ClickType::Integer {
-                                        ContractExpression::IntegerContext(Box::new(argument))
+                                        SurfaceTerm::IntegerContext(Box::new(argument))
                                     } else {
                                         crate::surface::lowering::pure_function_parameter_argument(
                                             &FunctionParameter {
@@ -1273,9 +1271,7 @@ impl<'a> Proof<'a> {
                 crate::kernel::ResourceFieldValue::Program(value) => {
                     locals.set_values(locals.values.with_inserted(
                         name.clone(),
-                        ContractExpression::ProgramExpression(ProgramExpression::Value(
-                            value.clone(),
-                        )),
+                        SurfaceTerm::ProgramExpression(ProgramExpression::Value(value.clone())),
                     ));
                 }
                 // Declaration expansion admits only C-typed field binders.
@@ -1312,7 +1308,7 @@ impl<'a> Proof<'a> {
             ProofContext::Execution(context) => context.spec_definitions,
         };
         if definitions.predicates.get(&application.name).is_some() {
-            return self.apply_local_predicate_unfold(&ClickProposition::PredicateCall {
+            return self.apply_local_predicate_unfold(&SurfaceProposition::PredicateCall {
                 name: application.name.clone(),
                 arguments: application.arguments.clone(),
             });
@@ -1467,8 +1463,8 @@ impl<'a> Proof<'a> {
         selector: Option<&ProgramPointSelector>,
     ) -> Result<CheckedFocusedTransition, ClickError> {
         // Both sides of an equation at a program point are read there.
-        let at_point = |expression: ContractExpression| match selector {
-            Some(selector) => ContractExpression::At {
+        let at_point = |expression: SurfaceTerm| match selector {
+            Some(selector) => SurfaceTerm::At {
                 selector: selector.clone(),
                 expression: Box::new(expression),
             },
@@ -1543,8 +1539,8 @@ impl<'a> Proof<'a> {
         };
         let checked_body =
             crate::surface::lowering::pure_function_result_value(&definition, checked_body);
-        let checked_equality = ClickProposition::Comparison {
-            left: at_point(ContractExpression::Call {
+        let checked_equality = SurfaceProposition::Comparison {
+            left: at_point(SurfaceTerm::Call {
                 name: application.name.clone(),
                 arguments: checked_arguments.clone(),
             }),
@@ -1622,7 +1618,7 @@ impl<'a> Proof<'a> {
                     // spelling of the same refreshed claim, and install it only
                     // when it lowers back to exactly this kernel proposition.
                     let surface = goal.surface.as_deref().and_then(|surface_goal| {
-                        let lower = |candidate: &ClickProposition| {
+                        let lower = |candidate: &SurfaceProposition| {
                             let candidate = self
                                 .substitute_fixed_state_locals_in_proposition(candidate)
                                 .ok()?;
@@ -1761,11 +1757,11 @@ impl<'a> Proof<'a> {
                     .map_err(|message| self.step_error(message))?;
                 let surface_body =
                     crate::surface::lowering::pure_function_result_value(&definition, surface_body);
-                let surface_application = ContractExpression::Call {
+                let surface_application = SurfaceTerm::Call {
                     name: application.name.clone(),
                     arguments: application.arguments.clone(),
                 };
-                let surface_equality = ClickProposition::Comparison {
+                let surface_equality = SurfaceProposition::Comparison {
                     left: at_point(surface_application),
                     operator: ComparisonOperator::Equal,
                     right: at_point(surface_body),
@@ -1930,7 +1926,7 @@ impl<'a> Proof<'a> {
                 .map(lambdas::reduce_head_fully)
                 .transpose()
                 .map_err(|message| self.step_error(message))?;
-            let Some(ContractExpression::RangeFold {
+            let Some(SurfaceTerm::RangeFold {
                 start,
                 end,
                 initial,
@@ -2039,7 +2035,7 @@ impl<'a> Proof<'a> {
             .map(lambdas::reduce_head_fully)
             .transpose()
             .map_err(|message| self.step_error(message))?;
-        let Some(ContractExpression::RangeFold {
+        let Some(SurfaceTerm::RangeFold {
             start,
             end,
             initial,
@@ -2100,12 +2096,12 @@ impl<'a> Proof<'a> {
         &self,
         application: &ClickFunctionApplication,
         definition: &ClickFunctionDefinition,
-        surface_goal: &ClickProposition,
+        surface_goal: &SurfaceProposition,
         refreshed_kernel: &Proposition,
-        lower: &dyn Fn(&ClickProposition) -> Option<Proposition>,
-    ) -> Option<ClickProposition> {
+        lower: &dyn Fn(&SurfaceProposition) -> Option<Proposition>,
+    ) -> Option<SurfaceProposition> {
         let fold_body = lambdas::reduce_head_fully(definition.body()?).ok()?;
-        let ContractExpression::RangeFold {
+        let SurfaceTerm::RangeFold {
             end,
             initial,
             accumulator,
@@ -2127,10 +2123,10 @@ impl<'a> Proof<'a> {
                 )
             })
             .collect::<BTreeMap<_, _>>();
-        let substitute = |expression: &ContractExpression| {
+        let substitute = |expression: &SurfaceTerm| {
             substitute_contract_expression(expression, &substitutions).ok()
         };
-        let whole = ContractExpression::Call {
+        let whole = SurfaceTerm::Call {
             name: application.name.clone(),
             arguments: application.arguments.clone(),
         };
@@ -2148,16 +2144,16 @@ impl<'a> Proof<'a> {
             .filter(|position| *position < application.arguments.len())
             && let Some(body) = substitute(body)
         {
-            let predecessor_end = ContractExpression::Subtract(
+            let predecessor_end = SurfaceTerm::Subtract(
                 Box::new(application.arguments[position].clone()),
-                Box::new(ContractExpression::IntegerLiteral("1".to_string())),
+                Box::new(SurfaceTerm::IntegerLiteral("1".to_string())),
             );
             let mut arguments = application.arguments.clone();
             arguments[position] = predecessor_end.clone();
             let cell = BTreeMap::from([
                 (
                     accumulator.clone(),
-                    ContractExpression::Call {
+                    SurfaceTerm::Call {
                         name: application.name.clone(),
                         arguments,
                     },
@@ -2176,7 +2172,7 @@ impl<'a> Proof<'a> {
         }
         for candidate in candidates {
             crate::instrumentation::record_deterministic_work(1);
-            let equality = ClickProposition::Comparison {
+            let equality = SurfaceProposition::Comparison {
                 left: whole.clone(),
                 operator: ComparisonOperator::Equal,
                 // The call supplied its Integer carrier. Keep that carrier
@@ -2246,9 +2242,9 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn unfold_goal_surface(
         &self,
         predicates: &PredicateEnvironment,
-        surface: &ClickProposition,
+        surface: &SurfaceProposition,
         names: &[String],
-    ) -> Result<ClickProposition, String> {
+    ) -> Result<SurfaceProposition, String> {
         let parameters = match self.context.as_ref() {
             ProofContext::FixedState(context) => Some(context.parameter_binding.parameters),
             ProofContext::Execution(context) => Some(context.parameter_binding().parameters),
@@ -2287,7 +2283,7 @@ impl<'a> Proof<'a> {
             )));
         }
         let state = &*execution.core.state;
-        let evaluate = |expression: &ContractExpression| {
+        let evaluate = |expression: &SurfaceTerm| {
             let expression = self.substitute_fixed_state_locals_in_expression(expression)?;
             let names = contract_expression_referenced_names(&expression);
             let (values, array_refs) =
@@ -2381,7 +2377,7 @@ impl<'a> Proof<'a> {
         })?;
         // Capture the descriptor just as a Resource theorem argument does.
         // The evidence is for current access even when the operands are saved.
-        let descriptor = ClickProposition::Contains {
+        let descriptor = SurfaceProposition::Contains {
             parent: resource.clone(),
             child: ResourceSubject::Emp,
         };
@@ -2394,7 +2390,7 @@ impl<'a> Proof<'a> {
             crate::kernel::Resource::Memory(range) => self.record_memory_observation(
                 view.fixed_state.state,
                 range,
-                ClickProposition::ResourceViewable {
+                SurfaceProposition::ResourceViewable {
                     resource: resource.clone(),
                 },
             ),
@@ -2428,7 +2424,7 @@ impl<'a> Proof<'a> {
         else {
             unreachable!()
         };
-        let surface = ClickProposition::Loadable { segment };
+        let surface = SurfaceProposition::Loadable { segment };
         self.record_memory_observation(view.fixed_state.state, range, surface)
     }
 
@@ -2436,7 +2432,7 @@ impl<'a> Proof<'a> {
         &self,
         state: &ExecutionState,
         range: &crate::kernel::MemoryRange,
-        surface: ClickProposition,
+        surface: SurfaceProposition,
     ) -> Result<CheckedFocusedTransition, ClickError> {
         let theorem = crate::kernel::observe_memory_view(state, range).ok_or_else(|| {
             self.step_error(
@@ -2694,7 +2690,7 @@ impl<'a> Proof<'a> {
             }
             locals.set_values(locals.values.with_inserted(
                 name.clone(),
-                ContractExpression::ProgramExpression(ProgramExpression::Value(value.clone())),
+                SurfaceTerm::ProgramExpression(ProgramExpression::Value(value.clone())),
             ));
         }
         Ok(())
@@ -2799,7 +2795,7 @@ impl<'a> Proof<'a> {
         };
         if !arguments
             .iter()
-            .any(|argument| matches!(argument, ContractExpression::Old(_)))
+            .any(|argument| matches!(argument, SurfaceTerm::Old(_)))
         {
             return Ok(resource.clone());
         }
@@ -2825,11 +2821,8 @@ impl<'a> Proof<'a> {
         let mut resolved = resource.clone();
         if let ResourceClause::Declared { arguments, .. } = &mut resolved {
             for (argument, value) in arguments.iter_mut().zip(values) {
-                if let (ContractExpression::Old(_), AlgebraicValue::Program(value)) =
-                    (&*argument, value)
-                {
-                    *argument =
-                        ContractExpression::ProgramExpression(ProgramExpression::Value(value));
+                if let (SurfaceTerm::Old(_), AlgebraicValue::Program(value)) = (&*argument, value) {
+                    *argument = SurfaceTerm::ProgramExpression(ProgramExpression::Value(value));
                 }
             }
         }
@@ -2870,7 +2863,7 @@ impl<'a> Proof<'a> {
                 .values
                 .iter()
                 .filter_map(|(name, value)| match value {
-                    ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
+                    SurfaceTerm::ProgramExpression(ProgramExpression::Value(value)) => {
                         Some((value.clone(), name.clone()))
                     }
                     _ => None,
@@ -3025,7 +3018,7 @@ impl<'a> Proof<'a> {
             resource,
             &BTreeMap::from([(
                 "result".to_string(),
-                ContractExpression::ProgramExpression(ProgramExpression::Value(
+                SurfaceTerm::ProgramExpression(ProgramExpression::Value(
                     goal.data.core.result.clone().into_native(),
                 )),
             )]),
@@ -3341,12 +3334,12 @@ impl<'a> Proof<'a> {
 /// smaller endpoint. A substitution failure counts as an occurrence: the
 /// check refuses rather than guesses.
 fn contract_expression_reads_binding(
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     binding: &crate::kernel::BindingName,
 ) -> bool {
     let substitutions = BTreeMap::from([(
         binding.clone(),
-        ContractExpression::IntegerLiteral("0".to_string()),
+        SurfaceTerm::IntegerLiteral("0".to_string()),
     )]);
     substitute_contract_expression(expression, &substitutions)
         .map(|substituted| &substituted != expression)
@@ -3355,12 +3348,12 @@ fn contract_expression_reads_binding(
 
 /// The parameter a range fold uses directly as its end. The append law
 /// restates the shorter fold as the same application at the predecessor.
-fn fold_end_parameter_binding(end: &ContractExpression) -> Option<crate::kernel::BindingName> {
+fn fold_end_parameter_binding(end: &SurfaceTerm) -> Option<crate::kernel::BindingName> {
     match end {
-        ContractExpression::Binding(binding) | ContractExpression::ProgramBinding(binding) => {
+        SurfaceTerm::Binding(binding) | SurfaceTerm::ProgramBinding(binding) => {
             Some(binding.into())
         }
-        ContractExpression::ProgramExpression(ProgramExpression::Variable(binding))
+        SurfaceTerm::ProgramExpression(ProgramExpression::Variable(binding))
             if binding.named().is_some() || binding.slice_length_of().is_some() =>
         {
             Some(binding.clone())
@@ -3386,13 +3379,13 @@ mod search;
 
 /// An explicit unfold selects known constructor arms. Substitute only each
 /// selected scrutinee and the final body so nested matches keep linear work.
-fn select_known_unfold_body(body: &ContractExpression) -> Result<ContractExpression, String> {
+fn select_known_unfold_body(body: &SurfaceTerm) -> Result<SurfaceTerm, String> {
     let mut selected = body;
     let mut bindings = BTreeMap::new();
-    while let ContractExpression::AlgebraicMatch { scrutinee, arms } = selected {
+    while let SurfaceTerm::AlgebraicMatch { scrutinee, arms } = selected {
         crate::instrumentation::record_deterministic_work(1);
         let scrutinee = substitute_contract_expression(scrutinee, &bindings)?;
-        let ContractExpression::AlgebraicConstructor {
+        let SurfaceTerm::AlgebraicConstructor {
             algebraic_type,
             variant,
             arguments,

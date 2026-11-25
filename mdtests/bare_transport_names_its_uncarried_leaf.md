@@ -34,5 +34,5 @@ fail: quantified frame: a leaf was not carried: a read in it was not shown uncha
   leaf it had: at(statement(0).exit, defined(dst[k]))
   leaf it wanted: defined(dst[k])
   this is the refusal with the source as the only premise, which is all a bare `transport` cites
-  this is a search miss, not a refusal; if the target holds, list the facts that carry the source in `transport(P, Q) using { ... }`, stating any that is not available with `have` first
+  this is a search miss, not a refusal; use `have` to state the facts that carry the source, `preserve` to prove unchanged reads across named footprints, and `rewrite` to relate those reads
 ```

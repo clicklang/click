@@ -5,17 +5,17 @@ use crate::kernel::{bits32_constant, constant_u32};
 use crate::surface::planning::solve::plan_context_free_closer;
 
 pub(super) fn surface_logical_children(
-    goal: &ClickProposition,
+    goal: &SurfaceProposition,
     conjunction: bool,
-) -> Option<(ClickProposition, ClickProposition)> {
+) -> Option<(SurfaceProposition, SurfaceProposition)> {
     match goal {
-        ClickProposition::And(left, right) if conjunction => {
+        SurfaceProposition::And(left, right) if conjunction => {
             Some((left.as_ref().clone(), right.as_ref().clone()))
         }
-        ClickProposition::Or(left, right) if !conjunction => {
+        SurfaceProposition::Or(left, right) if !conjunction => {
             Some((left.as_ref().clone(), right.as_ref().clone()))
         }
-        ClickProposition::Comparison {
+        SurfaceProposition::Comparison {
             left,
             operator: ComparisonOperator::Equal,
             right,
@@ -31,7 +31,7 @@ pub(super) fn surface_logical_children(
             let mut level = left
                 .into_iter()
                 .zip(right)
-                .map(|(left, right)| ClickProposition::Comparison {
+                .map(|(left, right)| SurfaceProposition::Comparison {
                     left,
                     operator: ComparisonOperator::Equal,
                     right,
@@ -43,7 +43,7 @@ pub(super) fn surface_logical_children(
                 while let Some(left) = values.next() {
                     crate::instrumentation::record_deterministic_work(1);
                     next.push(match values.next() {
-                        Some(right) => ClickProposition::And(Box::new(left), Box::new(right)),
+                        Some(right) => SurfaceProposition::And(Box::new(left), Box::new(right)),
                         None => left,
                     });
                 }
@@ -52,17 +52,17 @@ pub(super) fn surface_logical_children(
             let right = level.pop()?;
             Some((level.pop()?, right))
         }
-        ClickProposition::At {
+        SurfaceProposition::At {
             selector,
             proposition,
         } => {
             let (left, right) = surface_logical_children(proposition, conjunction)?;
             Some((
-                ClickProposition::At {
+                SurfaceProposition::At {
                     selector: selector.clone(),
                     proposition: Box::new(left),
                 },
-                ClickProposition::At {
+                SurfaceProposition::At {
                     selector: selector.clone(),
                     proposition: Box::new(right),
                 },
@@ -74,38 +74,38 @@ pub(super) fn surface_logical_children(
 
 /// Flatten only explicit sequence syntax. SymbolicMemory state wrappers apply to each
 /// element; no value evaluation or fact-dependent simplification participates.
-fn written_sequence_elements(expression: &ContractExpression) -> Option<Vec<ContractExpression>> {
+fn written_sequence_elements(expression: &SurfaceTerm) -> Option<Vec<SurfaceTerm>> {
     let mut pending = vec![(expression, Vec::<Option<ProgramPointSelector>>::new())];
     let mut elements = Vec::new();
     while let Some((expression, selectors)) = pending.pop() {
         crate::instrumentation::record_deterministic_work(1);
         match expression {
-            ContractExpression::SequenceConcat(left, right) => {
+            SurfaceTerm::SequenceConcat(left, right) => {
                 pending.push((right, selectors.clone()));
                 pending.push((left, selectors));
             }
-            ContractExpression::SequenceLiteral(values) => {
+            SurfaceTerm::SequenceLiteral(values) => {
                 for value in values {
                     crate::instrumentation::record_deterministic_work(1 + selectors.len());
                     let mut value = value.clone();
                     for selector in selectors.iter().rev() {
                         value = match selector {
-                            Some(selector) => ContractExpression::At {
+                            Some(selector) => SurfaceTerm::At {
                                 selector: selector.clone(),
                                 expression: Box::new(value),
                             },
-                            None => ContractExpression::Old(Box::new(value)),
+                            None => SurfaceTerm::Old(Box::new(value)),
                         };
                     }
                     elements.push(value);
                 }
             }
-            ContractExpression::Old(inner) => {
+            SurfaceTerm::Old(inner) => {
                 let mut selectors = selectors;
                 selectors.push(None);
                 pending.push((inner, selectors));
             }
-            ContractExpression::At {
+            SurfaceTerm::At {
                 selector,
                 expression,
             } => {
@@ -131,11 +131,11 @@ mod sequence_scaling_tests {
 /// implication instead has both parts written.
 pub(super) enum WrittenAntecedent {
     Implication {
-        antecedent: ClickProposition,
-        consequent: ClickProposition,
+        antecedent: SurfaceProposition,
+        consequent: SurfaceProposition,
     },
     RangeGuard {
-        body: ClickProposition,
+        body: SurfaceProposition,
     },
 }
 
@@ -143,16 +143,20 @@ pub(super) enum WrittenAntecedent {
 ///
 /// Only the recorded head chain decides that this kernel node is a written
 /// connective; this function then reads which written form carries it.
-pub(super) fn written_implication_consequent(goal: &ClickProposition) -> Option<WrittenAntecedent> {
+pub(super) fn written_implication_consequent(
+    goal: &SurfaceProposition,
+) -> Option<WrittenAntecedent> {
     match goal {
-        ClickProposition::Implies(antecedent, consequent) => Some(WrittenAntecedent::Implication {
-            antecedent: antecedent.as_ref().clone(),
-            consequent: consequent.as_ref().clone(),
-        }),
-        ClickProposition::RangeAll { body, .. } => Some(WrittenAntecedent::RangeGuard {
+        SurfaceProposition::Implies(antecedent, consequent) => {
+            Some(WrittenAntecedent::Implication {
+                antecedent: antecedent.as_ref().clone(),
+                consequent: consequent.as_ref().clone(),
+            })
+        }
+        SurfaceProposition::RangeAll { body, .. } => Some(WrittenAntecedent::RangeGuard {
             body: body.as_ref().clone(),
         }),
-        ClickProposition::At {
+        SurfaceProposition::At {
             selector,
             proposition,
         } => match written_implication_consequent(proposition)? {
@@ -160,17 +164,17 @@ pub(super) fn written_implication_consequent(goal: &ClickProposition) -> Option<
                 antecedent,
                 consequent,
             } => Some(WrittenAntecedent::Implication {
-                antecedent: ClickProposition::At {
+                antecedent: SurfaceProposition::At {
                     selector: selector.clone(),
                     proposition: Box::new(antecedent),
                 },
-                consequent: ClickProposition::At {
+                consequent: SurfaceProposition::At {
                     selector: selector.clone(),
                     proposition: Box::new(consequent),
                 },
             }),
             WrittenAntecedent::RangeGuard { body } => Some(WrittenAntecedent::RangeGuard {
-                body: ClickProposition::At {
+                body: SurfaceProposition::At {
                     selector: selector.clone(),
                     proposition: Box::new(body),
                 },
@@ -185,14 +189,14 @@ pub(super) fn written_implication_consequent(goal: &ClickProposition) -> Option<
 /// A `forall` writes its body directly. A range quantifier keeps its written
 /// form focused: its range guard is the next introduction, and that guard
 /// exposes the written body.
-pub(super) fn written_universal_body(goal: &ClickProposition) -> Option<ClickProposition> {
+pub(super) fn written_universal_body(goal: &SurfaceProposition) -> Option<SurfaceProposition> {
     match goal {
-        ClickProposition::ForAll { body, .. } => Some(body.as_ref().clone()),
-        ClickProposition::RangeAll { .. } => Some(goal.clone()),
-        ClickProposition::At {
+        SurfaceProposition::ForAll { body, .. } => Some(body.as_ref().clone()),
+        SurfaceProposition::RangeAll { .. } => Some(goal.clone()),
+        SurfaceProposition::At {
             selector,
             proposition,
-        } => Some(ClickProposition::At {
+        } => Some(SurfaceProposition::At {
             selector: selector.clone(),
             proposition: Box::new(written_universal_body(proposition)?),
         }),
@@ -201,13 +205,15 @@ pub(super) fn written_universal_body(goal: &ClickProposition) -> Option<ClickPro
 }
 
 /// Select just the antecedent without copying the unselected consequent.
-pub(super) fn surface_implication_antecedent(goal: &ClickProposition) -> Option<ClickProposition> {
+pub(super) fn surface_implication_antecedent(
+    goal: &SurfaceProposition,
+) -> Option<SurfaceProposition> {
     match goal {
-        ClickProposition::Implies(antecedent, _) => Some(antecedent.as_ref().clone()),
-        ClickProposition::At {
+        SurfaceProposition::Implies(antecedent, _) => Some(antecedent.as_ref().clone()),
+        SurfaceProposition::At {
             selector,
             proposition,
-        } => Some(ClickProposition::At {
+        } => Some(SurfaceProposition::At {
             selector: selector.clone(),
             proposition: Box::new(surface_implication_antecedent(proposition)?),
         }),
@@ -216,23 +222,23 @@ pub(super) fn surface_implication_antecedent(goal: &ClickProposition) -> Option<
 }
 
 pub(super) fn surface_implication_parts(
-    goal: &ClickProposition,
-) -> Option<(ClickProposition, ClickProposition)> {
+    goal: &SurfaceProposition,
+) -> Option<(SurfaceProposition, SurfaceProposition)> {
     match goal {
-        ClickProposition::Implies(antecedent, consequent) => {
+        SurfaceProposition::Implies(antecedent, consequent) => {
             Some((antecedent.as_ref().clone(), consequent.as_ref().clone()))
         }
-        ClickProposition::At {
+        SurfaceProposition::At {
             selector,
             proposition,
         } => {
             let (antecedent, consequent) = surface_implication_parts(proposition)?;
             Some((
-                ClickProposition::At {
+                SurfaceProposition::At {
                     selector: selector.clone(),
                     proposition: Box::new(antecedent),
                 },
-                ClickProposition::At {
+                SurfaceProposition::At {
                     selector: selector.clone(),
                     proposition: Box::new(consequent),
                 },
@@ -242,15 +248,13 @@ pub(super) fn surface_implication_parts(
     }
 }
 
-fn contract_expression_for_instantiation_value(value: &MachineTerm) -> Option<ContractExpression> {
+fn contract_expression_for_instantiation_value(value: &MachineTerm) -> Option<SurfaceTerm> {
     let bits32_constant!(bits) = value else {
         return None;
     };
-    Some(ContractExpression::ProgramExpression(
-        ProgramExpression::Value(ProgramValue::Int32(MachineTerm::constant(constant_u32(
-            *bits,
-        )))),
-    ))
+    Some(SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+        ProgramValue::Int32(MachineTerm::constant(constant_u32(*bits))),
+    )))
 }
 
 /// Ordinary guard goals required by a planned specialization. The fast
@@ -258,10 +262,10 @@ fn contract_expression_for_instantiation_value(value: &MachineTerm) -> Option<Co
 /// only guards absent from the selected explicit premises, retaining each
 /// successful proof as an ordinary `have` certificate.
 pub(super) fn instantiation_guard_tactics(
-    quantified: &ClickProposition,
-    argument: &ContractExpression,
+    quantified: &SurfaceProposition,
+    argument: &SurfaceTerm,
     instance: &Proposition,
-    premises: &[(Proposition, ClickProposition)],
+    premises: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let mut available = Vec::new();
     for (premise, _) in premises {
@@ -288,13 +292,13 @@ pub(super) fn instantiation_guard_tactics(
         return Some(Vec::new());
     }
     let (selector, quantified) = match quantified {
-        ClickProposition::At {
+        SurfaceProposition::At {
             selector,
             proposition,
         } => (Some(selector), proposition.as_ref()),
         other => (None, other),
     };
-    let ClickProposition::ForAll { name, body, .. } = quantified else {
+    let SurfaceProposition::ForAll { name, body, .. } = quantified else {
         return None;
     };
     let mut written =
@@ -307,12 +311,12 @@ pub(super) fn instantiation_guard_tactics(
         .collect::<Vec<_>>();
     let mut tactics = Vec::new();
     while let Proposition::Implies(guard, conclusion) = kernel {
-        let ClickProposition::Implies(surface_guard, rest) = written else {
+        let SurfaceProposition::Implies(surface_guard, rest) = written else {
             return None;
         };
         if !guard_available(guard) {
             let proposition = match selector {
-                Some(selector) => ClickProposition::At {
+                Some(selector) => SurfaceProposition::At {
                     selector: selector.clone(),
                     proposition: surface_guard,
                 },
@@ -333,7 +337,7 @@ pub(super) fn instantiation_guard_tactics(
 
 pub(super) fn plan_explicit_forall_instantiation(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     for (index, (kernel, surface)) in premise_pairs.iter().enumerate() {
         let Proposition::ForAll {
@@ -396,17 +400,17 @@ pub(super) struct UniversalConclusionPlan {
 }
 
 pub(super) struct SelectedConclusion {
-    pub(super) source: ClickProposition,
-    pub(super) target: ClickProposition,
-    pub(super) premises: Vec<ClickProposition>,
+    pub(super) source: SurfaceProposition,
+    pub(super) target: SurfaceProposition,
+    pub(super) premises: Vec<SurfaceProposition>,
     pub(super) fallback: Vec<ProofTactic>,
 }
 
 pub(super) fn plan_explicit_forall_instantiation_transport(
     goal: &Proposition,
-    surface_goal: &ClickProposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
-    extra_arguments: &[(MachineTerm, ContractExpression)],
+    surface_goal: &SurfaceProposition,
+    premise_pairs: &[(Proposition, SurfaceProposition)],
+    extra_arguments: &[(MachineTerm, SurfaceTerm)],
     conclusion_gate: &dyn Fn(&Proposition) -> bool,
 ) -> Option<UniversalConclusionPlan> {
     for (index, (kernel, surface)) in premise_pairs.iter().enumerate() {
@@ -465,13 +469,13 @@ pub(super) fn plan_explicit_forall_instantiation_transport(
 #[allow(clippy::too_many_arguments)]
 fn plan_explicit_universal_conclusion_discharge(
     premise_kernel: &Proposition,
-    premise_surface: &ClickProposition,
+    premise_surface: &SurfaceProposition,
     argument_term: MachineTerm,
-    argument_expression: &ContractExpression,
+    argument_expression: &SurfaceTerm,
     goal_conclusion: &Proposition,
-    surface_goal_conclusion: &ClickProposition,
+    surface_goal_conclusion: &SurfaceProposition,
     discharge_kernels: &[Proposition],
-    using_surfaces: &[ClickProposition],
+    using_surfaces: &[SurfaceProposition],
     conclusion_gate: Option<&dyn Fn(&Proposition) -> bool>,
 ) -> Option<UniversalConclusionPlan> {
     let Proposition::ForAll {
@@ -508,13 +512,13 @@ fn plan_explicit_universal_conclusion_discharge(
         // substituted transport source so the source lowers at the same
         // state the premise denotes.
         let (premise_selector, premise_forall) = match premise_surface {
-            ClickProposition::At {
+            SurfaceProposition::At {
                 selector,
                 proposition,
             } => (Some(selector), proposition.as_ref()),
             other => (None, other),
         };
-        let ClickProposition::ForAll {
+        let SurfaceProposition::ForAll {
             name: premise_binder,
             body: premise_surface_body,
             ..
@@ -523,7 +527,7 @@ fn plan_explicit_universal_conclusion_discharge(
             return None;
         };
         let premise_surface_conclusion = match premise_surface_body.as_ref() {
-            ClickProposition::Implies(_, conclusion) => conclusion.as_ref(),
+            SurfaceProposition::Implies(_, conclusion) => conclusion.as_ref(),
             body => body,
         };
         let substitutions = std::iter::once((premise_binder.clone(), argument_expression.clone()))
@@ -531,7 +535,7 @@ fn plan_explicit_universal_conclusion_discharge(
         let source =
             substitute_click_proposition(premise_surface_conclusion, &substitutions).ok()?;
         let source = match premise_selector {
-            Some(selector) => ClickProposition::At {
+            Some(selector) => SurfaceProposition::At {
                 selector: selector.clone(),
                 proposition: Box::new(source),
             },
@@ -553,17 +557,17 @@ fn plan_explicit_universal_conclusion_discharge(
     let conclusion = transport_closure.map(|(source, target)| {
         let mut fallback = Vec::new();
         if let Some((historical, current)) = comparison_state_expression_pair(&source, &target) {
-            let reflexive = ClickProposition::Comparison {
+            let reflexive = SurfaceProposition::Comparison {
                 left: historical.clone(),
                 operator: ComparisonOperator::Equal,
                 right: historical.clone(),
             };
-            let forward = ClickProposition::Comparison {
+            let forward = SurfaceProposition::Comparison {
                 left: historical.clone(),
                 operator: ComparisonOperator::Equal,
                 right: current.clone(),
             };
-            let reverse = ClickProposition::Comparison {
+            let reverse = SurfaceProposition::Comparison {
                 left: current,
                 operator: ComparisonOperator::Equal,
                 right: historical,
@@ -613,16 +617,16 @@ fn plan_explicit_universal_conclusion_discharge(
 /// state and at the current state. An equality bridge for that operand can
 /// then carry the surrounding comparison by an ordinary checked rewrite.
 fn comparison_state_expression_pair(
-    source: &ClickProposition,
-    target: &ClickProposition,
-) -> Option<(ContractExpression, ContractExpression)> {
+    source: &SurfaceProposition,
+    target: &SurfaceProposition,
+) -> Option<(SurfaceTerm, SurfaceTerm)> {
     let (
-        ClickProposition::Comparison {
+        SurfaceProposition::Comparison {
             left: source_left,
             operator: source_operator,
             right: source_right,
         },
-        ClickProposition::Comparison {
+        SurfaceProposition::Comparison {
             left: target_left,
             operator: target_operator,
             right: target_right,
@@ -641,7 +645,7 @@ fn comparison_state_expression_pair(
     .into_iter()
     .find_map(
         |(historical, current, source_other, target_other)| match historical {
-            ContractExpression::At { expression, .. }
+            SurfaceTerm::At { expression, .. }
                 if expression.as_ref() == current && source_other == target_other =>
             {
                 Some((historical.clone(), current.clone()))
@@ -653,8 +657,8 @@ fn comparison_state_expression_pair(
 
 pub(super) fn plan_explicit_forall_goal_from_premises(
     goal: &Proposition,
-    surface_goal: &ClickProposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    surface_goal: &SurfaceProposition,
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<UniversalConclusionPlan> {
     let Proposition::ForAll {
         var: goal_var,
@@ -669,7 +673,7 @@ pub(super) fn plan_explicit_forall_goal_from_premises(
     let (goal_witness, goal_body) =
         crate::kernel::quantifiers::open_quantifier(*goal_var, sort, goal_body)?;
     let goal_body = Box::new(goal_body);
-    let ClickProposition::ForAll {
+    let SurfaceProposition::ForAll {
         name: binder_name,
         body: surface_body,
         ..
@@ -681,7 +685,7 @@ pub(super) fn plan_explicit_forall_goal_from_premises(
         match (goal_body.as_ref(), surface_body.as_ref()) {
             (
                 Proposition::Implies(antecedent, conclusion),
-                ClickProposition::Implies(surface_antecedent, _),
+                SurfaceProposition::Implies(surface_antecedent, _),
             ) => (
                 Some(antecedent.as_ref().clone()),
                 conclusion.as_ref(),
@@ -690,7 +694,7 @@ pub(super) fn plan_explicit_forall_goal_from_premises(
             (body, _) => (None, body, None),
         };
     let surface_goal_conclusion = match surface_body.as_ref() {
-        ClickProposition::Implies(_, conclusion) => conclusion.as_ref(),
+        SurfaceProposition::Implies(_, conclusion) => conclusion.as_ref(),
         body => body,
     };
     for (index, (kernel, surface)) in premise_pairs.iter().enumerate() {
@@ -707,7 +711,7 @@ pub(super) fn plan_explicit_forall_goal_from_premises(
             kernel,
             surface,
             MachineTerm::Variable(goal_witness),
-            &ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            &SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 (binder_name.clone()).into(),
             )),
             goal_conclusion,
@@ -731,7 +735,7 @@ pub(super) fn plan_explicit_forall_goal_from_premises(
 
 pub(super) fn plan_explicit_named_signed_rule(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     plan_explicit_implies_refuted_antecedent(goal, premise_pairs)
         .or_else(|| plan_explicit_signed_antisymmetry(goal, premise_pairs))
@@ -774,7 +778,7 @@ pub(super) fn plan_explicit_named_signed_rule(
 
 fn plan_explicit_signed_antisymmetry(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let Some((
         ConditionTerm::Compare {
@@ -810,7 +814,7 @@ fn plan_explicit_signed_antisymmetry(
 
 pub(super) fn plan_explicit_le_and_neq_implies_lt(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let (left, right) = goal_exact_less_than_parts(goal)?;
     for (le_kernel, le_surface) in premise_pairs {
@@ -860,13 +864,13 @@ pub(super) fn plan_explicit_le_and_neq_implies_lt(
 /// Selection is syntactic and bounded by the explicit premises. The driver
 /// checks the selected footprint's landing state before invoking preserve.
 pub(super) fn single_statement_preservation_premise(
-    source: &ClickProposition,
-    target: &ClickProposition,
-    premises: &[ClickProposition],
-) -> Option<ClickProposition> {
+    source: &SurfaceProposition,
+    target: &SurfaceProposition,
+    premises: &[SurfaceProposition],
+) -> Option<SurfaceProposition> {
     let (region, _) = preservation_read(source, target)?;
     let separation = premises.iter().find(|premise| matches!(premise,
-        ClickProposition::Separate { left: ResourceSubject::Footprint(selected), .. } if selected == &region
+        SurfaceProposition::Separate { left: ResourceSubject::Footprint(selected), .. } if selected == &region
     ))?;
     // The only other admitted citation is the reflexive source. Preserve
     // establishes its observation's definedness along with the equality.
@@ -881,10 +885,10 @@ pub(super) fn single_statement_preservation_premise(
 
 /// The explicit old/current observation shared by preservation expansions.
 pub(super) fn preservation_read(
-    source: &ClickProposition,
-    target: &ClickProposition,
-) -> Option<(CodeRegionRef, ContractExpression)> {
-    let ClickProposition::Comparison {
+    source: &SurfaceProposition,
+    target: &SurfaceProposition,
+) -> Option<(CodeRegionRef, SurfaceTerm)> {
+    let SurfaceProposition::Comparison {
         left,
         operator: ComparisonOperator::Equal,
         right,
@@ -898,7 +902,7 @@ pub(super) fn preservation_read(
     let (historical, current) = comparison_state_expression_pair(source, target)?;
     // Preserve is the read-observation axiom. Constant equalities and
     // arithmetic expressions use their existing ordinary reasoning routes.
-    if !matches!(current, ContractExpression::ResourceField(_))
+    if !matches!(current, SurfaceTerm::ResourceField(_))
         && !matches!(
             contract_expression_as_program_expression(&current),
             Some(
@@ -910,7 +914,7 @@ pub(super) fn preservation_read(
     {
         return None;
     }
-    let ContractExpression::At {
+    let SurfaceTerm::At {
         selector:
             ProgramPointSelector::ProgramPoint(ProgramPointRef {
                 region,
@@ -931,14 +935,14 @@ pub(super) fn preservation_read(
 /// Search uses this syntactic test while selecting premises; it performs no
 /// lookup, lowering, or traversal of the proof state.
 pub(super) fn preservation_separation_matches(
-    source: &ClickProposition,
-    target: &ClickProposition,
-    premise: &ClickProposition,
+    source: &SurfaceProposition,
+    target: &SurfaceProposition,
+    premise: &SurfaceProposition,
 ) -> bool {
     let Some((_, read)) = preservation_read(source, target) else {
         return false;
     };
-    let ClickProposition::Separate {
+    let SurfaceProposition::Separate {
         left: ResourceSubject::Footprint(_),
         right,
     } = premise
@@ -958,9 +962,9 @@ pub(super) fn preservation_separation_matches(
 /// equalities. Endpoint connectivity is ordinary equality reasoning; this reads
 /// no execution history and discovers no missing footprint or premise.
 pub(super) fn statement_preservation_steps(
-    source: &ClickProposition,
-    target: &ClickProposition,
-    premises: &[ClickProposition],
+    source: &SurfaceProposition,
+    target: &SurfaceProposition,
+    premises: &[SurfaceProposition],
 ) -> Option<Vec<ProofStep>> {
     let (start, read) = preservation_read(source, target)?;
     let mut steps = Vec::new();
@@ -969,7 +973,7 @@ pub(super) fn statement_preservation_steps(
         if premise == source {
             continue;
         }
-        let ClickProposition::Separate {
+        let SurfaceProposition::Separate {
             left: ResourceSubject::Footprint(region),
             ..
         } = premise
@@ -980,7 +984,7 @@ pub(super) fn statement_preservation_steps(
             return None;
         }
         includes_start |= region == &start;
-        let at = |kind| ContractExpression::At {
+        let at = |kind| SurfaceTerm::At {
             selector: ProgramPointSelector::ProgramPoint(ProgramPointRef {
                 region: region.clone(),
                 kind,
@@ -988,7 +992,7 @@ pub(super) fn statement_preservation_steps(
             expression: Box::new(read.clone()),
         };
         steps.push(ProofStep::Have {
-            proposition: ClickProposition::Comparison {
+            proposition: SurfaceProposition::Comparison {
                 left: at(ProgramPointKind::Exit),
                 operator: ComparisonOperator::Equal,
                 right: at(ProgramPointKind::Entry),
@@ -1009,9 +1013,9 @@ pub(super) fn statement_preservation_steps(
 /// Carry a comparison whose read operands change state. All selected
 /// footprints remain ordinary preservation steps; no ambient premise discovery.
 pub(super) fn comparison_preservation_steps(
-    source: &ClickProposition,
-    target: &ClickProposition,
-    premises: &[ClickProposition],
+    source: &SurfaceProposition,
+    target: &SurfaceProposition,
+    premises: &[SurfaceProposition],
 ) -> Option<Vec<ProofStep>> {
     let pairs = comparison_preservation_reads(source, target)?;
     read_preservation_rewrite_steps(source, pairs, premises)
@@ -1022,11 +1026,11 @@ pub(super) fn comparison_preservation_steps(
 /// whole fact after preservation. Rewriting the whole goal once per read would
 /// make replay quadratic in the number of distinct reads.
 pub(super) fn implication_preservation_steps(
-    source: &ClickProposition,
-    target: &ClickProposition,
-    premises: &[ClickProposition],
+    source: &SurfaceProposition,
+    target: &SurfaceProposition,
+    premises: &[SurfaceProposition],
 ) -> Option<Vec<ProofStep>> {
-    if !matches!(target, ClickProposition::Implies(..)) {
+    if !matches!(target, SurfaceProposition::Implies(..)) {
         return None;
     }
     let mut pending = vec![(source, target, None)];
@@ -1036,7 +1040,7 @@ pub(super) fn implication_preservation_steps(
         crate::instrumentation::record_deterministic_work(1);
         match (source, target) {
             (
-                ClickProposition::At {
+                SurfaceProposition::At {
                     selector,
                     proposition,
                 },
@@ -1044,18 +1048,18 @@ pub(super) fn implication_preservation_steps(
             ) if retained_state.is_none() => {
                 pending.push((proposition.as_ref(), target, Some(selector)));
             }
-            (ClickProposition::And(sl, sr), ClickProposition::And(tl, tr))
-            | (ClickProposition::Or(sl, sr), ClickProposition::Or(tl, tr))
-            | (ClickProposition::Implies(sl, sr), ClickProposition::Implies(tl, tr)) => {
+            (SurfaceProposition::And(sl, sr), SurfaceProposition::And(tl, tr))
+            | (SurfaceProposition::Or(sl, sr), SurfaceProposition::Or(tl, tr))
+            | (SurfaceProposition::Implies(sl, sr), SurfaceProposition::Implies(tl, tr)) => {
                 pending.push((sr.as_ref(), tr.as_ref(), retained_state));
                 pending.push((sl.as_ref(), tl.as_ref(), retained_state));
             }
-            (ClickProposition::Not(source), ClickProposition::Not(target)) => {
+            (SurfaceProposition::Not(source), SurfaceProposition::Not(target)) => {
                 pending.push((source.as_ref(), target.as_ref(), retained_state));
             }
-            (ClickProposition::Comparison { .. }, ClickProposition::Comparison { .. }) => {
+            (SurfaceProposition::Comparison { .. }, SurfaceProposition::Comparison { .. }) => {
                 let historical = match retained_state {
-                    Some(selector) => ClickProposition::At {
+                    Some(selector) => SurfaceProposition::At {
                         selector: selector.clone(),
                         proposition: Box::new(source.clone()),
                     },
@@ -1076,9 +1080,9 @@ pub(super) fn implication_preservation_steps(
 }
 
 fn read_preservation_rewrite_steps(
-    source: &ClickProposition,
-    pairs: Vec<(ContractExpression, ContractExpression)>,
-    premises: &[ClickProposition],
+    source: &SurfaceProposition,
+    pairs: Vec<(SurfaceTerm, SurfaceTerm)>,
+    premises: &[SurfaceProposition],
 ) -> Option<Vec<ProofStep>> {
     let (mut steps, equalities) = read_preservation_steps(source, pairs, premises)?;
     steps.extend(equalities.into_iter().map(ProofStep::Rewrite));
@@ -1089,10 +1093,10 @@ fn read_preservation_rewrite_steps(
 /// Construct the ordinary read equalities. Premise selection is indexed by
 /// written subject, so many logical leaves do not rescan all separations.
 fn read_preservation_steps(
-    source: &ClickProposition,
-    pairs: Vec<(ContractExpression, ContractExpression)>,
-    premises: &[ClickProposition],
-) -> Option<(Vec<ProofStep>, Vec<ClickProposition>)> {
+    source: &SurfaceProposition,
+    pairs: Vec<(SurfaceTerm, SurfaceTerm)>,
+    premises: &[SurfaceProposition],
+) -> Option<(Vec<ProofStep>, Vec<SurfaceProposition>)> {
     let separations = premises
         .iter()
         .filter(|p| *p != source)
@@ -1112,7 +1116,7 @@ fn read_preservation_steps(
         }
         for premise in separations {
             crate::instrumentation::record_deterministic_work(1);
-            let ClickProposition::Separate {
+            let SurfaceProposition::Separate {
                 left: ResourceSubject::Footprint(_),
                 right,
             } = &premise
@@ -1138,12 +1142,12 @@ fn read_preservation_steps(
     let mut steps = vec![have(source.clone(), vec![ProofStep::Known])];
     let mut equalities = Vec::new();
     for ((historical, current), separations) in pairs.into_iter().zip(selected) {
-        let reflexive = ClickProposition::Comparison {
+        let reflexive = SurfaceProposition::Comparison {
             left: historical.clone(),
             operator: ComparisonOperator::Equal,
             right: historical.clone(),
         };
-        let bridge = ClickProposition::Comparison {
+        let bridge = SurfaceProposition::Comparison {
             left: current,
             operator: ComparisonOperator::Equal,
             right: historical,
@@ -1157,20 +1161,20 @@ fn read_preservation_steps(
 
 /// Read bridges selected by the written comparison only.
 pub(super) fn comparison_preservation_reads(
-    source: &ClickProposition,
-    target: &ClickProposition,
-) -> Option<Vec<(ContractExpression, ContractExpression)>> {
+    source: &SurfaceProposition,
+    target: &SurfaceProposition,
+) -> Option<Vec<(SurfaceTerm, SurfaceTerm)>> {
     // Distribute only a comparison's written state. Literal integers are
     // state-independent; every other operand keeps its explicit state.
     // Retain the original source below, so ordinary `known` checks connect
     // the written fact to the rewritten goal without a new trusted rule.
     let distributed;
-    let comparison = if let ClickProposition::At {
+    let comparison = if let SurfaceProposition::At {
         selector,
         proposition,
     } = source
     {
-        let ClickProposition::Comparison {
+        let SurfaceProposition::Comparison {
             left,
             operator,
             right,
@@ -1178,17 +1182,17 @@ pub(super) fn comparison_preservation_reads(
         else {
             return None;
         };
-        let at = |expression: &ContractExpression| {
-            if matches!(expression, ContractExpression::IntegerLiteral(_)) {
+        let at = |expression: &SurfaceTerm| {
+            if matches!(expression, SurfaceTerm::IntegerLiteral(_)) {
                 expression.clone()
             } else {
-                ContractExpression::At {
+                SurfaceTerm::At {
                     selector: selector.clone(),
                     expression: Box::new(expression.clone()),
                 }
             }
         };
-        distributed = ClickProposition::Comparison {
+        distributed = SurfaceProposition::Comparison {
             left: at(left),
             operator: *operator,
             right: at(right),
@@ -1197,7 +1201,7 @@ pub(super) fn comparison_preservation_reads(
     } else {
         source
     };
-    let ClickProposition::Comparison {
+    let SurfaceProposition::Comparison {
         left,
         operator,
         right,
@@ -1222,7 +1226,7 @@ pub(super) fn comparison_preservation_reads(
     let pairs = if let Some(pair) = comparison_state_expression_pair(comparison, target) {
         vec![pair]
     } else {
-        let ClickProposition::Comparison {
+        let SurfaceProposition::Comparison {
             left: target_left,
             operator: target_operator,
             right: target_right,
@@ -1236,7 +1240,7 @@ pub(super) fn comparison_preservation_reads(
         [(left, target_left), (right, target_right)]
             .into_iter()
             .map(|(historical, current)| match historical {
-                ContractExpression::At { expression, .. } if expression.as_ref() == current => {
+                SurfaceTerm::At { expression, .. } if expression.as_ref() == current => {
                     Some((historical.clone(), current.clone()))
                 }
                 _ => None,
@@ -1250,38 +1254,38 @@ pub(super) fn comparison_preservation_reads(
 /// ordinary equality reasoning distributes those equalities through arithmetic.
 /// Unknown expression forms stay on the existing explicit transport route.
 fn scalar_preservation_read_leaves(
-    pairs: Vec<(ContractExpression, ContractExpression)>,
-) -> Option<Vec<(ContractExpression, ContractExpression)>> {
+    pairs: Vec<(SurfaceTerm, SurfaceTerm)>,
+) -> Option<Vec<(SurfaceTerm, SurfaceTerm)>> {
     let mut reads = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for (historical, current) in &pairs {
-        let ContractExpression::At { selector, .. } = historical else {
+        let SurfaceTerm::At { selector, .. } = historical else {
             return None;
         };
         let mut pending = vec![current];
         while let Some(expression) = pending.pop() {
             crate::instrumentation::record_deterministic_work(1);
             match expression {
-                ContractExpression::IntegerLiteral(_) => {}
-                ContractExpression::Add(left, right)
-                | ContractExpression::Subtract(left, right)
-                | ContractExpression::Multiply(left, right)
-                | ContractExpression::BitwiseAnd(left, right)
-                | ContractExpression::BitwiseOr(left, right)
-                | ContractExpression::BitwiseXor(left, right) => {
+                SurfaceTerm::IntegerLiteral(_) => {}
+                SurfaceTerm::Add(left, right)
+                | SurfaceTerm::Subtract(left, right)
+                | SurfaceTerm::Multiply(left, right)
+                | SurfaceTerm::BitwiseAnd(left, right)
+                | SurfaceTerm::BitwiseOr(left, right)
+                | SurfaceTerm::BitwiseXor(left, right) => {
                     pending.push(right);
                     pending.push(left);
                 }
-                ContractExpression::Negate(value) | ContractExpression::BitwiseNot(value) => {
+                SurfaceTerm::Negate(value) | SurfaceTerm::BitwiseNot(value) => {
                     pending.push(value);
                 }
-                ContractExpression::Call { name, arguments }
+                SurfaceTerm::Call { name, arguments }
                     if name == "to_integer" && arguments.len() == 1 =>
                 {
                     pending.push(&arguments[0]);
                 }
                 _ => {
-                    if !matches!(expression, ContractExpression::ResourceField(_))
+                    if !matches!(expression, SurfaceTerm::ResourceField(_))
                         && !matches!(
                             contract_expression_as_program_expression(expression),
                             Some(
@@ -1294,7 +1298,7 @@ fn scalar_preservation_read_leaves(
                         return None;
                     }
                     let pair = (
-                        ContractExpression::At {
+                        SurfaceTerm::At {
                             selector: selector.clone(),
                             expression: Box::new(expression.clone()),
                         },
@@ -1313,13 +1317,13 @@ fn scalar_preservation_read_leaves(
 /// Select scalar leaves from the written historical conjunction. Index the
 /// leaf spellings once: neither ambient facts nor candidate histories are read.
 pub(super) fn conjunction_projection_preservation_steps(
-    source: &ClickProposition,
-    target: &ClickProposition,
-    premises: &[ClickProposition],
+    source: &SurfaceProposition,
+    target: &SurfaceProposition,
+    premises: &[SurfaceProposition],
 ) -> Option<Vec<ProofStep>> {
     if !matches!(
         target,
-        ClickProposition::Comparison { .. } | ClickProposition::And(..)
+        SurfaceProposition::Comparison { .. } | SurfaceProposition::And(..)
     ) {
         return None;
     }
@@ -1329,18 +1333,18 @@ pub(super) fn conjunction_projection_preservation_steps(
     while let Some((proposition, retained_state)) = pending.pop() {
         crate::instrumentation::record_deterministic_work(1);
         match proposition {
-            ClickProposition::And(left, right) => {
+            SurfaceProposition::And(left, right) => {
                 conjunction = true;
                 pending.push((right.as_ref(), retained_state));
                 pending.push((left.as_ref(), retained_state));
             }
-            ClickProposition::At {
+            SurfaceProposition::At {
                 selector,
                 proposition,
             } if retained_state.is_none() => {
                 pending.push((proposition.as_ref(), Some(selector)));
             }
-            ClickProposition::Comparison { .. } => {
+            SurfaceProposition::Comparison { .. } => {
                 if let Some(retained_state) = retained_state {
                     // One selected witness. Failure of its ordinary proof does
                     // not retry another state or discover extra premises.
@@ -1359,14 +1363,14 @@ pub(super) fn conjunction_projection_preservation_steps(
     while let Some(node) = pending.pop() {
         crate::instrumentation::record_deterministic_work(1);
         match node {
-            Some(ClickProposition::And(left, right)) => {
+            Some(SurfaceProposition::And(left, right)) => {
                 pending.push(None);
                 pending.push(Some(right));
                 pending.push(Some(left));
             }
-            Some(target @ ClickProposition::Comparison { .. }) => {
+            Some(target @ SurfaceProposition::Comparison { .. }) => {
                 let retained_state = leaves.get(target)?;
-                let source = ClickProposition::At {
+                let source = SurfaceProposition::At {
                     selector: (*retained_state).clone(),
                     proposition: Box::new(target.clone()),
                 };
@@ -1383,17 +1387,17 @@ pub(super) fn conjunction_projection_preservation_steps(
 /// Preserve a written conjunction tree without rescanning its premises at each
 /// branch. Only scalar leaves are copied; the tree is traversed by reference.
 pub(super) fn conjunction_preservation_steps(
-    source: &ClickProposition,
-    target: &ClickProposition,
-    premises: &[ClickProposition],
+    source: &SurfaceProposition,
+    target: &SurfaceProposition,
+    premises: &[SurfaceProposition],
 ) -> Option<Vec<ProofStep>> {
-    if !matches!(target, ClickProposition::And(..)) {
+    if !matches!(target, SurfaceProposition::And(..)) {
         return None;
     }
     enum Task<'a> {
         Visit(
-            &'a ClickProposition,
-            &'a ClickProposition,
+            &'a SurfaceProposition,
+            &'a SurfaceProposition,
             Option<&'a ProgramPointSelector>,
         ),
         Join,
@@ -1407,7 +1411,7 @@ pub(super) fn conjunction_preservation_steps(
             shape.push(None);
             continue;
         };
-        if let ClickProposition::At {
+        if let SurfaceProposition::At {
             selector,
             proposition,
         } = source
@@ -1416,7 +1420,7 @@ pub(super) fn conjunction_preservation_steps(
                 return None;
             }
             pending.push(Task::Visit(proposition, target, Some(selector)));
-        } else if let (ClickProposition::And(sl, sr), ClickProposition::And(tl, tr)) =
+        } else if let (SurfaceProposition::And(sl, sr), SurfaceProposition::And(tl, tr)) =
             (source, target)
         {
             pending.push(Task::Join);
@@ -1424,7 +1428,7 @@ pub(super) fn conjunction_preservation_steps(
             pending.push(Task::Visit(sl, tl, retained_state));
         } else {
             let source = match retained_state {
-                Some(selector) => ClickProposition::At {
+                Some(selector) => SurfaceProposition::At {
                     selector: selector.clone(),
                     proposition: Box::new(source.clone()),
                 },
@@ -1440,9 +1444,9 @@ pub(super) fn conjunction_preservation_steps(
 /// Both matching trees and selected/regrouped trees use one premise index and
 /// the same ordinary scalar proofs. `shape` is the target's postorder tree.
 fn conjunction_leaf_preservation_steps(
-    source: &ClickProposition,
-    premises: &[ClickProposition],
-    leaves: Vec<(ClickProposition, &ClickProposition)>,
+    source: &SurfaceProposition,
+    premises: &[SurfaceProposition],
+    leaves: Vec<(SurfaceProposition, &SurfaceProposition)>,
     shape: Vec<Option<usize>>,
 ) -> Option<Vec<ProofStep>> {
     use std::collections::{HashMap, HashSet};
@@ -1461,7 +1465,7 @@ fn conjunction_leaf_preservation_steps(
             used[index] = true;
             continue;
         }
-        let ClickProposition::Separate {
+        let SurfaceProposition::Separate {
             left: ResourceSubject::Footprint(_),
             right,
         } = premise
@@ -1537,8 +1541,8 @@ enum TransportReadSubject {
     Resource(crate::kernel::InstanceRef),
 }
 
-fn transport_read_subject(read: &ContractExpression) -> Option<TransportReadSubject> {
-    if let ContractExpression::ResourceField(field) = read {
+fn transport_read_subject(read: &SurfaceTerm) -> Option<TransportReadSubject> {
+    if let SurfaceTerm::ResourceField(field) = read {
         return field
             .children
             .is_empty()
@@ -1579,12 +1583,12 @@ fn transport_separation_subject(subject: &ResourceSubject) -> Option<TransportRe
 /// The planner proposes them; ordinary rewrite checks each equality. No
 /// semantic descriptor normalization or ambient fact search happens here.
 pub(super) fn resource_descriptor_rewrite_steps(
-    target: &ClickProposition,
-    source: &ClickProposition,
+    target: &SurfaceProposition,
+    source: &SurfaceProposition,
 ) -> Option<Vec<ProofStep>> {
     let (
-        ClickProposition::Separate { left, right },
-        ClickProposition::Separate {
+        SurfaceProposition::Separate { left, right },
+        SurfaceProposition::Separate {
             left: source_left,
             right: source_right,
         },
@@ -1621,7 +1625,7 @@ pub(super) fn resource_descriptor_rewrite_steps(
             {
                 continue;
             }
-            steps.push(ProofStep::Rewrite(ClickProposition::Comparison {
+            steps.push(ProofStep::Rewrite(SurfaceProposition::Comparison {
                 left,
                 operator: ComparisonOperator::Equal,
                 right,
@@ -1635,14 +1639,14 @@ pub(super) fn resource_descriptor_rewrite_steps(
     Some(steps)
 }
 
-fn viewability_resource(proposition: &ClickProposition) -> Option<ResourceSubject> {
+fn viewability_resource(proposition: &SurfaceProposition) -> Option<ResourceSubject> {
     match proposition {
-        ClickProposition::Loadable { segment }
+        SurfaceProposition::Loadable { segment }
             if segment.state == ContractSegmentState::Current =>
         {
             Some(ResourceSubject::Memory(segment.clone()))
         }
-        ClickProposition::ResourceViewable { resource } => Some(resource.clone()),
+        SurfaceProposition::ResourceViewable { resource } => Some(resource.clone()),
         _ => None,
     }
 }
@@ -1650,9 +1654,9 @@ fn viewability_resource(proposition: &ClickProposition) -> Option<ResourceSubjec
 /// Ordinary proof of a selected viewability restriction. This visits only
 /// written descriptors and premises; no state, history, or ambient facts.
 pub(super) fn viewability_restriction_steps(
-    source: &ClickProposition,
-    target: &ClickProposition,
-    premises: &[ClickProposition],
+    source: &SurfaceProposition,
+    target: &SurfaceProposition,
+    premises: &[SurfaceProposition],
 ) -> Option<(Vec<ProofStep>, bool)> {
     if source == target || !premises.contains(source) {
         return None;
@@ -1671,7 +1675,7 @@ pub(super) fn viewability_restriction_steps(
             (range_base(parent_segment), range_base(child_segment))
             && parent_base != child_base
         {
-            let equality = ClickProposition::Comparison {
+            let equality = SurfaceProposition::Comparison {
                 left: child_base,
                 operator: ComparisonOperator::Equal,
                 right: parent_base.clone(),
@@ -1686,7 +1690,7 @@ pub(super) fn viewability_restriction_steps(
                 | ContractSegmentSurface::StructRange { base, .. } => *base = parent_base,
                 _ => unreachable!(),
             }
-            let intermediate = ClickProposition::Loadable { segment };
+            let intermediate = SurfaceProposition::Loadable { segment };
             let (steps, narrow_range) =
                 viewability_restriction_steps(source, &intermediate, premises)?;
             return Some((
@@ -1704,7 +1708,7 @@ pub(super) fn viewability_restriction_steps(
             ));
         }
     }
-    let containment = ClickProposition::Contains {
+    let containment = SurfaceProposition::Contains {
         parent: parent.clone(),
         child: child.clone(),
     };
@@ -1720,11 +1724,7 @@ pub(super) fn viewability_restriction_steps(
         }
         fn endpoints(
             segment: &ContractSegment,
-        ) -> Option<(
-            &ContractExpression,
-            &ContractExpression,
-            &ContractExpression,
-        )> {
+        ) -> Option<(&SurfaceTerm, &SurfaceTerm, &SurfaceTerm)> {
             match &segment.surface {
                 ContractSegmentSurface::Range { base, start, end }
                 | ContractSegmentSurface::StructRange {
@@ -1742,7 +1742,7 @@ pub(super) fn viewability_restriction_steps(
             return None;
         }
         let bounds = [(lo, inner_lo), (inner_lo, inner_hi), (inner_hi, hi)].map(|(left, right)| {
-            ClickProposition::Comparison {
+            SurfaceProposition::Comparison {
                 left: left.clone(),
                 operator: ComparisonOperator::LessEqual,
                 right: right.clone(),
@@ -1754,14 +1754,14 @@ pub(super) fn viewability_restriction_steps(
             if premises.contains(bound) {
                 continue;
             }
-            let ClickProposition::Comparison { left, right, .. } = bound else {
+            let SurfaceProposition::Comparison { left, right, .. } = bound else {
                 unreachable!()
             };
-            let literal = |value: &ContractExpression| {
+            let literal = |value: &SurfaceTerm| {
                 matches!(
                     value,
-                    ContractExpression::IntegerLiteral(_)
-                        | ContractExpression::ProgramExpression(ProgramExpression::Value(_))
+                    SurfaceTerm::IntegerLiteral(_)
+                        | SurfaceTerm::ProgramExpression(ProgramExpression::Value(_))
                 )
             };
             if !literal(left) || !literal(right) {
@@ -1801,8 +1801,8 @@ pub(super) fn viewability_restriction_steps(
         application: TheoremApplication {
             name: "click::separation::viewable_restrict".into(),
             arguments: vec![
-                ContractExpression::Resource(Box::new(parent)),
-                ContractExpression::Resource(Box::new(child)),
+                SurfaceTerm::Resource(Box::new(parent)),
+                SurfaceTerm::Resource(Box::new(child)),
             ],
         },
         premises: cited,
@@ -1813,10 +1813,10 @@ pub(super) fn viewability_restriction_steps(
 /// A displaced view is first restricted to the offset, then rebased, then
 /// restricted to its requested length. Every link is an ordinary library law.
 pub(super) fn rebased_viewability_restriction_steps(
-    source: &ClickProposition,
-    target: &ClickProposition,
-    premises: &[ClickProposition],
-) -> Option<Vec<(ClickProposition, Vec<ProofStep>)>> {
+    source: &SurfaceProposition,
+    target: &SurfaceProposition,
+    premises: &[SurfaceProposition],
+) -> Option<Vec<(SurfaceProposition, Vec<ProofStep>)>> {
     let parent = viewability_resource(source)?;
     let child = viewability_resource(target)?;
     let (ResourceSubject::Memory(parent_segment), ResourceSubject::Memory(child_segment)) =
@@ -1837,7 +1837,7 @@ pub(super) fn rebased_viewability_restriction_steps(
     if contract_expression_as_program_expression(base).as_ref() != Some(pointer.as_ref()) {
         return None;
     }
-    let is_zero = |value: &ContractExpression| {
+    let is_zero = |value: &SurfaceTerm| {
         matches!(
             contract_expression_as_program_expression(value),
             Some(ProgramExpression::Value(ProgramValue::Int32(value)
@@ -1847,31 +1847,30 @@ pub(super) fn rebased_viewability_restriction_steps(
     if !is_zero(zero) {
         return None;
     }
-    let offset = ContractExpression::ProgramExpression(*offset);
-    let remaining = ContractExpression::ProgramExpression(ProgramExpression::Subtract(
+    let offset = SurfaceTerm::ProgramExpression(*offset);
+    let remaining = SurfaceTerm::ProgramExpression(ProgramExpression::Subtract(
         Box::new(contract_expression_as_program_expression(hi)?),
         Box::new(contract_expression_as_program_expression(&offset)?),
     ));
-    let range =
-        |template: &ContractSegment, start: &ContractExpression, end: &ContractExpression| {
-            let mut segment = template.clone();
-            segment.start = contract_expression_as_program_expression(start)?;
-            segment.end = contract_expression_as_program_expression(end)?;
-            let ContractSegmentSurface::Range {
-                start: written_start,
-                end: written_end,
-                ..
-            } = &mut segment.surface
-            else {
-                return None;
-            };
-            *written_start = start.clone();
-            *written_end = end.clone();
-            Some(ResourceSubject::Memory(segment))
+    let range = |template: &ContractSegment, start: &SurfaceTerm, end: &SurfaceTerm| {
+        let mut segment = template.clone();
+        segment.start = contract_expression_as_program_expression(start)?;
+        segment.end = contract_expression_as_program_expression(end)?;
+        let ContractSegmentSurface::Range {
+            start: written_start,
+            end: written_end,
+            ..
+        } = &mut segment.surface
+        else {
+            return None;
         };
+        *written_start = start.clone();
+        *written_end = end.clone();
+        Some(ResourceSubject::Memory(segment))
+    };
     let tail = range(parent_segment, &offset, hi)?;
     let rebased = range(child_segment, zero, &remaining)?;
-    let contains = |a: &ResourceSubject, b: &ResourceSubject| ClickProposition::Contains {
+    let contains = |a: &ResourceSubject, b: &ResourceSubject| SurfaceProposition::Contains {
         parent: a.clone(),
         child: b.clone(),
     };
@@ -1879,22 +1878,21 @@ pub(super) fn rebased_viewability_restriction_steps(
         let ResourceSubject::Memory(segment) = a else {
             unreachable!()
         };
-        ClickProposition::Loadable {
+        SurfaceProposition::Loadable {
             segment: segment.clone(),
         }
     };
     // Keep computed machine endpoints inside an explicit observation. A bare
     // subtraction in a comparison parses as mathematical integer arithmetic.
-    let observe = |value: &ContractExpression| ContractExpression::Call {
+    let observe = |value: &SurfaceTerm| SurfaceTerm::Call {
         name: "to_integer".into(),
         arguments: vec![value.clone()],
     };
-    let bound =
-        |left: &ContractExpression, right: &ContractExpression| ClickProposition::Comparison {
-            left: observe(left),
-            operator: ComparisonOperator::LessEqual,
-            right: observe(right),
-        };
+    let bound = |left: &SurfaceTerm, right: &SurfaceTerm| SurfaceProposition::Comparison {
+        left: observe(left),
+        operator: ComparisonOperator::LessEqual,
+        right: observe(right),
+    };
     let apply = |name: &str, arguments, premises| {
         vec![ProofStep::ApplyPlannedTheorem {
             application: TheoremApplication {
@@ -1904,7 +1902,7 @@ pub(super) fn rebased_viewability_restriction_steps(
             premises,
         }]
     };
-    let arg = |resource: &ResourceSubject| ContractExpression::Resource(Box::new(resource.clone()));
+    let arg = |resource: &ResourceSubject| SurfaceTerm::Resource(Box::new(resource.clone()));
     let mut cited = premises.to_vec();
     let mut goals = Vec::new();
     for goal in [
@@ -1983,10 +1981,10 @@ pub(super) fn rebased_viewability_restriction_steps(
 /// count. The ordinary resource laws perform the element-width scaling;
 /// planning only proves the written endpoint bounds.
 pub(super) fn native_viewability_restriction_steps(
-    source: &ClickProposition,
-    target: &ClickProposition,
-    premises: &[ClickProposition],
-) -> Option<Vec<(ClickProposition, Vec<ProofStep>)>> {
+    source: &SurfaceProposition,
+    target: &SurfaceProposition,
+    premises: &[SurfaceProposition],
+) -> Option<Vec<(SurfaceProposition, Vec<ProofStep>)>> {
     let requirements = viewability_restriction_requirements(source, target)?;
     let mut cited = premises.to_vec();
     let mut goals = Vec::new();
@@ -1996,7 +1994,7 @@ pub(super) fn native_viewability_restriction_steps(
         }
         let step = if matches!(
             &requirement,
-            ClickProposition::Comparison {
+            SurfaceProposition::Comparison {
                 operator: ComparisonOperator::Equal,
                 ..
             }
@@ -2017,10 +2015,10 @@ pub(super) fn native_viewability_restriction_steps(
 /// signed operation identity. Search applies these steps under its budget;
 /// replay retains the resulting arithmetic steps and library steps.
 pub(super) fn computed_viewability_restriction_steps(
-    source: &ClickProposition,
-    target: &ClickProposition,
-    premises: &[ClickProposition],
-) -> Option<Vec<(ClickProposition, Vec<ProofStep>)>> {
+    source: &SurfaceProposition,
+    target: &SurfaceProposition,
+    premises: &[SurfaceProposition],
+) -> Option<Vec<(SurfaceProposition, Vec<ProofStep>)>> {
     let parent = viewability_resource(source)?;
     let child = viewability_resource(target)?;
     let (ResourceSubject::Memory(parent_segment), ResourceSubject::Memory(child_segment)) =
@@ -2056,22 +2054,18 @@ pub(super) fn computed_viewability_restriction_steps(
         }
         _ => return None,
     };
-    let observe = |value: ContractExpression| ContractExpression::Call {
+    let observe = |value: SurfaceTerm| SurfaceTerm::Call {
         name: "to_integer".into(),
         arguments: vec![value],
     };
-    let exact_left = Box::new(observe(ContractExpression::ProgramExpression(
-        (*left).clone(),
-    )));
-    let exact_right = Box::new(observe(ContractExpression::ProgramExpression(
-        (*right).clone(),
-    )));
+    let exact_left = Box::new(observe(SurfaceTerm::ProgramExpression((*left).clone())));
+    let exact_right = Box::new(observe(SurfaceTerm::ProgramExpression((*right).clone())));
     let exact = if law == "click::integer::int32_add_to_integer" {
-        ContractExpression::Add(exact_left, exact_right)
+        SurfaceTerm::Add(exact_left, exact_right)
     } else {
-        ContractExpression::Subtract(exact_left, exact_right)
+        SurfaceTerm::Subtract(exact_left, exact_right)
     };
-    let compare = |left, operator, right| ClickProposition::Comparison {
+    let compare = |left, operator, right| SurfaceProposition::Comparison {
         left,
         operator,
         right,
@@ -2084,14 +2078,12 @@ pub(super) fn computed_viewability_restriction_steps(
         (observe(inner_lo.clone()), exact.clone()),
         (exact.clone(), observe(hi.clone())),
         (
-            ContractExpression::Negate(Box::new(ContractExpression::IntegerLiteral(
-                "2147483648".into(),
-            ))),
+            SurfaceTerm::Negate(Box::new(SurfaceTerm::IntegerLiteral("2147483648".into()))),
             exact.clone(),
         ),
         (
             exact.clone(),
-            ContractExpression::IntegerLiteral("2147483647".into()),
+            SurfaceTerm::IntegerLiteral("2147483647".into()),
         ),
     ] {
         let bound = compare(left.clone(), ComparisonOperator::LessEqual, right.clone());
@@ -2101,7 +2093,7 @@ pub(super) fn computed_viewability_restriction_steps(
         ));
         cited.push(bound);
     }
-    let defined = ClickProposition::Defined {
+    let defined = SurfaceProposition::Defined {
         expression: inner_hi.clone(),
     };
     steps.push(have(defined.clone(), vec![ProofStep::Known]));
@@ -2113,8 +2105,8 @@ pub(super) fn computed_viewability_restriction_steps(
             application: TheoremApplication {
                 name: law.into(),
                 arguments: vec![
-                    ContractExpression::ProgramExpression(*left),
-                    ContractExpression::ProgramExpression(*right),
+                    SurfaceTerm::ProgramExpression(*left),
+                    SurfaceTerm::ProgramExpression(*right),
                 ],
             },
             premises: vec![defined],
@@ -2132,7 +2124,7 @@ pub(super) fn computed_viewability_restriction_steps(
         ));
         cited.push(bound);
     }
-    let containment = ClickProposition::Contains {
+    let containment = SurfaceProposition::Contains {
         parent: parent.clone(),
         child: child.clone(),
     };
@@ -2156,8 +2148,8 @@ pub(super) fn computed_viewability_restriction_steps(
             application: TheoremApplication {
                 name: "click::separation::viewable_restrict".into(),
                 arguments: vec![
-                    ContractExpression::Resource(Box::new(parent)),
-                    ContractExpression::Resource(Box::new(child)),
+                    SurfaceTerm::Resource(Box::new(parent)),
+                    SurfaceTerm::Resource(Box::new(child)),
                 ],
             },
             premises: cited,
@@ -2169,9 +2161,9 @@ pub(super) fn computed_viewability_restriction_steps(
 /// The explicit alias and endpoint facts needed by the ordinary subrange law.
 /// Planning proves these; the driver only consumes the selected facts.
 pub(super) fn viewability_restriction_requirements(
-    source: &ClickProposition,
-    target: &ClickProposition,
-) -> Option<Vec<ClickProposition>> {
+    source: &SurfaceProposition,
+    target: &SurfaceProposition,
+) -> Option<Vec<SurfaceProposition>> {
     if source == target {
         return None;
     }
@@ -2196,14 +2188,14 @@ pub(super) fn viewability_restriction_requirements(
     // Computed endpoints have mathematical Integer semantics in a range,
     // while a machine-typed theorem argument can denote a wrapping operation.
     // Those need an explicit operation-identity bridge, not just order bounds.
-    let direct = |bound: &ContractExpression| {
+    let direct = |bound: &SurfaceTerm| {
         matches!(
             bound,
-            ContractExpression::IntegerLiteral(_)
-                | ContractExpression::Binding(_)
-                | ContractExpression::Field { .. }
-                | ContractExpression::ArrayIndex { .. }
-                | ContractExpression::ProgramExpression(
+            SurfaceTerm::IntegerLiteral(_)
+                | SurfaceTerm::Binding(_)
+                | SurfaceTerm::Field { .. }
+                | SurfaceTerm::ArrayIndex { .. }
+                | SurfaceTerm::ProgramExpression(
                     ProgramExpression::Variable(_)
                         | ProgramExpression::Value(_)
                         | ProgramExpression::Load(_)
@@ -2217,7 +2209,7 @@ pub(super) fn viewability_restriction_requirements(
     }
     let mut requirements = Vec::new();
     if base != child_base {
-        requirements.push(ClickProposition::Comparison {
+        requirements.push(SurfaceProposition::Comparison {
             left: child_base,
             operator: ComparisonOperator::Equal,
             right: base,
@@ -2228,7 +2220,7 @@ pub(super) fn viewability_restriction_requirements(
         (inner_lo, inner_hi.clone()),
         (inner_hi, hi),
     ] {
-        requirements.push(ClickProposition::Comparison {
+        requirements.push(SurfaceProposition::Comparison {
             left,
             operator: ComparisonOperator::LessEqual,
             right,
@@ -2355,10 +2347,10 @@ fn negated_signed_order_parts(
 /// difference of those term by term. `None` when an operand has no spelling.
 pub(super) fn spell_signed_goal(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<ClickProposition> {
+    premise_pairs: &[(Proposition, SurfaceProposition)],
+) -> Option<SurfaceProposition> {
     use crate::kernel::{MachineBinaryOp, MachineOperandView, SignedDefinedWidth};
-    let mut operands: Vec<(&MachineTerm, ContractExpression)> = Vec::new();
+    let mut operands: Vec<(&MachineTerm, SurfaceTerm)> = Vec::new();
     for (kernel, surface) in premise_pairs {
         let parts = signed_strict_parts(kernel)
             .zip(surface_strict_parts(surface))
@@ -2367,7 +2359,7 @@ pub(super) fn spell_signed_goal(
         // does.
         let parts = parts.or_else(|| {
             let (left, right, strict) = negated_signed_order_parts(kernel)?;
-            let ClickProposition::Not(inner) = surface else {
+            let SurfaceProposition::Not(inner) = surface else {
                 return None;
             };
             let surface_parts = if strict {
@@ -2384,12 +2376,12 @@ pub(super) fn spell_signed_goal(
     }
     fn spell(
         term: MachineOperandView<'_>,
-        operands: &[(&MachineTerm, ContractExpression)],
-    ) -> Option<ContractExpression> {
+        operands: &[(&MachineTerm, SurfaceTerm)],
+    ) -> Option<SurfaceTerm> {
         if let Some(value) = term.word32_constant() {
-            return Some(ContractExpression::ProgramExpression(
-                ProgramExpression::Value(int32(value)),
-            ));
+            return Some(SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+                int32(value),
+            )));
         }
         if let Some((_, surface)) = operands
             .iter()
@@ -2399,13 +2391,13 @@ pub(super) fn spell_signed_goal(
         }
         match term.binary() {
             Some((MachineIntegerType::Int32, MachineBinaryOp::Add, [left, right])) => {
-                Some(ContractExpression::Add(
+                Some(SurfaceTerm::Add(
                     Box::new(spell(left, operands)?),
                     Box::new(spell(right, operands)?),
                 ))
             }
             Some((MachineIntegerType::Int32, MachineBinaryOp::Subtract, [left, right])) => {
-                Some(ContractExpression::Subtract(
+                Some(SurfaceTerm::Subtract(
                     Box::new(spell(left, operands)?),
                     Box::new(spell(right, operands)?),
                 ))
@@ -2414,7 +2406,7 @@ pub(super) fn spell_signed_goal(
         }
     }
     let compare = |left: &MachineTerm, operator, right: &MachineTerm| {
-        Some(ClickProposition::Comparison {
+        Some(SurfaceProposition::Comparison {
             left: spell(MachineOperandView::Legacy(left), &operands)?,
             operator,
             right: spell(MachineOperandView::Legacy(right), &operands)?,
@@ -2425,11 +2417,11 @@ pub(super) fn spell_signed_goal(
     {
         let left = Box::new(spell(values[0].operand_view(), &operands)?);
         let right = Box::new(spell(values[1].operand_view(), &operands)?);
-        return Some(ClickProposition::Defined {
+        return Some(SurfaceProposition::Defined {
             expression: if subtract {
-                ContractExpression::Subtract(left, right)
+                SurfaceTerm::Subtract(left, right)
             } else {
-                ContractExpression::Add(left, right)
+                SurfaceTerm::Add(left, right)
             },
         });
     }
@@ -2475,8 +2467,8 @@ pub(super) fn spell_signed_goal(
 /// order.
 pub(super) fn recorded_signed_order_pairs(
     derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<(Proposition, ClickProposition)>> {
+    premise_pairs: &[(Proposition, SurfaceProposition)],
+) -> Option<Vec<(Proposition, SurfaceProposition)>> {
     derivation.signed_order_path().and_then(|path| {
         path.iter()
             .map(|step| {
@@ -2493,8 +2485,8 @@ pub(super) fn recorded_signed_order_pairs(
 /// in chain order.
 pub(super) fn recorded_wide_order_pairs(
     derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<(Proposition, ClickProposition)>> {
+    premise_pairs: &[(Proposition, SurfaceProposition)],
+) -> Option<Vec<(Proposition, SurfaceProposition)>> {
     let (_, path) = derivation.wide_order_path()?;
     let pairs = path
         .iter()
@@ -2514,7 +2506,7 @@ pub(super) fn recorded_wide_order_pairs(
 /// written as `<`, `<=`, `>` or `>=` (a negated order, say) is left to other
 /// routes.
 pub(super) fn plan_recorded_wide_order_path(
-    path: &[(Proposition, ClickProposition)],
+    path: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     if path.len() < 2 {
         return None;
@@ -2535,9 +2527,9 @@ pub(super) fn plan_recorded_wide_order_path(
 /// opposite polarity also matches.
 pub(super) fn recorded_premise_pairs<'a>(
     premises: impl IntoIterator<Item = &'a Proposition>,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
     polarity: bool,
-) -> Option<Vec<(Proposition, ClickProposition)>> {
+) -> Option<Vec<(Proposition, SurfaceProposition)>> {
     premises
         .into_iter()
         .map(|premise| {
@@ -2554,8 +2546,8 @@ pub(super) fn recorded_premise_pairs<'a>(
 
 pub(super) fn recorded_int32_one_le_predecessor_is_nonnegative_pairs(
     derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<(Proposition, ClickProposition)>> {
+    premise_pairs: &[(Proposition, SurfaceProposition)],
+) -> Option<Vec<(Proposition, SurfaceProposition)>> {
     let premise = derivation
         .int32_one_le_predecessor_is_nonnegative_step()?
         .premise();
@@ -2568,8 +2560,8 @@ pub(super) fn recorded_int32_one_le_predecessor_is_nonnegative_pairs(
 
 pub(super) fn recorded_int32_one_le_predecessor_strictly_decreases_pairs(
     derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<(Proposition, ClickProposition)>> {
+    premise_pairs: &[(Proposition, SurfaceProposition)],
+) -> Option<Vec<(Proposition, SurfaceProposition)>> {
     let premise = derivation
         .int32_one_le_predecessor_strictly_decreases_step()?
         .premise();
@@ -2582,8 +2574,8 @@ pub(super) fn recorded_int32_one_le_predecessor_strictly_decreases_pairs(
 
 pub(super) fn recorded_int32_equal_one_predecessor_is_nonnegative_pairs(
     derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<(Proposition, ClickProposition)>> {
+    premise_pairs: &[(Proposition, SurfaceProposition)],
+) -> Option<Vec<(Proposition, SurfaceProposition)>> {
     derivation
         .int32_equal_one_predecessor_is_nonnegative_path()
         .and_then(|path| recorded_bitvector_equality_path_pairs(path, premise_pairs))
@@ -2591,8 +2583,8 @@ pub(super) fn recorded_int32_equal_one_predecessor_is_nonnegative_pairs(
 
 pub(super) fn recorded_int32_equal_one_predecessor_strictly_decreases_pairs(
     derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<(Proposition, ClickProposition)>> {
+    premise_pairs: &[(Proposition, SurfaceProposition)],
+) -> Option<Vec<(Proposition, SurfaceProposition)>> {
     derivation
         .int32_equal_one_predecessor_strictly_decreases_path()
         .and_then(|path| recorded_bitvector_equality_path_pairs(path, premise_pairs))
@@ -2600,8 +2592,8 @@ pub(super) fn recorded_int32_equal_one_predecessor_strictly_decreases_pairs(
 
 pub(super) fn recorded_int32_equal_one_predecessor_is_zero_pairs(
     derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<(Proposition, ClickProposition)>> {
+    premise_pairs: &[(Proposition, SurfaceProposition)],
+) -> Option<Vec<(Proposition, SurfaceProposition)>> {
     derivation
         .int32_equal_one_predecessor_is_zero_path()
         .and_then(|path| recorded_bitvector_equality_path_pairs(path, premise_pairs))
@@ -2610,7 +2602,7 @@ pub(super) fn recorded_int32_equal_one_predecessor_is_zero_pairs(
 pub(super) fn plan_recorded_int32_equal_one_predecessor(
     goal: &Proposition,
     derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let path = derivation
         .int32_equal_one_predecessor_is_nonnegative_path()
@@ -2671,7 +2663,7 @@ pub(super) fn plan_recorded_int32_equal_one_predecessor(
 pub(super) fn plan_recorded_int32_equal_one_predecessor_is_zero(
     goal: &Proposition,
     derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let path = derivation.int32_equal_one_predecessor_is_zero_path()?;
     let available = premise_pairs
@@ -2707,7 +2699,7 @@ pub(super) fn plan_recorded_int32_equal_one_predecessor_is_zero(
 /// does.
 pub(super) fn plan_recorded_signed_order_path(
     goal: &Proposition,
-    path: &[(Proposition, ClickProposition)],
+    path: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     if path.len() < 2 {
         return plan_explicit_named_signed_rule(goal, path);
@@ -2742,7 +2734,7 @@ pub(super) fn plan_recorded_signed_order_path(
             surface_nonstrict_parts(&next.1)?
         };
         let strict = current_strict || next_strict;
-        let surface_target = ClickProposition::Comparison {
+        let surface_target = SurfaceProposition::Comparison {
             left: surface_lower.clone(),
             operator: if strict {
                 ComparisonOperator::LessThan
@@ -2783,8 +2775,8 @@ pub(super) fn plan_recorded_signed_order_path(
 
 fn orient_surface_bitvector_equality(
     step: &BitvectorEqualityDerivationStep,
-    surface: &ClickProposition,
-) -> Option<ClickProposition> {
+    surface: &SurfaceProposition,
+) -> Option<SurfaceProposition> {
     let Proposition::ConditionIs(condition, true) = step.premise() else {
         return None;
     };
@@ -2810,20 +2802,20 @@ fn orient_surface_bitvector_equality(
     if !(reverse || source == left && target == right) {
         return None;
     }
-    fn oriented(surface: &ClickProposition, reverse: bool) -> Option<ClickProposition> {
+    fn oriented(surface: &SurfaceProposition, reverse: bool) -> Option<SurfaceProposition> {
         match surface {
-            ClickProposition::At {
+            SurfaceProposition::At {
                 selector,
                 proposition,
-            } => Some(ClickProposition::At {
+            } => Some(SurfaceProposition::At {
                 selector: selector.clone(),
                 proposition: Box::new(oriented(proposition, reverse)?),
             }),
-            ClickProposition::Comparison {
+            SurfaceProposition::Comparison {
                 left,
                 operator: ComparisonOperator::Equal,
                 right,
-            } => Some(ClickProposition::Comparison {
+            } => Some(SurfaceProposition::Comparison {
                 left: if reverse { right.clone() } else { left.clone() },
                 operator: ComparisonOperator::Equal,
                 right: if reverse { left.clone() } else { right.clone() },
@@ -2836,8 +2828,8 @@ fn orient_surface_bitvector_equality(
 
 fn recorded_bitvector_equality_path_pairs(
     path: &[BitvectorEqualityDerivationStep],
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<(Proposition, ClickProposition)>> {
+    premise_pairs: &[(Proposition, SurfaceProposition)],
+) -> Option<Vec<(Proposition, SurfaceProposition)>> {
     path.iter()
         .map(|step| {
             premise_pairs
@@ -2850,8 +2842,8 @@ fn recorded_bitvector_equality_path_pairs(
 
 pub(super) fn recorded_load_address_congruence_path_pairs(
     derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
-) -> Option<Vec<Vec<(Proposition, ClickProposition)>>> {
+    premise_pairs: &[(Proposition, SurfaceProposition)],
+) -> Option<Vec<Vec<(Proposition, SurfaceProposition)>>> {
     derivation
         .load_address_congruence_paths()?
         .iter()
@@ -2866,7 +2858,7 @@ pub(super) fn recorded_load_address_congruence_path_pairs(
 pub(super) fn plan_recorded_bitvector_equality_path(
     goal: &Proposition,
     derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let path = derivation.bitvector_equality_path()?;
     let available = premise_pairs
@@ -2903,8 +2895,8 @@ pub(super) fn plan_recorded_bitvector_equality_path(
 pub(super) fn plan_recorded_pointer_word(
     goal: &Proposition,
     derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
-    _surface_goal: &ClickProposition,
+    premise_pairs: &[(Proposition, SurfaceProposition)],
+    _surface_goal: &SurfaceProposition,
 ) -> Option<Vec<ProofTactic>> {
     let premises = derivation.pointer_word_premises()?;
     if premises.is_empty() {
@@ -2935,8 +2927,8 @@ pub(super) fn plan_recorded_pointer_word(
 pub(super) fn plan_recorded_pointer_alignment(
     goal: &Proposition,
     derivation: &PropositionDerivation,
-    premise_pairs: &[(Proposition, ClickProposition)],
-    _surface_goal: &ClickProposition,
+    premise_pairs: &[(Proposition, SurfaceProposition)],
+    _surface_goal: &SurfaceProposition,
 ) -> Option<Vec<ProofTactic>> {
     match derivation.pointer_alignment_premise()? {
         None => plan_context_free_closer(goal).map(|closer| vec![closer]),
@@ -2960,7 +2952,7 @@ pub(super) fn plan_recorded_pointer_alignment(
 pub(super) fn plan_recorded_load_address_congruence(
     goal: &Proposition,
     derivation: &PropositionDerivation,
-    premise_paths: &[Vec<(Proposition, ClickProposition)>],
+    premise_paths: &[Vec<(Proposition, SurfaceProposition)>],
 ) -> Option<Vec<ProofTactic>> {
     let paths = derivation.load_address_congruence_paths()?;
     if paths.len() != premise_paths.len() {
@@ -3056,13 +3048,10 @@ fn increment_base(term: &MachineTerm) -> Option<&MachineTerm> {
 /// comparison of exact observations, `to_integer(a) < to_integer(b)` or
 /// `to_integer(a) < 7`, is the native comparison of `a` and `b`, so a lemma
 /// over machine values takes `a` and `b` as its arguments.
-fn native_operands(
-    left: &ContractExpression,
-    right: &ContractExpression,
-) -> (ContractExpression, ContractExpression) {
-    fn observed(operand: &ContractExpression) -> Option<&ContractExpression> {
+fn native_operands(left: &SurfaceTerm, right: &SurfaceTerm) -> (SurfaceTerm, SurfaceTerm) {
+    fn observed(operand: &SurfaceTerm) -> Option<&SurfaceTerm> {
         match operand {
-            ContractExpression::Call { name, arguments } if name == "to_integer" => {
+            SurfaceTerm::Call { name, arguments } if name == "to_integer" => {
                 match arguments.as_slice() {
                     [argument] => Some(argument),
                     _ => None,
@@ -3071,11 +3060,11 @@ fn native_operands(
             _ => None,
         }
     }
-    fn literal(operand: &ContractExpression) -> bool {
+    fn literal(operand: &SurfaceTerm) -> bool {
         match operand {
-            ContractExpression::IntegerLiteral(_) => true,
-            ContractExpression::Negate(inner) => {
-                matches!(inner.as_ref(), ContractExpression::IntegerLiteral(_))
+            SurfaceTerm::IntegerLiteral(_) => true,
+            SurfaceTerm::Negate(inner) => {
+                matches!(inner.as_ref(), SurfaceTerm::IntegerLiteral(_))
             }
             _ => false,
         }
@@ -3089,21 +3078,21 @@ fn native_operands(
 }
 
 pub(super) fn surface_strict_parts(
-    proposition: &ClickProposition,
-) -> Option<(ContractExpression, ContractExpression)> {
-    if let ClickProposition::At {
+    proposition: &SurfaceProposition,
+) -> Option<(SurfaceTerm, SurfaceTerm)> {
+    if let SurfaceProposition::At {
         selector,
         proposition,
     } = proposition
     {
         let (left, right) = surface_strict_parts(proposition)?;
-        let at = |expression| ContractExpression::At {
+        let at = |expression| SurfaceTerm::At {
             selector: selector.clone(),
             expression: Box::new(expression),
         };
         return Some((at(left), at(right)));
     }
-    let ClickProposition::Comparison {
+    let SurfaceProposition::Comparison {
         left,
         operator,
         right,
@@ -3120,21 +3109,21 @@ pub(super) fn surface_strict_parts(
 }
 
 pub(super) fn surface_nonstrict_parts(
-    proposition: &ClickProposition,
-) -> Option<(ContractExpression, ContractExpression)> {
-    if let ClickProposition::At {
+    proposition: &SurfaceProposition,
+) -> Option<(SurfaceTerm, SurfaceTerm)> {
+    if let SurfaceProposition::At {
         selector,
         proposition,
     } = proposition
     {
         let (left, right) = surface_nonstrict_parts(proposition)?;
-        let at = |expression| ContractExpression::At {
+        let at = |expression| SurfaceTerm::At {
             selector: selector.clone(),
             expression: Box::new(expression),
         };
         return Some((at(left), at(right)));
     }
-    let ClickProposition::Comparison {
+    let SurfaceProposition::Comparison {
         left,
         operator,
         right,
@@ -3178,7 +3167,7 @@ pub(super) fn uint64_increment_upper_bound_guard(goal: &Proposition) -> Option<P
 }
 
 pub(super) fn uint64_increment_upper_bound_application(
-    guard: &ClickProposition,
+    guard: &SurfaceProposition,
 ) -> Option<ProofStep> {
     let (value, upper) = surface_strict_parts(guard)?;
     Some(ProofStep::ApplyPlannedTheorem {
@@ -3192,7 +3181,7 @@ pub(super) fn uint64_increment_upper_bound_application(
 
 pub(super) fn plan_explicit_increment_upper_bound(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let (incremented, goal_upper) = goal_exact_less_equal_parts(goal)?;
     let base = increment_base(incremented)?;
@@ -3212,7 +3201,7 @@ pub(super) fn plan_explicit_increment_upper_bound(
 
 pub(super) fn plan_explicit_positive_is_nonnegative(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     // `0 <= value` and `value >= 0` are one order; arithmetic closes either
     // spelling.
@@ -3235,7 +3224,7 @@ pub(super) fn plan_explicit_positive_is_nonnegative(
 
 pub(super) fn plan_explicit_le_transitive_constant_lower(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let Some((
         ConditionTerm::Compare {
@@ -3284,7 +3273,7 @@ pub(super) fn plan_explicit_le_transitive_constant_lower(
 
 fn plan_explicit_strict_implies_nonstrict(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let (goal_left, goal_right) = signed_nonstrict_parts(goal)?;
     for (kernel, surface) in premise_pairs {
@@ -3309,7 +3298,7 @@ fn plan_explicit_strict_implies_nonstrict(
 /// would not survive the `contradiction` tactic's exact-match check.
 fn plan_explicit_implies_refuted_antecedent(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let mut depth = 0;
     let mut current = goal;
@@ -3343,7 +3332,7 @@ fn plan_explicit_implies_refuted_antecedent(
 /// goal from the consequent.
 fn plan_explicit_discharged_implication_consequent(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let antecedent_listed = |antecedent: &Proposition| {
         premise_pairs.iter().any(|(kernel, _)| {
@@ -3354,7 +3343,7 @@ fn plan_explicit_discharged_implication_consequent(
         let mut current = (kernel, surface);
         while let (
             Proposition::Implies(antecedent, consequent),
-            ClickProposition::Implies(_, surface_consequent),
+            SurfaceProposition::Implies(_, surface_consequent),
         ) = (current.0, current.1)
         {
             if !antecedent_listed(antecedent) {
@@ -3384,7 +3373,7 @@ fn plan_explicit_discharged_implication_consequent(
 
 fn plan_explicit_greater_equal_to_reversed_less_equal(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let Some((
         ConditionTerm::Compare {
@@ -3422,7 +3411,7 @@ fn plan_explicit_greater_equal_to_reversed_less_equal(
 
 fn plan_explicit_not_strict_implies_greater_equal(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let (goal_left, goal_right) = match goal {
         condition_source_0 @ Proposition::ConditionIs(_, true)
@@ -3479,7 +3468,7 @@ fn plan_explicit_not_strict_implies_greater_equal(
         if !matches {
             continue;
         }
-        let ClickProposition::Not(inner) = surface else {
+        let SurfaceProposition::Not(inner) = surface else {
             continue;
         };
         surface_strict_parts(inner)?;
@@ -3490,7 +3479,7 @@ fn plan_explicit_not_strict_implies_greater_equal(
 
 fn plan_explicit_greater_equal_transitive(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let Some((
         ConditionTerm::Compare {
@@ -3531,7 +3520,7 @@ fn plan_explicit_greater_equal_transitive(
 
 pub(super) fn plan_explicit_negated_strict_successor_bound(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let Some((
         ConditionTerm::Compare {
@@ -3585,7 +3574,7 @@ pub(super) fn plan_explicit_negated_strict_successor_bound(
         if premise_value != goal_value.as_ref() || premise_upper != &MachineTerm::constant(upper) {
             continue;
         }
-        let ClickProposition::Not(inner) = surface else {
+        let SurfaceProposition::Not(inner) = surface else {
             continue;
         };
         surface_strict_parts(inner)?;
@@ -3596,7 +3585,7 @@ pub(super) fn plan_explicit_negated_strict_successor_bound(
 
 pub(super) fn plan_explicit_increment_greater_equal_lower_bound(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let Some((
         ConditionTerm::Compare {
@@ -3638,7 +3627,7 @@ pub(super) fn plan_explicit_increment_greater_equal_lower_bound(
 
 pub(super) fn plan_explicit_increment_strict_greater_lower_bound(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let Some((
         ConditionTerm::Compare {
@@ -3680,7 +3669,7 @@ pub(super) fn plan_explicit_increment_strict_greater_lower_bound(
 
 pub(super) fn plan_explicit_increment_strict_greater_from_strict_lower(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let Some((
         ConditionTerm::Compare {
@@ -3729,10 +3718,7 @@ impl SignedOrder {
         }
     }
 
-    fn surface_parts(
-        self,
-        proposition: &ClickProposition,
-    ) -> Option<(ContractExpression, ContractExpression)> {
+    fn surface_parts(self, proposition: &SurfaceProposition) -> Option<(SurfaceTerm, SurfaceTerm)> {
         match self {
             Self::NonStrict => surface_nonstrict_parts(proposition),
             Self::Strict => surface_strict_parts(proposition),
@@ -3753,7 +3739,7 @@ const SIGNED_TRANSITIVE_CHAINS: [(SignedOrder, SignedOrder); 4] = [
 /// by Integer arithmetic over the two.
 fn plan_explicit_transitive(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
     (first_order, second_order): (SignedOrder, SignedOrder),
 ) -> Option<Vec<ProofTactic>> {
     let strict =
@@ -3819,7 +3805,7 @@ fn plan_explicit_transitive(
 /// Integer arithmetic over the premise.
 fn plan_explicit_constant_strict_upper_bound_weakening(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let Some((
         ConditionTerm::Compare {
@@ -3869,7 +3855,7 @@ fn plan_explicit_constant_strict_upper_bound_weakening(
 /// by Integer arithmetic over the premise.
 pub(super) fn plan_explicit_increment_constant_upper_bound(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let Some((
         ConditionTerm::Compare {
@@ -3913,7 +3899,7 @@ pub(super) fn plan_explicit_increment_constant_upper_bound(
 /// arithmetic over the premise.
 fn plan_explicit_constant_lower_bound_weakening(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let (goal_lower, goal_value) = signed_nonstrict_parts(goal)?;
     let bits32_constant!(goal_constant) = goal_lower else {
@@ -3969,7 +3955,7 @@ fn same_written_int32_operand(
 
 pub(super) fn plan_explicit_increment_below_max_is_defined(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let (_, premise) = int32_increment_bound(goal, premise_pairs, false)?;
     Some(vec![ProofTactic::ArithmeticUsing(vec![premise.clone()])])
@@ -3977,7 +3963,7 @@ pub(super) fn plan_explicit_increment_below_max_is_defined(
 
 pub(super) fn plan_explicit_one_plus_below_max_is_defined(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let (_, premise) = int32_increment_bound(goal, premise_pairs, true)?;
     Some(vec![ProofTactic::ArithmeticUsing(vec![premise.clone()])])
@@ -3985,9 +3971,9 @@ pub(super) fn plan_explicit_one_plus_below_max_is_defined(
 
 fn int32_increment_bound<'s>(
     goal: &Proposition,
-    premise_pairs: &'s [(Proposition, ClickProposition)],
+    premise_pairs: &'s [(Proposition, SurfaceProposition)],
     one_first: bool,
-) -> Option<(ContractExpression, &'s ClickProposition)> {
+) -> Option<(SurfaceTerm, &'s SurfaceProposition)> {
     let (crate::kernel::SignedDefinedWidth::Int32, operands, false) =
         crate::kernel::proof::arithmetic_special::signed_definedness_query(goal)?
     else {
@@ -4020,7 +4006,7 @@ fn int32_increment_bound<'s>(
 /// An exact named bound supplies the complete domain for a pure increment.
 pub(super) fn plan_int32_increment_definedness_theorem(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     if let Some((value, surface)) = int32_increment_bound(goal, premise_pairs, false) {
         return Some(vec![int32_increment_definedness_application(
@@ -4029,17 +4015,16 @@ pub(super) fn plan_int32_increment_definedness_theorem(
     }
 
     let (value, surface) = int32_increment_bound(goal, premise_pairs, true)?;
-    let one =
-        ContractExpression::ProgramExpression(ProgramExpression::Value(crate::kernel::int32(1)));
-    let increment = ClickProposition::Defined {
-        expression: ContractExpression::Add(Box::new(value.clone()), Box::new(one)),
+    let one = SurfaceTerm::ProgramExpression(ProgramExpression::Value(crate::kernel::int32(1)));
+    let increment = SurfaceProposition::Defined {
+        expression: SurfaceTerm::Add(Box::new(value.clone()), Box::new(one)),
     };
     // The domains differ only in the order of the exact Integer sum.
     let observed = wide_arithmetic::to_integer(&value);
-    let one = ContractExpression::IntegerLiteral("1".to_string());
-    let value_plus_one = ContractExpression::Add(Box::new(observed.clone()), Box::new(one.clone()));
-    let one_plus_value = ContractExpression::Add(Box::new(one.clone()), Box::new(observed.clone()));
-    let equal = |left, right| ClickProposition::Comparison {
+    let one = SurfaceTerm::IntegerLiteral("1".to_string());
+    let value_plus_one = SurfaceTerm::Add(Box::new(observed.clone()), Box::new(one.clone()));
+    let one_plus_value = SurfaceTerm::Add(Box::new(one.clone()), Box::new(observed.clone()));
+    let equal = |left, right| SurfaceProposition::Comparison {
         left,
         operator: ComparisonOperator::Equal,
         right,
@@ -4067,8 +4052,8 @@ pub(super) fn plan_int32_increment_definedness_theorem(
 }
 
 fn int32_increment_definedness_application(
-    value: ContractExpression,
-    premise: &ClickProposition,
+    value: SurfaceTerm,
+    premise: &SurfaceProposition,
 ) -> ProofTactic {
     ProofTactic::ApplyTheoremUsing {
         application: TheoremApplication {
@@ -4081,7 +4066,7 @@ fn int32_increment_definedness_application(
 
 pub(super) fn plan_explicit_one_plus_strictly_increases(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let Some((
         ConditionTerm::Compare {
@@ -4116,7 +4101,7 @@ pub(super) fn plan_explicit_one_plus_strictly_increases(
 
 pub(super) fn plan_explicit_nonnegative_add_within_max_is_defined(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let (crate::kernel::SignedDefinedWidth::Int32, operands, false) =
         crate::kernel::proof::arithmetic_special::signed_definedness_query(goal)?
@@ -4164,28 +4149,28 @@ pub(super) fn plan_explicit_nonnegative_add_within_max_is_defined(
 /// proved by ordinary Integer laws from `premises` and the normalized
 /// type-range bound of `value` it needs.
 fn int32_definedness_by_integer_bounds(
-    value: ContractExpression,
-    amount: ContractExpression,
+    value: SurfaceTerm,
+    amount: SurfaceTerm,
     subtract: bool,
-    premises: Vec<ClickProposition>,
+    premises: Vec<SurfaceProposition>,
 ) -> Vec<ProofTactic> {
-    let observe = |operand: ContractExpression| ContractExpression::Call {
+    let observe = |operand: SurfaceTerm| SurfaceTerm::Call {
         name: "to_integer".to_string(),
         arguments: vec![operand],
     };
-    let literal = |text: &str| ContractExpression::IntegerLiteral(text.to_string());
-    let less_equal = |left, right| ClickProposition::Comparison {
+    let literal = |text: &str| SurfaceTerm::IntegerLiteral(text.to_string());
+    let less_equal = |left, right| SurfaceProposition::Comparison {
         left,
         operator: ComparisonOperator::LessEqual,
         right,
     };
     let (left, right) = (Box::new(observe(value.clone())), Box::new(observe(amount)));
     let exact = if subtract {
-        ContractExpression::Subtract(left, right)
+        SurfaceTerm::Subtract(left, right)
     } else {
-        ContractExpression::Add(left, right)
+        SurfaceTerm::Add(left, right)
     };
-    let minimum = ContractExpression::Negate(Box::new(literal("2147483648")));
+    let minimum = SurfaceTerm::Negate(Box::new(literal("2147483648")));
     // A sum of a nonnegative amount reaches below the type only through
     // `value`'s lower range; a difference of one reaches above it only
     // through `value`'s upper range.
@@ -4196,7 +4181,7 @@ fn int32_definedness_by_integer_bounds(
     };
     let mut listed = premises;
     listed.push(range.clone());
-    let have = |proposition: ClickProposition, proof: Vec<ProofTactic>| {
+    let have = |proposition: SurfaceProposition, proof: Vec<ProofTactic>| {
         ProofTactic::Have(ProofHave {
             proposition,
             proof: SourceProof::Script(proof),
@@ -4218,7 +4203,7 @@ fn int32_definedness_by_integer_bounds(
 
 pub(super) fn plan_explicit_nonnegative_subtract_within_value_is_defined(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let (crate::kernel::SignedDefinedWidth::Int32, operands, true) =
         crate::kernel::proof::arithmetic_special::signed_definedness_query(goal)?
@@ -4248,7 +4233,7 @@ pub(super) fn plan_explicit_nonnegative_subtract_within_value_is_defined(
 
 pub(super) fn plan_explicit_positive_predecessor_is_nonnegative(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let (goal_lower, predecessor) = goal_exact_less_equal_parts(goal)?;
     if goal_lower != &MachineTerm::constant(0) {
@@ -4277,7 +4262,7 @@ pub(super) fn plan_explicit_positive_predecessor_is_nonnegative(
 /// selected comparisons, including a loop-entry endpoint.
 pub(super) fn plan_explicit_predecessor_upper_bound(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let observed = goal
         .condition_native()
@@ -4318,7 +4303,7 @@ pub(super) fn plan_explicit_predecessor_upper_bound(
 
 pub(super) fn plan_explicit_one_le_predecessor(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let value = if let Some((goal_lower, predecessor)) = goal_exact_less_equal_parts(goal) {
         if goal_lower != &MachineTerm::constant(0) {
@@ -4373,21 +4358,21 @@ fn one_le_predecessor_value(goal: &Proposition) -> Option<MachineTerm> {
     }
 }
 
-fn surface_one_le_equality_source(surface: &ClickProposition) -> Option<ClickProposition> {
+fn surface_one_le_equality_source(surface: &SurfaceProposition) -> Option<SurfaceProposition> {
     match surface {
-        ClickProposition::At {
+        SurfaceProposition::At {
             selector,
             proposition,
-        } => Some(ClickProposition::At {
+        } => Some(SurfaceProposition::At {
             selector: selector.clone(),
             proposition: Box::new(surface_one_le_equality_source(proposition)?),
         }),
-        ClickProposition::Comparison {
+        SurfaceProposition::Comparison {
             left,
             operator: ComparisonOperator::Equal,
             ..
-        } => Some(ClickProposition::Comparison {
-            left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
+        } => Some(SurfaceProposition::Comparison {
+            left: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(1))),
             operator: ComparisonOperator::LessEqual,
             right: left.clone(),
         }),
@@ -4397,7 +4382,7 @@ fn surface_one_le_equality_source(surface: &ClickProposition) -> Option<ClickPro
 
 pub(super) fn plan_explicit_positive_predecessor_strictly_decreases(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let (predecessor, value) = goal_exact_less_than_parts(goal)?;
     let binary_term!(Int32, Subtract, predecessor_value, amount) = predecessor else {
@@ -4421,7 +4406,7 @@ pub(super) fn plan_explicit_positive_predecessor_strictly_decreases(
 
 pub(super) fn plan_explicit_le_and_not_lt_implies_eq(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let Some((
         ConditionTerm::Compare {
@@ -4469,7 +4454,7 @@ pub(super) fn plan_explicit_le_and_not_lt_implies_eq(
 /// smart/simple boundary.
 pub(super) fn plan_pointer_advanced_load_equality(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let Some((
         ConditionTerm::Compare {
@@ -4524,7 +4509,7 @@ pub(super) fn plan_pointer_advanced_load_equality(
                 .is_some_and(|(left, right)| left == &source_index && right == &target_index)
         })?;
         let (index_left, index_right) = surface_nonstrict_parts(index_surface)?;
-        let index_surface = ClickProposition::Comparison {
+        let index_surface = SurfaceProposition::Comparison {
             left: index_left,
             operator: ComparisonOperator::Equal,
             right: index_right,
@@ -4589,7 +4574,7 @@ fn pointer_int32_scaled_value(offset: &AddressOffset) -> Option<MachineTerm> {
 
 pub(super) fn plan_explicit_ge_and_not_gt_implies_eq(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let Some((
         ConditionTerm::Compare {
@@ -4657,7 +4642,7 @@ pub(super) fn plan_explicit_ge_and_not_gt_implies_eq(
 
 pub(super) fn plan_explicit_increment_strictly_increases(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let (base, incremented) = goal_exact_less_than_parts(goal)?;
     if increment_base(incremented)? != base {
@@ -4679,7 +4664,7 @@ pub(super) fn plan_explicit_increment_strictly_increases(
 
 pub(super) fn plan_explicit_successor_le_implies_lt(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let (lower, value) = match goal {
         condition_source @ Proposition::ConditionIs(_, true)
@@ -4746,7 +4731,7 @@ pub(super) fn plan_explicit_successor_le_implies_lt(
 
 pub(super) fn plan_explicit_increment_preserves_order(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     for (order_kernel, order_surface) in premise_pairs {
         let Some((lower, value)) = signed_nonstrict_parts(order_kernel) else {
@@ -4788,7 +4773,7 @@ pub(super) fn plan_explicit_increment_preserves_order(
 
 pub(super) fn plan_explicit_increment_lower_bound(
     goal: &Proposition,
-    premise_pairs: &[(Proposition, ClickProposition)],
+    premise_pairs: &[(Proposition, SurfaceProposition)],
 ) -> Option<Vec<ProofTactic>> {
     // A greater-equal goal form belongs to
     // `plan_explicit_increment_greater_equal_lower_bound`.
@@ -4851,9 +4836,8 @@ mod shared_goal_spelling_tests {
             ),
         )
         .unwrap();
-        let surface =
-            ContractExpression::ProgramExpression(ProgramExpression::Variable("x".into()));
-        let one = ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1)));
+        let surface = SurfaceTerm::ProgramExpression(ProgramExpression::Variable("x".into()));
+        let one = SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(1)));
         let pairs = vec![(
             Proposition::condition_is(
                 ConditionTerm::Compare {
@@ -4864,13 +4848,13 @@ mod shared_goal_spelling_tests {
                 },
                 true,
             ),
-            ClickProposition::Comparison {
+            SurfaceProposition::Comparison {
                 left: surface.clone(),
                 operator: ComparisonOperator::LessEqual,
-                right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(10))),
+                right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(10))),
             },
         )];
-        let surface = ContractExpression::Add(Box::new(surface.clone()), Box::new(surface));
+        let surface = SurfaceTerm::Add(Box::new(surface.clone()), Box::new(surface));
         for subtract in [false, true] {
             let left = IntegerTerm::Machine(machine.clone()).into();
             let right = IntegerTerm::constant(1.into()).into();
@@ -4895,11 +4879,11 @@ mod shared_goal_spelling_tests {
             );
             assert!(spell_signed_goal(&upper, &pairs).is_none());
             let domain = Proposition::And(Box::new(upper), Box::new(lower));
-            let expected = ClickProposition::Defined {
+            let expected = SurfaceProposition::Defined {
                 expression: if subtract {
-                    ContractExpression::Subtract(Box::new(surface.clone()), Box::new(one.clone()))
+                    SurfaceTerm::Subtract(Box::new(surface.clone()), Box::new(one.clone()))
                 } else {
-                    ContractExpression::Add(Box::new(surface.clone()), Box::new(one.clone()))
+                    SurfaceTerm::Add(Box::new(surface.clone()), Box::new(one.clone()))
                 },
             };
             assert_eq!(spell_signed_goal(&domain, &pairs), Some(expected));

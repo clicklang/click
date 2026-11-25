@@ -142,7 +142,7 @@ const BARE_ARITHMETIC_HINT: &str = "`close() using {}` reads no facts from the c
 /// The two lists are the whole story: no ambient fact participates.
 fn describe_integer_premise_reading(
     premises: &[crate::kernel::Proposition],
-    surface_premises: &[ClickProposition],
+    surface_premises: &[SurfaceProposition],
 ) -> String {
     use crate::kernel::proof::integer_arithmetic::integer_affine_claim;
     let spelled = |index: usize| match surface_premises.get(index) {
@@ -462,10 +462,7 @@ impl<'a> Proof<'a> {
                     return (RoundTrip::Unraised, String::new(), String::new());
                 };
                 let raised = crate::surface::printing::source_click_proposition(&surface);
-                let lowered =
-                    crate::surface::proof::execution_planning::without_open_obligation_probe(
-                        || self.lower_surface_proposition_direct(&surface, "raise-lower audit"),
-                    );
+                let lowered = self.lower_proposition_spelling(&surface);
                 match lowered {
                     Err(_) => (RoundTrip::Unlowered, raised, String::new()),
                     Ok(lowered) => match audit::classify(original, &lowered) {
@@ -809,7 +806,7 @@ impl<'a> Proof<'a> {
     #[inline(never)]
     pub(super) fn apply_normalize_using(
         &self,
-        surface_premises: &[ClickProposition],
+        surface_premises: &[SurfaceProposition],
     ) -> Result<KernelProofHandle, ClickError> {
         use crate::kernel::proof::fact_reasoning::ConditionalNormalizationError;
         let premises = surface_premises
@@ -849,7 +846,7 @@ impl<'a> Proof<'a> {
 
     pub(in crate::surface::proof) fn arithmetic_refusal(
         &self,
-        surface_premises: &[ClickProposition],
+        surface_premises: &[SurfaceProposition],
     ) -> Result<Proof<'a>, ClickError> {
         // A ranking decrease compares the loop-head value with its checked
         // predecessor.  At the back edge the ordinary spelling of a loop
@@ -971,7 +968,7 @@ impl<'a> Proof<'a> {
     /// One explicit footprint-preservation operation. No premise discovery.
     fn apply_preserve(
         &self,
-        separation: &ClickProposition,
+        separation: &SurfaceProposition,
     ) -> Result<KernelProofHandle, ClickError> {
         let _reads = crate::kernel::TransportReadScope::enter();
         let separation =
@@ -989,7 +986,7 @@ impl<'a> Proof<'a> {
 
     pub(in crate::surface::proof) fn lower_integer_surface_proposition(
         &self,
-        surface: &ClickProposition,
+        surface: &SurfaceProposition,
         description: &str,
     ) -> Result<Proposition, ClickError> {
         match self.context.as_ref() {
@@ -1033,7 +1030,7 @@ impl<'a> Proof<'a> {
     fn universal_goal_renamed_for_intro(
         &self,
         name: &SurfaceBinder,
-    ) -> Result<ClickProposition, ClickError> {
+    ) -> Result<SurfaceProposition, ClickError> {
         if !matches!(self.goal(), Some(Proposition::ForAll { .. })) {
             return Err(self.step_error(format!(
                 "use `intro({name}) {{ ... }}` for a `forall` goal. To introduce an implication premise, write `intro() {{ ... }}`"
@@ -1042,13 +1039,13 @@ impl<'a> Proof<'a> {
         // A range quantifier keeps its variable in the lambda:
         // `(lo..hi).all(|k| { ... })`.
         let (binder, body, c_typed) = match self.surface_goal() {
-            Some(ClickProposition::ForAll {
+            Some(SurfaceProposition::ForAll {
                 click_type,
                 name: binder,
                 body,
                 ..
             }) => (binder, body, matches!(click_type, ClickType::Program(_))),
-            Some(ClickProposition::RangeAll { item, body, .. }) => (item, body, false),
+            Some(SurfaceProposition::RangeAll { item, body, .. }) => (item, body, false),
             _ => {
                 return Err(self.step_error(format!(
                     "`intro({name}) {{ ... }}` requires a goal written as `forall (x: T) {{ ... }}` or `(lo..hi).all(|x| {{ ... }})`. Use `intro() {{ ... }}` to keep the quantifier's name"
@@ -1097,21 +1094,21 @@ impl<'a> Proof<'a> {
             )));
         }
         let replacement = match (c_typed, name.written()) {
-            (true, Some(name)) => ContractExpression::ProgramBinding(name.into()),
+            (true, Some(name)) => SurfaceTerm::ProgramBinding(name.into()),
             _ => name.reference(),
         };
         let renaming = BTreeMap::from([(binder.clone(), replacement)]);
         let body = crate::surface::lowering::substitute_click_proposition(body, &renaming)
             .map_err(|message| self.step_error(message))?;
         Ok(match self.surface_goal() {
-            Some(ClickProposition::RangeAll { start, end, .. }) => ClickProposition::RangeAll {
+            Some(SurfaceProposition::RangeAll { start, end, .. }) => SurfaceProposition::RangeAll {
                 start: start.clone(),
                 end: end.clone(),
                 item: name.clone(),
                 written_item: None,
                 body: Box::new(body),
             },
-            Some(ClickProposition::ForAll { click_type, .. }) => ClickProposition::ForAll {
+            Some(SurfaceProposition::ForAll { click_type, .. }) => SurfaceProposition::ForAll {
                 click_type: click_type.clone(),
                 name: name.clone(),
                 written_name: None,
@@ -1176,12 +1173,12 @@ impl<'a> Proof<'a> {
                     (
                         PropositionIntroduction::Universal { .. },
                         _,
-                        Some(ClickProposition::ForAll { name, .. }),
+                        Some(SurfaceProposition::ForAll { name, .. }),
                     ) => Some(SurfaceBinder::from(name)),
                     (
                         PropositionIntroduction::Universal { .. },
                         None,
-                        Some(ClickProposition::RangeAll { item, .. }),
+                        Some(SurfaceProposition::RangeAll { item, .. }),
                     ) => Some(item.clone()),
                     _ => None,
                 };
@@ -1214,7 +1211,7 @@ impl<'a> Proof<'a> {
                                 .find(|(parameter, _)| parameter.name() == name)
                                 .map(|(_, argument)| argument.clone()),
                         };
-                        value.map(ContractExpression::ProgramExpression)
+                        value.map(SurfaceTerm::ProgramExpression)
                     });
                     if let Some(previous) = previous {
                         let mut depth = 1;
@@ -1319,7 +1316,7 @@ impl<'a> Proof<'a> {
                         } else if !*integer {
                             surface_bindings = surface_bindings.with_inserted(
                                 name.clone(),
-                                ContractExpression::ProgramExpression(ProgramExpression::Value(value)),
+                                SurfaceTerm::ProgramExpression(ProgramExpression::Value(value)),
                             );
                         }
                         surface.and_then(written_universal_body).map(Arc::new)
@@ -1338,7 +1335,7 @@ impl<'a> Proof<'a> {
                             algebraic,
                             ..
                         },
-                        Some(ClickProposition::ForAll { name, body, .. }),
+                        Some(SurfaceProposition::ForAll { name, body, .. }),
                     ) => {
                         if let Some(algebraic_type) = algebraic {
                             algebraic_binding =
@@ -1358,7 +1355,7 @@ impl<'a> Proof<'a> {
                         } else {
                             surface_bindings = surface_bindings.with_inserted(
                                 name.clone(),
-                                ContractExpression::ProgramExpression(ProgramExpression::Value(
+                                SurfaceTerm::ProgramExpression(ProgramExpression::Value(
                                     match self.proposition_goal("`intro` requires a proposition goal").expect("intro checked its goal") {
                                         Proposition::ForAll { sort, .. } if sort.machine_integer_type().is_some() => sort.machine_integer_type().unwrap().symbolic_value(variable),
                                         _ => ProgramValue::Int32(MachineTerm::Variable(variable)),
@@ -1381,7 +1378,7 @@ impl<'a> Proof<'a> {
                             algebraic: None,
                             ..
                         },
-                        Some(ClickProposition::RangeAll {
+                        Some(SurfaceProposition::RangeAll {
                             start,
                             end,
                             item,
@@ -1391,7 +1388,7 @@ impl<'a> Proof<'a> {
                     ) => {
                         surface_bindings = surface_bindings.with_inserted(
                             item.clone(),
-                            ContractExpression::ProgramExpression(ProgramExpression::Value(
+                            SurfaceTerm::ProgramExpression(ProgramExpression::Value(
                                 match self.proposition_goal("`intro` requires a proposition goal").expect("intro checked its goal") {
                                     Proposition::ForAll { sort, .. } if sort.machine_integer_type().is_some() => sort.machine_integer_type().unwrap().symbolic_value(variable),
                                     _ => ProgramValue::Int32(MachineTerm::Variable(variable)),
@@ -1399,19 +1396,19 @@ impl<'a> Proof<'a> {
                             )),
                         );
                         let bound = item.reference();
-                        let guard = ClickProposition::And(
-                            Box::new(ClickProposition::Comparison {
+                        let guard = SurfaceProposition::And(
+                            Box::new(SurfaceProposition::Comparison {
                                 left: start.clone(),
                                 operator: ComparisonOperator::LessEqual,
                                 right: bound.clone(),
                             }),
-                            Box::new(ClickProposition::Comparison {
+                            Box::new(SurfaceProposition::Comparison {
                                 left: bound,
                                 operator: ComparisonOperator::LessThan,
                                 right: end.clone(),
                             }),
                         );
-                        Some(Arc::new(ClickProposition::Implies(
+                        Some(Arc::new(SurfaceProposition::Implies(
                             Box::new(guard),
                             body.clone(),
                         )))
@@ -1593,7 +1590,7 @@ impl<'a> Proof<'a> {
     fn apply_induction(
         &self,
         hypothesis: &str,
-        arguments: &[ContractExpression],
+        arguments: &[SurfaceTerm],
     ) -> Result<CheckedFocusedTransition, ClickError> {
         let ProofContext::Pure(context) = self.context.as_ref() else {
             return Err(self.step_error("induction application requires a pure theorem proof"));
@@ -1751,7 +1748,7 @@ impl<'a> Proof<'a> {
     fn apply_structural_induction_hypothesis(
         &self,
         hypothesis: &str,
-        arguments: &[ContractExpression],
+        arguments: &[SurfaceTerm],
     ) -> Result<CheckedFocusedTransition, ClickError> {
         let application = self.structural_induction_instance(hypothesis, arguments)?;
         let explicit_premises = &application.kernel_premises;

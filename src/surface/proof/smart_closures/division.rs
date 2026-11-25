@@ -2,41 +2,37 @@
 use super::*;
 use crate::kernel::{IntegerTerm as I, SharedIntegerTerm};
 
-fn c(n: &BigInt) -> ContractExpression {
+fn c(n: &BigInt) -> SurfaceTerm {
     surface_signed_integer_literal(n)
 }
-fn lit(n: i64) -> ContractExpression {
+fn lit(n: i64) -> SurfaceTerm {
     c(&BigInt::from(n))
 }
-fn neg(a: ContractExpression) -> ContractExpression {
-    ContractExpression::Negate(Box::new(a))
+fn neg(a: SurfaceTerm) -> SurfaceTerm {
+    SurfaceTerm::Negate(Box::new(a))
 }
-fn add(a: ContractExpression, b: ContractExpression) -> ContractExpression {
-    ContractExpression::Add(Box::new(a), Box::new(b))
+fn add(a: SurfaceTerm, b: SurfaceTerm) -> SurfaceTerm {
+    SurfaceTerm::Add(Box::new(a), Box::new(b))
 }
-fn sub(a: ContractExpression, b: ContractExpression) -> ContractExpression {
-    ContractExpression::Subtract(Box::new(a), Box::new(b))
+fn sub(a: SurfaceTerm, b: SurfaceTerm) -> SurfaceTerm {
+    SurfaceTerm::Subtract(Box::new(a), Box::new(b))
 }
-fn mul(a: ContractExpression, b: ContractExpression) -> ContractExpression {
-    ContractExpression::Multiply(Box::new(a), Box::new(b))
+fn mul(a: SurfaceTerm, b: SurfaceTerm) -> SurfaceTerm {
+    SurfaceTerm::Multiply(Box::new(a), Box::new(b))
 }
-fn compare(
-    a: ContractExpression,
-    operator: ComparisonOperator,
-    b: ContractExpression,
-) -> ClickProposition {
-    fn numerical(expression: &ContractExpression) -> bool {
+fn compare(a: SurfaceTerm, operator: ComparisonOperator, b: SurfaceTerm) -> SurfaceProposition {
+    fn numerical(expression: &SurfaceTerm) -> bool {
         match expression {
-            ContractExpression::IntegerLiteral(_) => true,
-            ContractExpression::Negate(a) => numerical(a),
-            ContractExpression::Add(a, b)
-            | ContractExpression::Subtract(a, b)
-            | ContractExpression::Multiply(a, b) => numerical(a) && numerical(b),
+            SurfaceTerm::IntegerLiteral(_) => true,
+            SurfaceTerm::Negate(a) => numerical(a),
+            SurfaceTerm::Add(a, b) | SurfaceTerm::Subtract(a, b) | SurfaceTerm::Multiply(a, b) => {
+                numerical(a) && numerical(b)
+            }
             _ => false,
         }
     }
     let integer_context = numerical(&a) && numerical(&b);
-    ClickProposition::Comparison {
+    SurfaceProposition::Comparison {
         left: if integer_context {
             super::super::surface_synthesis::integer_typed_expression(a)
         } else {
@@ -46,17 +42,17 @@ fn compare(
         right: b,
     }
 }
-fn le(a: ContractExpression, b: ContractExpression) -> ClickProposition {
+fn le(a: SurfaceTerm, b: SurfaceTerm) -> SurfaceProposition {
     compare(a, ComparisonOperator::LessEqual, b)
 }
-fn eq(a: ContractExpression, b: ContractExpression) -> ClickProposition {
+fn eq(a: SurfaceTerm, b: SurfaceTerm) -> SurfaceProposition {
     compare(a, ComparisonOperator::Equal, b)
 }
-fn ne(a: ContractExpression, b: ContractExpression) -> ClickProposition {
+fn ne(a: SurfaceTerm, b: SurfaceTerm) -> SurfaceProposition {
     compare(a, ComparisonOperator::NotEqual, b)
 }
-fn operation(n: ContractExpression, d: ContractExpression, rem: bool) -> ContractExpression {
-    ContractExpression::Call {
+fn operation(n: SurfaceTerm, d: SurfaceTerm, rem: bool) -> SurfaceTerm {
+    SurfaceTerm::Call {
         name: if rem {
             "truncating_remainder"
         } else {
@@ -66,18 +62,14 @@ fn operation(n: ContractExpression, d: ContractExpression, rem: bool) -> Contrac
         arguments: vec![n, d],
     }
 }
-fn apply(
-    name: &str,
-    args: Vec<ContractExpression>,
-    mut premises: Vec<ClickProposition>,
-) -> ProofStep {
+fn apply(name: &str, args: Vec<SurfaceTerm>, mut premises: Vec<SurfaceProposition>) -> ProofStep {
     // Partial values used as theorem arguments retain their explicit domains.
     // These guards come from the written arguments, not an ambient fact scan.
     for argument in &args {
         super::super::fixed_state_proofs::conversion_conditions::walk_written_expressions(
             argument,
             &mut |expression| {
-                if let ContractExpression::Call { name, arguments } = expression
+                if let SurfaceTerm::Call { name, arguments } = expression
                     && matches!(
                         name.as_str(),
                         "truncating_quotient" | "truncating_remainder"
@@ -100,27 +92,22 @@ fn apply(
         premises,
     }
 }
-fn have(p: ClickProposition, steps: Vec<ProofStep>) -> ProofStep {
+fn have(p: SurfaceProposition, steps: Vec<ProofStep>) -> ProofStep {
     super::super::wide_arithmetic::have(p, steps)
 }
-fn known(steps: &mut Vec<ProofStep>, p: ClickProposition) {
+fn known(steps: &mut Vec<ProofStep>, p: SurfaceProposition) {
     steps.push(have(p, vec![ProofStep::Known]));
 }
 fn proved(
     steps: &mut Vec<ProofStep>,
-    p: ClickProposition,
+    p: SurfaceProposition,
     name: &str,
-    args: Vec<ContractExpression>,
-    ps: Vec<ClickProposition>,
+    args: Vec<SurfaceTerm>,
+    ps: Vec<SurfaceProposition>,
 ) {
     steps.push(have(p, vec![apply(name, args, ps)]));
 }
-fn trans(
-    steps: &mut Vec<ProofStep>,
-    a: ContractExpression,
-    b: ContractExpression,
-    c: ContractExpression,
-) {
+fn trans(steps: &mut Vec<ProofStep>, a: SurfaceTerm, b: SurfaceTerm, c: SurfaceTerm) {
     proved(
         steps,
         le(a.clone(), c.clone()),
@@ -130,11 +117,11 @@ fn trans(
     );
 }
 // Exact selected facts retain both their source proposition and operand name.
-type Endpoint = (BigInt, ClickProposition, ContractExpression);
+type Endpoint = (BigInt, SurfaceProposition, SurfaceTerm);
 
 fn positive_interval(
-    n: ContractExpression,
-    d: ContractExpression,
+    n: SurfaceTerm,
+    d: SurfaceTerm,
     ends: &[Endpoint; 4],
     target: &BigInt,
     lower: bool,
@@ -324,7 +311,7 @@ fn positive_interval(
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_division_bound_using(
         input: &Proof<'a>,
-        premises: &[ClickProposition],
+        premises: &[SurfaceProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_division_bound_using");
@@ -688,7 +675,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     // known step exactly where congruence, rather than the application, closes it.
     fn apply_division_have(
         input: &Proof<'a>,
-        proposition: ClickProposition,
+        proposition: SurfaceProposition,
         steps: Vec<ProofStep>,
     ) -> Result<Proof<'a>, ClickError> {
         #[cfg(test)]

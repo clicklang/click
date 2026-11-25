@@ -99,7 +99,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     /// simple operation and expansion retains the completed `have` body.
     pub(in crate::surface::proof) fn prove_cases_disjunction(
         &self,
-        disjunction: &ClickProposition,
+        disjunction: &SurfaceProposition,
     ) -> Result<Proof<'a>, ClickError> {
         let proof = self.proof;
         let kernel = proof.lower_surface_proposition(disjunction, "`cases` disjunction")?;
@@ -163,10 +163,10 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     pub(in crate::surface::proof) fn apply_step_with_obligation_proofs(
         &self,
         step: ProofStep,
-        entries: Option<&[(Option<String>, ClickProposition)]>,
+        entries: Option<&[(Option<String>, SurfaceProposition)]>,
         prove: &mut dyn FnMut(
             &Proof<'a>,
-            ClickProposition,
+            SurfaceProposition,
             Option<usize>,
         ) -> Result<Proof<'a>, ClickError>,
     ) -> Result<Proof<'a>, ClickError> {
@@ -793,15 +793,14 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         let _ = take_unclosed_bundle_member();
         // Catch every error here; `?` must not skip the obligation
         // diagnostic below.
-        if body == [ProofTactic::Solve]
-            && crate::surface::proof::implicit_solve_scope::checked_only()
-        {
-            return Err(driver_proof.step_error(
-                "checked-only verification requires an explicit proof for `close_invariants()`",
-            ));
-        }
         let attempted = {
-            if body == [ProofTactic::Solve] {
+            if body == [ProofTactic::Solve]
+                && crate::surface::proof::implicit_solve_scope::checked_only()
+            {
+                // Expanded maintain scripts publish the individual members
+                // at the back edge. Check the bundle only from those facts.
+                root.driver().apply_step(ProofStep::Known).map(Some)
+            } else if body == [ProofTactic::Solve] {
                 crate::instrumentation::measure_operation(
                     "surface",
                     "close invariants",
@@ -1132,7 +1131,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     /// otherwise the ordinary implicit solver produces those same haves.
     pub(in crate::surface::proof) fn discharge_entry_requirements(
         &self,
-        surface_goal: &ClickProposition,
+        surface_goal: &SurfaceProposition,
         requirements: &super::super::execution_planning::OpenObligationProbe,
     ) -> Result<Proof<'a>, ClickError> {
         let driver_proof = self.proof;
@@ -1230,7 +1229,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         invariant_checks: &[LoopInvariantCheck],
         ranking_measures: &[crate::kernel::RankingComponent],
         structural_measure: Option<&str>,
-        invariant_surfaces: &[ClickProposition],
+        invariant_surfaces: &[SurfaceProposition],
         binders: &[crate::kernel::LoopBinder],
         composite_resource_definitions: &[CompositeResourceDefinition],
     ) -> Result<(Proof<'a>, LoopBoundary), ClickError> {
@@ -1269,10 +1268,19 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         let proof = if execution.core.checked_invariant_lowerings.is_some() {
             driver_proof.clone()
         } else {
+            // Expanded maintain scripts can establish the invariant bundle
+            // as facts and leave the back edge to certify them. In checked
+            // replay that certification must use the facts directly.
+            let checked_only = crate::surface::proof::implicit_solve_scope::checked_only();
+            let closer = if checked_only {
+                ProofTactic::Known
+            } else {
+                ProofTactic::Solve
+            };
             driver_proof.driver().apply_close_invariants_body(
-                &[ProofTactic::Solve],
+                &[closer],
                 Some(&boundary),
-                true,
+                !checked_only,
             )?
         };
         proof.validate_loop_invariant_bundle(

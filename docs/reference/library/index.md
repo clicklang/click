@@ -10773,3 +10773,51 @@ axiom int32_to_float32_le(a: int32, b: int32) {
     ensures (a as float) <= (b as float);
 }
 ```
+
+### `float_order::float32_divide_positive_lower`
+
+Rounded division by a finite positive divisor preserves non-strict order.
+
+```click
+axiom float32_divide_positive_lower(divisor: float, x: float, bound: float) {
+    requires x >= bound;
+    requires isfinite(divisor);
+    requires float32_from_bits(0) < divisor;
+    ensures x / divisor >= bound / divisor;
+}
+```
+
+### `float_order::float32_divide_positive_upper`
+
+```click
+axiom float32_divide_positive_upper(divisor: float, x: float, bound: float) {
+    requires x <= bound;
+    requires isfinite(divisor);
+    requires float32_from_bits(0) < divisor;
+    ensures x / divisor <= bound / divisor;
+}
+```
+
+### `float_order::float32_divide_negative_lower`
+
+Rounded division by a finite negative divisor reverses non-strict order.
+
+```click
+axiom float32_divide_negative_lower(divisor: float, x: float, bound: float) {
+    requires x <= bound;
+    requires isfinite(divisor);
+    requires divisor < float32_from_bits(0);
+    ensures x / divisor >= bound / divisor;
+}
+```
+
+### `float_order::float32_divide_negative_upper`
+
+```click
+axiom float32_divide_negative_upper(divisor: float, x: float, bound: float) {
+    requires x >= bound;
+    requires isfinite(divisor);
+    requires divisor < float32_from_bits(0);
+    ensures x / divisor <= bound / divisor;
+}
+```

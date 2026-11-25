@@ -25,7 +25,7 @@ thread_local! {
 /// them.
 pub(in crate::surface) fn theorem_requirement_propositions(
     theorem: &TheoremDefinition,
-) -> Result<Vec<ClickProposition>, ClickError> {
+) -> Result<Vec<SurfaceProposition>, ClickError> {
     theorem
         .requires()
         .iter()
@@ -241,7 +241,7 @@ pub(in crate::surface) fn verify_concrete_theorem_definition(
 pub(super) struct PureTheoremContext {
     /// Immutable specification parameter names, retained for diagnostics.
     pub(super) diagnostic_names: std::sync::Arc<[(Variable, String)]>,
-    pub(super) declaration_bindings: BTreeMap<String, ContractExpression>,
+    pub(super) declaration_bindings: BTreeMap<String, SurfaceTerm>,
     /// The theorem's starting point: the memory it quantifies over, as the
     /// first point of a path of its own.
     pub(super) point: crate::kernel::ProgramPoint,
@@ -255,7 +255,7 @@ pub(super) struct PureTheoremContext {
 impl PureTheoremContext {
     fn with_declaration_bindings(
         &self,
-        bindings: &[(String, Option<ClickType>, ContractExpression)],
+        bindings: &[(String, Option<ClickType>, SurfaceTerm)],
         spec_definitions: SpecDefinitions<'_>,
     ) -> Result<Self, ClickError> {
         let mut context = self.clone();
@@ -268,7 +268,7 @@ impl PureTheoremContext {
             if let Some(value) = self.values.get(&name) {
                 substitutions.insert(
                     name.clone(),
-                    ContractExpression::ProgramExpression(ProgramExpression::Value(value.clone())),
+                    SurfaceTerm::ProgramExpression(ProgramExpression::Value(value.clone())),
                 );
             } else if let Some(value) = self.integer_values.get(&name) {
                 // This spelling cannot be written by a source-level binder.
@@ -276,7 +276,7 @@ impl PureTheoremContext {
                 context.integer_values = context
                     .integer_values
                     .with_inserted(captured.clone(), value.clone());
-                substitutions.insert(name, ContractExpression::Binding(captured));
+                substitutions.insert(name, SurfaceTerm::Binding(captured));
             }
         }
         let assumptions = assumptions_from_propositions(&context.requires);
@@ -291,9 +291,9 @@ impl PureTheoremContext {
             let is_integer = match click_type.as_ref() {
                 Some(ClickType::Integer) => true,
                 Some(_) => false,
-                None if matches!(value, ContractExpression::Lambda { .. })
+                None if matches!(value, SurfaceTerm::Lambda { .. })
                     || lambdas::is_proposition_value(&value)
-                    || matches!(&value, ContractExpression::Call { name, .. } if spec_definitions.functions.get(name).is_some_and(|definition| definition.return_type() == &ClickType::Proposition)) =>
+                    || matches!(&value, SurfaceTerm::Call { name, .. } if spec_definitions.functions.get(name).is_some_and(|definition| definition.return_type() == &ClickType::Proposition)) =>
                 {
                     false
                 }
@@ -324,10 +324,10 @@ impl PureTheoremContext {
                                 values.with_inserted(name, value)
                             });
                         let spec = crate::surface::lowering::elaborate_fixed_state_proposition_with_algebraic_and_integer_values(
-                            &ClickProposition::Comparison {
+                            &SurfaceProposition::Comparison {
                                 left: promoted,
                                 operator: ComparisonOperator::Equal,
-                                right: ContractExpression::IntegerLiteral("0".into()),
+                                right: SurfaceTerm::IntegerLiteral("0".into()),
                             }, BTreeMap::new(), BTreeMap::new(), &state, &state, ProgramValueBindings::new(), ProgramValueBindings::new(),
                             BTreeMap::new(), &integer_values, None, &RecordedStates::new(), spec_definitions,
                             BTreeSet::new(), BTreeMap::new(),).map_err(ClickError::new)?;
@@ -354,18 +354,18 @@ impl PureTheoremContext {
                 context.integer_values = context
                     .integer_values
                     .with_inserted(captured.clone(), value);
-                ContractExpression::Binding(captured)
+                SurfaceTerm::Binding(captured)
             } else if crate::surface::lowering::narrow_typed_arithmetic(click_type.as_ref(), &value)
             {
                 // A narrow typed `let` names its native sum (G2), as the
                 // clauses read it; the bare value would be C's promoted one.
-                ContractExpression::Let {
+                SurfaceTerm::Let {
                     name: name.clone().into(),
                     click_type: click_type.clone(),
                     value: Box::new(value),
-                    body: Box::new(ContractExpression::ProgramExpression(
-                        ProgramExpression::Variable((name.clone()).into()),
-                    )),
+                    body: Box::new(SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                        (name.clone()).into(),
+                    ))),
                 }
             } else {
                 value
@@ -383,8 +383,8 @@ impl PureTheoremContext {
 pub(super) struct PureInductionSetup {
     pub(super) parameter: String,
     pub(super) hypothesis: String,
-    pub(super) surface_requires: Vec<ClickProposition>,
-    pub(super) surface_goal: ClickProposition,
+    pub(super) surface_requires: Vec<SurfaceProposition>,
+    pub(super) surface_goal: SurfaceProposition,
     /// Present for algebraic induction; applications may instantiate all parameters.
     pub(super) structural_parameters: Option<Vec<FunctionParameter>>,
     pub(super) structural_root: Option<crate::kernel::AlgebraicTerm>,
@@ -394,7 +394,7 @@ pub(super) struct PureInductionSetup {
 pub(super) struct PureStructuralInductionApplication {
     /// The selected theorem's exact requirements and their written forms.
     pub(super) kernel_premises: Vec<Proposition>,
-    pub(super) surface_premises: Vec<ClickProposition>,
+    pub(super) surface_premises: Vec<SurfaceProposition>,
     pub(super) implication: Proposition,
     pub(super) conclusion: Proposition,
 }
@@ -413,13 +413,13 @@ pub(super) struct PureStructuralInductionBranchSetup {
 
 /// The bare parameter or binding name an induction argument spells, when it
 /// spells one rather than a compound term.
-pub(super) fn induction_argument_name(argument: &ContractExpression) -> Option<&str> {
+pub(super) fn induction_argument_name(argument: &SurfaceTerm) -> Option<&str> {
     match argument {
-        ContractExpression::Binding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+        SurfaceTerm::Binding(name)
+        | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) => Some(name),
-        ContractExpression::AlgebraicVariable { name, .. } => name.written(),
+        SurfaceTerm::AlgebraicVariable { name, .. } => name.written(),
         _ => None,
     }
 }
@@ -429,8 +429,8 @@ pub(super) fn induction_argument_name(argument: &ContractExpression) -> Option<&
 /// application spells that position alone.
 pub(super) fn structural_induction_descent_argument(
     parameter_index: usize,
-    arguments: &[ContractExpression],
-) -> Option<&ContractExpression> {
+    arguments: &[SurfaceTerm],
+) -> Option<&SurfaceTerm> {
     if arguments.len() == 1 {
         arguments.first()
     } else {
@@ -450,8 +450,8 @@ pub(super) fn structural_induction_hypothesis_substitution(
     parameters: &[FunctionParameter],
     parameter: &str,
     hypothesis: &str,
-    arguments: &[ContractExpression],
-) -> Result<BTreeMap<String, ContractExpression>, ClickError> {
+    arguments: &[SurfaceTerm],
+) -> Result<BTreeMap<String, SurfaceTerm>, ClickError> {
     if arguments.len() == 1 {
         return Ok(BTreeMap::from([(
             parameter.to_string(),
@@ -581,7 +581,7 @@ pub(super) fn pure_induction_hypothesis(
 
 fn prepare_pure_induction_setup(
     theorem: &TheoremDefinition,
-    goal: &ClickProposition,
+    goal: &SurfaceProposition,
     tactics: &[ProofTactic],
     context: &PureTheoremContext,
     spec_definitions: SpecDefinitions<'_>,
@@ -662,7 +662,7 @@ fn prepare_pure_induction_setup(
         };
         let state = ExecutionState::at_point(&context.point);
         let captured = capture_fixed_state_algebraic_expression(
-            &ContractExpression::AlgebraicVariable {
+            &SurfaceTerm::AlgebraicVariable {
                 name: parameter.clone().into(),
                 algebraic_type: algebraic_type.clone(),
                 binder_index: index,
@@ -804,7 +804,7 @@ pub(super) fn pure_theorem_context(
                 let name = parameter.name().to_owned();
                 Some((
                     name.clone(),
-                    ContractExpression::AlgebraicVariable {
+                    SurfaceTerm::AlgebraicVariable {
                         name: name.into(),
                         algebraic_type: algebraic_type.clone(),
                         binder_index,
@@ -847,84 +847,6 @@ fn theorem_statement_error(
             diagnostic.with_kind(ClickErrorKind::Internal)
         }
     }
-}
-
-/// Lowers imported or otherwise unselected theorem statements into scoped
-/// certification assumptions. Proof bodies are intentionally ignored.
-pub(in crate::surface) fn assumed_theorem_certification_authorities(
-    theorems: &[TheoremDefinition],
-    spec_definitions: SpecDefinitions<'_>,
-) -> Result<Vec<(String, Proposition, KernelVerifiedPureTheorem)>, ClickError> {
-    let mut assumptions = Vec::new();
-    for theorem in theorems {
-        if !theorem.type_parameters().is_empty()
-            || !theorem.parameters().iter().all(|parameter| {
-                parameter.click_type() == &ClickType::Program(InterfaceType::Int32)
-            })
-        {
-            continue;
-        }
-        let context = pure_theorem_context(theorem, spec_definitions)?;
-        let variables = theorem
-            .parameters()
-            .iter()
-            .map(|parameter| match context.values.get(parameter.name()) {
-                Some(ProgramValue::Int32(MachineTerm::Variable(variable))) => Some(*variable),
-                _ => None,
-            })
-            .collect::<Option<Vec<_>>>()
-            .expect("the int32 parameter filter creates int32 variables");
-        for ensure in theorem.ensures() {
-            let Ensure::Proposition(surface_goal) = ensure.ensure() else {
-                continue;
-            };
-            let lowering_assumptions = assumptions_from_propositions(&context.requires);
-            let state = ExecutionState::at_point(&context.point);
-            let (conclusion, _, _) = lower_stated_proposition(
-                surface_goal,
-                &PureFactContext::new(),
-                ContractEnvironment::new(&context.values, &context.array_refs),
-                FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
-                spec_definitions,
-                FixedStateLoweringOptions {
-                    integer_values: Some(&context.integer_values),
-                    obligation_assumptions: Some(&lowering_assumptions),
-                    ..Default::default()
-                },
-            )
-            .map_err(|reason| {
-                let diagnostic = ClickError::new(format!(
-                    "could not lower assumed theorem `{}` conclusion: pure theorem `{}`: {reason}",
-                    theorem.name(),
-                    theorem.name(),
-                ))
-                .at_declaration(theorem.name());
-                theorem_statement_error(diagnostic, reason)
-            })?;
-            let Some(authority) = assume_universally_quantified_pure_implication(
-                context.requires.clone(),
-                conclusion.clone(),
-                variables.clone(),
-            ) else {
-                continue;
-            };
-            let body = context
-                .requires
-                .iter()
-                .rev()
-                .fold(conclusion, |body, requirement| {
-                    Proposition::Implies(Box::new(requirement.clone()), Box::new(body))
-                });
-            let binders = variables
-                .iter()
-                .map(|variable| (Default::default(), *variable, Sort::ProgramInt32))
-                .collect::<Vec<_>>();
-            let fact = crate::kernel::quantifiers::close_foralls(&binders, &body)
-                .ok_or_else(|| ClickError::new("a theorem's quantifier does not close"))?;
-            assumptions.push((theorem.name().to_string(), fact, authority));
-        }
-    }
-    Ok(assumptions)
 }
 
 fn pure_theorem_parameter_integer_values(
@@ -1666,7 +1588,7 @@ fn verify_contract_refinement_theorem(
     ensure_index: usize,
     ensure_clause: &EnsureClause,
     claim_label: &str,
-    surface_goal: &ClickProposition,
+    surface_goal: &SurfaceProposition,
     context: &PureTheoremContext,
     spec_definitions: SpecDefinitions<'_>,
     theorem_environment: &TheoremEnvironment,
@@ -1675,7 +1597,7 @@ fn verify_contract_refinement_theorem(
     use super::smart_closures::LinearScriptDecline;
     use crate::surface::{ClickErrorKind, ProofRefusal};
 
-    let ClickProposition::PredicateCall { name, arguments } = surface_goal else {
+    let SurfaceProposition::PredicateCall { name, arguments } = surface_goal else {
         return Ok(None);
     };
     let Some(contract_definition) = spec_definitions.predicates.contract_definition(name) else {
@@ -1686,7 +1608,7 @@ fn verify_contract_refinement_theorem(
     let Some(argument) = arguments.first() else {
         return Ok(None);
     };
-    let lower = |proposition: &ClickProposition| {
+    let lower = |proposition: &SurfaceProposition| {
         lower_pure_theorem_proposition_with_integer_values(
             theorem.name(),
             proposition,
@@ -1710,8 +1632,8 @@ fn verify_contract_refinement_theorem(
     })?;
     let concrete_target = contract_expression_function_address(argument);
     let symbolic_binding = match argument {
-        ContractExpression::Binding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+        SurfaceTerm::Binding(name)
+        | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) => Some(name.as_str()),
         _ => None,
@@ -1748,7 +1670,7 @@ fn verify_contract_refinement_theorem(
                 "`{claim_label}`: abstract contract refinement requires exactly one source-contract fact"
             )));
         };
-        let Some(ClickProposition::PredicateCall {
+        let Some(SurfaceProposition::PredicateCall {
             name: source_name,
             arguments: source_arguments,
         }) = requirement.proposition()
@@ -1803,7 +1725,7 @@ fn verify_contract_refinement_theorem(
     let selected_application = |tactic: &ProofTactic| -> Result<Option<Proposition>, ClickError> {
         let target = match tactic {
             ProofTactic::UnfoldProposition(target) => target.clone(),
-            ProofTactic::UnfoldFunction(application) => ClickProposition::PredicateCall {
+            ProofTactic::UnfoldFunction(application) => SurfaceProposition::PredicateCall {
                 name: application.name.clone(),
                 arguments: application.arguments.clone(),
             },
@@ -1964,13 +1886,13 @@ fn verify_contract_refinement_theorem(
     let mut pending = vec![(&proof_goal, &presentation)];
     while let Some((kernel, surface)) = pending.pop() {
         match (kernel, surface) {
-            (Proposition::And(kl, kr), ClickProposition::And(sl, sr))
-            | (Proposition::Or(kl, kr), ClickProposition::Or(sl, sr))
-            | (Proposition::Implies(kl, kr), ClickProposition::Implies(sl, sr)) => {
+            (Proposition::And(kl, kr), SurfaceProposition::And(sl, sr))
+            | (Proposition::Or(kl, kr), SurfaceProposition::Or(sl, sr))
+            | (Proposition::Implies(kl, kr), SurfaceProposition::Implies(sl, sr)) => {
                 pending.push((kl, sl));
                 pending.push((kr, sr));
             }
-            (Proposition::Not(k), ClickProposition::Not(s)) => pending.push((k, s)),
+            (Proposition::Not(k), SurfaceProposition::Not(s)) => pending.push((k, s)),
             _ => surfaces.record_lowering(surface, kernel)?,
         }
     }
@@ -2162,7 +2084,7 @@ fn check_direct_pure_goal_with_proof(
     implicit: bool,
     claim_label: &str,
     context: &PureTheoremContext,
-    surface_goal: &ClickProposition,
+    surface_goal: &SurfaceProposition,
     goal: &Proposition,
     goal_introductions: &crate::kernel::LoweringIntroductions,
     entry_requirements: &super::execution_planning::OpenObligationProbe,
@@ -2680,7 +2602,7 @@ fn verify_kernel_standard_theorem_axiom(
 fn check_pure_script_with_proof(
     claim_label: &str,
     context: &PureTheoremContext,
-    surface_goal: &ClickProposition,
+    surface_goal: &SurfaceProposition,
     goal: &Proposition,
     goal_introductions: &crate::kernel::LoweringIntroductions,
     entry_requirements: &super::execution_planning::OpenObligationProbe,
@@ -2796,8 +2718,8 @@ fn check_pure_script_with_proof(
 }
 
 pub(super) fn click_function_applications(
-    proposition: &ClickProposition,
-    known_facts: &[ClickProposition],
+    proposition: &SurfaceProposition,
+    known_facts: &[SurfaceProposition],
 ) -> Vec<ClickFunctionApplication> {
     click_function_applications_with(
         proposition,
@@ -2814,7 +2736,7 @@ pub(super) fn click_function_applications(
 /// application in either arm is valid, so a guard read here only directs the
 /// search.
 pub(super) fn click_function_applications_deciding_constant_guards(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
 ) -> Vec<ClickFunctionApplication> {
     click_function_applications_with(
         proposition,
@@ -2827,23 +2749,23 @@ pub(super) fn click_function_applications_deciding_constant_guards(
 
 /// What decides an `if` guard while collecting applications.
 struct KnownGuards<'a> {
-    facts: &'a [ClickProposition],
+    facts: &'a [SurfaceProposition],
     /// Also decide a guard that compares constants.
     constants: bool,
 }
 
 fn click_function_applications_with(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     known_facts: &KnownGuards<'_>,
 ) -> Vec<ClickFunctionApplication> {
     fn fact_polarity(
-        proposition: &ClickProposition,
+        proposition: &SurfaceProposition,
         known_facts: &KnownGuards<'_>,
     ) -> Option<bool> {
         if known_facts.facts.contains(proposition) {
             return Some(true);
         }
-        let negated = ClickProposition::Not(Box::new(proposition.clone()));
+        let negated = SurfaceProposition::Not(Box::new(proposition.clone()));
         if known_facts.facts.contains(&negated) {
             return Some(false);
         }
@@ -2854,24 +2776,22 @@ fn click_function_applications_with(
     }
 
     fn expression(
-        term: &ContractExpression,
+        term: &SurfaceTerm,
         known_facts: &KnownGuards<'_>,
         applications: &mut Vec<ClickFunctionApplication>,
     ) {
         match term {
-            ContractExpression::IntegerContext(value) => {
-                expression(value, known_facts, applications)
-            }
+            SurfaceTerm::IntegerContext(value) => expression(value, known_facts, applications),
 
-            ContractExpression::Proposition(proposition) => {
+            SurfaceTerm::Proposition(proposition) => {
                 proposition_inner(proposition, known_facts, applications)
             }
-            ContractExpression::Resource(_) => {}
-            ContractExpression::RegionResult(_)
-            | ContractExpression::RegionAllocation(_)
-            | ContractExpression::RegionParameter { .. } => {}
-            ContractExpression::Lambda { .. } => {}
-            ContractExpression::Apply {
+            SurfaceTerm::Resource(_) => {}
+            SurfaceTerm::RegionResult(_)
+            | SurfaceTerm::RegionAllocation(_)
+            | SurfaceTerm::RegionParameter { .. } => {}
+            SurfaceTerm::Lambda { .. } => {}
+            SurfaceTerm::Apply {
                 function,
                 arguments,
             } => {
@@ -2881,34 +2801,34 @@ fn click_function_applications_with(
                 }
             }
 
-            ContractExpression::IntegerLiteral(_) => {}
-            ContractExpression::CUnary { operand: inner, .. }
-            | ContractExpression::MemoryLoad { pointer: inner, .. }
-            | ContractExpression::Negate(inner) => expression(inner, known_facts, applications),
-            ContractExpression::ResourceField(_)
-            | ContractExpression::AlgebraicVariable { .. }
-            | ContractExpression::Binding(_) => {}
-            ContractExpression::AlgebraicConstructor { arguments, .. } => {
+            SurfaceTerm::IntegerLiteral(_) => {}
+            SurfaceTerm::CUnary { operand: inner, .. }
+            | SurfaceTerm::MemoryLoad { pointer: inner, .. }
+            | SurfaceTerm::Negate(inner) => expression(inner, known_facts, applications),
+            SurfaceTerm::ResourceField(_)
+            | SurfaceTerm::AlgebraicVariable { .. }
+            | SurfaceTerm::Binding(_) => {}
+            SurfaceTerm::AlgebraicConstructor { arguments, .. } => {
                 for argument in arguments {
                     expression(argument, known_facts, applications);
                 }
             }
-            ContractExpression::AlgebraicMatch { scrutinee, arms } => {
+            SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
                 expression(scrutinee, known_facts, applications);
                 for arm in arms {
                     expression(&arm.body, known_facts, applications);
                 }
             }
-            ContractExpression::SequenceLiteral(elements) => {
+            SurfaceTerm::SequenceLiteral(elements) => {
                 for element in elements {
                     expression(element, known_facts, applications);
                 }
             }
-            ContractExpression::SequenceConcat(left, right) => {
+            SurfaceTerm::SequenceConcat(left, right) => {
                 expression(left, known_facts, applications);
                 expression(right, known_facts, applications);
             }
-            ContractExpression::MethodCall {
+            SurfaceTerm::MethodCall {
                 receiver,
                 arguments,
                 ..
@@ -2918,7 +2838,7 @@ fn click_function_applications_with(
                     expression(argument, known_facts, applications);
                 }
             }
-            ContractExpression::Call { name, arguments } => {
+            SurfaceTerm::Call { name, arguments } => {
                 for argument in arguments {
                     expression(argument, known_facts, applications);
                 }
@@ -2933,18 +2853,18 @@ fn click_function_applications_with(
                     applications.push(application);
                 }
             }
-            ContractExpression::Field { base, .. }
-            | ContractExpression::Old(base)
-            | ContractExpression::Exact(base)
-            | ContractExpression::At {
+            SurfaceTerm::Field { base, .. }
+            | SurfaceTerm::Old(base)
+            | SurfaceTerm::Exact(base)
+            | SurfaceTerm::At {
                 expression: base, ..
             }
-            | ContractExpression::BitwiseNot(base) => expression(base, known_facts, applications),
+            | SurfaceTerm::BitwiseNot(base) => expression(base, known_facts, applications),
             crate::surface::binary_contract_expression!(left, right) => {
                 expression(left, known_facts, applications);
                 expression(right, known_facts, applications);
             }
-            ContractExpression::If {
+            SurfaceTerm::If {
                 condition,
                 then_branch,
                 else_branch,
@@ -2956,7 +2876,7 @@ fn click_function_applications_with(
                     None => {}
                 }
             }
-            ContractExpression::RangeFold {
+            SurfaceTerm::RangeFold {
                 start,
                 end,
                 initial,
@@ -2968,78 +2888,78 @@ fn click_function_applications_with(
                 expression(initial, known_facts, applications);
                 expression(body, known_facts, applications);
             }
-            ContractExpression::Let { value, body, .. } => {
+            SurfaceTerm::Let { value, body, .. } => {
                 expression(value, known_facts, applications);
                 expression(body, known_facts, applications);
             }
-            ContractExpression::ResourceCount(resource) => {
+            SurfaceTerm::ResourceCount(resource) => {
                 if let ResourceClause::Declared { arguments, .. } = resource.as_ref() {
                     for argument in arguments {
                         expression(argument, known_facts, applications);
                     }
                 }
             }
-            ContractExpression::QualifiedC { .. }
-            | ContractExpression::ProgramExpression(_)
-            | ContractExpression::ArrayIndex { .. }
-            | ContractExpression::ProgramBinding(_)
-            | ContractExpression::ResourceWildcard => {}
+            SurfaceTerm::QualifiedC { .. }
+            | SurfaceTerm::ProgramExpression(_)
+            | SurfaceTerm::ArrayIndex { .. }
+            | SurfaceTerm::ProgramBinding(_)
+            | SurfaceTerm::ResourceWildcard => {}
         }
     }
 
     fn proposition_inner(
-        proposition: &ClickProposition,
+        proposition: &SurfaceProposition,
         known_facts: &KnownGuards<'_>,
         applications: &mut Vec<ClickFunctionApplication>,
     ) {
         match proposition {
-            ClickProposition::Value(value) => expression(value, known_facts, applications),
-            ClickProposition::Comparison { left, right, .. } => {
+            SurfaceProposition::Value(value) => expression(value, known_facts, applications),
+            SurfaceProposition::Comparison { left, right, .. } => {
                 expression(left, known_facts, applications);
                 expression(right, known_facts, applications);
             }
-            ClickProposition::FloatClassification {
+            SurfaceProposition::FloatClassification {
                 expression: value, ..
             } => {
                 expression(value, known_facts, applications);
             }
-            ClickProposition::Defined { expression: value }
-            | ClickProposition::IsA { pointer: value, .. } => {
+            SurfaceProposition::Defined { expression: value }
+            | SurfaceProposition::IsA { pointer: value, .. } => {
                 expression(value, known_facts, applications)
             }
-            ClickProposition::And(left, right)
-            | ClickProposition::Or(left, right)
-            | ClickProposition::Implies(left, right) => {
+            SurfaceProposition::And(left, right)
+            | SurfaceProposition::Or(left, right)
+            | SurfaceProposition::Implies(left, right) => {
                 proposition_inner(left, known_facts, applications);
                 proposition_inner(right, known_facts, applications);
             }
-            ClickProposition::Not(body)
-            | ClickProposition::At {
+            SurfaceProposition::Not(body)
+            | SurfaceProposition::At {
                 proposition: body, ..
             }
-            | ClickProposition::ForAll { body, .. }
-            | ClickProposition::Exists { body, .. } => {
+            | SurfaceProposition::ForAll { body, .. }
+            | SurfaceProposition::Exists { body, .. } => {
                 proposition_inner(body, known_facts, applications)
             }
-            ClickProposition::RangeAll {
+            SurfaceProposition::RangeAll {
                 start, end, body, ..
             }
-            | ClickProposition::RangeAny {
+            | SurfaceProposition::RangeAny {
                 start, end, body, ..
             } => {
                 expression(start, known_facts, applications);
                 expression(end, known_facts, applications);
                 proposition_inner(body, known_facts, applications);
             }
-            ClickProposition::PredicateCall { arguments, .. } => {
+            SurfaceProposition::PredicateCall { arguments, .. } => {
                 for argument in arguments {
                     expression(argument, known_facts, applications);
                 }
             }
-            ClickProposition::Separate { .. }
-            | ClickProposition::ResourceViewable { .. }
-            | ClickProposition::Contains { .. }
-            | ClickProposition::Loadable { .. } => {}
+            SurfaceProposition::Separate { .. }
+            | SurfaceProposition::ResourceViewable { .. }
+            | SurfaceProposition::Contains { .. }
+            | SurfaceProposition::Loadable { .. } => {}
         }
     }
 
@@ -3050,19 +2970,19 @@ fn click_function_applications_with(
 
 pub(super) fn induction_application_surface_premises(
     setup: &PureInductionSetup,
-    argument: &ContractExpression,
-) -> Result<Vec<ClickProposition>, ClickError> {
-    let zero = ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0)));
-    let current = ContractExpression::ProgramExpression(ProgramExpression::Variable(
+    argument: &SurfaceTerm,
+) -> Result<Vec<SurfaceProposition>, ClickError> {
+    let zero = SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(0)));
+    let current = SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
         (setup.parameter.clone()).into(),
     ));
     let mut premises = vec![
-        ClickProposition::Comparison {
+        SurfaceProposition::Comparison {
             left: zero,
             operator: ComparisonOperator::LessEqual,
             right: argument.clone(),
         },
-        ClickProposition::Comparison {
+        SurfaceProposition::Comparison {
             left: argument.clone(),
             operator: ComparisonOperator::LessThan,
             right: current,
@@ -3076,7 +2996,7 @@ pub(super) fn induction_application_surface_premises(
         .map_err(ClickError::new)?;
         let mut pending = vec![substituted];
         while let Some(premise) = pending.pop() {
-            if let ClickProposition::And(left, right) = premise {
+            if let SurfaceProposition::And(left, right) = premise {
                 pending.push(*right);
                 pending.push(*left);
             } else if !premises.contains(&premise) {
@@ -3089,7 +3009,7 @@ pub(super) fn induction_application_surface_premises(
 
 pub(super) fn lower_pure_theorem_proposition(
     theorem_name: &str,
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     contract_environment: ContractEnvironment<'_>,
     at: &crate::kernel::ProgramPoint,
     spec_definitions: SpecDefinitions<'_>,
@@ -3106,7 +3026,7 @@ pub(super) fn lower_pure_theorem_proposition(
 
 pub(super) fn lower_pure_theorem_proposition_with_integer_values(
     theorem_name: &str,
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     contract_environment: ContractEnvironment<'_>,
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     at: &crate::kernel::ProgramPoint,
@@ -3126,7 +3046,7 @@ pub(super) fn lower_pure_theorem_proposition_with_integer_values(
 #[allow(clippy::too_many_arguments)]
 pub(super) fn lower_pure_theorem_proposition_with_algebraic_and_integer_values(
     theorem_name: &str,
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
@@ -3152,7 +3072,7 @@ pub(super) fn lower_pure_theorem_proposition_with_algebraic_and_integer_values(
 #[allow(clippy::too_many_arguments)]
 pub(super) fn lower_pure_theorem_proposition_recording_introductions(
     theorem_name: &str,
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
@@ -3176,7 +3096,7 @@ pub(super) fn lower_pure_theorem_proposition_recording_introductions(
 #[allow(clippy::too_many_arguments)]
 pub(super) fn lower_pure_theorem_proposition_for_proof(
     theorem_name: &str,
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: &BTreeMap<String, SpecAlgebraicExpression>,
@@ -3208,7 +3128,7 @@ pub(super) fn lower_pure_theorem_proposition_for_proof(
 /// applications.
 fn lower_pure_theorem_proposition_with_opaque_calls(
     theorem_name: &str,
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     contract_environment: ContractEnvironment<'_>,
     at: &crate::kernel::ProgramPoint,
     spec_definitions: SpecDefinitions<'_>,
@@ -3231,7 +3151,7 @@ fn lower_pure_theorem_proposition_with_opaque_calls(
 
 fn lower_pure_theorem_proposition_opaque(
     theorem_name: &str,
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     assumptions: &PureFactContext,
     context: &PureTheoremContext,
     spec_definitions: SpecDefinitions<'_>,
@@ -4601,12 +4521,12 @@ mod function_candidate_tests {
 
     #[test]
     fn unfolding_candidates_descend_through_integer_conversions() {
-        let call = ContractExpression::Call {
+        let call = SurfaceTerm::Call {
             name: "count".into(),
             arguments: vec![],
         };
-        let goal = ClickProposition::Defined {
-            expression: ContractExpression::Call {
+        let goal = SurfaceProposition::Defined {
+            expression: SurfaceTerm::Call {
                 name: "to_integer".into(),
                 arguments: vec![call],
             },
@@ -4621,10 +4541,10 @@ mod function_candidate_tests {
 /// integer literal or a machine integer constant, through casts, `+`, `-` and
 /// negation; any step that leaves its type's range, or a comparison of a
 /// signed with an unsigned value, is left undecided.
-fn constant_guard_value(proposition: &ClickProposition) -> Option<bool> {
+fn constant_guard_value(proposition: &SurfaceProposition) -> Option<bool> {
     match proposition {
-        ClickProposition::Not(body) => constant_guard_value(body).map(|value| !value),
-        ClickProposition::Comparison {
+        SurfaceProposition::Not(body) => constant_guard_value(body).map(|value| !value),
+        SurfaceProposition::Comparison {
             left,
             operator,
             right,
@@ -4696,15 +4616,15 @@ impl ConstantType {
 
 /// A constant integer expression's value and machine type, `None` for an
 /// `Integer` literal.
-fn constant_integer(expression: &ContractExpression) -> Option<(i128, Option<ConstantType>)> {
+fn constant_integer(expression: &SurfaceTerm) -> Option<(i128, Option<ConstantType>)> {
     let in_range = |value: i128, ty: Option<ConstantType>| {
         ty.is_none_or(|ty| ty.contains(value))
             .then_some((value, ty))
     };
     match expression {
-        ContractExpression::IntegerLiteral(text) => Some((text.parse().ok()?, None)),
-        ContractExpression::IntegerContext(inner) => constant_integer(inner),
-        ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
+        SurfaceTerm::IntegerLiteral(text) => Some((text.parse().ok()?, None)),
+        SurfaceTerm::IntegerContext(inner) => constant_integer(inner),
+        SurfaceTerm::ProgramExpression(ProgramExpression::Value(value)) => {
             let ty = ConstantType::of(value.program_type())?;
             let value = MachineIntegerType::from_program_type(value.program_type())?
                 .constant_from_value(value)?
@@ -4713,14 +4633,14 @@ fn constant_integer(expression: &ContractExpression) -> Option<(i128, Option<Con
         }
         // A string literal is read-only, so its byte at a constant index is
         // a constant: `"hi"[1u64]` is `105u8`.
-        ContractExpression::Index(base, index) => {
+        SurfaceTerm::Index(base, index) => {
             let mut base = base.as_ref();
-            while let ContractExpression::At { expression, .. } = base {
+            while let SurfaceTerm::At { expression, .. } = base {
                 base = expression;
             }
-            let ContractExpression::ProgramExpression(ProgramExpression::Value(
-                ProgramValue::Pointer(pointer),
-            )) = base
+            let SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(
+                pointer,
+            ))) = base
             else {
                 return None;
             };
@@ -4744,25 +4664,25 @@ fn constant_integer(expression: &ContractExpression) -> Option<(i128, Option<Con
                 (i128::from(byte), Some(ConstantType::UInt8))
             })
         }
-        ContractExpression::CUnary {
+        SurfaceTerm::CUnary {
             operand,
             lowered: ProgramExpression::Cast { target_type, .. },
         } => {
             let (value, _) = constant_integer(operand)?;
             in_range(value, Some(ConstantType::of(*target_type)?))
         }
-        ContractExpression::Negate(inner) => {
+        SurfaceTerm::Negate(inner) => {
             let (value, ty) = constant_integer(inner)?;
             in_range(-value, ty)
         }
-        ContractExpression::Add(left, right) | ContractExpression::Subtract(left, right) => {
+        SurfaceTerm::Add(left, right) | SurfaceTerm::Subtract(left, right) => {
             let (left_value, left_type) = constant_integer(left)?;
             let (right_value, right_type) = constant_integer(right)?;
             let ty = match (left_type, right_type) {
                 (Some(left), Some(right)) if left != right => return None,
                 (left, right) => left.or(right),
             };
-            let value = if matches!(expression, ContractExpression::Add(..)) {
+            let value = if matches!(expression, SurfaceTerm::Add(..)) {
                 left_value + right_value
             } else {
                 left_value - right_value
@@ -4779,45 +4699,43 @@ fn constant_integer(expression: &ContractExpression) -> Option<(i128, Option<Con
 /// == at(region(1).entry, format_length(..))`. The call's array arguments
 /// are read at that point, so its value is a different term elsewhere.
 pub(super) fn application_point(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     application: &ClickFunctionApplication,
 ) -> Option<ProgramPointSelector> {
     fn in_expression(
-        term: &ContractExpression,
+        term: &SurfaceTerm,
         application: &ClickFunctionApplication,
     ) -> Option<ProgramPointSelector> {
         match term {
-            ContractExpression::At {
+            SurfaceTerm::At {
                 selector,
                 expression,
             } => match expression.as_ref() {
-                ContractExpression::Call { name, arguments }
+                SurfaceTerm::Call { name, arguments }
                     if *name == application.name && *arguments == application.arguments =>
                 {
                     Some(selector.clone())
                 }
                 inner => in_expression(inner, application),
             },
-            ContractExpression::AlgebraicConstructor { arguments, .. }
-            | ContractExpression::Call { arguments, .. } => arguments
+            SurfaceTerm::AlgebraicConstructor { arguments, .. }
+            | SurfaceTerm::Call { arguments, .. } => arguments
                 .iter()
                 .find_map(|argument| in_expression(argument, application)),
-            ContractExpression::Proposition(proposition) => {
-                application_point(proposition, application)
-            }
+            SurfaceTerm::Proposition(proposition) => application_point(proposition, application),
             _ => None,
         }
     }
     match proposition {
-        ClickProposition::Value(value) => in_expression(value, application),
-        ClickProposition::Comparison { left, right, .. } => {
+        SurfaceProposition::Value(value) => in_expression(value, application),
+        SurfaceProposition::Comparison { left, right, .. } => {
             in_expression(left, application).or_else(|| in_expression(right, application))
         }
-        ClickProposition::And(left, right) | ClickProposition::Or(left, right) => {
+        SurfaceProposition::And(left, right) | SurfaceProposition::Or(left, right) => {
             application_point(left, application).or_else(|| application_point(right, application))
         }
-        ClickProposition::Not(body)
-        | ClickProposition::At {
+        SurfaceProposition::Not(body)
+        | SurfaceProposition::At {
             proposition: body, ..
         } => application_point(body, application),
         _ => None,
@@ -4839,9 +4757,9 @@ pub(super) fn largest_constant_argument(application: &ClickFunctionApplication) 
 
 /// The constant `value` of type `ty` as an expression: a machine constant, or
 /// an `Integer` literal when `ty` is `None`.
-fn constant_expression(value: i128, ty: Option<ConstantType>) -> Option<ContractExpression> {
+fn constant_expression(value: i128, ty: Option<ConstantType>) -> Option<SurfaceTerm> {
     let value = match ty {
-        None => return Some(ContractExpression::IntegerLiteral(value.to_string())),
+        None => return Some(SurfaceTerm::IntegerLiteral(value.to_string())),
         Some(ConstantType::Int8) => {
             crate::kernel::int8(MachineTerm::constant(i8::try_from(value).ok()? as u32))
         }
@@ -4861,9 +4779,9 @@ fn constant_expression(value: i128, ty: Option<ConstantType>) -> Option<Contract
             ProgramValue::UInt64(MachineTerm::uint64_constant(u64::try_from(value).ok()?))
         }
     };
-    Some(ContractExpression::ProgramExpression(
-        ProgramExpression::Value(value),
-    ))
+    Some(SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+        value,
+    )))
 }
 
 /// `application` with each constant argument written as its value, so
@@ -4891,7 +4809,7 @@ fn with_constant_arguments(application: &ClickFunctionApplication) -> ClickFunct
 pub(super) fn ground_recursion_level(
     functions: &ClickFunctionEnvironment,
     application: &ClickFunctionApplication,
-) -> Option<(ContractExpression, Option<ClickFunctionApplication>)> {
+) -> Option<(SurfaceTerm, Option<ClickFunctionApplication>)> {
     let definition = functions.get(&application.name)?;
     if definition.decreases().is_none()
         || !definition.type_parameters().is_empty()
@@ -4917,7 +4835,7 @@ pub(super) fn ground_recursion_level(
         &substitutions,
     )
     .ok()?;
-    while let ContractExpression::If {
+    while let SurfaceTerm::If {
         condition,
         then_branch,
         else_branch,
@@ -4929,7 +4847,7 @@ pub(super) fn ground_recursion_level(
             *else_branch
         };
     }
-    let calls = click_function_applications(&ClickProposition::Value(arm.clone()), &[])
+    let calls = click_function_applications(&SurfaceProposition::Value(arm.clone()), &[])
         .into_iter()
         .filter(|call| call.name == application.name)
         .collect::<Vec<_>>();
@@ -4944,13 +4862,13 @@ pub(super) fn ground_recursion_level(
 /// `expression` with each constant field of its constructors written as its
 /// value, such as a string literal's byte, so the equality closure compares
 /// it with a written list.
-fn with_constant_fields(expression: &ContractExpression) -> ContractExpression {
+fn with_constant_fields(expression: &SurfaceTerm) -> SurfaceTerm {
     match expression {
-        ContractExpression::AlgebraicConstructor {
+        SurfaceTerm::AlgebraicConstructor {
             algebraic_type,
             variant,
             arguments,
-        } => ContractExpression::AlgebraicConstructor {
+        } => SurfaceTerm::AlgebraicConstructor {
             algebraic_type: algebraic_type.clone(),
             variant: variant.clone(),
             arguments: arguments.iter().map(with_constant_fields).collect(),
@@ -4967,8 +4885,8 @@ fn with_constant_fields(expression: &ContractExpression) -> ContractExpression {
 /// an arm holds its call where no value can be put.
 pub(super) fn ground_recursion_value(
     name: &str,
-    levels: &[(ClickFunctionApplication, ContractExpression)],
-) -> Option<ContractExpression> {
+    levels: &[(ClickFunctionApplication, SurfaceTerm)],
+) -> Option<SurfaceTerm> {
     let ((_, base), rest) = levels.split_last()?;
     let mut value = base.clone();
     for (_, arm) in rest.iter().rev() {
@@ -4980,30 +4898,30 @@ pub(super) fn ground_recursion_value(
 /// `expression` with its one call of `name` replaced by `value`, through
 /// constructors and `+` and `-`, the places a recursive arm holds its call.
 fn with_call_replaced(
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     name: &str,
-    value: &ContractExpression,
-) -> Option<ContractExpression> {
-    let replace = |expression: &ContractExpression| with_call_replaced(expression, name, value);
+    value: &SurfaceTerm,
+) -> Option<SurfaceTerm> {
+    let replace = |expression: &SurfaceTerm| with_call_replaced(expression, name, value);
     Some(match expression {
-        ContractExpression::Call { name: called, .. } if called == name => value.clone(),
-        ContractExpression::AlgebraicConstructor {
+        SurfaceTerm::Call { name: called, .. } if called == name => value.clone(),
+        SurfaceTerm::AlgebraicConstructor {
             algebraic_type,
             variant,
             arguments,
-        } => ContractExpression::AlgebraicConstructor {
+        } => SurfaceTerm::AlgebraicConstructor {
             algebraic_type: algebraic_type.clone(),
             variant: variant.clone(),
             arguments: arguments.iter().map(replace).collect::<Option<_>>()?,
         },
-        ContractExpression::Add(left, right) => {
-            ContractExpression::Add(Box::new(replace(left)?), Box::new(replace(right)?))
+        SurfaceTerm::Add(left, right) => {
+            SurfaceTerm::Add(Box::new(replace(left)?), Box::new(replace(right)?))
         }
-        ContractExpression::Subtract(left, right) => {
-            ContractExpression::Subtract(Box::new(replace(left)?), Box::new(replace(right)?))
+        SurfaceTerm::Subtract(left, right) => {
+            SurfaceTerm::Subtract(Box::new(replace(left)?), Box::new(replace(right)?))
         }
         other => {
-            let calls = click_function_applications(&ClickProposition::Value(other.clone()), &[]);
+            let calls = click_function_applications(&SurfaceProposition::Value(other.clone()), &[]);
             if calls.iter().any(|call| call.name == name) {
                 return None;
             }

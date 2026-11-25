@@ -7,13 +7,13 @@ use super::*;
 #[test]
 fn integer_certificate_lowering_scales_with_nodes_not_unrelated_bindings() {
     use crate::kernel::{IntegerTerm, SpecIntegerExpression};
-    let surface = ClickProposition::Comparison {
-        left: ContractExpression::Add(
-            Box::new(ContractExpression::Binding("x".into())),
-            Box::new(ContractExpression::IntegerLiteral("1".into())),
+    let surface = SurfaceProposition::Comparison {
+        left: SurfaceTerm::Add(
+            Box::new(SurfaceTerm::Binding("x".into())),
+            Box::new(SurfaceTerm::IntegerLiteral("1".into())),
         ),
         operator: ComparisonOperator::GreaterThan,
-        right: ContractExpression::Binding("x".into()),
+        right: SurfaceTerm::Binding("x".into()),
     };
     let mut costs = Vec::new();
     for unrelated in [0, 64, 256, 1024] {
@@ -50,19 +50,19 @@ fn proposition_state_selection_matches_full_context_without_unrelated_bindings()
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
     let entry = ExecutionState::new().with_local("used", int32(1));
-    let atom = |expression| ClickProposition::Comparison {
+    let atom = |expression| SurfaceProposition::Comparison {
         left: expression,
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::Binding("late".into()),
+        right: SurfaceTerm::Binding("late".into()),
     };
-    let proposition = ClickProposition::And(
-        Box::new(atom(ContractExpression::At {
+    let proposition = SurfaceProposition::And(
+        Box::new(atom(SurfaceTerm::At {
             selector: ProgramPointSelector::Mark("before".into()),
-            expression: Box::new(ContractExpression::Binding("used".into())),
+            expression: Box::new(SurfaceTerm::Binding("used".into())),
         })),
-        Box::new(atom(ContractExpression::Old(Box::new(
-            ContractExpression::Binding("used".into()),
-        )))),
+        Box::new(atom(SurfaceTerm::Old(Box::new(SurfaceTerm::Binding(
+            "used".into(),
+        ))))),
     );
     let mut costs = Vec::new();
     for size in [16, 64, 256, 1024] {
@@ -197,9 +197,9 @@ fn putting_a_lowered_loop_in_place_reads_its_path_not_the_loops_before_it() {
 #[test]
 fn mathematical_lowering_keeps_repeated_squares_shared_without_evaluation() {
     use crate::kernel::{IntegerTerm, SpecIntegerExpression};
-    let expression = ContractExpression::Multiply(
-        Box::new(ContractExpression::Binding("selected".into())),
-        Box::new(ContractExpression::Binding("selected".into())),
+    let expression = SurfaceTerm::Multiply(
+        Box::new(SurfaceTerm::Binding("selected".into())),
+        Box::new(SurfaceTerm::Binding("selected".into())),
     );
     let state = ExecutionState::new();
     let retained_states = RecordedStates::new();

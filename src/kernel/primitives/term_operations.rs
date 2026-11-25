@@ -4865,6 +4865,14 @@ impl SharedPureApplication {
     }
 }
 
+impl Pointer {
+    /// The word of a pointer converted from an integer, as
+    /// `(word) as (T *)` writes it.
+    pub(crate) fn integer_cast_word(&self) -> Option<&MachineTerm> {
+        self.address().integer_address_bits()
+    }
+}
+
 impl Address {
     pub(in crate::kernel) fn integer_address_bits(&self) -> Option<&MachineTerm> {
         if self.offset == AddressOffset::Constant(0)
@@ -4956,7 +4964,7 @@ impl Address {
 
     /// Numeric LP64 reconstruction. This application is only an address;
     /// a complete C word carries its independent provenance beside it.
-    pub(in crate::kernel) fn from_integer_address(bits: MachineTerm) -> Self {
+    pub(crate) fn from_integer_address(bits: MachineTerm) -> Self {
         if bits.uint64_as_const() == Some(0) {
             return Self::null();
         }

@@ -17,7 +17,7 @@ fn typed_lambda_validation_scales_with_body_and_ignores_unrelated_bindings() {
                 .map(|index| {
                     let name = format!("capture{index}");
                     integers.insert(name.clone());
-                    ContractExpression::Binding(name)
+                    SurfaceTerm::Binding(name)
                 })
                 .collect::<Vec<_>>();
             while level.len() > 1 {
@@ -26,14 +26,11 @@ fn typed_lambda_validation_scales_with_body_and_ignores_unrelated_bindings() {
                     .0
                     .iter()
                     .map(|pair| {
-                        ContractExpression::Add(
-                            Box::new(pair[0].clone()),
-                            Box::new(pair[1].clone()),
-                        )
+                        SurfaceTerm::Add(Box::new(pair[0].clone()), Box::new(pair[1].clone()))
                     })
                     .collect();
             }
-            let expression = ContractExpression::Lambda {
+            let expression = SurfaceTerm::Lambda {
                 parameters: vec![("x".into(), ClickType::Integer)],
                 result: ClickType::Integer,
                 body: Box::new(level.pop().unwrap()),
@@ -85,7 +82,7 @@ fn lambda_fold_typing_scales_with_captures_and_ignores_unrelated_bindings() {
                 .map(|index| {
                     let name = format!("capture{index}");
                     integers.insert(name.clone());
-                    ContractExpression::Binding(name)
+                    SurfaceTerm::Binding(name)
                 })
                 .collect::<Vec<_>>();
             while level.len() > 1 {
@@ -94,33 +91,30 @@ fn lambda_fold_typing_scales_with_captures_and_ignores_unrelated_bindings() {
                     .0
                     .iter()
                     .map(|pair| {
-                        ContractExpression::Add(
-                            Box::new(pair[0].clone()),
-                            Box::new(pair[1].clone()),
-                        )
+                        SurfaceTerm::Add(Box::new(pair[0].clone()), Box::new(pair[1].clone()))
                     })
                     .collect();
             }
-            let step = ContractExpression::Lambda {
+            let step = SurfaceTerm::Lambda {
                 parameters: vec![
                     ("acc".into(), ClickType::Integer),
                     ("k".into(), ClickType::Program(InterfaceType::Int32)),
                 ],
                 result: ClickType::Integer,
-                body: Box::new(ContractExpression::Add(
-                    Box::new(ContractExpression::Binding("acc".into())),
+                body: Box::new(SurfaceTerm::Add(
+                    Box::new(SurfaceTerm::Binding("acc".into())),
                     Box::new(level.pop().unwrap()),
                 )),
             };
             let literal = |value| {
-                ContractExpression::ProgramExpression(ProgramExpression::Value(
-                    ProgramValue::Int32(MachineTerm::uint32_constant(value)),
-                ))
+                SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
+                    MachineTerm::uint32_constant(value),
+                )))
             };
             let expression = lambdas::range_fold(
                 literal(0),
                 literal(3),
-                ContractExpression::IntegerLiteral("0".into()),
+                SurfaceTerm::IntegerLiteral("0".into()),
                 step,
             );
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -170,10 +164,10 @@ fn proposition_lambda_and_range_validation_ignore_unrelated_scopes() {
                 .map(|index| {
                     let name = format!("capture{index}");
                     integers.insert(name.clone());
-                    ClickProposition::Comparison {
-                        left: ContractExpression::Binding(name.clone()),
+                    SurfaceProposition::Comparison {
+                        left: SurfaceTerm::Binding(name.clone()),
                         operator: ComparisonOperator::Equal,
-                        right: ContractExpression::Binding(name),
+                        right: SurfaceTerm::Binding(name),
                     }
                 })
                 .collect::<Vec<_>>();
@@ -183,21 +177,22 @@ fn proposition_lambda_and_range_validation_ignore_unrelated_scopes() {
                     .0
                     .iter()
                     .map(|pair| {
-                        ClickProposition::And(Box::new(pair[0].clone()), Box::new(pair[1].clone()))
+                        SurfaceProposition::And(
+                            Box::new(pair[0].clone()),
+                            Box::new(pair[1].clone()),
+                        )
                     })
                     .collect();
             }
-            let predicate = ContractExpression::Lambda {
+            let predicate = SurfaceTerm::Lambda {
                 parameters: vec![("x".into(), ClickType::Program(InterfaceType::Int32))],
                 result: ClickType::Proposition,
-                body: Box::new(ContractExpression::Proposition(Box::new(
-                    level.pop().unwrap(),
-                ))),
+                body: Box::new(SurfaceTerm::Proposition(Box::new(level.pop().unwrap()))),
             };
             let literal = |value| {
-                ContractExpression::ProgramExpression(ProgramExpression::Value(
-                    ProgramValue::Int32(MachineTerm::uint32_constant(value)),
-                ))
+                SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
+                    MachineTerm::uint32_constant(value),
+                )))
             };
             let all = lambdas::range_proposition(literal(0), literal(3), predicate, true);
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -247,9 +242,9 @@ fn memory_lambda_validation_scales_with_reads_and_ignores_unrelated_bindings() {
                 .map(|index| {
                     let name = format!("capture{index}");
                     variables.insert(name.clone(), InterfaceType::Int32Pointer);
-                    ContractExpression::Index(
-                        Box::new(ContractExpression::Binding(name)),
-                        Box::new(ContractExpression::Binding("x".into())),
+                    SurfaceTerm::Index(
+                        Box::new(SurfaceTerm::Binding(name)),
+                        Box::new(SurfaceTerm::Binding("x".into())),
                     )
                 })
                 .collect::<Vec<_>>();
@@ -259,14 +254,11 @@ fn memory_lambda_validation_scales_with_reads_and_ignores_unrelated_bindings() {
                     .0
                     .iter()
                     .map(|pair| {
-                        ContractExpression::Add(
-                            Box::new(pair[0].clone()),
-                            Box::new(pair[1].clone()),
-                        )
+                        SurfaceTerm::Add(Box::new(pair[0].clone()), Box::new(pair[1].clone()))
                     })
                     .collect();
             }
-            let expression = ContractExpression::Lambda {
+            let expression = SurfaceTerm::Lambda {
                 parameters: vec![("x".into(), ClickType::Program(InterfaceType::Int32))],
                 result: ClickType::Program(InterfaceType::Int32),
                 body: Box::new(level.pop().unwrap()),
@@ -338,9 +330,9 @@ fn callback_parameter_typing_scales_with_selected_body_and_ignores_other_functio
         }
         for size in [8, 16, 32, 64] {
             let mut nodes = (0..size)
-                .map(|_| ContractExpression::Apply {
-                    function: Box::new(ContractExpression::Binding("f".into())),
-                    arguments: vec![ContractExpression::Binding("x".into())],
+                .map(|_| SurfaceTerm::Apply {
+                    function: Box::new(SurfaceTerm::Binding("f".into())),
+                    arguments: vec![SurfaceTerm::Binding("x".into())],
                 })
                 .collect::<Vec<_>>();
             while nodes.len() > 1 {
@@ -349,10 +341,7 @@ fn callback_parameter_typing_scales_with_selected_body_and_ignores_other_functio
                     .0
                     .iter()
                     .map(|pair| {
-                        ContractExpression::Add(
-                            Box::new(pair[0].clone()),
-                            Box::new(pair[1].clone()),
-                        )
+                        SurfaceTerm::Add(Box::new(pair[0].clone()), Box::new(pair[1].clone()))
                     })
                     .collect();
             }
