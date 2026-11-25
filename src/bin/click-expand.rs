@@ -978,6 +978,15 @@ int32 identity(int32 x) {
             negative.contains("float32_divide_negative_upper"),
             "{negative}"
         );
+        let negative_fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/float_division_by_negative_literal.md");
+        let negative_cast = check(&negative_fixture, "divide_negative_two.ensures_0").unwrap();
+        for law in [
+            "float32_divide_negative_lower",
+            "float32_divide_negative_upper",
+        ] {
+            assert!(negative_cast.contains(law), "{negative_cast}");
+        }
         let division = check(&fixture, "divide_two.ensures_0").unwrap();
         for law in [
             "float32_divide_positive_lower",
