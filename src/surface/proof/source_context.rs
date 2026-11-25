@@ -62,7 +62,6 @@ impl SourceContext {
                     | ProofTactic::Enumerate
                     | ProofTactic::Contradiction(_)
                     | ProofTactic::Rewrite(_)
-                    | ProofTactic::TransportUsing { .. }
                     | ProofTactic::CompatibilityFactTransport { .. }
                     | ProofTactic::Instantiate { .. }
             ),
@@ -74,7 +73,6 @@ impl SourceContext {
                     | ProofTactic::StepBind(_)
                     | ProofTactic::StepCall(_)
                     | ProofTactic::UserTactic(_)
-                    | ProofTactic::TransportUsing { .. }
                     | ProofTactic::CompatibilityFactTransport { .. }
                     | ProofTactic::UnfoldProposition(_)
                     | ProofTactic::UnfoldFunction(_)
@@ -84,6 +82,7 @@ impl SourceContext {
                     | ProofTactic::ReleaseView(_)
                     | ProofTactic::ObserveResource(_)
                     | ProofTactic::Iterated(_)
+                    | ProofTactic::Instantiate { .. }
                     | ProofTactic::ApplyFactUsing { .. }
                     | ProofTactic::ApplyTheoremUsing { .. }
             ),
@@ -110,7 +109,6 @@ impl SourceContext {
                     | ProofTactic::ArithmeticUsing(_)
                     | ProofTactic::Preserve(_)
                     | ProofTactic::Rewrite(_)
-                    | ProofTactic::TransportUsing { .. }
                     | ProofTactic::CompatibilityFactTransport { .. }
             ),
         }

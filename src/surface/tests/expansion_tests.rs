@@ -580,7 +580,7 @@ fn signed_countdown_bounds_expand_without_normalize() {
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expands and cold-verifies three linked-pointer C programs"]
 fn linked_pointer_viewability_expands_without_normalize() {
-    for (fixture, guards, rewrites) in [
+    for (fixture, calls, rewrites) in [
         (
             "a_linked_pointer_array_initializer_names_a_private_object_of_its_defining_file",
             1,
@@ -603,7 +603,8 @@ fn linked_pointer_viewability_expands_without_normalize() {
         let expanded = expand_c_claim_source_by_label(&source, &sources, label)
             .unwrap_or_else(|error| panic!("{}", error.report()));
         assert!(!expanded.contains("normalize()"), "{expanded}");
-        assert_eq!(expanded.matches("observe(").count(), guards, "{expanded}");
+        assert_eq!(expanded.matches("step() by {").count(), calls, "{expanded}");
+        assert_eq!(expanded.matches("observe(").count(), rewrites, "{expanded}");
         assert_eq!(expanded.matches("rewrite(").count(), rewrites, "{expanded}");
         without_implicit_solve_for_claim(label, || {
             verify_c_sources(&expanded, &sources).map_err(|error| error.report())
@@ -1338,11 +1339,12 @@ fn viewable_requirement_supports_a_narrower_span_without_transport() {
         );
     let report = verify_c_sources(&wrapped, &[]).unwrap_err().report();
     assert!(
-        report.contains("needs that range to be a valid 32-bit byte span"),
+        report
+            .contains("theorem `click::separation::viewable_restrict` has an unproved obligation"),
         "{report}"
     );
     assert!(
-        report.contains("to_integer(hi - lo) <= 1073741823"),
+        report.contains("goal: to_integer(hi - lo) <= 1073741823"),
         "{report}"
     );
 }
@@ -2178,7 +2180,10 @@ fn lexicographic_integer_measure_links_expand_and_recheck() {
         .collect::<Vec<_>>();
     let verified = verify_c_sources(&source, &sources).unwrap();
     let expanded = expand_checked_grouped_claim(&source, &verified, "lexicographic").unwrap();
-    without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
+    without_implicit_solve_for_claim("lexicographic.contract", || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
 }
 
 #[test]
@@ -2375,8 +2380,7 @@ fn scalar_induction_keeps_integer_parameters_and_their_guards() {
         without_implicit_solve_for_claim("carry_seed_returns_the_same_integer.ensures_0", || {
             verify_click_theorems(&guarded_family).map_err(|error| error.report())
         })
-        .err()
-        .expect("cold replay must require the instantiated guard");
+        .expect_err("cold replay must require the instantiated guard");
     assert!(
         error.to_string().contains("induction hypothesis"),
         "{error}"
@@ -4857,7 +4861,7 @@ fn shared_initialize_closer_expansion_replaces_the_script_before_it() {
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 4s in the parallel gate"]
 fn initialize_closer_expansion_names_an_invariant_once_per_owed_goal() {
-    let anchor = "            }\n            close();\n        }\n        preserve";
+    let anchor = "            }\n            close();\n        }\n        maintain";
     let quantified = "have forall (k: int32) { 0 <= k and k <= n implies viewable(a[0..k]) } by {\n                have";
     for fixture in [
         "mdtests/loop_initialize_narrows_a_held_range_under_a_universal.md",
@@ -11774,7 +11778,6 @@ fn literal_constructor_field_disequality_expands_to_known() {
 #[test]
 fn computed_sequence_negations_expand_to_known() {
     let (source, _) = mdtest_sources("mdtests/sequence_literals.md");
-    let source = source.replace("[0, 1] != [1, 0] by close()", "[0, 1] != [1, 0] by close()");
     for (theorem, next_theorem) in [
         (
             "sequence_order_is_observable",
@@ -14295,10 +14298,10 @@ fn execution_branch_arm_terminal_proof_if_stays_on_one_proof() {
             Some(ProofTactic::Branch(outer))
                 if outer.then_tactics.iter().any(|tactic| matches!(
                     tactic,
-                    ProofTactic::If(inner) if inner.condition == SurfaceProposition::Comparison {
-                        left: SurfaceTerm::ProgramExpression(ProgramExpression::Variable(("x".to_string()).into())),
+                    ProofTactic::If(inner) if inner.condition == SyntaxProposition::Comparison {
+                        left: SyntaxTerm::ProgramExpression(ProgramExpression::Variable(("x".to_string()).into())),
                         operator: ComparisonOperator::GreaterEqual,
-                        right: SurfaceTerm::IntegerLiteral("0".into()),
+                        right: SyntaxTerm::IntegerLiteral("0".into()),
                     }
                 ))
         ),
@@ -14406,7 +14409,7 @@ fn branch_interface_retains_its_checked_abstract_join() {
                 ..
             ] if matches!(
                 branch.ensuring.as_deref(),
-                Some([ProofAssertion::Fact(SurfaceProposition::Comparison {
+                Some([ProofAssertion::Fact(SyntaxProposition::Comparison {
                     operator: ComparisonOperator::GreaterEqual,
                     ..
                 })])
@@ -14709,7 +14712,7 @@ fn branch_join_retains_a_bare_theorem_application_in_its_continuation() {
                 ..
             ] if matches!(
                     branch.ensuring.as_deref(),
-                    Some([ProofAssertion::Fact(SurfaceProposition::Comparison {
+                    Some([ProofAssertion::Fact(SyntaxProposition::Comparison {
                         operator: ComparisonOperator::LessThan,
                         ..
                     })])
@@ -14781,7 +14784,7 @@ fn branch_join_retains_a_bare_fact_transport_in_its_continuation() {
                 ..
             ] if matches!(
                     branch.ensuring.as_deref(),
-                    Some([ProofAssertion::Fact(SurfaceProposition::Comparison {
+                    Some([ProofAssertion::Fact(SyntaxProposition::Comparison {
                         operator: ComparisonOperator::LessThan,
                         ..
                     })])
@@ -14873,11 +14876,11 @@ fn branch_join_retains_a_nested_have_in_its_continuation() {
             ] if matches!(
                     branch.ensuring.as_deref(),
                     Some([
-                        ProofAssertion::Fact(SurfaceProposition::Comparison {
+                        ProofAssertion::Fact(SyntaxProposition::Comparison {
                             operator: ComparisonOperator::GreaterThan,
                             ..
                         }),
-                        ProofAssertion::Fact(SurfaceProposition::Comparison {
+                        ProofAssertion::Fact(SyntaxProposition::Comparison {
                             operator: ComparisonOperator::LessThan,
                             ..
                         }),
@@ -14959,11 +14962,11 @@ fn branch_join_retains_linear_execute_on_its_common_successor() {
             ] if matches!(
                     branch.ensuring.as_deref(),
                     Some([
-                        ProofAssertion::Fact(SurfaceProposition::Comparison {
+                        ProofAssertion::Fact(SyntaxProposition::Comparison {
                             operator: ComparisonOperator::GreaterThan,
                             ..
                         }),
-                        ProofAssertion::Fact(SurfaceProposition::Comparison {
+                        ProofAssertion::Fact(SyntaxProposition::Comparison {
                             operator: ComparisonOperator::LessThan,
                             ..
                         }),
@@ -16923,7 +16926,7 @@ const RESOURCE_EXAMPLE_PIPELINE_CASES: &[(&str, &str, &str, &str)] = &[
         "recursive-zero-list",
         "recursive_zero_list.click",
         "zero_list_pipeline",
-        "fold(zero_list(first));",
+        "fold(zero_list(first)) by {",
     ),
     (
         "vector-push",
@@ -17304,17 +17307,10 @@ fn negative_outcome_diagnostic_manifests_have_no_fallbacks() {
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn branch_continuation_claims_retain_their_selected_outcome_step() {
-    for (filename, function, claim, _) in [
-        (
-            "proof_branch_continuation.md",
-            "joined_increment",
-            ContractProofClaim::Ensure(1),
-            "joined_increment.ensures_1",
-        ),
+    for (filename, label) in [
+        ("proof_branch_continuation.md", "joined_increment.ensures_0"),
         (
             "proof_branch_interface_continuation.md",
-            "advance_nested_join",
-            ContractProofClaim::Ensure(0),
             "advance_nested_join.ensures_0",
         ),
     ] {
@@ -17341,7 +17337,7 @@ fn branch_continuation_claims_retain_their_selected_outcome_step() {
                 click_source,
                 &c_sources,
                 crate::surface::expansion::ProofSite::FunctionClaim {
-                    function_name: function.to_string(),
+                    function_name: "joined_increment".to_string(),
                     claim: ContractProofClaim::Ensure(1),
                 },
                 0,
@@ -17354,11 +17350,10 @@ fn branch_continuation_claims_retain_their_selected_outcome_step() {
             );
         }
 
-        let expanded = expand_c_claim_source(click_source, &c_sources, function, claim)
+        let expanded = expand_c_claim_source_by_label(click_source, &c_sources, label)
             .unwrap_or_else(|error| panic!("failed to expand `{}`: {error:?}", path.display()));
-        // The selected outcome step is the one `have` whose arithmetic steps
-        // cite, as listed premises, the state-anchored facts the branch
-        // exported.
+        // The selected outcome step uses the state-anchored lower bound
+        // exported by the branch.
         let retained = anchored_arithmetic_have_blocks(&expanded);
         let [retained] = retained.as_slice() else {
             panic!("expected one retained arithmetic step, found {retained:?}:\n{expanded}");
@@ -17366,15 +17361,17 @@ fn branch_continuation_claims_retain_their_selected_outcome_step() {
         let lines = expanded.lines().collect::<Vec<_>>();
         assert!(
             lines[retained.clone()].iter().any(|line| {
-                line.trim_start()
-                    .trim_start_matches('(')
-                    .starts_with("at(region(")
+                line.trim_start().starts_with("have 0 <= to_integer(")
+                    && line.contains("at(region(")
             }),
             "the retained step does not cite the anchored branch premises:\n{expanded}"
         );
-        verify_c_sources(&expanded, &c_sources).unwrap_or_else(|error| {
+        crate::surface::check_audit_claim(label, true, || {
+            verify_c_sources(&expanded, &c_sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| {
             panic!(
-                "expanded proof from `{}` failed independent verification: {error:?}",
+                "expanded proof from `{}` failed independent verification: {error}",
                 path.display()
             )
         });
@@ -17387,7 +17384,10 @@ fn branch_continuation_claims_retain_their_selected_outcome_step() {
             .collect::<Vec<_>>()
             .join("\n");
         assert!(
-            verify_c_sources(&without_retained_step, &c_sources).is_err(),
+            crate::surface::check_audit_claim(label, true, || {
+                verify_c_sources(&without_retained_step, &c_sources).map_err(|error| error.report())
+            })
+            .is_err(),
             "`{}` checked after deleting its selected retained arithmetic step",
             path.display()
         );
@@ -18125,12 +18125,10 @@ fn guarded_definedness_preservation_expands_and_cold_replays() {
         .map(|(name, text)| (*name, text.as_str()))
         .collect::<Vec<_>>();
     let error = verify_c_sources(&source, &overwritten_sources).unwrap_err();
+    let report = error.report();
     assert!(
-        error
-            .message()
-            .contains("`normalize using` goal did not normalize to true"),
-        "{}",
-        error.report()
+        report.contains("goal: separate(region(1).footprint,"),
+        "{report}"
     );
 }
 
@@ -20174,18 +20172,16 @@ fn grouped_closer_over_four_paths_places_each_leafs_own_expansion() {
     // then stitched onto every leaf, and the one path needing a different
     // closer conflicted with the leaves the others had already filled.
     let sources = [("contains3.c", FOUR_RETURN_C)];
-    let closer = FOUR_RETURN_CLICK
-        .rfind("close();")
-        .expect("proof should contain the grouped closer");
-    let position = expansion::position_at_offset(FOUR_RETURN_CLICK, closer);
-    let expanded =
-        expand_c_tactic_source_at(FOUR_RETURN_CLICK, &sources, position.line, position.column)
-            .expect("the four-path closer should expand");
+    let label = "contains3.contract";
+    let expanded = expand_c_claim_source_by_label(FOUR_RETURN_CLICK, &sources, label)
+        .expect("the four-path closer should expand");
     // Cold verification checks every leaf's own certificate. Constant
     // false premises can close the falling-through leaf directly, so a
     // particular number of transport steps is not part of this guarantee.
-    verify_c_sources(&expanded, &sources)
-        .expect("the expanded four-path closer should independently reverify");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .expect("the expanded four-path closer should independently reverify");
 }
 
 /// A composite resource whose body binds an existential witness. The witness
@@ -21094,7 +21090,12 @@ fn conditional_call_witness_expansion_keeps_empty_binder_map() {
     )
     .expect("the let-bound call must remain parseable");
     assert!(
-        expanded.contains("let { result: r } = step(child);"),
+        expanded.lines().any(|line| {
+            matches!(
+                line.trim(),
+                "let { result: r } = step(child);" | "let { result: r } = step(child) {"
+            )
+        }),
         "{expanded}"
     );
     verify_c_sources(&expanded, &sources).expect("the expanded witness proof certifies");
@@ -23243,6 +23244,23 @@ fn loop_maintain_expansion_preserves_pointer_arm_binding() {
     verify_c_sources(&expanded, &sources).expect("the expanded proof checks");
 }
 
+#[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_68")]
+fn loop_maintain_instantiation_expands_and_replays() {
+    let (source, sources) = mdtest_sources("mdtests/loop_decreases_index_ordered_walk.md");
+    let sources = crate::cli::source_refs(&sources);
+    let label = "walk.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+        .expect("the loop proof with bare instantiation should expand");
+    let maintain = expanded.split_once("maintain by {").unwrap().1;
+    let before_step = maintain.split_once("step()").unwrap().0;
+    assert!(before_step.contains("instantiate(forall"), "{expanded}");
+    crate::surface::without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
+    })
+    .expect("the expanded proof should replay with the instantiated fact");
+}
+
 /// A loop phase written in a grouped proof's `loop` tactic is a claim of its
 /// own: its label, and a line of its proof, select just that phase, and the
 /// expansion replaces only the phase's `by` clause with its checked
@@ -24669,10 +24687,13 @@ fn early_return_expansion_keeps_resource_call_outputs_in_scope() {
         .iter()
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
-    let expanded = expand_c_claim_source_by_label(source, &sources, "run.contract")
+    let label = "run.contract";
+    let expanded = expand_c_claim_source_by_label(source, &sources, label)
         .expect("a call's resource output must remain in scope in the expanded continuation");
-    crate::surface::proof::without_implicit_solve(|| verify_c_sources(&expanded, &sources))
-        .expect("the expanded worker claim must cold verify without implicit solving");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .expect("the expanded worker claim must cold verify without implicit solving");
 }
 
 #[test]
@@ -26745,6 +26766,7 @@ test_batches! {
         unfolded_conjunction_have_solve_expands_and_rechecks,
         outcome_predecessor_bound_solve_expands_to_arithmetic_steps,
         loop_preservation_case_after_step_expands_in_place,
+        loop_maintain_instantiation_expands_and_replays,
     ],
     expansion_batch_69: [
         loop_preservation_case_before_step_expands_in_place,

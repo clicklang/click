@@ -109,7 +109,7 @@ fn raw_pointer_conditions_keep_shared_displacements_through_rewrites_and_transpo
                     .unwrap();
                 let transported = crate::kernel::memory_history::transport_framed_common_condition(
                     &source,
-                    &crate::kernel::SymbolicMemory::new(),
+                    &crate::kernel::ProgramPoint::of_memory(&crate::kernel::SymbolicMemory::new()),
                     None,
                 )
                 .unwrap();
@@ -180,7 +180,7 @@ fn complete_pointer_conditions_keep_shared_domains_through_rewrites_and_observat
             assert_eq!(
                 crate::kernel::memory_history::transport_framed_common_condition(
                     &root,
-                    &crate::kernel::SymbolicMemory::new(),
+                    &crate::kernel::ProgramPoint::of_memory(&crate::kernel::SymbolicMemory::new()),
                     None
                 ),
                 Some(root.clone())

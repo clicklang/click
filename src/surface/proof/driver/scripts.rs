@@ -26,7 +26,7 @@ impl ConjunctKey {
 struct ConjunctArms<'proof, 'a, 'source> {
     parent: &'proof Proof<'a>,
     arms: &'source [ProofAllArm],
-    written: HashMap<&'source SurfaceProposition, VecDeque<usize>>,
+    written: HashMap<&'source SyntaxProposition, VecDeque<usize>>,
     lowered: Option<BTreeMap<ConjunctKey, VecDeque<(usize, Proposition)>>>,
     used: Vec<bool>,
     grouped: usize,
@@ -42,7 +42,7 @@ impl<'proof, 'a, 'source> ConjunctArms<'proof, 'a, 'source> {
                 .entry(&arm.proposition)
                 .or_default()
                 .push_back(index);
-            grouped += usize::from(matches!(arm.proposition, SurfaceProposition::And(..)));
+            grouped += usize::from(matches!(arm.proposition, SyntaxProposition::And(..)));
         }
         Self {
             parent,
@@ -69,7 +69,7 @@ impl<'proof, 'a, 'source> ConjunctArms<'proof, 'a, 'source> {
         let index = written.or_else(|| self.take_lowered(goal))?;
         self.used[index] = true;
         let arm = &self.arms[index];
-        self.grouped -= usize::from(matches!(arm.proposition, SurfaceProposition::And(..)));
+        self.grouped -= usize::from(matches!(arm.proposition, SyntaxProposition::And(..)));
         Some((index, arm))
     }
 
@@ -110,8 +110,7 @@ impl<'proof, 'a, 'source> ConjunctArms<'proof, 'a, 'source> {
         // ordinary check also compares the non-memory storage of predicates.
         let matching = candidates.iter().position(|(index, label)| {
             !self.used[*index]
-                && (!grouped
-                    || matches!(self.arms[*index].proposition, SurfaceProposition::And(..)))
+                && (!grouped || matches!(self.arms[*index].proposition, SyntaxProposition::And(..)))
                 && propositions_are_alpha_equal(label, goal)
         })?;
         candidates.remove(matching).map(|(index, _)| index)
@@ -238,11 +237,11 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 .assumption
                 .clone(),
             |disjunction, arm| {
-                SurfaceProposition::Or(Box::new(disjunction), Box::new(arm.assumption.clone()))
+                SyntaxProposition::Or(Box::new(disjunction), Box::new(arm.assumption.clone()))
             },
         );
         let disjunction =
-            SurfaceProposition::Or(Box::new(disjunction), Box::new(last.assumption.clone()));
+            SyntaxProposition::Or(Box::new(disjunction), Box::new(last.assumption.clone()));
         let prepared = driver_proof
             .driver()
             .prove_cases_disjunction(&disjunction)?;
@@ -400,7 +399,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         mut unfinished: Option<&mut Option<Proof<'a>>>,
         implicit_tail: bool,
         at_root: bool,
-    ) -> Result<Option<(Proof<'a>, Option<Arc<SurfaceProposition>>)>, ClickError> {
+    ) -> Result<Option<(Proof<'a>, Option<Arc<SyntaxProposition>>)>, ClickError> {
         let proof = self.proof;
         let Some(goal) = proof.goal() else {
             return Err(proof.step_error("`all` requires a conjunction goal"));
@@ -639,7 +638,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     | ProofTactic::ApplyInduction { .. }
                     | ProofTactic::Instantiate { .. }
                     | ProofTactic::Transport { .. }
-                    | ProofTactic::TransportUsing { .. }
                     | ProofTactic::CompatibilityFactTransport { .. }
                     | ProofTactic::LetSatisfy(_)
             ) && tactics.get(index + 1).is_some_and(|next| {
@@ -1021,7 +1019,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     // answer. A pure theorem has no frontier to select from.
                     if !matches!(proof.context.as_ref(), ProofContext::Execution(_)) {
                         return Err(proof.step_error(
-                            "bare `transport` selects its premises at a C execution frontier, and this proof has none; write `transport(P, Q) using { ... }` with the premises it needs",
+                            "`transport` requires a C execution frontier; use `have`, `rewrite`, or `close() using` to prove the goal here",
                         ));
                     }
                     proof = match crate::kernel::search::ProofSearch::try_execution_fact_transport_or_refusal(&(proof), source, target)? {
@@ -1082,7 +1080,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     | ProofTactic::ApplyInduction { .. }
                     | ProofTactic::Instantiate { .. }
                     | ProofTactic::Transport { .. }
-                    | ProofTactic::TransportUsing { .. }
                     | ProofTactic::CompatibilityFactTransport { .. }
                     | ProofTactic::LetSatisfy(_)
             ) && !proof.focused_discharged()
@@ -1122,8 +1119,8 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     /// certificate, and keeps it as a fact.
     pub(in crate::surface::proof) fn have_by_integer_arithmetic(
         &self,
-        conclusion: SurfaceProposition,
-        premises: Vec<SurfaceProposition>,
+        conclusion: SyntaxProposition,
+        premises: Vec<SyntaxProposition>,
     ) -> Result<Proof<'a>, ClickError> {
         let driver_proof = self.proof;
         driver_proof
@@ -1138,8 +1135,8 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     pub(in crate::surface::proof) fn close_with_unsigned_lemma(
         &self,
         name: &str,
-        arguments: Vec<SurfaceTerm>,
-        premise: SurfaceProposition,
+        arguments: Vec<SyntaxTerm>,
+        premise: SyntaxProposition,
     ) -> Option<Proof<'a>> {
         let driver_proof = self.proof;
         let applied = driver_proof

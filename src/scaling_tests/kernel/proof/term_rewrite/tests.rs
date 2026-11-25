@@ -1184,12 +1184,16 @@ fn generic_read_alias_rewrite_work(count: u64, unrelated: u64, warm: bool) -> us
         },
         ProgramType::Int32Pointer,
     );
-    let read = AlgebraicTermNode::parameter_load(memory.clone(), from.address().clone(), parameter);
+    let read = AlgebraicTermNode::parameter_load_unsited(
+        memory.clone(),
+        from.address().clone(),
+        parameter,
+    );
     // Catch up the input's pointer-reachable index once for the warm-query
     // axis. Every measured alias is still fresh. The cold axis below charges
     // this initial delta as well and grows cells and queries together.
     if warm {
-        let _ = AlgebraicTermNode::parameter_load(
+        let _ = AlgebraicTermNode::parameter_load_unsited(
             memory.clone(),
             Address::symbolic(Variable(998_000)),
             parameter,
@@ -1202,8 +1206,11 @@ fn generic_read_alias_rewrite_work(count: u64, unrelated: u64, warm: bool) -> us
                 ProgramType::Int32Pointer,
             );
             let rewritten = TermRewrite::for_pointer_value_exact(&from, &to).value(&read);
-            let expected =
-                AlgebraicTermNode::parameter_load(memory.clone(), to.address().clone(), parameter);
+            let expected = AlgebraicTermNode::parameter_load_unsited(
+                memory.clone(),
+                to.address().clone(),
+                parameter,
+            );
             assert_eq!(rewritten, expected);
             assert_ne!(rewritten, stored);
         }

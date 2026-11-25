@@ -64,10 +64,9 @@ contract closers have no independent source site and remain part of shared
 verification work rather than appearing as selectable tactics.
 
 Function and claim rankings are two views of the same work and must not be
-added together. A `SMART` row is a written smart tactic, the implicit tail,
-or a simple tactic written with an elided argument, such as `apply(t(x))` or
-a bare `transport(P, Q)`, whose search fills that argument. The same tactic
-with its argument written is a `SIMPLE` row. Profile rows for `close()` and `close() using` read `close`. Bare
+added together. A `SMART` row covers a written smart tactic such as bare
+`transport(P, Q)`, or implicit proof search. A `SIMPLE` row covers a checked
+operation. Profile rows for `close()` and `close() using` read `close`. Bare
 `close()` charges its initial check as simple work and its fallback search
 as smart work. A `step_until` row reads `step_until`. The implicit tail
 at the end of a script or an omitted proof reads `implicit tail`. The implicit closer

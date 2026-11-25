@@ -350,7 +350,7 @@ pub(super) fn pointer_definition(pointer: &Address) -> Option<MachineTerm> {
         let read = pointer.as_loaded_value()?;
         (read.displacement == crate::kernel::AddressOffset::Constant(0)).then(|| {
             crate::kernel::MachineTerm::read_named(
-                crate::kernel::ProgramPoint::at(&read.defining_memory),
+                crate::kernel::ProgramPoint::viewing(&read.defining_memory, &read.point),
                 read.defining_address,
                 crate::kernel::LoadKind::Int32,
             )

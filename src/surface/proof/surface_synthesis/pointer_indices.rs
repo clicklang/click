@@ -79,7 +79,7 @@ pub(super) fn raise(
     parameters: ParameterBinding<'_>,
     state: &ExecutionState,
     names: &BTreeMap<Variable, SurfaceBinder>,
-) -> Option<SurfaceTerm> {
+) -> Option<SyntaxTerm> {
     match value {
         V::Shared(root) => raise_kernel_term(root, parameters, state, names),
         V::Legacy(value) => synthesize_surface_bitvector(value, parameters, state, names),

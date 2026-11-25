@@ -65,7 +65,7 @@ Checklist:
 Search for all matches on:
 
 ```console
-rg -n "SurfaceProposition|SurfaceTerm" src/surface.rs
+rg -n "SyntaxProposition|SyntaxTerm" src/surface.rs
 ```
 
 ## Adding C syntax

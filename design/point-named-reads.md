@@ -197,7 +197,7 @@ standalone (local branch `codex/pathless-census`):
 
 | Built without a path | Calls | Sites |
 | --- | --- | --- |
-| `ProgramPoint::at(memory)` | 88,406 | 45 |
+| `ProgramPoint::at(memory)` (now `ProgramPoint::unplaced`) | 88,406 | 45 |
 | read terms named at such a point | 43,090 | 28 |
 | `ExecutionState::program_point()` with no path | 999 | 7 |
 
@@ -220,10 +220,20 @@ and the walk that found it is what knew where on the path that snapshot sits.
 Naming the read at that place instead is stage 2's renaming. Stage 1
 attaches only the **read site**: the point the read was made at.
 
-- `ReadSelection::Legacy` carries an optional read site.
+- `ReadSelection::Legacy` carries a place (`LegacyPlace`): where the
+  memory belongs. `ProgramPoint::viewing(memory, source)` places a memory
+  that is `source`'s state or a view of it (a substitution, a
+  materialization, a projection of that state) as true at `source`'s point.
+  `ProgramPoint::walked(memory, read_at)` places the legacy walk's memory,
+  which is the state of an earlier point the walk does not name, only as
+  walked from the read's point: it claims nothing about where the memory is
+  true. `ProgramPoint::read_at(memory, site)` picks between them.
   `ProgramPoint::read_site()` is the point's own path when it has one, else
-  that recorded site. `ProgramPoint::at_read_site(memory, site)` builds a
-  legacy point that records one.
+  that place.
+- A point with no place is built only by `ProgramPoint::unplaced`, whose
+  production uses `build_support/read_construction.rs` holds to a shrinking
+  count; it is removed when the count reaches zero. The walk's memory gets a
+  true place only when reads are named by the point walk (stage 2).
 - The site is no part of identity: legacy points compare and hash by memory,
   and the point's own path stays empty, so code that branches on
   `ProgramPoint::id()` or `has_certified_read_view()` is unaffected. No term

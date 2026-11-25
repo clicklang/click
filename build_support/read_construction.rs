@@ -41,6 +41,7 @@ pub(super) enum Form {
     LoadBase,
     Bits64,
     PointerWordRead,
+    UnplacedPoint,
 }
 
 impl Form {
@@ -54,6 +55,9 @@ impl Form {
             Self::LoadBase => "`AddressBase::Load(..)`",
             Self::Bits64 => "`LoadKind::Bits64` spellings",
             Self::PointerWordRead => "`legacy_pointer_word_read(..)` calls",
+            Self::UnplacedPoint => {
+                "`ProgramPoint::unplaced(..)`, `canonical_form_of_load(..)` and `memory_read(..)` calls"
+            }
         }
     }
 
@@ -69,6 +73,9 @@ impl Form {
             }
             Self::PointerWordRead => {
                 "name, compare and key a pointer load as a `Load` (design/loads.md, step 3b)"
+            }
+            Self::UnplacedPoint => {
+                "place the memory: `ProgramPoint::viewing` for a state or a view of one, `ProgramPoint::walked` for a legacy walk's memory (design/point-named-reads.md)"
             }
         }
     }
@@ -139,6 +146,57 @@ const BASELINE: &[(&str, Form, usize)] = &[
         "src/kernel/primitives/term_operations.rs",
         Form::PointerWordRead,
         2,
+    ), // Points built from a bare memory, with no place (`ProgramPoint::unplaced`).
+    // Each conversion to `viewing` or `walked` lowers its file's entry; the
+    // constructor goes when the table has none.
+    (
+        "src/kernel/api/contract_certification/contract_claims.rs",
+        Form::UnplacedPoint,
+        1,
+    ),
+    ("src/kernel/assumptions.rs", Form::UnplacedPoint, 1),
+    ("src/kernel/eval/memory_loads.rs", Form::UnplacedPoint, 12),
+    (
+        "src/kernel/functions/globals_and_aggregates.rs",
+        Form::UnplacedPoint,
+        3,
+    ),
+    ("src/kernel/memory_history.rs", Form::UnplacedPoint, 2),
+    (
+        "src/kernel/primitives/cell_store.rs",
+        Form::UnplacedPoint,
+        1,
+    ),
+    ("src/kernel/primitives/load.rs", Form::UnplacedPoint, 1),
+    (
+        "src/kernel/primitives/machine_integer.rs",
+        Form::UnplacedPoint,
+        1,
+    ),
+    (
+        "src/kernel/primitives/memory_state.rs",
+        Form::UnplacedPoint,
+        7,
+    ),
+    (
+        "src/kernel/primitives/program_point.rs",
+        Form::UnplacedPoint,
+        2,
+    ),
+    (
+        "src/kernel/primitives/term_operations.rs",
+        Form::UnplacedPoint,
+        3,
+    ),
+    (
+        "src/kernel/proof/equality_rewrite.rs",
+        Form::UnplacedPoint,
+        1,
+    ),
+    (
+        "src/surface/proof/fixed_state_proofs/fact_transport.rs",
+        Form::UnplacedPoint,
+        1,
     ),
 ];
 
@@ -236,6 +294,18 @@ impl<'ast> Visit<'ast> for Counter {
                 [.., last] if *last == "legacy_pointer_word_read" => {
                     self.add(Form::PointerWordRead)
                 }
+                [.., owner, last]
+                    if *last == "unplaced" && (*owner == "ProgramPoint" || *owner == "Self") =>
+                {
+                    self.add(Form::UnplacedPoint)
+                }
+                // The wrappers that build a read from a bare memory make an
+                // unplaced point for each caller.
+                [.., last] if *last == "canonical_form_of_load" || *last == "memory_read" => {
+                    self.add(Form::UnplacedPoint)
+                }
+                // An optional read site falls back to an unplaced point.
+                [.., last] if *last == "read_at_optional" => self.add(Form::UnplacedPoint),
                 [.., owner, last]
                     if *last == "Load"
                         && (*owner == "AddressBase"

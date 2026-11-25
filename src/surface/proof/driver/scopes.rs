@@ -5,9 +5,9 @@ use crate::surface::proof::driver::ProofDriver;
 impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
     pub(in crate::surface::proof) fn try_ordinary_fact_transport(
         &self,
-        source: &SurfaceProposition,
-        target: &SurfaceProposition,
-        premises: &[SurfaceProposition],
+        source: &SyntaxProposition,
+        target: &SyntaxProposition,
+        premises: &[SyntaxProposition],
     ) -> Result<Option<ProofScope<'a>>, ClickError> {
         let Some(body) = crate::kernel::search::ProofSearch::try_ordinary_fact_transport(
             &self.proof.body,
@@ -25,8 +25,8 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
 
     pub(in crate::surface::proof) fn try_preserve_selected_fact(
         &self,
-        conclusion: &SurfaceProposition,
-        source: SurfaceProposition,
+        conclusion: &SyntaxProposition,
+        source: SyntaxProposition,
     ) -> Result<Option<ProofScope<'a>>, ClickError> {
         let Some(body) = crate::kernel::search::ProofSearch::try_preserve_selected_fact(
             &self.proof.body,
@@ -43,7 +43,7 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
 
     pub(in crate::surface::proof) fn try_struct_field_equality(
         &self,
-        equality: &SurfaceProposition,
+        equality: &SyntaxProposition,
     ) -> Result<Option<ProofScope<'a>>, ClickError> {
         let Some(body) = crate::kernel::search::ProofSearch::try_struct_field_equality(
             &self.proof.body,
@@ -62,7 +62,7 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
         &self,
         source: &Proposition,
         goal: &Proposition,
-        source_surface: &SurfaceProposition,
+        source_surface: &SyntaxProposition,
     ) -> Result<Option<ProofScope<'a>>, ClickError> {
         let Some(body) = crate::kernel::search::ProofSearch::try_float_bound_link(
             &self.proof.body,
@@ -81,7 +81,7 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
     pub(in crate::surface::proof) fn try_signed_definedness_bounds(
         &self,
         width: crate::kernel::SignedDefinedWidth,
-        premises: Vec<SurfaceProposition>,
+        premises: Vec<SyntaxProposition>,
     ) -> Result<Option<ProofScope<'a>>, ClickError> {
         let Some(body) = crate::kernel::search::ProofSearch::try_signed_definedness_bounds(
             &self.proof.body,
@@ -112,7 +112,7 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
     /// Emit local word laws in an owned have body.
     pub(in crate::surface::proof) fn try_address_words_using(
         &self,
-        premises: &[SurfaceProposition],
+        premises: &[SyntaxProposition],
     ) -> Result<Option<ProofScope<'a>>, ClickError> {
         let Some(body) = crate::kernel::search::ProofSearch::try_address_words_using(
             &self.proof.body,
@@ -129,7 +129,7 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
     /// Rewrite selected conditional arms inside an owned have body.
     pub(in crate::surface::proof) fn try_rewrite_conditional_arms_using(
         &self,
-        premises: &[SurfaceProposition],
+        premises: &[SyntaxProposition],
     ) -> Result<Option<ProofScope<'a>>, ClickError> {
         let Some((body, _)) = crate::kernel::search::ProofSearch::rewrite_conditional_arms_using(
             &self.proof.body,
@@ -146,7 +146,7 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
     /// Construct a selected scalar interval leaf without normalization.
     pub(in crate::surface::proof) fn try_interval_fact_using(
         &self,
-        premises: &[SurfaceProposition],
+        premises: &[SyntaxProposition],
     ) -> Result<Option<ProofScope<'a>>, ClickError> {
         let Some(body) = crate::kernel::search::ProofSearch::try_interval_fact_using(
             &self.proof.body,
@@ -178,7 +178,7 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
     /// Construct a signed addition or subtraction certificate from the selected bounds.
     pub(in crate::surface::proof) fn try_int32_add_sub_using(
         &self,
-        premises: &[SurfaceProposition],
+        premises: &[SyntaxProposition],
     ) -> Result<Option<ProofScope<'a>>, ClickError> {
         let Some(body) = crate::kernel::search::ProofSearch::try_int32_add_sub_using(
             &self.proof.body,
@@ -195,7 +195,7 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
     /// Construct the selected countdown bound in its owned have body.
     pub(in crate::surface::proof) fn try_signed_countdown_using(
         &self,
-        premises: &[SurfaceProposition],
+        premises: &[SyntaxProposition],
     ) -> Result<Option<ProofScope<'a>>, ClickError> {
         let Some(body) = crate::kernel::search::ProofSearch::try_signed_countdown_using(
             &self.proof.body,
@@ -212,7 +212,7 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
     /// Run only the ordinary Integer emitter in a selected have body.
     pub(in crate::surface::proof) fn try_integer_composition_using(
         &self,
-        premises: &[SurfaceProposition],
+        premises: &[SyntaxProposition],
     ) -> Result<Option<ProofScope<'a>>, ClickError> {
         let Some(body) = crate::kernel::search::ProofSearch::try_integer_composition_using(
             &self.proof.body,
@@ -243,7 +243,7 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
     /// Emit the explicit interval-product proof inside a selected have body.
     pub(in crate::surface::proof) fn try_product_bound_using(
         &self,
-        premises: &[SurfaceProposition],
+        premises: &[SyntaxProposition],
     ) -> Result<Option<ProofScope<'a>>, ClickError> {
         let Some(body) = crate::kernel::search::ProofSearch::try_product_bound_using(
             &self.proof.body,
@@ -274,7 +274,7 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
     /// Interpret an expanded branch, then retain its direct checked successor.
     pub(in crate::surface::proof) fn apply_expanded_execution_if(
         &self,
-        condition: &SurfaceProposition,
+        condition: &SyntaxProposition,
         then_steps: &[ProofStep],
         else_steps: &[ProofStep],
     ) -> Result<ProofScope<'a>, ClickError> {
@@ -395,11 +395,11 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
 
     /// Runs bare fact-transport search on the scope's current checked body.
     /// Failed candidate descendants are discarded by `Proof`; the enclosing
-    /// scope receives only the successful retained `TransportUsing` node.
+    /// scope receives only the successful retained proof.
     pub(in crate::surface::proof) fn try_fact_transport(
         &self,
-        source: &SurfaceProposition,
-        target: &SurfaceProposition,
+        source: &SyntaxProposition,
+        target: &SyntaxProposition,
     ) -> Result<Option<ProofScope<'a>>, ClickError> {
         let driver_proof = self.proof;
         if driver_proof.body.is_at_function_exit() {
@@ -489,7 +489,7 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
     /// Preserve the selected sources in an owned signed-domain proof.
     pub(in crate::surface::proof) fn try_restricted_signed_definedness_closure(
         &self,
-        premises: &[(crate::kernel::Proposition, SurfaceProposition)],
+        premises: &[(crate::kernel::Proposition, SyntaxProposition)],
     ) -> Result<Option<ProofScope<'a>>, ClickError> {
         let Some(body) =
             crate::kernel::search::ProofSearch::try_restricted_signed_definedness_closure(
@@ -663,7 +663,7 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
 
     pub(in crate::surface::proof) fn try_restricted_solve_closure(
         &self,
-        surfaces: &[SurfaceProposition],
+        surfaces: &[SyntaxProposition],
     ) -> Option<ProofScope<'a>> {
         let driver_proof = self.proof;
         let body = crate::kernel::search::ProofSearch::try_restricted_solve_closure(
@@ -677,7 +677,7 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
 
     pub(in crate::surface::proof) fn try_solve_closure_with_surfaces(
         &self,
-        introduced_surfaces: &[SurfaceProposition],
+        introduced_surfaces: &[SyntaxProposition],
     ) -> Result<Option<ProofScope<'a>>, ClickError> {
         let driver_proof = self.proof;
         let Some(body) = crate::kernel::search::ProofSearch::try_solve_closure_with_surfaces(
@@ -694,7 +694,7 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
 
     pub(in crate::surface::proof) fn try_indexed_separation_restriction(
         &self,
-        goal: &SurfaceProposition,
+        goal: &SyntaxProposition,
     ) -> Result<Option<ProofScope<'a>>, ClickError> {
         let Some(body) =
             crate::kernel::search::ProofSearch::try_resource_separation_restriction_closure(
@@ -791,7 +791,7 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
     /// outcome-local ordered-finalization operations.
     pub(in crate::surface::proof) fn apply_fact_application(
         &self,
-        fact: &SurfaceProposition,
+        fact: &SyntaxProposition,
     ) -> Result<Option<ProofScope<'a>>, ClickError> {
         let driver_proof = self.proof;
         if driver_proof.body.is_at_function_exit() {
@@ -844,37 +844,32 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     /// Open a generated have, preserving its native arithmetic presentation.
     pub(in crate::surface::proof) fn open_have(
         &self,
-        proposition: SurfaceProposition,
+        proposition: SyntaxProposition,
     ) -> Result<ProofScope<'a>, ClickError> {
-        self.open_have_with_presentation(proposition, true, true)
+        self.open_have_with_presentation(proposition, true)
     }
 
     pub(in crate::surface::proof) fn open_source_have(
         &self,
         have: &ProofHave,
     ) -> Result<ProofScope<'a>, ClickError> {
-        let explicit_transport = matches!(&have.proof,
-            SourceProof::Script(tactics) if matches!(tactics.as_slice(), [ProofTactic::TransportUsing { .. }]));
-        self.open_have_with_goal_observations(have.proposition.clone(), !explicit_transport)
+        self.open_have_as_written(have.proposition.clone())
     }
 
-    pub(in crate::surface::proof) fn open_have_with_goal_observations(
+    pub(in crate::surface::proof) fn open_have_as_written(
         &self,
-        proposition: SurfaceProposition,
-        observe_goal: bool,
+        proposition: SyntaxProposition,
     ) -> Result<ProofScope<'a>, ClickError> {
-        self.open_have_with_presentation(proposition, observe_goal, false)
+        self.open_have_with_presentation(proposition, false)
     }
 
     fn open_have_with_presentation(
         &self,
-        proposition: SurfaceProposition,
-        observe_goal: bool,
+        proposition: SyntaxProposition,
         observed_spelling: bool,
     ) -> Result<ProofScope<'a>, ClickError> {
-        let operation = |proof: &Proof<'a>| {
-            proof.begin_have(proposition.clone(), observe_goal, observed_spelling)
-        };
+        let operation =
+            |proof: &Proof<'a>| proof.begin_have(proposition.clone(), observed_spelling);
         if super::execution_statements::implicit_solve_disabled() {
             return operation(self.proof);
         }
@@ -891,7 +886,7 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
     /// must still be incorporated through the existing join_nested operation.
     pub(in crate::surface::proof) fn open_have(
         &self,
-        proposition: SurfaceProposition,
+        proposition: SyntaxProposition,
     ) -> Result<ProofScope<'a>, ClickError> {
         self.proof.body.driver().open_have(proposition)
     }
@@ -909,7 +904,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     pub(in crate::surface::proof) fn open_contract_claim(
         &self,
         goal: &crate::kernel::ContractClaimGoal,
-        surface: &SurfaceProposition,
+        surface: &SyntaxProposition,
     ) -> Result<Proof<'a>, ClickError> {
         let root = self
             .proof
@@ -924,7 +919,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     pub(in crate::surface::proof) fn open_contract_claim_without_lowering_facts(
         &self,
         goal: &crate::kernel::ContractClaimGoal,
-        surface: &SurfaceProposition,
+        surface: &SyntaxProposition,
     ) -> Result<Proof<'a>, ClickError> {
         let checkpoint = self.proof.checkpoint();
         let operation = |root: &Proof<'a>| {

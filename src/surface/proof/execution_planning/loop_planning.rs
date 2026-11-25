@@ -12,7 +12,7 @@ use std::sync::Arc;
 /// map the clause re-annotation uses.
 fn phase_proof_scope(
     environment: &ExecutionProofEnvironment<'_>,
-) -> PersistentBinderMap<SurfaceTerm> {
+) -> PersistentBinderMap<SyntaxTerm> {
     environment
         .proof_locals
         .iter()
@@ -63,7 +63,7 @@ fn loop_invariant_surfaces(
     environment: &ExecutionProofEnvironment<'_>,
     loop_index: usize,
     claim_label: &str,
-) -> Result<Vec<SurfaceProposition>, ClickError> {
+) -> Result<Vec<SyntaxProposition>, ClickError> {
     environment
         .function_block
         .structural_clauses()
@@ -91,7 +91,7 @@ fn loop_invariant_surfaces(
 fn loop_ranking_surfaces(
     environment: &ExecutionProofEnvironment<'_>,
     loop_index: usize,
-) -> Vec<SurfaceTerm> {
+) -> Vec<SyntaxTerm> {
     environment
         .function_block
         .structural_clauses()
@@ -111,10 +111,10 @@ fn loop_ranking_surfaces(
 /// clauses retain their source meaning in the enclosing presentation map.
 fn record_loop_entry_invariants(
     surface_propositions: &mut SurfacePropositionMap,
-    invariant_surfaces: &[SurfaceProposition],
+    invariant_surfaces: &[SyntaxProposition],
     preservation: &crate::kernel::LoopPreservationContext,
     statement_index: usize,
-) -> Result<Vec<SurfaceProposition>, ClickError> {
+) -> Result<Vec<SyntaxProposition>, ClickError> {
     if invariant_surfaces.len() != preservation.invariant_propositions().len() {
         return Err(ClickError::new(
             "loop-head invariant results do not align with declared clauses",
@@ -749,7 +749,7 @@ pub(in crate::surface) fn with_scoped_loop_exit_facts<T>(run: impl FnOnce() -> T
 /// The written candidates are the loop's own proof statements. A nested
 /// loop has its own export boundary, and a have body proves its parent goal
 /// in a separate scope.
-fn loop_exit_claims(clause: &StructuralClause) -> Vec<&SurfaceProposition> {
+fn loop_exit_claims(clause: &StructuralClause) -> Vec<&SyntaxProposition> {
     use crate::surface::TacticChild;
     let mut pending = [clause.preserve_proof(), clause.otherwise_proof()]
         .into_iter()

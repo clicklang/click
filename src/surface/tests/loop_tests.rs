@@ -1496,7 +1496,7 @@ fn frontier_loop_binding_replaces_scope_without_merging_declarations() {
     else {
         panic!("expected the loop template");
     };
-    let value = |n| SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(n)));
+    let value = |n| SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(n)));
     let outer = template.with_scope(BTreeMap::from([("bound".to_string(), value(0))]));
     let inner = template.with_scope(BTreeMap::from([("bound".to_string(), value(1))]));
     let initial = function
@@ -2465,7 +2465,7 @@ fn conditional_loop_resources_parse_print_and_resolve_scope() {
     );
     let scoped = clause.with_scope(BTreeMap::from([(
         "bound".to_string(),
-        SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(4))),
+        SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(4))),
     )]));
     let resolved = scoped.resolved().unwrap();
     assert_ne!(resolved.resources(), clause.resources());
@@ -2950,7 +2950,7 @@ fn indexed_structural_clauses_agree_with_the_clause_list_walks() {
             _ => panic!("expected loop templates"),
         })
         .collect::<Vec<_>>();
-    let value = |n| SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(n)));
+    let value = |n| SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(n)));
     let scoped = templates[2].with_scope(BTreeMap::from([("bound".to_string(), value(0))]));
     let choices = [&templates[0], &templates[1], &templates[2], &scoped];
     // The fold `with_bound_frontier_loop_clauses` made over a `Vec`.

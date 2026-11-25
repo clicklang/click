@@ -165,6 +165,8 @@ pub(crate) use memory_loads::recorded_load_access_width;
 pub(crate) use memory_loads::registered_load_bytes_for_variable;
 pub(crate) use memory_loads::registered_load_for_variable;
 pub(crate) use memory_loads::registered_load_origin_for_variable;
+#[cfg(test)]
+pub(crate) use memory_loads::scalar_read_for_exact_cell;
 pub(in crate::kernel) use memory_loads::scalar_read_origin_for_cell;
 pub(in crate::kernel) use memory_loads::select_graph_scalar_reads;
 pub(in crate::kernel) use memory_loads::symbolic_load_value_unrecorded;
@@ -179,8 +181,7 @@ pub(crate) use memory_loads::{
 };
 pub(crate) use memory_loads::{
     ScalarReadObservation, is_selected_scalar_read, latest_scalar_read_observation,
-    registered_scalar_read_term, scalar_read_for_exact_cell, scalar_read_for_exact_cell_at,
-    scalar_read_observation,
+    registered_scalar_read_term, scalar_read_for_exact_cell_at, scalar_read_observation,
 };
 pub(crate) use memory_loads::{
     arithmetic_comparison_form, comparison_form, comparison_identity_of_exact_read,
@@ -218,6 +219,9 @@ pub(crate) use memory_loads::{
 pub(crate) use memory_loads::{
     registered_load_kind_for_variable, registered_load_origin_term_for_variable,
     registered_load_term_for_variable,
+};
+pub(crate) use memory_loads::{
+    registered_load_origin_point_for_variable, registered_load_point_for_variable,
 };
 pub(super) use operators::pointer_offset_by_bytes_paths;
 pub(super) use operators::*;

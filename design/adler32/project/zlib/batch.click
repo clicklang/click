@@ -81,9 +81,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
      have to_integer(adler) == 1 by close();
      have to_integer(sum2) == 0 by close();
      have viewable(buf[0u64..5552u64]) by {
-      transport(at(batch_entry, viewable(buf[0u64..5552u64])), viewable(buf[0u64..5552u64])) using {
-       at(batch_entry, viewable(buf[0u64..5552u64]));
-      };
+      transport(at(batch_entry, viewable(buf[0u64..5552u64])), viewable(buf[0u64..5552u64]));
      }
      have viewable(buf[0u64..16u64 * n as uint64]) by close();
      apply(zlib_batch_prefix_initial());
@@ -734,14 +732,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
       };
       have buf == at(before_block, buf) + 16 by close();
       have viewable(buf[0u64..16u64 * n as uint64]) by {
-       transport(at(before_block, viewable(buf[0u64..16u64 * n as uint64])), viewable(buf[0u64..16u64 * n as uint64])) using {
-        buf == at(before_block, buf) + 16;
-        at(before_block, viewable(buf[0u64..16u64 * n as uint64]));
-        16u64 <= at(before_advance, 16u64 * n as uint64);
-        16u64 * n as uint64 <= at(before_block, 16u64 * n as uint64) - 16u64;
-        16u64 * n as uint64 <= 5552u64;
-        16u64 * n as uint64 <= 9223372036854775807u64;
-       };
+       transport(at(before_block, viewable(buf[0u64..16u64 * n as uint64])), viewable(buf[0u64..16u64 * n as uint64]));
       }
       have zlib_batch_count(n) == at(before_advance, zlib_batch_count(n) + 16) by close() using {
        n == at(before_advance, n) - 1u32;

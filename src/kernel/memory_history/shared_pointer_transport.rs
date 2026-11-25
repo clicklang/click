@@ -4,7 +4,7 @@ use super::*;
 use std::collections::HashMap;
 
 struct Transport<'a> {
-    after: &'a SymbolicMemory,
+    after: &'a ProgramPoint,
     assumptions: Option<(&'a PureFactContext, bool)>,
     reconstructed_word: bool,
     offsets: HashMap<SharedAddressOffset, SharedAddressOffset>,
@@ -13,7 +13,7 @@ struct Transport<'a> {
 }
 impl<'a> Transport<'a> {
     fn new(
-        after: &'a SymbolicMemory,
+        after: &'a ProgramPoint,
         assumptions: Option<(&'a PureFactContext, bool)>,
         reconstructed_word: bool,
     ) -> Self {
@@ -35,12 +35,7 @@ impl<'a> Transport<'a> {
             return None;
         };
         let format = MachineIntegerType::from_program_type(*ty)?;
-        let source =
-            if let Some(source) = SharedMachineIntegerTerm::from_shared(format, root.clone()) {
-                source
-            } else {
-                return None;
-            };
+        let source = SharedMachineIntegerTerm::from_shared(format, root.clone())?;
         let result = transport_framed_index(&source, self.after, self.assumptions)?;
         self.indices.insert(root.clone(), result.clone());
         Some(result)
@@ -94,7 +89,7 @@ impl<'a> Transport<'a> {
         if self.reconstructed_word
             && let AddressBase::Load(load) = node.base.native_atom()
         {
-            let after = crate::kernel::intern_memory_ref(self.after);
+            let after = self.after.shared_memory().clone();
             let target = Address::loaded_value(&after, load.cell());
             let before = Address {
                 base: node.base.native_atom().clone(),
@@ -149,7 +144,7 @@ impl PointerRewrite for Transport<'_> {
 
 pub(super) fn transport_addresses(
     source: &[SharedAddress; 2],
-    after: &SymbolicMemory,
+    after: &ProgramPoint,
     assumptions: Option<(&PureFactContext, bool)>,
 ) -> Option<[SharedAddress; 2]> {
     let mut transport = Transport::new(after, assumptions, false);
@@ -161,7 +156,7 @@ pub(super) fn transport_addresses(
 
 pub(super) fn transport_offsets(
     source: &[SharedAddressOffset; 2],
-    after: &SymbolicMemory,
+    after: &ProgramPoint,
     assumptions: Option<(&PureFactContext, bool)>,
 ) -> Option<[SharedAddressOffset; 2]> {
     let mut transport = Transport::new(after, assumptions, false);
@@ -170,7 +165,7 @@ pub(super) fn transport_offsets(
 
 pub(crate) fn transport_address(
     source: &SharedAddress,
-    after: &SymbolicMemory,
+    after: &ProgramPoint,
     assumptions: Option<(&PureFactContext, bool)>,
 ) -> Option<SharedAddress> {
     source
@@ -179,7 +174,7 @@ pub(crate) fn transport_address(
 }
 pub(crate) fn transport_pointer(
     source: &SharedPointer,
-    after: &SymbolicMemory,
+    after: &ProgramPoint,
     assumptions: Option<(&PureFactContext, bool)>,
 ) -> Option<SharedPointer> {
     let reconstructed = matches!(
@@ -244,19 +239,35 @@ mod tests {
                 offset: AddressOffset::Add(Box::new(scaled), Box::new(AddressOffset::Constant(0))),
             };
             let shared = SharedAddress::import(&source);
-            let expected = transport_framed_atomic_pointer(&source, &after, Some((&context, true)))
-                .expect("disjoint frame");
+            let expected = transport_framed_atomic_pointer(
+                &source,
+                &crate::kernel::ProgramPoint::of_memory(&after),
+                Some((&context, true)),
+            )
+            .expect("disjoint frame");
             let exports = KernelTermExport::machine_export_count();
-            let output = transport_address(&shared, &after, Some((&context, true)))
-                .expect("shared disjoint frame");
+            let output = transport_address(
+                &shared,
+                &crate::kernel::ProgramPoint::of_memory(&after),
+                Some((&context, true)),
+            )
+            .expect("shared disjoint frame");
             assert_eq!(KernelTermExport::machine_export_count(), exports);
             assert_eq!(output.export().unwrap(), expected);
-            let expected =
-                transport_framed_atomic_pointer(&source, &changed, Some((&context, true))).unwrap();
-            let historical = transport_address(&shared, &changed, Some((&context, true)))
-                .unwrap()
-                .export()
-                .unwrap();
+            let expected = transport_framed_atomic_pointer(
+                &source,
+                &crate::kernel::ProgramPoint::of_memory(&changed),
+                Some((&context, true)),
+            )
+            .unwrap();
+            let historical = transport_address(
+                &shared,
+                &crate::kernel::ProgramPoint::of_memory(&changed),
+                Some((&context, true)),
+            )
+            .unwrap()
+            .export()
+            .unwrap();
             assert_eq!(historical, expected);
             let (AddressOffset::Int32Scaled { value, .. }
             | AddressOffset::Int64Scaled { value, .. }) = &historical.offset
@@ -299,11 +310,20 @@ mod tests {
                 offset,
             };
             let shared = SharedAddress::import(&source);
-            let expected = transport_framed_atomic_pointer(&source, &after, None).unwrap();
-            let output = transport_address(&shared, &after, None)
-                .unwrap()
-                .export()
-                .unwrap();
+            let expected = transport_framed_atomic_pointer(
+                &source,
+                &crate::kernel::ProgramPoint::of_memory(&after),
+                None,
+            )
+            .unwrap();
+            let output = transport_address(
+                &shared,
+                &crate::kernel::ProgramPoint::of_memory(&after),
+                None,
+            )
+            .unwrap()
+            .export()
+            .unwrap();
             assert_eq!(output, expected);
         }
     }
@@ -328,12 +348,22 @@ mod tests {
             ),
         }));
         let shared = SharedPointer::import(&source);
-        let output = transport_pointer(&shared, &after, None).unwrap();
+        let output = transport_pointer(
+            &shared,
+            &crate::kernel::ProgramPoint::of_memory(&after),
+            None,
+        )
+        .unwrap();
         assert_eq!(output, shared);
         assert!(output.node().array.same_payload(&shared.node().array));
         assert_eq!(
             output.export().unwrap(),
-            transport_framed_atomic_pointer_value(&source, &after, None).unwrap()
+            transport_framed_atomic_pointer_value(
+                &source,
+                &crate::kernel::ProgramPoint::of_memory(&after),
+                None
+            )
+            .unwrap()
         );
     }
     #[test]
@@ -368,9 +398,18 @@ mod tests {
             .with_bounds_owner(Some(loaded.clone()));
             assert!(source.address().integer_address_bits().is_none());
             let shared = SharedPointer::import(&source);
-            let expected = transport_framed_atomic_pointer_value(&source, &after, None)
-                .expect("ordinary origin requires no new complete-word evidence");
-            let output = transport_pointer(&shared, &after, None).unwrap();
+            let expected = transport_framed_atomic_pointer_value(
+                &source,
+                &crate::kernel::ProgramPoint::of_memory(&after),
+                None,
+            )
+            .expect("ordinary origin requires no new complete-word evidence");
+            let output = transport_pointer(
+                &shared,
+                &crate::kernel::ProgramPoint::of_memory(&after),
+                None,
+            )
+            .unwrap();
             assert_eq!(output.export().unwrap(), expected);
             assert_eq!(output.node().provenance, shared.node().provenance);
             assert_eq!(output.node().array.owner(), shared.node().array.owner());
@@ -397,15 +436,29 @@ mod tests {
         .with_bounds_owner(Some(loaded));
         let shared = SharedPointer::import(&source);
         let context = PureFactContext::new();
-        let expected =
-            transport_framed_atomic_pointer_value(&source, &after, Some((&context, true)));
-        let output = transport_pointer(&shared, &after, Some((&context, true)));
+        let expected = transport_framed_atomic_pointer_value(
+            &source,
+            &crate::kernel::ProgramPoint::of_memory(&after),
+            Some((&context, true)),
+        );
+        let output = transport_pointer(
+            &shared,
+            &crate::kernel::ProgramPoint::of_memory(&after),
+            Some((&context, true)),
+        );
         assert_eq!(
             output.as_ref().map(|value| value.export().unwrap()),
             expected
         );
         assert!(expected.is_some(), "complete word survives disjoint frame");
-        assert!(transport_pointer(&shared, &after, None).is_none());
+        assert!(
+            transport_pointer(
+                &shared,
+                &crate::kernel::ProgramPoint::of_memory(&after),
+                None
+            )
+            .is_none()
+        );
     }
 }
 #[cfg(test)]

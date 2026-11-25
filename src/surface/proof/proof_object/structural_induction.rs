@@ -30,7 +30,7 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn structural_induction_instance(
         &self,
         hypothesis: &str,
-        arguments: &[SurfaceTerm],
+        arguments: &[SyntaxTerm],
     ) -> Result<PureStructuralInductionApplication, ClickError> {
         let ProofContext::Pure(context) = self.context.as_ref() else {
             return Err(self.step_error("induction application requires a pure theorem proof"));
@@ -123,9 +123,9 @@ impl<'a> Proof<'a> {
     /// original theorem requirements without replaying the proof prefix.
     pub(in crate::surface::proof) fn structural_case_equality(
         &self,
-        source: &SurfaceTerm,
+        source: &SyntaxTerm,
         arm: &ProofInductionArm,
-    ) -> SurfaceProposition {
+    ) -> SyntaxProposition {
         let ProofContext::Pure(context) = self.context.as_ref() else {
             unreachable!()
         };
@@ -143,16 +143,16 @@ impl<'a> Proof<'a> {
         let ClickType::Algebraic(algebraic_type) = parameter.click_type() else {
             unreachable!()
         };
-        let constructor = SurfaceTerm::AlgebraicConstructor {
+        let constructor = SyntaxTerm::AlgebraicConstructor {
             algebraic_type: algebraic_type.clone(),
             variant: arm.variant.clone(),
             arguments: arm
                 .bindings
                 .iter()
-                .map(|name| SurfaceTerm::Binding(name.clone()))
+                .map(|name| SyntaxTerm::Binding(name.clone()))
                 .collect(),
         };
-        SurfaceProposition::Comparison {
+        SyntaxProposition::Comparison {
             left: source.clone(),
             operator: ComparisonOperator::Equal,
             right: constructor,
@@ -163,7 +163,7 @@ impl<'a> Proof<'a> {
     /// original scrutinee spelling before running a shared continuation.
     pub(in crate::surface::proof) fn refine_structural_case_goal(
         &self,
-        source: &SurfaceTerm,
+        source: &SyntaxTerm,
         arm: &ProofInductionArm,
         reverse: bool,
     ) -> Result<Self, ClickError> {
@@ -174,7 +174,7 @@ impl<'a> Proof<'a> {
             return Ok(self.clone());
         }
         let mut equality = self.structural_case_equality(source, arm);
-        if reverse && let SurfaceProposition::Comparison { left, right, .. } = &mut equality {
+        if reverse && let SyntaxProposition::Comparison { left, right, .. } = &mut equality {
             std::mem::swap(left, right);
         }
         if self
@@ -205,7 +205,7 @@ impl<'a> Proof<'a> {
     /// immediate fields, at the theorem's fixed remaining parameters.
     pub(in crate::surface::proof) fn enter_structural_induction_case(
         &self,
-        source: &SurfaceTerm,
+        source: &SyntaxTerm,
         arm: &ProofInductionArm,
     ) -> Result<Self, ClickError> {
         let ProofContext::Pure(context) = self.context.as_ref() else {
@@ -258,7 +258,7 @@ impl<'a> Proof<'a> {
         }
         for name in recursive_bindings {
             let instance = entered
-                .structural_induction_instance(&setup.hypothesis, &[SurfaceTerm::Binding(name)])?;
+                .structural_induction_instance(&setup.hypothesis, &[SyntaxTerm::Binding(name)])?;
             facts = facts.with_kernel_checked_fact(instance.implication.clone());
             added.push(instance.implication);
         }

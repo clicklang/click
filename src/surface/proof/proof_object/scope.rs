@@ -260,12 +260,6 @@ impl<'a> ProofScope<'a> {
         Ok(())
     }
 
-    /// Retain only the checked body when a written operation is rejected.
-    pub(in crate::surface::proof) fn record_certification_failure_trace(&self) {
-        self.body
-            .record_certification_failure_trace(self.body.claim_label(), 0);
-    }
-
     /// Opens the C branch at this scope body's frontier as an in-`Proof`
     /// sibling split. The returned proof advances by focusing each recorded
     /// arm; `join_execution_split` accepts the direct joined successor.
@@ -280,7 +274,7 @@ impl<'a> ProofScope<'a> {
     /// `join_execution_if_terminal` accepts the direct joined successor.
     pub(in crate::surface::proof) fn split_execution_if(
         &self,
-        condition: SurfaceProposition,
+        condition: SyntaxProposition,
     ) -> Result<(Proof<'a>, ExecutionProofCaseSplit<'a>), ClickError> {
         self.body.split_focused_execution_if(condition)
     }
@@ -394,7 +388,7 @@ impl<'a> ProofScope<'a> {
     /// `surface_condition`.
     pub(in crate::surface::proof) fn frontier_is_execution_branch(
         &self,
-        surface_condition: &SurfaceProposition,
+        surface_condition: &SyntaxProposition,
     ) -> Result<bool, ClickError> {
         self.body.frontier_is_execution_branch(surface_condition)
     }
@@ -481,7 +475,7 @@ impl<'a> ProofScope<'a> {
     /// lowering and certificate fact recording.
     fn carry_have_into_frontier(
         execution: &mut ExecutionProofState,
-        proposition: &SurfaceProposition,
+        proposition: &SyntaxProposition,
         kernel: &Proposition,
     ) -> Result<(), ClickError> {
         execution
@@ -858,7 +852,7 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn opens_scoped_range(&self, introduced: &Self) -> bool {
         matches!(
             self.surface_goal(),
-            Some(SurfaceProposition::RangeAll { .. })
+            Some(SyntaxProposition::RangeAll { .. })
         ) && matches!(self.goal(), Some(Proposition::ForAll { .. }))
             && introduced.proposition_obligation().is_some_and(|goal| {
                 matches!(goal.kernel(), Proposition::Implies(_, _))
@@ -965,7 +959,7 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn retain_completed_goal(
         &self,
         completed: &Self,
-        conclusions: &[SurfaceProposition],
+        conclusions: &[SyntaxProposition],
     ) -> Result<Self, ClickError> {
         if !Arc::ptr_eq(&self.context, &completed.context)
             || self.focused_branch_id() != completed.focused_branch_id()

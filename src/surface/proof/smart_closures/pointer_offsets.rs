@@ -1,7 +1,7 @@
 //! Bounded scalar-pointer translation through named laws and exact index proofs.
 //! Pointer domains come from a selected pointer relation, never address words.
 use super::*;
-use SurfaceTerm as E;
+use SyntaxTerm as E;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Index {
@@ -34,14 +34,14 @@ fn sub(a: E, b: E) -> E {
 fn observe(e: E) -> E {
     super::super::wide_arithmetic::to_integer(&e)
 }
-fn equality(a: E, b: E) -> SurfaceProposition {
-    SurfaceProposition::Comparison {
+fn equality(a: E, b: E) -> SyntaxProposition {
+    SyntaxProposition::Comparison {
         left: a,
         operator: ComparisonOperator::Equal,
         right: b,
     }
 }
-fn law(name: &str, arguments: Vec<E>, premises: Vec<SurfaceProposition>) -> ProofStep {
+fn law(name: &str, arguments: Vec<E>, premises: Vec<SyntaxProposition>) -> ProofStep {
     ProofStep::ApplyPlannedTheorem {
         application: TheoremApplication {
             name: format!("click::integer::{name}"),
@@ -127,7 +127,7 @@ fn pointee_name(value: &ProgramValue) -> Option<&'static str> {
 struct Emitter<'a> {
     proof: Proof<'a>,
     pointee: &'static str,
-    sources: Vec<SurfaceProposition>,
+    sources: Vec<SyntaxProposition>,
     steps: usize,
 }
 impl<'a> Emitter<'a> {
@@ -145,7 +145,7 @@ impl<'a> Emitter<'a> {
         self.proof = self.proof.driver().apply_step(step)?;
         Ok(())
     }
-    fn known(&mut self, proposition: SurfaceProposition) -> Result<(), ClickError> {
+    fn known(&mut self, proposition: SyntaxProposition) -> Result<(), ClickError> {
         self.apply(super::super::wide_arithmetic::have(
             proposition.clone(),
             vec![ProofStep::Known],
@@ -153,10 +153,10 @@ impl<'a> Emitter<'a> {
         self.sources.push(proposition);
         Ok(())
     }
-    fn arithmetic(&mut self, proposition: SurfaceProposition) -> Result<(), ClickError> {
+    fn arithmetic(&mut self, proposition: SyntaxProposition) -> Result<(), ClickError> {
         self.charge()?;
         let scope = self.proof.driver().open_have(proposition.clone())?;
-        self.proof = if matches!(proposition, SurfaceProposition::Defined { .. })
+        self.proof = if matches!(proposition, SyntaxProposition::Defined { .. })
             && let Some(closed) =
                 attempt::candidate_outcome(scope.driver().try_signed_definedness_bounds(
                     crate::kernel::SignedDefinedWidth::Int32,
@@ -179,13 +179,13 @@ impl<'a> Emitter<'a> {
         left: E,
         right: E,
         kind: Index,
-    ) -> Result<(E, SurfaceProposition), ClickError> {
+    ) -> Result<(E, SyntaxProposition), ClickError> {
         let sum = add(left.clone(), right.clone());
         let guard = match kind {
-            Index::Signed => SurfaceProposition::Defined {
+            Index::Signed => SyntaxProposition::Defined {
                 expression: sum.clone(),
             },
-            Index::Unsigned => SurfaceProposition::Comparison {
+            Index::Unsigned => SyntaxProposition::Comparison {
                 left: add(observe(left.clone()), observe(right.clone())),
                 operator: ComparisonOperator::LessEqual,
                 right: super::super::surface_synthesis::integer_typed_expression(
@@ -284,7 +284,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(None);
         }
-        let Some(SurfaceProposition::Comparison {
+        let Some(SyntaxProposition::Comparison {
             left,
             operator: ComparisonOperator::Equal,
             right,
@@ -323,7 +323,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
 
     pub(in crate::surface::proof) fn try_pointer_translation_using(
         input: &Proof<'a>,
-        sources: &[SurfaceProposition],
+        sources: &[SyntaxProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_pointer_translation_using");
@@ -336,7 +336,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(None);
         }
-        let Some(SurfaceProposition::Comparison {
+        let Some(SyntaxProposition::Comparison {
             left,
             operator: ComparisonOperator::Equal,
             right,
@@ -368,7 +368,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 )
             })
         {
-            let bound = SurfaceProposition::Comparison {
+            let bound = SyntaxProposition::Comparison {
                 left: observe(index.clone()),
                 operator: ComparisonOperator::LessEqual,
                 right: surface_signed_integer_literal(&BigInt::from(i32::MAX)),
@@ -392,7 +392,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if !input.facts().listed_premise_available(&kernel, &[], false) {
                 return Ok(None);
             }
-            if let SurfaceProposition::Comparison {
+            if let SyntaxProposition::Comparison {
                 left,
                 operator: ComparisonOperator::Equal,
                 right,
@@ -711,8 +711,8 @@ mod tests {
                                                             Value::Number(v.clone()),
                                                         );
                                                     }
-                                                    let holds = |p: &SurfaceProposition| {
-                                                        let SurfaceProposition::Comparison {
+                                                    let holds = |p: &SyntaxProposition| {
+                                                        let SyntaxProposition::Comparison {
                                                             left,
                                                             operator: ComparisonOperator::Equal,
                                                             right,

@@ -29,6 +29,23 @@ int32 scalar(int32 a, int32 b) {
     requires a >= 0;
     requires b >= 0;
     ensures result == 0;
+} by {
+    if a > 0 {
+        have 1 <= a by { close(); }
+        apply(click::integer::int32_nonnegative_subtract_within_value_is_defined(a, 1));
+        apply(click::integer::int32_subtract_to_integer(a, 1));
+        have 0 <= to_integer(a - 1) by {
+            rewrite(to_integer(a - 1), to_integer(a) - 1);
+            close();
+        }
+        apply(click::integer::int32_to_integer_less_equal_implies_less_equal(0, a - 1));
+        have to_integer(a - 1) + to_integer(b) < to_integer(a) + to_integer(b) by { close(); }
+        step_until(function.exit);
+        close();
+    } else {
+        step_until(function.exit);
+        close();
+    }
 }
 
 int32 lexicographic(int32 a, int32 b) {
@@ -38,8 +55,14 @@ int32 lexicographic(int32 a, int32 b) {
     ensures result == 0;
 } by {
     if a > 0 {
-        have defined(a - 1) by { close(); }
-        have to_integer(a - 1) == to_integer(a) - 1 by { close(); }
+        have 1 <= a by { close(); }
+        apply(click::integer::int32_nonnegative_subtract_within_value_is_defined(a, 1));
+        apply(click::integer::int32_subtract_to_integer(a, 1));
+        have 0 <= to_integer(a - 1) by {
+            rewrite(to_integer(a - 1), to_integer(a) - 1);
+            close();
+        }
+        apply(click::integer::int32_to_integer_less_equal_implies_less_equal(0, a - 1));
         have to_integer(a - 1) + to_integer(b) < to_integer(a) + to_integer(b) by { close(); }
         step_until(function.exit);
         close();

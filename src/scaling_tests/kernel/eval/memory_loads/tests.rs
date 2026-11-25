@@ -1469,9 +1469,13 @@ fn complete_pointer_domains_across_cached_observations_scale_with_new_cells() {
         let _session = crate::kernel::VerificationSession::enter();
         let address = Address::symbolic(Variable(199_101));
         let mut memory = SymbolicMemory::new();
-        let ProgramValue::Pointer(original) =
-            symbolic_load_value(&memory, None, &address, ProgramType::Int64Pointer).unwrap()
-        else {
+        let ProgramValue::Pointer(original) = symbolic_load_value(
+            &memory,
+            &crate::kernel::ProgramPoint::of_memory(&memory),
+            &address,
+            ProgramType::Int64Pointer,
+        )
+        .unwrap() else {
             panic!("pointer read")
         };
         let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
@@ -1481,10 +1485,13 @@ fn complete_pointer_domains_across_cached_observations_scale_with_new_cells() {
                     memory = memory
                         .clone()
                         .materialize_symbolic_cell(cell, ProgramType::Int32);
-                    let ProgramValue::Pointer(read) =
-                        symbolic_load_value(&memory, None, &address, ProgramType::Int64Pointer)
-                            .unwrap()
-                    else {
+                    let ProgramValue::Pointer(read) = symbolic_load_value(
+                        &memory,
+                        &crate::kernel::ProgramPoint::of_memory(&memory),
+                        &address,
+                        ProgramType::Int64Pointer,
+                    )
+                    .unwrap() else {
                         panic!("pointer read")
                     };
                     assert_eq!(read.access_provenance(), original.access_provenance());

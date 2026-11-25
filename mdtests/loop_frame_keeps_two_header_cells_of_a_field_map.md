@@ -48,8 +48,8 @@ void mark_tail(struct arena* arena, int32 end) {
         initialize by close();
         maintain by {
             mark before_store;
-            have i != 0 by { normalize() using { 2 <= i; }; }
-            have i != 1 by { normalize() using { 2 <= i; }; }
+            have i != 0 by { close(); }
+            have i != 1 by { close(); }
             apply(click::separation::separate_elements(arena->occupied, i, 0));
             apply(click::separation::separate_elements(arena->occupied, i, 1));
             have contains(memory(arena->occupied[0..arena->capacity]), memory(arena->occupied[i])) by {
@@ -63,14 +63,12 @@ void mark_tail(struct arena* arena, int32 end) {
                 memory(*arena), memory(arena->occupied[0..arena->capacity]),
                 memory(*arena), memory(arena->occupied[i])));
             step();
-            have separate(loop(0).statement(0).footprint, at(before_store, memory(*arena))) by {
-                normalize() using {
-                    at(before_store, separate(memory(*arena), memory(arena->occupied[i])));
-                };
+            have at(before_store, separate(loop(0).statement(0).footprint, memory(*arena))) by {
+                close();
             }
             apply(click::separation::contains_refl(loop(0).statement(0).footprint));
             have contains(at(before_store, memory(*arena)), at(before_store, memory(arena->occupied))) by {
-                normalize();
+                close();
             }
             apply(click::separation::separate_restrict(
                 loop(0).statement(0).footprint, at(before_store, memory(*arena)),
@@ -78,10 +76,8 @@ void mark_tail(struct arena* arena, int32 end) {
             have arena->occupied == at(before_store, arena->occupied) by {
                 preserve(at(before_store, memory(arena->occupied)), loop(0).statement(0));
             }
-            have separate(loop(0).statement(0).footprint, at(before_store, memory(arena->occupied[0]))) by {
-                normalize() using {
-                    at(before_store, separate(memory(arena->occupied[i]), memory(arena->occupied[0])));
-                };
+            have at(before_store, separate(loop(0).statement(0).footprint, memory(arena->occupied[0]))) by {
+                close();
             }
             have load<int32>(at(before_store, &arena->occupied[0])) == at(before_store, arena->occupied[0]) by {
                 preserve(at(before_store, memory(arena->occupied[0])), loop(0).statement(0));
@@ -90,10 +86,8 @@ void mark_tail(struct arena* arena, int32 end) {
                 rewrite(arena->occupied, at(before_store, arena->occupied));
                 close();
             }
-            have separate(loop(0).statement(0).footprint, at(before_store, memory(arena->occupied[1]))) by {
-                normalize() using {
-                    at(before_store, separate(memory(arena->occupied[i]), memory(arena->occupied[1])));
-                };
+            have at(before_store, separate(loop(0).statement(0).footprint, memory(arena->occupied[1]))) by {
+                close();
             }
             have load<int32>(at(before_store, &arena->occupied[1])) == at(before_store, arena->occupied[1]) by {
                 preserve(at(before_store, memory(arena->occupied[1])), loop(0).statement(0));

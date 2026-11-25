@@ -5,7 +5,7 @@ definition itself must reject its incompatible return value.
 
 ```click
 function wrong(p: struct other*) -> struct node* { p }
-theorem unrelated() { ensures 1 == 1 by normalize(); }
+theorem unrelated() { ensures 1 == 1 by close(); }
 ```
 
 ```expect

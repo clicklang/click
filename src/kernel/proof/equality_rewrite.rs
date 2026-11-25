@@ -801,8 +801,9 @@ fn rewrite_through_load_variable(
     // exposed by the equality. The current epoch's origin retains that
     // execution history, just as it does for checked load transport.
     // Without a live origin, keep the variable's defining state.
-    let (memory, pointer) = crate::kernel::registered_load_origin_for_variable(variable)
-        .or_else(|| crate::kernel::registered_load_for_variable(variable))?;
+    let (point, pointer) = crate::kernel::eval::registered_load_origin_point_for_variable(variable)
+        .or_else(|| crate::kernel::eval::registered_load_point_for_variable(variable))?;
+    let memory = point.shared_memory().clone();
     let kind = crate::kernel::registered_load_kind_for_variable(variable)?;
     let rewritten = rewrite_pointer(&pointer);
     if rewritten == pointer {
@@ -818,8 +819,10 @@ fn rewrite_through_load_variable(
     // its version, never by a value its cell holds, so the rewritten goal
     // is the one writing the new address gives (`a[j]` to `a[i]`, not to
     // what `a[i]` stores).
-    Some(crate::kernel::canonical_form_of_load(
-        memory, rewritten, kind,
+    Some(crate::kernel::canonical_form_of_load_at(
+        &crate::kernel::ProgramPoint::viewing(&memory, &point),
+        rewritten,
+        kind,
     ))
 }
 
@@ -847,7 +850,11 @@ fn rewrite_through_loaded_address_base(
         };
         // Name the legacy scalar-carrier read, too: folding stored bits can
         // discard the rewritten read or cease to be a pointer carrier.
-        let load = crate::kernel::canonical_form_of_load(memory, address, kind);
+        let load = crate::kernel::canonical_form_of_load_at(
+            &crate::kernel::ProgramPoint::read_at_optional(&memory, site),
+            address,
+            kind,
+        );
         let variable = match load {
             MachineTerm::Variable(variable) => variable,
             load @ MachineTerm::MemoryLoad(_, _, _) => {

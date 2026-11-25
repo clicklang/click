@@ -2,14 +2,14 @@
 //! Plans select explicit inputs; only ordinary steps establish their results.
 use super::*;
 
-fn multiply(a: SurfaceTerm, b: SurfaceTerm) -> SurfaceTerm {
-    SurfaceTerm::Multiply(Box::new(a), Box::new(b))
+fn multiply(a: SyntaxTerm, b: SyntaxTerm) -> SyntaxTerm {
+    SyntaxTerm::Multiply(Box::new(a), Box::new(b))
 }
 
 /// Select one mathematical distributivity rewrite in written source. Native
 /// observations, calls, reads and other opaque expressions are never opened.
-fn distribution(expression: &SurfaceTerm) -> Option<(SurfaceTerm, SurfaceTerm)> {
-    use SurfaceTerm as E;
+fn distribution(expression: &SyntaxTerm) -> Option<(SyntaxTerm, SyntaxTerm)> {
+    use SyntaxTerm as E;
     match expression {
         E::Add(a, b) | E::Subtract(a, b) | E::Multiply(a, b) => {
             if let Some(step) = distribution(a).or_else(|| distribution(b)) {
@@ -66,8 +66,8 @@ fn distribution(expression: &SurfaceTerm) -> Option<(SurfaceTerm, SurfaceTerm)> 
     }
 }
 
-pub(super) fn needs_distribution(goal: &SurfaceProposition) -> bool {
-    matches!(goal, SurfaceProposition::Comparison {left,right,..}
+pub(super) fn needs_distribution(goal: &SyntaxProposition) -> bool {
+    matches!(goal, SyntaxProposition::Comparison {left,right,..}
         if distribution(left).is_some() || distribution(right).is_some())
 }
 

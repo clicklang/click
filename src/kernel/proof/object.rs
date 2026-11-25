@@ -1678,9 +1678,18 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         quantified: Proposition,
         argument: super::fact_reasoning::InstanceArgument,
     ) -> Result<(Self, Proposition), PropositionCloseError> {
-        let (_, facts) = self
-            .focused_proposition()
+        let branch = self
+            .state
+            .open_branches
+            .get(self.focused_branch)
+            .filter(|branch| {
+                matches!(
+                    branch.obligation,
+                    ProofObligation::Proposition(_) | ProofObligation::Frontier(_)
+                )
+            })
             .ok_or(PropositionCloseError::NotProposition)?;
+        let facts = &branch.state.facts;
         let quantified =
             if facts.contains(&quantified) || facts.assumptions().contains_known(&quantified) {
                 quantified

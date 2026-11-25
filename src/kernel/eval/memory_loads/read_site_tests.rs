@@ -104,8 +104,16 @@ fn symbolic_pointer_loads_record_their_site_and_are_the_same_values() {
 
     // The pointer evaluator's own producer, as a C load reaches it.
     let at = cell(1_207_034);
-    let sited = pointer(symbolic_load_value(&memory, Some(&site), &at, ty).unwrap());
-    let bare = pointer(symbolic_load_value(&memory, None, &at, ty).unwrap());
+    let sited = pointer(symbolic_load_value(&memory, &site, &at, ty).unwrap());
+    let bare = pointer(
+        symbolic_load_value(
+            &memory,
+            &crate::kernel::ProgramPoint::of_memory(&memory),
+            &at,
+            ty,
+        )
+        .unwrap(),
+    );
     same_load(sited.address(), bare.address(), &site);
     assert_eq!(sited, bare);
 }

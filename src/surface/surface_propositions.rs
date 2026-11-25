@@ -12,7 +12,7 @@
 //! pair already recorded whole is not walked again, and a lookup costs its
 //! query plus the depth of the answer's position.
 use super::{
-    ClickError, ClickType, ProgramPointSelector, SurfaceBinder, SurfaceProposition, SurfaceTerm,
+    ClickError, ClickType, ProgramPointSelector, SurfaceBinder, SyntaxProposition, SyntaxTerm,
     clone_click_proposition_iteratively, proof,
 };
 use crate::kernel::{Address, ConditionTerm, MachineTerm, Proposition, Sort, Variable};
@@ -32,10 +32,10 @@ pub struct SurfacePropositionMap {
 pub(in crate::surface) struct SurfacePropositionStorage {
     /// Source names for qualified storage reads, independent of the heap
     /// state. These are synthesis hints, never evidence of a fact.
-    pub(in crate::surface) qualified_load_sources: PersistentMap<Address, SurfaceTerm>,
+    pub(in crate::surface) qualified_load_sources: PersistentMap<Address, SyntaxTerm>,
     /// Source forms for certified stores, indexed by the versioned read that
     /// identifies the written cell. Keep the producer's exact fact for lookup.
-    store_sources: PersistentMap<StoreReadKey, (Arc<Proposition>, Arc<SurfaceProposition>)>,
+    store_sources: PersistentMap<StoreReadKey, (Arc<Proposition>, Arc<SyntaxProposition>)>,
     /// Every interned kernel node: an atom by value, a connective by its
     /// payload and children's identities.
     kernel_atoms: PersistentMap<Arc<Proposition>, (NodeId, Arc<Proposition>)>,
@@ -44,7 +44,7 @@ pub(in crate::surface) struct SurfacePropositionStorage {
     /// or of the connective's payload and child identities. Exact equality
     /// inside a bucket preserves soundness even if two syntax variants ever
     /// acquire the same debug rendering.
-    surface_atoms: PersistentMap<String, Vec<(Arc<SurfaceProposition>, NodeId)>>,
+    surface_atoms: PersistentMap<String, Vec<(Arc<SyntaxProposition>, NodeId)>>,
     surface_connectives: PersistentMap<String, Vec<(SurfaceConnective, NodeId)>>,
     /// MemoryState-blind keys of kernel connectives, by their children's keys.
     blind_connectives: PersistentMap<BlindConnective, NodeId>,
@@ -150,15 +150,15 @@ enum SurfaceConnective {
         body: NodeId,
     },
     RangeAll {
-        start: SurfaceTerm,
-        end: SurfaceTerm,
+        start: SyntaxTerm,
+        end: SyntaxTerm,
         item: SurfaceBinder,
         written_item: Option<String>,
         body: NodeId,
     },
     RangeAny {
-        start: SurfaceTerm,
-        end: SurfaceTerm,
+        start: SyntaxTerm,
+        end: SyntaxTerm,
         item: SurfaceBinder,
         written_item: Option<String>,
         body: NodeId,
@@ -187,7 +187,7 @@ enum BlindConnective {
 /// preorder so that a position names a node.
 #[derive(Debug)]
 struct RecordedTrees {
-    surface: SurfaceProposition,
+    surface: SyntaxProposition,
     surface_sizes: Vec<u32>,
     kernel: Proposition,
     kernel_sizes: Vec<u32>,
@@ -202,7 +202,7 @@ enum NodeRef<T> {
 }
 
 type KernelRef = NodeRef<Proposition>;
-type SurfaceRef = NodeRef<SurfaceProposition>;
+type SurfaceRef = NodeRef<SyntaxProposition>;
 
 impl NodeRef<Proposition> {
     fn get(&self) -> &Proposition {
@@ -215,8 +215,8 @@ impl NodeRef<Proposition> {
     }
 }
 
-impl NodeRef<SurfaceProposition> {
-    fn get(&self) -> &SurfaceProposition {
+impl NodeRef<SyntaxProposition> {
+    fn get(&self) -> &SyntaxProposition {
         match self {
             Self::Atom(atom) => atom,
             Self::Tree(trees, index) => preorder_node(
@@ -279,19 +279,19 @@ fn kernel_children(proposition: &Proposition) -> Children<'_, Proposition> {
     }
 }
 
-fn surface_children(proposition: &SurfaceProposition) -> Children<'_, SurfaceProposition> {
+fn surface_children(proposition: &SyntaxProposition) -> Children<'_, SyntaxProposition> {
     match proposition {
-        SurfaceProposition::And(left, right)
-        | SurfaceProposition::Or(left, right)
-        | SurfaceProposition::Implies(left, right) => Some((left, Some(right))),
-        SurfaceProposition::At {
+        SyntaxProposition::And(left, right)
+        | SyntaxProposition::Or(left, right)
+        | SyntaxProposition::Implies(left, right) => Some((left, Some(right))),
+        SyntaxProposition::At {
             proposition: body, ..
         }
-        | SurfaceProposition::Not(body)
-        | SurfaceProposition::ForAll { body, .. }
-        | SurfaceProposition::Exists { body, .. }
-        | SurfaceProposition::RangeAll { body, .. }
-        | SurfaceProposition::RangeAny { body, .. } => Some((body, None)),
+        | SyntaxProposition::Not(body)
+        | SyntaxProposition::ForAll { body, .. }
+        | SyntaxProposition::Exists { body, .. }
+        | SyntaxProposition::RangeAll { body, .. }
+        | SyntaxProposition::RangeAny { body, .. } => Some((body, None)),
         _ => None,
     }
 }
@@ -378,8 +378,8 @@ trait Interner {
     fn kernel_connective(&mut self, connective: KernelConnective) -> Option<NodeId>;
     fn surface_atom(
         &mut self,
-        atom: &SurfaceProposition,
-    ) -> Option<(NodeId, Arc<SurfaceProposition>)>;
+        atom: &SyntaxProposition,
+    ) -> Option<(NodeId, Arc<SyntaxProposition>)>;
     fn surface_connective(&mut self, connective: SurfaceConnective) -> Option<NodeId>;
     fn blind_connective(&mut self, connective: BlindConnective) -> Option<NodeId>;
 }
@@ -391,8 +391,8 @@ struct Inserter<'a>(&'a mut SurfacePropositionStorage);
 fn find_surface_atom(
     storage: &SurfacePropositionStorage,
     key: &str,
-    atom: &SurfaceProposition,
-) -> Option<(NodeId, Arc<SurfaceProposition>)> {
+    atom: &SyntaxProposition,
+) -> Option<(NodeId, Arc<SyntaxProposition>)> {
     storage
         .surface_atoms
         .get(key)?
@@ -423,8 +423,8 @@ impl Interner for Finder<'_> {
 
     fn surface_atom(
         &mut self,
-        atom: &SurfaceProposition,
-    ) -> Option<(NodeId, Arc<SurfaceProposition>)> {
+        atom: &SyntaxProposition,
+    ) -> Option<(NodeId, Arc<SyntaxProposition>)> {
         find_surface_atom(self.0, &format!("{atom:?}"), atom)
     }
 
@@ -469,8 +469,8 @@ impl Interner for Inserter<'_> {
 
     fn surface_atom(
         &mut self,
-        atom: &SurfaceProposition,
-    ) -> Option<(NodeId, Arc<SurfaceProposition>)> {
+        atom: &SyntaxProposition,
+    ) -> Option<(NodeId, Arc<SyntaxProposition>)> {
         let key = format!("{atom:?}");
         if let Some(found) = find_surface_atom(self.0, &key, atom) {
             return Some(found);
@@ -568,31 +568,31 @@ fn kernel_identities(
 
 fn surface_identities(
     interner: &mut impl Interner,
-    tree: &Flattened<'_, SurfaceProposition>,
-) -> Identities<SurfaceProposition> {
+    tree: &Flattened<'_, SyntaxProposition>,
+) -> Identities<SyntaxProposition> {
     let mut ids = vec![None; tree.nodes.len()];
     let mut atoms = vec![None; tree.nodes.len()];
     for index in (0..tree.nodes.len()).rev() {
         let (first, second) = tree.children[index];
         let child = |position: u32| ids[position as usize];
         let connective = match tree.nodes[index] {
-            SurfaceProposition::At { selector, .. } => {
+            SyntaxProposition::At { selector, .. } => {
                 child(first).map(|body| SurfaceConnective::At {
                     selector: selector.clone(),
                     body,
                 })
             }
-            SurfaceProposition::And(..) => child(first)
+            SyntaxProposition::And(..) => child(first)
                 .zip(child(second))
                 .map(|(left, right)| SurfaceConnective::And(left, right)),
-            SurfaceProposition::Or(..) => child(first)
+            SyntaxProposition::Or(..) => child(first)
                 .zip(child(second))
                 .map(|(left, right)| SurfaceConnective::Or(left, right)),
-            SurfaceProposition::Implies(..) => child(first)
+            SyntaxProposition::Implies(..) => child(first)
                 .zip(child(second))
                 .map(|(left, right)| SurfaceConnective::Implies(left, right)),
-            SurfaceProposition::Not(_) => child(first).map(SurfaceConnective::Not),
-            SurfaceProposition::ForAll {
+            SyntaxProposition::Not(_) => child(first).map(SurfaceConnective::Not),
+            SyntaxProposition::ForAll {
                 click_type,
                 name,
                 written_name,
@@ -603,7 +603,7 @@ fn surface_identities(
                 written_name: written_name.clone(),
                 body,
             }),
-            SurfaceProposition::Exists {
+            SyntaxProposition::Exists {
                 click_type,
                 name,
                 written_name,
@@ -614,7 +614,7 @@ fn surface_identities(
                 written_name: written_name.clone(),
                 body,
             }),
-            SurfaceProposition::RangeAll {
+            SyntaxProposition::RangeAll {
                 start,
                 end,
                 item,
@@ -627,7 +627,7 @@ fn surface_identities(
                 written_item: written_item.clone(),
                 body,
             }),
-            SurfaceProposition::RangeAny {
+            SyntaxProposition::RangeAny {
                 start,
                 end,
                 item,
@@ -694,8 +694,8 @@ fn blind_keys(
 /// One recording's interned trees.
 struct Recording<'a> {
     trees: Arc<RecordedTrees>,
-    surface: Flattened<'a, SurfaceProposition>,
-    surface_ids: Identities<SurfaceProposition>,
+    surface: Flattened<'a, SyntaxProposition>,
+    surface_ids: Identities<SyntaxProposition>,
     kernel: Flattened<'a, Proposition>,
     kernel_ids: Identities<Proposition>,
     kernel_blind: Vec<Option<BlindKey>>,
@@ -704,7 +704,7 @@ struct Recording<'a> {
 }
 
 impl<'a> Recording<'a> {
-    fn surface_node(&self, index: u32) -> &'a SurfaceProposition {
+    fn surface_node(&self, index: u32) -> &'a SyntaxProposition {
         self.surface.nodes[index as usize]
     }
 
@@ -745,35 +745,35 @@ impl<'a> Recording<'a> {
         let (surface_first, surface_second) = self.surface.children[surface as usize];
         let (kernel_first, kernel_second) = self.kernel.children[kernel as usize];
         let answer = match (self.surface_node(surface), self.kernel_node(kernel)) {
-            (SurfaceProposition::And(..), Proposition::And(..))
-            | (SurfaceProposition::Or(..), Proposition::Or(..))
-            | (SurfaceProposition::Implies(..), Proposition::Implies(..)) => {
+            (SyntaxProposition::And(..), Proposition::And(..))
+            | (SyntaxProposition::Or(..), Proposition::Or(..))
+            | (SyntaxProposition::Implies(..), Proposition::Implies(..)) => {
                 self.structure_matches(surface_first, kernel_first)
                     && self.structure_matches(surface_second, kernel_second)
             }
-            (SurfaceProposition::Not(_), Proposition::ConditionIs(_, _)) => true,
-            (SurfaceProposition::Not(_), Proposition::Not(_))
-            | (SurfaceProposition::ForAll { .. }, Proposition::ForAll { .. }) => {
+            (SyntaxProposition::Not(_), Proposition::ConditionIs(_, _)) => true,
+            (SyntaxProposition::Not(_), Proposition::Not(_))
+            | (SyntaxProposition::ForAll { .. }, Proposition::ForAll { .. }) => {
                 self.structure_matches(surface_first, kernel_first)
             }
-            (SurfaceProposition::Exists { .. }, Proposition::Exists { .. }) => true,
+            (SyntaxProposition::Exists { .. }, Proposition::Exists { .. }) => true,
             (
-                SurfaceProposition::And(..)
-                | SurfaceProposition::Or(..)
-                | SurfaceProposition::Implies(..),
+                SyntaxProposition::And(..)
+                | SyntaxProposition::Or(..)
+                | SyntaxProposition::Implies(..),
                 _,
             ) => {
                 self.structure_matches(surface_first, kernel)
                     || self.structure_matches(surface_second, kernel)
             }
             (
-                SurfaceProposition::ForAll { .. } | SurfaceProposition::Exists { .. },
+                SyntaxProposition::ForAll { .. } | SyntaxProposition::Exists { .. },
                 Proposition::Implies(_, _),
             ) => self.structure_matches(surface, kernel_second),
             (
-                SurfaceProposition::Not(_)
-                | SurfaceProposition::ForAll { .. }
-                | SurfaceProposition::Exists { .. },
+                SyntaxProposition::Not(_)
+                | SyntaxProposition::ForAll { .. }
+                | SyntaxProposition::Exists { .. },
                 _,
             ) => false,
             _ => true,
@@ -793,7 +793,7 @@ impl SurfacePropositionStorage {
         }
     }
 
-    fn surface_id(&self, surface: &SurfaceProposition) -> Option<NodeId> {
+    fn surface_id(&self, surface: &SyntaxProposition) -> Option<NodeId> {
         surface_identities(&mut Finder(self), &flatten(surface, surface_children)).ids[0]
     }
 }
@@ -835,7 +835,7 @@ impl SurfacePropositionMap {
     pub(in crate::surface) fn record_store_source(
         &mut self,
         equation: &Arc<Proposition>,
-        surface: &SurfaceProposition,
+        surface: &SyntaxProposition,
         source_address: &Address,
     ) -> bool {
         let Some((key, address)) = StoreReadKey::of(equation) else {
@@ -853,7 +853,7 @@ impl SurfacePropositionMap {
         true
     }
 
-    fn store_source(&self, equation: &Proposition) -> Option<&SurfaceProposition> {
+    fn store_source(&self, equation: &Proposition) -> Option<&SyntaxProposition> {
         if self.storage.store_sources.is_empty() {
             return None;
         }
@@ -870,7 +870,7 @@ impl SurfacePropositionMap {
     /// and per pair recorded.
     pub fn record_lowering(
         &mut self,
-        surface: &SurfaceProposition,
+        surface: &SyntaxProposition,
         kernel: &Proposition,
     ) -> Result<(), ClickError> {
         let surface_tree = flatten(surface, surface_children);
@@ -956,7 +956,7 @@ impl SurfacePropositionMap {
                 }
                 storage.complete = storage.complete.with_value((surface_id, kernel_id));
             }
-            if let SurfaceProposition::Comparison { left, right, .. } = surface {
+            if let SyntaxProposition::Comparison { left, right, .. } = surface {
                 // Only a side that names a qualified object records anything
                 // here, so the kernel form is resolved only for one. Resolving
                 // restores every load the form mentions, the cached values of
@@ -999,7 +999,7 @@ impl SurfacePropositionMap {
                 }
             }
             if matches!(kernel, Proposition::And(..))
-                && !matches!(surface, SurfaceProposition::And(..))
+                && !matches!(surface, SyntaxProposition::And(..))
             {
                 // One unit per conjunction node walked: the walk is the
                 // kernel tree this recording already charged.
@@ -1063,9 +1063,9 @@ impl SurfacePropositionMap {
         let (surface_first, surface_second) = recording.surface.children[surface_index as usize];
         let (kernel_first, kernel_second) = recording.kernel.children[kernel_index as usize];
         match (surface, kernel) {
-            (SurfaceProposition::And(..), Proposition::And(..))
-            | (SurfaceProposition::Or(..), Proposition::Or(..))
-            | (SurfaceProposition::Implies(..), Proposition::Implies(..)) => {
+            (SyntaxProposition::And(..), Proposition::And(..))
+            | (SyntaxProposition::Or(..), Proposition::Or(..))
+            | (SyntaxProposition::Implies(..), Proposition::Implies(..)) => {
                 pending.push((surface_second, kernel_second));
                 pending.push((surface_first, kernel_first));
                 Ok(())
@@ -1073,13 +1073,13 @@ impl SurfacePropositionMap {
             // Click comparison negation is lowered by flipping the comparison
             // polarity, so either kernel boolean is possible (for example,
             // `not (x != 0)` becomes equality with polarity `true`).
-            (SurfaceProposition::Not(_), Proposition::ConditionIs(_, _)) => Ok(()),
-            (SurfaceProposition::Not(_), Proposition::Not(_))
-            | (SurfaceProposition::ForAll { .. }, Proposition::ForAll { .. }) => {
+            (SyntaxProposition::Not(_), Proposition::ConditionIs(_, _)) => Ok(()),
+            (SyntaxProposition::Not(_), Proposition::Not(_))
+            | (SyntaxProposition::ForAll { .. }, Proposition::ForAll { .. }) => {
                 pending.push((surface_first, kernel_first));
                 Ok(())
             }
-            (SurfaceProposition::Exists { .. }, Proposition::Exists { .. }) => {
+            (SyntaxProposition::Exists { .. }, Proposition::Exists { .. }) => {
                 // The existential's kernel body may include arithmetic
                 // obligations scoped to its witness. It is not a lowering of
                 // the written body alone, and that body is not usable outside
@@ -1094,9 +1094,9 @@ impl SurfacePropositionMap {
             // structure; a kernel matching neither leg is a real
             // mislowering and still errors below.
             (
-                SurfaceProposition::And(..)
-                | SurfaceProposition::Or(..)
-                | SurfaceProposition::Implies(..),
+                SyntaxProposition::And(..)
+                | SyntaxProposition::Or(..)
+                | SyntaxProposition::Implies(..),
                 _,
             ) if recording.structure_matches(surface_first, kernel_index)
                 || recording.structure_matches(surface_second, kernel_index) =>
@@ -1114,17 +1114,17 @@ impl SurfacePropositionMap {
             // surface form of their own; record the surface quantifier
             // against the guarded conclusion.
             (
-                SurfaceProposition::ForAll { .. } | SurfaceProposition::Exists { .. },
+                SyntaxProposition::ForAll { .. } | SyntaxProposition::Exists { .. },
                 Proposition::Implies(_, _),
             ) if recording.structure_matches(surface_index, kernel_second) => {
                 self.record_from(recording, surface_index, kernel_second)
             }
-            (SurfaceProposition::And(_, _), _)
-            | (SurfaceProposition::Or(_, _), _)
-            | (SurfaceProposition::Not(_), _)
-            | (SurfaceProposition::Implies(_, _), _)
-            | (SurfaceProposition::ForAll { .. }, _)
-            | (SurfaceProposition::Exists { .. }, _) => {
+            (SyntaxProposition::And(_, _), _)
+            | (SyntaxProposition::Or(_, _), _)
+            | (SyntaxProposition::Not(_), _)
+            | (SyntaxProposition::Implies(_, _), _)
+            | (SyntaxProposition::ForAll { .. }, _)
+            | (SyntaxProposition::Exists { .. }, _) => {
                 // The kernel form can embed whole memory states; bound the
                 // rendering so the diagnostic stays a diagnostic.
                 let kernel = format!("{kernel:?}");
@@ -1146,7 +1146,7 @@ impl SurfacePropositionMap {
         self.storage.by_kernel.get(&id)
     }
 
-    fn surface_lowerings(&self, surface: &SurfaceProposition) -> Option<&OrderedNodes<KernelRef>> {
+    fn surface_lowerings(&self, surface: &SyntaxProposition) -> Option<&OrderedNodes<KernelRef>> {
         let id = self.storage.surface_id(surface)?;
         self.storage.by_surface.get(&id)
     }
@@ -1155,7 +1155,7 @@ impl SurfacePropositionMap {
     pub(in crate::surface) fn recorded_surface(
         &self,
         kernel: &Proposition,
-    ) -> Option<&SurfaceProposition> {
+    ) -> Option<&SyntaxProposition> {
         self.store_source(kernel).or_else(|| {
             self.kernel_forms(kernel)
                 .and_then(|forms| forms.nodes().next_back())
@@ -1169,7 +1169,7 @@ impl SurfacePropositionMap {
     pub(in crate::surface) fn recorded_requirement_surface(
         &self,
         kernel: &Proposition,
-    ) -> Option<&SurfaceProposition> {
+    ) -> Option<&SyntaxProposition> {
         if let Some(surface) = self.recorded_surface(kernel) {
             return Some(surface);
         }
@@ -1178,7 +1178,7 @@ impl SurfacePropositionMap {
         self.recorded_surface(container.get())
     }
 
-    pub fn surface(&self, kernel: &Proposition) -> Result<&SurfaceProposition, ClickError> {
+    pub fn surface(&self, kernel: &Proposition) -> Result<&SyntaxProposition, ClickError> {
         self.recorded_surface(kernel).ok_or_else(|| {
             ClickError::new(format!(
                 "kernel proposition has no recorded Click surface form: {kernel:?}"
@@ -1189,7 +1189,7 @@ impl SurfacePropositionMap {
     pub fn surfaces(
         &self,
         kernel: &Proposition,
-    ) -> impl DoubleEndedIterator<Item = &SurfaceProposition> {
+    ) -> impl DoubleEndedIterator<Item = &SyntaxProposition> {
         self.kernel_forms(kernel)
             .into_iter()
             .flat_map(|forms| forms.nodes().map(|(_, surface)| surface.get()))
@@ -1230,7 +1230,7 @@ impl SurfacePropositionMap {
 
     pub fn available_kernel(
         &self,
-        surface: &SurfaceProposition,
+        surface: &SyntaxProposition,
         available: &[Proposition],
     ) -> Option<&Proposition> {
         self.available_kernel_matching(surface, |kernel| available.contains(kernel))
@@ -1238,7 +1238,7 @@ impl SurfacePropositionMap {
 
     pub(crate) fn available_kernel_matching(
         &self,
-        surface: &SurfaceProposition,
+        surface: &SyntaxProposition,
         mut is_available: impl FnMut(&Proposition) -> bool,
     ) -> Option<&Proposition> {
         let mut matches = self
@@ -1253,7 +1253,7 @@ impl SurfacePropositionMap {
         matches.next().is_none().then_some(kernel)
     }
 
-    pub fn unique_kernel(&self, surface: &SurfaceProposition) -> Option<&Proposition> {
+    pub fn unique_kernel(&self, surface: &SyntaxProposition) -> Option<&Proposition> {
         let mut lowerings = self.surface_lowerings(surface)?.nodes();
         let (_, kernel) = lowerings.next()?;
         lowerings.next().is_none().then(|| kernel.get())
@@ -1263,9 +1263,9 @@ impl SurfacePropositionMap {
         &self,
         kernel: &Proposition,
         mut lower_in_current_state: F,
-    ) -> Result<SurfaceProposition, ClickError>
+    ) -> Result<SyntaxProposition, ClickError>
     where
-        F: FnMut(&SurfaceProposition) -> Result<Proposition, ClickError>,
+        F: FnMut(&SyntaxProposition) -> Result<Proposition, ClickError>,
     {
         if let Some(surface) = self.store_source(kernel)
             && lower_in_current_state(surface).is_ok_and(|lowered| &lowered == kernel)
@@ -1320,26 +1320,26 @@ impl SurfacePropositionMap {
 /// are found the same way a bare `alpha::value` is. The whole accessor chain
 /// is what gets returned, so the spelling reads back the cell the pointer
 /// names.
-fn qualified_object_access(side: &SurfaceTerm) -> Option<&SurfaceTerm> {
+fn qualified_object_access(side: &SyntaxTerm) -> Option<&SyntaxTerm> {
     let mut expression = side;
-    while let SurfaceTerm::At {
+    while let SyntaxTerm::At {
         expression: inner, ..
     }
-    | SurfaceTerm::Old(inner)
-    | SurfaceTerm::Exact(inner) = expression
+    | SyntaxTerm::Old(inner)
+    | SyntaxTerm::Exact(inner) = expression
     {
         expression = inner;
     }
     let mut base = expression;
     loop {
         base = match base {
-            SurfaceTerm::Field { base: inner, .. } => inner,
-            SurfaceTerm::Index(inner, _) => inner,
-            SurfaceTerm::ArrayIndex { base: inner, .. } => inner,
+            SyntaxTerm::Field { base: inner, .. } => inner,
+            SyntaxTerm::Index(inner, _) => inner,
+            SyntaxTerm::ArrayIndex { base: inner, .. } => inner,
             _ => break,
         };
     }
-    matches!(base, SurfaceTerm::QualifiedC { .. }).then_some(expression)
+    matches!(base, SyntaxTerm::QualifiedC { .. }).then_some(expression)
 }
 
 #[cfg(test)]
@@ -1367,10 +1367,10 @@ mod store_source_tests {
             ))
         };
         let stored = equation(1);
-        let source = SurfaceProposition::Comparison {
-            left: SurfaceTerm::Binding("written".into()),
+        let source = SyntaxProposition::Comparison {
+            left: SyntaxTerm::Binding("written".into()),
             operator: crate::surface::ComparisonOperator::Equal,
-            right: SurfaceTerm::Binding("value".into()),
+            right: SyntaxTerm::Binding("value".into()),
         };
         let mut map = SurfacePropositionMap::default();
         let other = Address {
@@ -1425,10 +1425,10 @@ mod store_source_tests {
                 true,
             ))
         };
-        let spelling = |name: &str| SurfaceProposition::Comparison {
-            left: SurfaceTerm::Binding(name.into()),
+        let spelling = |name: &str| SyntaxProposition::Comparison {
+            left: SyntaxTerm::Binding(name.into()),
             operator: crate::surface::ComparisonOperator::Equal,
-            right: SurfaceTerm::Binding("value".into()),
+            right: SyntaxTerm::Binding("value".into()),
         };
         let (first, second) = (equation(first), equation(second));
         let (first_source, second_source) = (spelling("first"), spelling("second"));

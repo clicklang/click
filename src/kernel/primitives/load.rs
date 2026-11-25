@@ -304,13 +304,6 @@ impl LoadCell {
     /// The read's interned load. Its [`Load::point`] is the first selection
     /// of its read key, not necessarily this read's: consumers read the
     /// selection from the term's own [`ReadPoint`].
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "consumers move to the load in step 3a-ii (design/loads.md)"
-        )
-    )]
     pub(crate) fn load(&self) -> &Load {
         &self.load
     }
@@ -434,7 +427,7 @@ pub(crate) fn legacy_pointer_word_read(
     cell: &Address,
 ) -> crate::kernel::MachineTerm {
     crate::kernel::MachineTerm::read_named(
-        ProgramPoint::at_optional_read_site(memory, site),
+        ProgramPoint::read_at_optional(memory, site),
         cell.clone(),
         crate::kernel::LoadKind::Bits64,
     )

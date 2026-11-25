@@ -1507,7 +1507,7 @@ fn abstract_read_origin_lookup_ignores_unrelated_definitions() {
         );
         let parameter = TypeParameterName::intern("ScaledOriginT");
         for i in 0..size {
-            AlgebraicTermNode::parameter_load(
+            AlgebraicTermNode::parameter_load_unsited(
                 source.clone(),
                 Address::symbolic(Variable(993_000 + i)),
                 parameter,
@@ -1515,7 +1515,7 @@ fn abstract_read_origin_lookup_ignores_unrelated_definitions() {
         }
         let address = Address::symbolic(Variable(992_000));
         let ProgramValue::Parameter(named) =
-            AlgebraicTermNode::parameter_load(source.clone(), address.clone(), parameter)
+            AlgebraicTermNode::parameter_load_unsited(source.clone(), address.clone(), parameter)
         else {
             unreachable!()
         };

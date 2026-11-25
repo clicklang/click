@@ -334,7 +334,7 @@ int32 vector_grow(struct vector* owner) {
     }
     have (old_capacity as uint32) <= 1073741823u32 by {
         rewrite(old_capacity, owner->cap);
-        close() using {
+        normalize() using {
             1 <= owner->cap;
             owner->cap <= 536870910;
         };
@@ -371,7 +371,7 @@ int32 vector_grow(struct vector* owner) {
             close() using { 1 <= new_capacity; new_capacity <= 536870912; };
         }
         have (owner->len as uint32) <= 1073741823u32 by {
-            close() using { 0 <= owner->len; owner->len <= owner->cap; owner->cap <= 536870910; };
+            normalize() using { 0 <= owner->len; owner->len <= owner->cap; owner->cap <= 536870910; };
         }
         step();
         step();
@@ -431,9 +431,13 @@ int32 vector_grow(struct vector* owner) {
                         rewrite(old(owner->data[k]), at(statement(10).call(vector_copy, 0).entry, old_data[k]));
                         close();
                     }
-                    have owner->data[k] == new_data[k] by {
+                    have &owner->data[k] == &new_data[k] by {
                         rewrite(owner->data, new_data);
                         close();
+                    }
+                    have owner->data[k] == new_data[k] by {
+                        rewrite(&owner->data[k], &new_data[k]);
+                        normalize() using {};
                     }
                     rewrite(owner->data[k], new_data[k]);
                     close();
@@ -444,67 +448,12 @@ int32 vector_grow(struct vector* owner) {
         fold(allocated_vector(owner));
         have result == 0 implies owner->cap == old(owner->cap);
         have result == 0 implies owner->data == old(owner->data);
-        have result == 1 implies to_integer(owner->cap) == (to_integer(old(owner->cap)) + 1) by {
-            have 0 == 0 implies (let integer_value: Integer = to_integer(at(region(7).exit, (new_capacity as int32))); integer_value) == (to_integer(at(region(5).exit, (old_capacity as int32))) + 1) by {
-                intro() {
-                    if at(function.entry, owner->cap < (536870910 as int32)) {
-                        have at(function.entry, owner->cap != (536870910 as int32)) by {
-                            if at(function.entry, owner->cap) < (at(function.entry, 1073741823) as int32) {
-                                have at(function.entry, owner->cap) != (at(function.entry, 1073741823) as int32) by {
-                                    have at(function.entry, owner->cap) < (at(function.entry, 1073741823) as int32) by {
-                                        close();
-                                    }
-                                    if at(function.entry, owner->cap) == (at(function.entry, 1073741823) as int32) {
-                                        have false by {
-                                            close() using { at(function.entry, owner->cap) < (at(function.entry,
-                                                    1073741823) as int32); at(function.entry, owner->cap) == (at(function.entry,
-                                                    1073741823) as int32); };
-                                        }
-                                        contradiction();
-                                    } else {
-                                        close();
-                                    }
-                                }
-                                close() using { (at(function.entry, owner->cap) as int32) < (at(function.entry,
-                                        536870910) as int32); (at(function.entry, 1) as int32) <= (at(function.entry,
-                                        owner->cap) as int32); };
-                            } else {
-                                have at(function.entry, owner->cap) == (at(function.entry, 1073741823) as int32) by {
-                                    have at(function.entry, owner->cap) <= (at(function.entry, 1073741823) as int32) by {
-                                        close();
-                                    }
-                                    close() using { at(function.entry, owner->cap) <= (at(function.entry,
-                                            1073741823) as int32); not at(function.entry, owner->cap) < at(function.entry,
-                                            1073741823); };
-                                }
-                                rewrite(at(function.entry, owner->cap), (at(function.entry, 1073741823) as int32));
-                                close();
-                            }
-                        }
-                        have -2147483648 <= (to_integer(at(region(5).exit, (old_capacity as int32))) + 1) by {
-                            close() using { 0 <= to_integer(at(region(5).exit, (old_capacity as int32))); };
-                        }
-                        have (to_integer(at(region(5).exit, (old_capacity as int32))) + 1) <= 2147483647 by {
-                            close() using { to_integer(at(region(5).exit, (old_capacity as int32))) < 536870910; };
-                        }
-                        have to_integer((let integer_value: Integer = to_integer(at(region(7).exit, (new_capacity as int32))); integer_value)) == (to_integer(at(region(5).exit, (old_capacity as int32))) + 1) by {
-                            close() using { -2147483648 <= (to_integer(at(region(5).exit, (old_capacity as
-                                    int32))) + 1); (to_integer(at(region(5).exit, (old_capacity as int32))) + 1) <=
-                                    2147483647; };
-                        }
-                        close();
-                    } else {
-                        have at(function.entry, owner->cap == (536870910 as int32)) by {
-                            have at(function.entry, owner->cap <= (536870910 as int32)) by {
-                                close();
-                            }
-                            close() using { at(function.entry, owner->cap <= (536870910 as int32)); not at(function.entry, owner->cap) < at(function.entry, 536870910); };
-                        }
-                        rewrite(at(function.entry, owner->cap), at(function.entry, (536870910 as int32)));
-                        close();
-                    }
-                }
-            }
+        have owner->cap == old(owner->cap) + 1 by {
+            rewrite(owner->cap, at(region(9).entry, new_capacity));
+            have at(region(9).entry, new_capacity) == at(region(5).exit, old_capacity) + 1;
+            rewrite(at(region(9).entry, new_capacity), at(region(5).exit, old_capacity) + 1);
+            have at(region(5).exit, old_capacity) == old(owner->cap);
+            rewrite(at(region(5).exit, old_capacity), old(owner->cap));
             close();
         }
         close();

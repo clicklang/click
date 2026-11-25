@@ -970,10 +970,9 @@ assignment exists and therefore the propositions are contradictory.
 
 ### Search miss
 
-The failure of an elided form, such as `apply(theorem(args))` or a bare
-`transport(P, Q)`, whose search found no fact for the argument it elides. It
-is not a refusal: write the argument, or state the missing fact with `have`
-first. See [Smart and simple tactics](../concepts/smart-and-simple-tactics.md#elided-arguments).
+A smart tactic found no proof in its bounded search. For example, a bare
+`transport(P, Q)` may find no frame for the source fact. See
+[Smart and simple tactics](../concepts/smart-and-simple-tactics.md#fact-transport).
 
 ### Selector
 

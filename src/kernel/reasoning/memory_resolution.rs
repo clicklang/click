@@ -3573,7 +3573,7 @@ fn unrelated_forgotten_states_do_not_prove_their_loads_equal() {
 
     let load = |memory: &SymbolicMemory| {
         MachineTerm::read_named(
-            ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
+            ProgramPoint::unplaced(&(crate::kernel::intern_memory_ref(memory))),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
         )
@@ -3590,7 +3590,7 @@ fn unrelated_states_do_not_erase_object_or_heap_state_visible_to_the_load() {
     let loads_proven_equal = |left: &SymbolicMemory, right: &SymbolicMemory, pointer: &Address| {
         let load = |memory: &SymbolicMemory| {
             MachineTerm::read_named(
-                ProgramPoint::at(&(crate::kernel::intern_memory_ref(memory))),
+                ProgramPoint::unplaced(&(crate::kernel::intern_memory_ref(memory))),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
             )

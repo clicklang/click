@@ -7,8 +7,7 @@ language. A tactic is either **smart**, **simple**, or **control**:
   `close() using`, and `step_until`, which steps to a target and proves what
   each step needs. Smart tactics also include the implicit closer, which
   ends proofs including loop `maintain` scripts and finishes a `step()` or
-  `fold`, and forms whose search fills an elided argument:
-  `apply(fact)`, `apply(ih(m))`, and a bare `transport(P, Q)`. They
+  `fold`, and the frame search in bare `transport(P, Q)`. They
   are the tactics that `click profile` may recommend expanding. The parser
   refuses retired forms such as `known()` and `solve()` and names their
   replacement, `close()`.
@@ -1106,7 +1105,7 @@ See [`have_disjunction_projection.md`](https://github.com/clicklang/click/blob/m
 and [`loop_exit_disjunction_projection.md`](https://github.com/clicklang/click/blob/master/mdtests/loop_exit_disjunction_projection.md).
 
 A simple tactic that adds a fact (`instantiate(...)`,
-`apply`, `transport ... using`, and `obtain`) also closes a
+`apply` and `obtain`) also closes a
 proposition goal that it adds, when it is the last written step or only
 `close()` or `normalize()` follows it. An added order fact closes
 the goal under either form of the same claim: `0 <= e` closes the goal
@@ -2125,9 +2124,12 @@ offsets at the same version point and storage block.
 A read of at most four bytes, and `defined(...)` of a read of any width, are
 justified the same way: the walk, reading the cited conditions only, must end
 at a store that writes the read's whole width, so `t[j + 1] = 0` under a
-cited `j == 2` gives `t[3u64] == 0u8` and `defined(t[3u64])`
-([`normalize_using_reads_a_narrow_stored_value.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_reads_a_narrow_stored_value.md),
-[`normalize_using_refuses_a_narrow_value_the_store_did_not_write.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_refuses_a_narrow_value_the_store_did_not_write.md)).
+cited `j == 2` gives `t[3u64] == 0u8` and `defined(t[3u64])`.
+An ordinary proof can establish the exact address equality first, then
+rewrite the read to the store's address
+([`normalize_using_reads_a_narrow_stored_value.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_reads_a_narrow_stored_value.md)).
+A different byte still needs its own store
+([`normalize_using_refuses_a_narrow_value_the_store_did_not_write.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_refuses_a_narrow_value_the_store_did_not_write.md)).
 
 For a top-level 64-bit read equality, the cited conditions can also justify
 its recorded stored value: the typed memory-history walk checks each effect,
@@ -2858,10 +2860,10 @@ instantiation performs no premise search or guard discharge.
 **Outside it:** a universal not yet established must be proved first with
 `have`. A value of another carrier needs a conversion. The former `using`
 list is rejected; write ordinary guard proofs instead.
-The loop preservation checker currently supports instantiation inside
-`have proposition by { ... }`. Supporting a standalone instantiation in
-`maintain` requires the checker to carry the added fact between execution
-steps.
+At an execution frontier, including inside a loop's `maintain` block,
+`instantiate` adds the instance to the current path without executing a
+statement. The next `step()` can use the fact.
+See [the checked loop example](https://github.com/clicklang/click/blob/master/mdtests/loop_decreases_index_ordered_walk.md).
 
 
 **Failure, checking, and tools:**
@@ -3560,7 +3562,6 @@ mathematical product.
 | Form | Class | Audience | Purpose | Details |
 | --- | --- | --- | --- | --- |
 | `transport(P, Q)` | smart | Specialized | Carry a fact from an earlier memory state. | [Reference](#fact-transport) |
-| `transport(P, Q) using { R; ... }` | simple | Specialized | Carry a fact using explicit frame evidence. | [Reference](#transport-with-selected-premises) |
 | `unfold(predicate(args))` | simple | Core | Open one selected predicate application. | [Reference](#unfolding-predicates) |
 | `unfold(resource(args))` | simple | Core | Open an owned resource instance. | [Reference](#unfolding-resources) |
 | `fold(resource)` | simple | Core | Assemble a composite or create an ordinary token at return. | [Reference](#folding-resources) |
@@ -3592,214 +3593,11 @@ facts. Prove unchanged reads across named footprints with `preserve` and use
 **Failure, checking, and tools:**
 
 Unrelated propositions, unsafe writes, or a source that does not carry the
-target alone fail. The refusal is the one the same transport gets with its
-source listed in `using`: it names the effects
-between the two states and, for a quantified fact, the leaf still needing
-proof. Expansion writes the ordinary checks, such as `preserve` and
+target alone fail. The diagnostic identifies the recorded effects and, for a
+quantified fact, the leaf still needing proof. Expansion writes the ordinary checks, such as `preserve` and
 `rewrite`, when it records a replayable derivation.
 
 **Checked examples:** [`known_value_transport_expansion.md`](https://github.com/clicklang/click/blob/master/mdtests/known_value_transport_expansion.md), [`transport_model_pointer_binding.md`](https://github.com/clicklang/click/blob/master/mdtests/transport_model_pointer_binding.md)
-
-### Transport with selected premises
-
-**Form:** `transport(P, Q) using { R; ... }`
-
-**Specialized.** Existing execution proofs can derive target proposition `Q`
-from source `P` using the listed point and frame evidence. Write intermediate
-facts with `have`, and use `preserve` across named footprints and `rewrite`
-to carry the fact to its new state. Pure proofs use `have`, `rewrite`, or
-`close() using`.
-
-**Accepts** in an execution proof when:
-
-- Every listed `R` is an available fact, read as every `using` list reads
-  premises: exactly, under another form of the same order claim, or true
-  without facts. A quantified premise may name its own binder: a call's
-  postcondition held under the binder its lowering chose is cited by a written
-  form with another. Listing a stated range also cites
-  its two span halves.
-- The source `P` is a listed premise, follows from the listed premises by the
-  kernel's atomic derivation (`old(p[0]) <= 7` from `old(p[0]) == 7`), or is
-  a reflexive equality, under binders and guards, which needs no entry. At a
-  completed return outcome `P` may instead be any held fact, up to its
-  binder's name.
-- The target `Q` is already available, or the frame carries `P` to it as
-  described below.
-
-It adds `Q` as a fact and closes the goal when `Q` is the goal.
-
-For current-point `viewable(A)` to `viewable(B)` with explicitly cited
-`contains(A, B)`, expansion retains ordinary
-`apply(separation::viewable_restrict(A, B))` steps. When both
-are memory ranges with the same written base and int32 endpoints, citing
-`lo <= inner_lo`, `inner_lo <= inner_hi`, and `inner_hi <= hi` instead
-produces an explicit `have contains(...)` using `separation::contains_subrange` first.
-These cases expand to ordinary library applications.
-See `mdtests/viewable_restrict_transport_expansion.md`.
-
-At an execution frontier, a focused equality between a read now and the same
-read at a named statement's entry also expands to `preserve(R, statement(...))`
-when that footprint separation is cited, the source is the earlier read's
-reflexive equality, and the statement's recorded exit is the current point.
-This covers memory reads and abstract resource fields. The explicit footprint
-separation proof remains in the expanded script; no history search is needed
-for replay. See `mdtests/single_write_transport_expansion.md` and
-`mdtests/single_write_resource_transport_expansion.md`.
-
-For several statements, cite each footprint separation in `using`. Expansion
-writes one `have at(statement(i).exit, read) == at(statement(i).entry, read)`
-proved by `preserve` per cited footprint, then `close()` joins the
-endpoint equalities. The premises can be written in either order; they must
-cover the read's path to the current point. No intermediate footprint or
-separation is discovered from history, and failure of ordinary equality closure is final rather
-than retrying a history search. Both memory reads and abstract resource fields
-use this form. See `mdtests/multi_write_transport_expansion.md`.
-
-A focused comparison with one read operand changing from a statement entry
-to the current point uses the same preservation chain. For example,
-`transport(at(statement(0).entry, *q) > 0, *q > 0) using { ... }`
-first retains the earlier inequality with `close()`, proves the read
-equality from the cited footprint separations, then uses `rewrite` and
-`close()` to close the current comparison. This also carries a known
-value, such as `at(statement(0).entry, *q) == 7` to `*q == 7`. It covers
-non-reflexive `==`, `<`, `<=`, `>`, `>=`, and `!=`, with the changing operand
-on either side; the other operand and comparison operator must be unchanged. It also applies to abstract
-resource fields. The source must already be provable, and all supplied
-separations are checked. See `mdtests/inequality_transport_expansion.md` and
-`mdtests/known_value_transport_expansion.md`.
-
-The `at(...)` may also wrap the whole source comparison, as in
-`transport(at(statement(0).entry, *q == 7), *q == 7) using { ... }`.
-The driver uses the same explicit preservation and rewrite steps. Unsuffixed
-integer literals are point-independent; every other operand retains an
-explicit `at(...)`. Thus an old comparison of two reads can carry one read
-while the target explicitly keeps the other at its old point, but this route
-does not silently substitute the other's current value. The original source
-fact remains in the proof and is checked by `close()`.
-See `mdtests/state_comparison_transport_expansion.md`.
-
-When both operands are reads at earlier points, the comparison route can
-preserve both: `transport(at(statement(0).entry, *q == *r), *q == *r)`.
-Cite the footprint separation for each read in `using`. Expansion writes one
-preservation chain per operand, rewrites both, and closes with `close()`.
-Selection uses the explicitly written single-cell dereference or named
-resource-field subject; it does not discover aliases or prove range containment.
-Every supplied separation must be used and checked. See
-`mdtests/two_read_transport_expansion.md`.
-Conjunction trees of supported scalar comparisons also expand: for example,
-`transport(at(statement(0).entry, *q == 7 and (*r == 8 and *s == 9)), *q == 7 and (*r == 8 and *s == 9))`.
-Expansion emits a flat `all` block in goal order, with a preservation and
-rewrite proof for each scalar leaf. This form handles
-matching conjunction structure; selection and regrouping are described below. The source can wrap the whole tree, a
-subtree, or individual leaves in `at(...)`; nested `at(...)` wrappers are not
-handled by this route. Each leaf checks its earlier fact with `close()`
-and uses the supplied footprint separations for its changing reads. This covers
-memory and root fields of named resources across one or several statements.
-The explicit separations are indexed once by their written cell or resource,
-and every supplied separation must be used and checked. No aliases or range
-containment facts are discovered. See `mdtests/conjunction_transport_expansion.md`
-and `mdtests/nested_conjunction_transport_expansion.md`.
-
-A historical conjunction can also transport selected scalar comparison leaves:
-`transport(at(statement(0).entry, *p == 8 and *q == 7), *q == 7)` keeps one,
-while `transport(at(statement(0).entry, *q == 7 and (*p == 8 and *r == 8)), *r == 8 and *q == 7)`
-keeps two in a different order. The target may regroup or repeat selected
-leaves in a conjunction tree.
-The driver indexes the written source's `at(...)` comparison leaves once and
-selects each target leaf by exact source text. It emits a `have` for each selected
-historical leaf using `close()`, followed by its ordinary preservation/rewrite
-proof, and combines the results with `all` in the target's conjunct order.
-Discarded conjuncts need not remain true; only the selected reads need footprint
-separations. The supplied separations are indexed once and must all be used and
-checked. Whole-tree and subtree `at(...)` wrappers are supported. The exact
-source text of a leaf selects one point; this route does not retry other points
-or discover additional evidence. Non-comparison leaves and operand-level
-`at(...)` forms remain outside this selection route.
-See `mdtests/conjunction_projection_transport_expansion.md` and
-`mdtests/conjunction_selection_transport_expansion.md`.
-
-Implications also expand when source and target have matching logical structure
-built from `and`, `or`, `not`, nested `implies`, and supported scalar comparison
-leaves. For example,
-`transport(at(statement(0).entry, (*q == 7 and *r > 0) implies (*q > 0 implies *r == 8)), (*q == 7 and *r > 0) implies (*q > 0 implies *r == 8))`
-uses footprint separations for reads throughout the guard and conclusion.
-Expansion retains the earlier whole fact with `close()`, proves each
-selected read's preservation, then closes the whole goal with `close()`
-using those equalities. It emits no whole-goal rewrites and does not assume
-that any guard is true. Exact shared read pairs use one preservation chain.
-The driver traverses the written logical trees once and indexes explicit
-separations by written subject. It does not search for aliases or discover
-additional premises. Source `at(...)` forms may wrap the whole implication or
-individual subtrees/comparisons; repeated `at(...)` wrappers are unsupported.
-Memory reads, named resource fields, two-read comparisons and multiple cited
-statements use the same form. Quantifiers and non-comparison leaves remain
-outside this route, as do logical regrouping and top-level disjunction transport.
-See `mdtests/implication_transport_expansion.md` and
-`mdtests/compound_implication_transport_expansion.md`.
-
-Other transport routes still retain their existing form.
-
-The frame carries a fact across the steps between its point and the
-target's when every cell it reads is unchanged. The structural frame does so
-read by read, including 64-bit equality, preserving the read kind, all eight
-bytes, and the other operand; it carries `defined(...)` leaves through the
-typed-read transport rule, preserving initialization and lifetime evidence.
-Equal read values alone do not justify carrying definedness across
-deallocation. See the
-[checked disjoint-store regression](https://github.com/clicklang/click/blob/master/mdtests/guarded_definedness_survives_a_disjoint_store.md).
-Beyond it:
-
-- A `viewable` target is decided by the kernel's viewability rules, so a range
-  narrows to a sub-range the listed order facts place inside it, provided the
-  source range is established to be a valid 32-bit byte span.
-- A fact about an application of an `Integer` range-fold function whose body
-  the kernel checks, reading its one `T[]` argument (for a C integer `T` such
-  as `int32` or `uint64`) only at the fold's own index, crosses each store and
-  checked call write set that an exact order fact or stated `separate(...)`
-  places outside the application's `lo..hi` cells; the proved application
-  equality grants no C access.
-- A universal fact `forall (k: int32) { G implies F }` crosses the same steps:
-  `k` is renamed fresh, `G` is assumed, and each read of `F` and `G` is carried
-  when the recorded history shows its cell unchanged between its two
-  points, read against the current context's own facts (for example
-  `k < n` excluding a store to `dst[n]`, `k != cur` excluding a store to
-  `visited[cur]`, or `0 <= k and k < n` with a contract separation placing
-  `left[k]` apart from it).
-- A source `A and B` reaches a target that is only `A` or only `B`: after
-  `memset(dst, 7, 4); dst[4] = 0;`, `memset`'s guarded postcondition carries
-  to `(0u64..4u64).all(|k| { dst[k] == 7 })`.
-
-The rule answers the same for every caller, so `close()`'s transport between points
-reaches it too, and `close()` offers an `A and B` source when the goal is held at
-a recorded point only as one of its conjuncts.
-
-**Outside it**, with what to write instead:
-
-- A mid-execution source that is an available fact but not listed: list it;
-  the refusal names it as one to list.
-- A target whose cell a step between the two points may write, such as
-  `old(p[0]) == 7` to `p[0] == 7` after `p[0] = 9`: no frame exists; prove the
-  target from the step's own facts.
-- A pure target that needs a fact not listed, such as `a == 1` to `b == 1`
-  without `a == b`: list it.
-- Choosing frame evidence: use the bare `transport(P, Q)`.
-
-**Failure, checking, and tools:**
-
-An absent premise prints it as the required transport premise. An absent
-source, mismatched target, or insufficient evidence fails. A refused narrowing
-names the order fact it needs, as the two segments were written. A refused
-frame prints the source and target, as written and as checked, and the cell
-walks it performed; a refused fold frame names the step it could not place,
-or why the function has no checked read summary; a refused quantified frame
-prints the leaf it had and the leaf it wanted. A pure-theorem refusal prints
-its propositions with the theorem's parameter names and the names the script
-introduced.
-
-Click checks that transport only; expansion is unchanged, and profiling charges
-the named evidence.
-
-**Checked examples:** [`field_derived_precise_effect_after_metadata_write.md`](https://github.com/clicklang/click/blob/master/mdtests/field_derived_precise_effect_after_metadata_write.md), [`have_viewable_prefix_of_a_range.md`](https://github.com/clicklang/click/blob/master/mdtests/have_viewable_prefix_of_a_range.md), [`sweep_maintains_a_zero_unmarked_count.md`](https://github.com/clicklang/click/blob/master/mdtests/sweep_maintains_a_zero_unmarked_count.md), [`sweep_prefix_survives_its_endpoint_store_by_solve.md`](https://github.com/clicklang/click/blob/master/mdtests/sweep_prefix_survives_its_endpoint_store_by_solve.md), [`quantified_frame_carries_a_fact_past_the_excluded_store.md`](https://github.com/clicklang/click/blob/master/mdtests/quantified_frame_carries_a_fact_past_the_excluded_store.md), [`quantified_frame_preserves_uint64_equality.md`](https://github.com/clicklang/click/blob/master/mdtests/quantified_frame_preserves_uint64_equality.md), [`a_guarded_memset_value_claim_crosses_a_disjoint_store.md`](https://github.com/clicklang/click/blob/master/mdtests/a_guarded_memset_value_claim_crosses_a_disjoint_store.md)
 
 ### Unfolding predicates
 

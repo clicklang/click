@@ -541,7 +541,7 @@ pub(crate) fn logical_pointer_read_term(value: &Address) -> Option<MachineTerm> 
     });
     let load = application?.as_loaded_value()?;
     Some(crate::kernel::MachineTerm::read_named(
-        ProgramPoint::at(&load.defining_memory),
+        ProgramPoint::viewing(&load.defining_memory, &load.point),
         load.defining_address,
         LoadKind::Int32,
     ))
@@ -2876,10 +2876,15 @@ impl EqualityGraphState {
                         && crate::kernel::registered_load_bytes_for_variable(variable)
                             == Some(8) =>
                 {
-                    crate::kernel::registered_load_for_variable(variable).and_then(
-                        |(memory, address)| {
-                            crate::kernel::registered_load_kind_for_variable(variable)
-                                .map(|kind| (ProgramPoint::at(&memory), address, kind))
+                    crate::kernel::eval::registered_load_point_for_variable(variable).and_then(
+                        |(point, address)| {
+                            crate::kernel::registered_load_kind_for_variable(variable).map(|kind| {
+                                (
+                                    ProgramPoint::viewing(point.shared_memory(), &point),
+                                    address,
+                                    kind,
+                                )
+                            })
                         },
                     )
                 }
@@ -3413,8 +3418,8 @@ fn exact_read_comparison_input(term: &MachineTerm) -> MachineTerm {
         {
             // Select the read identity without recovering a cached value.
             // Already-selected reads above retain their producer's identity.
-            return crate::kernel::canonical_form_of_load(
-                memory.shared_memory().clone(),
+            return crate::kernel::canonical_form_of_load_at(
+                memory,
                 pointer.as_ref().clone(),
                 *kind,
             );

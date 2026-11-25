@@ -2,7 +2,7 @@
 //! Products are expanded here, never by a simple checker. Calls and reads are atoms.
 use super::*;
 use crate::kernel::SharedIntegerTerm;
-type Expr = SurfaceTerm;
+type Expr = SyntaxTerm;
 type Poly = BTreeMap<Vec<u64>, BigInt>;
 
 fn num(n: impl Into<BigInt>) -> Expr {
@@ -19,8 +19,8 @@ fn mul(a: Expr, b: Expr) -> Expr {
 fn neg(a: Expr) -> Expr {
     Expr::Negate(Box::new(a))
 }
-fn eq(a: Expr, b: Expr) -> SurfaceProposition {
-    SurfaceProposition::Comparison {
+fn eq(a: Expr, b: Expr) -> SyntaxProposition {
+    SyntaxProposition::Comparison {
         left: super::super::surface_synthesis::integer_typed_expression(a),
         operator: ComparisonOperator::Equal,
         right: b,
@@ -36,7 +36,7 @@ fn product(terms: &[Expr]) -> Expr {
         [head, tail @ ..] => mul(head.clone(), product(tail)),
     }
 }
-fn have(p: SurfaceProposition, body: Vec<ProofStep>) -> ProofStep {
+fn have(p: SyntaxProposition, body: Vec<ProofStep>) -> ProofStep {
     super::super::wide_arithmetic::have(p, body)
 }
 // Reject non-identities before evaluating Surface arguments or selecting laws.
@@ -149,7 +149,7 @@ impl<'p, 'a> Algebra<'p, 'a> {
         a: Expr,
         b: Expr,
         body: Vec<ProofStep>,
-    ) -> Result<SurfaceProposition, ClickError> {
+    ) -> Result<SyntaxProposition, ClickError> {
         self.charge(1)?;
         if a == b {
             return Ok(eq(a, b));
@@ -171,7 +171,7 @@ impl<'p, 'a> Algebra<'p, 'a> {
         self.steps.push(have(p.clone(), retained));
         Ok(p)
     }
-    fn known(&mut self, a: Expr, b: Expr) -> Result<SurfaceProposition, ClickError> {
+    fn known(&mut self, a: Expr, b: Expr) -> Result<SyntaxProposition, ClickError> {
         self.record(a, b, vec![ProofStep::Known])
     }
     fn law(
@@ -180,7 +180,7 @@ impl<'p, 'a> Algebra<'p, 'a> {
         args: Vec<Expr>,
         a: Expr,
         b: Expr,
-    ) -> Result<SurfaceProposition, ClickError> {
+    ) -> Result<SyntaxProposition, ClickError> {
         let mut premises = Vec::new();
         for arg in &args {
             super::super::fixed_state_proofs::conversion_conditions::walk_written_expressions(
@@ -222,7 +222,7 @@ impl<'p, 'a> Algebra<'p, 'a> {
                             domains.push(e);
                         }
                         for value in domains {
-                            let domain = SurfaceProposition::Defined {
+                            let domain = SyntaxProposition::Defined {
                                 expression: value.clone(),
                             };
                             if let Ok(kernel) = self.proof.lower_cited_surface_proposition(
@@ -246,7 +246,7 @@ impl<'p, 'a> Algebra<'p, 'a> {
                         )
                         && let [_, divisor] = arguments.as_slice()
                     {
-                        let domain = SurfaceProposition::Comparison {
+                        let domain = SyntaxProposition::Comparison {
                             left: divisor.clone(),
                             operator: ComparisonOperator::NotEqual,
                             right: num(0),
@@ -941,7 +941,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
-        let SurfaceProposition::Comparison {
+        let SyntaxProposition::Comparison {
             left,
             operator,
             right,
@@ -955,7 +955,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             // Integer lets lower with their lexical bindings resolved.
             // Use the exact raised arithmetic, preserving the original
             // operands on sides that do not need a new spelling.
-            let Some(SurfaceProposition::Comparison {
+            let Some(SyntaxProposition::Comparison {
                 left,
                 operator: ComparisonOperator::Equal,
                 right,

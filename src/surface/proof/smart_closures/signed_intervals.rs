@@ -5,23 +5,23 @@ use super::*;
 
 #[derive(Clone)]
 enum Value {
-    Claim(SurfaceProposition),
+    Claim(SyntaxProposition),
     Interval {
-        term: SurfaceTerm,
-        lower: SurfaceProposition,
-        upper: SurfaceProposition,
+        term: SyntaxTerm,
+        lower: SyntaxProposition,
+        upper: SyntaxProposition,
         lower_endpoint: i64,
     },
-    Defined(SurfaceProposition),
+    Defined(SyntaxProposition),
 }
 impl Value {
-    fn facts(&self) -> Vec<SurfaceProposition> {
+    fn facts(&self) -> Vec<SyntaxProposition> {
         match self {
             Self::Claim(p) | Self::Defined(p) => vec![p.clone()],
             Self::Interval { lower, upper, .. } => vec![lower.clone(), upper.clone()],
         }
     }
-    fn term(&self) -> Option<SurfaceTerm> {
+    fn term(&self) -> Option<SyntaxTerm> {
         if let Self::Interval { term, .. } = self {
             Some(term.clone())
         } else {
@@ -29,40 +29,40 @@ impl Value {
         }
     }
 }
-fn number(n: i64) -> SurfaceTerm {
+fn number(n: i64) -> SyntaxTerm {
     surface_signed_integer_literal(&BigInt::from(n))
 }
-fn le(a: SurfaceTerm, b: SurfaceTerm) -> SurfaceProposition {
-    SurfaceProposition::Comparison {
+fn le(a: SyntaxTerm, b: SyntaxTerm) -> SyntaxProposition {
+    SyntaxProposition::Comparison {
         left: a,
         operator: ComparisonOperator::LessEqual,
         right: b,
     }
 }
-fn eq(a: SurfaceTerm, b: SurfaceTerm) -> SurfaceProposition {
-    SurfaceProposition::Comparison {
+fn eq(a: SyntaxTerm, b: SyntaxTerm) -> SyntaxProposition {
+    SyntaxProposition::Comparison {
         left: a,
         operator: ComparisonOperator::Equal,
         right: b,
     }
 }
-fn observed(term: &SurfaceTerm) -> SurfaceTerm {
+fn observed(term: &SyntaxTerm) -> SyntaxTerm {
     to_integer(&native_int32_split_operand(term.clone()))
 }
 
-fn add(a: SurfaceTerm, b: SurfaceTerm) -> SurfaceTerm {
-    SurfaceTerm::Add(Box::new(a), Box::new(b))
+fn add(a: SyntaxTerm, b: SyntaxTerm) -> SyntaxTerm {
+    SyntaxTerm::Add(Box::new(a), Box::new(b))
 }
-fn mul(a: SurfaceTerm, b: SurfaceTerm) -> SurfaceTerm {
-    SurfaceTerm::Multiply(Box::new(a), Box::new(b))
+fn mul(a: SyntaxTerm, b: SyntaxTerm) -> SyntaxTerm {
+    SyntaxTerm::Multiply(Box::new(a), Box::new(b))
 }
-fn truncating(name: &str, n: SurfaceTerm, d: SurfaceTerm) -> SurfaceTerm {
-    SurfaceTerm::Call {
+fn truncating(name: &str, n: SyntaxTerm, d: SyntaxTerm) -> SyntaxTerm {
+    SyntaxTerm::Call {
         name: name.into(),
         arguments: vec![n, d],
     }
 }
-fn apply(name: &str, arguments: Vec<SurfaceTerm>, premises: Vec<SurfaceProposition>) -> ProofStep {
+fn apply(name: &str, arguments: Vec<SyntaxTerm>, premises: Vec<SyntaxProposition>) -> ProofStep {
     ProofStep::ApplyPlannedTheorem {
         application: TheoremApplication {
             name: format!("click::integer::{name}"),
@@ -74,15 +74,15 @@ fn apply(name: &str, arguments: Vec<SurfaceTerm>, premises: Vec<SurfacePropositi
 
 /// History and memory reads keep the selected compatibility adapter while
 /// scalar arithmetic is migrated independently of read/state transport.
-pub(super) fn has_retained_read_source(proposition: &SurfaceProposition) -> bool {
+pub(super) fn has_retained_read_source(proposition: &SyntaxProposition) -> bool {
     let expressions = match proposition {
-        SurfaceProposition::Comparison { left, right, .. } => vec![left, right],
-        SurfaceProposition::Defined { expression } => vec![expression],
-        SurfaceProposition::And(a, b) | SurfaceProposition::Or(a, b) => {
+        SyntaxProposition::Comparison { left, right, .. } => vec![left, right],
+        SyntaxProposition::Defined { expression } => vec![expression],
+        SyntaxProposition::And(a, b) | SyntaxProposition::Or(a, b) => {
             return has_retained_read_source(a) || has_retained_read_source(b);
         }
-        SurfaceProposition::Not(p) => return has_retained_read_source(p),
-        SurfaceProposition::At { .. } => return true,
+        SyntaxProposition::Not(p) => return has_retained_read_source(p),
+        SyntaxProposition::At { .. } => return true,
         _ => return false,
     };
     let mut found = false;
@@ -92,12 +92,12 @@ pub(super) fn has_retained_read_source(proposition: &SurfaceProposition) -> bool
             &mut |part| {
                 found |= matches!(
                     part,
-                    SurfaceTerm::At { .. }
-                        | SurfaceTerm::Old(_)
-                        | SurfaceTerm::Field { .. }
-                        | SurfaceTerm::Index(..)
-                        | SurfaceTerm::ArrayIndex { .. }
-                        | SurfaceTerm::ProgramExpression(
+                    SyntaxTerm::At { .. }
+                        | SyntaxTerm::Old(_)
+                        | SyntaxTerm::Field { .. }
+                        | SyntaxTerm::Index(..)
+                        | SyntaxTerm::ArrayIndex { .. }
+                        | SyntaxTerm::ProgramExpression(
                             ProgramExpression::Load(_) | ProgramExpression::TypedLoad { .. }
                         )
                 );
@@ -250,7 +250,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 };
                 use super::super::wide_arithmetic::have;
                 let bound = le(add(lower.clone(), number(1)), upper.clone());
-                let strict_bound = SurfaceProposition::Comparison {
+                let strict_bound = SyntaxProposition::Comparison {
                     left: lower.clone(),
                     operator: ComparisonOperator::LessThan,
                     right: upper.clone(),
@@ -281,7 +281,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 && value.value_read() == lo.value_read()
                 && increment.as_const().is_some_and(num_traits::One::is_one)
                 && hi.value_read() == goal_hi.value_read()
-                && let SurfaceTerm::Add(observed, _) = lower
+                && let SyntaxTerm::Add(observed, _) = lower
             {
                 ("lt_step_le", *observed, upper, None)
             } else if let (Some(bound), Some(target)) = (lo.as_const(), goal_lo.as_const())
@@ -289,14 +289,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 && &(bound + BigInt::one()) == target
             {
                 let original = surface_signed_integer_literal(bound);
-                let shifted = SurfaceTerm::Add(Box::new(original.clone()), one());
+                let shifted = SyntaxTerm::Add(Box::new(original.clone()), one());
                 ("lt_step_le", original, upper, Some(eq(lower, shifted)))
             } else if let (Some(bound), Some(target)) = (hi.as_const(), goal_hi.as_const())
                 && lo == goal_lo
                 && &(bound - BigInt::one()) == target
             {
                 let original = surface_signed_integer_literal(bound);
-                let shifted = SurfaceTerm::Subtract(Box::new(original.clone()), one());
+                let shifted = SyntaxTerm::Subtract(Box::new(original.clone()), one());
                 (
                     "lt_le_predecessor",
                     lower,
@@ -306,7 +306,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             } else {
                 continue;
             };
-            let granted = SurfaceProposition::Comparison {
+            let granted = SyntaxProposition::Comparison {
                 left: left.clone(),
                 operator: ComparisonOperator::LessThan,
                 right: right.clone(),
@@ -337,7 +337,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// Observation identities themselves need only their outer range guards.
     pub(in crate::surface::proof) fn prepare_integer_read_domain(
         proof: &Proof<'a>,
-        domain: SurfaceProposition,
+        domain: SyntaxProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("prepare_integer_read_domain");
@@ -390,7 +390,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// let known check the explicit operation or conversion.
     pub(in crate::surface::proof) fn try_bounded_observation_identity_using(
         input: &Proof<'a>,
-        premises: &[SurfaceProposition],
+        premises: &[SyntaxProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_bounded_observation_identity_using");
@@ -399,7 +399,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let (Some(goal), Some(surface)) = (input.goal(), input.surface_goal()) else {
             return Ok(None);
         };
-        let Some(SurfaceProposition::Comparison {
+        let Some(SyntaxProposition::Comparison {
             mut left,
             operator: ComparisonOperator::Equal,
             mut right,
@@ -560,7 +560,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// All nonliteral endpoints come from the checked selected premises.
     pub(in crate::surface::proof) fn try_int32_add_sub_using(
         input: &Proof<'a>,
-        premises: &[SurfaceProposition],
+        premises: &[SyntaxProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_int32_add_sub_using");
@@ -581,7 +581,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             ConditionTerm::IntegerGreaterEqual(left, right) => (right, left),
             _ => return Ok(None),
         };
-        let Some(SurfaceProposition::Comparison {
+        let Some(SyntaxProposition::Comparison {
             left: written_left,
             right: written_right,
             ..
@@ -601,10 +601,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let (subtract, operands, written_a, written_b) = match (result.as_ref(), &written_result) {
-            (IntegerTerm::Add(a, b), SurfaceTerm::Add(written_a, written_b)) => {
+            (IntegerTerm::Add(a, b), SyntaxTerm::Add(written_a, written_b)) => {
                 (false, [a, b], written_a, written_b)
             }
-            (IntegerTerm::Subtract(a, b), SurfaceTerm::Subtract(written_a, written_b)) => {
+            (IntegerTerm::Subtract(a, b), SyntaxTerm::Subtract(written_a, written_b)) => {
                 (true, [a, b], written_a, written_b)
             }
             _ => return Ok(None),
@@ -694,7 +694,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             (
                 "subtract_le",
                 le(d.clone(), c.clone()),
-                SurfaceTerm::Subtract(Box::new(endpoint_a), Box::new(endpoint_b)),
+                SyntaxTerm::Subtract(Box::new(endpoint_a), Box::new(endpoint_b)),
             )
         } else {
             (
@@ -740,7 +740,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// A cast comparison asks for the uncast order over the same premises.
     pub(in crate::surface::proof) fn try_interval_fact_using(
         input: &Proof<'a>,
-        premises: &[SurfaceProposition],
+        premises: &[SyntaxProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_interval_fact_using");
@@ -770,18 +770,18 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if matches!(goal, Proposition::ConditionIs(condition, _) if
             crate::kernel::machine_integer::comparison::structural_comparison_view(condition.native_compat())
                 .is_some_and(|view| view.format == MachineIntegerType::UInt32))
-            && let Some(surface @ SurfaceProposition::Comparison { left, right, .. }) =
+            && let Some(surface @ SyntaxProposition::Comparison { left, right, .. }) =
                 input.surface_goal()
-            && let SurfaceProposition::Comparison {
+            && let SyntaxProposition::Comparison {
                 left: observed_left,
                 operator,
                 right: observed_right,
             } = observed_native_surface_comparison(goal, surface)
         {
             let mut casts = Vec::new();
-            let mut uncast = |expression: &SurfaceTerm, observed| {
+            let mut uncast = |expression: &SyntaxTerm, observed| {
                 let operand = match expression {
-                    SurfaceTerm::CUnary {
+                    SyntaxTerm::CUnary {
                         operand,
                         lowered:
                             ProgramExpression::Cast {
@@ -789,11 +789,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                                 ..
                             },
                     } => Some(operand.as_ref().clone()),
-                    SurfaceTerm::ProgramExpression(ProgramExpression::Cast {
+                    SyntaxTerm::ProgramExpression(ProgramExpression::Cast {
                         expression,
                         target_type: crate::kernel::ProgramType::UInt32,
                         ..
-                    }) => Some(SurfaceTerm::ProgramExpression(expression.as_ref().clone())),
+                    }) => Some(SyntaxTerm::ProgramExpression(expression.as_ref().clone())),
                     _ => None,
                 };
                 let Some(operand) = operand else {
@@ -818,7 +818,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 // Integer observations are still available to the interval
                 // planner. Then substitute the checked identities in the
                 // original comparison and read the established order.
-                let scope = proof.driver().open_have(SurfaceProposition::Comparison {
+                let scope = proof.driver().open_have(SyntaxProposition::Comparison {
                     left,
                     operator,
                     right,
@@ -852,7 +852,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// signed countdown bound. Keep both observations at their written points.
     pub(in crate::surface::proof) fn try_signed_countdown_using(
         input: &Proof<'a>,
-        premises: &[SurfaceProposition],
+        premises: &[SyntaxProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_signed_countdown_using");
@@ -920,7 +920,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 let IntegerTerm::Subtract(base, unit) = exact.as_ref() else {
                     continue;
                 };
-                let SurfaceTerm::Subtract(written_base, written_unit) = written_exact else {
+                let SyntaxTerm::Subtract(written_base, written_unit) = written_exact else {
                     continue;
                 };
                 if unit.value_read().as_const().and_then(ToPrimitive::to_i32) != Some(1)
@@ -952,7 +952,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let proof = (|| {
             let zero = number(0);
             let one = super::super::surface_synthesis::integer_typed_expression(number(1));
-            let positive = SurfaceProposition::Comparison {
+            let positive = SyntaxProposition::Comparison {
                 left: zero.clone(),
                 operator: ComparisonOperator::LessThan,
                 right: previous.clone(),
@@ -961,7 +961,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let lower = le(one.clone(), previous.clone());
             let unit = le(amount.clone(), one.clone());
             let exact_bound = le(
-                SurfaceTerm::Subtract(Box::new(one.clone()), Box::new(one.clone())),
+                SyntaxTerm::Subtract(Box::new(one.clone()), Box::new(one.clone())),
                 difference.clone(),
             );
             let observed = to_integer(&written_current);
@@ -1006,15 +1006,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// Prove a stated fact without any route back to a signed certificate.
     pub(in crate::surface::proof) fn ordinary_integer_fact(
         proof: &Proof<'a>,
-        target: SurfaceProposition,
-        premises: &[SurfaceProposition],
+        target: SyntaxProposition,
+        premises: &[SyntaxProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("ordinary_integer_fact");
         let mut atomic = Vec::new();
         let mut pending = premises.iter().rev().collect::<Vec<_>>();
         while let Some(premise) = pending.pop() {
-            if let SurfaceProposition::And(a, b) = premise {
+            if let SyntaxProposition::And(a, b) = premise {
                 pending.push(b);
                 pending.push(a);
             } else {
@@ -1089,7 +1089,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let Some(expression) = integer_composition::observed_argument(&written) else {
                 continue;
             };
-            let domain = SurfaceProposition::Defined { expression };
+            let domain = SyntaxProposition::Defined { expression };
             let Ok(kernel) =
                 prepared.lower_cited_surface_proposition(&domain, "Integer read domain")
             else {
@@ -1114,8 +1114,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // Rewrite the outermost recent operation first, leaving child values
         // opaque so their selected interval endpoints still name them directly.
         for premise in premises.iter().rev() {
-            if let SurfaceProposition::Comparison {
-                left: SurfaceTerm::Call { name, .. },
+            if let SyntaxProposition::Comparison {
+                left: SyntaxTerm::Call { name, .. },
                 operator: ComparisonOperator::Equal,
                 ..
             } = premise
@@ -1172,7 +1172,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     continue;
                 }
                 DefinedPremise { term, .. } => {
-                    let proposition = SurfaceProposition::Defined {
+                    let proposition = SyntaxProposition::Defined {
                         expression: term.clone(),
                     };
                     let scope = proof.driver().open_have(proposition.clone())?;
@@ -1296,9 +1296,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         Box::new(values[*right].term().unwrap()),
                     );
                     let term = match node {
-                        IntervalAdd { .. } => SurfaceTerm::Add(a, b),
-                        IntervalSubtract { .. } => SurfaceTerm::Subtract(a, b),
-                        _ => SurfaceTerm::Multiply(a, b),
+                        IntervalAdd { .. } => SyntaxTerm::Add(a, b),
+                        IntervalSubtract { .. } => SyntaxTerm::Subtract(a, b),
+                        _ => SyntaxTerm::Multiply(a, b),
                     };
                     Some((term, result.lower, result.upper))
                 }
@@ -1309,7 +1309,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 } => {
                     refs.extend([*left, *right]);
                     Some((
-                        SurfaceTerm::Add(
+                        SyntaxTerm::Add(
                             Box::new(values[*left].term().unwrap()),
                             Box::new(values[*right].term().unwrap()),
                         ),
@@ -1325,7 +1325,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 } => {
                     refs.extend([*operand, *defined]);
                     Some((
-                        SurfaceTerm::Remainder(
+                        SyntaxTerm::Remainder(
                             Box::new(values[*operand].term().unwrap()),
                             Box::new(number(i64::from(*divisor))),
                         ),
@@ -1342,8 +1342,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 } => {
                     refs.extend([*operand, *remainder]);
                     Some((
-                        SurfaceTerm::Remainder(
-                            Box::new(SurfaceTerm::Add(
+                        SyntaxTerm::Remainder(
+                            Box::new(SyntaxTerm::Add(
                                 Box::new(values[*operand].term().unwrap()),
                                 Box::new(number(i64::from(*addend))),
                             )),
@@ -1361,7 +1361,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 } => {
                     refs.extend([*operand, *defined]);
                     Some((
-                        SurfaceTerm::ShiftLeft(
+                        SyntaxTerm::ShiftLeft(
                             Box::new(values[*operand].term().unwrap()),
                             Box::new(number(i64::from(*shift))),
                         ),
@@ -1376,7 +1376,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 } => {
                     refs.push(*operand);
                     Some((
-                        SurfaceTerm::ShiftRight(
+                        SyntaxTerm::ShiftRight(
                             Box::new(values[*operand].term().unwrap()),
                             Box::new(number(i64::from(*shift))),
                         ),
@@ -1391,7 +1391,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 } => {
                     refs.push(*operand);
                     Some((
-                        SurfaceTerm::BitwiseAnd(
+                        SyntaxTerm::BitwiseAnd(
                             Box::new(values[*operand].term().unwrap()),
                             Box::new(number(i64::from(*mask as i32))),
                         ),
@@ -1407,7 +1407,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 } => {
                     refs.push(*operand);
                     Some((
-                        SurfaceTerm::CUnary {
+                        SyntaxTerm::CUnary {
                             operand: Box::new(values[*operand].term().unwrap()),
                             lowered: crate::kernel::program_expression::cast(
                                 ProgramExpression::Value(crate::kernel::int32(0)),
@@ -1492,7 +1492,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     proof = next;
 
                     let positive = le(number(1), d.clone());
-                    let nonzero = SurfaceProposition::Comparison {
+                    let nonzero = SyntaxProposition::Comparison {
                         left: observed(&d),
                         operator: ComparisonOperator::NotEqual,
                         right: number(0),
@@ -1515,10 +1515,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     ] {
                         // `defined(dividend % d)` claims the remainder alone;
                         // the dividend argument owes its own domain.
-                        let dividend_domain = SurfaceProposition::Defined {
+                        let dividend_domain = SyntaxProposition::Defined {
                             expression: dividend.clone(),
                         };
-                        let domain = SurfaceProposition::Defined {
+                        let domain = SyntaxProposition::Defined {
                             expression: native.clone(),
                         };
                         for guard in [dividend_domain.clone(), domain.clone()] {
@@ -1636,7 +1636,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         le(number(0), residue.clone()),
                         le(
                             residue.clone(),
-                            SurfaceTerm::Subtract(Box::new(d.clone()), Box::new(number(1))),
+                            SyntaxTerm::Subtract(Box::new(d.clone()), Box::new(number(1))),
                         ),
                         reconstruction,
                     ];
@@ -1680,15 +1680,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 // then publish the native observation identity. Endpoint proofs
                 // rewrite that identity and use ordinary Integer laws.
                 let exact = match &term {
-                    SurfaceTerm::Add(a, b) => Some(SurfaceTerm::Add(
+                    SyntaxTerm::Add(a, b) => Some(SyntaxTerm::Add(
                         Box::new(observed(a)),
                         Box::new(observed(b)),
                     )),
-                    SurfaceTerm::Subtract(a, b) => Some(SurfaceTerm::Subtract(
+                    SyntaxTerm::Subtract(a, b) => Some(SyntaxTerm::Subtract(
                         Box::new(observed(a)),
                         Box::new(observed(b)),
                     )),
-                    SurfaceTerm::Multiply(a, b) => Some(SurfaceTerm::Multiply(
+                    SyntaxTerm::Multiply(a, b) => Some(SyntaxTerm::Multiply(
                         Box::new(observed(a)),
                         Box::new(observed(b)),
                     )),
@@ -1749,7 +1749,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 let upper = le(observed(&term), number(hi));
                 let retained_identity = result_identity.filter(|_| {
                     retained_product
-                        || (matches!(term, SurfaceTerm::Add(..) | SurfaceTerm::Subtract(..))
+                        || (matches!(term, SyntaxTerm::Add(..) | SyntaxTerm::Subtract(..))
                             && inputs.iter().any(has_retained_read_source))
                 });
                 for bound in [&lower, &upper] {
@@ -1796,7 +1796,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if proof.surface_goal().is_some_and(|goal| {
             !matches!(
                 surface_comparison_with_anchored_operands(goal),
-                SurfaceProposition::Comparison { .. }
+                SyntaxProposition::Comparison { .. }
             )
         }) && let Ok(closed) = proof.driver().apply_step(ProofStep::Known)
         {

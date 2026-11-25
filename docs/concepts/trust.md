@@ -158,7 +158,7 @@ theorem certification consumes checks that theorem once. A proved library
 theorem is trusted to the extent that the check of its proof is; a kernel
 standard theorem is trusted to the extent that its builder is.
 
-The library also declares 136 `axiom`s, which are trusted, not proved.
+The library also declares 148 `axiom`s, which are trusted, not proved.
 Seven are the laws of the primitive type `Vec<T>` in
 `library/rust/vec.click`, which relate its bodyless operations `vec::len`,
 `vec::get`, `vec::push` and `vec::set`
@@ -227,11 +227,11 @@ NaNs. For an upper bound the finite endpoints rule out positive infinity
 in the inputs, and for a lower bound they rule out negative infinity.
 Neither case admits a sum of infinities of opposite sign. Each sum rounds
 at the law's stated precision.
-The float32 scaling axioms multiply both sides of an ordered comparison
-by one finite positive factor and round both products at float32 precision.
-The library gives separate laws for the two operand orders.
-A positive finite factor excludes both zero-times-infinity and
-infinity-times-zero.
+The scaling axioms multiply both sides of an ordered comparison
+by one finite nonzero factor and round both products at the operand's
+float32 or float64 precision.
+Positive factors preserve order and negative factors reverse it. The library
+gives separate laws for the two operand orders.
 
 The rounded division axioms require a finite nonzero divisor. A positive
 one preserves non-strict order and a negative one reverses it. The ordered

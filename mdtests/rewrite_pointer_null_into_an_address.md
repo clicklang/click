@@ -47,9 +47,13 @@ theorem frame_null_is_null(up: struct cell*) {
         if up == 0 {
             close();
         } else {
-            have frame_null(Frame::Above(up)) != 1 by {
+            have frame_null(Frame::Above(up)) == 0 by {
                 unfold(frame_null(Frame::Above(up)));
-                normalize() using { not(up == 0); };
+                close();
+            }
+            have frame_null(Frame::Above(up)) != 1 by {
+                rewrite(frame_null(Frame::Above(up)), 0);
+                close();
             }
             contradiction(frame_null(Frame::Above(up)) == 1);
         }

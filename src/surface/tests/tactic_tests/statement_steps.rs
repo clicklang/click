@@ -20,9 +20,7 @@ fn pure_proofs_use_rewrite_instead_of_transport_using() {
     );
     let error = verify_c_sources(&retired, &[]).unwrap_err();
     assert!(
-        error
-            .message()
-            .contains("`transport ... using` is retired in pure proofs"),
+        error.message().contains("`transport ... using` is retired"),
         "{error}"
     );
 }
@@ -907,7 +905,7 @@ fn execute_step_omits_materialization_only_transport() {
     assert!(
         !expanded
             .iter()
-            .any(|tactic| matches!(tactic, ProofTactic::TransportUsing { .. })),
+            .any(|tactic| matches!(tactic, ProofTactic::CompatibilityFactTransport { .. })),
         "{expanded:#?}"
     );
     ProofCertificate::from_proof_tactics(&expanded)
@@ -973,7 +971,7 @@ fn execute_step_omits_materialized_mixed_state_transport() {
     assert!(
         !expanded
             .iter()
-            .any(|tactic| matches!(tactic, ProofTactic::TransportUsing { .. })),
+            .any(|tactic| matches!(tactic, ProofTactic::CompatibilityFactTransport { .. })),
         "{expanded:#?}"
     );
     ProofCertificate::from_proof_tactics(&expanded)
@@ -1042,7 +1040,7 @@ fn execute_step_omits_materialization_transport_across_statements() {
     assert_eq!(
         expanded
             .iter()
-            .filter(|tactic| matches!(tactic, ProofTactic::TransportUsing { .. }))
+            .filter(|tactic| matches!(tactic, ProofTactic::CompatibilityFactTransport { .. }))
             .count(),
         0,
         "{expanded:#?}"
@@ -1191,13 +1189,13 @@ fn synthesizes_loaded_pointer_equality_as_pointer_comparison() {
     // (`design/loads.md`, "Raising"), never at a guessed `int32 *`.
     assert!(matches!(
         surface,
-        SurfaceProposition::Comparison {
-            left: SurfaceTerm::ProgramExpression(ProgramExpression::TypedLoad {
+        SyntaxProposition::Comparison {
+            left: SyntaxTerm::ProgramExpression(ProgramExpression::TypedLoad {
                 value_type: ProgramType::Pointer,
                 ..
             }),
             operator: ComparisonOperator::Equal,
-            right: SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name)),
+            right: SyntaxTerm::ProgramExpression(ProgramExpression::Variable(name)),
         } if name == ("data").into()
     ));
 }
@@ -1302,8 +1300,8 @@ fn synthesizes_dynamically_indexed_pointer_offset_equality() {
 
     assert!(matches!(
         surface,
-        SurfaceProposition::Comparison {
-            left: SurfaceTerm::ProgramExpression(ProgramExpression::Add(left, right)),
+        SyntaxProposition::Comparison {
+            left: SyntaxTerm::ProgramExpression(ProgramExpression::Add(left, right)),
             operator: ComparisonOperator::Equal,
             ..
         } if matches!(left.as_ref(), ProgramExpression::Variable(name) if name.is_named("data"))

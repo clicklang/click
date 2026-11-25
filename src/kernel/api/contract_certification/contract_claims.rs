@@ -1127,7 +1127,7 @@ fn materialized_load_is_unchanged(
         return false;
     }
     let right = crate::kernel::MachineTerm::read_named(
-        ProgramPoint::at(&(crate::kernel::intern_memory(symbolic_memory.clone()))),
+        ProgramPoint::unplaced(&(crate::kernel::intern_memory(symbolic_memory.clone()))),
         pointer.clone(),
         kind,
     );

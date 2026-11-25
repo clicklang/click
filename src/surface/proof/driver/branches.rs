@@ -32,7 +32,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     /// only the branch-entry transition is selected here.
     pub(in crate::surface::proof) fn try_split_source_successor_if(
         &self,
-        condition: &SurfaceProposition,
+        condition: &SyntaxProposition,
         arm_steps: [(usize, usize); 2],
     ) -> Result<Option<(Proof<'a>, ExecutionProofCaseSplit<'a>)>, ClickError> {
         let driver_proof = self.proof;

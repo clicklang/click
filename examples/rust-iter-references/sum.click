@@ -44,7 +44,9 @@ fn sum(bytes: &[u8]) -> i32 {
             if 0u64 < iter.len() {
                 mark iteration;
                 have bytes.len() - iter.len() < bytes.len();
-                have to_integer((bytes.len() - iter.len())) <= 1000;
+                have to_integer((bytes.len() - iter.len())) <= 1000 by {
+                    normalize() using { iter.len() <= bytes.len(); bytes.len() <= 1000u64; };
+                }
                 have (bytes.len() - iter.len()) < 1000u64;
                 have (bytes.len() - iter.len()) < 18446744073709551615u64;
                 have prefix(bytes, (bytes.len() - iter.len()) + 1u64) == prefix(bytes, (bytes.len() - iter.len())) + to_integer(bytes[(bytes.len() - iter.len())] as i32) by {
@@ -70,7 +72,10 @@ fn sum(bytes: &[u8]) -> i32 {
                 step_until(read(0).entry);
                 let { result: loaded_byte } = step();
                 mark loaded;
-                have at(iteration, bytes[(bytes.len() - iter.len())]) == loaded_byte;
+                have at(iteration, bytes[(bytes.len() - iter.len())]) == loaded_byte by {
+                    rewrite(at(iteration, bytes + (bytes.len() - iter.len())), at(iteration, iter.as_slice()));
+                    normalize() using {};
+                }
                 have 0 <= to_integer(loaded_byte as i32);
                 have to_integer(loaded_byte as i32) <= 255;
                 have defined(total + loaded_byte as i32);

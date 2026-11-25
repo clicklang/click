@@ -18,7 +18,7 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn theorem_application_surface_conclusions(
         &self,
         application: &TheoremApplication,
-    ) -> Vec<SurfaceProposition> {
+    ) -> Vec<SyntaxProposition> {
         let Some((theorem, substitutions)) = self.theorem_application_instance(application) else {
             return Vec::new();
         };
@@ -47,7 +47,7 @@ impl<'a> Proof<'a> {
     pub(super) fn theorem_application_instance(
         &self,
         application: &TheoremApplication,
-    ) -> Option<(TheoremDefinition, BTreeMap<String, SurfaceTerm>)> {
+    ) -> Option<(TheoremDefinition, BTreeMap<String, SyntaxTerm>)> {
         let written = application;
         let application = self.resolve_theorem_application(application).ok()?;
         let theorem_environment = match self.context.as_ref() {

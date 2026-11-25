@@ -82,7 +82,7 @@ mod tests {
                         &state,
                         &BTreeMap::new(),
                     ),
-                    Some(SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                    Some(SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                         name.into()
                     ))),
                     "pointer equality must preserve the complete selected value name",
@@ -95,7 +95,7 @@ mod tests {
                 .unwrap();
                 assert_eq!(
                     expression,
-                    SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name.into()))
+                    SyntaxTerm::ProgramExpression(ProgramExpression::Variable(name.into()))
                 );
                 assert_eq!(
                     raise_kernel_term(&root, ParameterBinding::default(), &state, &BTreeMap::new()),
@@ -198,7 +198,7 @@ mod tests {
             raise_kernel_term(&root, ParameterBinding::default(), &state, &BTreeMap::new())
         })
         .unwrap();
-        let SurfaceTerm::If { condition, .. } = expression else {
+        let SyntaxTerm::If { condition, .. } = expression else {
             panic!("expected a raised pointer comparison");
         };
         assert_eq!(

@@ -497,7 +497,7 @@ current architecture contract.
 
 ## Failed explicit transport walks
 
-A rejected `transport(source, target) using { ... }` reports the cell walks
+A rejected `transport(source, target)` reports the cell walks
 actually performed while checking that operation. Each observation identifies
 the queried address and byte width, starting and stopping states, number of
 crossed edges, stopping reason, and the extended/explicit DAG modes used by the

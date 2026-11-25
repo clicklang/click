@@ -339,7 +339,7 @@ impl CellRun {
             element_width,
             element_type,
             count,
-            ProgramPoint::at(&source),
+            ProgramPoint::unplaced(&source),
             mode,
             holes,
         )

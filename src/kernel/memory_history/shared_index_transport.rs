@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 pub(super) fn transport_framed_index(
     value: &SharedMachineIntegerTerm,
-    after: &SymbolicMemory,
+    after: &ProgramPoint,
     assumptions: Option<(&PureFactContext, bool)>,
 ) -> Option<SharedMachineIntegerTerm> {
     map_index_with_guard(
@@ -322,7 +322,12 @@ mod tests {
             let root = KernelTermImport::default().machine_call(format, &application);
             let value = SharedMachineIntegerTerm::from_shared(format, root.clone()).unwrap();
             let exports = KernelTermExport::machine_export_count();
-            let framed = transport_framed_index(&value, &after, None).unwrap();
+            let framed = transport_framed_index(
+                &value,
+                &crate::kernel::ProgramPoint::of_memory(&after),
+                None,
+            )
+            .unwrap();
             assert_eq!(framed.shared_operand(), Some(&root));
             let normalized = normalize_exact_index(&value, &PureFactContext::new()).unwrap();
             assert_eq!(normalized.shared_operand(), Some(&root));
@@ -442,11 +447,19 @@ mod tests {
         normalization_parity(ty, term, facts.map(|(facts, _)| facts).unwrap_or(&empty));
         let value = retained(ty, term);
         let before = KernelTermExport::machine_export_count();
-        let result = transport_framed_index(&value, after, facts);
+        let result = transport_framed_index(
+            &value,
+            &crate::kernel::ProgramPoint::of_memory(after),
+            facts,
+        );
         assert_eq!(before, KernelTermExport::machine_export_count());
         // Deref on the old offset path read the structural operand, including
         // registered names already imported as read descriptors.
-        let expected = transport_framed_atomic_bitvector(value.structural_value(), after, facts);
+        let expected = transport_framed_atomic_bitvector(
+            value.structural_value(),
+            &crate::kernel::ProgramPoint::of_memory(after),
+            facts,
+        );
         assert_eq!(result.is_some(), expected.is_some(), "{term:?}");
         if let (Some(result), Some(expected)) = (result, expected) {
             assert_eq!(
@@ -635,7 +648,7 @@ mod tests {
         }
         let unchanged = transport_framed_index(
             &retained(MachineIntegerType::Int32, &term),
-            &SymbolicMemory::new(),
+            &crate::kernel::ProgramPoint::of_memory(&SymbolicMemory::new()),
             None,
         )
         .unwrap();
@@ -691,7 +704,7 @@ mod tests {
         assert!(
             transport_framed_index(
                 &retained(MachineIntegerType::Int32, &term),
-                &SymbolicMemory::new(),
+                &crate::kernel::ProgramPoint::of_memory(&SymbolicMemory::new()),
                 None
             )
             .is_none()
@@ -983,7 +996,11 @@ mod tests {
         for _ in 0..8 {
             assert_eq!(normalize_exact_index(&value, &empty), Some(value.clone()));
             assert_eq!(
-                transport_framed_index(&value, &SymbolicMemory::new(), None),
+                transport_framed_index(
+                    &value,
+                    &crate::kernel::ProgramPoint::of_memory(&SymbolicMemory::new()),
+                    None
+                ),
                 Some(value.clone())
             );
         }

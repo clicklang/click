@@ -18,10 +18,7 @@ fn cover(bytes: &[u8]) -> usize {
     have ((((bytes.len() - bytes.len() % 4u64) as uint32) as int32)) <= ((bytes.len() as uint32) as int32) by { normalize() using { bytes.len() - bytes.len() % 4u64 <= bytes.len(); bytes.len() <= 2147483647u64; } }
     step_until(region(22).entry);
     have viewable(bytes[0..((bytes.len() as uint32) as int32)]) by {
-        transport(at(function.entry, viewable(bytes[0..((bytes.len() as uint32) as int32)])), viewable(bytes[0..((bytes.len() as uint32) as int32)])) using {
-            at(function.entry, viewable(bytes[0..((bytes.len() as uint32) as int32)]));
-            0 <= ((bytes.len() as uint32) as int32);
-        }
+        transport(at(function.entry, viewable(bytes[0..((bytes.len() as uint32) as int32)])), viewable(bytes[0..((bytes.len() as uint32) as int32)]));
     }
     have bytes.len() <= 2147483647u64 by { normalize() using { bytes.len() <= 1000u64; } }
     have (((((bytes.len() - bytes.len() % 4u64) as uint32) as int32)) % 4) == 0 by { normalize() using { bytes.len() <= 2147483647u64; } }
@@ -60,10 +57,7 @@ fn cover(bytes: &[u8]) -> usize {
             }
             step_until(region(42).entry); step();
             have viewable(bytes[0..((bytes.len() as uint32) as int32)]) by {
-                transport(at(iteration, viewable(bytes[0..((bytes.len() as uint32) as int32)])), viewable(bytes[0..((bytes.len() as uint32) as int32)])) using {
-                    at(iteration, viewable(bytes[0..((bytes.len() as uint32) as int32)]));
-                    0 <= ((bytes.len() as uint32) as int32);
-                }
+                transport(at(iteration, viewable(bytes[0..((bytes.len() as uint32) as int32)])), viewable(bytes[0..((bytes.len() as uint32) as int32)]));
             }
             have chunks_remaining == at(iteration, chunks_remaining) - 4 by { close(); }
             have (at(iteration, chunks_remaining) - 4) % 4 == at(iteration, chunks_remaining % 4) by {

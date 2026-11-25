@@ -1295,8 +1295,11 @@ pub(super) fn copy_aggregate_fields_from(
                                 )
                             })
                             .unwrap_or_else(|| {
-                                crate::kernel::canonical_form_of_load(
-                                    crate::kernel::intern_memory(memory.clone()),
+                                crate::kernel::canonical_form_of_load_at(
+                                    &ProgramPoint::read_at_optional(
+                                        &crate::kernel::intern_memory(memory.clone()),
+                                        captured_point(),
+                                    ),
                                     source_field,
                                     kind,
                                 )
@@ -1342,7 +1345,10 @@ pub(super) fn copy_aggregate_fields_from(
                         .or_else(|| {
                             crate::kernel::eval::symbolic_load_value_unrecorded(
                                 &memory,
-                                captured_point(),
+                                &ProgramPoint::read_at_optional(
+                                    &crate::kernel::intern_memory(memory.clone()),
+                                    captured_point(),
+                                ),
                                 &source_field,
                                 element_type,
                             )
@@ -1387,7 +1393,7 @@ fn copy_retained_aggregate_union_member<'a>(
     memory: &SymbolicMemory,
     source_field: &Address,
     element_type: ProgramType,
-    captured_point: impl FnOnce() -> Option<&'a ProgramPoint>,
+    captured_point: impl Fn() -> Option<&'a ProgramPoint>,
 ) -> Option<ExecutionValue> {
     if let Some(value) = memory.known_retained_union_value(source_field, element_type) {
         return Some(value);
@@ -1431,14 +1437,17 @@ fn copy_retained_aggregate_union_member<'a>(
     }
     let kind = LoadKind::of_type(element_type)?;
     let load = matches!(element_type, ProgramType::Int32 | ProgramType::UInt8)
-        .then(captured_point)
+        .then(&captured_point)
         .flatten()
         .and_then(|point| {
             crate::kernel::eval::point_named_cell_load(point, source_field, element_type)
         })
         .unwrap_or_else(|| {
-            crate::kernel::canonical_form_of_load(
-                crate::kernel::intern_memory(memory.clone()),
+            crate::kernel::canonical_form_of_load_at(
+                &ProgramPoint::read_at_optional(
+                    &crate::kernel::intern_memory(memory.clone()),
+                    captured_point(),
+                ),
                 source_field.clone(),
                 kind,
             )

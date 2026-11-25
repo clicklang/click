@@ -10,17 +10,17 @@ enum ExpressionHead {
     Node(&'static str),
 }
 
-fn parameter_name(expression: &SurfaceTerm) -> Option<&str> {
+fn parameter_name(expression: &SyntaxTerm) -> Option<&str> {
     match expression {
-        SurfaceTerm::AlgebraicVariable { name, .. } => name.written(),
-        SurfaceTerm::Binding(name) => Some(name),
-        SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name)) => name.named(),
+        SyntaxTerm::AlgebraicVariable { name, .. } => name.written(),
+        SyntaxTerm::Binding(name) => Some(name),
+        SyntaxTerm::ProgramExpression(ProgramExpression::Variable(name)) => name.named(),
         _ => None,
     }
 }
 
-fn expression_head(expression: &SurfaceTerm) -> ExpressionHead {
-    use SurfaceTerm as E;
+fn expression_head(expression: &SyntaxTerm) -> ExpressionHead {
+    use SyntaxTerm as E;
     ExpressionHead::Node(match expression {
         E::Call { name, .. } => return ExpressionHead::Call(name.clone()),
         E::AlgebraicConstructor {
@@ -59,10 +59,10 @@ fn expression_head(expression: &SurfaceTerm) -> ExpressionHead {
 /// Operand reversal preserves float comparisons too, including NaNs. Do not
 /// turn negated orders into complementary relations here.
 fn comparison_view<'a>(
-    left: &'a SurfaceTerm,
+    left: &'a SyntaxTerm,
     operator: ComparisonOperator,
-    right: &'a SurfaceTerm,
-) -> (ComparisonOperator, &'a SurfaceTerm, &'a SurfaceTerm) {
+    right: &'a SyntaxTerm,
+) -> (ComparisonOperator, &'a SyntaxTerm, &'a SyntaxTerm) {
     match operator {
         ComparisonOperator::GreaterThan => (ComparisonOperator::LessThan, right, left),
         ComparisonOperator::GreaterEqual => (ComparisonOperator::LessEqual, right, left),
@@ -87,10 +87,10 @@ enum ConclusionHead {
 }
 
 fn conclusion_head(
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     parameters: &BTreeSet<&str>,
 ) -> Option<ConclusionHead> {
-    let head = |expression: &SurfaceTerm| {
+    let head = |expression: &SyntaxTerm| {
         if parameter_name(expression).is_some_and(|name| parameters.contains(name)) {
             None
         } else {
@@ -98,7 +98,7 @@ fn conclusion_head(
         }
     };
     Some(match proposition {
-        SurfaceProposition::Comparison {
+        SyntaxProposition::Comparison {
             left,
             operator,
             right,
@@ -106,13 +106,13 @@ fn conclusion_head(
             let (operator, left, right) = comparison_view(left, *operator, right);
             ConclusionHead::Comparison(operator as u8, head(left), head(right))
         }
-        SurfaceProposition::PredicateCall { name, .. } => ConclusionHead::Predicate(name.clone()),
-        SurfaceProposition::Defined { expression } => ConclusionHead::Defined(head(expression)),
-        SurfaceProposition::Value(expression) => ConclusionHead::Value(head(expression)),
-        SurfaceProposition::And(..) => ConclusionHead::Logical(0),
-        SurfaceProposition::Or(..) => ConclusionHead::Logical(1),
-        SurfaceProposition::Not(..) => ConclusionHead::Logical(2),
-        SurfaceProposition::Implies(..) => ConclusionHead::Logical(3),
+        SyntaxProposition::PredicateCall { name, .. } => ConclusionHead::Predicate(name.clone()),
+        SyntaxProposition::Defined { expression } => ConclusionHead::Defined(head(expression)),
+        SyntaxProposition::Value(expression) => ConclusionHead::Value(head(expression)),
+        SyntaxProposition::And(..) => ConclusionHead::Logical(0),
+        SyntaxProposition::Or(..) => ConclusionHead::Logical(1),
+        SyntaxProposition::Not(..) => ConclusionHead::Logical(2),
+        SyntaxProposition::Implies(..) => ConclusionHead::Logical(3),
         _ => return None,
     })
 }
@@ -167,7 +167,7 @@ impl TheoremConclusionIndex {
 
     pub(in crate::surface) fn candidates<'a>(
         &'a self,
-        goal: &SurfaceProposition,
+        goal: &SyntaxProposition,
         end: usize,
     ) -> impl Iterator<Item = &'a TheoremCandidate> {
         let mut keys = Vec::new();
@@ -232,7 +232,7 @@ pub(in crate::surface) enum TheoremConclusionMatch<'a> {
 pub(in crate::surface) fn match_theorem_conclusion<'a>(
     theorem: &'a TheoremDefinition,
     ensure: usize,
-    goal: &'a SurfaceProposition,
+    goal: &'a SyntaxProposition,
 ) -> impl Iterator<Item = TheoremApplication> + 'a {
     theorem_conclusion_matches(theorem, ensure, goal).filter_map(|outcome| match outcome {
         TheoremConclusionMatch::Application(application) => Some(application),
@@ -246,10 +246,10 @@ pub(in crate::surface) fn match_theorem_conclusion<'a>(
 pub(in crate::surface) fn theorem_conclusion_matches<'a>(
     theorem: &'a TheoremDefinition,
     ensure: usize,
-    goal: &'a SurfaceProposition,
+    goal: &'a SyntaxProposition,
 ) -> impl Iterator<Item = TheoremConclusionMatch<'a>> + 'a {
-    use SurfaceProposition as P;
-    use SurfaceTerm as E;
+    use SyntaxProposition as P;
+    use SyntaxTerm as E;
     #[derive(Clone, Copy)]
     enum Pair<'a> {
         Expression(&'a E, &'a E),
@@ -271,7 +271,7 @@ pub(in crate::surface) fn theorem_conclusion_matches<'a>(
         .into_iter()
         .map(|conclusion| {
             (
-                BTreeMap::<&str, &SurfaceTerm>::new(),
+                BTreeMap::<&str, &SyntaxTerm>::new(),
                 vec![Pair::Proposition(conclusion, goal)],
             )
         })

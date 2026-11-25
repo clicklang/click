@@ -71,59 +71,59 @@ pub(in crate::surface) fn program_expression_uses_variable(
     }
 }
 
-pub(in crate::surface) fn contains_old_expression(expression: &SurfaceTerm) -> bool {
+pub(in crate::surface) fn contains_old_expression(expression: &SyntaxTerm) -> bool {
     match expression {
-        SurfaceTerm::IntegerContext(value) => contains_old_expression(value),
+        SyntaxTerm::IntegerContext(value) => contains_old_expression(value),
 
-        SurfaceTerm::Proposition(proposition) => proposition_contains_old_expression(proposition),
-        SurfaceTerm::Resource(subject) => resource_subject_contains_old_expression(subject),
-        SurfaceTerm::RegionResult(_)
-        | SurfaceTerm::RegionAllocation(_)
-        | SurfaceTerm::RegionParameter { .. } => false,
-        SurfaceTerm::Lambda { body, .. } => contains_old_expression(body),
-        SurfaceTerm::Apply {
+        SyntaxTerm::Proposition(proposition) => proposition_contains_old_expression(proposition),
+        SyntaxTerm::Resource(subject) => resource_subject_contains_old_expression(subject),
+        SyntaxTerm::RegionResult(_)
+        | SyntaxTerm::RegionAllocation(_)
+        | SyntaxTerm::RegionParameter { .. } => false,
+        SyntaxTerm::Lambda { body, .. } => contains_old_expression(body),
+        SyntaxTerm::Apply {
             function,
             arguments,
         } => contains_old_expression(function) || arguments.iter().any(contains_old_expression),
 
-        SurfaceTerm::IntegerLiteral(_) => false,
-        SurfaceTerm::CUnary { operand: inner, .. }
-        | SurfaceTerm::MemoryLoad { pointer: inner, .. }
-        | SurfaceTerm::Negate(inner) => contains_old_expression(inner),
-        SurfaceTerm::ResourceField(_)
-        | SurfaceTerm::AlgebraicVariable { .. }
-        | SurfaceTerm::Binding(_) => false,
-        SurfaceTerm::AlgebraicConstructor { arguments, .. } => {
+        SyntaxTerm::IntegerLiteral(_) => false,
+        SyntaxTerm::CUnary { operand: inner, .. }
+        | SyntaxTerm::MemoryLoad { pointer: inner, .. }
+        | SyntaxTerm::Negate(inner) => contains_old_expression(inner),
+        SyntaxTerm::ResourceField(_)
+        | SyntaxTerm::AlgebraicVariable { .. }
+        | SyntaxTerm::Binding(_) => false,
+        SyntaxTerm::AlgebraicConstructor { arguments, .. } => {
             arguments.iter().any(contains_old_expression)
         }
-        SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
+        SyntaxTerm::AlgebraicMatch { scrutinee, arms } => {
             contains_old_expression(scrutinee)
                 || arms.iter().any(|arm| contains_old_expression(&arm.body))
         }
-        SurfaceTerm::SequenceLiteral(elements) => elements.iter().any(contains_old_expression),
-        SurfaceTerm::SequenceConcat(left, right) => {
+        SyntaxTerm::SequenceLiteral(elements) => elements.iter().any(contains_old_expression),
+        SyntaxTerm::SequenceConcat(left, right) => {
             contains_old_expression(left) || contains_old_expression(right)
         }
-        SurfaceTerm::Old(_) => true,
-        SurfaceTerm::Exact(place) => contains_old_expression(place),
-        SurfaceTerm::QualifiedC { .. }
-        | SurfaceTerm::ProgramExpression(_)
-        | SurfaceTerm::ProgramBinding(_)
-        | SurfaceTerm::ResourceWildcard => false,
-        SurfaceTerm::ResourceCount(resource) => match resource.as_ref() {
+        SyntaxTerm::Old(_) => true,
+        SyntaxTerm::Exact(place) => contains_old_expression(place),
+        SyntaxTerm::QualifiedC { .. }
+        | SyntaxTerm::ProgramExpression(_)
+        | SyntaxTerm::ProgramBinding(_)
+        | SyntaxTerm::ResourceWildcard => false,
+        SyntaxTerm::ResourceCount(resource) => match resource.as_ref() {
             ResourceClause::Declared { arguments, .. } => {
                 arguments.iter().any(contains_old_expression)
             }
             _ => false,
         },
-        SurfaceTerm::Field { base, .. } => contains_old_expression(base),
-        SurfaceTerm::ArrayIndex { base, .. } => contains_old_expression(base),
-        SurfaceTerm::At { expression, .. } => contains_old_expression(expression),
+        SyntaxTerm::Field { base, .. } => contains_old_expression(base),
+        SyntaxTerm::ArrayIndex { base, .. } => contains_old_expression(base),
+        SyntaxTerm::At { expression, .. } => contains_old_expression(expression),
         crate::surface::binary_contract_expression!(left, right) => {
             contains_old_expression(left) || contains_old_expression(right)
         }
-        SurfaceTerm::BitwiseNot(expression) => contains_old_expression(expression),
-        SurfaceTerm::If {
+        SyntaxTerm::BitwiseNot(expression) => contains_old_expression(expression),
+        SyntaxTerm::If {
             condition,
             then_branch,
             else_branch,
@@ -132,7 +132,7 @@ pub(in crate::surface) fn contains_old_expression(expression: &SurfaceTerm) -> b
                 || contains_old_expression(then_branch)
                 || contains_old_expression(else_branch)
         }
-        SurfaceTerm::RangeFold {
+        SyntaxTerm::RangeFold {
             start,
             end,
             initial,
@@ -144,68 +144,68 @@ pub(in crate::surface) fn contains_old_expression(expression: &SurfaceTerm) -> b
                 || contains_old_expression(initial)
                 || contains_old_expression(body)
         }
-        SurfaceTerm::Let { value, body, .. } => {
+        SyntaxTerm::Let { value, body, .. } => {
             contains_old_expression(value) || contains_old_expression(body)
         }
-        SurfaceTerm::MethodCall {
+        SyntaxTerm::MethodCall {
             receiver,
             arguments,
             ..
         } => contains_old_expression(receiver) || arguments.iter().any(contains_old_expression),
-        SurfaceTerm::Call { arguments, .. } => arguments.iter().any(contains_old_expression),
+        SyntaxTerm::Call { arguments, .. } => arguments.iter().any(contains_old_expression),
     }
 }
 
-pub(in crate::surface) fn contains_resource_count(expression: &SurfaceTerm) -> bool {
+pub(in crate::surface) fn contains_resource_count(expression: &SyntaxTerm) -> bool {
     match expression {
-        SurfaceTerm::IntegerContext(value) => contains_resource_count(value),
+        SyntaxTerm::IntegerContext(value) => contains_resource_count(value),
 
-        SurfaceTerm::Proposition(proposition) => proposition_contains_resource_count(proposition),
-        SurfaceTerm::Resource(_) => false,
-        SurfaceTerm::RegionResult(_)
-        | SurfaceTerm::RegionAllocation(_)
-        | SurfaceTerm::RegionParameter { .. } => false,
-        SurfaceTerm::Lambda { body, .. } => contains_resource_count(body),
-        SurfaceTerm::Apply {
+        SyntaxTerm::Proposition(proposition) => proposition_contains_resource_count(proposition),
+        SyntaxTerm::Resource(_) => false,
+        SyntaxTerm::RegionResult(_)
+        | SyntaxTerm::RegionAllocation(_)
+        | SyntaxTerm::RegionParameter { .. } => false,
+        SyntaxTerm::Lambda { body, .. } => contains_resource_count(body),
+        SyntaxTerm::Apply {
             function,
             arguments,
         } => contains_resource_count(function) || arguments.iter().any(contains_resource_count),
 
-        SurfaceTerm::IntegerLiteral(_) => false,
-        SurfaceTerm::CUnary { operand: inner, .. }
-        | SurfaceTerm::MemoryLoad { pointer: inner, .. }
-        | SurfaceTerm::Negate(inner) => contains_resource_count(inner),
-        SurfaceTerm::ResourceField(_)
-        | SurfaceTerm::AlgebraicVariable { .. }
-        | SurfaceTerm::Binding(_) => false,
-        SurfaceTerm::AlgebraicConstructor { arguments, .. } => {
+        SyntaxTerm::IntegerLiteral(_) => false,
+        SyntaxTerm::CUnary { operand: inner, .. }
+        | SyntaxTerm::MemoryLoad { pointer: inner, .. }
+        | SyntaxTerm::Negate(inner) => contains_resource_count(inner),
+        SyntaxTerm::ResourceField(_)
+        | SyntaxTerm::AlgebraicVariable { .. }
+        | SyntaxTerm::Binding(_) => false,
+        SyntaxTerm::AlgebraicConstructor { arguments, .. } => {
             arguments.iter().any(contains_resource_count)
         }
-        SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
+        SyntaxTerm::AlgebraicMatch { scrutinee, arms } => {
             contains_resource_count(scrutinee)
                 || arms.iter().any(|arm| contains_resource_count(&arm.body))
         }
-        SurfaceTerm::SequenceLiteral(elements) => elements.iter().any(contains_resource_count),
-        SurfaceTerm::SequenceConcat(left, right) => {
+        SyntaxTerm::SequenceLiteral(elements) => elements.iter().any(contains_resource_count),
+        SyntaxTerm::SequenceConcat(left, right) => {
             contains_resource_count(left) || contains_resource_count(right)
         }
-        SurfaceTerm::ResourceCount(_) => true,
-        SurfaceTerm::QualifiedC { .. }
-        | SurfaceTerm::ProgramExpression(_)
-        | SurfaceTerm::ProgramBinding(_)
-        | SurfaceTerm::ResourceWildcard => false,
-        SurfaceTerm::Field { base, .. }
-        | SurfaceTerm::Old(base)
-        | SurfaceTerm::Exact(base)
-        | SurfaceTerm::At {
+        SyntaxTerm::ResourceCount(_) => true,
+        SyntaxTerm::QualifiedC { .. }
+        | SyntaxTerm::ProgramExpression(_)
+        | SyntaxTerm::ProgramBinding(_)
+        | SyntaxTerm::ResourceWildcard => false,
+        SyntaxTerm::Field { base, .. }
+        | SyntaxTerm::Old(base)
+        | SyntaxTerm::Exact(base)
+        | SyntaxTerm::At {
             expression: base, ..
         }
-        | SurfaceTerm::BitwiseNot(base) => contains_resource_count(base),
-        SurfaceTerm::ArrayIndex { base, .. } => contains_resource_count(base),
+        | SyntaxTerm::BitwiseNot(base) => contains_resource_count(base),
+        SyntaxTerm::ArrayIndex { base, .. } => contains_resource_count(base),
         crate::surface::binary_contract_expression!(left, right) => {
             contains_resource_count(left) || contains_resource_count(right)
         }
-        SurfaceTerm::If {
+        SyntaxTerm::If {
             condition,
             then_branch,
             else_branch,
@@ -214,7 +214,7 @@ pub(in crate::surface) fn contains_resource_count(expression: &SurfaceTerm) -> b
                 || contains_resource_count(then_branch)
                 || contains_resource_count(else_branch)
         }
-        SurfaceTerm::RangeFold {
+        SyntaxTerm::RangeFold {
             start,
             end,
             initial,
@@ -226,87 +226,87 @@ pub(in crate::surface) fn contains_resource_count(expression: &SurfaceTerm) -> b
                 || contains_resource_count(initial)
                 || contains_resource_count(body)
         }
-        SurfaceTerm::Let { value, body, .. } => {
+        SyntaxTerm::Let { value, body, .. } => {
             contains_resource_count(value) || contains_resource_count(body)
         }
-        SurfaceTerm::MethodCall {
+        SyntaxTerm::MethodCall {
             receiver,
             arguments,
             ..
         } => contains_resource_count(receiver) || arguments.iter().any(contains_resource_count),
-        SurfaceTerm::Call { arguments, .. } => arguments.iter().any(contains_resource_count),
+        SyntaxTerm::Call { arguments, .. } => arguments.iter().any(contains_resource_count),
     }
 }
 
 pub(in crate::surface) fn proposition_contains_resource_count(
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
 ) -> bool {
     match proposition {
-        SurfaceProposition::Value(expression) => contains_resource_count(expression),
-        SurfaceProposition::Comparison { left, right, .. } => {
+        SyntaxProposition::Value(expression) => contains_resource_count(expression),
+        SyntaxProposition::Comparison { left, right, .. } => {
             contains_resource_count(left) || contains_resource_count(right)
         }
-        SurfaceProposition::FloatClassification { expression, .. } => {
+        SyntaxProposition::FloatClassification { expression, .. } => {
             contains_resource_count(expression)
         }
-        SurfaceProposition::Defined { expression }
-        | SurfaceProposition::IsA {
+        SyntaxProposition::Defined { expression }
+        | SyntaxProposition::IsA {
             pointer: expression,
             ..
         } => contains_resource_count(expression),
-        SurfaceProposition::At { proposition, .. }
-        | SurfaceProposition::Not(proposition)
-        | SurfaceProposition::ForAll {
+        SyntaxProposition::At { proposition, .. }
+        | SyntaxProposition::Not(proposition)
+        | SyntaxProposition::ForAll {
             body: proposition, ..
         }
-        | SurfaceProposition::Exists {
+        | SyntaxProposition::Exists {
             body: proposition, ..
         } => proposition_contains_resource_count(proposition),
-        SurfaceProposition::And(left, right)
-        | SurfaceProposition::Or(left, right)
-        | SurfaceProposition::Implies(left, right) => {
+        SyntaxProposition::And(left, right)
+        | SyntaxProposition::Or(left, right)
+        | SyntaxProposition::Implies(left, right) => {
             proposition_contains_resource_count(left) || proposition_contains_resource_count(right)
         }
-        SurfaceProposition::RangeAll {
+        SyntaxProposition::RangeAll {
             start, end, body, ..
         }
-        | SurfaceProposition::RangeAny {
+        | SyntaxProposition::RangeAny {
             start, end, body, ..
         } => {
             contains_resource_count(start)
                 || contains_resource_count(end)
                 || proposition_contains_resource_count(body)
         }
-        SurfaceProposition::PredicateCall { arguments, .. } => {
+        SyntaxProposition::PredicateCall { arguments, .. } => {
             arguments.iter().any(contains_resource_count)
         }
-        SurfaceProposition::Separate { .. }
-        | SurfaceProposition::ResourceViewable { .. }
-        | SurfaceProposition::Contains { .. }
-        | SurfaceProposition::Loadable { .. } => false,
+        SyntaxProposition::Separate { .. }
+        | SyntaxProposition::ResourceViewable { .. }
+        | SyntaxProposition::Contains { .. }
+        | SyntaxProposition::Loadable { .. } => false,
     }
 }
 
 /// Whether a proposition claims allocation liveness (`loadable(...)`),
 /// directly or through a called predicate's body.
 pub(in crate::surface) fn proposition_contains_liveness_claim(
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     owned_bases: &[&ProgramExpression],
     predicate_environment: &PredicateEnvironment,
     visited_predicates: &mut BTreeSet<String>,
 ) -> bool {
     match proposition {
-        SurfaceProposition::Value(expression) => {
+        SyntaxProposition::Value(expression) => {
             let mut calls = Vec::new();
             contract_expression_reads_memory(expression, &mut calls)
         }
         // Liveness of storage the body itself owns is stable under a borrow:
         // a live borrow over any of those bytes forbids freeing the
         // allocation. Liveness of anything else is not.
-        SurfaceProposition::Loadable { segment } => {
+        SyntaxProposition::Loadable { segment } => {
             !owned_bases.iter().any(|base| **base == segment.base)
         }
-        SurfaceProposition::ResourceViewable { resource } => match resource {
+        SyntaxProposition::ResourceViewable { resource } => match resource {
             ResourceSubject::Memory(segment) => {
                 !owned_bases.iter().any(|base| **base == segment.base)
             }
@@ -314,7 +314,7 @@ pub(in crate::surface) fn proposition_contains_liveness_claim(
             // live while a composite is lent out.
             _ => true,
         },
-        SurfaceProposition::PredicateCall { name, .. } => {
+        SyntaxProposition::PredicateCall { name, .. } => {
             if !visited_predicates.insert(name.clone()) {
                 return false;
             }
@@ -327,12 +327,12 @@ pub(in crate::surface) fn proposition_contains_liveness_claim(
                 )
             })
         }
-        SurfaceProposition::At { proposition, .. }
-        | SurfaceProposition::Not(proposition)
-        | SurfaceProposition::ForAll {
+        SyntaxProposition::At { proposition, .. }
+        | SyntaxProposition::Not(proposition)
+        | SyntaxProposition::ForAll {
             body: proposition, ..
         }
-        | SurfaceProposition::Exists {
+        | SyntaxProposition::Exists {
             body: proposition, ..
         } => proposition_contains_liveness_claim(
             proposition,
@@ -340,9 +340,9 @@ pub(in crate::surface) fn proposition_contains_liveness_claim(
             predicate_environment,
             visited_predicates,
         ),
-        SurfaceProposition::And(left, right)
-        | SurfaceProposition::Or(left, right)
-        | SurfaceProposition::Implies(left, right) => {
+        SyntaxProposition::And(left, right)
+        | SyntaxProposition::Or(left, right)
+        | SyntaxProposition::Implies(left, right) => {
             proposition_contains_liveness_claim(
                 left,
                 owned_bases,
@@ -355,7 +355,7 @@ pub(in crate::surface) fn proposition_contains_liveness_claim(
                 visited_predicates,
             )
         }
-        SurfaceProposition::RangeAll { body, .. } | SurfaceProposition::RangeAny { body, .. } => {
+        SyntaxProposition::RangeAll { body, .. } | SyntaxProposition::RangeAny { body, .. } => {
             proposition_contains_liveness_claim(
                 body,
                 owned_bases,
@@ -363,32 +363,32 @@ pub(in crate::surface) fn proposition_contains_liveness_claim(
                 visited_predicates,
             )
         }
-        SurfaceProposition::Comparison { .. }
-        | SurfaceProposition::FloatClassification { .. }
-        | SurfaceProposition::Separate { .. }
-        | SurfaceProposition::Contains { .. }
-        | SurfaceProposition::Defined { .. }
-        | SurfaceProposition::IsA { .. } => false,
+        SyntaxProposition::Comparison { .. }
+        | SyntaxProposition::FloatClassification { .. }
+        | SyntaxProposition::Separate { .. }
+        | SyntaxProposition::Contains { .. }
+        | SyntaxProposition::Defined { .. }
+        | SyntaxProposition::IsA { .. } => false,
     }
 }
 
 pub(in crate::surface) fn collect_resource_count_families(
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     families: &mut BTreeSet<String>,
 ) {
-    fn collect_expression(expression: &SurfaceTerm, families: &mut BTreeSet<String>) {
+    fn collect_expression(expression: &SyntaxTerm, families: &mut BTreeSet<String>) {
         match expression {
-            SurfaceTerm::IntegerContext(value) => collect_expression(value, families),
+            SyntaxTerm::IntegerContext(value) => collect_expression(value, families),
 
-            SurfaceTerm::Proposition(proposition) => {
+            SyntaxTerm::Proposition(proposition) => {
                 collect_resource_count_families(proposition, families)
             }
-            SurfaceTerm::Resource(_) => {}
-            SurfaceTerm::RegionResult(_)
-            | SurfaceTerm::RegionAllocation(_)
-            | SurfaceTerm::RegionParameter { .. } => {}
-            SurfaceTerm::Lambda { body, .. } => collect_expression(body, families),
-            SurfaceTerm::Apply {
+            SyntaxTerm::Resource(_) => {}
+            SyntaxTerm::RegionResult(_)
+            | SyntaxTerm::RegionAllocation(_)
+            | SyntaxTerm::RegionParameter { .. } => {}
+            SyntaxTerm::Lambda { body, .. } => collect_expression(body, families),
+            SyntaxTerm::Apply {
                 function,
                 arguments,
             } => {
@@ -398,34 +398,34 @@ pub(in crate::surface) fn collect_resource_count_families(
                 }
             }
 
-            SurfaceTerm::IntegerLiteral(_) => {}
-            SurfaceTerm::CUnary { operand: inner, .. }
-            | SurfaceTerm::MemoryLoad { pointer: inner, .. }
-            | SurfaceTerm::Negate(inner) => collect_expression(inner, families),
-            SurfaceTerm::ResourceField(_)
-            | SurfaceTerm::AlgebraicVariable { .. }
-            | SurfaceTerm::Binding(_) => {}
-            SurfaceTerm::AlgebraicConstructor { arguments, .. } => {
+            SyntaxTerm::IntegerLiteral(_) => {}
+            SyntaxTerm::CUnary { operand: inner, .. }
+            | SyntaxTerm::MemoryLoad { pointer: inner, .. }
+            | SyntaxTerm::Negate(inner) => collect_expression(inner, families),
+            SyntaxTerm::ResourceField(_)
+            | SyntaxTerm::AlgebraicVariable { .. }
+            | SyntaxTerm::Binding(_) => {}
+            SyntaxTerm::AlgebraicConstructor { arguments, .. } => {
                 for argument in arguments {
                     collect_expression(argument, families);
                 }
             }
-            SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
+            SyntaxTerm::AlgebraicMatch { scrutinee, arms } => {
                 collect_expression(scrutinee, families);
                 for arm in arms {
                     collect_expression(&arm.body, families);
                 }
             }
-            SurfaceTerm::SequenceLiteral(elements) => {
+            SyntaxTerm::SequenceLiteral(elements) => {
                 for element in elements {
                     collect_expression(element, families);
                 }
             }
-            SurfaceTerm::SequenceConcat(left, right) => {
+            SyntaxTerm::SequenceConcat(left, right) => {
                 collect_expression(left, families);
                 collect_expression(right, families);
             }
-            SurfaceTerm::ResourceCount(resource) => {
+            SyntaxTerm::ResourceCount(resource) => {
                 if let ResourceClause::Declared {
                     name, arguments, ..
                 } = resource.as_ref()
@@ -436,19 +436,19 @@ pub(in crate::surface) fn collect_resource_count_families(
                     }
                 }
             }
-            SurfaceTerm::Field { base, .. }
-            | SurfaceTerm::Old(base)
-            | SurfaceTerm::Exact(base)
-            | SurfaceTerm::At {
+            SyntaxTerm::Field { base, .. }
+            | SyntaxTerm::Old(base)
+            | SyntaxTerm::Exact(base)
+            | SyntaxTerm::At {
                 expression: base, ..
             }
-            | SurfaceTerm::BitwiseNot(base) => collect_expression(base, families),
-            SurfaceTerm::ArrayIndex { base, .. } => collect_expression(base, families),
+            | SyntaxTerm::BitwiseNot(base) => collect_expression(base, families),
+            SyntaxTerm::ArrayIndex { base, .. } => collect_expression(base, families),
             crate::surface::binary_contract_expression!(left, right) => {
                 collect_expression(left, families);
                 collect_expression(right, families);
             }
-            SurfaceTerm::If {
+            SyntaxTerm::If {
                 condition,
                 then_branch,
                 else_branch,
@@ -457,7 +457,7 @@ pub(in crate::surface) fn collect_resource_count_families(
                 collect_expression(then_branch, families);
                 collect_expression(else_branch, families);
             }
-            SurfaceTerm::RangeFold {
+            SyntaxTerm::RangeFold {
                 start,
                 end,
                 initial,
@@ -469,11 +469,11 @@ pub(in crate::surface) fn collect_resource_count_families(
                 collect_expression(initial, families);
                 collect_expression(body, families);
             }
-            SurfaceTerm::Let { value, body, .. } => {
+            SyntaxTerm::Let { value, body, .. } => {
                 collect_expression(value, families);
                 collect_expression(body, families);
             }
-            SurfaceTerm::MethodCall {
+            SyntaxTerm::MethodCall {
                 receiver,
                 arguments,
                 ..
@@ -483,115 +483,115 @@ pub(in crate::surface) fn collect_resource_count_families(
                     collect_expression(argument, families);
                 }
             }
-            SurfaceTerm::Call { arguments, .. } => {
+            SyntaxTerm::Call { arguments, .. } => {
                 for argument in arguments {
                     collect_expression(argument, families);
                 }
             }
-            SurfaceTerm::QualifiedC { .. }
-            | SurfaceTerm::ProgramExpression(_)
-            | SurfaceTerm::ProgramBinding(_)
-            | SurfaceTerm::ResourceWildcard => {}
+            SyntaxTerm::QualifiedC { .. }
+            | SyntaxTerm::ProgramExpression(_)
+            | SyntaxTerm::ProgramBinding(_)
+            | SyntaxTerm::ResourceWildcard => {}
         }
     }
 
     match proposition {
-        SurfaceProposition::Value(expression) => collect_expression(expression, families),
-        SurfaceProposition::Comparison { left, right, .. } => {
+        SyntaxProposition::Value(expression) => collect_expression(expression, families),
+        SyntaxProposition::Comparison { left, right, .. } => {
             collect_expression(left, families);
             collect_expression(right, families);
         }
-        SurfaceProposition::FloatClassification { expression, .. } => {
+        SyntaxProposition::FloatClassification { expression, .. } => {
             collect_expression(expression, families);
         }
-        SurfaceProposition::Defined { expression }
-        | SurfaceProposition::IsA {
+        SyntaxProposition::Defined { expression }
+        | SyntaxProposition::IsA {
             pointer: expression,
             ..
         } => collect_expression(expression, families),
-        SurfaceProposition::At { proposition, .. }
-        | SurfaceProposition::Not(proposition)
-        | SurfaceProposition::ForAll {
+        SyntaxProposition::At { proposition, .. }
+        | SyntaxProposition::Not(proposition)
+        | SyntaxProposition::ForAll {
             body: proposition, ..
         }
-        | SurfaceProposition::Exists {
+        | SyntaxProposition::Exists {
             body: proposition, ..
         } => {
             collect_resource_count_families(proposition, families);
         }
-        SurfaceProposition::And(left, right)
-        | SurfaceProposition::Or(left, right)
-        | SurfaceProposition::Implies(left, right) => {
+        SyntaxProposition::And(left, right)
+        | SyntaxProposition::Or(left, right)
+        | SyntaxProposition::Implies(left, right) => {
             collect_resource_count_families(left, families);
             collect_resource_count_families(right, families);
         }
-        SurfaceProposition::RangeAll {
+        SyntaxProposition::RangeAll {
             start, end, body, ..
         }
-        | SurfaceProposition::RangeAny {
+        | SyntaxProposition::RangeAny {
             start, end, body, ..
         } => {
             collect_expression(start, families);
             collect_expression(end, families);
             collect_resource_count_families(body, families);
         }
-        SurfaceProposition::PredicateCall { arguments, .. } => {
+        SyntaxProposition::PredicateCall { arguments, .. } => {
             for argument in arguments {
                 collect_expression(argument, families);
             }
         }
-        SurfaceProposition::Separate { .. }
-        | SurfaceProposition::ResourceViewable { .. }
-        | SurfaceProposition::Contains { .. }
-        | SurfaceProposition::Loadable { .. } => {}
+        SyntaxProposition::Separate { .. }
+        | SyntaxProposition::ResourceViewable { .. }
+        | SyntaxProposition::Contains { .. }
+        | SyntaxProposition::Loadable { .. } => {}
     }
 }
 
 pub(in crate::surface) fn collect_called_predicates(
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     names: &mut BTreeSet<String>,
 ) {
     match proposition {
-        SurfaceProposition::Value(expression) => {
+        SyntaxProposition::Value(expression) => {
             crate::surface::proof::fixed_state_proofs::conversion_conditions::walk_written_expressions(
                 expression,
                 &mut |term| {
-                    if let SurfaceTerm::Proposition(body) = term {
+                    if let SyntaxTerm::Proposition(body) = term {
                         collect_called_predicates(body, names);
                     }
                 },
             );
         }
-        SurfaceProposition::PredicateCall { name, .. } => {
+        SyntaxProposition::PredicateCall { name, .. } => {
             names.insert(name.clone());
         }
-        SurfaceProposition::At { proposition, .. }
-        | SurfaceProposition::Not(proposition)
-        | SurfaceProposition::ForAll {
+        SyntaxProposition::At { proposition, .. }
+        | SyntaxProposition::Not(proposition)
+        | SyntaxProposition::ForAll {
             body: proposition, ..
         }
-        | SurfaceProposition::Exists {
+        | SyntaxProposition::Exists {
             body: proposition, ..
         } => {
             collect_called_predicates(proposition, names);
         }
-        SurfaceProposition::And(left, right)
-        | SurfaceProposition::Or(left, right)
-        | SurfaceProposition::Implies(left, right) => {
+        SyntaxProposition::And(left, right)
+        | SyntaxProposition::Or(left, right)
+        | SyntaxProposition::Implies(left, right) => {
             collect_called_predicates(left, names);
             collect_called_predicates(right, names);
         }
-        SurfaceProposition::RangeAll { body, .. } | SurfaceProposition::RangeAny { body, .. } => {
+        SyntaxProposition::RangeAll { body, .. } | SyntaxProposition::RangeAny { body, .. } => {
             collect_called_predicates(body, names);
         }
-        SurfaceProposition::Comparison { .. }
-        | SurfaceProposition::FloatClassification { .. }
-        | SurfaceProposition::Separate { .. }
-        | SurfaceProposition::ResourceViewable { .. }
-        | SurfaceProposition::Contains { .. }
-        | SurfaceProposition::Loadable { .. }
-        | SurfaceProposition::Defined { .. }
-        | SurfaceProposition::IsA { .. } => {}
+        SyntaxProposition::Comparison { .. }
+        | SyntaxProposition::FloatClassification { .. }
+        | SyntaxProposition::Separate { .. }
+        | SyntaxProposition::ResourceViewable { .. }
+        | SyntaxProposition::Contains { .. }
+        | SyntaxProposition::Loadable { .. }
+        | SyntaxProposition::Defined { .. }
+        | SyntaxProposition::IsA { .. } => {}
     }
 }
 
@@ -599,7 +599,7 @@ fn contract_segment_contains_old_expression(segment: &ContractSegment) -> bool {
     [&segment.base, &segment.start, &segment.end]
         .into_iter()
         .any(|expression| {
-            contains_old_expression(&SurfaceTerm::ProgramExpression(expression.clone()))
+            contains_old_expression(&SyntaxTerm::ProgramExpression(expression.clone()))
         })
 }
 
@@ -627,116 +627,116 @@ fn resource_subject_contains_old_expression(resource: &ResourceSubject) -> bool 
 }
 
 pub(in crate::surface) fn proposition_contains_old_expression(
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
 ) -> bool {
     match proposition {
-        SurfaceProposition::Value(expression) => contains_old_expression(expression),
+        SyntaxProposition::Value(expression) => contains_old_expression(expression),
 
-        SurfaceProposition::Comparison { left, right, .. } => {
+        SyntaxProposition::Comparison { left, right, .. } => {
             contains_old_expression(left) || contains_old_expression(right)
         }
-        SurfaceProposition::FloatClassification { expression, .. } => {
+        SyntaxProposition::FloatClassification { expression, .. } => {
             contains_old_expression(expression)
         }
-        SurfaceProposition::Separate { left, right } => {
+        SyntaxProposition::Separate { left, right } => {
             resource_subject_contains_old_expression(left)
                 || resource_subject_contains_old_expression(right)
         }
-        SurfaceProposition::ResourceViewable { resource } => {
+        SyntaxProposition::ResourceViewable { resource } => {
             resource_subject_contains_old_expression(resource)
         }
-        SurfaceProposition::Contains { parent, child } => {
+        SyntaxProposition::Contains { parent, child } => {
             resource_subject_contains_old_expression(parent)
                 || resource_subject_contains_old_expression(child)
         }
-        SurfaceProposition::Loadable { segment } => {
+        SyntaxProposition::Loadable { segment } => {
             contract_segment_contains_old_expression(segment)
         }
-        SurfaceProposition::Defined { expression }
-        | SurfaceProposition::IsA {
+        SyntaxProposition::Defined { expression }
+        | SyntaxProposition::IsA {
             pointer: expression,
             ..
         } => contains_old_expression(expression),
-        SurfaceProposition::At { proposition, .. } => {
+        SyntaxProposition::At { proposition, .. } => {
             proposition_contains_old_expression(proposition)
         }
-        SurfaceProposition::And(left, right)
-        | SurfaceProposition::Or(left, right)
-        | SurfaceProposition::Implies(left, right) => {
+        SyntaxProposition::And(left, right)
+        | SyntaxProposition::Or(left, right)
+        | SyntaxProposition::Implies(left, right) => {
             proposition_contains_old_expression(left) || proposition_contains_old_expression(right)
         }
-        SurfaceProposition::Not(body)
-        | SurfaceProposition::ForAll { body, .. }
-        | SurfaceProposition::Exists { body, .. } => proposition_contains_old_expression(body),
-        SurfaceProposition::RangeAll {
+        SyntaxProposition::Not(body)
+        | SyntaxProposition::ForAll { body, .. }
+        | SyntaxProposition::Exists { body, .. } => proposition_contains_old_expression(body),
+        SyntaxProposition::RangeAll {
             start, end, body, ..
         }
-        | SurfaceProposition::RangeAny {
+        | SyntaxProposition::RangeAny {
             start, end, body, ..
         } => {
             contains_old_expression(start)
                 || contains_old_expression(end)
                 || proposition_contains_old_expression(body)
         }
-        SurfaceProposition::PredicateCall { arguments, .. } => {
+        SyntaxProposition::PredicateCall { arguments, .. } => {
             arguments.iter().any(contains_old_expression)
         }
     }
 }
 
-pub(in crate::surface) fn contains_at_expression(expression: &SurfaceTerm) -> bool {
+pub(in crate::surface) fn contains_at_expression(expression: &SyntaxTerm) -> bool {
     match expression {
-        SurfaceTerm::IntegerContext(value) => contains_at_expression(value),
+        SyntaxTerm::IntegerContext(value) => contains_at_expression(value),
 
-        SurfaceTerm::Proposition(proposition) => proposition_contains_at_expression(proposition),
-        SurfaceTerm::Resource(subject) => resource_subject_contains_at_expression(subject),
-        SurfaceTerm::RegionResult(_)
-        | SurfaceTerm::RegionAllocation(_)
-        | SurfaceTerm::RegionParameter { .. } => true,
-        SurfaceTerm::Lambda { body, .. } => contains_at_expression(body),
-        SurfaceTerm::Apply {
+        SyntaxTerm::Proposition(proposition) => proposition_contains_at_expression(proposition),
+        SyntaxTerm::Resource(subject) => resource_subject_contains_at_expression(subject),
+        SyntaxTerm::RegionResult(_)
+        | SyntaxTerm::RegionAllocation(_)
+        | SyntaxTerm::RegionParameter { .. } => true,
+        SyntaxTerm::Lambda { body, .. } => contains_at_expression(body),
+        SyntaxTerm::Apply {
             function,
             arguments,
         } => contains_at_expression(function) || arguments.iter().any(contains_at_expression),
 
-        SurfaceTerm::IntegerLiteral(_) => false,
-        SurfaceTerm::CUnary { operand: inner, .. }
-        | SurfaceTerm::MemoryLoad { pointer: inner, .. }
-        | SurfaceTerm::Negate(inner) => contains_at_expression(inner),
-        SurfaceTerm::ResourceField(_)
-        | SurfaceTerm::AlgebraicVariable { .. }
-        | SurfaceTerm::Binding(_) => false,
-        SurfaceTerm::AlgebraicConstructor { arguments, .. } => {
+        SyntaxTerm::IntegerLiteral(_) => false,
+        SyntaxTerm::CUnary { operand: inner, .. }
+        | SyntaxTerm::MemoryLoad { pointer: inner, .. }
+        | SyntaxTerm::Negate(inner) => contains_at_expression(inner),
+        SyntaxTerm::ResourceField(_)
+        | SyntaxTerm::AlgebraicVariable { .. }
+        | SyntaxTerm::Binding(_) => false,
+        SyntaxTerm::AlgebraicConstructor { arguments, .. } => {
             arguments.iter().any(contains_at_expression)
         }
-        SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
+        SyntaxTerm::AlgebraicMatch { scrutinee, arms } => {
             contains_at_expression(scrutinee)
                 || arms.iter().any(|arm| contains_at_expression(&arm.body))
         }
-        SurfaceTerm::SequenceLiteral(elements) => elements.iter().any(contains_at_expression),
-        SurfaceTerm::SequenceConcat(left, right) => {
+        SyntaxTerm::SequenceLiteral(elements) => elements.iter().any(contains_at_expression),
+        SyntaxTerm::SequenceConcat(left, right) => {
             contains_at_expression(left) || contains_at_expression(right)
         }
-        SurfaceTerm::At { .. } => true,
-        SurfaceTerm::QualifiedC { .. }
-        | SurfaceTerm::ProgramExpression(_)
-        | SurfaceTerm::ProgramBinding(_)
-        | SurfaceTerm::ResourceWildcard => false,
-        SurfaceTerm::ResourceCount(resource) => match resource.as_ref() {
+        SyntaxTerm::At { .. } => true,
+        SyntaxTerm::QualifiedC { .. }
+        | SyntaxTerm::ProgramExpression(_)
+        | SyntaxTerm::ProgramBinding(_)
+        | SyntaxTerm::ResourceWildcard => false,
+        SyntaxTerm::ResourceCount(resource) => match resource.as_ref() {
             ResourceClause::Declared { arguments, .. } => {
                 arguments.iter().any(contains_at_expression)
             }
             _ => false,
         },
-        SurfaceTerm::Field { base, .. } => contains_at_expression(base),
-        SurfaceTerm::ArrayIndex { base, .. } => contains_at_expression(base),
-        SurfaceTerm::Old(expression)
-        | SurfaceTerm::Exact(expression)
-        | SurfaceTerm::BitwiseNot(expression) => contains_at_expression(expression),
+        SyntaxTerm::Field { base, .. } => contains_at_expression(base),
+        SyntaxTerm::ArrayIndex { base, .. } => contains_at_expression(base),
+        SyntaxTerm::Old(expression)
+        | SyntaxTerm::Exact(expression)
+        | SyntaxTerm::BitwiseNot(expression) => contains_at_expression(expression),
         crate::surface::binary_contract_expression!(left, right) => {
             contains_at_expression(left) || contains_at_expression(right)
         }
-        SurfaceTerm::If {
+        SyntaxTerm::If {
             condition,
             then_branch,
             else_branch,
@@ -745,7 +745,7 @@ pub(in crate::surface) fn contains_at_expression(expression: &SurfaceTerm) -> bo
                 || contains_at_expression(then_branch)
                 || contains_at_expression(else_branch)
         }
-        SurfaceTerm::RangeFold {
+        SyntaxTerm::RangeFold {
             start,
             end,
             initial,
@@ -757,15 +757,15 @@ pub(in crate::surface) fn contains_at_expression(expression: &SurfaceTerm) -> bo
                 || contains_at_expression(initial)
                 || contains_at_expression(body)
         }
-        SurfaceTerm::Let { value, body, .. } => {
+        SyntaxTerm::Let { value, body, .. } => {
             contains_at_expression(value) || contains_at_expression(body)
         }
-        SurfaceTerm::MethodCall {
+        SyntaxTerm::MethodCall {
             receiver,
             arguments,
             ..
         } => contains_at_expression(receiver) || arguments.iter().any(contains_at_expression),
-        SurfaceTerm::Call { arguments, .. } => arguments.iter().any(contains_at_expression),
+        SyntaxTerm::Call { arguments, .. } => arguments.iter().any(contains_at_expression),
     }
 }
 
@@ -773,7 +773,7 @@ fn contract_segment_contains_at_expression(segment: &ContractSegment) -> bool {
     [&segment.base, &segment.start, &segment.end]
         .into_iter()
         .any(|expression| {
-            contains_at_expression(&SurfaceTerm::ProgramExpression(expression.clone()))
+            contains_at_expression(&SyntaxTerm::ProgramExpression(expression.clone()))
         })
 }
 
@@ -799,68 +799,66 @@ fn resource_subject_contains_at_expression(resource: &ResourceSubject) -> bool {
 }
 
 pub(in crate::surface) fn proposition_contains_at_expression(
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
 ) -> bool {
     match proposition {
-        SurfaceProposition::Value(expression) => contains_at_expression(expression),
+        SyntaxProposition::Value(expression) => contains_at_expression(expression),
 
-        SurfaceProposition::Comparison { left, right, .. } => {
+        SyntaxProposition::Comparison { left, right, .. } => {
             contains_at_expression(left) || contains_at_expression(right)
         }
-        SurfaceProposition::FloatClassification { expression, .. } => {
+        SyntaxProposition::FloatClassification { expression, .. } => {
             contains_at_expression(expression)
         }
-        SurfaceProposition::Separate { left, right } => {
+        SyntaxProposition::Separate { left, right } => {
             resource_subject_contains_at_expression(left)
                 || resource_subject_contains_at_expression(right)
         }
-        SurfaceProposition::ResourceViewable { resource } => {
+        SyntaxProposition::ResourceViewable { resource } => {
             resource_subject_contains_at_expression(resource)
         }
-        SurfaceProposition::Contains { parent, child } => {
+        SyntaxProposition::Contains { parent, child } => {
             resource_subject_contains_at_expression(parent)
                 || resource_subject_contains_at_expression(child)
         }
-        SurfaceProposition::Loadable { segment } => {
-            contract_segment_contains_at_expression(segment)
-        }
-        SurfaceProposition::Defined { expression }
-        | SurfaceProposition::IsA {
+        SyntaxProposition::Loadable { segment } => contract_segment_contains_at_expression(segment),
+        SyntaxProposition::Defined { expression }
+        | SyntaxProposition::IsA {
             pointer: expression,
             ..
         } => contains_at_expression(expression),
-        SurfaceProposition::At { .. } => true,
-        SurfaceProposition::And(left, right)
-        | SurfaceProposition::Or(left, right)
-        | SurfaceProposition::Implies(left, right) => {
+        SyntaxProposition::At { .. } => true,
+        SyntaxProposition::And(left, right)
+        | SyntaxProposition::Or(left, right)
+        | SyntaxProposition::Implies(left, right) => {
             proposition_contains_at_expression(left) || proposition_contains_at_expression(right)
         }
-        SurfaceProposition::Not(body)
-        | SurfaceProposition::ForAll { body, .. }
-        | SurfaceProposition::Exists { body, .. } => proposition_contains_at_expression(body),
-        SurfaceProposition::RangeAll {
+        SyntaxProposition::Not(body)
+        | SyntaxProposition::ForAll { body, .. }
+        | SyntaxProposition::Exists { body, .. } => proposition_contains_at_expression(body),
+        SyntaxProposition::RangeAll {
             start, end, body, ..
         }
-        | SurfaceProposition::RangeAny {
+        | SyntaxProposition::RangeAny {
             start, end, body, ..
         } => {
             contains_at_expression(start)
                 || contains_at_expression(end)
                 || proposition_contains_at_expression(body)
         }
-        SurfaceProposition::PredicateCall { arguments, .. } => {
+        SyntaxProposition::PredicateCall { arguments, .. } => {
             arguments.iter().any(contains_at_expression)
         }
     }
 }
 
 pub(in crate::surface) fn collect_click_function_calls(
-    expression: &SurfaceTerm,
+    expression: &SyntaxTerm,
     calls: &mut BTreeSet<String>,
 ) {
     let mut depth = 0;
     let mut current = expression;
-    while let SurfaceTerm::Add(left, _) = current {
+    while let SyntaxTerm::Add(left, _) = current {
         depth += 1;
         current = left;
     }
@@ -872,7 +870,7 @@ pub(in crate::surface) fn collect_click_function_calls(
                     pending.push(right);
                     pending.push(left);
                 }
-                SurfaceTerm::Negate(inner) | SurfaceTerm::BitwiseNot(inner) => pending.push(inner),
+                SyntaxTerm::Negate(inner) | SyntaxTerm::BitwiseNot(inner) => pending.push(inner),
                 expression => collect_click_function_calls_one(expression, calls),
             }
         }
@@ -881,25 +879,25 @@ pub(in crate::surface) fn collect_click_function_calls(
     collect_click_function_calls_one(expression, calls);
 }
 
-fn collect_click_function_calls_one(expression: &SurfaceTerm, calls: &mut BTreeSet<String>) {
+fn collect_click_function_calls_one(expression: &SyntaxTerm, calls: &mut BTreeSet<String>) {
     if let Ok(Some(reduced)) = lambdas::reduce_head(expression) {
         collect_click_function_calls(&reduced, calls);
         return;
     }
     match expression {
-        SurfaceTerm::IntegerContext(value) => collect_click_function_calls(value, calls),
+        SyntaxTerm::IntegerContext(value) => collect_click_function_calls(value, calls),
 
-        SurfaceTerm::Proposition(proposition) => {
+        SyntaxTerm::Proposition(proposition) => {
             collect_click_function_calls_in_proposition(proposition, calls)
         }
-        SurfaceTerm::Resource(subject) => {
+        SyntaxTerm::Resource(subject) => {
             collect_click_function_calls_in_resource_subject(subject, calls)
         }
-        SurfaceTerm::RegionResult(_)
-        | SurfaceTerm::RegionAllocation(_)
-        | SurfaceTerm::RegionParameter { .. } => {}
-        SurfaceTerm::Lambda { body, .. } => collect_click_function_calls(body, calls),
-        SurfaceTerm::Apply {
+        SyntaxTerm::RegionResult(_)
+        | SyntaxTerm::RegionAllocation(_)
+        | SyntaxTerm::RegionParameter { .. } => {}
+        SyntaxTerm::Lambda { body, .. } => collect_click_function_calls(body, calls),
+        SyntaxTerm::Apply {
             function,
             arguments,
         } => {
@@ -909,56 +907,56 @@ fn collect_click_function_calls_one(expression: &SurfaceTerm, calls: &mut BTreeS
             }
         }
 
-        SurfaceTerm::IntegerLiteral(_) => {}
-        SurfaceTerm::CUnary { operand: inner, .. }
-        | SurfaceTerm::MemoryLoad { pointer: inner, .. }
-        | SurfaceTerm::Negate(inner) => collect_click_function_calls(inner, calls),
-        SurfaceTerm::ResourceField(_)
-        | SurfaceTerm::AlgebraicVariable { .. }
-        | SurfaceTerm::Binding(_) => {}
-        SurfaceTerm::AlgebraicConstructor { arguments, .. } => {
+        SyntaxTerm::IntegerLiteral(_) => {}
+        SyntaxTerm::CUnary { operand: inner, .. }
+        | SyntaxTerm::MemoryLoad { pointer: inner, .. }
+        | SyntaxTerm::Negate(inner) => collect_click_function_calls(inner, calls),
+        SyntaxTerm::ResourceField(_)
+        | SyntaxTerm::AlgebraicVariable { .. }
+        | SyntaxTerm::Binding(_) => {}
+        SyntaxTerm::AlgebraicConstructor { arguments, .. } => {
             for argument in arguments {
                 collect_click_function_calls(argument, calls);
             }
         }
-        SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
+        SyntaxTerm::AlgebraicMatch { scrutinee, arms } => {
             collect_click_function_calls(scrutinee, calls);
             for arm in arms {
                 collect_click_function_calls(&arm.body, calls);
             }
         }
-        SurfaceTerm::SequenceLiteral(elements) => {
+        SyntaxTerm::SequenceLiteral(elements) => {
             for element in elements {
                 collect_click_function_calls(element, calls);
             }
         }
-        SurfaceTerm::SequenceConcat(left, right) => {
+        SyntaxTerm::SequenceConcat(left, right) => {
             collect_click_function_calls(left, calls);
             collect_click_function_calls(right, calls);
         }
-        SurfaceTerm::QualifiedC { .. }
-        | SurfaceTerm::ProgramExpression(_)
-        | SurfaceTerm::ProgramBinding(_)
-        | SurfaceTerm::ResourceWildcard => {}
-        SurfaceTerm::ResourceCount(resource) => {
+        SyntaxTerm::QualifiedC { .. }
+        | SyntaxTerm::ProgramExpression(_)
+        | SyntaxTerm::ProgramBinding(_)
+        | SyntaxTerm::ResourceWildcard => {}
+        SyntaxTerm::ResourceCount(resource) => {
             if let ResourceClause::Declared { arguments, .. } = resource.as_ref() {
                 for argument in arguments {
                     collect_click_function_calls(argument, calls);
                 }
             }
         }
-        SurfaceTerm::Field { base, .. } => collect_click_function_calls(base, calls),
-        SurfaceTerm::ArrayIndex { base, .. } => collect_click_function_calls(base, calls),
-        SurfaceTerm::Old(body) | SurfaceTerm::Exact(body) => {
+        SyntaxTerm::Field { base, .. } => collect_click_function_calls(base, calls),
+        SyntaxTerm::ArrayIndex { base, .. } => collect_click_function_calls(base, calls),
+        SyntaxTerm::Old(body) | SyntaxTerm::Exact(body) => {
             collect_click_function_calls(body, calls)
         }
-        SurfaceTerm::At { expression, .. } => collect_click_function_calls(expression, calls),
+        SyntaxTerm::At { expression, .. } => collect_click_function_calls(expression, calls),
         crate::surface::binary_contract_expression!(left, right) => {
             collect_click_function_calls(left, calls);
             collect_click_function_calls(right, calls);
         }
-        SurfaceTerm::BitwiseNot(expression) => collect_click_function_calls(expression, calls),
-        SurfaceTerm::If {
+        SyntaxTerm::BitwiseNot(expression) => collect_click_function_calls(expression, calls),
+        SyntaxTerm::If {
             condition,
             then_branch,
             else_branch,
@@ -967,7 +965,7 @@ fn collect_click_function_calls_one(expression: &SurfaceTerm, calls: &mut BTreeS
             collect_click_function_calls(then_branch, calls);
             collect_click_function_calls(else_branch, calls);
         }
-        SurfaceTerm::RangeFold {
+        SyntaxTerm::RangeFold {
             start,
             end,
             initial,
@@ -979,11 +977,11 @@ fn collect_click_function_calls_one(expression: &SurfaceTerm, calls: &mut BTreeS
             collect_click_function_calls(initial, calls);
             collect_click_function_calls(body, calls);
         }
-        SurfaceTerm::Let { value, body, .. } => {
+        SyntaxTerm::Let { value, body, .. } => {
             collect_click_function_calls(value, calls);
             collect_click_function_calls(body, calls);
         }
-        SurfaceTerm::MethodCall {
+        SyntaxTerm::MethodCall {
             receiver,
             arguments,
             ..
@@ -993,7 +991,7 @@ fn collect_click_function_calls_one(expression: &SurfaceTerm, calls: &mut BTreeS
                 collect_click_function_calls(argument, calls);
             }
         }
-        SurfaceTerm::Call { name, arguments } => {
+        SyntaxTerm::Call { name, arguments } => {
             calls.insert(name.clone());
             for argument in arguments {
                 collect_click_function_calls(argument, calls);
@@ -1007,7 +1005,7 @@ fn collect_click_function_calls_in_segment(
     calls: &mut BTreeSet<String>,
 ) {
     for expression in [&segment.base, &segment.start, &segment.end] {
-        collect_click_function_calls(&SurfaceTerm::ProgramExpression(expression.clone()), calls);
+        collect_click_function_calls(&SyntaxTerm::ProgramExpression(expression.clone()), calls);
     }
 }
 
@@ -1043,15 +1041,15 @@ fn collect_click_function_calls_in_resource_subject(
 }
 
 pub(in crate::surface) fn collect_click_function_calls_in_proposition(
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     calls: &mut BTreeSet<String>,
 ) {
     let mut pending = vec![proposition];
     while let Some(proposition) = pending.pop() {
         match proposition {
-            SurfaceProposition::And(left, right)
-            | SurfaceProposition::Or(left, right)
-            | SurfaceProposition::Implies(left, right) => {
+            SyntaxProposition::And(left, right)
+            | SyntaxProposition::Or(left, right)
+            | SyntaxProposition::Implies(left, right) => {
                 pending.push(right);
                 pending.push(left);
             }
@@ -1061,65 +1059,65 @@ pub(in crate::surface) fn collect_click_function_calls_in_proposition(
 }
 
 fn collect_click_function_calls_in_proposition_one(
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     calls: &mut BTreeSet<String>,
 ) {
     match proposition {
-        SurfaceProposition::Value(expression) => collect_click_function_calls(expression, calls),
+        SyntaxProposition::Value(expression) => collect_click_function_calls(expression, calls),
 
-        SurfaceProposition::Comparison { left, right, .. } => {
+        SyntaxProposition::Comparison { left, right, .. } => {
             collect_click_function_calls(left, calls);
             collect_click_function_calls(right, calls);
         }
-        SurfaceProposition::FloatClassification { expression, .. } => {
+        SyntaxProposition::FloatClassification { expression, .. } => {
             collect_click_function_calls(expression, calls);
         }
-        SurfaceProposition::Separate { left, right } => {
+        SyntaxProposition::Separate { left, right } => {
             collect_click_function_calls_in_resource_subject(left, calls);
             collect_click_function_calls_in_resource_subject(right, calls);
         }
-        SurfaceProposition::ResourceViewable { resource } => {
+        SyntaxProposition::ResourceViewable { resource } => {
             collect_click_function_calls_in_resource_subject(resource, calls)
         }
-        SurfaceProposition::Contains { parent, child } => {
+        SyntaxProposition::Contains { parent, child } => {
             collect_click_function_calls_in_resource_subject(parent, calls);
             collect_click_function_calls_in_resource_subject(child, calls);
         }
-        SurfaceProposition::Loadable { segment } => {
+        SyntaxProposition::Loadable { segment } => {
             collect_click_function_calls_in_segment(segment, calls);
         }
-        SurfaceProposition::Defined { expression }
-        | SurfaceProposition::IsA {
+        SyntaxProposition::Defined { expression }
+        | SyntaxProposition::IsA {
             pointer: expression,
             ..
         } => {
             collect_click_function_calls(expression, calls);
         }
-        SurfaceProposition::At { proposition, .. } => {
+        SyntaxProposition::At { proposition, .. } => {
             collect_click_function_calls_in_proposition(proposition, calls);
         }
-        SurfaceProposition::And(left, right)
-        | SurfaceProposition::Or(left, right)
-        | SurfaceProposition::Implies(left, right) => {
+        SyntaxProposition::And(left, right)
+        | SyntaxProposition::Or(left, right)
+        | SyntaxProposition::Implies(left, right) => {
             collect_click_function_calls_in_proposition(left, calls);
             collect_click_function_calls_in_proposition(right, calls);
         }
-        SurfaceProposition::Not(body)
-        | SurfaceProposition::ForAll { body, .. }
-        | SurfaceProposition::Exists { body, .. } => {
+        SyntaxProposition::Not(body)
+        | SyntaxProposition::ForAll { body, .. }
+        | SyntaxProposition::Exists { body, .. } => {
             collect_click_function_calls_in_proposition(body, calls);
         }
-        SurfaceProposition::RangeAll {
+        SyntaxProposition::RangeAll {
             start, end, body, ..
         }
-        | SurfaceProposition::RangeAny {
+        | SyntaxProposition::RangeAny {
             start, end, body, ..
         } => {
             collect_click_function_calls(start, calls);
             collect_click_function_calls(end, calls);
             collect_click_function_calls_in_proposition(body, calls);
         }
-        SurfaceProposition::PredicateCall { arguments, .. } => {
+        SyntaxProposition::PredicateCall { arguments, .. } => {
             for argument in arguments {
                 collect_click_function_calls(argument, calls);
             }
@@ -1260,22 +1258,22 @@ fn click_function_decreases_parameter(
     }
 }
 
-fn contract_expression_variable(expression: &SurfaceTerm) -> Option<SurfaceBinder> {
+fn contract_expression_variable(expression: &SyntaxTerm) -> Option<SurfaceBinder> {
     match expression {
-        SurfaceTerm::Binding(name)
-        | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+        SyntaxTerm::Binding(name)
+        | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         ))
-        | SurfaceTerm::ProgramBinding(name) => Some(name.into()),
-        SurfaceTerm::AlgebraicVariable { name, .. } => Some(name.clone()),
-        SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+        | SyntaxTerm::ProgramBinding(name) => Some(name.into()),
+        SyntaxTerm::AlgebraicVariable { name, .. } => Some(name.clone()),
+        SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Generated(id),
         )) => Some((*id).into()),
         _ => None,
     }
 }
 
-fn contract_expression_int32_constant(expression: &SurfaceTerm) -> Option<i64> {
+fn contract_expression_int32_constant(expression: &SyntaxTerm) -> Option<i64> {
     let ProgramExpression::Value(ProgramValue::Int32(bits32_constant!(value))) =
         contract_expression_as_program_expression(expression)?
     else {
@@ -1295,7 +1293,7 @@ fn component_internal_call(
 fn validate_recursive_call_edge(
     caller: &str,
     callee: &str,
-    arguments: &[SurfaceTerm],
+    arguments: &[SyntaxTerm],
     lower_bounds: &BinderMap<i64>,
     structural_subterms: &BinderMap<ClickType>,
     definitions: &BTreeMap<&str, &ClickFunctionDefinition>,
@@ -1342,7 +1340,7 @@ fn validate_recursive_call_edge(
         ) => {
             let caller_lower = lower_bounds.get(caller_parameter).copied();
             match next {
-                SurfaceTerm::Subtract(left, right)
+                SyntaxTerm::Subtract(left, right)
                     if contract_expression_variable(left)
                         .is_some_and(|name| name == *caller_parameter) =>
                 {
@@ -1385,7 +1383,7 @@ fn validate_recursive_call_edge(
 
 fn validate_recursive_calls_in_expression(
     caller: &str,
-    expression: &SurfaceTerm,
+    expression: &SyntaxTerm,
     lower_bounds: &BinderMap<i64>,
     structural_subterms: &BinderMap<ClickType>,
     definitions: &BTreeMap<&str, &ClickFunctionDefinition>,
@@ -1394,7 +1392,7 @@ fn validate_recursive_calls_in_expression(
     algebraic_definitions: &BTreeMap<&str, &AlgebraicTypeDefinition>,
 ) -> Result<(), ClickError> {
     let recurse =
-        |expression: &SurfaceTerm, bounds: &BinderMap<i64>, subterms: &BinderMap<ClickType>| {
+        |expression: &SyntaxTerm, bounds: &BinderMap<i64>, subterms: &BinderMap<ClickType>| {
             validate_recursive_calls_in_expression(
                 caller,
                 expression,
@@ -1407,9 +1405,9 @@ fn validate_recursive_calls_in_expression(
             )
         };
     match expression {
-        SurfaceTerm::IntegerContext(value) => recurse(value, lower_bounds, structural_subterms),
+        SyntaxTerm::IntegerContext(value) => recurse(value, lower_bounds, structural_subterms),
 
-        SurfaceTerm::Proposition(proposition) => validate_recursive_calls_in_proposition(
+        SyntaxTerm::Proposition(proposition) => validate_recursive_calls_in_proposition(
             caller,
             proposition,
             lower_bounds,
@@ -1419,12 +1417,12 @@ fn validate_recursive_calls_in_expression(
             measures,
             algebraic_definitions,
         ),
-        SurfaceTerm::Resource(_) => Ok(()),
-        SurfaceTerm::RegionResult(_)
-        | SurfaceTerm::RegionAllocation(_)
-        | SurfaceTerm::RegionParameter { .. } => Ok(()),
-        SurfaceTerm::Lambda { body, .. } => recurse(body, lower_bounds, structural_subterms),
-        SurfaceTerm::Apply {
+        SyntaxTerm::Resource(_) => Ok(()),
+        SyntaxTerm::RegionResult(_)
+        | SyntaxTerm::RegionAllocation(_)
+        | SyntaxTerm::RegionParameter { .. } => Ok(()),
+        SyntaxTerm::Lambda { body, .. } => recurse(body, lower_bounds, structural_subterms),
+        SyntaxTerm::Apply {
             function,
             arguments,
         } => {
@@ -1435,20 +1433,20 @@ fn validate_recursive_calls_in_expression(
             Ok(())
         }
 
-        SurfaceTerm::IntegerLiteral(_) => Ok(()),
-        SurfaceTerm::CUnary { operand: inner, .. }
-        | SurfaceTerm::MemoryLoad { pointer: inner, .. }
-        | SurfaceTerm::Negate(inner) => recurse(inner, lower_bounds, structural_subterms),
-        SurfaceTerm::ResourceField(_)
-        | SurfaceTerm::AlgebraicVariable { .. }
-        | SurfaceTerm::Binding(_) => Ok(()),
-        SurfaceTerm::AlgebraicConstructor { arguments, .. } => {
+        SyntaxTerm::IntegerLiteral(_) => Ok(()),
+        SyntaxTerm::CUnary { operand: inner, .. }
+        | SyntaxTerm::MemoryLoad { pointer: inner, .. }
+        | SyntaxTerm::Negate(inner) => recurse(inner, lower_bounds, structural_subterms),
+        SyntaxTerm::ResourceField(_)
+        | SyntaxTerm::AlgebraicVariable { .. }
+        | SyntaxTerm::Binding(_) => Ok(()),
+        SyntaxTerm::AlgebraicConstructor { arguments, .. } => {
             for argument in arguments {
                 recurse(argument, lower_bounds, structural_subterms)?;
             }
             Ok(())
         }
-        SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
+        SyntaxTerm::AlgebraicMatch { scrutinee, arms } => {
             recurse(scrutinee, lower_bounds, structural_subterms)?;
             // Parameter nodes retain their binder identity, whereas a match
             // or `let` binder that shadows the same spelling is a `Binding`.
@@ -1456,7 +1454,7 @@ fn validate_recursive_calls_in_expression(
             // an unrelated value into the root termination measure.
             let structural_scrutinee_type = match (scrutinee.as_ref(), measures.get(caller)) {
                 (
-                    SurfaceTerm::AlgebraicVariable {
+                    SyntaxTerm::AlgebraicVariable {
                         name,
                         algebraic_type: actual_type,
                         ..
@@ -1498,21 +1496,21 @@ fn validate_recursive_calls_in_expression(
             }
             Ok(())
         }
-        SurfaceTerm::SequenceLiteral(elements) => {
+        SyntaxTerm::SequenceLiteral(elements) => {
             for element in elements {
                 recurse(element, lower_bounds, structural_subterms)?;
             }
             Ok(())
         }
-        SurfaceTerm::SequenceConcat(left, right) => {
+        SyntaxTerm::SequenceConcat(left, right) => {
             recurse(left, lower_bounds, structural_subterms)?;
             recurse(right, lower_bounds, structural_subterms)
         }
-        SurfaceTerm::QualifiedC { .. }
-        | SurfaceTerm::ProgramExpression(_)
-        | SurfaceTerm::ProgramBinding(_)
-        | SurfaceTerm::ResourceWildcard => Ok(()),
-        SurfaceTerm::ResourceCount(resource) => {
+        SyntaxTerm::QualifiedC { .. }
+        | SyntaxTerm::ProgramExpression(_)
+        | SyntaxTerm::ProgramBinding(_)
+        | SyntaxTerm::ResourceWildcard => Ok(()),
+        SyntaxTerm::ResourceCount(resource) => {
             if let ResourceClause::Declared { arguments, .. } = resource.as_ref() {
                 for argument in arguments {
                     recurse(argument, lower_bounds, structural_subterms)?;
@@ -1520,18 +1518,16 @@ fn validate_recursive_calls_in_expression(
             }
             Ok(())
         }
-        SurfaceTerm::Field { base, .. } => recurse(base, lower_bounds, structural_subterms),
-        SurfaceTerm::Old(body) | SurfaceTerm::Exact(body) | SurfaceTerm::BitwiseNot(body) => {
+        SyntaxTerm::Field { base, .. } => recurse(base, lower_bounds, structural_subterms),
+        SyntaxTerm::Old(body) | SyntaxTerm::Exact(body) | SyntaxTerm::BitwiseNot(body) => {
             recurse(body, lower_bounds, structural_subterms)
         }
-        SurfaceTerm::At { expression, .. } => {
-            recurse(expression, lower_bounds, structural_subterms)
-        }
+        SyntaxTerm::At { expression, .. } => recurse(expression, lower_bounds, structural_subterms),
         crate::surface::binary_contract_expression!(left, right) => {
             recurse(left, lower_bounds, structural_subterms)?;
             recurse(right, lower_bounds, structural_subterms)
         }
-        SurfaceTerm::If {
+        SyntaxTerm::If {
             condition,
             then_branch,
             else_branch,
@@ -1553,7 +1549,7 @@ fn validate_recursive_calls_in_expression(
             recurse(then_branch, &then_bounds, structural_subterms)?;
             recurse(else_branch, &else_bounds, structural_subterms)
         }
-        SurfaceTerm::RangeFold {
+        SyntaxTerm::RangeFold {
             start,
             end,
             initial,
@@ -1576,7 +1572,7 @@ fn validate_recursive_calls_in_expression(
             }
             recurse(body, &body_bounds, &body_subterms)
         }
-        SurfaceTerm::Let {
+        SyntaxTerm::Let {
             name, value, body, ..
         } => {
             recurse(value, lower_bounds, structural_subterms)?;
@@ -1590,8 +1586,8 @@ fn validate_recursive_calls_in_expression(
             }
             recurse(body, &body_bounds, &body_subterms)
         }
-        SurfaceTerm::ArrayIndex { base, .. } => recurse(base, lower_bounds, structural_subterms),
-        SurfaceTerm::MethodCall {
+        SyntaxTerm::ArrayIndex { base, .. } => recurse(base, lower_bounds, structural_subterms),
+        SyntaxTerm::MethodCall {
             receiver,
             arguments,
             ..
@@ -1602,7 +1598,7 @@ fn validate_recursive_calls_in_expression(
             }
             Ok(())
         }
-        SurfaceTerm::Call { name, arguments } => {
+        SyntaxTerm::Call { name, arguments } => {
             for argument in arguments {
                 recurse(argument, lower_bounds, structural_subterms)?;
             }
@@ -1622,7 +1618,7 @@ fn validate_recursive_calls_in_expression(
 
 fn validate_recursive_calls_in_proposition(
     caller: &str,
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     lower_bounds: &BinderMap<i64>,
     structural_subterms: &BinderMap<ClickType>,
     definitions: &BTreeMap<&str, &ClickFunctionDefinition>,
@@ -1630,7 +1626,7 @@ fn validate_recursive_calls_in_proposition(
     measures: &BTreeMap<String, ClickRecursionMeasure>,
     algebraic_definitions: &BTreeMap<&str, &AlgebraicTypeDefinition>,
 ) -> Result<(), ClickError> {
-    let expression = |expression: &SurfaceTerm| {
+    let expression = |expression: &SyntaxTerm| {
         validate_recursive_calls_in_expression(
             caller,
             expression,
@@ -1642,7 +1638,7 @@ fn validate_recursive_calls_in_proposition(
             algebraic_definitions,
         )
     };
-    let recurse_proposition = |proposition: &SurfaceProposition| {
+    let recurse_proposition = |proposition: &SyntaxProposition| {
         validate_recursive_calls_in_proposition(
             caller,
             proposition,
@@ -1655,7 +1651,7 @@ fn validate_recursive_calls_in_proposition(
         )
     };
     match proposition {
-        SurfaceProposition::Value(expression) => validate_recursive_calls_in_expression(
+        SyntaxProposition::Value(expression) => validate_recursive_calls_in_expression(
             caller,
             expression,
             lower_bounds,
@@ -1666,44 +1662,44 @@ fn validate_recursive_calls_in_proposition(
             algebraic_definitions,
         ),
 
-        SurfaceProposition::Comparison { left, right, .. } => {
+        SyntaxProposition::Comparison { left, right, .. } => {
             expression(left)?;
             expression(right)
         }
-        SurfaceProposition::FloatClassification {
+        SyntaxProposition::FloatClassification {
             expression: value, ..
         } => expression(value),
-        SurfaceProposition::And(left, right)
-        | SurfaceProposition::Or(left, right)
-        | SurfaceProposition::Implies(left, right) => {
+        SyntaxProposition::And(left, right)
+        | SyntaxProposition::Or(left, right)
+        | SyntaxProposition::Implies(left, right) => {
             recurse_proposition(left)?;
             recurse_proposition(right)
         }
-        SurfaceProposition::Not(body)
-        | SurfaceProposition::ForAll { body, .. }
-        | SurfaceProposition::Exists { body, .. }
-        | SurfaceProposition::At {
+        SyntaxProposition::Not(body)
+        | SyntaxProposition::ForAll { body, .. }
+        | SyntaxProposition::Exists { body, .. }
+        | SyntaxProposition::At {
             proposition: body, ..
         } => recurse_proposition(body),
-        SurfaceProposition::RangeAll {
+        SyntaxProposition::RangeAll {
             start, end, body, ..
         }
-        | SurfaceProposition::RangeAny {
+        | SyntaxProposition::RangeAny {
             start, end, body, ..
         } => {
             expression(start)?;
             expression(end)?;
             recurse_proposition(body)
         }
-        SurfaceProposition::PredicateCall { arguments, .. } => {
+        SyntaxProposition::PredicateCall { arguments, .. } => {
             for argument in arguments {
                 expression(argument)?;
             }
             Ok(())
         }
-        SurfaceProposition::Defined { expression: body }
-        | SurfaceProposition::IsA { pointer: body, .. } => expression(body),
-        SurfaceProposition::ResourceViewable { resource } => {
+        SyntaxProposition::Defined { expression: body }
+        | SyntaxProposition::IsA { pointer: body, .. } => expression(body),
+        SyntaxProposition::ResourceViewable { resource } => {
             validate_recursive_calls_in_resource_subject(
                 caller,
                 resource,
@@ -1715,8 +1711,8 @@ fn validate_recursive_calls_in_proposition(
                 algebraic_definitions,
             )
         }
-        SurfaceProposition::Separate { left, right }
-        | SurfaceProposition::Contains {
+        SyntaxProposition::Separate { left, right }
+        | SyntaxProposition::Contains {
             parent: left,
             child: right,
         } => {
@@ -1741,7 +1737,7 @@ fn validate_recursive_calls_in_proposition(
                 algebraic_definitions,
             )
         }
-        SurfaceProposition::Loadable { segment } => validate_recursive_calls_in_segment(
+        SyntaxProposition::Loadable { segment } => validate_recursive_calls_in_segment(
             caller,
             segment,
             lower_bounds,
@@ -1880,21 +1876,21 @@ fn validate_recursive_calls_in_segment(
 }
 
 fn add_condition_lower_bounds(
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     truth: bool,
     lower_bounds: &mut BinderMap<i64>,
 ) {
     match proposition {
-        SurfaceProposition::Not(body) => add_condition_lower_bounds(body, !truth, lower_bounds),
-        SurfaceProposition::And(left, right) if truth => {
+        SyntaxProposition::Not(body) => add_condition_lower_bounds(body, !truth, lower_bounds),
+        SyntaxProposition::And(left, right) if truth => {
             add_condition_lower_bounds(left, true, lower_bounds);
             add_condition_lower_bounds(right, true, lower_bounds);
         }
-        SurfaceProposition::Or(left, right) if !truth => {
+        SyntaxProposition::Or(left, right) if !truth => {
             add_condition_lower_bounds(left, false, lower_bounds);
             add_condition_lower_bounds(right, false, lower_bounds);
         }
-        SurfaceProposition::Comparison {
+        SyntaxProposition::Comparison {
             left,
             operator,
             right,

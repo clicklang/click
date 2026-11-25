@@ -2001,8 +2001,8 @@ fn named_resource_field_metadata_is_shared_at_multiple_sizes() {
         );
         assert_eq!(function.ensures().len(), size + 1);
         for (i, ensure) in function.ensures()[1..].iter().enumerate() {
-            let Ensure::Proposition(SurfaceProposition::Comparison {
-                left: SurfaceTerm::ResourceField(access),
+            let Ensure::Proposition(SyntaxProposition::Comparison {
+                left: SyntaxTerm::ResourceField(access),
                 ..
             }) = ensure.ensure()
             else {
@@ -2317,29 +2317,29 @@ const FILL3_CLICK: &str = r#"
         }
     "#;
 
-fn current(expression: ProgramExpression) -> SurfaceTerm {
-    SurfaceTerm::ProgramExpression(expression)
+fn current(expression: ProgramExpression) -> SyntaxTerm {
+    SyntaxTerm::ProgramExpression(expression)
 }
 
-fn current_var(name: &str) -> SurfaceTerm {
+fn current_var(name: &str) -> SyntaxTerm {
     current(ProgramExpression::Variable((name.to_string()).into()))
 }
 
-fn current_int(value: u32) -> SurfaceTerm {
-    SurfaceTerm::IntegerLiteral(value.to_string())
+fn current_int(value: u32) -> SyntaxTerm {
+    SyntaxTerm::IntegerLiteral(value.to_string())
 }
 
-fn current_index(base: &str, index: u32) -> SurfaceTerm {
-    SurfaceTerm::Index(Box::new(current_var(base)), Box::new(current_int(index)))
+fn current_index(base: &str, index: u32) -> SyntaxTerm {
+    SyntaxTerm::Index(Box::new(current_var(base)), Box::new(current_int(index)))
 }
 
 #[test]
 fn contract_substitution_renames_colliding_logical_binders() {
-    let proposition = SurfaceProposition::ForAll {
+    let proposition = SyntaxProposition::ForAll {
         click_type: ClickType::Program(InterfaceType::Int32),
         name: "i".to_string().into(),
         written_name: None,
-        body: Box::new(SurfaceProposition::Comparison {
+        body: Box::new(SyntaxProposition::Comparison {
             left: current_var("argument"),
             operator: ComparisonOperator::Equal,
             right: current_var("i"),
@@ -2349,7 +2349,7 @@ fn contract_substitution_renames_colliding_logical_binders() {
 
     let substituted = lowering::substitute_click_proposition(&proposition, &substitutions)
         .expect("surface substitution should succeed");
-    let SurfaceProposition::ForAll {
+    let SyntaxProposition::ForAll {
         name,
         written_name,
         body,
@@ -2362,7 +2362,7 @@ fn contract_substitution_renames_colliding_logical_binders() {
     assert_eq!(written_name.as_deref(), Some("i"));
     assert_eq!(
         body.as_ref(),
-        &SurfaceProposition::Comparison {
+        &SyntaxProposition::Comparison {
             left: current_var("i"),
             operator: ComparisonOperator::Equal,
             right: name.reference(),
@@ -2373,28 +2373,28 @@ fn contract_substitution_renames_colliding_logical_binders() {
 #[test]
 fn contract_substitution_renames_colliding_range_fold_and_let_binders() {
     let substitutions = BTreeMap::from([(String::from("argument"), current_var("i"))]);
-    let fold = SurfaceTerm::RangeFold {
+    let fold = SyntaxTerm::RangeFold {
         start: Box::new(current_int(0)),
         end: Box::new(current_int(3)),
         initial: Box::new(current_int(0)),
         accumulator: "acc".to_string().into(),
         item: "i".to_string().into(),
-        body: Box::new(SurfaceTerm::Add(
+        body: Box::new(SyntaxTerm::Add(
             Box::new(current_var("argument")),
             Box::new(current_var("i")),
         )),
     };
-    let let_expression = SurfaceTerm::Let {
+    let let_expression = SyntaxTerm::Let {
         name: "i".to_string().into(),
         click_type: Some(ClickType::Program(InterfaceType::Int32)),
         value: Box::new(current_int(0)),
-        body: Box::new(SurfaceTerm::Add(
+        body: Box::new(SyntaxTerm::Add(
             Box::new(current_var("argument")),
             Box::new(current_var("i")),
         )),
     };
 
-    let SurfaceTerm::RangeFold { item, body, .. } =
+    let SyntaxTerm::RangeFold { item, body, .. } =
         lowering::substitute_contract_expression(&fold, &substitutions)
             .expect("range-fold substitution should succeed")
     else {
@@ -2403,10 +2403,10 @@ fn contract_substitution_renames_colliding_range_fold_and_let_binders() {
     assert_ne!(item, "i");
     assert_eq!(
         body.as_ref(),
-        &SurfaceTerm::Add(Box::new(current_var("i")), Box::new(item.reference()),)
+        &SyntaxTerm::Add(Box::new(current_var("i")), Box::new(item.reference()),)
     );
 
-    let SurfaceTerm::Let { name, body, .. } =
+    let SyntaxTerm::Let { name, body, .. } =
         lowering::substitute_contract_expression(&let_expression, &substitutions)
             .expect("let substitution should succeed")
     else {
@@ -2415,7 +2415,7 @@ fn contract_substitution_renames_colliding_range_fold_and_let_binders() {
     assert_ne!(name, "i");
     assert_eq!(
         body.as_ref(),
-        &SurfaceTerm::Add(Box::new(current_var("i")), Box::new(name.reference()),)
+        &SyntaxTerm::Add(Box::new(current_var("i")), Box::new(name.reference()),)
     );
 }
 
@@ -2512,16 +2512,12 @@ int32 fixed_c_params(int32 i, int32 total, int32 value) {
         .expect("expanded fixed execution scaled lower bound should recheck");
 }
 
-fn old_index(base: &str, index: u32) -> SurfaceTerm {
-    SurfaceTerm::Old(Box::new(current_index(base, index)))
+fn old_index(base: &str, index: u32) -> SyntaxTerm {
+    SyntaxTerm::Old(Box::new(current_index(base, index)))
 }
 
-fn ensure_comparison(
-    left: SurfaceTerm,
-    operator: ComparisonOperator,
-    right: SurfaceTerm,
-) -> Ensure {
-    Ensure::Proposition(SurfaceProposition::Comparison {
+fn ensure_comparison(left: SyntaxTerm, operator: ComparisonOperator, right: SyntaxTerm) -> Ensure {
+    Ensure::Proposition(SyntaxProposition::Comparison {
         left,
         operator,
         right,

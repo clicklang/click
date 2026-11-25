@@ -56,7 +56,7 @@ work expands into simple tactics:
 - At a loop back edge, the closure of the invariant bundle runs `close()` on
   each member and expands to one `have <member> by { ... }` per member not
   already a fact.
-- The searches behind elided arguments, below.
+- Bare `transport(P, Q)` searches for frame evidence between certified states.
 
 `step_until(point)` repeats `step()` up to its target, and each requirement
 it crosses is proved as a bare `step()`'s is. It walks a loop the facts decide
@@ -65,25 +65,18 @@ the proof `if` or `branch` to write there. The tactic reference classifies it
 as smart. The parser refuses the removed `execute()`; write
 `step_until(function.exit)` or leave the C to the implicit tail.
 
-## Elided arguments
+## Fact transport
 
-Every other search fills one argument that a simple tactic leaves out. A
-tactic written with its argument elided is a smart site; the same tactic
-with the argument written is simple:
+`transport(P, Q)` searches for evidence that a fact at an earlier state still
+holds at the target state. A search miss names the source, target, and
+recorded effects. Use `have` to state supporting facts, `preserve` to prove
+that reads stay unchanged across named footprints, and `rewrite` to relate
+the reads. Expansion keeps those ordinary steps when it finds a replayable
+derivation.
 
-| Elided form (smart) | Written form (simple) | What the search fills |
-|---|---|---|
-| `transport(P, Q)` | `have`, `preserve`, and `rewrite` | the selected reads and footprint separations |
-
-Implication application checks antecedents in scope. When the ordinary
-implicit closer proves a missing one, expansion writes its `have` before
-`apply(fact)`. Induction application checks the hypothesis's own premises
-in scope. When transport cannot find its frame evidence, the refusal is a
-**search miss**: it says "this is a search miss", names the fact it did not
-find, and tells you to write it (with `have P by { ... }` first, or in the
-`using` form). A search miss is never a Click bug; only the written form's
-refusal is a real refusal. `click expand` writes the found argument into the
-same tactic, so the expanded tactic gains its `using` list.
+Implication and induction applications check their premises in scope. When
+the implicit closer proves a missing antecedent, expansion writes its `have`
+before the application.
 
 The kernel's condition decision (`PureFactContext::decide`) is checking, not
 search: simple tactics may use it, and it is bounded per query like any other
@@ -98,7 +91,7 @@ marks each step smart work produced with its origin: ``(from `implicit tail`)``
 for the implicit tail's execution and its closer, ``(from `close`)`` for search inside a written `close()`, and ``(from `implicit closer`)`` for
 the closer of a step's requirement. It prints a `chosen:` line with the written
 form of an argument a search chose. [`click profile`](../reference/cli/profile.md) reports a smart
-site, elided forms included, as `SMART`, and a written simple tactic as
+site as `SMART` and a written simple tactic as
 `SIMPLE`.
 
 ## Search and the trust boundary

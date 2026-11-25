@@ -29,7 +29,14 @@ fn increment_first(bytes: &mut [u8]) {
     ensures bytes[0] == old(bytes[0]) + 1;
 } by {
     step_until(function.exit);
-    have to_integer(bytes[0]) == to_integer(old(bytes[0]) + 1u8) by close();
+    have 0 <= old(to_integer(bytes[0])) + 1;
+    have old(to_integer(bytes[0])) < 255;
+    have old(to_integer(bytes[0])) + 1 <= 255 by {
+        apply(click::integer::lt_step_le(old(to_integer(bytes[0])), 255));
+    }
+    have to_integer(bytes[0]) == old(to_integer(bytes[0])) + 1 by {
+        normalize() using { 0 <= old(to_integer(bytes[0])) + 1; old(to_integer(bytes[0])) + 1 <= 255; };
+    }
     close();
 }
 

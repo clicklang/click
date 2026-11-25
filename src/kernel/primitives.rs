@@ -5363,10 +5363,22 @@ impl AlgebraicTermNode {
         }
     }
 
+    /// [`Self::parameter_load`] read at `memory` itself, for tests.
+    #[cfg(test)]
+    pub(crate) fn parameter_load_unsited(
+        memory: SharedMemory,
+        pointer: Address,
+        parameter: TypeParameterName,
+    ) -> ProgramValue {
+        let site = ProgramPoint::at(&memory);
+        Self::parameter_load(memory, &site, pointer, parameter)
+    }
+
     /// The value of abstract type `parameter` that `memory` holds at
-    /// `pointer`.
+    /// `pointer`, read at `site`.
     pub(crate) fn parameter_load(
         memory: SharedMemory,
+        site: &ProgramPoint,
         pointer: Address,
         parameter: TypeParameterName,
     ) -> ProgramValue {
@@ -5377,7 +5389,7 @@ impl AlgebraicTermNode {
             &pointer,
             AccessExtent::of_algebraic(&parameter.algebraic_type()),
         );
-        Self::parameter_load_at(ProgramPoint::at(&memory), pointer, parameter)
+        Self::parameter_load_at(ProgramPoint::walked(&memory, site), pointer, parameter)
     }
 
     /// A checked cell observation uses the same typed version as a logical read.
@@ -5391,7 +5403,7 @@ impl AlgebraicTermNode {
         {
             return Self::parameter_load_at(version, pointer, parameter);
         }
-        Self::parameter_load(source.shared_memory().clone(), pointer, parameter)
+        Self::parameter_load(source.shared_memory().clone(), source, pointer, parameter)
     }
 
     pub(crate) fn parameter_load_at(
@@ -10217,7 +10229,67 @@ pub struct SharedMemory {
     memory: std::sync::Arc<SymbolicMemory>,
 }
 
+/// Record that `memory` is the state at `node`'s point, unless an earlier
+/// point already holds it. O(1); identity is unchanged.
+pub(in crate::kernel::primitives) fn record_memory_occurrence(
+    memory: &SharedMemory,
+    node: &std::sync::Arc<program_point::PointNode>,
+) {
+    C_MEMORY_ARENA.with(|arena| {
+        let mut arena = arena.borrow_mut();
+        let (token, arena) = &mut *arena;
+        if *token != memory.arena {
+            return;
+        }
+        if let Some(slot) = arena.occurrences.get_mut(memory.id as usize)
+            && slot.as_ref().is_none_or(|weak| weak.strong_count() == 0)
+        {
+            *slot = Some(std::sync::Arc::downgrade(node));
+        }
+    });
+}
+
 impl SharedMemory {
+    /// The first program point whose state this memory is, or of which it
+    /// is a view: a projection for one read stands for its one source's
+    /// state. `None` for a memory no point has held.
+    pub(in crate::kernel::primitives) fn occurrence(
+        &self,
+    ) -> Option<std::sync::Arc<program_point::PointNode>> {
+        let mut memory = self.clone();
+        for _ in 0..4 {
+            let found = C_MEMORY_ARENA.with(|arena| {
+                let arena = arena.borrow();
+                if arena.0 != memory.arena {
+                    return None;
+                }
+                arena
+                    .1
+                    .occurrences
+                    .get(memory.id as usize)
+                    .cloned()
+                    .flatten()
+                    .and_then(|weak| weak.upgrade())
+            });
+            if found.is_some() {
+                return found;
+            }
+            let Some(MemoryConstructionKind::Transform {
+                operation: "project memory for pointer read" | "canonicalize embedded reads",
+                sources,
+                ..
+            }) = memory.diagnostic_construction()
+            else {
+                return None;
+            };
+            let [source] = sources.as_slice() else {
+                return None;
+            };
+            memory = intern_memory_ref(source);
+        }
+        None
+    }
+
     /// How this state was produced, when the arena that named it is this
     /// thread's and an edge producer recorded one.
     ///
@@ -10865,6 +10937,10 @@ struct MemoryArena {
     /// Indexed by arena id; `None` for entry states and for any state
     /// whose first interning did not come from a recorded edge.
     derivations: Vec<Option<std::sync::Arc<MemoryDerivation>>>,
+    /// Indexed by arena id: the first program point whose state this memory
+    /// was, set when the point is made. Weak, because a point holds its
+    /// memory. Only metadata: it changes no identity.
+    occurrences: Vec<Option<std::sync::Weak<program_point::PointNode>>>,
     /// Immutable load-congruence keys. Producers reuse the base's key only
     /// for an unconditional byte-preserving transition. No history is queried.
     read_identities: Vec<u32>,
@@ -11555,6 +11631,7 @@ fn intern_memory_with(
             .insert(shallow_identity, (id, content_hash));
         arena.memories.push(stored.clone());
         arena.derivations.push(None);
+        arena.occurrences.push(None);
         arena.static_block_versions.push(None);
         arena.static_cell_versions.push(None);
         arena
@@ -16752,6 +16829,8 @@ pub struct CertifiedExecutionFactTransport {
 pub(super) struct CertifiedMemoryStore {
     pub(super) before: SymbolicMemory,
     pub(super) after: SymbolicMemory,
+    /// `after`, named by its memory and placed at the store's point.
+    pub(super) after_point: ProgramPoint,
     pub(super) pointer: Address,
     pub(super) value: ProgramValue,
     pub(super) authorized_range: Option<MemoryRange>,

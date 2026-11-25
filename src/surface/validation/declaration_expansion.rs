@@ -75,20 +75,20 @@ impl DeclaredResourceScope {
     /// ([`crate::surface::lowering::character_byte_view`]).
     fn expand_arguments(
         &self,
-        arguments: Vec<SurfaceTerm>,
+        arguments: Vec<SyntaxTerm>,
         parameter_types: &[InterfaceType],
-    ) -> Result<Vec<SurfaceTerm>, ClickError> {
+    ) -> Result<Vec<SyntaxTerm>, ClickError> {
         let character_parameters = self.character_parameters.borrow();
         arguments
             .into_iter()
             .enumerate()
             .map(|(index, argument)| {
                 let named = match &argument {
-                    SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                    SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                         crate::kernel::BindingName::Named(name),
                     ))
-                    | SurfaceTerm::Binding(name)
-                    | SurfaceTerm::ProgramBinding(name) => Some(name.as_str()),
+                    | SyntaxTerm::Binding(name)
+                    | SyntaxTerm::ProgramBinding(name) => Some(name.as_str()),
                     _ => None,
                 };
                 match (named, parameter_types.get(index)) {
@@ -1398,7 +1398,7 @@ fn expand_declared_resource_requirement(
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<Requirement, ClickError> {
     match requirement {
-        Requirement::Proposition(SurfaceProposition::PredicateCall { name, arguments })
+        Requirement::Proposition(SyntaxProposition::PredicateCall { name, arguments })
             if resource_definitions.contains_key(&name) =>
         {
             declared_resource_info(&name, arguments.len(), resource_definitions)?;
@@ -1421,7 +1421,7 @@ fn expand_declared_resource_ensure_clause(
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<EnsureClause, ClickError> {
     clause.ensure = match clause.ensure {
-        Ensure::Proposition(SurfaceProposition::PredicateCall { name, arguments })
+        Ensure::Proposition(SyntaxProposition::PredicateCall { name, arguments })
             if resource_definitions.contains_key(&name) =>
         {
             declared_resource_info(&name, arguments.len(), resource_definitions)?;
@@ -1517,7 +1517,7 @@ fn expand_declared_resource_proof(
 /// in the tactics after it, as a match arm's binder has in its arm.
 fn expand_declared_resource_proof_of(
     proof: SourceProof,
-    goal: Option<&SurfaceProposition>,
+    goal: Option<&SyntaxProposition>,
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<SourceProof, ClickError> {
     let SourceProof::Script(tactics) = proof else {
@@ -1547,7 +1547,7 @@ fn expand_declared_resource_proof_of(
             match introduced.and_then(|rename| goal.take().map(|goal| (rename, goal))) {
                 Some((
                     rename,
-                    SurfaceProposition::ForAll {
+                    SyntaxProposition::ForAll {
                         click_type,
                         name,
                         body,
@@ -1557,7 +1557,7 @@ fn expand_declared_resource_proof_of(
                     Some(*body),
                     Some(constructors.bind(rename.unwrap_or(name), Some(click_type))),
                 ),
-                Some((_, SurfaceProposition::Implies(_, consequent))) => (Some(*consequent), None),
+                Some((_, SyntaxProposition::Implies(_, consequent))) => (Some(*consequent), None),
                 _ => (None, None),
             };
         let tactic = match tactic {
@@ -1639,7 +1639,6 @@ fn expand_declared_resource_tactic(
         | ProofTactic::Preserve(_)
         | ProofTactic::Rewrite(_)
         | ProofTactic::Transport { .. }
-        | ProofTactic::TransportUsing { .. }
         | ProofTactic::CompatibilityFactTransport { .. }
         | ProofTactic::SolveUsing(_)
         | ProofTactic::NormalizeUsing(_)) => {
@@ -1732,7 +1731,7 @@ fn expand_declared_resource_tactic_with_plain_scripts(
         Visit(ProofTactic),
         Script(Vec<ProofTactic>),
         AllArm(Box<ProofAllArm>),
-        FinishArm(Box<SurfaceProposition>, usize),
+        FinishArm(Box<SyntaxProposition>, usize),
         All(usize),
         Both { left: usize, right: usize },
         Close { count: usize },
@@ -1972,18 +1971,6 @@ fn expand_declared_resource_tactic_with_propositions(
             source: expand_declared_resource_proposition(source, resource_definitions)?,
             target: expand_declared_resource_proposition(target, resource_definitions)?,
         }),
-        ProofTactic::TransportUsing {
-            source,
-            target,
-            premises,
-        } => Ok(ProofTactic::TransportUsing {
-            source: expand_declared_resource_proposition(source, resource_definitions)?,
-            target: expand_declared_resource_proposition(target, resource_definitions)?,
-            premises: premises
-                .into_iter()
-                .map(|premise| expand_declared_resource_proposition(premise, resource_definitions))
-                .collect::<Result<Vec<_>, _>>()?,
-        }),
         ProofTactic::CompatibilityFactTransport {
             source,
             target,
@@ -2070,7 +2057,7 @@ fn expand_declared_resource_script(
 fn expand_declared_intro_block(
     binder: Option<SurfaceBinder>,
     body: Vec<ProofTactic>,
-    goal: Option<&SurfaceProposition>,
+    goal: Option<&SyntaxProposition>,
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<ProofTactic, ClickError> {
     let alternatives = resource_definitions.begin_alternatives();
@@ -2154,7 +2141,7 @@ fn expand_declared_resource_tactic_with_nested_proofs(
             // resource's matched body in each proof arm.
             let selected_field = match &scrutinee {
                 // A body's own field selects no instance's arm.
-                SurfaceTerm::ResourceField(access) if access.children.is_empty() => access
+                SyntaxTerm::ResourceField(access) if access.children.is_empty() => access
                     .identity
                     .instance()
                     .map(|identity| (identity, access.field.clone())),
@@ -2235,12 +2222,12 @@ fn expand_declared_resource_tactic_with_nested_proofs(
 ///
 /// Cost is the one expression's head, not a search.
 fn classify_function_decrease(
-    expression: SurfaceTerm,
+    expression: SyntaxTerm,
     declared_binders: &BTreeSet<String>,
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<FunctionDecrease, ClickError> {
     match &expression {
-        SurfaceTerm::Call { name, arguments } if resource_definitions.contains_key(name) => {
+        SyntaxTerm::Call { name, arguments } if resource_definitions.contains_key(name) => {
             Ok(FunctionDecrease::Resource(expand_declared_resource_clause(
                 ResourceClause::Declared {
                     type_schema: None,
@@ -2255,9 +2242,9 @@ fn classify_function_decrease(
                 resource_definitions,
             )?))
         }
-        SurfaceTerm::Binding(name)
-        | SurfaceTerm::ProgramBinding(name)
-        | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+        SyntaxTerm::Binding(name)
+        | SyntaxTerm::ProgramBinding(name)
+        | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) if declared_binders.contains(name) => Ok(FunctionDecrease::Binder(name.clone())),
         _ => Ok(FunctionDecrease::Numeric(
@@ -2677,11 +2664,11 @@ fn expand_resource_type_arguments(
                 && (arguments.is_empty()
                     || !info.parameter_types[0].is_pointer()
                     || access != ResourceAccessMode::Own
-                    || matches!(arguments[0], SurfaceTerm::ResourceWildcard)
+                    || matches!(arguments[0], SyntaxTerm::ResourceWildcard)
                     || arguments
                         .iter()
                         .skip(1)
-                        .any(|argument| !matches!(argument, SurfaceTerm::ResourceWildcard)))
+                        .any(|argument| !matches!(argument, SyntaxTerm::ResourceWildcard)))
             {
                 return Err(ClickError::new(
                     "authority requires R(anchor) or R(anchor, _, ...) with a pointer anchor",
@@ -2748,11 +2735,11 @@ fn expand_declared_resource_subject(
 }
 
 fn expand_declared_resource_proposition(
-    proposition: SurfaceProposition,
+    proposition: SyntaxProposition,
     resource_definitions: &DeclaredResourceScope,
-) -> Result<SurfaceProposition, ClickError> {
+) -> Result<SyntaxProposition, ClickError> {
     enum Frame {
-        Visit(SurfaceProposition),
+        Visit(SyntaxProposition),
         BuildAt(ProgramPointSelector),
         BuildAnd,
         BuildOr,
@@ -2771,15 +2758,15 @@ fn expand_declared_resource_proposition(
             shadowed: crate::surface::scoped_names::Scope,
         },
         BuildRangeAll {
-            start: SurfaceTerm,
-            end: SurfaceTerm,
+            start: SyntaxTerm,
+            end: SyntaxTerm,
             item: SurfaceBinder,
             written_item: Option<String>,
             shadowed: crate::surface::scoped_names::Scope,
         },
         BuildRangeAny {
-            start: SurfaceTerm,
-            end: SurfaceTerm,
+            start: SyntaxTerm,
+            end: SyntaxTerm,
             item: SurfaceBinder,
             written_item: Option<String>,
             shadowed: crate::surface::scoped_names::Scope,
@@ -2795,33 +2782,33 @@ fn expand_declared_resource_proposition(
     while let Some(frame) = frames.pop() {
         match frame {
             Frame::Visit(proposition) => match proposition {
-                SurfaceProposition::And(left, right) => {
+                SyntaxProposition::And(left, right) => {
                     frames.push(Frame::BuildAnd);
                     frames.push(Frame::Visit(*right));
                     frames.push(Frame::Visit(*left));
                 }
-                SurfaceProposition::Or(left, right) => {
+                SyntaxProposition::Or(left, right) => {
                     frames.push(Frame::BuildOr);
                     frames.push(Frame::Visit(*right));
                     frames.push(Frame::Visit(*left));
                 }
-                SurfaceProposition::Implies(left, right) => {
+                SyntaxProposition::Implies(left, right) => {
                     frames.push(Frame::BuildImplies);
                     frames.push(Frame::Visit(*right));
                     frames.push(Frame::Visit(*left));
                 }
-                SurfaceProposition::Not(body) => {
+                SyntaxProposition::Not(body) => {
                     frames.push(Frame::BuildNot);
                     frames.push(Frame::Visit(*body));
                 }
-                SurfaceProposition::At {
+                SyntaxProposition::At {
                     selector,
                     proposition,
                 } => {
                     frames.push(Frame::BuildAt(selector));
                     frames.push(Frame::Visit(*proposition));
                 }
-                SurfaceProposition::ForAll {
+                SyntaxProposition::ForAll {
                     click_type,
                     name,
                     written_name,
@@ -2836,7 +2823,7 @@ fn expand_declared_resource_proposition(
                     });
                     frames.push(Frame::Visit(*body));
                 }
-                SurfaceProposition::Exists {
+                SyntaxProposition::Exists {
                     click_type,
                     name,
                     written_name,
@@ -2851,7 +2838,7 @@ fn expand_declared_resource_proposition(
                     });
                     frames.push(Frame::Visit(*body));
                 }
-                SurfaceProposition::RangeAll {
+                SyntaxProposition::RangeAll {
                     start,
                     end,
                     item,
@@ -2870,7 +2857,7 @@ fn expand_declared_resource_proposition(
                     });
                     frames.push(Frame::Visit(*body));
                 }
-                SurfaceProposition::RangeAny {
+                SyntaxProposition::RangeAny {
                     start,
                     end,
                     item,
@@ -2897,25 +2884,25 @@ fn expand_declared_resource_proposition(
             Frame::BuildAnd => {
                 let right = expanded.pop().expect("expanded conjunction right operand");
                 let left = expanded.pop().expect("expanded conjunction left operand");
-                expanded.push(SurfaceProposition::And(Box::new(left), Box::new(right)));
+                expanded.push(SyntaxProposition::And(Box::new(left), Box::new(right)));
             }
             Frame::BuildOr => {
                 let right = expanded.pop().expect("expanded disjunction right operand");
                 let left = expanded.pop().expect("expanded disjunction left operand");
-                expanded.push(SurfaceProposition::Or(Box::new(left), Box::new(right)));
+                expanded.push(SyntaxProposition::Or(Box::new(left), Box::new(right)));
             }
             Frame::BuildImplies => {
                 let right = expanded.pop().expect("expanded implication right operand");
                 let left = expanded.pop().expect("expanded implication left operand");
-                expanded.push(SurfaceProposition::Implies(Box::new(left), Box::new(right)));
+                expanded.push(SyntaxProposition::Implies(Box::new(left), Box::new(right)));
             }
             Frame::BuildNot => {
                 let body = expanded.pop().expect("expanded negation body");
-                expanded.push(SurfaceProposition::Not(Box::new(body)));
+                expanded.push(SyntaxProposition::Not(Box::new(body)));
             }
             Frame::BuildAt(selector) => {
                 let proposition = expanded.pop().expect("expanded state proposition");
-                expanded.push(SurfaceProposition::At {
+                expanded.push(SyntaxProposition::At {
                     selector,
                     proposition: Box::new(proposition),
                 });
@@ -2928,7 +2915,7 @@ fn expand_declared_resource_proposition(
             } => {
                 constructors.restore(shadowed);
                 let body = expanded.pop().expect("expanded universal body");
-                expanded.push(SurfaceProposition::ForAll {
+                expanded.push(SyntaxProposition::ForAll {
                     click_type,
                     name,
                     written_name,
@@ -2943,7 +2930,7 @@ fn expand_declared_resource_proposition(
             } => {
                 constructors.restore(shadowed);
                 let body = expanded.pop().expect("expanded existential body");
-                expanded.push(SurfaceProposition::Exists {
+                expanded.push(SyntaxProposition::Exists {
                     click_type,
                     name,
                     written_name,
@@ -2959,7 +2946,7 @@ fn expand_declared_resource_proposition(
             } => {
                 constructors.restore(shadowed);
                 let body = expanded.pop().expect("expanded range universal body");
-                expanded.push(SurfaceProposition::RangeAll {
+                expanded.push(SyntaxProposition::RangeAll {
                     start,
                     end,
                     item,
@@ -2976,7 +2963,7 @@ fn expand_declared_resource_proposition(
             } => {
                 constructors.restore(shadowed);
                 let body = expanded.pop().expect("expanded range existential body");
-                expanded.push(SurfaceProposition::RangeAny {
+                expanded.push(SyntaxProposition::RangeAny {
                     start,
                     end,
                     item,
@@ -2992,15 +2979,15 @@ fn expand_declared_resource_proposition(
 }
 
 fn expand_declared_resource_proposition_one(
-    proposition: SurfaceProposition,
+    proposition: SyntaxProposition,
     resource_definitions: &DeclaredResourceScope,
-) -> Result<SurfaceProposition, ClickError> {
+) -> Result<SyntaxProposition, ClickError> {
     match proposition {
-        SurfaceProposition::Value(expression) => Ok(SurfaceProposition::Value(
+        SyntaxProposition::Value(expression) => Ok(SyntaxProposition::Value(
             expand_declared_resource_expression(expression, resource_definitions)?,
         )),
 
-        SurfaceProposition::Comparison {
+        SyntaxProposition::Comparison {
             left,
             operator,
             right,
@@ -3010,33 +2997,33 @@ fn expand_declared_resource_proposition_one(
             resource_definitions
                 .constructors
                 .resolve_comparison(&mut left, &mut right);
-            Ok(SurfaceProposition::Comparison {
+            Ok(SyntaxProposition::Comparison {
                 left,
                 operator,
                 right,
             })
         }
-        SurfaceProposition::Defined { expression } => Ok(SurfaceProposition::Defined {
+        SyntaxProposition::Defined { expression } => Ok(SyntaxProposition::Defined {
             expression: expand_declared_resource_expression(expression, resource_definitions)?,
         }),
-        SurfaceProposition::IsA { class, pointer } => Ok(SurfaceProposition::IsA {
+        SyntaxProposition::IsA { class, pointer } => Ok(SyntaxProposition::IsA {
             class: class.clone(),
             pointer: expand_declared_resource_expression(pointer, resource_definitions)?,
         }),
-        SurfaceProposition::Separate { left, right } => Ok(SurfaceProposition::Separate {
+        SyntaxProposition::Separate { left, right } => Ok(SyntaxProposition::Separate {
             left: expand_declared_resource_subject(left, resource_definitions)?,
             right: expand_declared_resource_subject(right, resource_definitions)?,
         }),
-        SurfaceProposition::Contains { parent, child } => Ok(SurfaceProposition::Contains {
+        SyntaxProposition::Contains { parent, child } => Ok(SyntaxProposition::Contains {
             parent: expand_declared_resource_subject(parent, resource_definitions)?,
             child: expand_declared_resource_subject(child, resource_definitions)?,
         }),
-        SurfaceProposition::ResourceViewable { resource } => {
-            Ok(SurfaceProposition::ResourceViewable {
+        SyntaxProposition::ResourceViewable { resource } => {
+            Ok(SyntaxProposition::ResourceViewable {
                 resource: expand_declared_resource_subject(resource, resource_definitions)?,
             })
         }
-        SurfaceProposition::And(left, right) => Ok(SurfaceProposition::And(
+        SyntaxProposition::And(left, right) => Ok(SyntaxProposition::And(
             Box::new(expand_declared_resource_proposition(
                 *left,
                 resource_definitions,
@@ -3046,7 +3033,7 @@ fn expand_declared_resource_proposition_one(
                 resource_definitions,
             )?),
         )),
-        SurfaceProposition::Or(left, right) => Ok(SurfaceProposition::Or(
+        SyntaxProposition::Or(left, right) => Ok(SyntaxProposition::Or(
             Box::new(expand_declared_resource_proposition(
                 *left,
                 resource_definitions,
@@ -3056,7 +3043,7 @@ fn expand_declared_resource_proposition_one(
                 resource_definitions,
             )?),
         )),
-        SurfaceProposition::Implies(left, right) => Ok(SurfaceProposition::Implies(
+        SyntaxProposition::Implies(left, right) => Ok(SyntaxProposition::Implies(
             Box::new(expand_declared_resource_proposition(
                 *left,
                 resource_definitions,
@@ -3066,25 +3053,25 @@ fn expand_declared_resource_proposition_one(
                 resource_definitions,
             )?),
         )),
-        SurfaceProposition::Not(body) => Ok(SurfaceProposition::Not(Box::new(
+        SyntaxProposition::Not(body) => Ok(SyntaxProposition::Not(Box::new(
             expand_declared_resource_proposition(*body, resource_definitions)?,
         ))),
-        SurfaceProposition::At {
+        SyntaxProposition::At {
             selector,
             proposition,
-        } => Ok(SurfaceProposition::At {
+        } => Ok(SyntaxProposition::At {
             selector,
             proposition: Box::new(expand_declared_resource_proposition(
                 *proposition,
                 resource_definitions,
             )?),
         }),
-        SurfaceProposition::ForAll {
+        SyntaxProposition::ForAll {
             click_type: interface_type,
             name,
             written_name,
             body,
-        } => Ok(SurfaceProposition::ForAll {
+        } => Ok(SyntaxProposition::ForAll {
             click_type: interface_type,
             name,
             written_name,
@@ -3093,12 +3080,12 @@ fn expand_declared_resource_proposition_one(
                 resource_definitions,
             )?),
         }),
-        SurfaceProposition::Exists {
+        SyntaxProposition::Exists {
             click_type: interface_type,
             name,
             written_name,
             body,
-        } => Ok(SurfaceProposition::Exists {
+        } => Ok(SyntaxProposition::Exists {
             click_type: interface_type,
             name,
             written_name,
@@ -3107,13 +3094,13 @@ fn expand_declared_resource_proposition_one(
                 resource_definitions,
             )?),
         }),
-        SurfaceProposition::RangeAll {
+        SyntaxProposition::RangeAll {
             start,
             end,
             item,
             written_item,
             body,
-        } => Ok(SurfaceProposition::RangeAll {
+        } => Ok(SyntaxProposition::RangeAll {
             start: expand_declared_resource_expression(start, resource_definitions)?,
             end: expand_declared_resource_expression(end, resource_definitions)?,
             item,
@@ -3123,13 +3110,13 @@ fn expand_declared_resource_proposition_one(
                 resource_definitions,
             )?),
         }),
-        SurfaceProposition::RangeAny {
+        SyntaxProposition::RangeAny {
             start,
             end,
             item,
             written_item,
             body,
-        } => Ok(SurfaceProposition::RangeAny {
+        } => Ok(SyntaxProposition::RangeAny {
             start: expand_declared_resource_expression(start, resource_definitions)?,
             end: expand_declared_resource_expression(end, resource_definitions)?,
             item,
@@ -3139,7 +3126,7 @@ fn expand_declared_resource_proposition_one(
                 resource_definitions,
             )?),
         }),
-        SurfaceProposition::PredicateCall { name, arguments } => {
+        SyntaxProposition::PredicateCall { name, arguments } => {
             let mut arguments = arguments
                 .into_iter()
                 .map(|argument| expand_declared_resource_expression(argument, resource_definitions))
@@ -3149,32 +3136,32 @@ fn expand_declared_resource_proposition_one(
                 &name,
                 &mut arguments,
             );
-            Ok(SurfaceProposition::PredicateCall { name, arguments })
+            Ok(SyntaxProposition::PredicateCall { name, arguments })
         }
         proposition => Ok(proposition),
     }
 }
 
 fn expand_declared_resource_expression(
-    expression: SurfaceTerm,
+    expression: SyntaxTerm,
     resource_definitions: &DeclaredResourceScope,
-) -> Result<SurfaceTerm, ClickError> {
+) -> Result<SyntaxTerm, ClickError> {
     let mut add_depth = 0;
     let mut add_cursor = &expression;
-    while let SurfaceTerm::Add(left, _) = add_cursor {
+    while let SyntaxTerm::Add(left, _) = add_cursor {
         add_depth += 1;
         add_cursor = left;
     }
     if add_depth > 0 {
         let mut operands = Vec::with_capacity(add_depth);
         let mut current = expression;
-        while let SurfaceTerm::Add(left, right) = current {
+        while let SyntaxTerm::Add(left, right) = current {
             operands.push(*right);
             current = *left;
         }
         let mut expanded = expand_declared_resource_expression(current, resource_definitions)?;
         for operand in operands.into_iter().rev() {
-            expanded = SurfaceTerm::Add(
+            expanded = SyntaxTerm::Add(
                 Box::new(expanded),
                 Box::new(expand_declared_resource_expression(
                     operand,
@@ -3189,7 +3176,7 @@ fn expand_declared_resource_expression(
     // recursively nested `then` spine is rebuilt from the inside out.
     let mut conditionals = Vec::new();
     let mut expression = expression;
-    while let SurfaceTerm::If {
+    while let SyntaxTerm::If {
         condition,
         then_branch,
         else_branch,
@@ -3209,11 +3196,11 @@ fn expand_declared_resource_expression(
     type ExpandedLet = (
         SurfaceBinder,
         Option<ClickType>,
-        SurfaceTerm,
+        SyntaxTerm,
         crate::surface::scoped_names::Scope,
     );
     let mut lets: Vec<ExpandedLet> = Vec::new();
-    while let SurfaceTerm::Let {
+    while let SyntaxTerm::Let {
         name,
         click_type,
         value,
@@ -3239,7 +3226,7 @@ fn expand_declared_resource_expression(
     }
     let mut expanded = expanded?;
     while let Some((name, click_type, value, _)) = lets.pop() {
-        expanded = SurfaceTerm::Let {
+        expanded = SyntaxTerm::Let {
             name,
             click_type,
             value: Box::new(value),
@@ -3247,7 +3234,7 @@ fn expand_declared_resource_expression(
         };
     }
     while let Some((condition, else_branch)) = conditionals.pop() {
-        expanded = SurfaceTerm::If {
+        expanded = SyntaxTerm::If {
             condition: Box::new(condition),
             then_branch: Box::new(expanded),
             else_branch: Box::new(else_branch),
@@ -3262,9 +3249,9 @@ fn expand_declared_resource_expression(
 fn expand_let_value(
     name: impl Into<SurfaceBinder>,
     click_type: Option<&ClickType>,
-    value: SurfaceTerm,
+    value: SyntaxTerm,
     resource_definitions: &DeclaredResourceScope,
-) -> Result<(SurfaceTerm, crate::surface::scoped_names::Scope), ClickError> {
+) -> Result<(SyntaxTerm, crate::surface::scoped_names::Scope), ClickError> {
     let name = name.into();
     let constructors = &resource_definitions.constructors;
     let mut value = value;
@@ -3282,17 +3269,17 @@ fn expand_let_value(
 }
 
 fn expand_declared_resource_expression_node(
-    expression: SurfaceTerm,
+    expression: SyntaxTerm,
     resource_definitions: &DeclaredResourceScope,
-) -> Result<SurfaceTerm, ClickError> {
+) -> Result<SyntaxTerm, ClickError> {
     match expression {
-        SurfaceTerm::Resource(subject) => Ok(SurfaceTerm::Resource(Box::new(
+        SyntaxTerm::Resource(subject) => Ok(SyntaxTerm::Resource(Box::new(
             expand_declared_resource_subject(*subject, resource_definitions)?,
         ))),
-        SurfaceTerm::Call { name, arguments }
+        SyntaxTerm::Call { name, arguments }
             if resource_definitions.definitions.contains_key(&name) =>
         {
-            Ok(SurfaceTerm::Resource(Box::new(
+            Ok(SyntaxTerm::Resource(Box::new(
                 expand_declared_resource_subject(
                     ResourceSubject::Declared {
                         kind: ResourceKind::Token,
@@ -3305,7 +3292,7 @@ fn expand_declared_resource_expression_node(
             )))
         }
 
-        SurfaceTerm::ResourceField(mut access) => {
+        SyntaxTerm::ResourceField(mut access) => {
             // A body's own fields belong to the definition being expanded, not
             // to an instance whose family or ownership is recorded here.
             if let Some(identity) = access.identity.instance() {
@@ -3376,9 +3363,9 @@ fn expand_declared_resource_expression_node(
             })?;
             access.field_index = index;
             access.click_type = Some(field);
-            Ok(SurfaceTerm::ResourceField(access))
+            Ok(SyntaxTerm::ResourceField(access))
         }
-        SurfaceTerm::ResourceCount(resource) => {
+        SyntaxTerm::ResourceCount(resource) => {
             if resource_definitions.family_rules
                 && let ResourceClause::Declared { name, .. } = resource.as_ref()
                 && resource_definitions
@@ -3419,7 +3406,7 @@ fn expand_declared_resource_expression_node(
                 if !resource_arguments.is_empty() || !resource_type_arguments.is_empty() {
                     return Err(ClickError::new("count requires ordinary value arguments"));
                 }
-                return Ok(SurfaceTerm::ResourceCount(Box::new(
+                return Ok(SyntaxTerm::ResourceCount(Box::new(
                     ResourceClause::Declared {
                         type_schema: Some(declared_resource_type_schema(&info)?),
                         kind: info.kind,
@@ -3440,22 +3427,22 @@ fn expand_declared_resource_expression_node(
             }
             reject_counted_field_resource(&resource, resource_definitions)?;
             let resource = expand_declared_resource_clause(*resource, resource_definitions)?;
-            Ok(SurfaceTerm::ResourceCount(Box::new(resource)))
+            Ok(SyntaxTerm::ResourceCount(Box::new(resource)))
         }
-        expression @ (SurfaceTerm::SequenceConcat(..)
-        | SurfaceTerm::Add(..)
-        | SurfaceTerm::Subtract(..)
-        | SurfaceTerm::Multiply(..)
-        | SurfaceTerm::Divide(..)
-        | SurfaceTerm::Remainder(..)
-        | SurfaceTerm::ShiftLeft(..)
-        | SurfaceTerm::RustShiftLeft(..)
-        | SurfaceTerm::ShiftRight(..)
-        | SurfaceTerm::RustShiftRight(..)
-        | SurfaceTerm::BitwiseAnd(..)
-        | SurfaceTerm::BitwiseOr(..)
-        | SurfaceTerm::BitwiseXor(..)
-        | SurfaceTerm::Index(..)) => {
+        expression @ (SyntaxTerm::SequenceConcat(..)
+        | SyntaxTerm::Add(..)
+        | SyntaxTerm::Subtract(..)
+        | SyntaxTerm::Multiply(..)
+        | SyntaxTerm::Divide(..)
+        | SyntaxTerm::Remainder(..)
+        | SyntaxTerm::ShiftLeft(..)
+        | SyntaxTerm::RustShiftLeft(..)
+        | SyntaxTerm::ShiftRight(..)
+        | SyntaxTerm::RustShiftRight(..)
+        | SyntaxTerm::BitwiseAnd(..)
+        | SyntaxTerm::BitwiseOr(..)
+        | SyntaxTerm::BitwiseXor(..)
+        | SyntaxTerm::Index(..)) => {
             expand_declared_resource_binary_expression(expression, resource_definitions)
         }
         expression => {
@@ -3468,56 +3455,56 @@ fn expand_declared_resource_expression_node(
 // frame retained by each nested expression.
 #[inline(never)]
 fn expand_declared_resource_binary_expression(
-    expression: SurfaceTerm,
+    expression: SyntaxTerm,
     resource_definitions: &DeclaredResourceScope,
-) -> Result<SurfaceTerm, ClickError> {
+) -> Result<SyntaxTerm, ClickError> {
     let recurse =
         |expression| expand_declared_resource_expression(expression, resource_definitions);
     Ok(match expression {
-        SurfaceTerm::SequenceConcat(left, right) => {
-            SurfaceTerm::SequenceConcat(Box::new(recurse(*left)?), Box::new(recurse(*right)?))
+        SyntaxTerm::SequenceConcat(left, right) => {
+            SyntaxTerm::SequenceConcat(Box::new(recurse(*left)?), Box::new(recurse(*right)?))
         }
-        SurfaceTerm::Add(left, right) => {
-            SurfaceTerm::Add(Box::new(recurse(*left)?), Box::new(recurse(*right)?))
+        SyntaxTerm::Add(left, right) => {
+            SyntaxTerm::Add(Box::new(recurse(*left)?), Box::new(recurse(*right)?))
         }
-        SurfaceTerm::Subtract(left, right) => {
-            SurfaceTerm::Subtract(Box::new(recurse(*left)?), Box::new(recurse(*right)?))
+        SyntaxTerm::Subtract(left, right) => {
+            SyntaxTerm::Subtract(Box::new(recurse(*left)?), Box::new(recurse(*right)?))
         }
-        SurfaceTerm::Multiply(left, right) => match (recurse(*left)?, recurse(*right)?) {
-            (SurfaceTerm::Resource(left), SurfaceTerm::Resource(right)) => {
-                SurfaceTerm::Resource(Box::new(ResourceSubject::Star(left, right)))
+        SyntaxTerm::Multiply(left, right) => match (recurse(*left)?, recurse(*right)?) {
+            (SyntaxTerm::Resource(left), SyntaxTerm::Resource(right)) => {
+                SyntaxTerm::Resource(Box::new(ResourceSubject::Star(left, right)))
             }
-            (left, right) => SurfaceTerm::Multiply(Box::new(left), Box::new(right)),
+            (left, right) => SyntaxTerm::Multiply(Box::new(left), Box::new(right)),
         },
-        SurfaceTerm::Divide(left, right) => {
-            SurfaceTerm::Divide(Box::new(recurse(*left)?), Box::new(recurse(*right)?))
+        SyntaxTerm::Divide(left, right) => {
+            SyntaxTerm::Divide(Box::new(recurse(*left)?), Box::new(recurse(*right)?))
         }
-        SurfaceTerm::Remainder(left, right) => {
-            SurfaceTerm::Remainder(Box::new(recurse(*left)?), Box::new(recurse(*right)?))
+        SyntaxTerm::Remainder(left, right) => {
+            SyntaxTerm::Remainder(Box::new(recurse(*left)?), Box::new(recurse(*right)?))
         }
-        SurfaceTerm::ShiftLeft(left, right) => {
-            SurfaceTerm::ShiftLeft(Box::new(recurse(*left)?), Box::new(recurse(*right)?))
+        SyntaxTerm::ShiftLeft(left, right) => {
+            SyntaxTerm::ShiftLeft(Box::new(recurse(*left)?), Box::new(recurse(*right)?))
         }
-        SurfaceTerm::RustShiftLeft(left, right) => {
-            SurfaceTerm::RustShiftLeft(Box::new(recurse(*left)?), Box::new(recurse(*right)?))
+        SyntaxTerm::RustShiftLeft(left, right) => {
+            SyntaxTerm::RustShiftLeft(Box::new(recurse(*left)?), Box::new(recurse(*right)?))
         }
-        SurfaceTerm::ShiftRight(left, right) => {
-            SurfaceTerm::ShiftRight(Box::new(recurse(*left)?), Box::new(recurse(*right)?))
+        SyntaxTerm::ShiftRight(left, right) => {
+            SyntaxTerm::ShiftRight(Box::new(recurse(*left)?), Box::new(recurse(*right)?))
         }
-        SurfaceTerm::RustShiftRight(left, right) => {
-            SurfaceTerm::RustShiftRight(Box::new(recurse(*left)?), Box::new(recurse(*right)?))
+        SyntaxTerm::RustShiftRight(left, right) => {
+            SyntaxTerm::RustShiftRight(Box::new(recurse(*left)?), Box::new(recurse(*right)?))
         }
-        SurfaceTerm::BitwiseAnd(left, right) => {
-            SurfaceTerm::BitwiseAnd(Box::new(recurse(*left)?), Box::new(recurse(*right)?))
+        SyntaxTerm::BitwiseAnd(left, right) => {
+            SyntaxTerm::BitwiseAnd(Box::new(recurse(*left)?), Box::new(recurse(*right)?))
         }
-        SurfaceTerm::BitwiseOr(left, right) => {
-            SurfaceTerm::BitwiseOr(Box::new(recurse(*left)?), Box::new(recurse(*right)?))
+        SyntaxTerm::BitwiseOr(left, right) => {
+            SyntaxTerm::BitwiseOr(Box::new(recurse(*left)?), Box::new(recurse(*right)?))
         }
-        SurfaceTerm::BitwiseXor(left, right) => {
-            SurfaceTerm::BitwiseXor(Box::new(recurse(*left)?), Box::new(recurse(*right)?))
+        SyntaxTerm::BitwiseXor(left, right) => {
+            SyntaxTerm::BitwiseXor(Box::new(recurse(*left)?), Box::new(recurse(*right)?))
         }
-        SurfaceTerm::Index(base, index) => {
-            SurfaceTerm::Index(Box::new(recurse(*base)?), Box::new(recurse(*index)?))
+        SyntaxTerm::Index(base, index) => {
+            SyntaxTerm::Index(Box::new(recurse(*base)?), Box::new(recurse(*index)?))
         }
         _ => unreachable!("non-binary contract expression"),
     })
@@ -3527,18 +3514,18 @@ fn expand_declared_resource_binary_expression(
 // each nested expression.
 #[inline(never)]
 fn expand_declared_resource_expression_children(
-    expression: SurfaceTerm,
+    expression: SyntaxTerm,
     resource_definitions: &DeclaredResourceScope,
-) -> Result<SurfaceTerm, ClickError> {
+) -> Result<SyntaxTerm, ClickError> {
     let recurse =
         |expression| expand_declared_resource_expression(expression, resource_definitions);
     Ok(match expression {
-        SurfaceTerm::Negate(inner) => SurfaceTerm::Negate(Box::new(recurse(*inner)?)),
-        SurfaceTerm::Proposition(proposition) => SurfaceTerm::Proposition(Box::new(
+        SyntaxTerm::Negate(inner) => SyntaxTerm::Negate(Box::new(recurse(*inner)?)),
+        SyntaxTerm::Proposition(proposition) => SyntaxTerm::Proposition(Box::new(
             expand_declared_resource_proposition(*proposition, resource_definitions)?,
         )),
 
-        SurfaceTerm::Lambda {
+        SyntaxTerm::Lambda {
             parameters,
             result,
             body,
@@ -3552,16 +3539,16 @@ fn expand_declared_resource_expression_children(
             if let Some(scope) = scopes.first() {
                 constructors.restore(*scope);
             }
-            SurfaceTerm::Lambda {
+            SyntaxTerm::Lambda {
                 parameters,
                 result,
                 body: Box::new(body?),
             }
         }
-        SurfaceTerm::Apply {
+        SyntaxTerm::Apply {
             function,
             arguments,
-        } => SurfaceTerm::Apply {
+        } => SyntaxTerm::Apply {
             function: Box::new(recurse(*function)?),
             arguments: arguments
                 .into_iter()
@@ -3569,15 +3556,13 @@ fn expand_declared_resource_expression_children(
                 .collect::<Result<_, _>>()?,
         },
 
-        SurfaceTerm::IntegerContext(value) => {
-            SurfaceTerm::IntegerContext(Box::new(recurse(*value)?))
-        }
-        SurfaceTerm::AlgebraicConstructor {
+        SyntaxTerm::IntegerContext(value) => SyntaxTerm::IntegerContext(Box::new(recurse(*value)?)),
+        SyntaxTerm::AlgebraicConstructor {
             algebraic_type,
             variant,
             arguments,
         } => {
-            let mut constructor = SurfaceTerm::AlgebraicConstructor {
+            let mut constructor = SyntaxTerm::AlgebraicConstructor {
                 algebraic_type,
                 variant,
                 arguments: arguments
@@ -3590,15 +3575,15 @@ fn expand_declared_resource_expression_children(
                 .resolve_constructor(&mut constructor);
             constructor
         }
-        SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
+        SyntaxTerm::AlgebraicMatch { scrutinee, arms } => {
             let scrutinee = recurse(*scrutinee)?;
             let constructors = &resource_definitions.constructors;
-            SurfaceTerm::AlgebraicMatch {
+            SyntaxTerm::AlgebraicMatch {
                 arms: arms
                     .into_iter()
                     .map(|mut arm| {
                         let types = constructors.arm_binding_types(&scrutinee, &arm);
-                        let body = std::mem::replace(&mut arm.body, SurfaceTerm::ResourceWildcard);
+                        let body = std::mem::replace(&mut arm.body, SyntaxTerm::ResourceWildcard);
                         arm.body =
                             constructors.with_bindings(&arm.bindings, types, || recurse(body))?;
                         Ok(arm)
@@ -3607,59 +3592,59 @@ fn expand_declared_resource_expression_children(
                 scrutinee: Box::new(scrutinee),
             }
         }
-        SurfaceTerm::SequenceLiteral(elements) => SurfaceTerm::SequenceLiteral(
+        SyntaxTerm::SequenceLiteral(elements) => SyntaxTerm::SequenceLiteral(
             elements
                 .into_iter()
                 .map(recurse)
                 .collect::<Result<_, _>>()?,
         ),
-        SurfaceTerm::CUnary { operand, lowered } => SurfaceTerm::CUnary {
+        SyntaxTerm::CUnary { operand, lowered } => SyntaxTerm::CUnary {
             operand: Box::new(recurse(*operand)?),
             lowered,
         },
-        SurfaceTerm::MemoryLoad {
+        SyntaxTerm::MemoryLoad {
             pointer,
             value_type,
             volatile,
             pointee_constant,
-        } => SurfaceTerm::MemoryLoad {
+        } => SyntaxTerm::MemoryLoad {
             pointer: Box::new(recurse(*pointer)?),
             value_type,
             volatile,
             pointee_constant,
         },
-        SurfaceTerm::Field {
+        SyntaxTerm::Field {
             base,
             field,
             lowered,
             offset_bytes,
             pointee_struct,
-        } => SurfaceTerm::Field {
+        } => SyntaxTerm::Field {
             pointee_struct,
             base: Box::new(recurse(*base)?),
             field,
             lowered,
             offset_bytes,
         },
-        SurfaceTerm::Old(body) => SurfaceTerm::Old(Box::new(recurse(*body)?)),
-        SurfaceTerm::At {
+        SyntaxTerm::Old(body) => SyntaxTerm::Old(Box::new(recurse(*body)?)),
+        SyntaxTerm::At {
             selector,
             expression,
         } => match recurse(*expression)? {
-            SurfaceTerm::Resource(resource) => {
-                SurfaceTerm::Resource(Box::new(ResourceSubject::At { selector, resource }))
+            SyntaxTerm::Resource(resource) => {
+                SyntaxTerm::Resource(Box::new(ResourceSubject::At { selector, resource }))
             }
-            expression => SurfaceTerm::At {
+            expression => SyntaxTerm::At {
                 selector,
                 expression: Box::new(expression),
             },
         },
-        SurfaceTerm::BitwiseNot(body) => SurfaceTerm::BitwiseNot(Box::new(recurse(*body)?)),
-        SurfaceTerm::If {
+        SyntaxTerm::BitwiseNot(body) => SyntaxTerm::BitwiseNot(Box::new(recurse(*body)?)),
+        SyntaxTerm::If {
             condition,
             then_branch,
             else_branch,
-        } => SurfaceTerm::If {
+        } => SyntaxTerm::If {
             condition: Box::new(expand_declared_resource_proposition(
                 *condition,
                 resource_definitions,
@@ -3667,7 +3652,7 @@ fn expand_declared_resource_expression_children(
             then_branch: Box::new(recurse(*then_branch)?),
             else_branch: Box::new(recurse(*else_branch)?),
         },
-        SurfaceTerm::RangeFold {
+        SyntaxTerm::RangeFold {
             start,
             end,
             initial,
@@ -3684,7 +3669,7 @@ fn expand_declared_resource_expression_children(
             let body = recurse(*body);
             constructors.restore(item_previous);
             constructors.restore(accumulator_previous);
-            SurfaceTerm::RangeFold {
+            SyntaxTerm::RangeFold {
                 start: Box::new(start),
                 end: Box::new(end),
                 initial: Box::new(initial),
@@ -3693,7 +3678,7 @@ fn expand_declared_resource_expression_children(
                 body: Box::new(body?),
             }
         }
-        SurfaceTerm::Let {
+        SyntaxTerm::Let {
             name,
             click_type,
             value,
@@ -3703,14 +3688,14 @@ fn expand_declared_resource_expression_children(
                 expand_let_value(&name, click_type.as_ref(), *value, resource_definitions)?;
             let body = recurse(*body);
             resource_definitions.constructors.restore(previous);
-            SurfaceTerm::Let {
+            SyntaxTerm::Let {
                 name,
                 click_type,
                 value: Box::new(value),
                 body: Box::new(body?),
             }
         }
-        SurfaceTerm::Call { name, arguments } => {
+        SyntaxTerm::Call { name, arguments } => {
             let mut arguments = arguments
                 .into_iter()
                 .map(recurse)
@@ -3720,9 +3705,9 @@ fn expand_declared_resource_expression_children(
                 &name,
                 &mut arguments,
             );
-            SurfaceTerm::Call { name, arguments }
+            SyntaxTerm::Call { name, arguments }
         }
-        SurfaceTerm::MethodCall {
+        SyntaxTerm::MethodCall {
             receiver,
             method,
             arguments,
@@ -3924,7 +3909,7 @@ fn record_produced_instances(transport: &CallBinderTransport, definitions: &Decl
 
 fn validate_resource_reference_arguments(
     name: &str,
-    arguments: &[SurfaceTerm],
+    arguments: &[SyntaxTerm],
     references: &[ResourceInstanceBinding],
     info: &DeclaredResourceInfo,
     definitions: &DeclaredResourceScope,

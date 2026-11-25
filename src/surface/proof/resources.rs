@@ -807,7 +807,7 @@ pub(in crate::surface) struct SelectedInstanceArm {
 
 #[derive(Clone)]
 pub(in crate::surface) struct ResourceClausePresentation {
-    pub(in crate::surface) source: SurfaceProposition,
+    pub(in crate::surface) source: SyntaxProposition,
     pub(in crate::surface) checked: crate::kernel::ResourceBodyClauseRecord,
 }
 
@@ -882,15 +882,15 @@ pub(in crate::surface) fn pair_instance_body_clause_presentations(
         };
         let expression = match names_by_value.get(value).and_then(Option::as_ref) {
             Some(name) => {
-                SurfaceTerm::ProgramExpression(ProgramExpression::Variable((name.clone()).into()))
+                SyntaxTerm::ProgramExpression(ProgramExpression::Variable((name.clone()).into()))
             }
-            None => SurfaceTerm::ProgramExpression(ProgramExpression::Value(value.clone())),
+            None => SyntaxTerm::ProgramExpression(ProgramExpression::Value(value.clone())),
         };
         substitutions.insert(parameter.name().to_string(), expression);
     }
     if let Some(names) = proof_bindings {
         for ((name, _), proof_name) in bindings.iter().zip(names) {
-            substitutions.insert(name.clone(), SurfaceTerm::Binding(proof_name.clone()));
+            substitutions.insert(name.clone(), SyntaxTerm::Binding(proof_name.clone()));
         }
     }
     let instance_name =
@@ -915,7 +915,7 @@ pub(in crate::surface) fn pair_instance_body_clause_presentations(
         // chain even when the proposition was previously present. In
         // particular, a quantified declaration must have a written binder
         // in that chain; an unrelated equal fact is not its presentation.
-        if matches!(source, SurfaceProposition::ForAll { .. })
+        if matches!(source, SyntaxProposition::ForAll { .. })
             && !record.introductions.iter().any(|introduction| {
                 matches!(
                     introduction,
@@ -1380,7 +1380,7 @@ fn resource_value_substitutions_for_parameters(
     instance_arguments: &[AlgebraicValue],
     constructor_bindings: &[AlgebraicValue],
     parameters: &[FunctionParameter],
-) -> Result<BTreeMap<String, SurfaceTerm>, String> {
+) -> Result<BTreeMap<String, SyntaxTerm>, String> {
     if parameters.len() < instance_arguments.len() {
         return Err(format!("resource `{name}` received too many arguments"));
     }
@@ -1393,7 +1393,7 @@ fn resource_value_substitutions_for_parameters(
                 .ok_or_else(|| format!("resource `{name}` has a non-C argument"))?;
             Ok((
                 parameter.name().to_string(),
-                SurfaceTerm::ProgramExpression(ProgramExpression::Value(argument.clone())),
+                SyntaxTerm::ProgramExpression(ProgramExpression::Value(argument.clone())),
             ))
         })
         .collect::<Result<BTreeMap<_, _>, String>>()?;
@@ -1409,7 +1409,7 @@ fn resource_value_substitutions_for_parameters(
         };
         substitutions.insert(
             parameter.name().to_string(),
-            SurfaceTerm::ProgramExpression(ProgramExpression::Value(value.clone())),
+            SyntaxTerm::ProgramExpression(ProgramExpression::Value(value.clone())),
         );
     }
     Ok(substitutions)
@@ -1648,7 +1648,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             (quantity.clone(), resource.as_ref().clone(), true)
         }
         ResourceClause::Declared { .. } => (
-            SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(1))),
+            SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(1))),
             resource.clone(),
             false,
         ),
@@ -1675,10 +1675,10 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
     if abstract_resource.owned_quantity_term().is_some() {
         let count_authority = abstract_resource.clone();
         if counts_population {
-            let count_witness = SurfaceProposition::Comparison {
+            let count_witness = SyntaxProposition::Comparison {
                 left: observed_quantity.clone(),
                 operator: ComparisonOperator::LessEqual,
-                right: SurfaceTerm::ResourceCount(Box::new(counted_resource.clone())),
+                right: SyntaxTerm::ResourceCount(Box::new(counted_resource.clone())),
             };
             let count_kernel = lower_outcome_proposition_with_assumptions(
                 parameter_binding,
@@ -1713,8 +1713,8 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
                 available_pure_facts.insert(count_kernel);
             }
         }
-        let nonnegative_witness = SurfaceProposition::Comparison {
-            left: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
+        let nonnegative_witness = SyntaxProposition::Comparison {
+            left: SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
             operator: ComparisonOperator::LessEqual,
             right: observed_quantity.clone(),
         };
@@ -1753,10 +1753,10 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
         // The observed count is nonnegative: the kernel states that as a
         // population fact of the entry, and a certificate that cites it
         // needs this spelling of it.
-        let count_nonnegative_witness = SurfaceProposition::Comparison {
-            left: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
+        let count_nonnegative_witness = SyntaxProposition::Comparison {
+            left: SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
             operator: ComparisonOperator::LessEqual,
-            right: SurfaceTerm::ResourceCount(Box::new(counted_resource.clone())),
+            right: SyntaxTerm::ResourceCount(Box::new(counted_resource.clone())),
         };
         if let Ok(count_nonnegative_kernel) = lower_outcome_proposition_with_assumptions(
             parameter_binding,
@@ -1985,7 +1985,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
 fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
     definition: &ResourceDefinition,
     resource: &ResourceClause,
-    substitutions: &BTreeMap<String, SurfaceTerm>,
+    substitutions: &BTreeMap<String, SyntaxTerm>,
     parameter_binding: ParameterBinding<'_>,
     pre_state: &ExecutionState,
     fact_state: &ExecutionState,
@@ -2048,7 +2048,7 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
             let child_subject = resource_clause_subject(&contained);
             surface_propositions
                 .record_lowering(
-                    &SurfaceProposition::Contains {
+                    &SyntaxProposition::Contains {
                         parent: parent_subject.clone(),
                         child: child_subject.clone(),
                     },
@@ -2071,7 +2071,7 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
             let kernel = memory_range_loadable_atom_prop(fact_state.memory(), range);
             surface_propositions
                 .record_lowering(
-                    &SurfaceProposition::Loadable {
+                    &SyntaxProposition::Loadable {
                         segment: segment.clone(),
                     },
                     &kernel,
@@ -2084,7 +2084,7 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
             let (left, left_subject) = &owned_children[left_index];
             surface_propositions
                 .record_lowering(
-                    &SurfaceProposition::Separate {
+                    &SyntaxProposition::Separate {
                         left: left_subject.clone(),
                         right: right_subject.clone(),
                     },
@@ -2204,7 +2204,7 @@ pub(super) fn record_initial_composite_surface_facts(
         };
         for fact in body.facts() {
             let surface = substitute_click_proposition(fact, &substitutions)?;
-            if !matches!(surface, SurfaceProposition::Separate { .. }) {
+            if !matches!(surface, SyntaxProposition::Separate { .. }) {
                 continue;
             }
             let kernel = lower_outcome_proposition(
@@ -2305,7 +2305,7 @@ fn owned_quantity_is_positive(quantity: &MachineTerm, assumptions: &PureFactCont
 #[allow(clippy::too_many_arguments)]
 fn try_select_composite_resource_body(
     definition: &ResourceDefinition,
-    substitutions: &BTreeMap<String, SurfaceTerm>,
+    substitutions: &BTreeMap<String, SyntaxTerm>,
     parameter_binding: ParameterBinding<'_>,
     pre_state: &ExecutionState,
     state: &ExecutionState,
@@ -2389,7 +2389,7 @@ fn try_select_composite_resource_body(
 #[allow(clippy::too_many_arguments)]
 fn composite_resource_body_is_active_with_assumptions(
     definition: &ResourceDefinition,
-    substitutions: &BTreeMap<String, SurfaceTerm>,
+    substitutions: &BTreeMap<String, SyntaxTerm>,
     parameter_binding: ParameterBinding<'_>,
     pre_state: &ExecutionState,
     state: &ExecutionState,
@@ -2416,7 +2416,7 @@ fn composite_resource_body_is_active_with_assumptions(
 }
 
 enum CompositeObservation<'a> {
-    Explicit(&'a BTreeMap<String, SurfaceTerm>),
+    Explicit(&'a BTreeMap<String, SyntaxTerm>),
     Implicit,
 }
 
@@ -2558,7 +2558,7 @@ fn append_composite_definition_observable_facts<F: ResourcePureFacts>(
     definition: &ResourceDefinition,
     composite_body: &CompositeResourceBody,
     parent_resource: &Resource,
-    substitutions: &BTreeMap<String, SurfaceTerm>,
+    substitutions: &BTreeMap<String, SyntaxTerm>,
     contained_resources: &ResourceContext,
     parameter_binding: ParameterBinding<'_>,
     pre_state: &ExecutionState,
@@ -2639,7 +2639,7 @@ fn append_composite_resource_relation_facts_with_store<F: ResourcePureFacts>(
 fn append_composite_resource_loadable_facts<F: ResourcePureFacts>(
     definition: &ResourceDefinition,
     composite_body: &CompositeResourceBody,
-    substitutions: &BTreeMap<String, SurfaceTerm>,
+    substitutions: &BTreeMap<String, SyntaxTerm>,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     propositions: &mut F,
@@ -2721,7 +2721,7 @@ pub(super) fn append_lowered_resource_clause_loadable_fact(
 fn append_composite_resource_declared_facts<F: ResourcePureFacts>(
     definition: &ResourceDefinition,
     composite_body: &CompositeResourceBody,
-    substitutions: &BTreeMap<String, SurfaceTerm>,
+    substitutions: &BTreeMap<String, SyntaxTerm>,
     contained_resources: &ResourceContext,
     parameter_binding: ParameterBinding<'_>,
     pre_state: &ExecutionState,
@@ -2815,7 +2815,7 @@ fn describe_resource_context_validity_error(
 fn materialize_composite_resource_memory(
     name: &str,
     composite_body: &CompositeResourceBody,
-    substitutions: &BTreeMap<String, SurfaceTerm>,
+    substitutions: &BTreeMap<String, SyntaxTerm>,
     parameter_binding: ParameterBinding<'_>,
     mut state: ExecutionState,
     assumptions: &PureFactContext,
@@ -2869,7 +2869,7 @@ fn materialize_composite_resource_memory(
 pub(in crate::surface) fn instantiate_composite_resource_body_resources(
     name: &str,
     composite_body: &CompositeResourceBody,
-    substitutions: &BTreeMap<String, SurfaceTerm>,
+    substitutions: &BTreeMap<String, SyntaxTerm>,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     assumptions: &PureFactContext,
@@ -2930,7 +2930,7 @@ pub(in crate::surface) fn instantiate_composite_resource_body_resources(
 fn resource_value_substitutions(
     definition: &ResourceDefinition,
     arguments: &[AlgebraicValue],
-) -> Result<BTreeMap<String, SurfaceTerm>, String> {
+) -> Result<BTreeMap<String, SyntaxTerm>, String> {
     if definition.parameters().len() != arguments.len() {
         return Err(format!(
             "resource `{}` expects {} argument(s), got {}",
@@ -2949,7 +2949,7 @@ fn resource_value_substitutions(
                 .ok_or_else(|| "algebraic resource bodies are not supported yet".to_string())?;
             Ok((
                 parameter.name().to_string(),
-                SurfaceTerm::ProgramExpression(ProgramExpression::Value(argument.clone())),
+                SyntaxTerm::ProgramExpression(ProgramExpression::Value(argument.clone())),
             ))
         })
         .collect::<Result<_, String>>()
@@ -2967,7 +2967,7 @@ fn resource_value_substitutions_with_witnesses(
     resource_environment: &ResourceEnvironment,
     spec_definitions: SpecDefinitions<'_>,
     compiled_definitions: Option<&[CompositeResourceDefinition]>,
-) -> Result<BTreeMap<String, SurfaceTerm>, String> {
+) -> Result<BTreeMap<String, SyntaxTerm>, String> {
     let mut substitutions = resource_value_substitutions(definition, arguments)?;
     let Some(body) = definition.composite_body() else {
         return Ok(substitutions);
@@ -3006,7 +3006,7 @@ fn resource_value_substitutions_with_witnesses(
     for (witness, value) in body.witnesses().iter().zip(values) {
         substitutions.insert(
             witness.name().to_string(),
-            SurfaceTerm::ProgramExpression(ProgramExpression::Value(value)),
+            SyntaxTerm::ProgramExpression(ProgramExpression::Value(value)),
         );
     }
     Ok(substitutions)
@@ -3161,7 +3161,7 @@ pub(super) fn declared_resource_witness_values(
         .witnesses()
         .iter()
         .filter_map(|witness| match substitutions.get(witness.name()) {
-            Some(SurfaceTerm::ProgramExpression(ProgramExpression::Value(value))) => {
+            Some(SyntaxTerm::ProgramExpression(ProgramExpression::Value(value))) => {
                 Some((witness.name().to_string(), value.clone()))
             }
             _ => None,
@@ -3267,7 +3267,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             if spelling_substitutions.contains_key(witness) {
                 spelling_substitutions.insert(
                     witness.clone(),
-                    SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                    SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                         name.as_str().into(),
                     )),
                 );
@@ -4027,7 +4027,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                         &BTreeSet::new(),
                     )
                     .map_err(ClickError::new)?;
-                    *argument = SurfaceTerm::ProgramExpression(ProgramExpression::Value(value));
+                    *argument = SyntaxTerm::ProgramExpression(ProgramExpression::Value(value));
                 }
             }
         }
@@ -4396,7 +4396,7 @@ fn fold_composite_resources_on_outcome_with_facts(
             // reads.
             let spelling_resource = source_resource.unwrap_or(resource);
             let spelled = if open {
-                (|| -> Result<Option<SurfaceProposition>, ClickError> {
+                (|| -> Result<Option<SyntaxProposition>, ClickError> {
                     // The arguments as written, and each witness as it was
                     // inferred or given.
                     let mut spelling_substitutions = substitutions.clone();
@@ -4423,7 +4423,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                         (None, _) => pre_state,
                     };
                     for expression in spelling_substitutions.values_mut() {
-                        if let SurfaceTerm::ProgramExpression(ProgramExpression::Value(value)) =
+                        if let SyntaxTerm::ProgramExpression(ProgramExpression::Value(value)) =
                             expression
                             && let Some(spelled) =
                                 crate::surface::proof::surface_synthesis::synthesize_surface_value(
@@ -4440,7 +4440,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                     if spelling_substitutions.values().any(|expression| {
                         matches!(
                             expression,
-                            SurfaceTerm::ProgramExpression(ProgramExpression::Value(value))
+                            SyntaxTerm::ProgramExpression(ProgramExpression::Value(value))
                                 if !is_integer_constant(value)
                         )
                     }) {
@@ -5270,7 +5270,7 @@ fn composite_resource_law_definition<'a>(
 /// value literal, so later clauses mention exactly the pointer the kernel's
 /// own body instantiation uses.
 fn extend_substitutions_with_witnesses(
-    substitutions: &mut BTreeMap<String, SurfaceTerm>,
+    substitutions: &mut BTreeMap<String, SyntaxTerm>,
     definition: &ResourceDefinition,
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
@@ -5324,7 +5324,7 @@ fn extend_substitutions_with_witnesses(
     for (witness, value) in body.witnesses().iter().zip(values) {
         substitutions.insert(
             witness.name().to_string(),
-            SurfaceTerm::ProgramExpression(ProgramExpression::Value(value)),
+            SyntaxTerm::ProgramExpression(ProgramExpression::Value(value)),
         );
     }
     Ok(())
@@ -5357,7 +5357,7 @@ pub(super) fn resource_argument_substitutions(
     resource: &ResourceClause,
     claim_label: &str,
     tactic_index: usize,
-) -> Result<BTreeMap<String, SurfaceTerm>, ClickError> {
+) -> Result<BTreeMap<String, SyntaxTerm>, ClickError> {
     let resource = match resource {
         ResourceClause::Quantified { resource, .. } => resource.as_ref(),
         _ => resource,
@@ -5405,7 +5405,7 @@ pub(super) fn resource_argument_substitutions(
 
 pub(super) fn instantiate_resource_clause(
     resource: &ResourceClause,
-    substitutions: &BTreeMap<String, SurfaceTerm>,
+    substitutions: &BTreeMap<String, SyntaxTerm>,
 ) -> Result<ResourceClause, String> {
     match resource {
         ResourceClause::Conditional {
@@ -5471,7 +5471,7 @@ pub(super) fn instantiate_resource_clause(
 
 fn instantiate_contract_segment(
     segment: &ContractSegment,
-    substitutions: &BTreeMap<String, SurfaceTerm>,
+    substitutions: &BTreeMap<String, SyntaxTerm>,
 ) -> Result<ContractSegment, String> {
     let surface = match &segment.surface {
         ContractSegmentSurface::Range { base, start, end } => ContractSegmentSurface::Range {
@@ -5661,7 +5661,7 @@ fn materialize_composite_resource_cells_from_state(
         } else {
             // Named by the memory, as a legacy read is, and recording the
             // point the cells are read at.
-            crate::kernel::ProgramPoint::at_read_site(naming_point.shared_memory(), naming_point)
+            crate::kernel::ProgramPoint::read_at(naming_point.shared_memory(), naming_point)
         };
         match memory.with_named_cell_run(
             range.base().clone(),
@@ -6250,7 +6250,7 @@ mod wide_range_reader_tests {
             MachineTerm::uint64_constant(1 << 33),
             4,
         );
-        let literal = || SurfaceTerm::IntegerLiteral("0".into());
+        let literal = || SyntaxTerm::IntegerLiteral("0".into());
         let segment = ContractSegment {
             uninitialized: false,
             state: ContractSegmentState::Current,

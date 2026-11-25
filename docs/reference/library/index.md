@@ -5983,9 +5983,16 @@ selects this contract for the projected `<stdio.h>` declaration
 
 ### `stdout`
 
-C's `<stdio.h>` supplies `FILE *const stdout;` as a linked library value.
-C execution, contracts and standalone theorems share that pointer.
-The interface exports `stdout_non_null()`. Access to the stream still
+```click
+FILE *const stdout;
+
+theorem stdout_non_null() {
+    ensures stdout != 0;
+}
+```
+
+C's `<stdio.h>` supplies the linked library value. C execution, contracts,
+and standalone theorems share that pointer. Writing to the stream
 requires ownership of `click::c::stdio::stream(stdout)`.
 
 **Verified use:** [`hosted_stdout_uses_its_library_value.md`](https://github.com/clicklang/click/blob/master/mdtests/hosted_stdout_uses_its_library_value.md).
@@ -10872,5 +10879,137 @@ axiom float64_divide_negative_upper(divisor: double, x: double, bound: double) {
     requires isfinite(divisor);
     requires divisor < float64_from_bits(0u64);
     ensures x / divisor <= bound / divisor;
+}
+```
+
+### `float_order::float32_scale_negative_lower`
+
+```click
+axiom float32_scale_negative_lower(factor: float, x: float, bound: float) {
+    requires x <= bound;
+    requires isfinite(factor);
+    requires factor < float32_from_bits(0);
+    ensures factor * x >= factor * bound;
+}
+```
+
+### `float_order::float32_scale_negative_upper`
+
+```click
+axiom float32_scale_negative_upper(factor: float, x: float, bound: float) {
+    requires x >= bound;
+    requires isfinite(factor);
+    requires factor < float32_from_bits(0);
+    ensures factor * x <= factor * bound;
+}
+```
+
+### `float_order::float32_scale_negative_right_lower`
+
+```click
+axiom float32_scale_negative_right_lower(factor: float, x: float, bound: float) {
+    requires x <= bound;
+    requires isfinite(factor);
+    requires factor < float32_from_bits(0);
+    ensures x * factor >= bound * factor;
+}
+```
+
+### `float_order::float32_scale_negative_right_upper`
+
+```click
+axiom float32_scale_negative_right_upper(factor: float, x: float, bound: float) {
+    requires x >= bound;
+    requires isfinite(factor);
+    requires factor < float32_from_bits(0);
+    ensures x * factor <= bound * factor;
+}
+```
+
+### `float_order::float64_scale_lower`
+
+```click
+axiom float64_scale_lower(factor: double, x: double, bound: double) {
+    requires x >= bound;
+    requires isfinite(factor);
+    requires float64_from_bits(0u64) < factor;
+    ensures factor * x >= factor * bound;
+}
+```
+
+### `float_order::float64_scale_upper`
+
+```click
+axiom float64_scale_upper(factor: double, x: double, bound: double) {
+    requires x <= bound;
+    requires isfinite(factor);
+    requires float64_from_bits(0u64) < factor;
+    ensures factor * x <= factor * bound;
+}
+```
+
+### `float_order::float64_scale_right_lower`
+
+```click
+axiom float64_scale_right_lower(factor: double, x: double, bound: double) {
+    requires x >= bound;
+    requires isfinite(factor);
+    requires float64_from_bits(0u64) < factor;
+    ensures x * factor >= bound * factor;
+}
+```
+
+### `float_order::float64_scale_right_upper`
+
+```click
+axiom float64_scale_right_upper(factor: double, x: double, bound: double) {
+    requires x <= bound;
+    requires isfinite(factor);
+    requires float64_from_bits(0u64) < factor;
+    ensures x * factor <= bound * factor;
+}
+```
+
+### `float_order::float64_scale_negative_lower`
+
+```click
+axiom float64_scale_negative_lower(factor: double, x: double, bound: double) {
+    requires x <= bound;
+    requires isfinite(factor);
+    requires factor < float64_from_bits(0u64);
+    ensures factor * x >= factor * bound;
+}
+```
+
+### `float_order::float64_scale_negative_upper`
+
+```click
+axiom float64_scale_negative_upper(factor: double, x: double, bound: double) {
+    requires x >= bound;
+    requires isfinite(factor);
+    requires factor < float64_from_bits(0u64);
+    ensures factor * x <= factor * bound;
+}
+```
+
+### `float_order::float64_scale_negative_right_lower`
+
+```click
+axiom float64_scale_negative_right_lower(factor: double, x: double, bound: double) {
+    requires x <= bound;
+    requires isfinite(factor);
+    requires factor < float64_from_bits(0u64);
+    ensures x * factor >= bound * factor;
+}
+```
+
+### `float_order::float64_scale_negative_right_upper`
+
+```click
+axiom float64_scale_negative_right_upper(factor: double, x: double, bound: double) {
+    requires x >= bound;
+    requires isfinite(factor);
+    requires factor < float64_from_bits(0u64);
+    ensures x * factor <= bound * factor;
 }
 ```

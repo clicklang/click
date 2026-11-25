@@ -27,7 +27,17 @@ fn grow(s: Shape) -> Shape {
         Shape::Circle(r) => Shape::Circle(r + 1u32),
         Shape::Rect(w, h) => Shape::Rect(w, h),
         Shape::Empty => Shape::Empty,
-    };
+    } by {
+        match s {
+            Shape::Circle(r) => {
+                step_until(function.exit);
+                rewrite(s, Shape::Circle(r));
+                normalize() using {};
+            },
+            Shape::Rect(w, h) => { step_until(function.exit); close(); },
+            Shape::Empty => { step_until(function.exit); close(); },
+        }
+    }
 }
 
 // The split the implicit tail makes, written out.

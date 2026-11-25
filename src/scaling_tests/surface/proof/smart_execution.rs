@@ -11,22 +11,22 @@ fn prepared_pure_application_ignores_unrelated_facts() {
     ).unwrap();
     let application = TheoremApplication {
         name: "accept".into(),
-        arguments: vec![SurfaceTerm::AlgebraicConstructor {
+        arguments: vec![SyntaxTerm::AlgebraicConstructor {
             algebraic_type: AlgebraicTypeApplication {
                 rigid: false,
                 name: "Count".into(),
                 arguments: vec![],
             },
             variant: "At".into(),
-            arguments: vec![SurfaceTerm::Subtract(
-                Box::new(SurfaceTerm::Binding("x".into())),
-                Box::new(SurfaceTerm::IntegerLiteral("1".into())),
+            arguments: vec![SyntaxTerm::Subtract(
+                Box::new(SyntaxTerm::Binding("x".into())),
+                Box::new(SyntaxTerm::IntegerLiteral("1".into())),
             )],
         }],
     };
-    let guard = SurfaceProposition::Defined {
+    let guard = SyntaxProposition::Defined {
         expression: match &application.arguments[0] {
-            SurfaceTerm::AlgebraicConstructor { arguments, .. } => arguments[0].clone(),
+            SyntaxTerm::AlgebraicConstructor { arguments, .. } => arguments[0].clone(),
             _ => unreachable!(),
         },
     };
@@ -64,10 +64,10 @@ fn prepared_pure_application_ignores_unrelated_facts() {
                 crate::kernel::Variable(100_000 + index as u64),
             ));
             values.insert(name.clone(), value);
-            let surface = SurfaceProposition::Comparison {
-                left: SurfaceTerm::Binding(name),
+            let surface = SyntaxProposition::Comparison {
+                left: SyntaxTerm::Binding(name),
                 operator: ComparisonOperator::Equal,
-                right: SurfaceTerm::IntegerLiteral(index.to_string()),
+                right: SyntaxTerm::IntegerLiteral(index.to_string()),
             };
             let fact = lower_pure_theorem_proposition(
                 "unrelated guard fact",

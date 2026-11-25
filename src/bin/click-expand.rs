@@ -1025,17 +1025,51 @@ int32 identity(int32 x) {
             }
         }
 
-        let negative_product = directory.path().join("negative_product.click");
+        let negative_multiplication = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/float32_negative_literal_multiplication.md");
+        check(&negative_multiplication, "negative_product.ensures_0").unwrap();
+        for (claim, side) in [
+            ("multiply_left.ensures_0", ""),
+            ("multiply_right.ensures_0", "right_"),
+        ] {
+            let expanded = check(&negative_multiplication, claim).unwrap();
+            for bound in ["lower", "upper"] {
+                assert!(
+                    expanded.contains(&format!("float32_scale_negative_{side}{bound}")),
+                    "{claim}: {expanded}"
+                );
+            }
+        }
+
+        let double_scaling = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/float64_multiplication_by_literal.md");
+        check(&double_scaling, "double_product.ensures_0").unwrap();
+        for (claim, law) in [
+            ("positive_left.ensures_0", "scale_"),
+            ("positive_right.ensures_0", "scale_right_"),
+            ("negative_left.ensures_0", "scale_negative_"),
+            ("negative_right.ensures_0", "scale_negative_right_"),
+        ] {
+            let expanded = check(&double_scaling, claim).unwrap();
+            for bound in ["lower", "upper"] {
+                assert!(
+                    expanded.contains(&format!("float64_{law}{bound}")),
+                    "{claim}: {expanded}"
+                );
+            }
+        }
+
+        let nonzero = directory.path().join("nonzero.click");
         fs::write(
-            &negative_product,
-            r#"theorem negative_product(x: float) {
-    requires x >= float32_from_bits(0xc1200000);
-    ensures x * float32_from_bits(0xc0000000) <= float32_from_bits(0x41a00000) by close();
+            &nonzero,
+            r#"theorem nonzero(x: uint64) {
+    requires 0u64 < x;
+    ensures x != 0u64 by close();
 }
 "#,
         )
         .unwrap();
-        let generated = check(&negative_product, "negative_product.ensures_0").unwrap_err();
+        let generated = check(&nonzero, "nonzero.ensures_0").unwrap_err();
         assert!(
             generated.contains("Expanded proof still contains normalize()"),
             "{generated}"

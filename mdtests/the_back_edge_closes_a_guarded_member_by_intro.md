@@ -65,6 +65,10 @@ int32 count_run(int32 n) {
                 have 0 <= run and run <= i;
                 have i <= 2 and run == 0;
                 have (i <= 2 and run == 0) or (2 <= i and to_integer(2 + run) == to_integer(i)) by close();
+                have ((i <= 2 and run == 0) or (2 <= i implies defined(2 + run))) implies
+                    ((i <= 2 and run == 0) or (2 <= i and to_integer(2 + run) == to_integer(i))) by {
+                    intro() { close(); }
+                }
                 have 0 <= to_integer(n) - to_integer(i) by {
                     close() using { i <= n; };
                 }
@@ -106,13 +110,26 @@ int32 count_run(int32 n) {
                 have to_integer(2) + to_integer(run) <= 2147483647;
                 have to_integer(2) + to_integer(run) >= -2147483648;
                 have defined(2 + run);
+                have 2 <= i;
+                have to_integer(2 + run) == to_integer(i) by {
+                    have to_integer(2 + run) == 2 + to_integer(run) by {
+                        apply(integer::int32_add_to_integer(2, run));
+                    }
+                    rewrite(to_integer(2 + run), 2 + to_integer(run));
+                    rewrite(to_integer(run), to_integer(at(iteration, run)) + 1);
+                    rewrite(to_integer(i), to_integer(at(iteration, i)) + 1);
+                    rewrite(to_integer(at(iteration, i)), to_integer(2 + at(iteration, run)));
+                    rewrite(to_integer(2 + at(iteration, run)), 2 + to_integer(at(iteration, run)));
+                    close();
+                }
                 have 2 <= i and to_integer(2 + run) == to_integer(i);
                 have (i <= 2 and run == 0) or (2 <= i and to_integer(2 + run) == to_integer(i)) by close();
+                have ((i <= 2 and run == 0) or (2 <= i implies defined(2 + run))) implies
+                    ((i <= 2 and run == 0) or (2 <= i and to_integer(2 + run) == to_integer(i))) by {
+                    intro() { close(); }
+                }
                 have to_integer(2 + run) == 2 + to_integer(run) by {
-                    normalize() using {
-                        to_integer(2) + to_integer(run) >= -2147483648;
-                        to_integer(2) + to_integer(run) <= 2147483647;
-                    };
+                    apply(integer::int32_add_to_integer(2, run));
                 }
                 have (i <= 2 and run == 0) or (2 <= i and 2 + to_integer(run) == to_integer(i)) by {
                     rewrite(2 + to_integer(run), to_integer(2 + run));

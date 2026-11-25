@@ -6,10 +6,10 @@ fn retained_pure_citations_use_singletons_without_scanning_related_or_unrelated_
     let point = crate::kernel::ProgramPoint::starting_at(&SymbolicMemory::new());
     let value = MachineTerm::Variable(Variable(987_123));
     let values = ProgramValueBindings::from([("n".into(), ProgramValue::Int32(value))]);
-    let source = SurfaceProposition::Comparison {
-        left: SurfaceTerm::ProgramExpression(ProgramExpression::Variable("n".into())),
+    let source = SyntaxProposition::Comparison {
+        left: SyntaxTerm::ProgramExpression(ProgramExpression::Variable("n".into())),
         operator: ComparisonOperator::GreaterEqual,
-        right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
+        right: SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
     };
     let expected = super::super::pure_theorems::lower_pure_theorem_proposition(
         "retained citation",
@@ -41,10 +41,10 @@ fn retained_pure_citations_use_singletons_without_scanning_related_or_unrelated_
             );
             let mut proof = root.with_local_surface_fact(&source, &expected).unwrap();
             for index in 0..size {
-                let different = SurfaceProposition::Comparison {
-                    left: SurfaceTerm::ProgramExpression(ProgramExpression::Variable("n".into())),
+                let different = SyntaxProposition::Comparison {
+                    left: SyntaxTerm::ProgramExpression(ProgramExpression::Variable("n".into())),
                     operator: ComparisonOperator::GreaterEqual,
-                    right: SurfaceTerm::IntegerLiteral((index + 1).to_string()),
+                    right: SyntaxTerm::IntegerLiteral((index + 1).to_string()),
                 };
                 let fact = Proposition::condition_is(
                     ConditionTerm::IntegerLessEqual(

@@ -184,25 +184,25 @@ pub(in crate::surface) fn selected_program_state<'a>(
 
 pub(in crate::surface) fn contract_array_ref_element_type(
     array_refs: &ClickArrayRefs,
-    expression: &SurfaceTerm,
+    expression: &SyntaxTerm,
 ) -> Option<ProgramType> {
     match expression {
-        SurfaceTerm::Binding(name)
-        | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+        SyntaxTerm::Binding(name)
+        | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         ))
-        | SurfaceTerm::ProgramBinding(name) => {
+        | SyntaxTerm::ProgramBinding(name) => {
             array_refs.get(name).map(|array_ref| array_ref.element_type)
         }
-        SurfaceTerm::Old(expression) | SurfaceTerm::Exact(expression) => {
+        SyntaxTerm::Old(expression) | SyntaxTerm::Exact(expression) => {
             contract_array_ref_element_type(array_refs, expression)
         }
-        SurfaceTerm::At { expression, .. } => {
+        SyntaxTerm::At { expression, .. } => {
             contract_array_ref_element_type(array_refs, expression)
         }
-        SurfaceTerm::Add(left, right) => contract_array_ref_element_type(array_refs, left)
+        SyntaxTerm::Add(left, right) => contract_array_ref_element_type(array_refs, left)
             .or_else(|| contract_array_ref_element_type(array_refs, right)),
-        SurfaceTerm::Subtract(left, _) => contract_array_ref_element_type(array_refs, left),
+        SyntaxTerm::Subtract(left, _) => contract_array_ref_element_type(array_refs, left),
         _ => None,
     }
 }

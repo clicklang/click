@@ -5916,7 +5916,8 @@ fn substitute_through_load_variable(
     if !crate::kernel::is_load_variable(&variable) {
         return None;
     }
-    let (memory, pointer) = crate::kernel::eval::registered_load_for_variable(&variable)?;
+    let (registered, pointer) = crate::kernel::eval::registered_load_point_for_variable(&variable)?;
+    let memory = registered.shared_memory().clone();
     let kind = crate::kernel::eval::registered_load_kind_for_variable(&variable)?;
     let substituted_pointer = Address {
         base: pointer.base.clone(),
@@ -5944,12 +5945,17 @@ fn substitute_through_load_variable(
     // a direct lowering does. Sound: two states with one projection agree
     // on every cell the address may observe for every value of its
     // variables, and an instance observes no more of them than that.
-    let substituted_memory = if substituted_pointer == pointer {
-        substituted_memory
+    // A renaming is a view of the registered read's state; a projection's
+    // source is an earlier state the walk does not name.
+    let (substituted_memory, place) = if substituted_pointer == pointer {
+        (substituted_memory, ProgramPoint::viewing as fn(&_, &_) -> _)
     } else {
         match super::memory_resolution::canonical_load_projection_source(&memory, &pointer) {
-            Some(source) => substitute_bitvector_variable_in_shared_memory(&source, from, to),
-            None => substituted_memory,
+            Some(source) => (
+                substitute_bitvector_variable_in_shared_memory(&source, from, to),
+                ProgramPoint::walked as fn(&_, &_) -> _,
+            ),
+            None => (substituted_memory, ProgramPoint::viewing as fn(&_, &_) -> _),
         }
     };
     // Instantiation preserves the original read's byte dependency. Without
@@ -5964,7 +5970,7 @@ fn substitute_through_load_variable(
     }
     Some(crate::kernel::eval::canonical_term(
         &crate::kernel::MachineTerm::read_named(
-            ProgramPoint::at(&substituted_memory),
+            place(&substituted_memory, &registered),
             substituted_pointer,
             kind,
         ),
@@ -6168,7 +6174,7 @@ pub(crate) fn substitute_bitvector_variable(
                 );
                 return crate::kernel::eval::canonical_term(
                     &crate::kernel::MachineTerm::read_named(
-                        ProgramPoint::at_read_site(&source, memory),
+                        ProgramPoint::read_at(&source, memory),
                         rewritten_pointer,
                         *kind,
                     ),
@@ -6186,7 +6192,7 @@ pub(crate) fn substitute_bitvector_variable(
                 );
             }
             crate::kernel::eval::scalar_read_for_exact_cell_at(
-                &ProgramPoint::at_read_site(&rewritten_memory, memory),
+                &ProgramPoint::read_at(&rewritten_memory, memory),
                 &rewritten_pointer,
                 *kind,
                 read.bytes,

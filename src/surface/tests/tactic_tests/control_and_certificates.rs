@@ -647,8 +647,8 @@ fn parses_unfold_proof_tactic() {
                 ProofTactic::UnfoldFunction(ClickFunctionApplication {
                     name: "sorted".into(),
                     arguments: vec![
-                        SurfaceTerm::ProgramExpression(ProgramExpression::Variable("p".into())),
-                        SurfaceTerm::IntegerLiteral("2".into())
+                        SyntaxTerm::ProgramExpression(ProgramExpression::Variable("p".into())),
+                        SyntaxTerm::IntegerLiteral("2".into())
                     ]
                 }),
                 ProofTactic::Close,
@@ -705,7 +705,7 @@ fn rejects_apply_theorem_with_explicit_premises() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_07")]
-fn parses_transport_with_explicit_premises() {
+fn rejects_transport_with_explicit_premises() {
     let source = FILL3_CLICK.replace(
         "== 2;",
         "== 2 by {
@@ -717,13 +717,11 @@ fn parses_transport_with_explicit_premises() {
             close();
         }",
     );
-    let file = parse(&source).expect("explicit-premise transport should parse");
-    let ensure = &file.function_blocks()[0].ensures()[0];
-
-    assert!(matches!(
-        &ensure.proof().tactics().expect("expected tactics")[1],
-        ProofTactic::TransportUsing { premises, .. } if premises.len() == 1
-    ));
+    let error = parse(&source).expect_err("the selected-premise form is retired");
+    assert!(
+        error.message().contains("`transport ... using` is retired"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -778,17 +776,17 @@ fn parses_and_classifies_simple_and_smart_tactics() {
     assert!(matches!(
         ProofTactic::ApplyTheoremUsing {
             application,
-            premises: vec![SurfaceProposition::Defined {
+            premises: vec![SyntaxProposition::Defined {
                 expression: current_int(0),
             }],
         }
         .class(),
         TacticClass::Simple(SimpleTactic::ApplyTheorem)
     ));
-    let transport_source = SurfaceProposition::Defined {
+    let transport_source = SyntaxProposition::Defined {
         expression: current_int(0),
     };
-    let transport_target = SurfaceProposition::Defined {
+    let transport_target = SyntaxProposition::Defined {
         expression: current_int(1),
     };
     assert!(matches!(
@@ -797,10 +795,10 @@ fn parses_and_classifies_simple_and_smart_tactics() {
             target: transport_target.clone(),
         }
         .class(),
-        TacticClass::Smart(SmartSite::Elided(ElidedArgument::FrameEvidence))
+        TacticClass::Smart(SmartSite::FactTransport)
     ));
     assert!(matches!(
-        ProofTactic::TransportUsing {
+        ProofTactic::CompatibilityFactTransport {
             source: transport_source,
             target: transport_target,
             premises: Vec::new(),
@@ -863,10 +861,10 @@ fn parses_and_classifies_simple_and_smart_tactics() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_07")]
 fn canonical_tactic_printer_round_trips_nested_surface_certificate() {
-    let nonnegative = SurfaceProposition::Comparison {
-        left: SurfaceTerm::ProgramExpression(ProgramExpression::Variable(("x".to_string()).into())),
+    let nonnegative = SyntaxProposition::Comparison {
+        left: SyntaxTerm::ProgramExpression(ProgramExpression::Variable(("x".to_string()).into())),
         operator: ComparisonOperator::GreaterEqual,
-        right: SurfaceTerm::IntegerLiteral("0".into()),
+        right: SyntaxTerm::IntegerLiteral("0".into()),
     };
     let tactics = vec![
         ProofTactic::Mark("before_step".to_string()),
@@ -909,18 +907,18 @@ fn canonical_tactic_printer_round_trips_nested_surface_certificate() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_07")]
 fn canonical_tactic_printer_round_trips_cases_certificate() {
-    let nonnegative = SurfaceProposition::Comparison {
-        left: SurfaceTerm::ProgramExpression(ProgramExpression::Variable(("x".to_string()).into())),
+    let nonnegative = SyntaxProposition::Comparison {
+        left: SyntaxTerm::ProgramExpression(ProgramExpression::Variable(("x".to_string()).into())),
         operator: ComparisonOperator::GreaterEqual,
-        right: SurfaceTerm::IntegerLiteral("0".into()),
+        right: SyntaxTerm::IntegerLiteral("0".into()),
     };
-    let negative = SurfaceProposition::Comparison {
-        left: SurfaceTerm::ProgramExpression(ProgramExpression::Variable(("x".to_string()).into())),
+    let negative = SyntaxProposition::Comparison {
+        left: SyntaxTerm::ProgramExpression(ProgramExpression::Variable(("x".to_string()).into())),
         operator: ComparisonOperator::LessThan,
-        right: SurfaceTerm::IntegerLiteral("0".into()),
+        right: SyntaxTerm::IntegerLiteral("0".into()),
     };
     let disjunction =
-        SurfaceProposition::Or(Box::new(nonnegative.clone()), Box::new(negative.clone()));
+        SyntaxProposition::Or(Box::new(nonnegative.clone()), Box::new(negative.clone()));
     let tactics = vec![
         ProofTactic::Have(ProofHave {
             proposition: disjunction.clone(),
@@ -959,7 +957,7 @@ fn canonical_tactic_printer_round_trips_cases_certificate() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_08")]
 fn proof_certificate_round_trips_nested_surface_steps() {
-    let reflexive = SurfaceProposition::Comparison {
+    let reflexive = SyntaxProposition::Comparison {
         left: current_var("x"),
         operator: ComparisonOperator::Equal,
         right: current_var("x"),
@@ -1006,7 +1004,7 @@ fn proof_certificate_has_no_smart_step_variant() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_08")]
 fn tactic_certificate_accepts_only_simple_tactics() {
     let tactics = vec![
-        ProofTactic::Rewrite(SurfaceProposition::Comparison {
+        ProofTactic::Rewrite(SyntaxProposition::Comparison {
             left: current_var("x"),
             operator: ComparisonOperator::Equal,
             right: current_var("y"),
@@ -1036,7 +1034,7 @@ fn tactic_certificate_rejects_a_direct_smart_tactic() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_09")]
 fn tactic_certificate_rejects_smart_tactics_in_nested_control_tactics() {
-    let condition = SurfaceProposition::Comparison {
+    let condition = SyntaxProposition::Comparison {
         left: current_var("x"),
         operator: ComparisonOperator::Equal,
         right: current_var("x"),
@@ -1047,7 +1045,7 @@ fn tactic_certificate_rejects_smart_tactics_in_nested_control_tactics() {
             ensuring: None,
             condition,
             then_tactics: vec![ProofTactic::Have(ProofHave {
-                proposition: SurfaceProposition::Comparison {
+                proposition: SyntaxProposition::Comparison {
                     left: current_var("x"),
                     operator: ComparisonOperator::Equal,
                     right: current_var("x"),
@@ -1089,7 +1087,7 @@ fn tactic_certificate_checks_structural_induction_arms() {
             hypothesis: "ih".into(),
         },
         ProofTactic::Match(std::sync::Arc::new(ProofMatch {
-            scrutinee: SurfaceTerm::Binding("xs".into()),
+            scrutinee: SyntaxTerm::Binding("xs".into()),
             ensuring: None,
             arms: vec![ProofInductionArm {
                 type_name: "List".into(),
@@ -1120,7 +1118,7 @@ fn tactic_certificate_checks_structural_induction_arms() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_09")]
 fn tactic_certificate_treats_an_omitted_nested_proof_as_solve() {
     let tactics = [ProofTactic::Have(ProofHave {
-        proposition: SurfaceProposition::Comparison {
+        proposition: SyntaxProposition::Comparison {
             left: current_var("x"),
             operator: ComparisonOperator::Equal,
             right: current_var("x"),
@@ -1470,7 +1468,7 @@ test_batches! {
         rejects_apply_theorem_with_explicit_premises,
     ],
     control_batch_07: [
-        parses_transport_with_explicit_premises,
+        rejects_transport_with_explicit_premises,
         parses_and_classifies_simple_and_smart_tactics,
         canonical_tactic_printer_round_trips_nested_surface_certificate,
         canonical_tactic_printer_round_trips_cases_certificate,

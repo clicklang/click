@@ -70,7 +70,12 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                     rewrite(Color::Black, color);
                     rewrite(color, rb_color(old(tree.model))); close();
                 }
-                have erase_leaf_result(old(up.model), rb_color(old(tree.model))) == erase_flips_red_all_result(old(up.model), RbTree::Empty);
+                have erase_leaf_result(old(up.model), rb_color(old(tree.model))) == erase_flips_red_all_result(old(up.model), RbTree::Empty) by {
+                    rewrite(rb_color(old(tree.model)), color);
+                    rewrite(color, Color::Black);
+                    unfold(erase_leaf_result(old(up.model), Color::Black));
+                    normalize() using {};
+                }
                 have (node->__rb_parent_color & 1) == 1 by {
                     rewrite((node->__rb_parent_color & 1), color_bit(color));
                     rewrite(color, Color::Black); unfold(color_bit(Color::Black)); normalize();

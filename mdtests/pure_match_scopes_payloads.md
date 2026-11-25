@@ -5,8 +5,8 @@ spec enum Item { Value(int32) }
 theorem escape(item: Item) {
     ensures 1 == 1 by {
         match item { Item::Value(value) => { }, }
-        have value == value by { normalize(); }
-        normalize();
+        have value == value by { close(); }
+        close();
     }
 }
 ```

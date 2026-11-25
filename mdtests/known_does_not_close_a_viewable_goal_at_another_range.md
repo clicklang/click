@@ -1,10 +1,7 @@
-# `close()` does not close a `viewable` goal from a wider range
+# `close()` does not narrow a `viewable` goal
 
-`close()` closes a goal only from the identical available fact
-(`mdtests/known_closes_an_established_viewable_fact.md`). `viewable(a[0..n])`
-is not `viewable(a[0..k])`: narrowing one to the other is `transport … using`,
-which checks the order facts that place `0..k` inside `0..n`. `close()`
-does not narrow.
+A fact for `viewable(a[0..n])` does not close `viewable(a[0..k])` by exact
+lookup. Narrowing requires a containment proof and `viewable_restrict`.
 
 ```c filename=known_does_not_close_a_viewable_goal_at_another_range.c
 int32 probe(int32 a[], int32 n, int32 k) {

@@ -7842,13 +7842,13 @@ pub(super) fn collect_loop_effect_check_obligations(
             };
             !has_disjoint_effect_summary
                 || !explicit_atomic_equality_from_memory_derivations(
-                    &MachineTerm::memory_read(
-                        before_state.memory().clone().into(),
+                    &MachineTerm::read_named(
+                        before_state.memory_named_point(),
                         pointer.clone(),
                         kind,
                     ),
-                    &MachineTerm::memory_read(
-                        after_state.memory().clone().into(),
+                    &MachineTerm::read_named(
+                        after_state.memory_named_point(),
                         pointer.clone(),
                         kind,
                     ),

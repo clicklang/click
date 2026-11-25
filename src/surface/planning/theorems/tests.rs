@@ -145,17 +145,17 @@ fn discovery_respects_library_imports_and_prefixes() {
 fn theorem_matching_retains_typed_c_binding_identity() {
     let owner = crate::kernel::LocalFunctionId::new(Some("caller.c".into()), "caller".into());
     let local = crate::kernel::LocalBindingId::new(owner, false, 1, Some("x".into()));
-    let local = SurfaceTerm::ProgramExpression(ProgramExpression::Variable(local.into()));
+    let local = SyntaxTerm::ProgramExpression(ProgramExpression::Variable(local.into()));
     assert_eq!(parameter_name(&local), None);
-    let named = SurfaceTerm::ProgramExpression(ProgramExpression::Variable("x".into()));
+    let named = SyntaxTerm::ProgramExpression(ProgramExpression::Variable("x".into()));
     assert_eq!(parameter_name(&named), Some("x"));
     let file = parser::parse("function shifted(x: int32) -> Integer { to_integer(x) + 7 } theorem law(x: int32) { ensures 7 <= shifted(x); }").unwrap();
     let theorem = &file.theorem_definitions()[0];
     let Ensure::Proposition(mut goal) = theorem.ensures()[0].ensure().clone() else {
         panic!()
     };
-    let SurfaceProposition::Comparison {
-        right: SurfaceTerm::Call { arguments, .. },
+    let SyntaxProposition::Comparison {
+        right: SyntaxTerm::Call { arguments, .. },
         ..
     } = &mut goal
     else {
@@ -221,8 +221,8 @@ fn nested_comparison_matching_preserves_shared_arguments() {
     assert_eq!(
         applications[0].arguments,
         vec![
-            SurfaceTerm::Binding("a".into()),
-            SurfaceTerm::Binding("b".into())
+            SyntaxTerm::Binding("a".into()),
+            SyntaxTerm::Binding("b".into())
         ]
     );
     let repeated = parser::parse("function image(x: Integer) -> Integer { x } theorem law(x: Integer) { ensures image(x) == x; } theorem target(a: Integer, b: Integer) { ensures b == image(a); }").unwrap();

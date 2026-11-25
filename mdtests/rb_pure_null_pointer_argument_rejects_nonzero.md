@@ -134,7 +134,7 @@ struct rb_node* rb_left_of(struct rb_node* node) {
             have rb_tree_parent_consistent(sub.model)
                 == rb_parent_consistent(sub.model, 0) by {
                 unfold(rb_tree_parent_consistent(sub.model));
-                normalize();
+                close();
             }
             have ctx_holds(Context::Top, sub.model) == 1 by {
                 unfold(ctx_holds(Context::Top, sub.model));

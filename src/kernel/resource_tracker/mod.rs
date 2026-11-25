@@ -671,16 +671,24 @@ pub(crate) fn last_same_version_point(
     resource: TrackedResource<'_>,
     at: &ProgramPoint,
 ) -> Option<ProgramPoint> {
+    last_same_version_memory(resource, at.shared_memory())
+        .map(|memory| ProgramPoint::walked(&memory, at))
+}
+
+/// [`last_same_version_point`] for a caller that asks about a memory, not a
+/// point: the memory the walk from `memory` stops at. No point is made, so
+/// none is claimed.
+#[track_caller]
+pub(crate) fn last_same_version_memory(
+    resource: TrackedResource<'_>,
+    memory: &SharedMemory,
+) -> Option<SharedMemory> {
     match resource {
         TrackedResource::Cell { pointer, bytes } => legacy_walk_audit::counted(&resource, || {
-            cell_last_same_version_point(at.shared_memory(), pointer, bytes)
-                .map(|memory| ProgramPoint::at_read_site(&memory, at))
+            cell_last_same_version_point(memory, pointer, bytes)
         }),
         TrackedResource::Block(block) => legacy_walk_audit::counted(&resource, || {
-            Some(ProgramPoint::at_read_site(
-                &block_last_same_version_point(at.shared_memory(), block),
-                at,
-            ))
+            Some(block_last_same_version_point(memory, block))
         }),
         // No term names a memory footprint, so a footprint has no naming path
         // to be the oldest point of. Its one caller knows both ends of the
@@ -706,7 +714,10 @@ pub(crate) fn last_same(resource: TrackedResource<'_>, at: &ProgramPoint) -> Opt
         TrackedResource::Cell { pointer, bytes } => last_same_named_cell(pointer, bytes, at),
         TrackedResource::Block(block) => {
             let point = legacy_walk_audit::counted(&resource, || {
-                ProgramPoint::at(&block_last_same_version_point(at.shared_memory(), block))
+                ProgramPoint::walked(
+                    &block_last_same_version_point(at.shared_memory(), block),
+                    at,
+                )
             });
             let stopped_by = Stop::at_point(&point, resource);
             Some(LastSame { point, stopped_by })
@@ -727,8 +738,24 @@ pub(crate) fn last_same_named_cell(
     bytes: AccessExtent,
     at: &ProgramPoint,
 ) -> Option<LastSame> {
+    let (memory, stopped_by) = last_same_cell_memory(at.shared_memory(), pointer, bytes)?;
+    Some(LastSame {
+        point: ProgramPoint::walked(&memory, at),
+        stopped_by,
+    })
+}
+
+/// [`last_same_named_cell`] for a caller that asks about a memory, not a
+/// point: the memory the walk from `memory` stops at, and why. No point is
+/// made, so none is claimed.
+#[track_caller]
+pub(crate) fn last_same_cell_memory(
+    memory: &SharedMemory,
+    pointer: &Address,
+    bytes: AccessExtent,
+) -> Option<(SharedMemory, Stop)> {
     let version = legacy_walk_audit::counted(&TrackedResource::Cell { pointer, bytes }, || {
-        cell_last_same_version(at.shared_memory(), pointer, bytes)
+        cell_last_same_version(memory, pointer, bytes)
     })?;
     let change = version
         .memory
@@ -736,13 +763,13 @@ pub(crate) fn last_same_named_cell(
         .map_or(Change::BeginningOfHistory, |edge| {
             Change::of_derivation(&edge)
         });
-    Some(LastSame {
-        point: ProgramPoint::at(&version.memory),
-        stopped_by: Stop {
+    Some((
+        version.memory,
+        Stop {
             change,
             reason: version.reason,
         },
-    })
+    ))
 }
 
 /// Whether the resource is known to hold the same version at both points.
@@ -1658,7 +1685,7 @@ fn collect_address_base_reads(block: &AddressBase, reads: &mut Vec<ResourceRead>
                 pointer: load.cell().clone(),
                 bytes: crate::kernel::AccessExtent::from(crate::kernel::C_POINTER_BYTE_WIDTH),
             },
-            ProgramPoint::at(load.point().shared_memory()),
+            ProgramPoint::viewing(load.point().shared_memory(), load.point()),
         );
     }
 }

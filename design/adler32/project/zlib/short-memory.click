@@ -217,14 +217,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have len <= 15u64;
    have len <= 9223372036854775807u64;
    have viewable(buf[0u64..len]) by {
-    transport(at(before_decrement, viewable(buf[0u64..len])), viewable(buf[0u64..len])) using {
-     buf == at(before_decrement, buf) + 1u64;
-     at(before_decrement, viewable(buf[0u64..len]));
-     1u64 <= at(before_decrement, len);
-     len <= at(before_decrement, len) - 1u64;
-     len <= 15u64;
-     len <= 9223372036854775807u64;
-    };
+    transport(at(before_decrement, viewable(buf[0u64..len])), viewable(buf[0u64..len]));
    }
    have old(len) - len <= 15u64 by {
     have to_integer(old(len) - len) <= 15 by close() using {

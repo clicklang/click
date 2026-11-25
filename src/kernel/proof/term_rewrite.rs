@@ -4072,12 +4072,13 @@ impl<'a> TermRewrite<'a> {
                     }
                 } else {
                     AlgebraicTermNode::MemoryLoad {
-                        point: crate::kernel::ProgramPoint::at(
+                        point: crate::kernel::ProgramPoint::walked(
                             &crate::kernel::memory_history::canonical_value_load_memory(
                                 point.shared_memory(),
                                 &pointer,
                                 crate::kernel::AccessExtent::of_algebraic(&term.algebraic_type),
                             ),
+                            point,
                         ),
                         pointer: Box::new(pointer),
                     }
@@ -4113,12 +4114,13 @@ impl<'a> TermRewrite<'a> {
                                 )
                                 .unwrap_or_else(|| memory.shared_memory().clone());
                                 AlgebraicTermNode::MemoryLoad {
-                                    point: crate::kernel::ProgramPoint::at(
+                                    point: crate::kernel::ProgramPoint::walked(
                                         &crate::kernel::memory_history::canonical_value_load_memory(
                                             &origin,
                                             &moved_pointer,
                                             extent,
                                         ),
+                                        memory,
                                     ),
                                     pointer: moved_pointer,
                                 }
@@ -7137,16 +7139,17 @@ impl<'a> TermRewrite<'a> {
                     );
                     return crate::kernel::eval::canonical_term(
                         &crate::kernel::MachineTerm::read_named(
-                            ProgramPoint::at(&source),
+                            ProgramPoint::walked(&source, memory.point()),
                             rewritten,
                             *kind,
                         ),
                     );
                 }
-                let memory = observation
+                let source_point = observation
                     .filter(|_| use_origin)
-                    .and_then(|read| read.origin.map(|point| point.into_shared_memory()))
-                    .unwrap_or_else(|| memory.shared_memory().clone());
+                    .and_then(|read| read.origin)
+                    .unwrap_or_else(|| memory.point().clone());
+                let memory = source_point.shared_memory().clone();
                 if self.resolve_registered_loads
                     && let Some(value) = memory
                         .memory()
@@ -7172,7 +7175,12 @@ impl<'a> TermRewrite<'a> {
                 } else {
                     memory
                 };
-                crate::kernel::eval::scalar_read_for_exact_cell(&memory, &rewritten, *kind, bytes)
+                crate::kernel::eval::scalar_read_for_exact_cell_at(
+                    &ProgramPoint::viewing(&memory, &source_point),
+                    &rewritten,
+                    *kind,
+                    bytes,
+                )
             }
             MachineTerm::IntegerAddress(pointer, class) => {
                 MachineTerm::object_pointer_address(self.pointer(pointer), class.class())
@@ -9540,8 +9548,11 @@ mod pointer_integer_rewrite_tests {
             },
             stored.clone(),
         ));
-        let read =
-            AlgebraicTermNode::parameter_load(memory.clone(), from.address().clone(), parameter);
+        let read = AlgebraicTermNode::parameter_load_unsited(
+            memory.clone(),
+            from.address().clone(),
+            parameter,
+        );
         // A separate four-byte observation must not replace the generic
         // read's eight-byte origin when the same version name is reused.
         let partial = crate::kernel::intern_memory(memory.memory().clone().store(
@@ -9553,7 +9564,8 @@ mod pointer_integer_rewrite_tests {
         ));
         let _ =
             crate::kernel::memory_history::canonical_value_load_memory(&partial, from.address(), 4);
-        let expected = AlgebraicTermNode::parameter_load(memory, to.address().clone(), parameter);
+        let expected =
+            AlgebraicTermNode::parameter_load_unsited(memory, to.address().clone(), parameter);
         assert_ne!(expected, stored, "a rewritten logical read stays a read");
         let rewritten = TermRewrite::for_pointer_value_exact(&from, &to).value(&read);
         assert_eq!(rewritten, expected);

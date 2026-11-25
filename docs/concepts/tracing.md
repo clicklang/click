@@ -98,9 +98,7 @@ explanation.
 
 Before splitting a link, identify the inference that should justify it. A
 single proof step has specified premises, a specified conclusion, and a
-checked rule connecting them. Counting tactic calls is insufficient: one
-`transport ... using` can still hide a history walk. Conversely, an explicit
-certificate may contain several primitive steps.
+checked rule connecting them. A certificate may contain several primitive steps.
 
 Use this map to find the applicable rule, then read its full **Accepts** list
 and checked examples. The linked tactic reference is the catalog of supported
@@ -116,7 +114,7 @@ that every current implementation meets the checking-cost contract.
 | Apply a mathematical or separation law | [Theorem application](../reference/tactics/index.md#theorem-application), [library laws](../reference/library/index.md) | The named theorem, typed arguments, and each instantiated requirement |
 | Establish arithmetic | [Ordinary arithmetic proofs](../reference/tactics/index.md#ordinary-arithmetic-proofs) | Named laws, cited premises, and explicit intermediate facts |
 | Execute one program statement | [Single statements](../reference/tactics/index.md#single-statements), [one statement obligation](../reference/tactics/index.md#one-statement-obligation) | The statement, its preconditions, and resulting state/effect |
-| Preserve a fact across a state transition | [Preservation](../reference/tactics/index.md#preservation), [Transport with selected premises](../reference/tactics/index.md#transport-with-selected-premises) | The source fact, before/after states, checked effect, and separation or other frame premises |
+| Preserve a fact across a state transition | [Preservation](../reference/tactics/index.md#preservation) | The source fact, before/after states, checked effect, and separation or other frame premises |
 | Establish current live storage | [Observing resources](../reference/tactics/index.md#observing-resources) | One exact held memory range, named by `observe(p[lo..hi])`; this establishes liveness, not initialization or a stored value |
 | Manipulate ownership or open a resource definition | [Scoped resource opening](../reference/tactics/index.md#scoped-resource-opening), [tactic reference](../reference/tactics/index.md) | The selected resource instance, its definition, and required ownership quantities |
 
@@ -248,13 +246,10 @@ that obligation.
    line is the written form of an argument its search chose ([Reading trace
    output](#reading-trace-output)). Writing those out leaves only the
    unproved part of the link.
-6. **On a search miss, write the argument.** An elided form, such as
-   `apply(t(x))` or a bare `transport(P, Q)`, searches for an argument that
-   a simple form of the same tactic takes written. When the search finds
-   nothing, the heading is `unsuccessful search` and the report may name the
-   tactic on a `refused by:` line. State the missing fact with `have`
-   first, or write the `using` form, and run again. Only the written form's
-   refusal can be `tactic-bug`.
+6. **On a search miss, prove the missing link explicitly.** Under
+   `unsuccessful search`, the report may name the tactic on a `refused by:`
+   line. For a transport miss, prove the frame with `have`, `preserve`,
+   and `rewrite`.
 
 Before each run, say in one line which link is new and why it should hold.
 Changing a tactic, its written form, or its position without changing the chain

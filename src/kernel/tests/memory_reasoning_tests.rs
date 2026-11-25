@@ -2049,8 +2049,12 @@ fn direct_transport_composes_framed_loads_inside_an_indexed_address() {
             writes: vec![(written_cell, crate::kernel::AccessExtent::from(4))],
         });
 
-    let theorem = prove_program_condition_fact_direct_transport(&fact, &after, &assumptions)
-        .expect("the address loads and then the indexed cell should transport");
+    let theorem = prove_program_condition_fact_direct_transport(
+        &fact,
+        &crate::kernel::ProgramPoint::of_memory(&after),
+        &assumptions,
+    )
+    .expect("the address loads and then the indexed cell should transport");
     let (premises, target) = program_condition_fact_transport_parts(&theorem, &fact)
         .expect("transport theorem must retain its explicit source");
     assert!(!premises.is_empty());
@@ -2091,11 +2095,12 @@ fn direct_transport_rewrites_loads_inside_pointer_equality() {
     );
     let after = before.clone().with_block("local:result", 8);
 
-    let theorem =
-        prove_program_condition_fact_direct_transport(&fact, &after, &PureFactContext::new())
-            .expect(
-                "an unrelated local-memory change should transport a pointer-valued field load",
-            );
+    let theorem = prove_program_condition_fact_direct_transport(
+        &fact,
+        &crate::kernel::ProgramPoint::of_memory(&after),
+        &PureFactContext::new(),
+    )
+    .expect("an unrelated local-memory change should transport a pointer-valued field load");
     let Proposition::Implies(source, target) = theorem.proposition() else {
         panic!("transport theorem must be an implication");
     };
@@ -2154,8 +2159,12 @@ fn packed_word_pointer_transport_requires_all_eight_bytes() {
             field.offset_by_bytes(offset),
             ProgramValue::UInt32(MachineTerm::constant(7)),
         );
-        let theorem = prove_program_condition_fact_transport(&source, &after, &context)
-            .expect("separate metadata preserves the complete packed pointer");
+        let theorem = prove_program_condition_fact_transport(
+            &source,
+            &crate::kernel::ProgramPoint::of_memory(&after),
+            &context,
+        )
+        .expect("separate metadata preserves the complete packed pointer");
         let (_, target) =
             crate::kernel::program_condition_fact_transport_parts(&theorem, &source).unwrap();
         assert_ne!(target, &source);
@@ -2166,7 +2175,12 @@ fn packed_word_pointer_transport_requires_all_eight_bytes() {
             ProgramValue::UInt32(MachineTerm::constant(7)),
         );
         assert!(
-            prove_program_condition_fact_transport(&source, &after, &context).is_none(),
+            prove_program_condition_fact_transport(
+                &source,
+                &crate::kernel::ProgramPoint::of_memory(&after),
+                &context
+            )
+            .is_none(),
             "a partial overwrite at {offset} must not preserve the full pointer"
         );
     }
@@ -2190,11 +2204,12 @@ fn direct_transport_rewrites_loads_inside_signed_add_overflow_guard() {
     );
     let after = before.clone().with_block("local:result", 4);
 
-    let theorem =
-        prove_program_condition_fact_direct_transport(&fact, &after, &PureFactContext::new())
-            .expect(
-                "an unrelated local allocation should transport an arithmetic definedness guard",
-            );
+    let theorem = prove_program_condition_fact_direct_transport(
+        &fact,
+        &crate::kernel::ProgramPoint::of_memory(&after),
+        &PureFactContext::new(),
+    )
+    .expect("an unrelated local allocation should transport an arithmetic definedness guard");
     let Proposition::Implies(source, target) = theorem.proposition() else {
         panic!("transport theorem must be an implication");
     };
@@ -2552,7 +2567,12 @@ fn atomic_condition_fact_transport_does_not_plan_from_an_effect_summary() {
     });
 
     assert!(
-        prove_program_condition_fact_transport(&fact, &after, &assumptions).is_none(),
+        prove_program_condition_fact_transport(
+            &fact,
+            &crate::kernel::ProgramPoint::of_memory(&after),
+            &assumptions
+        )
+        .is_none(),
         "ordinary fact transport must not plan load equality from ambient effect summaries",
     );
 }
@@ -2618,8 +2638,12 @@ fn atomic_condition_fact_transport_ignores_distinct_materialized_cell() {
         true,
     );
 
-    let theorem = prove_program_condition_fact_transport(&fact, &after, &PureFactContext::new())
-        .expect("a distinct materialized cell must not change the framed load");
+    let theorem = prove_program_condition_fact_transport(
+        &fact,
+        &crate::kernel::ProgramPoint::of_memory(&after),
+        &PureFactContext::new(),
+    )
+    .expect("a distinct materialized cell must not change the framed load");
     assert_eq!(
         theorem.proposition(),
         &Proposition::Implies(
@@ -2679,7 +2703,12 @@ fn pointer_offset_fact_transport_does_not_plan_from_an_effect_summary() {
     });
 
     assert!(
-        prove_program_condition_fact_transport(&fact, &after, &assumptions).is_none(),
+        prove_program_condition_fact_transport(
+            &fact,
+            &crate::kernel::ProgramPoint::of_memory(&after),
+            &assumptions
+        )
+        .is_none(),
         "pointer-offset transport must require checked load-equality evidence",
     );
 }
@@ -2964,7 +2993,12 @@ fn atomic_condition_fact_transport_does_not_plan_from_a_separate_range() {
         });
 
     assert!(
-        prove_program_condition_fact_transport(&fact, &after, &assumptions).is_none(),
+        prove_program_condition_fact_transport(
+            &fact,
+            &crate::kernel::ProgramPoint::of_memory(&after),
+            &assumptions
+        )
+        .is_none(),
         "ordinary fact transport must not synthesize a frame from ambient separation",
     );
 }
@@ -3048,8 +3082,12 @@ fn direct_condition_transport_uses_relative_separate_range() {
         })
         .assume_proposition(effect.clone());
 
-    let theorem = prove_program_condition_fact_direct_transport(&fact, &after, &assumptions)
-        .expect("relative exact separation should directly frame the data load");
+    let theorem = prove_program_condition_fact_direct_transport(
+        &fact,
+        &crate::kernel::ProgramPoint::of_memory(&after),
+        &assumptions,
+    )
+    .expect("relative exact separation should directly frame the data load");
     let (premises, target) = program_condition_fact_transport_parts(&theorem, &fact)
         .expect("transport theorem must retain its explicit source");
     // Two more premises than the separation and the effect: the nonnegativity
@@ -3134,8 +3172,12 @@ fn direct_condition_transport_uses_indexed_relative_separate_range() {
         })
         .assume_proposition(effect.clone());
 
-    let theorem = prove_program_condition_fact_direct_transport(&fact, &after, &assumptions)
-        .expect("an indexed pointer in a relative separate range should be directly framed");
+    let theorem = prove_program_condition_fact_direct_transport(
+        &fact,
+        &crate::kernel::ProgramPoint::of_memory(&after),
+        &assumptions,
+    )
+    .expect("an indexed pointer in a relative separate range should be directly framed");
     let (premises, target) = program_condition_fact_transport_parts(&theorem, &fact)
         .expect("transport theorem must retain its explicit source");
     // Two more premises than the separation and the effect: the nonnegativity
@@ -3186,8 +3228,12 @@ fn condition_fact_transport_preserves_arithmetic_structure() {
         true,
     );
 
-    let theorem = prove_program_condition_fact_transport(&fact, &after, &PureFactContext::new())
-        .expect("arithmetic around a framed load should transport structurally");
+    let theorem = prove_program_condition_fact_transport(
+        &fact,
+        &crate::kernel::ProgramPoint::of_memory(&after),
+        &PureFactContext::new(),
+    )
+    .expect("arithmetic around a framed load should transport structurally");
     assert_eq!(
         theorem.proposition(),
         &Proposition::Implies(
@@ -6992,11 +7038,19 @@ fn memory_resolution_requires_the_loaded_cell_width() {
     );
     for pointer in [&stored, &alias] {
         assert_eq!(
-            assumptions.resolve_memory_load_value(&memory, pointer, LoadKind::Int32),
+            assumptions.resolve_memory_load_value(
+                &crate::kernel::ProgramPoint::of_memory(&memory),
+                pointer,
+                LoadKind::Int32
+            ),
             None
         );
         assert_eq!(
-            assumptions.resolve_memory_load_value(&memory, pointer, LoadKind::UInt16),
+            assumptions.resolve_memory_load_value(
+                &crate::kernel::ProgramPoint::of_memory(&memory),
+                pointer,
+                LoadKind::UInt16
+            ),
             Some(uint16(7))
         );
     }
@@ -7045,17 +7099,29 @@ fn symbolic_run_load_selection_checks_aliases_holes_and_width() {
             .expect("a named scalar run is compact");
         let unknown = PureFactContext::new();
         assert_eq!(
-            unknown.resolve_memory_load_value(&memory, &read, LoadKind::Int32),
+            unknown.resolve_memory_load_value(
+                &crate::kernel::ProgramPoint::of_memory(&memory),
+                &read,
+                LoadKind::Int32
+            ),
             None
         );
         let exact = PureFactContext::new()
             .assume_condition(ConditionTerm::equal(index, MachineTerm::constant(3)), true);
         assert_eq!(
-            exact.resolve_memory_load_value(&memory, &read, LoadKind::Int32),
+            exact.resolve_memory_load_value(
+                &crate::kernel::ProgramPoint::of_memory(&memory),
+                &read,
+                LoadKind::Int32
+            ),
             Some(int32(9))
         );
         assert_eq!(
-            exact.resolve_memory_load_value(&memory, &read, LoadKind::UInt16),
+            exact.resolve_memory_load_value(
+                &crate::kernel::ProgramPoint::of_memory(&memory),
+                &read,
+                LoadKind::UInt16
+            ),
             None
         );
         let alias = PureFactContext::new().assume_condition(
@@ -7063,7 +7129,11 @@ fn symbolic_run_load_selection_checks_aliases_holes_and_width() {
             true,
         );
         assert_eq!(
-            alias.resolve_memory_load_value(&memory, &read, LoadKind::Int32),
+            alias.resolve_memory_load_value(
+                &crate::kernel::ProgramPoint::of_memory(&memory),
+                &read,
+                LoadKind::Int32
+            ),
             Some(int32(9))
         );
         let other_base = Address {
@@ -7076,7 +7146,7 @@ fn symbolic_run_load_selection_checks_aliases_holes_and_width() {
         );
         assert_eq!(
             base_alias.resolve_memory_load_value(
-                &memory,
+                &crate::kernel::ProgramPoint::of_memory(&memory),
                 &other_base.offset_by_bytes(12),
                 LoadKind::Int32,
             ),
@@ -7092,7 +7162,11 @@ fn symbolic_run_load_selection_checks_aliases_holes_and_width() {
             true,
         );
         assert_eq!(
-            wide_exact.resolve_memory_load_value(&memory, &wide_read, LoadKind::Int32),
+            wide_exact.resolve_memory_load_value(
+                &crate::kernel::ProgramPoint::of_memory(&memory),
+                &wide_read,
+                LoadKind::Int32
+            ),
             Some(int32(9))
         );
         let signed_read = Address {
@@ -7104,7 +7178,11 @@ fn symbolic_run_load_selection_checks_aliases_holes_and_width() {
             true,
         );
         assert_eq!(
-            signed_exact.resolve_memory_load_value(&memory, &signed_read, LoadKind::Int32),
+            signed_exact.resolve_memory_load_value(
+                &crate::kernel::ProgramPoint::of_memory(&memory),
+                &signed_read,
+                LoadKind::Int32
+            ),
             Some(int32(9))
         );
         let high_word = PureFactContext::new().assume_condition(
@@ -7115,7 +7193,11 @@ fn symbolic_run_load_selection_checks_aliases_holes_and_width() {
             true,
         );
         assert_eq!(
-            high_word.resolve_memory_load_value(&memory, &wide_read, LoadKind::Int32),
+            high_word.resolve_memory_load_value(
+                &crate::kernel::ProgramPoint::of_memory(&memory),
+                &wide_read,
+                LoadKind::Int32
+            ),
             None
         );
         let low_word_only = PureFactContext::new().assume_condition(
@@ -7123,20 +7205,36 @@ fn symbolic_run_load_selection_checks_aliases_holes_and_width() {
             true,
         );
         assert_eq!(
-            low_word_only.resolve_memory_load_value(&memory, &wide_read, LoadKind::Int32),
+            low_word_only.resolve_memory_load_value(
+                &crate::kernel::ProgramPoint::of_memory(&memory),
+                &wide_read,
+                LoadKind::Int32
+            ),
             None
         );
         let changed = memory.store(base.offset_by_bytes(12), int32(7));
         assert_eq!(
-            exact.resolve_memory_load_value(&changed, &read, LoadKind::Int32),
+            exact.resolve_memory_load_value(
+                &crate::kernel::ProgramPoint::of_memory(&changed),
+                &read,
+                LoadKind::Int32
+            ),
             Some(int32(7))
         );
         assert_eq!(
-            alias.resolve_memory_load_value(&changed, &read, LoadKind::Int32),
+            alias.resolve_memory_load_value(
+                &crate::kernel::ProgramPoint::of_memory(&changed),
+                &read,
+                LoadKind::Int32
+            ),
             Some(int32(7))
         );
         assert_eq!(
-            unknown.resolve_memory_load_value(&changed, &read, LoadKind::Int32),
+            unknown.resolve_memory_load_value(
+                &crate::kernel::ProgramPoint::of_memory(&changed),
+                &read,
+                LoadKind::Int32
+            ),
             None
         );
     }

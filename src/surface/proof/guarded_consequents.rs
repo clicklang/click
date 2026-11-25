@@ -63,7 +63,7 @@ impl<'a> Proof<'a> {
         &self,
         guard: &Proposition,
         consequent: &Proposition,
-    ) -> Option<(SurfaceProposition, SurfaceProposition)> {
+    ) -> Option<(SyntaxProposition, SyntaxProposition)> {
         let (surface_guard, surface_consequent) = self.with_guarded_term_raiser(|raiser| {
             Some((raiser.guard(guard)?, raiser.comparison(consequent)?))
         })?;
@@ -82,12 +82,12 @@ impl<'a> Proof<'a> {
     pub(super) fn raised_comparison_surface(
         &self,
         kernel: &Proposition,
-    ) -> Option<SurfaceProposition> {
+    ) -> Option<SyntaxProposition> {
         let surface = self.with_guarded_term_raiser(|raiser| raiser.comparison(kernel))?;
         self.surface_lowers_to(&surface, kernel).then_some(surface)
     }
 
-    fn surface_lowers_to(&self, surface: &SurfaceProposition, kernel: &Proposition) -> bool {
+    fn surface_lowers_to(&self, surface: &SyntaxProposition, kernel: &Proposition) -> bool {
         self.lower_surface_proposition(surface, "guarded solve premise")
             .is_ok_and(|lowered| {
                 lowered == *kernel
@@ -115,7 +115,7 @@ impl<'a> Proof<'a> {
                 goal.surface_bindings
                     .iter()
                     .filter_map(|(name, binding)| match binding {
-                        SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+                        SyntaxTerm::ProgramExpression(ProgramExpression::Value(
                             crate::kernel::integer64_c_value!(MachineTerm::Variable(variable)),
                         )) => Some((*variable, name.clone())),
                         _ => None,
@@ -132,7 +132,7 @@ impl<'a> Proof<'a> {
     }
 }
 
-type BinaryExpression = fn(Box<SurfaceTerm>, Box<SurfaceTerm>) -> SurfaceTerm;
+type BinaryExpression = fn(Box<SyntaxTerm>, Box<SyntaxTerm>) -> SyntaxTerm;
 
 /// The operands and the written operator of a no-overflow condition.
 fn overflow_operands(
@@ -150,7 +150,7 @@ fn overflow_operands(
             op: OverflowOperation::Add,
             left,
             right,
-        } => (left, right, SurfaceTerm::Add),
+        } => (left, right, SyntaxTerm::Add),
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Subtract,
@@ -162,7 +162,7 @@ fn overflow_operands(
             op: OverflowOperation::Subtract,
             left,
             right,
-        } => (left, right, SurfaceTerm::Subtract),
+        } => (left, right, SyntaxTerm::Subtract),
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Multiply,
@@ -174,7 +174,7 @@ fn overflow_operands(
             op: OverflowOperation::Multiply,
             left,
             right,
-        } => (left, right, SurfaceTerm::Multiply),
+        } => (left, right, SyntaxTerm::Multiply),
         _ => return None,
     };
     Some((left, right, construct))
@@ -185,53 +185,53 @@ const MAX_RAISING_STATES: usize = 16;
 
 /// The distinct model-field accesses written in a goal.
 fn collect_goal_field_accesses(
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     accesses: &mut Vec<ResourceFieldAccess>,
 ) {
     let mut pending_propositions = vec![proposition];
     let mut pending_expressions = Vec::new();
     while let Some(proposition) = pending_propositions.pop() {
         match proposition {
-            SurfaceProposition::Comparison { left, right, .. } => {
+            SyntaxProposition::Comparison { left, right, .. } => {
                 pending_expressions.push(left);
                 pending_expressions.push(right);
             }
-            SurfaceProposition::Defined { expression }
-            | SurfaceProposition::IsA {
+            SyntaxProposition::Defined { expression }
+            | SyntaxProposition::IsA {
                 pointer: expression,
                 ..
             } => pending_expressions.push(expression),
-            SurfaceProposition::And(left, right)
-            | SurfaceProposition::Or(left, right)
-            | SurfaceProposition::Implies(left, right) => {
+            SyntaxProposition::And(left, right)
+            | SyntaxProposition::Or(left, right)
+            | SyntaxProposition::Implies(left, right) => {
                 pending_propositions.push(left);
                 pending_propositions.push(right);
             }
-            SurfaceProposition::Not(inner) => pending_propositions.push(inner),
+            SyntaxProposition::Not(inner) => pending_propositions.push(inner),
             _ => {}
         }
     }
     while let Some(expression) = pending_expressions.pop() {
         match expression {
-            SurfaceTerm::ResourceField(access) => {
+            SyntaxTerm::ResourceField(access) => {
                 if !accesses.contains(access) {
                     accesses.push(access.clone());
                 }
             }
-            SurfaceTerm::Add(left, right)
-            | SurfaceTerm::Subtract(left, right)
-            | SurfaceTerm::Multiply(left, right) => {
+            SyntaxTerm::Add(left, right)
+            | SyntaxTerm::Subtract(left, right)
+            | SyntaxTerm::Multiply(left, right) => {
                 pending_expressions.push(left);
                 pending_expressions.push(right);
             }
-            SurfaceTerm::IntegerContext(inner)
-            | SurfaceTerm::Negate(inner)
-            | SurfaceTerm::Old(inner)
-            | SurfaceTerm::At {
+            SyntaxTerm::IntegerContext(inner)
+            | SyntaxTerm::Negate(inner)
+            | SyntaxTerm::Old(inner)
+            | SyntaxTerm::At {
                 expression: inner, ..
             } => pending_expressions.push(inner),
             // An exact observation names the field it observes.
-            SurfaceTerm::Call { name, arguments } if name == "to_integer" => {
+            SyntaxTerm::Call { name, arguments } if name == "to_integer" => {
                 pending_expressions.extend(arguments);
             }
             _ => {}
@@ -248,14 +248,14 @@ struct GuardedTermRaiser<'v, 'p> {
 }
 
 impl GuardedTermRaiser<'_, '_> {
-    fn guard(&self, guard: &Proposition) -> Option<SurfaceProposition> {
+    fn guard(&self, guard: &Proposition) -> Option<SyntaxProposition> {
         // Complete ordinary range guards name the same operation as the
         // former private overflow query. Keep model-field state names on
         // its operands; the caller checks the full domain's round trip.
         let query = crate::kernel::machine_integer::definedness::interval_query_form(guard);
         let guard = query.as_ref().unwrap_or(guard);
         match guard {
-            Proposition::And(left, right) => Some(SurfaceProposition::And(
+            Proposition::And(left, right) => Some(SyntaxProposition::And(
                 Box::new(self.guard(left)?),
                 Box::new(self.guard(right)?),
             )),
@@ -263,7 +263,7 @@ impl GuardedTermRaiser<'_, '_> {
                 if let Some((left, right, construct)) =
                     overflow_operands(condition.native_compat()) =>
             {
-                Some(SurfaceProposition::Defined {
+                Some(SyntaxProposition::Defined {
                     expression: construct(Box::new(self.term(left)?), Box::new(self.term(right)?)),
                 })
             }
@@ -272,7 +272,7 @@ impl GuardedTermRaiser<'_, '_> {
     }
 
     /// An int32 or int64 comparison, in either polarity.
-    fn comparison(&self, proposition: &Proposition) -> Option<SurfaceProposition> {
+    fn comparison(&self, proposition: &Proposition) -> Option<SyntaxProposition> {
         let Proposition::ConditionIs(condition, value) = proposition else {
             return None;
         };
@@ -321,14 +321,14 @@ impl GuardedTermRaiser<'_, '_> {
                 ComparisonOperator::NotEqual | ComparisonOperator::In => return None,
             }
         };
-        Some(SurfaceProposition::Comparison {
+        Some(SyntaxProposition::Comparison {
             left: self.operand(view.operands[0].operand_view())?,
             operator,
             right: self.operand(view.operands[1].operand_view())?,
         })
     }
 
-    fn operand(&self, value: crate::kernel::MachineOperandView<'_>) -> Option<SurfaceTerm> {
+    fn operand(&self, value: crate::kernel::MachineOperandView<'_>) -> Option<SyntaxTerm> {
         use crate::kernel::MachineOperandView as V;
         let V::Shared(root) = value else {
             let V::Legacy(value) = value else {
@@ -352,9 +352,9 @@ impl GuardedTermRaiser<'_, '_> {
             value.binary()
         {
             let construct: BinaryExpression = match op {
-                MachineBinaryOp::Add => SurfaceTerm::Add,
-                MachineBinaryOp::Subtract => SurfaceTerm::Subtract,
-                MachineBinaryOp::Multiply => SurfaceTerm::Multiply,
+                MachineBinaryOp::Add => SyntaxTerm::Add,
+                MachineBinaryOp::Subtract => SyntaxTerm::Subtract,
+                MachineBinaryOp::Multiply => SyntaxTerm::Multiply,
                 _ => {
                     return super::surface_synthesis::raise_kernel_term(
                         root,
@@ -397,9 +397,9 @@ impl GuardedTermRaiser<'_, '_> {
 
     /// A model field the goal names, read at the current state, at function
     /// entry, or at the newest recorded state that holds this value.
-    fn field_surface(&self, term: &MachineTerm) -> Option<SurfaceTerm> {
+    fn field_surface(&self, term: &MachineTerm) -> Option<SyntaxTerm> {
         let named =
-            |access: &ResourceFieldAccess| Box::new(SurfaceTerm::ResourceField(access.clone()));
+            |access: &ResourceFieldAccess| Box::new(SyntaxTerm::ResourceField(access.clone()));
         for access in self.accesses {
             if Self::field_value(self.view.fixed_state.state, access) == Some(term) {
                 return Some(*named(access));
@@ -407,13 +407,13 @@ impl GuardedTermRaiser<'_, '_> {
         }
         for access in self.accesses {
             if Self::field_value(self.view.fixed_state.pre_state, access) == Some(term) {
-                return Some(SurfaceTerm::Old(named(access)));
+                return Some(SyntaxTerm::Old(named(access)));
             }
         }
         for (selector, state) in self.preferred_states() {
             for access in self.accesses {
                 if Self::field_value(state, access) == Some(term) {
-                    return Some(SurfaceTerm::At {
+                    return Some(SyntaxTerm::At {
                         selector: (*selector).clone(),
                         expression: named(access),
                     });
@@ -423,11 +423,11 @@ impl GuardedTermRaiser<'_, '_> {
         None
     }
 
-    fn term(&self, term: &MachineTerm) -> Option<SurfaceTerm> {
+    fn term(&self, term: &MachineTerm) -> Option<SyntaxTerm> {
         if let MachineTerm::Variable(variable) = term
             && let Some(name) = self.bound.get(variable)
         {
-            return Some(SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+            return Some(SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                 (name.clone()).into(),
             )));
         }
@@ -439,10 +439,10 @@ impl GuardedTermRaiser<'_, '_> {
         };
         let composite = match term {
             binary_term!(Int32, Add, left, right) => {
-                binary(left, right).map(|(left, right)| SurfaceTerm::Add(left, right))
+                binary(left, right).map(|(left, right)| SyntaxTerm::Add(left, right))
             }
             binary_term!(Int32, Subtract, left, right) => {
-                binary(left, right).map(|(left, right)| SurfaceTerm::Subtract(left, right))
+                binary(left, right).map(|(left, right)| SyntaxTerm::Subtract(left, right))
             }
             binary_term!(Int32, Multiply, left, right)
             | MachineTerm::Binary {
@@ -450,19 +450,19 @@ impl GuardedTermRaiser<'_, '_> {
                 op: MachineBinaryOp::Multiply,
                 left,
                 right,
-            } => binary(left, right).map(|(left, right)| SurfaceTerm::Multiply(left, right)),
+            } => binary(left, right).map(|(left, right)| SyntaxTerm::Multiply(left, right)),
             MachineTerm::Binary {
                 format: MachineIntegerType::Int64,
                 op: MachineBinaryOp::Add,
                 left,
                 right,
-            } => binary(left, right).map(|(left, right)| SurfaceTerm::Add(left, right)),
+            } => binary(left, right).map(|(left, right)| SyntaxTerm::Add(left, right)),
             MachineTerm::Binary {
                 format: MachineIntegerType::Int64,
                 op: MachineBinaryOp::Subtract,
                 left,
                 right,
-            } => binary(left, right).map(|(left, right)| SurfaceTerm::Subtract(left, right)),
+            } => binary(left, right).map(|(left, right)| SyntaxTerm::Subtract(left, right)),
             _ => None,
         };
         composite
@@ -482,7 +482,7 @@ impl GuardedTermRaiser<'_, '_> {
                         self.view.parameter_binding,
                         state,
                     )?;
-                    Some(SurfaceTerm::At {
+                    Some(SyntaxTerm::At {
                         selector: (*selector).clone(),
                         expression: Box::new(expression),
                     })

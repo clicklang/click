@@ -45,7 +45,12 @@ fn shared_pointer_transport_walks_offset_dags_once_beside_unrelated_state() {
             );
             let exports = KernelTermExport::machine_export_count();
             let (output, work) = crate::instrumentation::measure_deterministic_work(|| {
-                transport_address(&source, &after, Some((&context, true))).unwrap()
+                transport_address(
+                    &source,
+                    &crate::kernel::ProgramPoint::of_memory(&after),
+                    Some((&context, true)),
+                )
+                .unwrap()
             });
             assert!(matches!(
                 output.node().offset.node(),

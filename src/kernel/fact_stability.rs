@@ -82,6 +82,20 @@ pub(crate) fn same_up_to_binders(left: &Proposition, right: &Proposition) -> boo
         || (has_retained_machine_fold_comparison(left)
             && has_retained_machine_fold_comparison(right)
             && crate::kernel::proof::propositions_are_alpha_equal(left, right))
+        || same_native_int32_fold_equality(left, right)
+}
+
+fn same_native_int32_fold_equality(left: &Proposition, right: &Proposition) -> bool {
+    use crate::kernel::machine_integer::comparison::native_int32_fold_equality;
+    let (Some((left_condition, left_truth)), Some((right_condition, right_truth))) =
+        (left.condition_native(), right.condition_native())
+    else {
+        return false;
+    };
+    left_truth == right_truth
+        && native_int32_fold_equality(left_condition).is_some()
+        && native_int32_fold_equality(right_condition).is_some()
+        && crate::kernel::proof::propositions_are_alpha_equal(left, right)
 }
 
 // The structural fold spelling introduces fresh binder IDs. Use the

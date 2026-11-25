@@ -49,7 +49,7 @@ pub(super) fn with_application_source<T>(
 fn requirement_source_bindings(
     theorem: &TheoremDefinition,
     application: &TheoremApplication,
-) -> Vec<(String, SurfaceTerm)> {
+) -> Vec<(String, SyntaxTerm)> {
     let written = APPLICATION_SOURCE.with(|source| source.borrow().clone());
     let source = written
         .as_deref()
@@ -95,7 +95,7 @@ pub(super) struct TheoremApplicationContext<'a> {
 /// ambient fact becomes evidence for anything else.
 ///
 /// Every checker that turns a `using` list into evidence (`apply using` in
-/// pure and fixed-state proofs, `transport using`) calls this one rule.
+/// pure and fixed-state proofs) calls this one rule.
 pub(super) fn cite_range_span_guards(
     premise: &Proposition,
     evidence: &mut Vec<Proposition>,
@@ -214,7 +214,7 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
         spec_definitions,
     )
     .map_err(|message| theorem_application_error(claim_label, path_index, tactic_index, message))?;
-    let lower = |proposition: &SurfaceProposition| {
+    let lower = |proposition: &SyntaxProposition| {
         let proposition = substitute_click_proposition(proposition, &resource_bindings)?;
         lower_fixed_state_proposition_through_kernel_with(
             &proposition,
@@ -237,7 +237,7 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
             |error| theorem_application_error(claim_label, path_index, tactic_index, error.message),
         )?;
     let prepared_bindings = preparing_application().then(|| {
-        Arc::<[(String, SurfaceTerm)]>::from(requirement_source_bindings(&theorem, application))
+        Arc::<[(String, SyntaxTerm)]>::from(requirement_source_bindings(&theorem, application))
     });
     let prepared_substitutions = prepared_bindings.as_ref().map(|bindings| {
         bindings
@@ -440,9 +440,9 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
 pub(super) fn describe_unavailable_theorem_requirement(
     theorem_name: &str,
     requirement_index: usize,
-    requirement: &SurfaceProposition,
+    requirement: &SyntaxProposition,
     parameters: &[FunctionParameter],
-    bindings: &[(String, SurfaceTerm)],
+    bindings: &[(String, SyntaxTerm)],
     lowered: &Proposition,
 ) -> (String, String) {
     // Substitute the actual written arguments rather than asking a kernel
@@ -469,8 +469,8 @@ pub(super) fn describe_unavailable_theorem_requirement(
 /// Describe a premise whose instantiated goal is already spelled in the caller's names.
 pub(super) fn describe_theorem_requirement_instantiation(
     requirement_index: usize,
-    requirement: &SurfaceProposition,
-    bindings: &[(String, SurfaceTerm)],
+    requirement: &SyntaxProposition,
+    bindings: &[(String, SyntaxTerm)],
     instantiation: &str,
 ) -> String {
     let mut referenced = BTreeSet::new();
@@ -634,17 +634,17 @@ pub(in crate::surface::proof) fn population_member_count_zero_step(
         return None;
     }
     let premises = match application.arguments.as_slice() {
-        [SurfaceTerm::ResourceCount(resource)] => {
+        [SyntaxTerm::ResourceCount(resource)] => {
             let mut population = resource.as_ref().clone();
             if let ResourceClause::Declared { arguments, .. } = &mut population {
                 for argument in arguments.iter_mut().skip(1) {
-                    *argument = SurfaceTerm::ResourceWildcard;
+                    *argument = SyntaxTerm::ResourceWildcard;
                 }
             }
-            vec![SurfaceProposition::Comparison {
-                left: SurfaceTerm::ResourceCount(Box::new(population)),
+            vec![SyntaxProposition::Comparison {
+                left: SyntaxTerm::ResourceCount(Box::new(population)),
                 operator: ComparisonOperator::Equal,
-                right: SurfaceTerm::IntegerLiteral("0".to_string()),
+                right: SyntaxTerm::IntegerLiteral("0".to_string()),
             }]
         }
         // The checked application names the expected shape.
@@ -680,7 +680,7 @@ fn instantiate_population_member_count_zero(
             application.name
         ))
     };
-    let [SurfaceTerm::ResourceCount(resource)] = application.arguments.as_slice() else {
+    let [SyntaxTerm::ResourceCount(resource)] = application.arguments.as_slice() else {
         return Err(shape());
     };
     let ResourceClause::Declared {
@@ -692,7 +692,7 @@ fn instantiate_population_member_count_zero(
     if arguments.len() < 2
         || arguments
             .iter()
-            .any(|argument| matches!(argument, SurfaceTerm::ResourceWildcard))
+            .any(|argument| matches!(argument, SyntaxTerm::ResourceWildcard))
     {
         return Err(shape());
     }
@@ -740,13 +740,13 @@ fn instantiate_population_member_count_zero(
         let mut population = resource.as_ref().clone();
         if let ResourceClause::Declared { arguments, .. } = &mut population {
             for argument in arguments.iter_mut().skip(1) {
-                *argument = SurfaceTerm::ResourceWildcard;
+                *argument = SyntaxTerm::ResourceWildcard;
             }
         }
-        let surface = SurfaceProposition::Comparison {
-            left: SurfaceTerm::ResourceCount(Box::new(population)),
+        let surface = SyntaxProposition::Comparison {
+            left: SyntaxTerm::ResourceCount(Box::new(population)),
             operator: ComparisonOperator::Equal,
-            right: SurfaceTerm::IntegerLiteral("0".into()),
+            right: SyntaxTerm::IntegerLiteral("0".into()),
         };
         crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
             ClickError::new("population theorem has a premise obligation")
@@ -877,7 +877,7 @@ pub(in crate::surface::proof) fn instantiate_generic_theorem_application_definit
 }
 
 fn theorem_application_argument_type(
-    argument: &SurfaceTerm,
+    argument: &SyntaxTerm,
     assumptions: &PureFactContext,
     context: &TheoremApplicationContext<'_>,
     spec_definitions: SpecDefinitions<'_>,
@@ -888,7 +888,7 @@ fn theorem_application_argument_type(
     // A call's declared/instantiated result is its logical type. A generic
     // identity can preserve a pointer's original object evidence while its
     // selected type is int32* or void*, just as an explicit cast can.
-    if let SurfaceTerm::Call { name, arguments } = argument
+    if let SyntaxTerm::Call { name, arguments } = argument
         && let Some(function) = spec_definitions.functions.get(name)
         && arguments.len() == function.parameters().len()
     {
@@ -932,15 +932,15 @@ fn theorem_application_argument_type(
         ));
     }
     match argument {
-        SurfaceTerm::AlgebraicVariable { algebraic_type, .. }
-        | SurfaceTerm::AlgebraicConstructor { algebraic_type, .. } => {
+        SyntaxTerm::AlgebraicVariable { algebraic_type, .. }
+        | SyntaxTerm::AlgebraicConstructor { algebraic_type, .. } => {
             return Ok(Some(ClickType::Algebraic(algebraic_type.clone())));
         }
-        SurfaceTerm::ProgramExpression(ProgramExpression::Value(value)) => {
+        SyntaxTerm::ProgramExpression(ProgramExpression::Value(value)) => {
             return Ok(Some(generics::click_type_from_program_value(value)));
         }
-        SurfaceTerm::Binding(name)
-        | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+        SyntaxTerm::Binding(name)
+        | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) => {
             if let Some(value) = context.values.get(name) {
@@ -993,7 +993,7 @@ fn theorem_application_argument_type(
 // Native arguments can contain checked Integer conversions. Lower them in
 // the caller's scope before binding the resulting C value to the callee.
 fn evaluate_native_theorem_argument(
-    argument: &SurfaceTerm,
+    argument: &SyntaxTerm,
     context: &TheoremApplicationContext<'_>,
     assumptions: &PureFactContext,
     spec_definitions: SpecDefinitions<'_>,
@@ -1010,7 +1010,7 @@ fn evaluate_native_theorem_argument(
 }
 
 fn evaluate_retained_theorem_argument(
-    argument: &SurfaceTerm,
+    argument: &SyntaxTerm,
     context: &TheoremApplicationContext<'_>,
     assumptions: &PureFactContext,
     spec_definitions: SpecDefinitions<'_>,
@@ -1071,7 +1071,7 @@ pub(super) fn theorem_application_bindings(
     let mut integer_values = PersistentBinderMap::default();
     for (parameter, argument) in theorem.parameters().iter().zip(&application.arguments) {
         if parameter.click_type() == &ClickType::Resource {
-            if !matches!(argument, SurfaceTerm::Resource(_)) {
+            if !matches!(argument, SyntaxTerm::Resource(_)) {
                 return Err(format!(
                     "theorem `{}` parameter `{}` expects Resource",
                     theorem.name(),
@@ -1080,7 +1080,7 @@ pub(super) fn theorem_application_bindings(
             }
             continue;
         }
-        if matches!(argument, SurfaceTerm::Resource(_)) {
+        if matches!(argument, SyntaxTerm::Resource(_)) {
             return Err(format!(
                 "theorem `{}` parameter `{}` does not accept Resource",
                 theorem.name(),
@@ -1443,7 +1443,7 @@ pub(in crate::surface::proof) fn theorem_application_bound_array_memories(
         .parameters()
         .iter()
         .zip(&application.arguments)
-        .filter(|(_, argument)| matches!(argument, SurfaceTerm::Old(_) | SurfaceTerm::At { .. }))
+        .filter(|(_, argument)| matches!(argument, SyntaxTerm::Old(_) | SyntaxTerm::At { .. }))
         .filter_map(|(parameter, _)| {
             let array_ref = array_refs.get(parameter.name())?;
             Some((
@@ -1458,35 +1458,35 @@ pub(in crate::surface::proof) fn theorem_application_bound_array_memories(
 /// parameter. A scalar pointer cast supplies its target width even when it
 /// preserves the source object's provenance.
 fn pointer_element_width_for_argument(
-    argument: &SurfaceTerm,
+    argument: &SyntaxTerm,
     known: &BTreeMap<String, u32>,
 ) -> Option<u32> {
     match argument {
-        SurfaceTerm::MemoryLoad { value_type, .. } => {
+        SyntaxTerm::MemoryLoad { value_type, .. } => {
             value_type.pointee_type().map(ProgramType::byte_width)
         }
-        SurfaceTerm::Binding(name) | SurfaceTerm::ProgramBinding(name) => known.get(name).copied(),
-        SurfaceTerm::ProgramExpression(expression)
-        | SurfaceTerm::CUnary {
+        SyntaxTerm::Binding(name) | SyntaxTerm::ProgramBinding(name) => known.get(name).copied(),
+        SyntaxTerm::ProgramExpression(expression)
+        | SyntaxTerm::CUnary {
             lowered: expression,
             ..
         }
-        | SurfaceTerm::QualifiedC {
+        | SyntaxTerm::QualifiedC {
             lowered: expression,
             ..
         }
-        | SurfaceTerm::Field {
+        | SyntaxTerm::Field {
             lowered: expression,
             ..
         } => pointer_element_width_for_program_expression(expression, known),
-        SurfaceTerm::Add(left, right) => pointer_element_width_for_argument(left, known)
+        SyntaxTerm::Add(left, right) => pointer_element_width_for_argument(left, known)
             .or_else(|| pointer_element_width_for_argument(right, known)),
-        SurfaceTerm::Subtract(left, _)
-        | SurfaceTerm::Index(left, _)
-        | SurfaceTerm::Old(left)
-        | SurfaceTerm::Negate(left)
-        | SurfaceTerm::BitwiseNot(left) => pointer_element_width_for_argument(left, known),
-        SurfaceTerm::At { expression, .. } => pointer_element_width_for_argument(expression, known),
+        SyntaxTerm::Subtract(left, _)
+        | SyntaxTerm::Index(left, _)
+        | SyntaxTerm::Old(left)
+        | SyntaxTerm::Negate(left)
+        | SyntaxTerm::BitwiseNot(left) => pointer_element_width_for_argument(left, known),
+        SyntaxTerm::At { expression, .. } => pointer_element_width_for_argument(expression, known),
         _ => None,
     }
 }
@@ -1830,19 +1830,19 @@ theorem nested_count(value: int32) {
             integer_values: &integers,
             pointer_element_widths: BTreeMap::new(),
         };
-        let x = SurfaceTerm::Binding("x".into());
+        let x = SyntaxTerm::Binding("x".into());
         for (argument, expected) in [
             (x.clone(), 9),
-            (SurfaceTerm::Old(Box::new(x.clone())), 7),
+            (SyntaxTerm::Old(Box::new(x.clone())), 7),
             (
-                SurfaceTerm::At {
+                SyntaxTerm::At {
                     selector: ProgramPointSelector::Mark("before".into()),
                     expression: Box::new(x),
                 },
                 7,
             ),
             (
-                SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                     crate::kernel::CONTRACT_RESULT,
                 )),
                 11,
@@ -1850,7 +1850,7 @@ theorem nested_count(value: int32) {
         ] {
             let application = TheoremApplication {
                 name: "reflexive".into(),
-                arguments: vec![SurfaceTerm::Call {
+                arguments: vec![SyntaxTerm::Call {
                     name: "to_integer".into(),
                     arguments: vec![argument],
                 }],
@@ -1891,7 +1891,7 @@ mod diagnostic_source_tests {
     fn application_diagnostic_source_restores_after_nested_failures() {
         let outer = TheoremApplication {
             name: "outer".into(),
-            arguments: vec![SurfaceTerm::Binding("r".into())],
+            arguments: vec![SyntaxTerm::Binding("r".into())],
         };
         let inner = TheoremApplication {
             name: "inner".into(),
@@ -1931,16 +1931,16 @@ mod diagnostic_source_tests {
 /// clauses are its kernel axioms), so `value - 1 < value` instantiates to
 /// `to_integer(n - 1) < to_integer(n)`.
 pub(in crate::surface::proof) fn observe_machine_parameters(
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     parameters: &[FunctionParameter],
-    substitutions: &BTreeMap<String, SurfaceTerm>,
-) -> SurfaceProposition {
-    fn arithmetic(expression: &SurfaceTerm) -> bool {
+    substitutions: &BTreeMap<String, SyntaxTerm>,
+) -> SyntaxProposition {
+    fn arithmetic(expression: &SyntaxTerm) -> bool {
         match expression {
-            SurfaceTerm::Add(..) | SurfaceTerm::Subtract(..) | SurfaceTerm::Multiply(..) => true,
-            SurfaceTerm::Negate(inner) => !matches!(inner.as_ref(), SurfaceTerm::IntegerLiteral(_)),
-            SurfaceTerm::Old(inner)
-            | SurfaceTerm::At {
+            SyntaxTerm::Add(..) | SyntaxTerm::Subtract(..) | SyntaxTerm::Multiply(..) => true,
+            SyntaxTerm::Negate(inner) => !matches!(inner.as_ref(), SyntaxTerm::IntegerLiteral(_)),
+            SyntaxTerm::Old(inner)
+            | SyntaxTerm::At {
                 expression: inner, ..
             } => arithmetic(inner),
             _ => false,
@@ -1955,10 +1955,10 @@ pub(in crate::surface::proof) fn observe_machine_parameters(
         .map(|parameter| parameter.name())
         .collect::<BTreeSet<_>>();
     // A side the comparison reads natively: a machine parameter or a literal.
-    let parameter = |side: &SurfaceTerm| match side {
-        SurfaceTerm::Binding(name)
-        | SurfaceTerm::ProgramBinding(name)
-        | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+    let parameter = |side: &SyntaxTerm| match side {
+        SyntaxTerm::Binding(name)
+        | SyntaxTerm::ProgramBinding(name)
+        | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) if machine.contains(name.as_str()) => Some(name.clone()),
         _ => None,
@@ -1967,67 +1967,67 @@ pub(in crate::surface::proof) fn observe_machine_parameters(
     // natively too, so `100u64 < value` at `value = n - k` is the native
     // comparison `to_integer(100u64) < to_integer(n - k)`, not
     // `100u64 < n - k`.
-    let literal = |side: &SurfaceTerm| match side {
-        SurfaceTerm::IntegerLiteral(_) => true,
-        SurfaceTerm::ProgramExpression(ProgramExpression::Value(value)) => {
+    let literal = |side: &SyntaxTerm| match side {
+        SyntaxTerm::IntegerLiteral(_) => true,
+        SyntaxTerm::ProgramExpression(ProgramExpression::Value(value)) => {
             super::resources::is_integer_constant(value)
         }
-        SurfaceTerm::Negate(inner) => {
-            matches!(inner.as_ref(), SurfaceTerm::IntegerLiteral(_))
+        SyntaxTerm::Negate(inner) => {
+            matches!(inner.as_ref(), SyntaxTerm::IntegerLiteral(_))
         }
         _ => false,
     };
     // Machine arithmetic over machine parameters and literals, the shape a
     // native comparison side has.
     fn tree(
-        side: &SurfaceTerm,
-        parameter: &dyn Fn(&SurfaceTerm) -> Option<String>,
-        literal: &dyn Fn(&SurfaceTerm) -> bool,
+        side: &SyntaxTerm,
+        parameter: &dyn Fn(&SyntaxTerm) -> Option<String>,
+        literal: &dyn Fn(&SyntaxTerm) -> bool,
     ) -> bool {
         match side {
-            SurfaceTerm::Add(left, right)
-            | SurfaceTerm::Subtract(left, right)
-            | SurfaceTerm::Multiply(left, right) => {
+            SyntaxTerm::Add(left, right)
+            | SyntaxTerm::Subtract(left, right)
+            | SyntaxTerm::Multiply(left, right) => {
                 tree(left, parameter, literal) && tree(right, parameter, literal)
             }
             _ => parameter(side).is_some() || literal(side),
         }
     }
-    let machine_tree = |side: &SurfaceTerm| tree(side, &parameter, &literal);
-    let observe = |side: &SurfaceTerm| {
-        if literal(side) && !matches!(side, SurfaceTerm::ProgramExpression(_)) {
+    let machine_tree = |side: &SyntaxTerm| tree(side, &parameter, &literal);
+    let observe = |side: &SyntaxTerm| {
+        if literal(side) && !matches!(side, SyntaxTerm::ProgramExpression(_)) {
             side.clone()
         } else {
-            SurfaceTerm::Call {
+            SyntaxTerm::Call {
                 name: "to_integer".to_string(),
                 arguments: vec![side.clone()],
             }
         }
     };
     fn walk(
-        proposition: &SurfaceProposition,
-        rewrite: &dyn Fn(&SurfaceProposition) -> Option<SurfaceProposition>,
-    ) -> SurfaceProposition {
+        proposition: &SyntaxProposition,
+        rewrite: &dyn Fn(&SyntaxProposition) -> Option<SyntaxProposition>,
+    ) -> SyntaxProposition {
         if let Some(rewritten) = rewrite(proposition) {
             return rewritten;
         }
-        let recurse = |inner: &SurfaceProposition| Box::new(walk(inner, rewrite));
+        let recurse = |inner: &SyntaxProposition| Box::new(walk(inner, rewrite));
         match proposition {
-            SurfaceProposition::And(left, right) => {
-                SurfaceProposition::And(recurse(left), recurse(right))
+            SyntaxProposition::And(left, right) => {
+                SyntaxProposition::And(recurse(left), recurse(right))
             }
-            SurfaceProposition::Or(left, right) => {
-                SurfaceProposition::Or(recurse(left), recurse(right))
+            SyntaxProposition::Or(left, right) => {
+                SyntaxProposition::Or(recurse(left), recurse(right))
             }
-            SurfaceProposition::Implies(left, right) => {
-                SurfaceProposition::Implies(recurse(left), recurse(right))
+            SyntaxProposition::Implies(left, right) => {
+                SyntaxProposition::Implies(recurse(left), recurse(right))
             }
-            SurfaceProposition::Not(inner) => SurfaceProposition::Not(recurse(inner)),
+            SyntaxProposition::Not(inner) => SyntaxProposition::Not(recurse(inner)),
             other => other.clone(),
         }
     }
-    let rewrite = |proposition: &SurfaceProposition| {
-        let SurfaceProposition::Comparison {
+    let rewrite = |proposition: &SyntaxProposition| {
+        let SyntaxProposition::Comparison {
             left,
             operator,
             right,
@@ -2043,7 +2043,7 @@ pub(in crate::surface::proof) fn observe_machine_parameters(
                     .and_then(|name| substitutions.get(&name))
                     .is_some_and(arithmetic)
         });
-        (native && instance_arithmetic).then(|| SurfaceProposition::Comparison {
+        (native && instance_arithmetic).then(|| SyntaxProposition::Comparison {
             left: observe(left),
             operator: *operator,
             right: observe(right),
@@ -2060,16 +2060,16 @@ pub(super) fn theorem_resource_argument_bindings(
     context: &TheoremApplicationContext<'_>,
     assumptions: &PureFactContext,
     spec_definitions: SpecDefinitions<'_>,
-) -> Result<BTreeMap<String, SurfaceTerm>, String> {
+) -> Result<BTreeMap<String, SyntaxTerm>, String> {
     let mut bindings = BTreeMap::new();
     for (parameter, argument) in theorem.parameters().iter().zip(&application.arguments) {
         if parameter.click_type() != &ClickType::Resource {
             continue;
         }
-        let SurfaceTerm::Resource(subject) = argument else {
+        let SyntaxTerm::Resource(subject) = argument else {
             return Err(format!("parameter `{}` expects Resource", parameter.name()));
         };
-        let descriptor = SurfaceProposition::Contains {
+        let descriptor = SyntaxProposition::Contains {
             parent: subject.as_ref().clone(),
             child: subject.as_ref().clone(),
         };
@@ -2097,7 +2097,7 @@ pub(super) fn theorem_resource_argument_bindings(
         };
         bindings.insert(
             parameter.name().to_string(),
-            SurfaceTerm::Resource(Box::new(ResourceSubject::Captured {
+            SyntaxTerm::Resource(Box::new(ResourceSubject::Captured {
                 value: *parent,
                 source: subject.clone(),
             })),

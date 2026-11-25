@@ -91,11 +91,9 @@ operations and declaration validation that searches outside proof scripts.
 
 The known direct operation/search dependencies remain: this classification does
 not eliminate the four kernel bridges, their 17 caller records, or the 6
-Surface operation/search records. In particular, explicit premises are not an
-explicit derivation: `transport(...) using {...}` is classified Simple in
-`src/surface.rs`, but its application can still call `derive_atomic_proposition`.
-Bare `transport(...)`, by contrast, is classified Smart and may discover evidence.
-Expanding the latter into the former is not by itself a search-free guarantee.
+Surface operation/search records at the time of this audit. Internal
+transport frame checks can call `derive_atomic_proposition`. Written
+`transport(...)` is a smart tactic that can discover frame evidence.
 `preserve(...)` is a different operation and must be audited separately.
 
 ## The 16 mixed reference records
@@ -114,7 +112,7 @@ Paths below are relative to `src/surface/`.
 | `try_steps` | 1 | Search support. `proof/attempt.rs` tries candidate steps under an attempt budget; production callers are in `smart_closures/search.rs`. |
 | `plan_explicit_loadability_transport` | 1 | Search support. `surface_certificates.rs` selects/minimizes premises and returns written tactics for solve. Here “explicit” describes the output, not the planner's cost. |
 | `plan_explicit_predecessor_upper_bound` | 1 | Search support. Used by solve directly and by the recorded signed-order planner; may plan equality rewrites. |
-| `plan_explicit_fact_transport` | 1 | Smart transport planner. Reached from smart execution and the bare-transport adapters on `Proof`; builds contexts from available facts/effects and tests derivability. Ordinary expansion covers the scalar routes listed in T1–T5; surviving legacy output still uses `TransportUsing`, whose remaining search is not excused by this classification. |
+| `plan_explicit_fact_transport` | 1 | Smart transport planner. Reached from smart execution and the bare-transport adapters on `Proof`; builds contexts from available facts/effects and tests derivability. Ordinary expansion covers the scalar routes listed in T1–T5. |
 | `segment_contains_pointer` | 1 | Declaration-validation search. `checking/segments.rs` calls `ProofSearch::proves` for bounds; the production caller is resource-definition read-coverage validation in `validation/definition_validation.rs`. This is not ordinary implicit solve on a user proof obligation. Determine the declaration-input cost bound and how expensive reasoning can be replaced by explicit evidence. |
 
 Totals: 11 interpreter/obligation-dispatch records, 4 discovery/support records
@@ -195,12 +193,12 @@ frontier; it performs no speculative continuation.
 
 ## Reconciled operation dependencies
 
-The 6 `operation` records are not 6 independent slow walks:
+The operation records group by caller:
 
 | Group | Records | Current interpretation and remaining evidence |
 | --- | ---: | --- |
 | Theorem application on `ProofDriver` | 1 | Pure, fixed-state, live and returned-outcome named applications retain arguments and conclusions while the driver solves their obligations. Population-member-count-zero and Integer range-fold built-ins use that same obligation route. The selector edge remains for unsupported outcome dispatch. Migrated primitives have test-build discovery guards; generic applications instantiate checked statements without re-running declaration proofs. The guard does not certify unregistered helper loops as fast. ArithmeticUsing remains smart and dispatches through search. |
-| Legacy explicit transport checking | 3 | `certified_fact_transport_reaches`, `check_fixed_state_fact_transport_using_facts_inner`, and `apply_pure_transport_using` call atomic derivation. Confirmed search access from the explicit transport route; migrate/retire under T1–T5, not a new independent bug per record. |
+| Internal transport checking | 2 | `certified_fact_transport_reaches` and `check_fixed_state_fact_transport_inner` call atomic derivation. |
 | Definition validation | 2 | `symbolic_segment_covers_index` and `symbolic_segment_covers_range` join the mixed `segment_contains_pointer` record in one declaration-validation concern. There is no ordinary user obligation/expansion boundary established for these checks. |
 
 At this audit baseline, four kernel bridges mapped to three groups: loan

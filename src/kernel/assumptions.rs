@@ -5081,7 +5081,7 @@ impl PureFactContext {
                         relation: CompareRelation::Equal,
                         left: Box::new(MachineTerm::Variable(*variable)),
                         right: Box::new(crate::kernel::MachineTerm::read_named(
-                            ProgramPoint::at(memory),
+                            ProgramPoint::unplaced(memory),
                             address.clone(),
                             kind,
                         )),
@@ -11162,6 +11162,7 @@ impl ExecutionPureFact {
         let value_equation =
             super::memory_history::store_value_equation_at(&after, &pointer, &value)
                 .map(std::sync::Arc::new);
+        let after_point = crate::kernel::ProgramPoint::viewing(after.shared_memory(), &after);
         let after = after.memory().clone();
         Self {
             proposition: std::sync::Arc::new(Proposition::MemoryMutatesOnly {
@@ -11181,6 +11182,7 @@ impl ExecutionPureFact {
                 value_equation,
                 before,
                 after,
+                after_point,
                 pointer,
                 value,
                 authorized_range,

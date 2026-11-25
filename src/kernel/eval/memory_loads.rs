@@ -1144,8 +1144,11 @@ fn evaluate_retained_memory_load_case(
         Default::default()
     };
     for source in candidates {
-        let Some(theorem) = prove_program_condition_fact_transport(&source, memory, assumptions)
-        else {
+        let Some(theorem) = prove_program_condition_fact_transport(
+            &source,
+            &ProgramPoint::read_at_optional(&crate::kernel::intern_memory_ref(memory), site),
+            assumptions,
+        ) else {
             continue;
         };
         let Some(target) =
@@ -2673,7 +2676,12 @@ fn canonicalized_retained_symbolic_load_value_with_identity(
         record_load_access_width(memory, &address, value_type.byte_width());
         memory.symbolic_pointer_version_load(site, &address, value_type)
     } else {
-        symbolic_load_value(memory, site, &address, value_type)?
+        // An optional site is placed explicitly until the shared pointer
+        // chain requires one.
+        let site = site
+            .cloned()
+            .unwrap_or_else(|| ProgramPoint::unplaced(&crate::kernel::intern_memory_ref(memory)));
+        symbolic_load_value(memory, &site, &address, value_type)?
     };
     // Ordinary scalar reads retain their selected memory and address directly.
     match &value {
@@ -2806,7 +2814,7 @@ fn canonicalized_retained_symbolic_load_value_with_identity(
     {
         let retained_state = crate::kernel::intern_memory_ref(memory);
         let bits = crate::kernel::MachineTerm::read_named(
-            ProgramPoint::at_optional_read_site(&retained_state, site),
+            ProgramPoint::read_at_optional(&retained_state, site),
             address.clone(),
             LoadKind::Int32,
         );
@@ -3636,19 +3644,16 @@ fn memory_shown_cell_value_uncached(
         .or_else(|| memory.known_union_pointer(address))?;
     let source = crate::kernel::prelude::canonical_load_projection_source(memory, address)
         .unwrap_or_else(|| memory.clone());
-    let last = crate::kernel::resource_tracker::last_same_named_cell(
-        address,
-        bytes.into(),
-        &crate::kernel::resource_tracker::ProgramPoint::at(&source),
-    )?;
+    let (last_memory, last_stopped_by) =
+        crate::kernel::resource_tracker::last_same_cell_memory(&source, address, bytes.into())?;
     // The step the walk stopped at must have left the cached cell standing
     // for the cell's bytes by memory alone. A store elsewhere that overlaps
     // the cell changed some of them, whatever a cached cell still says; a
     // havoc keeps a cell only where a frame fact showed it separate, and that
     // fact, not the cache, is the authority for it.
-    match last.point.shared_memory().derivation().as_deref() {
+    match last_memory.derivation().as_deref() {
         Some(MemoryDerivation::Store { pointer, value, .. })
-            if last.stopped_by.reason == crate::kernel::resource_tracker::StopReason::Affected
+            if last_stopped_by.reason == crate::kernel::resource_tracker::StopReason::Affected
                 && (pointer != address || value.byte_width() < bytes) =>
         {
             None
@@ -3658,7 +3663,7 @@ fn memory_shown_cell_value_uncached(
         // release through an unrelated address) left the cache standing only
         // where a fact shows it separate.
         _ if matches!(
-            last.stopped_by.reason,
+            last_stopped_by.reason,
             crate::kernel::resource_tracker::StopReason::NotShownSeparate(_)
         ) =>
         {
@@ -3704,6 +3709,19 @@ pub(crate) fn registered_load_for_variable(variable: &Variable) -> Option<(Share
             .borrow()
             .get(variable)
             .map(|load| (load.point.shared_memory().clone(), load.pointer.clone()))
+    })
+}
+
+/// [`registered_load_for_variable`] with the registered read's point, so a
+/// read rebuilt from it is placed where the registered one was.
+pub(crate) fn registered_load_point_for_variable(
+    variable: &Variable,
+) -> Option<(ProgramPoint, Address)> {
+    LOAD_VARIABLE_REGISTRY.with(|registry| {
+        registry
+            .borrow()
+            .get(variable)
+            .map(|load| (load.point.clone(), load.pointer.clone()))
     })
 }
 
@@ -3787,14 +3805,15 @@ pub(in crate::kernel) fn scalar_read_origin_for_cell(
 /// Build an exact read and publish its typed observation. This does not
 /// select a comparison identity or change the supplied memory state. Use
 /// `MachineTerm::memory_read` when no observation needs to be published.
-#[cfg_attr(test, track_caller)]
+#[cfg(test)]
+#[track_caller]
 pub(crate) fn scalar_read_for_exact_cell(
     memory: &SharedMemory,
     pointer: &Address,
     kind: LoadKind,
     bytes: u32,
 ) -> MachineTerm {
-    scalar_read_for_exact_cell_at(&ProgramPoint::at(memory), pointer, kind, bytes)
+    scalar_read_for_exact_cell_at(&ProgramPoint::unplaced(memory), pointer, kind, bytes)
 }
 
 #[cfg_attr(test, track_caller)]
@@ -4131,6 +4150,16 @@ pub(crate) fn registered_load_origin_for_variable(
     Some((read.origin?.into_shared_memory(), read.pointer))
 }
 
+/// [`registered_load_origin_for_variable`] with the origin's point.
+pub(crate) fn registered_load_origin_point_for_variable(
+    variable: &Variable,
+) -> Option<(ProgramPoint, Address)> {
+    let read = scalar_read_observation(crate::kernel::MachineOperandView::Legacy(
+        &MachineTerm::Variable(*variable),
+    ))?;
+    Some((read.origin?, read.pointer))
+}
+
 /// [`registered_load_origin_for_variable`] as the load term it names there:
 /// the same read, kind included, at the live origin.
 pub(crate) fn registered_load_origin_term_for_variable(variable: &Variable) -> Option<MachineTerm> {
@@ -4386,7 +4415,7 @@ pub(crate) fn canonical_form_of_load_at(
     kind: LoadKind,
 ) -> MachineTerm {
     canonical_scalar_read(&MachineTerm::read_named(
-        ProgramPoint::at_read_site(site.shared_memory(), site),
+        ProgramPoint::read_at(site.shared_memory(), site),
         pointer,
         kind,
     ))
@@ -5340,7 +5369,7 @@ pub(crate) fn load_variable_for_cell_with_origin(
             pointer,
             bytes: bytes.into(),
         },
-        &crate::kernel::resource_tracker::ProgramPoint::at(memory),
+        &crate::kernel::resource_tracker::ProgramPoint::unplaced(memory),
     )
     .map(|point| point.shared_memory().clone());
     let memory = version.as_ref().unwrap_or(memory);
@@ -5664,10 +5693,10 @@ fn mint_load_variable_identity(
     bytes: u32,
 ) -> Variable {
     mint_load_variable_at(
-        &ProgramPoint::at(memory),
+        &ProgramPoint::unplaced(memory),
         pointer,
         kind,
-        &ProgramPoint::at(origin),
+        &ProgramPoint::unplaced(origin),
         bytes,
     )
 }
@@ -5763,7 +5792,7 @@ fn record_wide_load_observation(term: &MachineTerm, variable: Variable) {
     let point = if has_selected_read_point(memory) {
         memory.point().clone()
     } else {
-        ProgramPoint::at(memory.shared_memory())
+        ProgramPoint::unplaced(memory.shared_memory())
     };
     WIDE_LOAD_OBSERVATIONS.with(|registry| {
         let mut registry = registry.borrow_mut();
@@ -5864,11 +5893,7 @@ pub(in crate::kernel) fn canonical_scalar_read(bits: &MachineTerm) -> MachineTer
         };
         // Preserve master's intrinsic byte/halfword width on cache hits.
         if let Some(bytes) = descriptor.narrow_bytes() {
-            scalar_reads::record_comparison_observation(
-                &identity,
-                descriptor.memory(),
-                Some(bytes),
-            );
+            scalar_reads::record_comparison_observation(&identity, descriptor.point(), Some(bytes));
             read_observations::produced(identity.as_legacy_read(), bits);
             return identity.into_legacy_read();
         }
@@ -5884,7 +5909,7 @@ pub(in crate::kernel) fn canonical_scalar_read(bits: &MachineTerm) -> MachineTer
         }
     }
     let (identity, observed_bytes) = scalar_reads::select_comparison_identity(descriptor);
-    scalar_reads::record_comparison_observation(&identity, descriptor.memory(), observed_bytes);
+    scalar_reads::record_comparison_observation(&identity, descriptor.point(), observed_bytes);
     read_observations::produced(identity.as_legacy_read(), bits);
     SCALAR_READ_IDENTITY_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
@@ -6097,11 +6122,7 @@ fn record_load_variable_defining_fact_with_source_and_pointer(
             right: Box::new(if has_selected_read_point(memory) {
                 load.clone()
             } else {
-                canonical_form_of_load(
-                    memory.shared_memory().clone(),
-                    pointer.as_ref().clone(),
-                    *kind,
-                )
+                canonical_form_of_load_at(memory, pointer.as_ref().clone(), *kind)
             }),
         },
         true,
@@ -6140,7 +6161,7 @@ fn record_load_variable_defining_fact_with_source_and_pointer(
 #[cfg_attr(test, track_caller)]
 pub(in crate::kernel) fn symbolic_load_value(
     memory: &SymbolicMemory,
-    site: Option<&ProgramPoint>,
+    site: &ProgramPoint,
     pointer: &Address,
     value_type: ProgramType,
 ) -> Option<ProgramValue> {
@@ -6158,7 +6179,7 @@ pub(in crate::kernel) fn symbolic_load_value(
 #[cfg_attr(test, track_caller)]
 pub(in crate::kernel) fn symbolic_load_value_unrecorded(
     memory: &SymbolicMemory,
-    site: Option<&ProgramPoint>,
+    site: &ProgramPoint,
     pointer: &Address,
     value_type: ProgramType,
 ) -> Option<ProgramValue> {
@@ -6170,17 +6191,13 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
         // An abstract value is the load of its type at the address.
         ProgramType::Parameter(parameter) => Some(AlgebraicTermNode::parameter_load(
             crate::kernel::intern_memory(memory.clone()),
+            site,
             pointer.clone(),
             parameter,
         )),
         ProgramType::Void | ProgramType::VoidPointer => None,
         ProgramType::Bool => Some(ProgramValue::of_bool(ConditionTerm::boolean_cell_read(
-            match site {
-                Some(site) => {
-                    ProgramPoint::at_read_site(&crate::kernel::intern_memory_ref(memory), site)
-                }
-                None => ProgramPoint::at(&crate::kernel::intern_memory_ref(memory)),
-            },
+            ProgramPoint::read_at(&crate::kernel::intern_memory_ref(memory), site),
             pointer.clone(),
         ))),
         ProgramType::Int8 => Some(memory.symbolic_int8_load(site, pointer)),
@@ -6194,7 +6211,7 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
         ProgramType::Float32 => Some(memory.symbolic_float32_load(pointer)),
         ProgramType::Float64 => Some(memory.symbolic_float64_load(pointer)),
         ProgramType::Int8Pointer | ProgramType::Int8PointerPointer => {
-            Some(memory.symbolic_pointer_load(site, pointer, value_type))
+            Some(memory.symbolic_pointer_load(Some(site), pointer, value_type))
         }
         ProgramType::VoidPointerPointer
         | ProgramType::ParameterPointer(_)
@@ -6216,20 +6233,20 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
         | ProgramType::Int64PointerPointer
         | ProgramType::UInt128PointerPointer
         | ProgramType::UInt64PointerPointer => {
-            Some(memory.symbolic_pointer_load(site, pointer, value_type))
+            Some(memory.symbolic_pointer_load(Some(site), pointer, value_type))
         }
         ProgramType::Float32Pointer
         | ProgramType::Float64Pointer
         | ProgramType::Float32PointerPointer
         | ProgramType::Float64PointerPointer => {
-            Some(memory.symbolic_pointer_load(site, pointer, value_type))
+            Some(memory.symbolic_pointer_load(Some(site), pointer, value_type))
         }
         ProgramType::FunctionPointer(_) => {
-            Some(memory.symbolic_pointer_load(site, pointer, value_type))
+            Some(memory.symbolic_pointer_load(Some(site), pointer, value_type))
         }
         // Click's untyped pointer reads a pointer-width cell as any pointer
         // load does; only its type states no pointee.
-        ProgramType::Pointer => Some(memory.symbolic_pointer_load(site, pointer, value_type)),
+        ProgramType::Pointer => Some(memory.symbolic_pointer_load(Some(site), pointer, value_type)),
         ProgramType::Int8Array(_) => None,
         ProgramType::Int32Array(_)
         | ProgramType::UInt8Array(_)
@@ -6276,7 +6293,7 @@ pub(in crate::kernel) fn cached_symbolic_storage_cell_value(
         ProgramType::UInt64 => (LoadKind::Bits64, ProgramValue::UInt64),
         _ if program_type.is_object_pointer() => {
             let load = crate::kernel::MachineTerm::read_named(
-                ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
+                ProgramPoint::unplaced(&(crate::kernel::intern_memory(memory.clone()))),
                 pointer.clone(),
                 LoadKind::Int32,
             );
@@ -6293,7 +6310,7 @@ pub(in crate::kernel) fn cached_symbolic_storage_cell_value(
         _ => return None,
     };
     let load = crate::kernel::MachineTerm::read_named(
-        ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
+        ProgramPoint::unplaced(&(crate::kernel::intern_memory(memory.clone()))),
         pointer.clone(),
         kind,
     );
@@ -6317,10 +6334,7 @@ pub(in crate::kernel) fn symbolic_storage_cell_value(
             record_load_access_width(memory, pointer, program_type.byte_width());
         }
         let load = crate::kernel::MachineTerm::read_named(
-            ProgramPoint::at_optional_read_site(
-                &(crate::kernel::intern_memory(memory.clone())),
-                site,
-            ),
+            ProgramPoint::read_at_optional(&(crate::kernel::intern_memory(memory.clone())), site),
             pointer.clone(),
             LoadKind::Int32,
         );
@@ -6334,10 +6348,13 @@ pub(in crate::kernel) fn symbolic_storage_cell_value(
         )));
     }
     // Entry cells and contract reads select the same structural descriptor.
+    let site = site
+        .cloned()
+        .unwrap_or_else(|| ProgramPoint::unplaced(&crate::kernel::intern_memory_ref(memory)));
     let value = if record_width {
-        symbolic_load_value(memory, site, pointer, program_type)
+        symbolic_load_value(memory, &site, pointer, program_type)
     } else {
-        symbolic_load_value_unrecorded(memory, site, pointer, program_type)
+        symbolic_load_value_unrecorded(memory, &site, pointer, program_type)
     };
     value.map(|value| match value {
         ProgramValue::Int8(bits) => ProgramValue::Int8(canonical_scalar_read(&bits)),
@@ -6951,7 +6968,13 @@ mod tests {
             ProgramType::Int32Pointer,
             ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
         ] {
-            let ordinary = symbolic_load_value(&memory, None, &address, ty).unwrap();
+            let ordinary = symbolic_load_value(
+                &memory,
+                &crate::kernel::ProgramPoint::of_memory(&memory),
+                &address,
+                ty,
+            )
+            .unwrap();
             let logical = memory.symbolic_pointer_version_load(None, &address, ty);
             let entry = symbolic_storage_cell_value(&memory, None, &address, ty, true)
                 .expect("entry pointer read");

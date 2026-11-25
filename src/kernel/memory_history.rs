@@ -552,7 +552,7 @@ fn pointer_offsets_match_for_resource_check(
                 || {
                     transport_framed_atomic_pointer_offset(
                         offset,
-                        &memory,
+                        &ProgramPoint::unplaced(&memory),
                         Some((assumptions, false)),
                     )
                 },
@@ -763,11 +763,10 @@ fn cell_version_point(
     bytes: impl Into<crate::kernel::AccessExtent>,
 ) -> Option<SharedMemory> {
     let bytes = bytes.into();
-    crate::kernel::resource_tracker::last_same_version_point(
+    crate::kernel::resource_tracker::last_same_version_memory(
         crate::kernel::resource_tracker::TrackedResource::Cell { pointer, bytes },
-        &crate::kernel::resource_tracker::ProgramPoint::at(memory),
+        memory,
     )
-    .map(|point| point.shared_memory().clone())
 }
 
 /// Deep-canonical memory equality; see [`canonical_memory_deep`].
@@ -938,7 +937,9 @@ enum CheckedLoadEqualityEvidence {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct OriginLoadEndpoint {
-    memory: SharedMemory,
+    /// The read's origin memory, placed where the origin is; named, and
+    /// compared, by its memory.
+    point: ProgramPoint,
     pointer: Address,
     kind: LoadKind,
 }
@@ -949,11 +950,15 @@ fn origin_load_width(term: &MachineTerm) -> Option<u32> {
 }
 
 impl OriginLoadEndpoint {
+    fn memory(&self) -> &SharedMemory {
+        self.point.shared_memory()
+    }
+
     #[cfg(test)]
     fn for_term(term: &MachineTerm) -> Option<Self> {
         if let MachineTerm::MemoryLoad(memory, pointer, kind) = term {
             return Some(Self {
-                memory: memory.shared_memory().clone(),
+                point: ProgramPoint::viewing(memory.shared_memory(), memory),
                 pointer: pointer.as_ref().clone(),
                 kind: *kind,
             });
@@ -966,7 +971,9 @@ impl OriginLoadEndpoint {
             crate::kernel::MachineOperandView::Legacy(term),
         )?;
         Some(Self {
-            memory: read.origin?.into_shared_memory(),
+            point: read
+                .origin
+                .map(|origin| ProgramPoint::viewing(origin.shared_memory(), &origin))?,
             pointer: read.pointer,
             kind: read.kind,
         })
@@ -978,7 +985,7 @@ impl OriginLoadEndpoint {
             crate::kernel::MachineOperandView::Legacy(term),
         )?;
         Some(Self {
-            memory: read.point.into_shared_memory(),
+            point: ProgramPoint::viewing(read.point.shared_memory(), &read.point),
             pointer: read.pointer,
             kind: read.kind,
         })
@@ -987,7 +994,7 @@ impl OriginLoadEndpoint {
     /// The access width a walk from this endpoint uses.
     #[cfg(test)]
     fn bytes(&self) -> u32 {
-        crate::kernel::load_term_access_width(&self.memory, &self.pointer, self.kind)
+        crate::kernel::load_term_access_width(&self.memory(), &self.pointer, self.kind)
     }
 
     #[cfg(test)]
@@ -1001,11 +1008,7 @@ impl OriginLoadEndpoint {
     }
 
     fn as_term(&self) -> MachineTerm {
-        crate::kernel::MachineTerm::read_named(
-            ProgramPoint::at(&self.memory),
-            self.pointer.clone(),
-            self.kind,
-        )
+        crate::kernel::MachineTerm::read_named(self.point.clone(), self.pointer.clone(), self.kind)
     }
 }
 
@@ -1408,7 +1411,7 @@ impl CheckedLoadEquality {
                     && cell.has_only_typed_hops()
                     && written.byte_width() == bytes
                     && cell.checks_walk_from(
-                        &endpoint.memory,
+                        &endpoint.memory(),
                         &endpoint.pointer,
                         bytes,
                         assumptions,
@@ -1438,7 +1441,11 @@ impl CheckedLoadEquality {
                     && left.kind == right.kind
                     && left.pointer.base == right.pointer.base
                     && offset.checks(&left.pointer.offset, &right.pointer.offset, assumptions)
-                    && memories_match_for_pointer_load(&left.memory, &right.memory, &left.pointer)
+                    && memories_match_for_pointer_load(
+                        &left.memory(),
+                        &right.memory(),
+                        &left.pointer,
+                    )
             }
             CheckedLoadEqualityEvidence::OriginMemoryDag {
                 left,
@@ -1474,19 +1481,19 @@ impl CheckedLoadEquality {
                 endpoints_match
                     && left.kind == right.kind
                     && match retained_states {
-                        None => left.memory == right.memory,
+                        None => left.memory() == right.memory(),
                         Some(equality) => {
                             let MachineTerm::MemoryLoad(memory, pointer, kind) = &equality.left
                             else {
                                 return false;
                             };
-                            memory.shared_memory() == &left.memory
+                            memory.shared_memory() == left.memory()
                                 && *kind == left.kind
                                 && (pointer.as_ref() == &left.pointer
                                     || pointer.as_ref() == &right.pointer)
                                 && equality.right
                                     == MachineTerm::read_named(
-                                        ProgramPoint::at(&right.memory),
+                                        ProgramPoint::unplaced(&right.memory()),
                                         pointer.clone(),
                                         right.kind,
                                     )
@@ -1559,8 +1566,8 @@ impl CheckedLoadEquality {
                     && right.matches_observed_term(&self.right)
                     && left.pointer == right.pointer
                     && left.kind == right.kind
-                    && left.memory.memory() == expected_left
-                    && right.memory.memory() == expected_right
+                    && left.memory().memory() == expected_left
+                    && right.memory().memory() == expected_right
                     && assumptions.contains_assumed_exact(summary)
                     && ranges.len() == mutable_ranges.len()
                     && ranges.iter().zip(mutable_ranges).all(|(evidence, range)| {
@@ -1715,7 +1722,7 @@ fn checked_stored_origin_operand_equality(
         let previous = EXPLICIT_DAG_CHECK.with(|flag| flag.replace(true));
         let cell = with_extended_dag_bridging(|| {
             memory_dag_cell_source(
-                &endpoint.memory,
+                &endpoint.memory(),
                 &endpoint.pointer,
                 endpoint.bytes(),
                 assumptions,
@@ -1823,7 +1830,7 @@ pub(crate) fn checked_origin_load_equality(
     let named_endpoints = OriginLoadEndpoint::for_named_term(left)
         .zip(OriginLoadEndpoint::for_named_term(right))
         .filter(|(left, right)| {
-            left.memory == right.memory && left.pointer.base != right.pointer.base
+            left.memory() == right.memory() && left.pointer.base != right.pointer.base
         });
     let named_program_point = named_endpoints.is_some();
     let Some((left_endpoint, right_endpoint)) = named_endpoints.or_else(|| {
@@ -1857,18 +1864,18 @@ pub(crate) fn checked_origin_load_equality(
                     Some(path)
                 };
                 {
-                    let retained_states = if left_endpoint.memory == right_endpoint.memory {
+                    let retained_states = if left_endpoint.memory() == right_endpoint.memory() {
                         None
                     } else {
                         let mut selected = None;
                         for pointer in [&left_endpoint.pointer, &right_endpoint.pointer] {
                             let first = crate::kernel::MachineTerm::read_named(
-                                ProgramPoint::at(&left_endpoint.memory),
+                                left_endpoint.point.clone(),
                                 pointer.clone(),
                                 left_endpoint.kind,
                             );
                             let second = crate::kernel::MachineTerm::read_named(
-                                ProgramPoint::at(&right_endpoint.memory),
+                                right_endpoint.point.clone(),
                                 pointer.clone(),
                                 right_endpoint.kind,
                             );
@@ -1910,8 +1917,8 @@ pub(crate) fn checked_origin_load_equality(
     // endpoints this comparison is about to take as equal.
     if left_endpoint.pointer == right_endpoint.pointer
         && crate::kernel::reasoning::loads_lack_recorded_equality(
-            &left_endpoint.memory,
-            &right_endpoint.memory,
+            left_endpoint.memory(),
+            right_endpoint.memory(),
             &left_endpoint.pointer,
             left_endpoint.kind,
             assumptions,
@@ -1927,8 +1934,8 @@ pub(crate) fn checked_origin_load_equality(
         )
         .filter(|_| {
             memories_match_for_pointer_load(
-                &left_endpoint.memory,
-                &right_endpoint.memory,
+                left_endpoint.memory(),
+                right_endpoint.memory(),
                 &left_endpoint.pointer,
             )
         })
@@ -1969,7 +1976,7 @@ pub(crate) fn checked_origin_load_equality(
     let effect_summary = (direct.is_none() && dag.as_ref().is_none_or(Option::is_none))
         .then(|| {
             assumptions
-                .memory_effect_facts_naming(left_endpoint.memory.memory())
+                .memory_effect_facts_naming(left_endpoint.memory().memory())
                 .find_map(|summary| {
                     let Proposition::MemoryEffectSummary {
                         before,
@@ -1979,12 +1986,12 @@ pub(crate) fn checked_origin_load_equality(
                     else {
                         return None;
                     };
-                    let reversed = if before == left_endpoint.memory.memory()
-                        && after == right_endpoint.memory.memory()
+                    let reversed = if before == left_endpoint.memory().memory()
+                        && after == right_endpoint.memory().memory()
                     {
                         false
-                    } else if after == left_endpoint.memory.memory()
-                        && before == right_endpoint.memory.memory()
+                    } else if after == left_endpoint.memory().memory()
+                        && before == right_endpoint.memory().memory()
                     {
                         true
                     } else {
@@ -1996,7 +2003,7 @@ pub(crate) fn checked_origin_load_equality(
                                 mutable_ranges,
                                 &left_endpoint.pointer,
                                 crate::kernel::load_access_width_or_widest(
-                                    &left_endpoint.memory,
+                                    left_endpoint.memory(),
                                     &left_endpoint.pointer,
                                 ),
                                 assumptions,
@@ -3384,7 +3391,7 @@ fn checked_pointer_read_endpoint_and_kind(
             let application = assumptions.retained_pointer_read_application(read)?;
             let definition = application.as_loaded_value()?;
             Some(crate::kernel::MachineTerm::read_named(
-                ProgramPoint::at_read_site(&definition.defining_memory, &definition.point),
+                ProgramPoint::viewing(&definition.defining_memory, &definition.point),
                 definition.defining_address,
                 LoadKind::of_type(ProgramType::Int32Pointer)?,
             ))
@@ -3890,21 +3897,18 @@ impl LoadCellWalks {
             ));
         }
         let kind = self.kind;
-        let load = |memory: &SharedMemory| {
-            crate::kernel::MachineTerm::read_named(ProgramPoint::at(memory), pointer.clone(), kind)
-        };
-        let pins = |cell: &MemoryDagCell, other: &MachineTerm| {
+        let pins = |cell: &MemoryDagCell, other: &SharedMemory| {
             matches!(cell, MemoryDagCell::Stored { .. })
                 && matches!(
                     cell.resolved_value(pointer, kind),
                     Some(
                         crate::kernel::integer32_c_value!(value)
-                    ) if &value == other
+                    ) if value.is_memory_named_read_of(other, pointer, kind)
                 )
         };
-        if pins(&self.left, &load(right_memory)) {
+        if pins(&self.left, right_memory) {
             Some(AtomicMemoryLoadEqualityEvidence::LeftResolvesToRight { left: self.left })
-        } else if pins(&self.right, &load(left_memory)) {
+        } else if pins(&self.right, left_memory) {
             Some(AtomicMemoryLoadEqualityEvidence::RightResolvesToLeft { right: self.right })
         } else {
             None
@@ -4220,30 +4224,36 @@ fn recorded_load_history_uncached(
 /// proves the cell unchanged from, named by the assumption-free naming walk
 /// so that facts spelled with that older name apply exactly.
 pub(crate) fn resolve_load_along_memory_derivations(
-    memory: &SharedMemory,
+    origin: &ProgramPoint,
     pointer: &Address,
     kind: LoadKind,
     assumptions: &PureFactContext,
 ) -> Option<MachineTerm> {
+    let memory = origin.shared_memory();
     let _assumptions_id_scope = assumptions.enter_id_scope();
     let previous = EXPLICIT_DAG_CHECK.with(|flag| flag.replace(true));
-    let result =
-        with_extended_dag_bridging(|| {
-            let bytes = crate::kernel::load_term_access_width(memory, pointer, kind);
-            let cell = memory_dag_cell_source(memory, pointer, bytes, assumptions, true)?;
-            if let Some(value) = cell.resolved_value(pointer, kind) {
-                return match value {
-                    crate::kernel::integer32_c_value!(value) => Some(value),
-                    _ => None,
-                };
+    let result = with_extended_dag_bridging(|| {
+        let bytes = crate::kernel::load_term_access_width(memory, pointer, kind);
+        let cell = memory_dag_cell_source(memory, pointer, bytes, assumptions, true)?;
+        if let Some(value) = cell.resolved_value(pointer, kind) {
+            return match value {
+                crate::kernel::integer32_c_value!(value) => Some(value),
+                _ => None,
+            };
+        }
+        match cell {
+            MemoryDagCell::Stored { .. } => None,
+            // The node is an earlier memory the history walk reached
+            // from the origin; it is placed only as walked from there.
+            MemoryDagCell::Unwritten { node, .. } => {
+                Some(crate::kernel::canonical_form_of_load_at(
+                    &ProgramPoint::walked(&node, origin),
+                    pointer.clone(),
+                    kind,
+                ))
             }
-            match cell {
-                MemoryDagCell::Stored { .. } => None,
-                MemoryDagCell::Unwritten { node, .. } => Some(
-                    crate::kernel::canonical_form_of_load(node, pointer.clone(), kind),
-                ),
-            }
-        });
+        }
+    });
     EXPLICIT_DAG_CHECK.with(|flag| flag.set(previous));
     result
 }
@@ -4268,12 +4278,9 @@ pub(crate) fn resolve_prerequisite_loads_along_memory_derivations(
         else {
             continue;
         };
-        let Some(form) = resolve_load_along_memory_derivations(
-            origin.shared_memory(),
-            &pointer,
-            kind,
-            assumptions,
-        ) else {
+        let Some(form) =
+            resolve_load_along_memory_derivations(&origin, &pointer, kind, assumptions)
+        else {
             continue;
         };
         if form == MachineTerm::Variable(variable) {
@@ -4716,7 +4723,7 @@ fn memory_materializes_atomic_load(
 /// other proposition forms must be re-established explicitly.
 pub(crate) fn prove_program_condition_fact_transport(
     fact: &Proposition,
-    after: &SymbolicMemory,
+    after: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> Option<Theorem> {
     prove_program_condition_fact_transport_with_assumptions(fact, after, Some((assumptions, false)))
@@ -4725,7 +4732,7 @@ pub(crate) fn prove_program_condition_fact_transport(
 #[cfg(test)]
 pub(crate) fn prove_program_condition_fact_direct_transport(
     fact: &Proposition,
-    after: &SymbolicMemory,
+    after: &ProgramPoint,
     assumptions: &PureFactContext,
 ) -> Option<Theorem> {
     prove_program_condition_fact_transport_with_assumptions(fact, after, Some((assumptions, true)))
@@ -4789,7 +4796,7 @@ pub(crate) fn program_condition_fact_transport_target_in_context<'a>(
 
 fn prove_program_condition_fact_transport_with_assumptions(
     fact: &Proposition,
-    after: &SymbolicMemory,
+    after: &ProgramPoint,
     assumptions: Option<(&PureFactContext, bool)>,
 ) -> Option<Theorem> {
     #[cfg(test)]
@@ -4871,11 +4878,7 @@ pub(crate) fn rewrite_condition_through_certified_stores(
         };
         equations.push((
             canonicalize_atomic_loads(&value_term),
-            MachineTerm::memory_read(
-                crate::kernel::intern_memory(store.after.clone()),
-                store.pointer.clone(),
-                kind,
-            ),
+            MachineTerm::read_named(store.after_point.clone(), store.pointer.clone(), kind),
         ));
     }
     if equations.is_empty() {
@@ -5666,7 +5669,7 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &MachineTerm) -> MachineTerm 
                             );
                             let version = version.as_ref().unwrap_or(memory.shared_memory());
                             results.push(crate::kernel::MachineTerm::read_named(
-                                ProgramPoint::at_read_site(
+                                ProgramPoint::walked(
                                     &(canonical_projected_load_memory(version, &canonical_pointer)),
                                     memory,
                                 ),
@@ -5727,7 +5730,7 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &MachineTerm) -> MachineTerm 
                             );
                             let version = version.as_ref().unwrap_or(next_memory.shared_memory());
                             results.push(crate::kernel::MachineTerm::read_named(
-                                ProgramPoint::at_read_site(
+                                ProgramPoint::walked(
                                     &(canonical_projected_load_memory(version, &canonical_pointer)),
                                     next_memory,
                                 ),
@@ -6728,7 +6731,7 @@ fn collect_bitvector_memories(term: &MachineTerm, memories: &mut Vec<SharedMemor
 /// compatibility reader.
 pub(in crate::kernel) fn transport_framed_common_condition(
     condition: &crate::kernel::KernelTerm,
-    after: &SymbolicMemory,
+    after: &ProgramPoint,
     assumptions: Option<(&PureFactContext, bool)>,
 ) -> Option<crate::kernel::KernelTerm> {
     use crate::kernel::KernelTermNode as Node;
@@ -6815,7 +6818,7 @@ pub(in crate::kernel) fn transport_framed_common_condition(
 
 fn transport_framed_atomic_condition(
     condition: &ConditionTerm,
-    after: &SymbolicMemory,
+    after: &ProgramPoint,
     assumptions: Option<(&PureFactContext, bool)>,
 ) -> Option<ConditionTerm> {
     if crate::kernel::assumptions::reasoning_interrupted() {
@@ -6901,7 +6904,7 @@ fn transport_framed_atomic_condition(
 
 fn transport_framed_atomic_pointer_value(
     value: &Pointer,
-    after: &SymbolicMemory,
+    after: &ProgramPoint,
     assumptions: Option<(&PureFactContext, bool)>,
 ) -> Option<Pointer> {
     // Only reconstructed complete words need their read provenance moved
@@ -6912,7 +6915,7 @@ fn transport_framed_atomic_pointer_value(
             // The supplied endpoint names this observation. Check its one
             // immediate frame; discovering an older version would be a hidden
             // history search even if a previous query happened to cache it.
-            let after = crate::kernel::intern_memory_ref(after);
+            let after = after.shared_memory().clone();
             let mut target = Address::loaded_value(&after, &read.defining_address);
             target.offset = pointer.offset.clone();
             return assumptions
@@ -6927,7 +6930,7 @@ fn transport_framed_atomic_pointer_value(
 
 fn transport_framed_atomic_pointer(
     pointer: &Address,
-    after: &SymbolicMemory,
+    after: &ProgramPoint,
     assumptions: Option<(&PureFactContext, bool)>,
 ) -> Option<Address> {
     let block = if let AddressBase::Symbolic(variable) = &pointer.base {
@@ -6963,7 +6966,7 @@ fn transport_framed_atomic_pointer(
 
 fn transport_framed_atomic_pointer_offset(
     offset: &AddressOffset,
-    after: &SymbolicMemory,
+    after: &ProgramPoint,
     assumptions: Option<(&PureFactContext, bool)>,
 ) -> Option<AddressOffset> {
     if crate::kernel::assumptions::reasoning_interrupted() {
@@ -7009,7 +7012,7 @@ use shared_index_transport::{
 
 fn transport_framed_atomic_bitvector(
     term: &MachineTerm,
-    after: &SymbolicMemory,
+    after: &ProgramPoint,
     assumptions: Option<(&PureFactContext, bool)>,
 ) -> Option<MachineTerm> {
     if crate::kernel::assumptions::reasoning_interrupted() {
@@ -7057,13 +7060,13 @@ fn transport_framed_atomic_bitvector(
                     assumptions,
                 )?,
             };
-            if memories_match_for_pointer_load(memory.memory(), after, pointer)
-                || memory_materializes_atomic_load(after, memory.memory(), pointer, *kind)
+            if memories_match_for_pointer_load(memory.memory(), after.memory(), pointer)
+                || memory_materializes_atomic_load(after.memory(), memory.memory(), pointer, *kind)
                 || assumptions.is_some_and(|(assumptions, direct)| {
                     if direct {
                         memory_load_is_directly_unchanged(
                             memory.memory(),
-                            after,
+                            after.memory(),
                             pointer,
                             *kind,
                             assumptions,
@@ -7075,7 +7078,7 @@ fn transport_framed_atomic_bitvector(
                             *kind,
                         );
                         let right = crate::kernel::MachineTerm::read_named(
-                            ProgramPoint::at(&(crate::kernel::intern_memory(after.clone()))),
+                            ProgramPoint::viewing(after.shared_memory(), after),
                             transported_pointer.clone(),
                             *kind,
                         );
@@ -7084,7 +7087,7 @@ fn transport_framed_atomic_bitvector(
                 })
             {
                 crate::kernel::MachineTerm::read_named(
-                    ProgramPoint::at(&(crate::kernel::intern_memory(after.clone()))),
+                    ProgramPoint::viewing(after.shared_memory(), after),
                     transported_pointer,
                     *kind,
                 )
@@ -7645,7 +7648,7 @@ fn effect_pointer_equality_retains_exact_loads_and_explicit_offset_facts() {
     );
     let loaded = AddressOffset::scaled_int32_node(
         crate::kernel::MachineTerm::read_named(
-            ProgramPoint::at(&(intern_memory(memory))),
+            ProgramPoint::unplaced(&(intern_memory(memory))),
             pointer,
             crate::kernel::LoadKind::Int32,
         ),
@@ -8310,8 +8313,12 @@ mod opaque_pointer_frame_tests {
             .memory()
             .clone()
             .store(pointer, ProgramValue::Int32(MachineTerm::constant(7)));
-        let theorem = prove_program_condition_fact_transport(&source, &after, &assumptions)
-            .expect("unchanged pointer identity transports across an aliased store");
+        let theorem = prove_program_condition_fact_transport(
+            &source,
+            &crate::kernel::ProgramPoint::of_memory(&after),
+            &assumptions,
+        )
+        .expect("unchanged pointer identity transports across an aliased store");
         assert!(
             program_condition_fact_transport_target_in_context(&theorem, &source, &assumptions)
                 .is_some()
@@ -8328,7 +8335,14 @@ mod opaque_pointer_frame_tests {
             .memory()
             .clone()
             .store(field, ProgramValue::pointer(argument));
-        assert!(prove_program_condition_fact_transport(&source, &changed, &assumptions).is_none());
+        assert!(
+            prove_program_condition_fact_transport(
+                &source,
+                &crate::kernel::ProgramPoint::of_memory(&changed),
+                &assumptions
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -9483,8 +9497,18 @@ mod common_boolean_transport_tests {
             },
         ] {
             let root = KernelTermImport::default().condition(&source);
-            let expected = transport_framed_atomic_condition(&source, &after, None).unwrap();
-            let actual = transport_framed_common_condition(&root, &after, None).unwrap();
+            let expected = transport_framed_atomic_condition(
+                &source,
+                &crate::kernel::ProgramPoint::of_memory(&after),
+                None,
+            )
+            .unwrap();
+            let actual = transport_framed_common_condition(
+                &root,
+                &crate::kernel::ProgramPoint::of_memory(&after),
+                None,
+            )
+            .unwrap();
             assert_eq!(KernelTermExport::condition(&actual).unwrap(), expected);
         }
     }
@@ -9505,11 +9529,21 @@ mod common_boolean_transport_tests {
             ),
         ] {
             assert!(
-                transport_framed_atomic_condition(&source, &SymbolicMemory::new(), None).is_none()
+                transport_framed_atomic_condition(
+                    &source,
+                    &crate::kernel::ProgramPoint::of_memory(&SymbolicMemory::new()),
+                    None
+                )
+                .is_none()
             );
             let root = KernelTermImport::default().condition(&source);
             assert!(
-                transport_framed_common_condition(&root, &SymbolicMemory::new(), None).is_none()
+                transport_framed_common_condition(
+                    &root,
+                    &crate::kernel::ProgramPoint::of_memory(&SymbolicMemory::new()),
+                    None
+                )
+                .is_none()
             );
         }
     }
