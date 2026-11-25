@@ -1693,12 +1693,12 @@ fn querying_an_opaque_word_pointer_does_not_search_unrelated_call_resources() {
         if size == 16 {
             // A full pointer premise still supplies the selected member bounds.
             let root = Address::symbolic(Variable(989_704));
-            let bounded = OldPointer::new(root.clone(), ProgramType::Int32Pointer).with_bounds(Some(
-                SubobjectBounds {
+            let bounded = OldPointer::new(root.clone(), ProgramType::Int32Pointer).with_bounds(
+                Some(SubobjectBounds {
                     start: root,
                     width: 4u32.into(),
-                },
-            ));
+                }),
+            );
             let related = context.assume_condition(
                 ConditionTerm::pointer_equal(pointer.clone(), bounded.clone()),
                 true,
@@ -1830,12 +1830,12 @@ fn complete_pointer_read_definitions_scale_with_selected_reads() {
         for i in 0..selected {
             let slot = Address::symbolic(Variable(983_000 + i));
             let target = Address::symbolic(Variable(984_000 + i));
-            let stored = OldPointer::new(target.clone(), ProgramType::Int32Pointer).with_bounds(Some(
-                SubobjectBounds {
+            let stored = OldPointer::new(target.clone(), ProgramType::Int32Pointer).with_bounds(
+                Some(SubobjectBounds {
                     start: target,
                     width: 4u32.into(),
-                },
-            ));
+                }),
+            );
             let memory = intern_memory_ref(
                 &SymbolicMemory::new().store(slot.clone(), ProgramValue::Pointer(stored.clone())),
             );

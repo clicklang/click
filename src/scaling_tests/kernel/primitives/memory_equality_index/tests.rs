@@ -324,8 +324,10 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
         );
         let bytes_value =
             crate::kernel::OldPointer::new(bytes.clone(), crate::kernel::ProgramType::UInt8Pointer);
-        let cursor_value =
-            crate::kernel::OldPointer::new(cursor.clone(), crate::kernel::ProgramType::UInt8Pointer);
+        let cursor_value = crate::kernel::OldPointer::new(
+            cursor.clone(),
+            crate::kernel::ProgramType::UInt8Pointer,
+        );
         let aliases = PureFactContext::new()
             .assume_condition(
                 ConditionTerm::pointer_equal(

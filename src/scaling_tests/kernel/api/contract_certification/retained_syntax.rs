@@ -196,7 +196,8 @@ fn pointer_certification_visits_shared_address_dags_without_exporting_them() {
         for _ in 0..depth {
             offset = SharedAddressOffset::add(offset.clone(), offset);
         }
-        let base = SharedPointer::import(&OldPointer::new(Address::null(), ProgramType::Int32Pointer));
+        let base =
+            SharedPointer::import(&OldPointer::new(Address::null(), ProgramType::Int32Pointer));
         let mut value = base.node().clone();
         value.address = SharedAddress::new(value.address.node().base.clone(), offset);
         value.provenance = value.address.clone();

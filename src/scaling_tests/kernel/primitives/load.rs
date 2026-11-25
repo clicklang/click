@@ -4,7 +4,8 @@
 
 use super::*;
 use crate::kernel::{
-    CallbackSignature, ExecutionState, OldPointer, ProgramType, ProgramValue, SymbolicMemory, Variable,
+    CallbackSignature, ExecutionState, OldPointer, ProgramType, ProgramValue, SymbolicMemory,
+    Variable,
 };
 
 fn cell(index: u64) -> Address {
