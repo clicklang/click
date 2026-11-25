@@ -139,6 +139,18 @@ Today's trees become Syntax. The typed Surface is designed fresh, small, and
 built up one construct at a time. Each stage is its own pull request and leaves
 every test passing.
 
+The migration reorganizes where decisions are made; it does not change what
+they decide. Each step keeps the verifier's behavior: the same proofs pass, the
+same kernel terms are produced, the same text is printed. A behavior change
+joins a step only when today's behavior cannot be expressed in the new model,
+and the step then names it. Where today's behavior is merely awkward, Surface
+describes it as it is and the awkwardness is recorded for separate work. For
+example, the kernel lowers a written int32 comparison over a compound operand
+to an Integer comparison of observations
+([Every operation has its type](#every-operation-has-its-type)); Surface
+records that comparison's kind as elaboration chooses it today, and the
+raiser's casts stay until that lowering is changed on its own.
+
 1. **Name Syntax.** Rename today's `SurfaceProposition` and `SurfaceTerm` to
    `SyntaxProposition` and `SyntaxTerm`. A mechanical rename with no behavior
    change.
