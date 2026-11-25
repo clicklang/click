@@ -745,7 +745,7 @@ fn parses_expanded_typed_loads_and_old_loadability() {
     let premises = &solve_using.premises;
     assert!(matches!(
         &premises[0],
-        ClickProposition::Loadable { segment }
+        SurfaceProposition::Loadable { segment }
             if segment.state == ContractSegmentState::Old
     ));
     assert_eq!(
@@ -754,8 +754,8 @@ fn parses_expanded_typed_loads_and_old_loadability() {
     );
     assert!(matches!(
         &premises[1],
-        ClickProposition::Comparison {
-            left: ContractExpression::ProgramExpression(ProgramExpression::TypedLoad {
+        SurfaceProposition::Comparison {
+            left: SurfaceTerm::ProgramExpression(ProgramExpression::TypedLoad {
                 value_type: ProgramType::Int32Pointer,
                 ..
             }),
@@ -763,7 +763,7 @@ fn parses_expanded_typed_loads_and_old_loadability() {
             ..
         }
     ));
-    assert!(matches!(&premises[2], ClickProposition::Separate { .. }));
+    assert!(matches!(&premises[2], SurfaceProposition::Separate { .. }));
 }
 
 /// The `target` directive selects the C implementation target. Absent, the
@@ -1004,13 +1004,13 @@ fn parses_integer_theorem_parameters_and_keeps_decimal_spelling() {
     let file = parse(source).expect("Integer theorem should parse");
     let theorem = &file.theorem_definitions()[0];
     assert_eq!(theorem.parameters()[0].click_type(), &ClickType::Integer);
-    let Ensure::Proposition(ClickProposition::Comparison { right, .. }) =
+    let Ensure::Proposition(SurfaceProposition::Comparison { right, .. }) =
         theorem.ensures()[0].ensure()
     else {
         panic!("expected Integer comparison");
     };
     assert!(
-        matches!(right, ContractExpression::IntegerLiteral(value) if value == "100000000000000000000000000000000000001")
+        matches!(right, SurfaceTerm::IntegerLiteral(value) if value == "100000000000000000000000000000000000001")
     );
 }
 
@@ -1860,17 +1860,17 @@ fn verifies_atomic_derivation_from_explicit_premises() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_15")]
 fn records_checked_surface_forms_for_lowered_propositions() {
-    let left = ClickProposition::Comparison {
+    let left = SurfaceProposition::Comparison {
         left: current_var("x"),
         operator: ComparisonOperator::GreaterThan,
         right: current_int(0),
     };
-    let right = ClickProposition::Comparison {
+    let right = SurfaceProposition::Comparison {
         left: current_var("x"),
         operator: ComparisonOperator::LessThan,
         right: current_int(10),
     };
-    let surface = ClickProposition::And(Box::new(left.clone()), Box::new(right.clone()));
+    let surface = SurfaceProposition::And(Box::new(left.clone()), Box::new(right.clone()));
     let values = ProgramValueBindings::from([(
         "x".to_string(),
         ProgramValue::Int32(MachineTerm::Variable(Variable(42))),
@@ -1938,13 +1938,10 @@ fn surface_synthesis_qualifies_a_c_local_named_result() {
 
     let surface = synthesize_surface_proposition(&proposition, ParameterBinding::default(), &state)
         .expect("the local comparison should have a surface form");
-    let ClickProposition::Comparison { left, .. } = surface else {
+    let SurfaceProposition::Comparison { left, .. } = surface else {
         panic!("expected a comparison form");
     };
-    assert_eq!(
-        left,
-        ContractExpression::ProgramBinding("result".to_string())
-    );
+    assert_eq!(left, SurfaceTerm::ProgramBinding("result".to_string()));
 }
 
 #[test]
@@ -1982,11 +1979,11 @@ fn surface_synthesis_omits_a_predicates_hidden_resource_state_argument() {
     .expect("the hidden state should not need a surface spelling");
     assert_eq!(
         surface,
-        ClickProposition::PredicateCall {
+        SurfaceProposition::PredicateCall {
             name: "valid_pool".to_string(),
-            arguments: vec![ContractExpression::ProgramExpression(
-                ProgramExpression::Variable(("pool".to_string()).into(),)
-            )],
+            arguments: vec![SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                ("pool".to_string()).into(),
+            ))],
         }
     );
 }
@@ -2023,9 +2020,9 @@ fn surface_synthesis_spells_reserved_predicates_by_their_click_names() {
                 ),
             ],
         ),
-        Some(ClickProposition::PredicateCall {
+        Some(SurfaceProposition::PredicateCall {
             name: "ordered".to_string(),
-            arguments: vec![ContractExpression::ProgramExpression(
+            arguments: vec![SurfaceTerm::ProgramExpression(
                 ProgramExpression::FunctionAddress("compare".to_string(),)
             )],
         })
@@ -2088,12 +2085,12 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
         &ExecutionState::new(),
     )
     .expect("known struct field load should have a surface spelling");
-    let ClickProposition::Comparison { left, .. } = surface else {
+    let SurfaceProposition::Comparison { left, .. } = surface else {
         panic!("expected a comparison spelling");
     };
     assert!(matches!(
         &left,
-        ContractExpression::Field { field, .. } if field == "len"
+        SurfaceTerm::Field { field, .. } if field == "len"
     ));
     assert_eq!(describe_contract_expression(&left), "owner->len");
 
@@ -2130,7 +2127,7 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
         &ExecutionState::new(),
     )
     .expect("indexed pointer field load should have a surface spelling");
-    let ClickProposition::Comparison { left, .. } = surface else {
+    let SurfaceProposition::Comparison { left, .. } = surface else {
         panic!("expected a comparison spelling");
     };
     assert_eq!(describe_contract_expression(&left), "owner->data[0]");
@@ -2139,13 +2136,13 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_16")]
 fn proof_source_printing_preserves_proposition_precedence() {
-    let comparison = |operator, value| ClickProposition::Comparison {
+    let comparison = |operator, value| SurfaceProposition::Comparison {
         left: current_var("x"),
         operator,
         right: current_int(value),
     };
-    let proposition = ClickProposition::And(
-        Box::new(ClickProposition::Or(
+    let proposition = SurfaceProposition::And(
+        Box::new(SurfaceProposition::Or(
             Box::new(comparison(ComparisonOperator::Equal, 0)),
             Box::new(comparison(ComparisonOperator::Equal, 1)),
         )),
@@ -2161,12 +2158,12 @@ fn proof_source_printing_preserves_proposition_precedence() {
         "{source}"
     );
 
-    let quantified = ClickProposition::ForAll {
+    let quantified = SurfaceProposition::ForAll {
         click_type: ClickType::Program(InterfaceType::Int32),
         name: "k".to_string().into(),
         written_name: None,
-        body: Box::new(ClickProposition::Implies(
-            Box::new(ClickProposition::And(
+        body: Box::new(SurfaceProposition::Implies(
+            Box::new(SurfaceProposition::And(
                 Box::new(comparison(ComparisonOperator::LessEqual, 0)),
                 Box::new(comparison(ComparisonOperator::LessThan, 2)),
             )),
@@ -2476,13 +2473,13 @@ theorem false_guard(x: int32) {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_18")]
 fn retains_distinct_surface_spellings_for_the_same_kernel_fact() {
-    let current = ClickProposition::Comparison {
+    let current = SurfaceProposition::Comparison {
         left: current_var("x"),
         operator: ComparisonOperator::Equal,
         right: current_int(1),
     };
-    let retained_state = ClickProposition::Comparison {
-        left: ContractExpression::At {
+    let retained_state = SurfaceProposition::Comparison {
+        left: SurfaceTerm::At {
             selector: ProgramPointSelector::ProgramPoint(ProgramPointRef {
                 region: CodeRegionRef::Region(5),
                 kind: ProgramPointKind::Entry,
@@ -2516,7 +2513,7 @@ fn retains_distinct_surface_spellings_for_the_same_kernel_fact() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_18")]
 fn recorded_surface_fact_resolves_only_one_available_kernel_fact() {
-    let surface = ClickProposition::Comparison {
+    let surface = SurfaceProposition::Comparison {
         left: current_var("x"),
         operator: ComparisonOperator::Equal,
         right: current_int(1),
@@ -2537,10 +2534,10 @@ fn recorded_surface_fact_resolves_only_one_available_kernel_fact() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_18")]
 fn surface_lowering_map_forks_and_local_updates_scale_logarithmically() {
-    fn indexed_pair(index: u32) -> (ClickProposition, Proposition) {
+    fn indexed_pair(index: u32) -> (SurfaceProposition, Proposition) {
         (
-            ClickProposition::Comparison {
-                left: ContractExpression::ProgramBinding(format!("x{index}")),
+            SurfaceProposition::Comparison {
+                left: SurfaceTerm::ProgramBinding(format!("x{index}")),
                 operator: ComparisonOperator::Equal,
                 right: current_int(index),
             },
@@ -2668,7 +2665,7 @@ fn parses_loadable_segment_proposition() {
                     start: ProgramExpression::Value(int32(0)),
                     end: ProgramExpression::Variable(("n".to_string()).into()),
                     surface: ContractSegmentSurface::Range {
-                        base: ContractExpression::Add(
+                        base: SurfaceTerm::Add(
                             Box::new(current_var("p")),
                             Box::new(current_int(1)),
                         ),
@@ -2677,13 +2674,13 @@ fn parses_loadable_segment_proposition() {
                     },
                 },
             },
-            Requirement::Proposition(ClickProposition::PredicateCall {
+            Requirement::Proposition(SurfaceProposition::PredicateCall {
                 name: "shifted_loadable".to_string(),
                 arguments: vec![
-                    ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                    SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                         ("p".to_string()).into()
                     )),
-                    ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                    SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                         ("n".to_string()).into()
                     )),
                 ],
@@ -2692,7 +2689,7 @@ fn parses_loadable_segment_proposition() {
     );
     assert!(matches!(
         file.predicate_definitions()[0].body(),
-        ClickProposition::Loadable { .. }
+        SurfaceProposition::Loadable { .. }
     ));
 }
 
@@ -2721,13 +2718,13 @@ fn parses_resource_relation_propositions() {
 
     assert!(matches!(
         file.predicate_definitions()[0].body(),
-        ClickProposition::Separate { .. }
+        SurfaceProposition::Separate { .. }
     ));
     assert!(matches!(
         function.requires()[0],
-        Requirement::Proposition(ClickProposition::Contains { .. })
+        Requirement::Proposition(SurfaceProposition::Contains { .. })
     ));
-    let Requirement::Proposition(ClickProposition::Contains { parent, .. }) =
+    let Requirement::Proposition(SurfaceProposition::Contains { parent, .. }) =
         &function.requires()[0]
     else {
         panic!("expected contains proposition");
@@ -2758,7 +2755,7 @@ fn parses_memory_separate_requirement() {
 
     assert!(matches!(
         function.requires()[0],
-        Requirement::Proposition(ClickProposition::Separate { .. })
+        Requirement::Proposition(SurfaceProposition::Separate { .. })
     ));
 }
 
@@ -2794,7 +2791,7 @@ fn restricted_solve_premises_retain_declared_resource_argument_types() {
     };
     assert!(matches!(
         &premises[0],
-        ClickProposition::Separate {
+        SurfaceProposition::Separate {
             left: ResourceSubject::Declared { parameter_types, .. },
             ..
         } if parameter_types == &[InterfaceType::Int32Pointer]
@@ -2843,7 +2840,7 @@ fn transport_using_retains_declared_resource_argument_types() {
     for proposition in [source, target, &premises[0]] {
         assert!(matches!(
             proposition,
-            ClickProposition::Contains {
+            SurfaceProposition::Contains {
                 parent: ResourceSubject::Declared { parameter_types, .. },
                 ..
             } if parameter_types == &[InterfaceType::Int32Pointer]
@@ -2941,7 +2938,7 @@ fn parses_pilot_struct_pointer_signature_and_field_load() {
                 end: ProgramExpression::Value(int32(1)),
                 surface: ContractSegmentSurface::Field {
                     value_bytes: None,
-                    base: Some(Box::new(ContractExpression::ProgramExpression(
+                    base: Some(Box::new(SurfaceTerm::ProgramExpression(
                         ProgramExpression::Variable(("obj".to_string()).into())
                     ))),
                     name: "ref_count".to_string(),
@@ -2953,10 +2950,10 @@ fn parses_pilot_struct_pointer_signature_and_field_load() {
     );
     assert!(matches!(
         function.ensures()[0].ensure(),
-        Ensure::Proposition(ClickProposition::Comparison { right, .. })
+        Ensure::Proposition(SurfaceProposition::Comparison { right, .. })
             if matches!(
                 right,
-                ContractExpression::Field { field, .. } if field == "ref_count"
+                SurfaceTerm::Field { field, .. } if field == "ref_count"
             )
     ));
 }
@@ -3007,7 +3004,7 @@ fn parses_chained_struct_fields_with_imported_pointee_types() {
     "#;
     let file = parse_click_file_with_c_sources(click_source, &[("read_nested.c", c_source)])
         .expect("contract field chains should use imported struct pointee types");
-    let Ensure::Proposition(ClickProposition::Comparison { right, .. }) =
+    let Ensure::Proposition(SurfaceProposition::Comparison { right, .. }) =
         file.function_blocks()[0].ensures()[0].ensure()
     else {
         panic!("expected comparison ensure")
@@ -3019,7 +3016,7 @@ fn parses_chained_struct_fields_with_imported_pointee_types() {
     );
     assert!(matches!(
         right,
-        ContractExpression::Field {
+        SurfaceTerm::Field {
             field,
             ..
         } if field == "value"
@@ -3185,7 +3182,7 @@ fn parses_pilot_struct_field_owned_segment() {
             end: ProgramExpression::Value(int32(1)),
             surface: ContractSegmentSurface::Field {
                 value_bytes: None,
-                base: Some(Box::new(ContractExpression::ProgramExpression(
+                base: Some(Box::new(SurfaceTerm::ProgramExpression(
                     ProgramExpression::Variable(("obj".to_string()).into())
                 ))),
                 name: "ref_count".to_string(),
@@ -3262,7 +3259,7 @@ fn parses_sequence_literals_states_and_concatenation() {
         }
     "#;
     let file = parse(source).expect("sequence contract should parse");
-    let Ensure::Proposition(ClickProposition::Comparison {
+    let Ensure::Proposition(SurfaceProposition::Comparison {
         left,
         operator: ComparisonOperator::Equal,
         right,
@@ -3271,11 +3268,11 @@ fn parses_sequence_literals_states_and_concatenation() {
         panic!("expected sequence equality");
     };
 
-    assert!(matches!(left, ContractExpression::SequenceConcat(_, _)));
+    assert!(matches!(left, SurfaceTerm::SequenceConcat(_, _)));
     assert!(matches!(
         right,
-        ContractExpression::Old(inner)
-            if matches!(inner.as_ref(), ContractExpression::SequenceConcat(_, _))
+        SurfaceTerm::Old(inner)
+            if matches!(inner.as_ref(), SurfaceTerm::SequenceConcat(_, _))
     ));
     assert_eq!(
         describe_contract_expression(left),
@@ -3735,8 +3732,8 @@ fn typed_loads_lower_and_raise_back_to_the_same_term() {
         ))
         .unwrap_or_else(|error| panic!("`{text}` should parse: {}", error.report()));
         let body = file.click_function_definitions()[0].body().unwrap().clone();
-        let (ContractExpression::ProgramExpression(lowered @ ProgramExpression::TypedLoad { .. })
-        | ContractExpression::CUnary {
+        let (SurfaceTerm::ProgramExpression(lowered @ ProgramExpression::TypedLoad { .. })
+        | SurfaceTerm::CUnary {
             lowered: lowered @ ProgramExpression::TypedLoad { .. },
             ..
         }) = &body
@@ -3828,8 +3825,8 @@ fn an_untyped_pointer_cast_lowers_and_raises_back_to_the_same_term() {
         ))
         .unwrap_or_else(|error| panic!("`{text}` should parse: {}", error.report()));
         let body = file.click_function_definitions()[0].body().unwrap().clone();
-        let (ContractExpression::ProgramExpression(lowered @ ProgramExpression::Cast { .. })
-        | ContractExpression::CUnary {
+        let (SurfaceTerm::ProgramExpression(lowered @ ProgramExpression::Cast { .. })
+        | SurfaceTerm::CUnary {
             lowered: lowered @ ProgramExpression::Cast { .. },
             ..
         }) = &body
@@ -3868,12 +3865,12 @@ fn selected_memory_load_keeps_the_written_pointer_and_qualifiers() {
     let read = parse("load<const uint8*>(old(p))");
     assert!(matches!(
         &read,
-        ContractExpression::MemoryLoad {
+        SurfaceTerm::MemoryLoad {
             pointer,
             value_type: ProgramType::UInt8Pointer,
             volatile: false,
             pointee_constant: true,
-        } if matches!(pointer.as_ref(), ContractExpression::Old(_))
+        } if matches!(pointer.as_ref(), SurfaceTerm::Old(_))
     ));
     assert_eq!(
         parse(&crate::surface::diagnostics::describe_contract_expression(
@@ -5278,7 +5275,7 @@ fn a_cpp_class_function_is_its_object_field() {
 fn a_conjunct_of_one_source_facts_lowering_finds_that_fact() {
     // `x == 1` stands for a source atom (such as a contract `separate`) whose
     // lowering adds conditions beside the fact it states.
-    let surface = ClickProposition::Comparison {
+    let surface = SurfaceProposition::Comparison {
         left: current_var("x"),
         operator: ComparisonOperator::Equal,
         right: current_int(1),
@@ -5319,7 +5316,7 @@ fn a_conjunct_of_one_source_facts_lowering_finds_that_fact() {
     let unrelated = Proposition::condition_is(ConditionTerm::Constant(true), true);
     assert_eq!(forms.kernels_containing_conjunct(&unrelated).count(), 0);
     // A written conjunction records its conjuncts as pairs, not containment.
-    let left = ClickProposition::Comparison {
+    let left = SurfaceProposition::Comparison {
         left: current_var("y"),
         operator: ComparisonOperator::Equal,
         right: current_int(2),
@@ -5336,7 +5333,7 @@ fn a_conjunct_of_one_source_facts_lowering_finds_that_fact() {
     let mut written = SurfacePropositionMap::default();
     written
         .record_lowering(
-            &ClickProposition::And(Box::new(left.clone()), Box::new(surface.clone())),
+            &SurfaceProposition::And(Box::new(left.clone()), Box::new(surface.clone())),
             &Proposition::And(Box::new(left_kernel.clone()), Box::new(stated.clone())),
         )
         .unwrap();
@@ -5378,10 +5375,10 @@ fn printed_machine_arithmetic_keeps_exact_transport_premises() {
         } else {
             (variable, arithmetic)
         };
-        let premise = ClickProposition::Comparison {
-            left: ContractExpression::ProgramExpression(left),
+        let premise = SurfaceProposition::Comparison {
+            left: SurfaceTerm::ProgramExpression(left),
             operator: ComparisonOperator::LessThan,
-            right: ContractExpression::ProgramExpression(right),
+            right: SurfaceTerm::ProgramExpression(right),
         };
         let printed = printing::source_click_proposition(&premise);
         let source = format!(

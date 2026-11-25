@@ -647,10 +647,8 @@ fn parses_unfold_proof_tactic() {
                 ProofTactic::UnfoldFunction(ClickFunctionApplication {
                     name: "sorted".into(),
                     arguments: vec![
-                        ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                            "p".into()
-                        )),
-                        ContractExpression::IntegerLiteral("2".into())
+                        SurfaceTerm::ProgramExpression(ProgramExpression::Variable("p".into())),
+                        SurfaceTerm::IntegerLiteral("2".into())
                     ]
                 }),
                 ProofTactic::Close,
@@ -780,17 +778,17 @@ fn parses_and_classifies_simple_and_smart_tactics() {
     assert!(matches!(
         ProofTactic::ApplyTheoremUsing {
             application,
-            premises: vec![ClickProposition::Defined {
+            premises: vec![SurfaceProposition::Defined {
                 expression: current_int(0),
             }],
         }
         .class(),
         TacticClass::Simple(SimpleTactic::ApplyTheorem)
     ));
-    let transport_source = ClickProposition::Defined {
+    let transport_source = SurfaceProposition::Defined {
         expression: current_int(0),
     };
-    let transport_target = ClickProposition::Defined {
+    let transport_target = SurfaceProposition::Defined {
         expression: current_int(1),
     };
     assert!(matches!(
@@ -865,12 +863,10 @@ fn parses_and_classifies_simple_and_smart_tactics() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_07")]
 fn canonical_tactic_printer_round_trips_nested_surface_certificate() {
-    let nonnegative = ClickProposition::Comparison {
-        left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
-            ("x".to_string()).into(),
-        )),
+    let nonnegative = SurfaceProposition::Comparison {
+        left: SurfaceTerm::ProgramExpression(ProgramExpression::Variable(("x".to_string()).into())),
         operator: ComparisonOperator::GreaterEqual,
-        right: ContractExpression::IntegerLiteral("0".into()),
+        right: SurfaceTerm::IntegerLiteral("0".into()),
     };
     let tactics = vec![
         ProofTactic::Mark("before_step".to_string()),
@@ -913,22 +909,18 @@ fn canonical_tactic_printer_round_trips_nested_surface_certificate() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_07")]
 fn canonical_tactic_printer_round_trips_cases_certificate() {
-    let nonnegative = ClickProposition::Comparison {
-        left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
-            ("x".to_string()).into(),
-        )),
+    let nonnegative = SurfaceProposition::Comparison {
+        left: SurfaceTerm::ProgramExpression(ProgramExpression::Variable(("x".to_string()).into())),
         operator: ComparisonOperator::GreaterEqual,
-        right: ContractExpression::IntegerLiteral("0".into()),
+        right: SurfaceTerm::IntegerLiteral("0".into()),
     };
-    let negative = ClickProposition::Comparison {
-        left: ContractExpression::ProgramExpression(ProgramExpression::Variable(
-            ("x".to_string()).into(),
-        )),
+    let negative = SurfaceProposition::Comparison {
+        left: SurfaceTerm::ProgramExpression(ProgramExpression::Variable(("x".to_string()).into())),
         operator: ComparisonOperator::LessThan,
-        right: ContractExpression::IntegerLiteral("0".into()),
+        right: SurfaceTerm::IntegerLiteral("0".into()),
     };
     let disjunction =
-        ClickProposition::Or(Box::new(nonnegative.clone()), Box::new(negative.clone()));
+        SurfaceProposition::Or(Box::new(nonnegative.clone()), Box::new(negative.clone()));
     let tactics = vec![
         ProofTactic::Have(ProofHave {
             proposition: disjunction.clone(),
@@ -967,7 +959,7 @@ fn canonical_tactic_printer_round_trips_cases_certificate() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_08")]
 fn proof_certificate_round_trips_nested_surface_steps() {
-    let reflexive = ClickProposition::Comparison {
+    let reflexive = SurfaceProposition::Comparison {
         left: current_var("x"),
         operator: ComparisonOperator::Equal,
         right: current_var("x"),
@@ -1014,7 +1006,7 @@ fn proof_certificate_has_no_smart_step_variant() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_08")]
 fn tactic_certificate_accepts_only_simple_tactics() {
     let tactics = vec![
-        ProofTactic::Rewrite(ClickProposition::Comparison {
+        ProofTactic::Rewrite(SurfaceProposition::Comparison {
             left: current_var("x"),
             operator: ComparisonOperator::Equal,
             right: current_var("y"),
@@ -1044,7 +1036,7 @@ fn tactic_certificate_rejects_a_direct_smart_tactic() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_09")]
 fn tactic_certificate_rejects_smart_tactics_in_nested_control_tactics() {
-    let condition = ClickProposition::Comparison {
+    let condition = SurfaceProposition::Comparison {
         left: current_var("x"),
         operator: ComparisonOperator::Equal,
         right: current_var("x"),
@@ -1055,7 +1047,7 @@ fn tactic_certificate_rejects_smart_tactics_in_nested_control_tactics() {
             ensuring: None,
             condition,
             then_tactics: vec![ProofTactic::Have(ProofHave {
-                proposition: ClickProposition::Comparison {
+                proposition: SurfaceProposition::Comparison {
                     left: current_var("x"),
                     operator: ComparisonOperator::Equal,
                     right: current_var("x"),
@@ -1097,7 +1089,7 @@ fn tactic_certificate_checks_structural_induction_arms() {
             hypothesis: "ih".into(),
         },
         ProofTactic::Match(std::sync::Arc::new(ProofMatch {
-            scrutinee: ContractExpression::Binding("xs".into()),
+            scrutinee: SurfaceTerm::Binding("xs".into()),
             ensuring: None,
             arms: vec![ProofInductionArm {
                 type_name: "List".into(),
@@ -1128,7 +1120,7 @@ fn tactic_certificate_checks_structural_induction_arms() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_09")]
 fn tactic_certificate_treats_an_omitted_nested_proof_as_solve() {
     let tactics = [ProofTactic::Have(ProofHave {
-        proposition: ClickProposition::Comparison {
+        proposition: SurfaceProposition::Comparison {
             left: current_var("x"),
             operator: ComparisonOperator::Equal,
             right: current_var("x"),

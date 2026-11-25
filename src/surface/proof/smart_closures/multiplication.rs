@@ -4,7 +4,7 @@ use super::*;
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_multiply_order_using(
         input: &Proof<'a>,
-        premises: &[ClickProposition],
+        premises: &[SurfaceProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_multiply_order_using");
@@ -96,13 +96,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     if actual == canonical {
                         continue;
                     }
-                    let equality = ClickProposition::Comparison {
-                        left: ContractExpression::Multiply(
+                    let equality = SurfaceProposition::Comparison {
+                        left: SurfaceTerm::Multiply(
                             Box::new(source.clone()),
                             Box::new(written.clone()),
                         ),
                         operator: ComparisonOperator::Equal,
-                        right: ContractExpression::Multiply(
+                        right: SurfaceTerm::Multiply(
                             Box::new(written.clone()),
                             Box::new(source.clone()),
                         ),

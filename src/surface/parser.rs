@@ -964,54 +964,53 @@ impl Token {
 }
 
 /// A byte string denotes the ordinary structural list of its byte values.
-fn byte_list_expression(bytes: &[u8]) -> ContractExpression {
+fn byte_list_expression(bytes: &[u8]) -> SurfaceTerm {
     let algebraic_type = AlgebraicTypeApplication {
         rigid: false,
         name: "List".to_string(),
         arguments: vec![ClickType::Program(InterfaceType::UInt8)],
     };
     bytes.iter().rev().fold(
-        ContractExpression::AlgebraicConstructor {
+        SurfaceTerm::AlgebraicConstructor {
             algebraic_type: algebraic_type.clone(),
             variant: "Nil".to_string(),
             arguments: Vec::new(),
         },
-        |tail, byte| ContractExpression::AlgebraicConstructor {
+        |tail, byte| SurfaceTerm::AlgebraicConstructor {
             algebraic_type: algebraic_type.clone(),
             variant: "Cons".to_string(),
             arguments: vec![
-                ContractExpression::ProgramExpression(ProgramExpression::Value(
-                    crate::kernel::uint8(u32::from(*byte)),
-                )),
+                SurfaceTerm::ProgramExpression(ProgramExpression::Value(crate::kernel::uint8(
+                    u32::from(*byte),
+                ))),
                 tail,
             ],
         },
     )
 }
 
-type ContractBinaryConstructor =
-    fn(Box<ContractExpression>, Box<ContractExpression>) -> ContractExpression;
+type ContractBinaryConstructor = fn(Box<SurfaceTerm>, Box<SurfaceTerm>) -> SurfaceTerm;
 
 fn contract_binary_operator(token: &Token) -> Option<(usize, ContractBinaryConstructor)> {
     let (precedence, constructor): (usize, ContractBinaryConstructor) = match token {
-        Token::PlusPlus => (0, ContractExpression::SequenceConcat),
-        Token::Pipe => (1, ContractExpression::BitwiseOr),
-        Token::Caret => (2, ContractExpression::BitwiseXor),
-        Token::Amp => (3, ContractExpression::BitwiseAnd),
-        Token::ShiftLeft => (4, ContractExpression::ShiftLeft),
-        Token::ShiftRight => (4, ContractExpression::ShiftRight),
-        Token::Plus => (5, ContractExpression::Add),
-        Token::Minus => (5, ContractExpression::Subtract),
-        Token::Star => (6, ContractExpression::Multiply),
-        Token::Slash => (6, ContractExpression::Divide),
-        Token::Percent => (6, ContractExpression::Remainder),
+        Token::PlusPlus => (0, SurfaceTerm::SequenceConcat),
+        Token::Pipe => (1, SurfaceTerm::BitwiseOr),
+        Token::Caret => (2, SurfaceTerm::BitwiseXor),
+        Token::Amp => (3, SurfaceTerm::BitwiseAnd),
+        Token::ShiftLeft => (4, SurfaceTerm::ShiftLeft),
+        Token::ShiftRight => (4, SurfaceTerm::ShiftRight),
+        Token::Plus => (5, SurfaceTerm::Add),
+        Token::Minus => (5, SurfaceTerm::Subtract),
+        Token::Star => (6, SurfaceTerm::Multiply),
+        Token::Slash => (6, SurfaceTerm::Divide),
+        Token::Percent => (6, SurfaceTerm::Remainder),
         _ => return None,
     };
     Some((precedence, constructor))
 }
 
 fn reduce_contract_binary_expression(
-    values: &mut Vec<ContractExpression>,
+    values: &mut Vec<SurfaceTerm>,
     constructor: ContractBinaryConstructor,
 ) {
     let right = values
@@ -1036,7 +1035,7 @@ struct Parser {
     /// their availability at the point of use.
     loop_proof_value_names: crate::persistent::PersistentSet<String>,
     /// A predicate goal may introduce its declared quantifiers when unfolded.
-    loop_predicate_bodies: BTreeMap<String, ClickProposition>,
+    loop_predicate_bodies: BTreeMap<String, SurfaceProposition>,
     resource_parameters: BTreeMap<String, usize>,
     program_object_names_by_function: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
     hosted_stdout_by_function: BTreeMap<String, ProgramValue>,
@@ -1791,22 +1790,22 @@ pub(super) struct ContractLetBinding {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum ContractLetBindingKind {
-    Value(ContractExpression),
-    Where(ClickProposition),
+    Value(SurfaceTerm),
+    Where(SurfaceProposition),
     /// `let name: type;` in a named contract: a value parameter, bound where
     /// the contract is attached to a function.
     Parameter,
 }
 
 impl ContractLetBinding {
-    pub(super) fn value(&self) -> Option<&ContractExpression> {
+    pub(super) fn value(&self) -> Option<&SurfaceTerm> {
         match &self.kind {
             ContractLetBindingKind::Value(value) => Some(value),
             ContractLetBindingKind::Where(_) | ContractLetBindingKind::Parameter => None,
         }
     }
 
-    pub(super) fn where_condition(&self) -> Option<&ClickProposition> {
+    pub(super) fn where_condition(&self) -> Option<&SurfaceProposition> {
         match &self.kind {
             ContractLetBindingKind::Value(_) | ContractLetBindingKind::Parameter => None,
             ContractLetBindingKind::Where(condition) => Some(condition),
@@ -2482,16 +2481,16 @@ impl Parser {
 
     /// The slice parameter `expression` reads at another point:
     /// `old(bytes)` or `at(point, bytes)`.
-    fn read_slice_parameter<'a>(&self, expression: &'a ContractExpression) -> Option<&'a str> {
-        let (ContractExpression::Old(inner)
-        | ContractExpression::At {
+    fn read_slice_parameter<'a>(&self, expression: &'a SurfaceTerm) -> Option<&'a str> {
+        let (SurfaceTerm::Old(inner)
+        | SurfaceTerm::At {
             expression: inner, ..
         }) = expression
         else {
             return None;
         };
         match inner.as_ref() {
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(slice),
             )) if self.rust_slice_params.contains(slice) => Some(slice),
             _ => None,
@@ -2506,8 +2505,8 @@ impl Parser {
     fn spread_slice_arguments(
         &self,
         name: &str,
-        arguments: Vec<ContractExpression>,
-    ) -> Result<Vec<ContractExpression>, ClickError> {
+        arguments: Vec<SurfaceTerm>,
+    ) -> Result<Vec<SurfaceTerm>, ClickError> {
         let Some((count, slices)) = self.pure_function_slices.get(name) else {
             return Ok(arguments);
         };
@@ -2524,14 +2523,14 @@ impl Parser {
                 continue;
             }
             match argument {
-                ContractExpression::Call {
+                SurfaceTerm::Call {
                     name: constructor,
                     arguments: parts,
                 } if is_slice_from_raw_parts(&constructor) && parts.len() == 2 => {
                     spread.extend(parts);
                 }
                 // A subslice, `bytes[a..b]`, is its pointer and its length.
-                ContractExpression::AlgebraicConstructor {
+                SurfaceTerm::AlgebraicConstructor {
                     algebraic_type,
                     variant,
                     arguments: parts,
@@ -2541,7 +2540,7 @@ impl Parser {
                 // A slice read at another point, as a printed proof writes
                 // it: its pointer at that point, and its length, which a
                 // shared slice parameter never changes.
-                argument @ (ContractExpression::Old(_) | ContractExpression::At { .. })
+                argument @ (SurfaceTerm::Old(_) | SurfaceTerm::At { .. })
                     if self.read_slice_parameter(&argument).is_some() =>
                 {
                     let slice = self
@@ -2549,25 +2548,22 @@ impl Parser {
                         .expect("matched above")
                         .to_string();
                     spread.push(argument);
-                    spread.push(ContractExpression::ProgramExpression(
-                        ProgramExpression::Variable(crate::kernel::BindingName::slice_length(
-                            &slice,
-                        )),
-                    ));
+                    spread.push(SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                        crate::kernel::BindingName::slice_length(&slice),
+                    )));
                 }
-                ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                     crate::kernel::BindingName::Named(slice),
                 )) if self.rust_slice_params.contains(&slice) => {
-                    let length =
-                        ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                            crate::kernel::BindingName::slice_length(&slice),
-                        ));
-                    spread.push(ContractExpression::ProgramExpression(
-                        ProgramExpression::Variable(slice.into()),
+                    let length = SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                        crate::kernel::BindingName::slice_length(&slice),
                     ));
+                    spread.push(SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                        slice.into(),
+                    )));
                     spread.push(length);
                 }
-                ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                     crate::kernel::BindingName::Named(slice),
                 )) => {
                     return Err(self.error(format!(
@@ -2581,7 +2577,7 @@ impl Parser {
                     if self.is_rust_slice_value(&argument)
                         || self.is_click_valued_receiver(&argument) =>
                 {
-                    let method = |method: &str| ContractExpression::MethodCall {
+                    let method = |method: &str| SurfaceTerm::MethodCall {
                         receiver: Box::new(argument.clone()),
                         method: method.to_string(),
                         arguments: vec![],
@@ -3786,9 +3782,7 @@ impl Parser {
             .get(name)
     }
 
-    fn parse_segment_primary(
-        &mut self,
-    ) -> Result<(ContractExpression, ProgramExpression), ClickError> {
+    fn parse_segment_primary(&mut self) -> Result<(SurfaceTerm, ProgramExpression), ClickError> {
         if let Some(expression) = self.take_local_binding_reference()? {
             let lowered = contract_expression_as_program_expression(&expression)
                 .ok_or_else(|| self.error("a C declaration reference must denote a C place"))?;
@@ -3797,7 +3791,7 @@ impl Parser {
         if self.peek_next() == Some(&Token::ColonColon) {
             let (name, expression) = self.parse_qualified_program_name()?;
             return Ok((
-                ContractExpression::ProgramExpression(ProgramExpression::Variable((name).into())),
+                SurfaceTerm::ProgramExpression(ProgramExpression::Variable((name).into())),
                 expression,
             ));
         }
@@ -3809,7 +3803,7 @@ impl Parser {
         // parameter types and would default a global byte slice to `int32`
         // cells, letting `owns bytes[0..1]` authorize the neighboring byte.
         let lowered = self.retype_global_array_pointer(&expression);
-        Ok((ContractExpression::ProgramExpression(expression), lowered))
+        Ok((SurfaceTerm::ProgramExpression(expression), lowered))
     }
 
     /// Wraps a bare global-array name in a cast to its element pointer type.
@@ -3992,7 +3986,7 @@ impl Parser {
             .collect();
         let body = if return_type == ClickType::Proposition {
             self.parse_proposition()
-                .map(|body| ContractExpression::Proposition(Box::new(body)))
+                .map(|body| SurfaceTerm::Proposition(Box::new(body)))
         } else {
             self.parse_branch_value(return_type == ClickType::Program(InterfaceType::Bool))
         };
@@ -4199,7 +4193,7 @@ impl Parser {
     /// Out of line: the caller is the recursive postfix parser, whose frame
     /// every temporary enlarges.
     #[inline(never)]
-    fn hidden_child_field(&self, owner: &str, field: &str) -> Option<ContractExpression> {
+    fn hidden_child_field(&self, owner: &str, field: &str) -> Option<SurfaceTerm> {
         if self.names.hidden_child_fields.is_empty() {
             return None;
         }
@@ -4207,7 +4201,7 @@ impl Parser {
             .hidden_child_fields
             .get(&(owner.to_string(), field.to_string()))
             .cloned()
-            .map(ContractExpression::ResourceField)
+            .map(SurfaceTerm::ResourceField)
     }
 
     /// `fact child.field == parent_field;` is the equation that says where a
@@ -4215,8 +4209,8 @@ impl Parser {
     /// in the body reads that parent field, so the body may state further
     /// facts about it, as a resource with a hidden record may.
     #[inline(never)]
-    fn note_child_field_equation(&mut self, fact: &ClickProposition) {
-        let ClickProposition::Comparison {
+    fn note_child_field_equation(&mut self, fact: &SurfaceProposition) {
+        let SurfaceProposition::Comparison {
             left,
             operator: ComparisonOperator::Equal,
             right,
@@ -4224,8 +4218,7 @@ impl Parser {
         else {
             return;
         };
-        let (ContractExpression::ResourceField(one), ContractExpression::ResourceField(other)) =
-            (left, right)
+        let (SurfaceTerm::ResourceField(one), SurfaceTerm::ResourceField(other)) = (left, right)
         else {
             return;
         };
@@ -4256,7 +4249,7 @@ impl Parser {
         resource_name: &str,
         clause: &ResourceClause,
         fields: &mut Vec<ResourceFieldDefinition>,
-        facts: &mut Vec<ClickProposition>,
+        facts: &mut Vec<SurfaceProposition>,
     ) -> Result<(), ClickError> {
         let ResourceClause::Named { binding, resource } = clause else {
             return Ok(());
@@ -4285,8 +4278,8 @@ impl Parser {
                 name: hidden_name,
                 click_type: child_field.click_type.clone(),
             });
-            facts.push(ClickProposition::Comparison {
-                left: ContractExpression::ResourceField(ResourceFieldAccess {
+            facts.push(SurfaceProposition::Comparison {
+                left: SurfaceTerm::ResourceField(ResourceFieldAccess {
                     owner: binding.name.clone(),
                     resource_name: child.clone(),
                     identity: binding.instance()?.into(),
@@ -4296,7 +4289,7 @@ impl Parser {
                     click_type: None,
                 }),
                 operator: ComparisonOperator::Equal,
-                right: ContractExpression::ResourceField(hidden.clone()),
+                right: SurfaceTerm::ResourceField(hidden.clone()),
             });
             self.names
                 .bind_hidden_child_field((binding.name.clone(), child_field.name), hidden);
@@ -6760,14 +6753,14 @@ impl Parser {
     /// their callers are the recursive expression parsers, whose frames every
     /// temporary enlarges.
     #[inline(never)]
-    fn parse_place_index(&mut self) -> Result<ContractExpression, ClickError> {
+    fn parse_place_index(&mut self) -> Result<SurfaceTerm, ClickError> {
         let index = self.parse_contract_expression()?;
         Ok(index)
     }
 
     /// The right operand of a binary operator, with any `as` casts.
     #[inline(never)]
-    fn parse_binary_operand(&mut self) -> Result<ContractExpression, ClickError> {
+    fn parse_binary_operand(&mut self) -> Result<SurfaceTerm, ClickError> {
         let operand = self.parse_contract_unary()?;
         self.parse_casts(operand)
     }
@@ -6832,14 +6825,14 @@ impl Parser {
 
     /// A program variable, or the length a slice's `name.len()` denotes.
     #[inline(never)]
-    fn c_variable_expression(&mut self, name: String) -> Result<ContractExpression, ClickError> {
+    fn c_variable_expression(&mut self, name: String) -> Result<SurfaceTerm, ClickError> {
         if let Some(expression) = self.take_rust_iterator_method(&name, None)? {
             return Ok(expression);
         }
         if let Some(length) = self.take_rust_slice_len(&name, false) {
-            return Ok(ContractExpression::ProgramExpression(
-                ProgramExpression::Variable(length),
-            ));
+            return Ok(SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                length,
+            )));
         }
         self.refuse_unknown_loop_value(&name)?;
         if let Some(expression) = self.take_rust_vec_method(&name)? {
@@ -6848,14 +6841,14 @@ impl Parser {
         if name == "stdout"
             && let Some(value) = &self.hosted_stdout
         {
-            return Ok(ContractExpression::QualifiedC {
+            return Ok(SurfaceTerm::QualifiedC {
                 name,
                 lowered: ProgramExpression::Value(value.clone()),
             });
         }
-        Ok(ContractExpression::ProgramExpression(
-            ProgramExpression::Variable(name.into()),
-        ))
+        Ok(SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+            name.into(),
+        )))
     }
 
     fn parse_parameters(&mut self) -> Result<ParsedParameters, ClickError> {
@@ -8055,7 +8048,9 @@ impl Parser {
 
     fn parse_loadable_requirement(&mut self) -> Result<Requirement, ClickError> {
         match self.parse_viewable_proposition()? {
-            ClickProposition::Loadable { segment } => Ok(Requirement::LoadableSegment { segment }),
+            SurfaceProposition::Loadable { segment } => {
+                Ok(Requirement::LoadableSegment { segment })
+            }
             proposition => {
                 self.expect(Token::Semicolon)?;
                 Ok(Requirement::Proposition(proposition))
@@ -8066,7 +8061,7 @@ impl Parser {
     /// `is_a<T>(p)`: the object `p` points to is a `T`, a struct type or a
     /// pointer to one. Its class is the one a `T*` parameter gives its
     /// argument, so it names the same type evidence.
-    fn parse_is_a_proposition(&mut self) -> Result<ClickProposition, ClickError> {
+    fn parse_is_a_proposition(&mut self) -> Result<SurfaceProposition, ClickError> {
         self.position += 2;
         let parsed = self.parse_type()?;
         self.expect(Token::GreaterThan)?;
@@ -8094,10 +8089,10 @@ impl Parser {
         self.expect(Token::LParen)?;
         let pointer = self.parse_contract_expression()?;
         self.expect(Token::RParen)?;
-        Ok(ClickProposition::IsA { class, pointer })
+        Ok(SurfaceProposition::IsA { class, pointer })
     }
 
-    fn parse_viewable_proposition(&mut self) -> Result<ClickProposition, ClickError> {
+    fn parse_viewable_proposition(&mut self) -> Result<SurfaceProposition, ClickError> {
         let saved = self.position;
         self.expect_ident_spelling("viewable")?;
         self.expect(Token::LParen)?;
@@ -8105,10 +8100,10 @@ impl Parser {
             && self.peek() == Some(&Token::RParen)
         {
             self.position += 1;
-            return Ok(ClickProposition::ResourceViewable { resource });
+            return Ok(SurfaceProposition::ResourceViewable { resource });
         }
         self.position = saved;
-        Ok(ClickProposition::Loadable {
+        Ok(SurfaceProposition::Loadable {
             segment: self.parse_loadable_segment()?,
         })
     }
@@ -8242,7 +8237,7 @@ impl Parser {
                             // A pointer can be current even when its subscript
                             // is a proof expression such as `old(i)`.
                             match self.parse_contract_postfix() {
-                                Ok(ContractExpression::Index(base, index))
+                                Ok(SurfaceTerm::Index(base, index))
                                     if contract_expression_as_program_expression(&index)
                                         .is_none() =>
                                 {
@@ -8287,7 +8282,7 @@ impl Parser {
 
     fn parse_saved_memory_range(
         &mut self,
-        base: ContractExpression,
+        base: SurfaceTerm,
     ) -> Result<ResourceSubject, ClickError> {
         self.expect(Token::LBracket)?;
         let start = self.parse_contract_expression()?;
@@ -8716,7 +8711,7 @@ impl Parser {
                     let call_arguments = if named_function {
                         argument_names
                             .iter()
-                            .map(|argument| ContractExpression::Binding(argument.clone()))
+                            .map(|argument| SurfaceTerm::Binding(argument.clone()))
                             .collect()
                     } else {
                         arguments.clone()
@@ -8762,7 +8757,7 @@ impl Parser {
         name: &str,
         produced: &str,
         declaration: &CalleeResourceBinder,
-        arguments: &[ContractExpression],
+        arguments: &[SurfaceTerm],
     ) -> Result<CallBinderBinding, ClickError> {
         if self.names.contains_any(NameKind::VALUES, name) {
             return Err(self.error("produced instance conflicts with a C or pure binding"));
@@ -8877,7 +8872,7 @@ impl Parser {
                         access: ResourceAccessMode::Own,
                         kind: ResourceKind::Token,
                         name: family.to_string(),
-                        arguments: vec![ContractExpression::ProgramExpression(
+                        arguments: vec![SurfaceTerm::ProgramExpression(
                             ProgramExpression::Variable(("mutex".to_string()).into()),
                         )],
                         parameter_types: vec![InterfaceType::VoidPointer],
@@ -9395,7 +9390,9 @@ impl Parser {
         names: &BTreeSet<String>,
     ) -> Result<Vec<(String, String)>, ClickError> {
         let target = match ensure {
-            Ensure::Proposition(ClickProposition::PredicateCall { name, .. }) => Some(name.clone()),
+            Ensure::Proposition(SurfaceProposition::PredicateCall { name, .. }) => {
+                Some(name.clone())
+            }
             _ => None,
         };
         let declared = target
@@ -9499,7 +9496,7 @@ impl Parser {
         Ok(Ensure::Proposition(self.parse_proposition()?))
     }
 
-    fn parse_proposition(&mut self) -> Result<ClickProposition, ClickError> {
+    fn parse_proposition(&mut self) -> Result<SurfaceProposition, ClickError> {
         if self.proposition_nesting > STRUCTURAL_NESTING_LIMIT {
             return Err(self.error(format!(
                 "structural proposition nesting exceeds Click's supported depth of {STRUCTURAL_NESTING_LIMIT}"
@@ -9511,7 +9508,7 @@ impl Parser {
         result
     }
 
-    fn parse_proposition_implies(&mut self) -> Result<ClickProposition, ClickError> {
+    fn parse_proposition_implies(&mut self) -> Result<SurfaceProposition, ClickError> {
         // `implies` is right associative, but parsing it recursively makes a
         // short source-level chain consume one Rust frame per link. Collect
         // the operands iteratively and fold them from the right instead.
@@ -9530,12 +9527,12 @@ impl Parser {
             .next()
             .expect("an implication chain always has one operand");
         for left in propositions {
-            proposition = ClickProposition::Implies(Box::new(left), Box::new(proposition));
+            proposition = SurfaceProposition::Implies(Box::new(left), Box::new(proposition));
         }
         Ok(proposition)
     }
 
-    fn parse_proposition_or(&mut self) -> Result<ClickProposition, ClickError> {
+    fn parse_proposition_or(&mut self) -> Result<SurfaceProposition, ClickError> {
         let mut proposition = self.parse_proposition_and()?;
         let mut operands = 1;
         while self.peek_ident() == Some("or") {
@@ -9546,13 +9543,13 @@ impl Parser {
             }
             self.position += 1;
             let right = self.parse_proposition_and()?;
-            proposition = ClickProposition::Or(Box::new(proposition), Box::new(right));
+            proposition = SurfaceProposition::Or(Box::new(proposition), Box::new(right));
             operands += 1;
         }
         Ok(proposition)
     }
 
-    fn parse_proposition_and(&mut self) -> Result<ClickProposition, ClickError> {
+    fn parse_proposition_and(&mut self) -> Result<SurfaceProposition, ClickError> {
         let mut proposition = self.parse_proposition_not()?;
         let mut operands = 1;
         while self.peek_ident() == Some("and") {
@@ -9563,13 +9560,13 @@ impl Parser {
             }
             self.position += 1;
             let right = self.parse_proposition_not()?;
-            proposition = ClickProposition::And(Box::new(proposition), Box::new(right));
+            proposition = SurfaceProposition::And(Box::new(proposition), Box::new(right));
             operands += 1;
         }
         Ok(proposition)
     }
 
-    fn parse_proposition_not(&mut self) -> Result<ClickProposition, ClickError> {
+    fn parse_proposition_not(&mut self) -> Result<SurfaceProposition, ClickError> {
         // Unlike `implies`, unary negation has no intervening delimiter that
         // the tokenizer preflight can use as a structural bound. Consume the
         // prefix iteratively and rebuild it after parsing the atom.
@@ -9585,7 +9582,7 @@ impl Parser {
         }
         let mut proposition = self.parse_proposition_atom()?;
         for _ in 0..negations {
-            proposition = ClickProposition::Not(Box::new(proposition));
+            proposition = SurfaceProposition::Not(Box::new(proposition));
         }
         Ok(proposition)
     }
@@ -9606,7 +9603,7 @@ impl Parser {
         standalone.then_some(name.as_str())
     }
 
-    fn parse_proposition_atom(&mut self) -> Result<ClickProposition, ClickError> {
+    fn parse_proposition_atom(&mut self) -> Result<SurfaceProposition, ClickError> {
         if let Some(name) = self.standalone_proposition_name()
             && !self.quantifier_binders.iter().any(|binder| binder == name)
         {
@@ -9644,11 +9641,11 @@ impl Parser {
                 ));
             };
             let body = self.parse_proposition()?;
-            return Ok(ClickProposition::Exists {
+            return Ok(SurfaceProposition::Exists {
                 click_type: ClickType::Program(interface_type),
                 name: binding.name.into(),
                 written_name: None,
-                body: Box::new(ClickProposition::And(Box::new(condition), Box::new(body))),
+                body: Box::new(SurfaceProposition::And(Box::new(condition), Box::new(body))),
             });
         }
 
@@ -9677,7 +9674,7 @@ impl Parser {
                     self.expect(Token::Comma)?;
                     let proposition = self.parse_proposition()?;
                     self.expect(Token::RParen)?;
-                    Ok(ClickProposition::At {
+                    Ok(SurfaceProposition::At {
                         selector,
                         proposition: Box::new(proposition),
                     })
@@ -9712,7 +9709,7 @@ impl Parser {
             {
                 // Refuse only once the proposition reading is chosen, so the
                 // refusal is not mistaken for a reason to reparse.
-                if let Ok(ClickProposition::At {
+                if let Ok(SurfaceProposition::At {
                     selector,
                     proposition,
                 }) = &proposition_at_program_point
@@ -9726,12 +9723,12 @@ impl Parser {
 
         if self.peek_ident() == Some("separate") && self.peek_next() == Some(&Token::LParen) {
             let (left, right) = self.parse_resource_subject_pair("separate")?;
-            return Ok(ClickProposition::Separate { left, right });
+            return Ok(SurfaceProposition::Separate { left, right });
         }
 
         if self.peek_ident() == Some("contains") && self.peek_next() == Some(&Token::LParen) {
             let (parent, child) = self.parse_resource_subject_pair("contains")?;
-            return Ok(ClickProposition::Contains { parent, child });
+            return Ok(SurfaceProposition::Contains { parent, child });
         }
 
         if self.peek_ident() == Some("viewable") && self.peek_next() == Some(&Token::LParen) {
@@ -9781,7 +9778,7 @@ impl Parser {
             self.expect(Token::LParen)?;
             let expression = self.parse_contract_expression()?;
             self.expect(Token::RParen)?;
-            return Ok(ClickProposition::Defined { expression });
+            return Ok(SurfaceProposition::Defined { expression });
         }
 
         if self.peek_ident().is_some_and(|name| {
@@ -9836,12 +9833,10 @@ impl Parser {
                 let arguments = if kind == crate::kernel::TerminationAtomKind::Callbacks {
                     Vec::new()
                 } else {
-                    vec![ContractExpression::Binding(
-                        self.expect_string("function name")?,
-                    )]
+                    vec![SurfaceTerm::Binding(self.expect_string("function name")?)]
                 };
                 self.expect(Token::RParen)?;
-                return Ok(ClickProposition::PredicateCall { name, arguments });
+                return Ok(SurfaceProposition::PredicateCall { name, arguments });
             }
             let start = self.position;
             let (name, arguments) = self.parse_call_arguments("predicate or function name")?;
@@ -9851,7 +9846,7 @@ impl Parser {
                         "floating-point classification `{name}` expects one argument"
                     )));
                 };
-                return Ok(ClickProposition::FloatClassification {
+                return Ok(SurfaceProposition::FloatClassification {
                     expression: expression.clone(),
                     classification,
                 });
@@ -9868,7 +9863,7 @@ impl Parser {
                     let operator = self.parse_comparison_operator("proposition")?;
                     let right = self.parse_comparison_operand()?;
                     return Ok(self.specification_comparison(
-                        ContractExpression::Call { name, arguments },
+                        SurfaceTerm::Call { name, arguments },
                         operator,
                         right,
                     ));
@@ -9891,15 +9886,15 @@ impl Parser {
                     return self.parse_proposition_comparison();
                 }
                 _ if self.proposition_function_names.contains(&name) => {
-                    return Ok(ClickProposition::Value(ContractExpression::Call {
+                    return Ok(SurfaceProposition::Value(SurfaceTerm::Call {
                         name,
                         arguments,
                     }));
                 }
                 _ if self.symbols.is_pure_function(&name) => {
-                    return Ok(bool_truth(ContractExpression::Call { name, arguments }));
+                    return Ok(bool_truth(SurfaceTerm::Call { name, arguments }));
                 }
-                _ => return Ok(ClickProposition::PredicateCall { name, arguments }),
+                _ => return Ok(SurfaceProposition::PredicateCall { name, arguments }),
             }
         }
 
@@ -9909,7 +9904,7 @@ impl Parser {
     /// A named contract with value parameters attached to a function value,
     /// `Adds(f, { amount: k })`. The map names every value parameter once;
     /// the proposition takes the values in declaration order.
-    fn parse_contract_value_application(&mut self) -> Result<ClickProposition, ClickError> {
+    fn parse_contract_value_application(&mut self) -> Result<SurfaceProposition, ClickError> {
         let name = self.expect_ident("contract name")?;
         let declared = self
             .contract_value_parameter_names
@@ -9957,10 +9952,10 @@ impl Parser {
                 ))
             })?);
         }
-        Ok(ClickProposition::PredicateCall { name, arguments })
+        Ok(SurfaceProposition::PredicateCall { name, arguments })
     }
 
-    fn parse_quantifier_chain(&mut self) -> Result<ClickProposition, ClickError> {
+    fn parse_quantifier_chain(&mut self) -> Result<SurfaceProposition, ClickError> {
         #[derive(Clone, Copy)]
         enum Operator {
             And,
@@ -9984,13 +9979,13 @@ impl Parser {
         let mut operands = Vec::new();
         let mut operators = Vec::new();
         let mut expect_operand = true;
-        let reduce = |operator: Operator, operands: &mut Vec<ClickProposition>| {
+        let reduce = |operator: Operator, operands: &mut Vec<SurfaceProposition>| {
             let right = operands.pop().expect("quantifier expression right operand");
             let left = operands.pop().expect("quantifier expression left operand");
             operands.push(match operator {
-                Operator::And => ClickProposition::And(Box::new(left), Box::new(right)),
-                Operator::Or => ClickProposition::Or(Box::new(left), Box::new(right)),
-                Operator::Implies => ClickProposition::Implies(Box::new(left), Box::new(right)),
+                Operator::And => SurfaceProposition::And(Box::new(left), Box::new(right)),
+                Operator::Or => SurfaceProposition::Or(Box::new(left), Box::new(right)),
+                Operator::Implies => SurfaceProposition::Implies(Box::new(left), Box::new(right)),
                 Operator::Scope => unreachable!("scope marker is not a binary operator"),
             });
         };
@@ -10113,7 +10108,7 @@ impl Parser {
                 }
                 let mut operand = self.parse_proposition_atom()?;
                 for _ in 0..negations {
-                    operand = ClickProposition::Not(Box::new(operand));
+                    operand = SurfaceProposition::Not(Box::new(operand));
                 }
                 operands.push(operand);
                 expect_operand = false;
@@ -10166,14 +10161,14 @@ impl Parser {
                     self.integer_literal_context = scope.previous_integer_context;
                     let body = operands.pop().expect("quantifier body operand");
                     let mut quantifier = if scope.forall {
-                        ClickProposition::ForAll {
+                        SurfaceProposition::ForAll {
                             click_type: scope.click_type,
                             name: scope.name,
                             written_name: None,
                             body: Box::new(body),
                         }
                     } else {
-                        ClickProposition::Exists {
+                        SurfaceProposition::Exists {
                             click_type: scope.click_type,
                             name: scope.name,
                             written_name: None,
@@ -10181,7 +10176,7 @@ impl Parser {
                         }
                     };
                     for _ in 0..scope.negations {
-                        quantifier = ClickProposition::Not(Box::new(quantifier));
+                        quantifier = SurfaceProposition::Not(Box::new(quantifier));
                     }
                     operands.push(quantifier);
                 }
@@ -10196,7 +10191,7 @@ impl Parser {
         }
     }
 
-    fn parse_range_proposition_method(&mut self) -> Result<ClickProposition, ClickError> {
+    fn parse_range_proposition_method(&mut self) -> Result<SurfaceProposition, ClickError> {
         self.expect(Token::LParen)?;
         let start = self.parse_contract_expression()?;
         self.expect(Token::DotDot)?;
@@ -10245,14 +10240,14 @@ impl Parser {
 
         self.loop_proof_value_names = binder_scope;
         match method.as_str() {
-            "all" => Ok(ClickProposition::RangeAll {
+            "all" => Ok(SurfaceProposition::RangeAll {
                 start,
                 end,
                 item,
                 written_item: None,
                 body: Box::new(body),
             }),
-            "any" => Ok(ClickProposition::RangeAny {
+            "any" => Ok(SurfaceProposition::RangeAny {
                 start,
                 end,
                 item,
@@ -10266,7 +10261,7 @@ impl Parser {
     fn parse_call_arguments(
         &mut self,
         expected_name: &str,
-    ) -> Result<(String, Vec<ContractExpression>), ClickError> {
+    ) -> Result<(String, Vec<SurfaceTerm>), ClickError> {
         let name = self.expect_reference_name(expected_name)?;
         let arguments = self.parse_call_argument_list()?;
         let arguments = self.observe_integer_arguments(&name, arguments);
@@ -10274,7 +10269,7 @@ impl Parser {
         Ok((name, arguments))
     }
 
-    fn parse_call_argument_list(&mut self) -> Result<Vec<ContractExpression>, ClickError> {
+    fn parse_call_argument_list(&mut self) -> Result<Vec<SurfaceTerm>, ClickError> {
         self.expect(Token::LParen)?;
         let mut arguments = Vec::new();
         if self.peek() != Some(&Token::RParen) {
@@ -10296,7 +10291,7 @@ impl Parser {
         Ok(arguments)
     }
 
-    fn parse_proposition_comparison(&mut self) -> Result<ClickProposition, ClickError> {
+    fn parse_proposition_comparison(&mut self) -> Result<SurfaceProposition, ClickError> {
         let left = self.parse_comparison_operand()?;
         // A value written alone where a proposition is expected is a `bool`
         // claim: `flag` means `flag == true`. Type checking refuses it when
@@ -10304,15 +10299,15 @@ impl Parser {
         // nonzero truth.
         if self.at_proposition_end() {
             let proposition_binding = match &left {
-                ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                     crate::kernel::BindingName::Generated(id),
                 )) => {
                     self.specification_binding_kind(id)
                         == Some(spec_arithmetic::SpecificationBinding::Proposition)
                 }
-                ContractExpression::Binding(name)
-                | ContractExpression::ProgramBinding(name)
-                | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                SurfaceTerm::Binding(name)
+                | SurfaceTerm::ProgramBinding(name)
+                | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                     crate::kernel::BindingName::Named(name),
                 )) => {
                     self.specification_binding_kind(name)
@@ -10322,15 +10317,15 @@ impl Parser {
             };
             if proposition_binding
                 || crate::surface::bool_literal_value(&left).is_some()
-                || matches!(&left, ContractExpression::Call { name, .. } if self.proposition_function_names.contains(name))
+                || matches!(&left, SurfaceTerm::Call { name, .. } if self.proposition_function_names.contains(name))
                 || matches!(
                     left,
-                    ContractExpression::Apply { .. }
-                        | ContractExpression::Let { .. }
-                        | ContractExpression::Proposition(_)
+                    SurfaceTerm::Apply { .. }
+                        | SurfaceTerm::Let { .. }
+                        | SurfaceTerm::Proposition(_)
                 )
             {
-                return Ok(ClickProposition::Value(left));
+                return Ok(SurfaceProposition::Value(left));
             }
             return Ok(bool_truth(left));
         }
@@ -10368,18 +10363,18 @@ impl Parser {
     /// inferred: a binder, a pure function's result, a constructed value, a
     /// method's result, or one of those at another point. A C object or a
     /// resource instance is not: the parser resolves its fields.
-    fn is_click_valued_receiver(&self, expression: &ContractExpression) -> bool {
+    fn is_click_valued_receiver(&self, expression: &SurfaceTerm) -> bool {
         match expression {
-            ContractExpression::Binding(name) => {
+            SurfaceTerm::Binding(name) => {
                 !self.names.global_array_shapes.contains_key(name)
                     && !self.names.resource_bindings.contains_key(name)
             }
-            ContractExpression::AlgebraicVariable { .. }
-            | ContractExpression::AlgebraicConstructor { .. }
-            | ContractExpression::MethodCall { .. }
-            | ContractExpression::Call { .. } => true,
-            ContractExpression::Old(inner)
-            | ContractExpression::At {
+            SurfaceTerm::AlgebraicVariable { .. }
+            | SurfaceTerm::AlgebraicConstructor { .. }
+            | SurfaceTerm::MethodCall { .. }
+            | SurfaceTerm::Call { .. } => true,
+            SurfaceTerm::Old(inner)
+            | SurfaceTerm::At {
                 expression: inner, ..
             } => self.is_click_valued_receiver(inner),
             _ => false,
@@ -10389,13 +10384,10 @@ impl Parser {
     /// `receiver[i]`, `receiver[a..b]`, `receiver[a..]`, `receiver[..b]` or
     /// `receiver[..]` as the method `[]` or a range method, with the written
     /// bounds as its arguments.
-    fn parse_method_index(
-        &mut self,
-        receiver: ContractExpression,
-    ) -> Result<ContractExpression, ClickError> {
+    fn parse_method_index(&mut self, receiver: SurfaceTerm) -> Result<SurfaceTerm, ClickError> {
         let range = self.contract_bracket_is_range();
         self.expect(Token::LBracket)?;
-        let method_call = |method: &str, arguments| ContractExpression::MethodCall {
+        let method_call = |method: &str, arguments| SurfaceTerm::MethodCall {
             receiver: Box::new(receiver),
             method: method.to_string(),
             arguments,
@@ -10413,9 +10405,9 @@ impl Parser {
             .then(|| self.parse_contract_expression())
             .transpose()?;
         self.expect(Token::RBracket)?;
-        let literal = |bound: &Option<ContractExpression>| match bound {
-            Some(ContractExpression::IntegerLiteral(text)) => text.parse::<u64>().ok(),
-            Some(bound @ ContractExpression::ProgramExpression(ProgramExpression::Value(_))) => {
+        let literal = |bound: &Option<SurfaceTerm>| match bound {
+            Some(SurfaceTerm::IntegerLiteral(text)) => text.parse::<u64>().ok(),
+            Some(bound @ SurfaceTerm::ProgramExpression(ProgramExpression::Value(_))) => {
                 crate::surface::diagnostics::describe_contract_expression(bound)
                     .strip_suffix("u64")?
                     .parse::<u64>()
@@ -10439,7 +10431,7 @@ impl Parser {
     }
 
     /// A method call's parenthesized arguments.
-    fn parse_method_arguments(&mut self) -> Result<Vec<ContractExpression>, ClickError> {
+    fn parse_method_arguments(&mut self) -> Result<Vec<SurfaceTerm>, ClickError> {
         self.expect(Token::LParen)?;
         let mut arguments = Vec::new();
         if self.peek() != Some(&Token::RParen) {
@@ -10462,20 +10454,20 @@ impl Parser {
     /// Whether `expression` is a slice value a Rust sidecar reads with
     /// Rust's slice methods: a call of a pure function whose result is a
     /// slice, or a `Slice` binder.
-    fn is_rust_slice_value(&self, expression: &ContractExpression) -> bool {
+    fn is_rust_slice_value(&self, expression: &SurfaceTerm) -> bool {
         if !self.verifies_rust() {
             return false;
         }
         match expression {
-            ContractExpression::Call { name, .. } => {
+            SurfaceTerm::Call { name, .. } => {
                 self.slice_result_functions.contains(name) || is_slice_from_raw_parts(name)
             }
-            ContractExpression::AlgebraicVariable { algebraic_type, .. }
-            | ContractExpression::AlgebraicConstructor { algebraic_type, .. } => {
+            SurfaceTerm::AlgebraicVariable { algebraic_type, .. }
+            | SurfaceTerm::AlgebraicConstructor { algebraic_type, .. } => {
                 algebraic_type.name() == "Slice"
             }
-            ContractExpression::Old(inner)
-            | ContractExpression::At {
+            SurfaceTerm::Old(inner)
+            | SurfaceTerm::At {
                 expression: inner, ..
             } => self.is_rust_slice_value(inner),
             _ => false,
@@ -10484,9 +10476,9 @@ impl Parser {
 
     /// The slice parameter `expression` names: `bytes`, or `bytes` at another
     /// point, `old(bytes)` or `at(point, bytes)`.
-    fn rust_slice_parameter_read<'a>(&self, expression: &'a ContractExpression) -> Option<&'a str> {
+    fn rust_slice_parameter_read<'a>(&self, expression: &'a SurfaceTerm) -> Option<&'a str> {
         match expression {
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(slice),
             )) if self.rust_slice_params.contains(slice) => Some(slice),
             _ => self.read_slice_parameter(expression),
@@ -10496,10 +10488,10 @@ impl Parser {
     /// The slice value a slice parameter read stands for, `bytes` or
     /// `old(bytes)`: the constructor of its pointer, as written, and its
     /// length, which a parameter never changes, at its element type.
-    fn slice_parameter_value(&self, expression: &ContractExpression) -> Option<ContractExpression> {
+    fn slice_parameter_value(&self, expression: &SurfaceTerm) -> Option<SurfaceTerm> {
         let parameter = self.rust_slice_parameter_read(expression)?;
         let element = *self.rust_slice_elements.get(parameter)?;
-        Some(ContractExpression::AlgebraicConstructor {
+        Some(SurfaceTerm::AlgebraicConstructor {
             algebraic_type: AlgebraicTypeApplication {
                 rigid: false,
                 name: "Slice".to_string(),
@@ -10508,7 +10500,7 @@ impl Parser {
             variant: "Slice".to_string(),
             arguments: vec![
                 expression.clone(),
-                ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                     crate::kernel::BindingName::slice_length(parameter),
                 )),
             ],
@@ -10535,7 +10527,7 @@ impl Parser {
     /// Click binds them looser, so `x & 1 == 0` would read differently to a C
     /// reader than it verifies. Rust groups them as Click does, so a sidecar
     /// verifying Rust needs no parentheses.
-    fn parse_comparison_operand(&mut self) -> Result<ContractExpression, ClickError> {
+    fn parse_comparison_operand(&mut self) -> Result<SurfaceTerm, ClickError> {
         let start = self.position;
         let operand = self.parse_contract_expression()?;
         let operand = self.by_value_struct_value(operand)?;
@@ -10543,9 +10535,9 @@ impl Parser {
             return Ok(operand);
         }
         let operator = match &operand {
-            ContractExpression::BitwiseAnd(..) => "&",
-            ContractExpression::BitwiseOr(..) => "|",
-            ContractExpression::BitwiseXor(..) => "^",
+            SurfaceTerm::BitwiseAnd(..) => "&",
+            SurfaceTerm::BitwiseOr(..) => "|",
+            SurfaceTerm::BitwiseXor(..) => "^",
             _ => return Ok(operand),
         };
         let parenthesized = self.tokens.get(start) == Some(&Token::LParen)
@@ -10727,7 +10719,7 @@ impl Parser {
         }
     }
 
-    fn remember_loop_goal_binders(&mut self, proposition: &ClickProposition) {
+    fn remember_loop_goal_binders(&mut self, proposition: &SurfaceProposition) {
         if self.loop_name_context.is_none() {
             return;
         }
@@ -10735,20 +10727,20 @@ impl Parser {
         let mut predicates = BTreeSet::new();
         while let Some(proposition) = pending.pop() {
             match proposition {
-                ClickProposition::PredicateCall { name, .. } => {
+                SurfaceProposition::PredicateCall { name, .. } => {
                     if predicates.insert(name)
                         && let Some(body) = self.loop_predicate_bodies.get(name)
                     {
                         pending.push(body);
                     }
                 }
-                ClickProposition::ForAll {
+                SurfaceProposition::ForAll {
                     name,
                     written_name,
                     body,
                     ..
                 }
-                | ClickProposition::Exists {
+                | SurfaceProposition::Exists {
                     name,
                     written_name,
                     body,
@@ -10759,13 +10751,13 @@ impl Parser {
                         .with_value(written_name.clone().unwrap_or_else(|| name.to_string()));
                     pending.push(body);
                 }
-                ClickProposition::RangeAll {
+                SurfaceProposition::RangeAll {
                     item,
                     written_item,
                     body,
                     ..
                 }
-                | ClickProposition::RangeAny {
+                | SurfaceProposition::RangeAny {
                     item,
                     written_item,
                     body,
@@ -10776,14 +10768,14 @@ impl Parser {
                         .with_value(written_item.clone().unwrap_or_else(|| item.to_string()));
                     pending.push(body);
                 }
-                ClickProposition::And(left, right)
-                | ClickProposition::Or(left, right)
-                | ClickProposition::Implies(left, right) => {
+                SurfaceProposition::And(left, right)
+                | SurfaceProposition::Or(left, right)
+                | SurfaceProposition::Implies(left, right) => {
                     pending.push(right);
                     pending.push(left);
                 }
-                ClickProposition::Not(body) => pending.push(body),
-                ClickProposition::At { proposition, .. } => pending.push(proposition),
+                SurfaceProposition::Not(body) => pending.push(body),
+                SurfaceProposition::At { proposition, .. } => pending.push(proposition),
                 _ => {}
             }
         }
@@ -11313,7 +11305,7 @@ impl Parser {
         &self,
         declared: &[ResourceFieldDefinition],
         child_bindings: &[(String, String, InstanceId)],
-        fields: &mut Vec<(String, ContractExpression)>,
+        fields: &mut Vec<(String, SurfaceTerm)>,
     ) {
         for field in declared {
             let Some((slot, child_field)) = field.name.split_once('.') else {
@@ -11334,7 +11326,7 @@ impl Parser {
             };
             fields.push((
                 field.name.clone(),
-                ContractExpression::ResourceField(ResourceFieldAccess {
+                SurfaceTerm::ResourceField(ResourceFieldAccess {
                     owner: root.to_owned(),
                     resource_name: family.clone(),
                     identity: (*identity).into(),
@@ -11355,7 +11347,7 @@ impl Parser {
         self.expect(Token::RParen)?;
         self.expect(Token::Semicolon)?;
         let mut source = match &proposition {
-            ClickProposition::At { proposition, .. } => proposition.as_ref(),
+            SurfaceProposition::At { proposition, .. } => proposition.as_ref(),
             proposition => proposition,
         };
         let mut bindings = Vec::with_capacity(names.len());
@@ -11363,10 +11355,10 @@ impl Parser {
         let binding_count = names.len();
         for (index, name) in names.into_iter().enumerate() {
             let (click_type, body) = match source {
-                ClickProposition::Exists {
+                SurfaceProposition::Exists {
                     click_type, body, ..
                 } => (Some(click_type.clone()), body.as_ref()),
-                ClickProposition::RangeAny { body, .. } if index + 1 == binding_count => {
+                SurfaceProposition::RangeAny { body, .. } if index + 1 == binding_count => {
                     (None, body.as_ref())
                 }
                 _ => return Err(self.error(
@@ -12301,7 +12293,7 @@ impl Parser {
                 self.expect(Token::Comma)?;
                 let region = self.parse_code_region_ref()?;
                 self.expect(Token::RParen)?;
-                let separation = ClickProposition::Separate {
+                let separation = SurfaceProposition::Separate {
                     left: ResourceSubject::Footprint(region),
                     right: resource,
                 };
@@ -12320,7 +12312,7 @@ impl Parser {
             "contradiction" => {
                 self.expect(Token::LParen)?;
                 let proposition = if self.peek() == Some(&Token::RParen) {
-                    ClickProposition::Value(bool_literal(false))
+                    SurfaceProposition::Value(bool_literal(false))
                 } else {
                     self.parse_proposition()?
                 };
@@ -12775,7 +12767,7 @@ impl Parser {
             loop {
                 if self.peek_ident() == Some("_") {
                     self.position += 1;
-                    arguments.push(ContractExpression::ResourceWildcard);
+                    arguments.push(SurfaceTerm::ResourceWildcard);
                 } else {
                     arguments.push(self.parse_contract_expression()?);
                 }
@@ -12849,21 +12841,20 @@ impl Parser {
         self.expect(Token::RParen)?;
         let mut resource_arguments = Vec::new();
         let first_reference = arguments.iter().position(|argument| {
-            matches!(argument, ContractExpression::ProgramExpression(ProgramExpression::Variable(crate::kernel::BindingName::Named(name))) | ContractExpression::Binding(name)
+            matches!(argument, SurfaceTerm::ProgramExpression(ProgramExpression::Variable(crate::kernel::BindingName::Named(name))) | SurfaceTerm::Binding(name)
                 if self.names.resource_bindings.contains_key(name))
-                || matches!(argument, ContractExpression::Resource(subject)
+                || matches!(argument, SurfaceTerm::Resource(subject)
                     if matches!(subject.as_ref(), ResourceSubject::Instance { .. }))
         });
         if let Some(first) = first_reference {
             for argument in arguments.drain(first..) {
                 let reference = match argument {
-                    ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
-                        name.named()
-                            .ok_or_else(|| self.error("resource arguments must name instances"))?
-                            .to_owned()
-                    }
-                    ContractExpression::Binding(name) => name,
-                    ContractExpression::Resource(subject) => match *subject {
+                    SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name)) => name
+                        .named()
+                        .ok_or_else(|| self.error("resource arguments must name instances"))?
+                        .to_owned(),
+                    SurfaceTerm::Binding(name) => name,
+                    SurfaceTerm::Resource(subject) => match *subject {
                         ResourceSubject::Instance { name, .. } => name,
                         _ => return Err(self.error("resource arguments must name instances")),
                     },
@@ -12904,7 +12895,7 @@ impl Parser {
         self.expect(Token::RParen)
     }
 
-    fn parse_exact_premises(&mut self) -> Result<Vec<ClickProposition>, ClickError> {
+    fn parse_exact_premises(&mut self) -> Result<Vec<SurfaceProposition>, ClickError> {
         self.expect_ident_spelling("using")?;
         self.expect(Token::LBrace)?;
         let mut premises = Vec::new();
@@ -13150,11 +13141,11 @@ impl Parser {
         follows
     }
 
-    fn parse_contract_expression(&mut self) -> Result<ContractExpression, ClickError> {
+    fn parse_contract_expression(&mut self) -> Result<SurfaceTerm, ClickError> {
         if self.resource_expression_follows() {
             return self
                 .parse_resource_subject()
-                .map(|r| ContractExpression::Resource(Box::new(r)));
+                .map(|r| SurfaceTerm::Resource(Box::new(r)));
         }
         let first = self.parse_contract_unary()?;
         self.parse_contract_binary_suffix(first)
@@ -13166,8 +13157,8 @@ impl Parser {
     #[inline(never)]
     fn parse_contract_binary_suffix(
         &mut self,
-        first: ContractExpression,
-    ) -> Result<ContractExpression, ClickError> {
+        first: SurfaceTerm,
+    ) -> Result<SurfaceTerm, ClickError> {
         let mut values = vec![self.parse_casts(first)?];
         let mut operators: Vec<(usize, ContractBinaryConstructor)> = Vec::new();
         // Each precedence level has the same independently enforced chain
@@ -13195,10 +13186,10 @@ impl Parser {
             let constructor = if self.verifies_rust() {
                 match self.tokens.get(self.position - 1) {
                     Some(Token::ShiftLeft) => {
-                        ContractExpression::RustShiftLeft as ContractBinaryConstructor
+                        SurfaceTerm::RustShiftLeft as ContractBinaryConstructor
                     }
                     Some(Token::ShiftRight) => {
-                        ContractExpression::RustShiftRight as ContractBinaryConstructor
+                        SurfaceTerm::RustShiftRight as ContractBinaryConstructor
                     }
                     _ => constructor,
                 }
@@ -13217,14 +13208,14 @@ impl Parser {
             .expect("a contract expression has at least one operand"))
     }
 
-    fn parse_measure_component(&mut self) -> Result<ContractExpression, ClickError> {
+    fn parse_measure_component(&mut self) -> Result<SurfaceTerm, ClickError> {
         let component = self.parse_contract_expression()?;
         // In a decreases clause a bare resource name selects its structural
         // measure, as before resource descriptors could be theorem arguments.
         let component = match component {
-            ContractExpression::Resource(subject) => match *subject {
-                ResourceSubject::Instance { name, .. } => ContractExpression::Binding(name),
-                other => ContractExpression::Resource(Box::new(other)),
+            SurfaceTerm::Resource(subject) => match *subject {
+                ResourceSubject::Instance { name, .. } => SurfaceTerm::Binding(name),
+                other => SurfaceTerm::Resource(Box::new(other)),
             },
             other => other,
         };
@@ -13316,14 +13307,14 @@ impl Parser {
             self.parse_segment_primary()?
         };
         let mut struct_name = match &surface_base {
-            ContractExpression::Field { .. } => self.contract_expression_struct_name(&surface_base),
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::Field { .. } => self.contract_expression_struct_name(&surface_base),
+            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 binding @ (crate::kernel::BindingName::ReferenceCarrier(_)
                 | crate::kernel::BindingName::Local(_)
                 | crate::kernel::BindingName::Static(_)),
             )) => self.binding_struct_name(binding).cloned(),
-            ContractExpression::Binding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::Binding(name)
+            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) => self
                 .names
@@ -13335,18 +13326,17 @@ impl Parser {
                         .and_then(|object| object.struct_name.as_ref())
                 })
                 .cloned(),
-            ContractExpression::CUnary {
+            SurfaceTerm::CUnary {
                 lowered: ProgramExpression::Cast { pointee_struct, .. },
                 ..
             }
-            | ContractExpression::ProgramExpression(ProgramExpression::Cast {
-                pointee_struct,
-                ..
-            }) => pointee_struct.clone(),
+            | SurfaceTerm::ProgramExpression(ProgramExpression::Cast { pointee_struct, .. }) => {
+                pointee_struct.clone()
+            }
             _ => None,
         };
-        if let ContractExpression::Binding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+        if let SurfaceTerm::Binding(name)
+        | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) = &surface_base
             && self
@@ -13357,13 +13347,13 @@ impl Parser {
             struct_name = None;
         }
         let names_aggregate_object = match &surface_base {
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 binding @ (crate::kernel::BindingName::ReferenceCarrier(_)
                 | crate::kernel::BindingName::Local(_)
                 | crate::kernel::BindingName::Static(_)),
             )) => self.binding_is_aggregate(binding),
-            ContractExpression::Binding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::Binding(name)
+            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) => {
                 self.names.aggregate_objects.contains_key(name)
@@ -13375,7 +13365,7 @@ impl Parser {
         let mut dereferences_pointer = !names_aggregate_object;
         let mut union_name: Option<String> = None;
         let mut struct_array_element_width = match &surface_base {
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 binding @ (crate::kernel::BindingName::ReferenceCarrier(_)
                 | crate::kernel::BindingName::Local(_)
                 | crate::kernel::BindingName::Static(_)),
@@ -13386,14 +13376,14 @@ impl Parser {
                 .and_then(|info| info.struct_name.as_ref())
                 .and_then(|name| self.struct_layouts.get(name))
                 .and_then(|layout| layout.size().bytes()),
-            ContractExpression::Binding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::Binding(name)
+            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) if self.names.contains(NameKind::StructArrayParameter, name) => struct_name
                 .as_ref()
                 .and_then(|name| self.struct_layouts.get(name))
                 .and_then(|layout| layout.size().bytes()),
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) => self
                 .qualified_object(name)
@@ -13404,7 +13394,7 @@ impl Parser {
             _ => None,
         };
         let mut struct_array_shape = match &surface_base {
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 binding @ (crate::kernel::BindingName::ReferenceCarrier(_)
                 | crate::kernel::BindingName::Local(_)
                 | crate::kernel::BindingName::Static(_)),
@@ -13413,7 +13403,7 @@ impl Parser {
                 .info(binding)
                 .filter(|info| info.struct_name.is_some())
                 .and_then(|info| info.array_shape.clone()),
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) => self
                 .qualified_object(name)
@@ -13422,7 +13412,7 @@ impl Parser {
             _ => None,
         };
         let mut scalar_array_shape = match &surface_base {
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 binding @ (crate::kernel::BindingName::ReferenceCarrier(_)
                 | crate::kernel::BindingName::Local(_)
                 | crate::kernel::BindingName::Static(_)),
@@ -13431,8 +13421,8 @@ impl Parser {
                 .info(binding)
                 .filter(|info| info.struct_name.is_none())
                 .and_then(|info| info.array_shape.clone()),
-            ContractExpression::Binding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::Binding(name)
+            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) => self
                 .names
@@ -13481,9 +13471,9 @@ impl Parser {
                         )
                     {
                         base = ProgramExpression::Index(Box::new(base), Box::new(index.clone()));
-                        surface_base = ContractExpression::Index(
+                        surface_base = SurfaceTerm::Index(
                             Box::new(surface_base_before_index),
-                            Box::new(ContractExpression::ProgramExpression(index)),
+                            Box::new(SurfaceTerm::ProgramExpression(index)),
                         );
                         struct_name = None;
                         union_name = None;
@@ -13491,8 +13481,7 @@ impl Parser {
                         continue;
                     }
                     let mut indexes = vec![index.clone()];
-                    let mut surface_indexes =
-                        vec![ContractExpression::ProgramExpression(index.clone())];
+                    let mut surface_indexes = vec![SurfaceTerm::ProgramExpression(index.clone())];
                     while struct_array_shape.is_some() && self.peek() == Some(&Token::LBracket) {
                         self.position += 1;
                         let next_index = self.parse_contract_expression()?;
@@ -13502,7 +13491,7 @@ impl Parser {
                                 self.error("struct array indices must be current C expressions")
                             })?;
                         indexes.push(next_index.clone());
-                        surface_indexes.push(ContractExpression::ProgramExpression(next_index));
+                        surface_indexes.push(SurfaceTerm::ProgramExpression(next_index));
                     }
                     let offset = if let Some(shape) = struct_array_shape.take() {
                         if indexes.len() != shape.len() {
@@ -13522,13 +13511,13 @@ impl Parser {
                     surface_base = surface_indexes
                         .into_iter()
                         .fold(surface_base_before_index, |base, index| {
-                            ContractExpression::Index(Box::new(base), Box::new(index))
+                            SurfaceTerm::Index(Box::new(base), Box::new(index))
                         });
                     struct_array_element_width = None;
                     indexed_scalar_field = None;
                 } else if let Some(shape) = struct_array_shape.take() {
                     let mut indexes = vec![index.clone()];
-                    let mut surface_indexes = vec![ContractExpression::ProgramExpression(index)];
+                    let mut surface_indexes = vec![SurfaceTerm::ProgramExpression(index)];
                     while self.peek() == Some(&Token::LBracket) && !self.contract_bracket_is_range()
                     {
                         self.position += 1;
@@ -13539,7 +13528,7 @@ impl Parser {
                                 self.error("struct array indices must be current C expressions")
                             })?;
                         indexes.push(next_index.clone());
-                        surface_indexes.push(ContractExpression::ProgramExpression(next_index));
+                        surface_indexes.push(SurfaceTerm::ProgramExpression(next_index));
                     }
                     if indexes.len() != shape.len() {
                         return Err(self.error(format!(
@@ -13553,14 +13542,14 @@ impl Parser {
                     surface_base = surface_indexes
                         .into_iter()
                         .fold(surface_base_before_index, |base, index| {
-                            ContractExpression::Index(Box::new(base), Box::new(index))
+                            SurfaceTerm::Index(Box::new(base), Box::new(index))
                         });
                     struct_name = None;
                     union_name = None;
                     struct_array_element_width = None;
                 } else if let Some(shape) = scalar_array_shape.take() {
                     let mut indexes = vec![index.clone()];
-                    let mut surface_indexes = vec![ContractExpression::ProgramExpression(index)];
+                    let mut surface_indexes = vec![SurfaceTerm::ProgramExpression(index)];
                     while self.peek() == Some(&Token::LBracket) && !self.contract_bracket_is_range()
                     {
                         self.position += 1;
@@ -13571,7 +13560,7 @@ impl Parser {
                                 self.error("global array indices must be current C expressions")
                             })?;
                         indexes.push(next_index.clone());
-                        surface_indexes.push(ContractExpression::ProgramExpression(next_index));
+                        surface_indexes.push(SurfaceTerm::ProgramExpression(next_index));
                     }
                     let has_following_range =
                         self.peek() == Some(&Token::LBracket) && self.contract_bracket_is_range();
@@ -13592,15 +13581,15 @@ impl Parser {
                     surface_base = surface_indexes
                         .into_iter()
                         .fold(surface_base_before_index, |base, index| {
-                            ContractExpression::Index(Box::new(base), Box::new(index))
+                            SurfaceTerm::Index(Box::new(base), Box::new(index))
                         });
                     struct_name = None;
                     union_name = None;
                     struct_array_element_width = None;
                 } else {
-                    let surface_index = ContractExpression::ProgramExpression(index.clone());
+                    let surface_index = SurfaceTerm::ProgramExpression(index.clone());
                     base = ProgramExpression::Index(Box::new(base), Box::new(index));
-                    surface_base = ContractExpression::Index(
+                    surface_base = SurfaceTerm::Index(
                         Box::new(surface_base_before_index),
                         Box::new(surface_index),
                     );
@@ -13807,7 +13796,7 @@ impl Parser {
             } else {
                 None
             };
-            surface_base = ContractExpression::Field {
+            surface_base = SurfaceTerm::Field {
                 pointee_struct: next_struct_name.clone().filter(|_| dereferences_pointer),
                 base: Box::new(surface_base),
                 field: field_name,
@@ -13839,14 +13828,12 @@ impl Parser {
                 start: ProgramExpression::Value(int32(0)),
                 end: ProgramExpression::Value(int32(1)),
                 surface: ContractSegmentSurface::Range {
-                    base: ContractExpression::CUnary {
+                    base: SurfaceTerm::CUnary {
                         operand: Box::new(surface_base),
                         lowered: address,
                     },
-                    start: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(
-                        0,
-                    ))),
-                    end: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
+                    start: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
+                    end: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(1))),
                 },
             }]);
         }
@@ -13858,10 +13845,10 @@ impl Parser {
             })
         };
         let names_reference = matches!(&surface_base,
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(binding))
+            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(binding))
                 if carries_reference(binding));
         let names_scalar_referent = matches!(&surface_base,
-            ContractExpression::ProgramExpression(ProgramExpression::Index(carrier, _))
+            SurfaceTerm::ProgramExpression(ProgramExpression::Index(carrier, _))
                 if matches!(carrier.as_ref(), ProgramExpression::Variable(binding) if carries_reference(binding)));
 
         if dereference && (names_reference || names_scalar_referent) {
@@ -13891,9 +13878,9 @@ impl Parser {
                     start: start.clone(),
                     end: end.clone(),
                     surface: ContractSegmentSurface::Range {
-                        base: ContractExpression::ProgramExpression((**carrier).clone()),
-                        start: ContractExpression::ProgramExpression(start),
-                        end: ContractExpression::ProgramExpression(end),
+                        base: SurfaceTerm::ProgramExpression((**carrier).clone()),
+                        start: SurfaceTerm::ProgramExpression(start),
+                        end: SurfaceTerm::ProgramExpression(end),
                     },
                 }]);
             }
@@ -13908,9 +13895,9 @@ impl Parser {
                 start: start.clone(),
                 end: end.clone(),
                 surface: ContractSegmentSurface::Range {
-                    base: ContractExpression::ProgramExpression((**carrier).clone()),
-                    start: ContractExpression::ProgramExpression(start),
-                    end: ContractExpression::ProgramExpression(end),
+                    base: SurfaceTerm::ProgramExpression((**carrier).clone()),
+                    start: SurfaceTerm::ProgramExpression(start),
+                    end: SurfaceTerm::ProgramExpression(end),
                 },
             }]);
         }
@@ -13933,7 +13920,7 @@ impl Parser {
             if let ProgramExpression::Variable(crate::kernel::BindingName::Named(name)) = &base
                 && self.rust_slice_params.contains(name)
             {
-                let length = ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                let length = SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                     crate::kernel::BindingName::slice_length(name),
                 ));
                 let end_expression = length;
@@ -13948,7 +13935,7 @@ impl Parser {
                     end,
                     surface: ContractSegmentSurface::Range {
                         base: surface_base,
-                        start: ContractExpression::ProgramExpression(start),
+                        start: SurfaceTerm::ProgramExpression(start),
                         end: end_expression,
                     },
                 }]);
@@ -13971,8 +13958,8 @@ impl Parser {
                     end: end.clone(),
                     surface: ContractSegmentSurface::Range {
                         base: surface_base,
-                        start: ContractExpression::ProgramExpression(start),
-                        end: ContractExpression::ProgramExpression(end),
+                        start: SurfaceTerm::ProgramExpression(start),
+                        end: SurfaceTerm::ProgramExpression(end),
                     },
                 }]);
             }
@@ -13989,8 +13976,8 @@ impl Parser {
                     end: end.clone(),
                     surface: ContractSegmentSurface::Range {
                         base: surface_base,
-                        start: ContractExpression::ProgramExpression(start),
-                        end: ContractExpression::ProgramExpression(end),
+                        start: SurfaceTerm::ProgramExpression(start),
+                        end: SurfaceTerm::ProgramExpression(end),
                     },
                 }]);
             };
@@ -14001,8 +13988,7 @@ impl Parser {
         // imported ABI so input cells use the actual field types.
         if postfixes == 0
             && self.peek() != Some(&Token::LBracket)
-            && let ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) =
-                &surface_base
+            && let SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name)) = &surface_base
         {
             let object = if name.named().is_none() {
                 self.local_bindings
@@ -14055,7 +14041,7 @@ impl Parser {
             let base = match base {
                 ProgramExpression::TypedLoad { pointer, .. } => *pointer,
                 ProgramExpression::Value(ProgramValue::Pointer(_)) => {
-                    let ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) =
+                    let SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name)) =
                         &surface_base
                     else {
                         return Err(self.error("this C expression has no storage to own"));
@@ -14068,7 +14054,7 @@ impl Parser {
                 expression => ProgramExpression::AddressOf(Box::new(expression)),
             };
             let surface_base =
-                ContractExpression::ProgramExpression(ProgramExpression::AddressOf(Box::new(
+                SurfaceTerm::ProgramExpression(ProgramExpression::AddressOf(Box::new(
                     contract_expression_as_program_expression(&surface_base)
                         .expect("C segment base"),
                 )));
@@ -14080,10 +14066,8 @@ impl Parser {
                 end: ProgramExpression::Value(int32(1)),
                 surface: ContractSegmentSurface::Range {
                     base: surface_base,
-                    start: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(
-                        0,
-                    ))),
-                    end: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(1))),
+                    start: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
+                    end: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(1))),
                 },
             }]);
         }
@@ -14162,7 +14146,7 @@ impl Parser {
                 crate::kernel::MachineTerm::uint64_constant(0),
             ));
             let end = ProgramExpression::Value(ProgramValue::UInt64(layout.size().term()));
-            let surface_base = ContractExpression::ProgramExpression(base.clone());
+            let surface_base = SurfaceTerm::ProgramExpression(base.clone());
             // The range is in bytes, as its `sizeof` end says; the base keeps
             // the pointer's own bounds.
             return Ok(ContractSegment {
@@ -14173,8 +14157,8 @@ impl Parser {
                 end: end.clone(),
                 surface: ContractSegmentSurface::Range {
                     base: surface_base,
-                    start: ContractExpression::ProgramExpression(start),
-                    end: ContractExpression::ProgramExpression(end),
+                    start: SurfaceTerm::ProgramExpression(start),
+                    end: SurfaceTerm::ProgramExpression(end),
                 },
             });
         }
@@ -14197,7 +14181,7 @@ impl Parser {
     fn aggregate_field_segments(
         &self,
         base: ProgramExpression,
-        surface_base: ContractExpression,
+        surface_base: SurfaceTerm,
         field_name: &str,
         field: &ResolvedField,
     ) -> Result<Vec<ContractSegment>, ClickError> {
@@ -14383,7 +14367,7 @@ impl Parser {
     fn resolve_field_segment(
         &self,
         base: ProgramExpression,
-        surface_base: Option<ContractExpression>,
+        surface_base: Option<SurfaceTerm>,
         field_name: &str,
     ) -> Result<ContractSegment, ClickError> {
         let Some(field) = self.resolve_field_metadata(&base, field_name)? else {
@@ -14415,7 +14399,7 @@ impl Parser {
 
     fn field_segment_from_metadata(
         base: ProgramExpression,
-        surface_base: Option<ContractExpression>,
+        surface_base: Option<SurfaceTerm>,
         field_name: &str,
         field: &ResolvedField,
     ) -> ContractSegment {
@@ -14722,12 +14706,9 @@ impl Parser {
 
     /// Whether `pointer` is a struct double pointer's slot, whose `*`
     /// reads a pointer, not a struct.
-    fn contract_expression_designates_struct_pointer_slot(
-        &self,
-        pointer: &ContractExpression,
-    ) -> bool {
-        matches!(pointer, ContractExpression::Binding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+    fn contract_expression_designates_struct_pointer_slot(&self, pointer: &SurfaceTerm) -> bool {
+        matches!(pointer, SurfaceTerm::Binding(name)
+            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) if self
                 .names
@@ -14843,7 +14824,7 @@ impl Parser {
     /// A struct value written by its fields: `(struct pair){ .x = a, .y = b }`
     /// in C and `crate_name::Pair { x: a, y: b }` in Rust. Every field is
     /// named once; the value is the struct's constructor of them.
-    fn parse_struct_value_literal(&mut self) -> Result<Option<ContractExpression>, ClickError> {
+    fn parse_struct_value_literal(&mut self) -> Result<Option<SurfaceTerm>, ClickError> {
         let start = self.position;
         let (struct_name, rust) = if self.peek() == Some(&Token::LParen)
             && matches!(self.tokens.get(start + 1), Some(Token::Ident(word)) if word == "struct")
@@ -14927,7 +14908,7 @@ impl Parser {
         if let Some(field) = values.keys().next() {
             return Err(self.error(format!("struct `{struct_name}` has no field `{field}`")));
         }
-        Ok(Some(ContractExpression::AlgebraicConstructor {
+        Ok(Some(SurfaceTerm::AlgebraicConstructor {
             algebraic_type: AlgebraicTypeApplication::concrete(type_name.clone()),
             variant: type_name,
             arguments,
@@ -14937,29 +14918,26 @@ impl Parser {
     /// A by-value struct parameter compared whole, `value` or `old(value)`,
     /// is its struct value: the constructor of `value.field` for each field.
     /// Anything else is itself.
-    fn by_value_struct_value(
-        &mut self,
-        operand: ContractExpression,
-    ) -> Result<ContractExpression, ClickError> {
-        let wrapped = |inner: ContractExpression, outer: &ContractExpression| match outer {
-            ContractExpression::Old(_) => ContractExpression::Old(Box::new(inner)),
-            ContractExpression::Exact(_) => ContractExpression::Exact(Box::new(inner)),
-            ContractExpression::At { selector, .. } => ContractExpression::At {
+    fn by_value_struct_value(&mut self, operand: SurfaceTerm) -> Result<SurfaceTerm, ClickError> {
+        let wrapped = |inner: SurfaceTerm, outer: &SurfaceTerm| match outer {
+            SurfaceTerm::Old(_) => SurfaceTerm::Old(Box::new(inner)),
+            SurfaceTerm::Exact(_) => SurfaceTerm::Exact(Box::new(inner)),
+            SurfaceTerm::At { selector, .. } => SurfaceTerm::At {
                 selector: selector.clone(),
                 expression: Box::new(inner),
             },
             _ => inner,
         };
         let place = match &operand {
-            ContractExpression::Old(inner)
-            | ContractExpression::Exact(inner)
-            | ContractExpression::At {
+            SurfaceTerm::Old(inner)
+            | SurfaceTerm::Exact(inner)
+            | SurfaceTerm::At {
                 expression: inner, ..
             } => inner.as_ref(),
             other => other,
         };
-        let (ContractExpression::Binding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+        let (SurfaceTerm::Binding(name)
+        | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         ))) = place
         else {
@@ -14993,9 +14971,9 @@ impl Parser {
     /// constructor applied to each field's value, read as `place->field`.
     fn struct_value_expression(
         &mut self,
-        place: ContractExpression,
+        place: SurfaceTerm,
         struct_name: &str,
-    ) -> Result<ContractExpression, ClickError> {
+    ) -> Result<SurfaceTerm, ClickError> {
         let type_name = self.struct_value_type(struct_name)?;
         let layout = self
             .struct_layouts
@@ -15004,9 +14982,9 @@ impl Parser {
             .expect("the struct's value type was formed from its layout");
         let surface_base = place.clone();
         let base = match &place {
-            ContractExpression::Old(inner)
-            | ContractExpression::Exact(inner)
-            | ContractExpression::At {
+            SurfaceTerm::Old(inner)
+            | SurfaceTerm::Exact(inner)
+            | SurfaceTerm::At {
                 expression: inner, ..
             } => contract_expression_as_program_expression(inner),
             _ => contract_expression_as_program_expression(&place),
@@ -15017,7 +14995,7 @@ impl Parser {
             let field_name = field_name.to_string();
             let field = self.resolve_struct_field_metadata(struct_name, &field_name)?;
             let pointer = self.member_field_pointer(base.clone(), &field);
-            let access = ContractExpression::Field {
+            let access = SurfaceTerm::Field {
                 pointee_struct: field
                     .struct_name
                     .clone()
@@ -15034,34 +15012,33 @@ impl Parser {
                 _ => access,
             });
         }
-        Ok(ContractExpression::AlgebraicConstructor {
+        Ok(SurfaceTerm::AlgebraicConstructor {
             algebraic_type: AlgebraicTypeApplication::concrete(type_name.clone()),
             variant: type_name,
             arguments,
         })
     }
 
-    fn contract_expression_struct_name(&self, expression: &ContractExpression) -> Option<String> {
+    fn contract_expression_struct_name(&self, expression: &SurfaceTerm) -> Option<String> {
         crate::instrumentation::record_deterministic_work(1);
         match expression {
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 binding @ (crate::kernel::BindingName::ReferenceCarrier(_)
                 | crate::kernel::BindingName::Local(_)
                 | crate::kernel::BindingName::Static(_)),
             )) => self.binding_struct_name(binding).cloned(),
-            ContractExpression::CUnary {
+            SurfaceTerm::CUnary {
                 lowered: ProgramExpression::Cast { pointee_struct, .. },
                 ..
             }
-            | ContractExpression::ProgramExpression(ProgramExpression::Cast {
-                pointee_struct,
-                ..
-            }) => pointee_struct.clone(),
-            ContractExpression::QualifiedC { name, .. } => self
+            | SurfaceTerm::ProgramExpression(ProgramExpression::Cast { pointee_struct, .. }) => {
+                pointee_struct.clone()
+            }
+            SurfaceTerm::QualifiedC { name, .. } => self
                 .qualified_object(name)
                 .and_then(|object| object.struct_name.clone()),
-            ContractExpression::Binding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::Binding(name)
+            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) => self
                 .names
@@ -15069,7 +15046,7 @@ impl Parser {
                 .get(name)
                 .or_else(|| self.names.aggregate_objects.get(name))
                 .cloned(),
-            ContractExpression::Field { base, field, .. } => {
+            SurfaceTerm::Field { base, field, .. } => {
                 let struct_name = self.contract_expression_struct_name(base)?;
                 // Only nominal identity is needed here. Read the exact
                 // declaration and field indexes, without preparing a resource
@@ -15080,9 +15057,9 @@ impl Parser {
                     .struct_name()
                     .map(str::to_string)
             }
-            ContractExpression::Old(inner)
-            | ContractExpression::Exact(inner)
-            | ContractExpression::At {
+            SurfaceTerm::Old(inner)
+            | SurfaceTerm::Exact(inner)
+            | SurfaceTerm::At {
                 expression: inner, ..
             } => self.contract_expression_struct_name(inner),
             _ => None,
@@ -15571,8 +15548,8 @@ impl Parser {
     fn lower_struct_pointer_cast(
         &mut self,
         cast: StructPointerCast,
-        source_operand: ContractExpression,
-    ) -> Result<ContractExpression, ClickError> {
+        source_operand: SurfaceTerm,
+    ) -> Result<SurfaceTerm, ClickError> {
         let Some(operand) = contract_expression_as_program_expression(&source_operand) else {
             return Err(self.error(
                 "struct pointer cast expects a current C `void *` expression; put old(...) around the whole cast for an entry-state value",
@@ -15607,18 +15584,18 @@ impl Parser {
     fn lower_click_cast(
         &mut self,
         target_type: ProgramType,
-        operand: ContractExpression,
-    ) -> Result<ContractExpression, ClickError> {
+        operand: SurfaceTerm,
+    ) -> Result<SurfaceTerm, ClickError> {
         self.lower_qualified_click_cast(target_type, false, false, operand)
     }
 
     // A recorded allocation names an identity, even if the pointer returned
     // by the allocator has since been reassigned. Address transformations of
     // that identity do not read a pointer value from another program state.
-    fn is_allocation_address(expression: &ContractExpression) -> bool {
+    fn is_allocation_address(expression: &SurfaceTerm) -> bool {
         match expression {
-            ContractExpression::RegionAllocation(_) => true,
-            ContractExpression::CUnary { operand, lowered }
+            SurfaceTerm::RegionAllocation(_) => true,
+            SurfaceTerm::CUnary { operand, lowered }
                 if matches!(lowered, ProgramExpression::PointerOffsetBytes { .. })
                     || matches!(lowered, ProgramExpression::Cast { target_type, .. }
                         if target_type.is_pointer()) =>
@@ -15634,8 +15611,8 @@ impl Parser {
         target_type: ProgramType,
         pointee_constant: bool,
         pointee_volatile: bool,
-        operand: ContractExpression,
-    ) -> Result<ContractExpression, ClickError> {
+        operand: SurfaceTerm,
+    ) -> Result<SurfaceTerm, ClickError> {
         let allocation_address = Self::is_allocation_address(&operand);
         let historical = crate::surface::validation::contains_old_expression(&operand)
             || (!allocation_address
@@ -15669,7 +15646,7 @@ impl Parser {
                 "contract expression",
             )?;
         }
-        Ok(ContractExpression::CUnary {
+        Ok(SurfaceTerm::CUnary {
             operand: Box::new(operand),
             lowered: ProgramExpression::Cast {
                 expression: Box::new(expression),
@@ -15693,14 +15670,11 @@ impl Parser {
         })
     }
 
-    fn parse_contract_unary(&mut self) -> Result<ContractExpression, ClickError> {
+    fn parse_contract_unary(&mut self) -> Result<SurfaceTerm, ClickError> {
         self.parse_contract_unary_at_depth(0)
     }
 
-    fn parse_contract_unary_at_depth(
-        &mut self,
-        depth: usize,
-    ) -> Result<ContractExpression, ClickError> {
+    fn parse_contract_unary_at_depth(&mut self, depth: usize) -> Result<SurfaceTerm, ClickError> {
         if let Some(cast) = self.peek_struct_pointer_cast() {
             return Err(self.legacy_cast_error(&cast.spelling(), true));
         }
@@ -15731,21 +15705,19 @@ impl Parser {
             }
             if self.peek_next() == Some(&Token::Int64MinimumMagnitude) {
                 self.position += 2;
-                return Ok(ContractExpression::ProgramExpression(
-                    ProgramExpression::Value(ProgramValue::Int64(MachineTerm::int64_constant(
-                        i64::MIN,
-                    ))),
-                ));
+                return Ok(SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+                    ProgramValue::Int64(MachineTerm::int64_constant(i64::MIN)),
+                )));
             }
             self.position += 1;
-            return Ok(ContractExpression::Negate(Box::new(
+            return Ok(SurfaceTerm::Negate(Box::new(
                 self.parse_contract_unary_at_depth(depth + 1)?,
             )));
         }
         if self.peek() == Some(&Token::Tilde) {
             self.check_unary_nesting_limit(depth)?;
             self.position += 1;
-            return Ok(ContractExpression::BitwiseNot(Box::new(
+            return Ok(SurfaceTerm::BitwiseNot(Box::new(
                 self.parse_contract_unary_at_depth(depth + 1)?,
             )));
         }
@@ -15779,7 +15751,7 @@ impl Parser {
             self.check_unary_nesting_limit(depth)?;
             self.position += 1;
             let expression = self.parse_contract_unary_at_depth(depth + 1)?;
-            if let ContractExpression::Field {
+            if let SurfaceTerm::Field {
                 base,
                 offset_bytes,
                 lowered,
@@ -15796,7 +15768,7 @@ impl Parser {
                 if let ProgramExpression::TypedLoad { value_type, .. } = lowered
                     && value_type.pointer_to().is_some()
                 {
-                    return Ok(ContractExpression::CUnary {
+                    return Ok(SurfaceTerm::CUnary {
                         operand: Box::new(expression.clone()),
                         lowered: ProgramExpression::AddressOf(Box::new(contract_member_lvalue(
                             lowered,
@@ -15810,7 +15782,7 @@ impl Parser {
                     && let Some(name) = self.contract_expression_struct_name(&expression)
                     && let Some(layout) = self.struct_layouts.get(&name)
                 {
-                    return Ok(ContractExpression::CUnary {
+                    return Ok(SurfaceTerm::CUnary {
                         operand: Box::new(expression.clone()),
                         lowered: ProgramExpression::Subobject {
                             pointer: Box::new(lowered.clone()),
@@ -15831,10 +15803,10 @@ impl Parser {
                 ));
             }
             if self.current_aggregate_result
-                && matches!(&expression, ContractExpression::ProgramExpression(
+                && matches!(&expression, SurfaceTerm::ProgramExpression(
                     ProgramExpression::Variable(name)) if name.is_named("result"))
             {
-                return Ok(ContractExpression::ProgramExpression(
+                return Ok(SurfaceTerm::ProgramExpression(
                     ProgramExpression::AddressOf(Box::new(ProgramExpression::Variable(
                         crate::kernel::CONTRACT_RESULT,
                     ))),
@@ -15853,7 +15825,7 @@ impl Parser {
         self.parse_contract_postfix()
     }
 
-    fn parse_contract_postfix(&mut self) -> Result<ContractExpression, ClickError> {
+    fn parse_contract_postfix(&mut self) -> Result<SurfaceTerm, ClickError> {
         let expression = self.parse_contract_primary()?;
         self.parse_contract_postfix_suffix(expression)
     }
@@ -15885,15 +15857,15 @@ impl Parser {
 
     /// Consumes `&name` where [`Self::at_reference_parameter_address`] holds.
     #[inline(never)]
-    fn parse_reference_parameter_address(&mut self) -> Result<ContractExpression, ClickError> {
+    fn parse_reference_parameter_address(&mut self) -> Result<SurfaceTerm, ClickError> {
         let Some(Token::Ident(name)) = self.peek_next() else {
             return Err(self.error("expected a reference binding after `&`"));
         };
         let carrier = self.reference_binding_carrier(name);
         self.position += 2;
-        Ok(ContractExpression::ProgramExpression(
-            ProgramExpression::Variable(carrier),
-        ))
+        Ok(SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+            carrier,
+        )))
     }
 
     /// A reference parameter's name is its referent. The pointer that
@@ -15904,10 +15876,10 @@ impl Parser {
     #[inline(never)]
     fn resolve_reference_parameter(
         &mut self,
-        mut expression: ContractExpression,
-    ) -> Result<ContractExpression, ClickError> {
-        if let ContractExpression::Binding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+        mut expression: SurfaceTerm,
+    ) -> Result<SurfaceTerm, ClickError> {
+        if let SurfaceTerm::Binding(name)
+        | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) = &expression
             && self.is_reference_binding(name)
@@ -15920,17 +15892,16 @@ impl Parser {
                     "`{name}` is a struct reference; name a field as `{name}.field`, or its address as `&{name}`"
                 )));
             }
-            expression =
-                ContractExpression::ProgramExpression(ProgramExpression::Variable(carrier));
+            expression = SurfaceTerm::ProgramExpression(ProgramExpression::Variable(carrier));
             if !is_struct {
                 if self.peek() == Some(&Token::LBracket) {
                     return Err(self.error(format!(
                         "`{name}` is a reference and names the value it refers to, so it takes no index; write `{name}`"
                     )));
                 }
-                expression = ContractExpression::Index(
+                expression = SurfaceTerm::Index(
                     Box::new(expression),
-                    Box::new(ContractExpression::IntegerLiteral("0".to_string())),
+                    Box::new(SurfaceTerm::IntegerLiteral("0".to_string())),
                 );
             }
         }
@@ -15943,35 +15914,34 @@ impl Parser {
     #[inline(never)]
     fn parse_contract_postfix_suffix(
         &mut self,
-        mut expression: ContractExpression,
-    ) -> Result<ContractExpression, ClickError> {
-        if matches!(&expression, ContractExpression::RegionParameter { .. })
-            || (matches!(&expression, ContractExpression::RegionResult(_))
+        mut expression: SurfaceTerm,
+    ) -> Result<SurfaceTerm, ClickError> {
+        if matches!(&expression, SurfaceTerm::RegionParameter { .. })
+            || (matches!(&expression, SurfaceTerm::RegionResult(_))
                 && self.peek() == Some(&Token::Dot))
         {
             return self.parse_region_parameter_suffix(expression);
         }
         expression = self.resolve_reference_parameter(expression)?;
         let mut struct_name = match &expression {
-            ContractExpression::Field { .. } => self.contract_expression_struct_name(&expression),
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::Field { .. } => self.contract_expression_struct_name(&expression),
+            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 binding @ (crate::kernel::BindingName::ReferenceCarrier(_)
                 | crate::kernel::BindingName::Local(_)
                 | crate::kernel::BindingName::Static(_)),
             )) => self.binding_struct_name(binding).cloned(),
-            ContractExpression::CUnary {
+            SurfaceTerm::CUnary {
                 lowered: ProgramExpression::Cast { pointee_struct, .. },
                 ..
             }
-            | ContractExpression::ProgramExpression(ProgramExpression::Cast {
-                pointee_struct,
-                ..
-            }) => pointee_struct.clone(),
-            ContractExpression::QualifiedC { name, .. } => self
+            | SurfaceTerm::ProgramExpression(ProgramExpression::Cast { pointee_struct, .. }) => {
+                pointee_struct.clone()
+            }
+            SurfaceTerm::QualifiedC { name, .. } => self
                 .qualified_object(name)
                 .and_then(|object| object.struct_name.clone()),
-            ContractExpression::Binding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::Binding(name)
+            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) => self
                 .names
@@ -15979,16 +15949,16 @@ impl Parser {
                 .get(name)
                 .or_else(|| self.names.aggregate_objects.get(name))
                 .cloned(),
-            ContractExpression::Old(inner)
-            | ContractExpression::Exact(inner)
-            | ContractExpression::At {
+            SurfaceTerm::Old(inner)
+            | SurfaceTerm::Exact(inner)
+            | SurfaceTerm::At {
                 expression: inner, ..
             } => self.contract_expression_struct_name(inner),
             _ => None,
         };
         // A struct double pointer indexes pointer slots, not struct objects.
-        if let ContractExpression::Binding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+        if let SurfaceTerm::Binding(name)
+        | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) = &expression
             && self
@@ -16000,7 +15970,7 @@ impl Parser {
         }
         let mut union_name: Option<String> = None;
         let mut struct_array_element_width = match &expression {
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 binding @ (crate::kernel::BindingName::ReferenceCarrier(_)
                 | crate::kernel::BindingName::Local(_)
                 | crate::kernel::BindingName::Static(_)),
@@ -16011,8 +15981,8 @@ impl Parser {
                 .and_then(|info| info.struct_name.as_ref())
                 .and_then(|name| self.struct_layouts.get(name))
                 .and_then(|layout| layout.size().bytes()),
-            ContractExpression::Binding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::Binding(name)
+            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) => self
                 .names
@@ -16024,7 +15994,7 @@ impl Parser {
                         .and_then(|layout| layout.size().bytes())
                 })
                 .flatten(),
-            ContractExpression::QualifiedC { name, .. } => self
+            SurfaceTerm::QualifiedC { name, .. } => self
                 .qualified_object(name)
                 .filter(|object| object.struct_name.is_some() && object.array_shape.is_some())
                 .and_then(|object| object.struct_name.as_ref())
@@ -16033,7 +16003,7 @@ impl Parser {
             _ => None,
         };
         let mut struct_array_shape = match &expression {
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 binding @ (crate::kernel::BindingName::ReferenceCarrier(_)
                 | crate::kernel::BindingName::Local(_)
                 | crate::kernel::BindingName::Static(_)),
@@ -16042,14 +16012,14 @@ impl Parser {
                 .info(binding)
                 .filter(|info| info.struct_name.is_some())
                 .and_then(|info| info.array_shape.clone()),
-            ContractExpression::QualifiedC { name, .. } => self
+            SurfaceTerm::QualifiedC { name, .. } => self
                 .qualified_object(name)
                 .filter(|object| object.struct_name.is_some())
                 .and_then(|object| object.array_shape.clone()),
             _ => None,
         };
         let mut scalar_array_shape = match &expression {
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 binding @ (crate::kernel::BindingName::ReferenceCarrier(_)
                 | crate::kernel::BindingName::Local(_)
                 | crate::kernel::BindingName::Static(_)),
@@ -16058,11 +16028,11 @@ impl Parser {
                 .info(binding)
                 .filter(|info| info.struct_name.is_none())
                 .and_then(|info| info.array_shape.clone()),
-            ContractExpression::QualifiedC { name, .. } => self
+            SurfaceTerm::QualifiedC { name, .. } => self
                 .qualified_object(name)
                 .and_then(|object| object.array_shape.clone()),
-            ContractExpression::Binding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::Binding(name)
+            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) => self
                 .names
@@ -16099,7 +16069,7 @@ impl Parser {
                         }
                     }
                     self.expect(Token::RParen)?;
-                    expression = ContractExpression::Apply {
+                    expression = SurfaceTerm::Apply {
                         function: Box::new(expression),
                         arguments,
                     };
@@ -16178,7 +16148,7 @@ impl Parser {
                         // Keep the subscripts as written beside the element
                         // address, so the access prints back as `a[i]`
                         // rather than as the byte arithmetic it lowers to.
-                        expression = ContractExpression::ArrayIndex {
+                        expression = SurfaceTerm::ArrayIndex {
                             base: Box::new(expression),
                             indexes,
                             dimensions,
@@ -16243,17 +16213,15 @@ impl Parser {
                         // flattened index alone prints as one subscript,
                         // which does not parse back.
                         expression = match contract_expression_as_program_expression(&expression) {
-                            Some(lowered_base) if indexes.len() > 1 => {
-                                ContractExpression::ArrayIndex {
-                                    base: Box::new(expression),
-                                    indexes,
-                                    dimensions: shape.clone(),
-                                    lowered: ProgramExpression::Index(
-                                        Box::new(lowered_base),
-                                        Box::new(offset),
-                                    ),
-                                }
-                            }
+                            Some(lowered_base) if indexes.len() > 1 => SurfaceTerm::ArrayIndex {
+                                base: Box::new(expression),
+                                indexes,
+                                dimensions: shape.clone(),
+                                lowered: ProgramExpression::Index(
+                                    Box::new(lowered_base),
+                                    Box::new(offset),
+                                ),
+                            },
                             _ => {
                                 let offset = indexes
                                     .into_iter()
@@ -16270,19 +16238,19 @@ impl Parser {
                                         if stride == 1 {
                                             expression
                                         } else {
-                                            ContractExpression::Multiply(
+                                            SurfaceTerm::Multiply(
                                                 Box::new(expression),
-                                                Box::new(ContractExpression::ProgramExpression(
+                                                Box::new(SurfaceTerm::ProgramExpression(
                                                     ProgramExpression::Value(int32(stride)),
                                                 )),
                                             )
                                         }
                                     })
                                     .reduce(|left, right| {
-                                        ContractExpression::Add(Box::new(left), Box::new(right))
+                                        SurfaceTerm::Add(Box::new(left), Box::new(right))
                                     })
                                     .expect("array has indices");
-                                ContractExpression::Index(Box::new(expression), Box::new(offset))
+                                SurfaceTerm::Index(Box::new(expression), Box::new(offset))
                             }
                         };
                         struct_name = None;
@@ -16325,7 +16293,7 @@ impl Parser {
                                 .collect(),
                             &shape,
                         );
-                        expression = ContractExpression::ArrayIndex {
+                        expression = SurfaceTerm::ArrayIndex {
                             base: Box::new(expression),
                             indexes,
                             dimensions: shape.clone(),
@@ -16338,8 +16306,7 @@ impl Parser {
                         union_name = None;
                         struct_array_element_width = None;
                     } else {
-                        expression =
-                            ContractExpression::Index(Box::new(expression), Box::new(index));
+                        expression = SurfaceTerm::Index(Box::new(expression), Box::new(index));
                         struct_name = None;
                         union_name = None;
                         struct_array_element_width = None;
@@ -16348,7 +16315,7 @@ impl Parser {
                     }
                 }
                 Some(Token::Arrow | Token::Dot) => {
-                    if let ContractExpression::ResourceField(access) = &mut expression {
+                    if let SurfaceTerm::ResourceField(access) = &mut expression {
                         if self.peek() != Some(&Token::Dot) {
                             return Err(self.error("resource children use `.`, not `->`"));
                         }
@@ -16360,7 +16327,7 @@ impl Parser {
                         access.click_type = None;
                         continue;
                     }
-                    if let ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                    if let SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                         crate::kernel::BindingName::Named(owner),
                     )) = &expression
                         && self.peek() == Some(&Token::Dot)
@@ -16369,7 +16336,7 @@ impl Parser {
                     {
                         return Err(self.unknown_instance(owner, "resource instance"));
                     }
-                    if let ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                    if let SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                         crate::kernel::BindingName::Named(owner),
                     )) = &expression
                         && let Some((identity, resource_name)) =
@@ -16385,7 +16352,7 @@ impl Parser {
                             expression = hidden;
                             continue;
                         }
-                        expression = ContractExpression::ResourceField(ResourceFieldAccess {
+                        expression = SurfaceTerm::ResourceField(ResourceFieldAccess {
                             owner,
                             resource_name,
                             identity: identity
@@ -16409,7 +16376,7 @@ impl Parser {
                         self.position += 1;
                         let method = self.expect_ident("method name")?;
                         let arguments = self.parse_method_arguments()?;
-                        expression = ContractExpression::MethodCall {
+                        expression = SurfaceTerm::MethodCall {
                             receiver: Box::new(expression),
                             method,
                             arguments,
@@ -16425,9 +16392,9 @@ impl Parser {
                     let field_name = self.expect_field_name()?;
                     let surface_base = expression.clone();
                     let base = match &expression {
-                        ContractExpression::Old(inner)
-                        | ContractExpression::Exact(inner)
-                        | ContractExpression::At {
+                        SurfaceTerm::Old(inner)
+                        | SurfaceTerm::Exact(inner)
+                        | SurfaceTerm::At {
                             expression: inner, ..
                         } => contract_expression_as_program_expression(inner),
                         _ => contract_expression_as_program_expression(&expression),
@@ -16443,7 +16410,7 @@ impl Parser {
                         union_name = None;
                         struct_array_element_width = None;
                         struct_array_shape = None;
-                        expression = ContractExpression::Field {
+                        expression = SurfaceTerm::Field {
                             pointee_struct: field
                                 .struct_name
                                 .clone()
@@ -16464,7 +16431,7 @@ impl Parser {
                         struct_array_element_width = field.array_element_width;
                         struct_array_shape = field.array_shape.clone();
                         scalar_array_shape = None;
-                        expression = ContractExpression::Field {
+                        expression = SurfaceTerm::Field {
                             pointee_struct: field
                                 .struct_name
                                 .clone()
@@ -16475,7 +16442,7 @@ impl Parser {
                             offset_bytes: field.offset,
                         };
                     } else {
-                        expression = ContractExpression::Field {
+                        expression = SurfaceTerm::Field {
                             pointee_struct: None,
                             base: Box::new(surface_base),
                             field: field_name.clone(),
@@ -16499,9 +16466,9 @@ impl Parser {
     /// lowering that bypasses that resolution refuses it.
     fn parse_region_parameter_suffix(
         &mut self,
-        mut expression: ContractExpression,
-    ) -> Result<ContractExpression, ClickError> {
-        let unresolved = |expression: &ContractExpression| {
+        mut expression: SurfaceTerm,
+    ) -> Result<SurfaceTerm, ClickError> {
+        let unresolved = |expression: &SurfaceTerm| {
             ProgramExpression::Variable(
                 format!(
                     "<{} read at its call>",
@@ -16516,7 +16483,7 @@ impl Parser {
                     self.position += 1;
                     let field = self.expect_field_name()?;
                     let lowered = unresolved(&expression);
-                    expression = ContractExpression::Field {
+                    expression = SurfaceTerm::Field {
                         pointee_struct: None,
                         base: Box::new(expression),
                         field,
@@ -16528,7 +16495,7 @@ impl Parser {
                     self.position += 1;
                     let index = self.parse_contract_expression()?;
                     self.expect(Token::RBracket)?;
-                    expression = ContractExpression::Index(Box::new(expression), Box::new(index));
+                    expression = SurfaceTerm::Index(Box::new(expression), Box::new(index));
                 }
                 _ => return Ok(expression),
             }
@@ -16559,7 +16526,7 @@ impl Parser {
         false
     }
 
-    fn parse_contract_match(&mut self) -> Result<ContractExpression, ClickError> {
+    fn parse_contract_match(&mut self) -> Result<SurfaceTerm, ClickError> {
         let bool_arms = std::mem::take(&mut self.bool_value_context);
         self.position += 1;
         let scrutinee = self.parse_contract_expression()?;
@@ -16619,7 +16586,7 @@ impl Parser {
             }
         }
         self.expect(Token::RBrace)?;
-        Ok(ContractExpression::AlgebraicMatch {
+        Ok(SurfaceTerm::AlgebraicMatch {
             scrutinee: Box::new(scrutinee),
             arms,
         })
@@ -16644,7 +16611,7 @@ impl Parser {
     }
 
     /// A source literal object: `f.string_literal(i)` or `"file.c"::f.string_literal(i)`.
-    fn take_string_literal_reference(&mut self) -> Result<Option<ContractExpression>, ClickError> {
+    fn take_string_literal_reference(&mut self) -> Result<Option<SurfaceTerm>, ClickError> {
         let start = self.position;
         let first = match self.peek() {
             Some(Token::Ident(name)) => (false, name.clone()),
@@ -16722,7 +16689,7 @@ impl Parser {
             .string_literal_values
             .get(&id)
             .ok_or_else(|| self.error(format!("unknown string literal `{id}`")))?;
-        Ok(Some(ContractExpression::ProgramExpression(
+        Ok(Some(SurfaceTerm::ProgramExpression(
             ProgramExpression::Value(value.clone()),
         )))
     }
@@ -16730,7 +16697,7 @@ impl Parser {
     fn finish_static_reference(
         &mut self,
         query: crate::kernel::StaticBindingId,
-    ) -> Result<ContractExpression, ClickError> {
+    ) -> Result<SurfaceTerm, ClickError> {
         crate::instrumentation::record_deterministic_work(1);
         let id = self
             .local_bindings
@@ -16745,22 +16712,22 @@ impl Parser {
             self.position += 2;
             self.expect(Token::LParen)?;
             self.expect(Token::RParen)?;
-            return Ok(ContractExpression::ProgramExpression(
-                ProgramExpression::Value(ProgramValue::typed_pointer(
+            return Ok(SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+                ProgramValue::typed_pointer(
                     crate::kernel::Address {
                         base: crate::kernel::AddressBase::StaticObject { binding: id },
                         offset: crate::kernel::AddressOffset::Constant(0),
                     },
                     ProgramType::UInt8Pointer,
-                )),
-            ));
+                ),
+            )));
         }
-        Ok(ContractExpression::ProgramExpression(
-            ProgramExpression::Variable(id.into()),
-        ))
+        Ok(SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+            id.into(),
+        )))
     }
 
-    fn take_local_binding_reference(&mut self) -> Result<Option<ContractExpression>, ClickError> {
+    fn take_local_binding_reference(&mut self) -> Result<Option<SurfaceTerm>, ClickError> {
         let start = self.position;
         let first = match self.peek() {
             Some(Token::Ident(name)) => (false, name.clone()),
@@ -16986,7 +16953,7 @@ impl Parser {
                 }
             };
             self.expect(Token::RParen)?;
-            return Ok(Some(ContractExpression::ProgramExpression(
+            return Ok(Some(SurfaceTerm::ProgramExpression(
                 ProgramExpression::Value(ProgramValue::typed_pointer(
                     crate::kernel::Address {
                         base: crate::kernel::AddressBase::AutomaticLocal {
@@ -16999,12 +16966,12 @@ impl Parser {
                 )),
             )));
         }
-        Ok(Some(ContractExpression::ProgramExpression(
+        Ok(Some(SurfaceTerm::ProgramExpression(
             ProgramExpression::Variable(id.into()),
         )))
     }
 
-    fn parse_contract_primary(&mut self) -> Result<ContractExpression, ClickError> {
+    fn parse_contract_primary(&mut self) -> Result<SurfaceTerm, ClickError> {
         if let Some(literal) = self.parse_struct_value_literal()? {
             return Ok(literal);
         }
@@ -17020,9 +16987,9 @@ impl Parser {
             && matches!(self.peek_next(), Some(Token::Ident(name)) if name == "footprint")
         {
             self.position += 2;
-            return Ok(ContractExpression::Resource(Box::new(
-                ResourceSubject::Footprint(region),
-            )));
+            return Ok(SurfaceTerm::Resource(Box::new(ResourceSubject::Footprint(
+                region,
+            ))));
         }
         self.position = start;
         // A loop's pass count past the loop, `loop(i).iterations`: a proof
@@ -17045,7 +17012,7 @@ impl Parser {
             && matches!(self.peek_next(), Some(Token::Ident(name)) if name == crate::surface::LOOP_ITERATIONS_NAME)
         {
             self.position += 2;
-            return Ok(ContractExpression::Binding(
+            return Ok(SurfaceTerm::Binding(
                 crate::surface::loop_iterations_spelling(index),
             ));
         }
@@ -17070,17 +17037,15 @@ impl Parser {
             }
             if let Some(name) = self.peek_ident().map(str::to_string) {
                 self.position += 1;
-                return Ok(ContractExpression::ProgramExpression(
-                    ProgramExpression::Variable(
-                        format!("{}{}", "outer.".repeat(depth), name).into(),
-                    ),
-                ));
+                return Ok(SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                    format!("{}{}", "outer.".repeat(depth), name).into(),
+                )));
             }
             self.position = start;
         }
         if self.is_qualified_program_name() {
             let (name, lowered) = self.parse_qualified_program_name()?;
-            return Ok(ContractExpression::QualifiedC { name, lowered });
+            return Ok(SurfaceTerm::QualifiedC { name, lowered });
         }
         // Region values sit beside their `entry` and `exit` points: `.result`
         // is the returned value; `.allocation` is the fresh heap identity.
@@ -17095,12 +17060,12 @@ impl Parser {
                 self.expect(Token::LParen)?;
                 let name = self.expect_ident("parameter name")?;
                 self.expect(Token::RParen)?;
-                return Ok(ContractExpression::RegionParameter { region, name });
+                return Ok(SurfaceTerm::RegionParameter { region, name });
             }
             return Ok(if allocation {
-                ContractExpression::RegionAllocation(region)
+                SurfaceTerm::RegionAllocation(region)
             } else {
-                ContractExpression::RegionResult(region)
+                SurfaceTerm::RegionResult(region)
             });
         }
         if self.peek_ident() == Some("match") {
@@ -17130,7 +17095,7 @@ impl Parser {
     }
 
     #[inline(never)]
-    fn parse_contract_non_match_primary(&mut self) -> Result<ContractExpression, ClickError> {
+    fn parse_contract_non_match_primary(&mut self) -> Result<SurfaceTerm, ClickError> {
         // Exact outcome storage identities. Naming one grants no access rights.
         if matches!(self.peek_ident(), Some("result" | "exception"))
             && self.tokens.get(self.position + 1) == Some(&Token::Dot)
@@ -17153,15 +17118,15 @@ impl Parser {
                 crate::kernel::AddressBase::AggregateReturn { frame }
             };
             self.expect(Token::RParen)?;
-            return Ok(ContractExpression::ProgramExpression(
-                ProgramExpression::Value(ProgramValue::typed_pointer(
+            return Ok(SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+                ProgramValue::typed_pointer(
                     crate::kernel::Address {
                         base: block,
                         offset: crate::kernel::AddressOffset::Constant(0),
                     },
                     ProgramType::UInt8Pointer,
-                )),
-            ));
+                ),
+            )));
         }
 
         if self.peek_next() == Some(&Token::LParen) {
@@ -17175,7 +17140,7 @@ impl Parser {
             self.position += 2;
             let proposition = self.parse_proposition()?;
             self.expect(Token::RBrace)?;
-            return Ok(ContractExpression::Proposition(Box::new(proposition)));
+            return Ok(SurfaceTerm::Proposition(Box::new(proposition)));
         }
         if self.peek() == Some(&Token::Pipe) {
             self.position += 1;
@@ -17218,7 +17183,7 @@ impl Parser {
             }
             let body = if result == ClickType::Proposition {
                 self.parse_proposition()
-                    .map(|body| ContractExpression::Proposition(Box::new(body)))
+                    .map(|body| SurfaceTerm::Proposition(Box::new(body)))
             } else {
                 self.parse_branch_value(result == ClickType::Program(InterfaceType::Bool))
                     .and_then(|body| match &result {
@@ -17236,7 +17201,7 @@ impl Parser {
             let body = body?;
             self.expect(Token::RBrace)?;
             super::lambdas::validate_body_state(&body)?;
-            return Ok(ContractExpression::Lambda {
+            return Ok(SurfaceTerm::Lambda {
                 parameters,
                 result,
                 body: Box::new(body),
@@ -17260,7 +17225,7 @@ impl Parser {
                 self.expect(Token::RParen)?;
             }
             let arguments = self.observe_integer_fields(&algebraic_type.name, &variant, arguments);
-            return Ok(ContractExpression::AlgebraicConstructor {
+            return Ok(SurfaceTerm::AlgebraicConstructor {
                 algebraic_type,
                 variant,
                 arguments,
@@ -17283,9 +17248,9 @@ impl Parser {
                     .ok_or_else(|| self.error(format!("unknown struct declaration `{name}`")))?
                     .size();
                 if let crate::kernel::LayoutSize::Of(_) = size {
-                    return Ok(ContractExpression::ProgramExpression(
-                        ProgramExpression::Value(ProgramValue::UInt64(size.term())),
-                    ));
+                    return Ok(SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+                        ProgramValue::UInt64(size.term()),
+                    )));
                 }
                 size.concrete()
             } else {
@@ -17303,9 +17268,9 @@ impl Parser {
                 // Click does not know: `sizeof(T)`, which each instance reads
                 // as its type argument's size.
                 if let InterfaceType::Parameter(parameter) = parsed_type.interface_type {
-                    return Ok(ContractExpression::ProgramExpression(
-                        ProgramExpression::Value(ProgramValue::UInt64(parameter.size_term())),
-                    ));
+                    return Ok(SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+                        ProgramValue::UInt64(parameter.size_term()),
+                    )));
                 }
                 match &parsed_type.struct_name {
                     // A C++ record named as the source names it, `Node`.
@@ -17315,9 +17280,9 @@ impl Parser {
                         if let Some(size @ crate::kernel::LayoutSize::Of(_)) =
                             self.struct_layouts.get(name).map(|layout| layout.size())
                         {
-                            return Ok(ContractExpression::ProgramExpression(
-                                ProgramExpression::Value(ProgramValue::UInt64(size.term())),
-                            ));
+                            return Ok(SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+                                ProgramValue::UInt64(size.term()),
+                            )));
                         }
                         self.struct_layouts
                             .get(name)
@@ -17329,9 +17294,9 @@ impl Parser {
                     _ => parsed_type.interface_type.abi_size_bytes(),
                 }
             };
-            return Ok(ContractExpression::ProgramExpression(
-                ProgramExpression::Value(int32(bytes)),
-            ));
+            return Ok(SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+                int32(bytes),
+            )));
         }
         if self.peek_ident() == Some("let") {
             if self.contract_expression_nesting >= CONTRACT_LET_RECURSION_LIMIT {
@@ -17350,14 +17315,14 @@ impl Parser {
             let expression = self.parse_contract_expression()?;
             self.expect(Token::RParen)?;
             self.refuse_result_in_program_point_expression(None, &expression)?;
-            return Ok(ContractExpression::Old(Box::new(expression)));
+            return Ok(SurfaceTerm::Old(Box::new(expression)));
         }
 
         if self.peek_ident() == Some("exact") && self.peek_next() == Some(&Token::LParen) {
             self.position += 2;
             let place = self.parse_contract_expression()?;
             self.expect(Token::RParen)?;
-            return Ok(ContractExpression::Exact(Box::new(place)));
+            return Ok(SurfaceTerm::Exact(Box::new(place)));
         }
 
         if self.peek_ident() == Some("at") && self.peek_next() == Some(&Token::LParen) {
@@ -17367,7 +17332,7 @@ impl Parser {
             let expression = self.parse_contract_expression()?;
             self.expect(Token::RParen)?;
             self.refuse_result_in_program_point_expression(Some(&selector), &expression)?;
-            return Ok(ContractExpression::At {
+            return Ok(SurfaceTerm::At {
                 selector,
                 expression: Box::new(expression),
             });
@@ -17384,12 +17349,12 @@ impl Parser {
             self.position += 2;
             let name = self.expect_ident("program binding name")?;
             if let Some(length) = self.take_rust_slice_len(&name, true) {
-                return Ok(ContractExpression::ProgramExpression(
-                    ProgramExpression::Variable(length),
-                ));
+                return Ok(SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                    length,
+                )));
             }
             self.refuse_unknown_loop_value(&name)?;
-            return Ok(ContractExpression::ProgramBinding(name));
+            return Ok(SurfaceTerm::ProgramBinding(name));
         }
         // The earlier language-named forms are refused with their replacement.
         if matches!(self.peek_ident(), Some("c" | "rust"))
@@ -17438,17 +17403,17 @@ impl Parser {
             // constructed operands retain their authoritative Surface operand.
             if matches!(
                 &source_pointer,
-                ContractExpression::Binding(_)
-                    | ContractExpression::ProgramBinding(_)
-                    | ContractExpression::ProgramExpression(_)
-                    | ContractExpression::QualifiedC { .. }
+                SurfaceTerm::Binding(_)
+                    | SurfaceTerm::ProgramBinding(_)
+                    | SurfaceTerm::ProgramExpression(_)
+                    | SurfaceTerm::QualifiedC { .. }
             ) {
                 return Ok(crate::surface::lowering::contract_c_unary(
                     source_pointer,
                     cast,
                 ));
             }
-            return Ok(ContractExpression::CUnary {
+            return Ok(SurfaceTerm::CUnary {
                 operand: Box::new(source_pointer),
                 lowered: cast,
             });
@@ -17480,7 +17445,7 @@ impl Parser {
                     Some(pointer) => {
                         crate::surface::lowering::contract_c_unary(source_pointer, lowered(pointer))
                     }
-                    None => ContractExpression::CUnary {
+                    None => SurfaceTerm::CUnary {
                         operand: Box::new(source_pointer),
                         lowered: lowered(ProgramExpression::Value(int32(0))),
                     },
@@ -17514,7 +17479,7 @@ impl Parser {
             // The operand remains authoritative during spec lowering. A
             // historical pointer selects an address, while this load uses
             // the surrounding clause's memory state.
-            return Ok(ContractExpression::MemoryLoad {
+            return Ok(SurfaceTerm::MemoryLoad {
                 pointer: Box::new(source_pointer),
                 value_type,
                 volatile,
@@ -17533,7 +17498,7 @@ impl Parser {
             self.position += 2;
             let resource = self.parse_resource_count_pattern()?;
             self.expect(Token::RParen)?;
-            return Ok(ContractExpression::ResourceCount(Box::new(resource)));
+            return Ok(SurfaceTerm::ResourceCount(Box::new(resource)));
         }
 
         if let Some((receiver, width)) = self.object_resource_field_selector() {
@@ -17543,7 +17508,7 @@ impl Parser {
             {
                 self.position += width + 1;
                 let field = self.expect_ident("object resource field")?;
-                return Ok(ContractExpression::ResourceField(ResourceFieldAccess {
+                return Ok(SurfaceTerm::ResourceField(ResourceFieldAccess {
                     owner,
                     resource_name,
                     identity: identity
@@ -17567,12 +17532,12 @@ impl Parser {
                     Some(spec_arithmetic::SpecificationBinding::Function { .. })
                 )
             {
-                return Ok(ContractExpression::Apply {
-                    function: Box::new(ContractExpression::Binding(name)),
+                return Ok(SurfaceTerm::Apply {
+                    function: Box::new(SurfaceTerm::Binding(name)),
                     arguments,
                 });
             }
-            let call = ContractExpression::Call {
+            let call = SurfaceTerm::Call {
                 name: name.clone(),
                 arguments,
             };
@@ -17605,7 +17570,7 @@ impl Parser {
                 }
                 // Hidden records retain a flat schema key such as first.v.
                 // This selects that exact slot, without opening the child.
-                return Ok(ContractExpression::ResourceField(ResourceFieldAccess {
+                return Ok(SurfaceTerm::ResourceField(ResourceFieldAccess {
                     owner: crate::surface::diagnostics::describe_contract_expression(&call),
                     resource_name: name,
                     identity: identity
@@ -17627,7 +17592,7 @@ impl Parser {
             }
             Some(Token::Ident(name)) => {
                 if let Some(field) = self.names.resource_fields.get(&name) {
-                    return Ok(ContractExpression::ResourceField(field.clone()));
+                    return Ok(SurfaceTerm::ResourceField(field.clone()));
                 }
                 // Inside a loop, `iter` is the loop's iterator, read through
                 // its accessors, even where the function has a local of
@@ -17639,11 +17604,11 @@ impl Parser {
                 }
                 if self.names.contains_any(NameKind::VALUES, &name) || self.specification_binding_kind(&name).is_some()
                 {
-                    Ok(ContractExpression::Binding(name))
+                    Ok(SurfaceTerm::Binding(name))
                 } else {
                     match self.names.algebraic_params.get(&name) {
                         Some((algebraic_type, binder_index)) => {
-                            Ok(ContractExpression::AlgebraicVariable {
+                            Ok(SurfaceTerm::AlgebraicVariable {
                                 name: name.into(),
                                 algebraic_type: algebraic_type.clone(),
                                 binder_index: *binder_index,
@@ -17659,32 +17624,32 @@ impl Parser {
             // Keep unsuffixed specification numerals contextual until typing.
             // A surrounding conversion or Integer-valued expression may supply
             // that context even when the enclosing theorem has only C params.
-            Some(Token::Number(value)) => Ok(ContractExpression::IntegerLiteral(value.to_string())),
+            Some(Token::Number(value)) => Ok(SurfaceTerm::IntegerLiteral(value.to_string())),
             Some(Token::RustInteger(literal)) => literal.contract_expression(false).map_err(|message| self.error(message)),
-            Some(Token::BigNumber(value)) => Ok(ContractExpression::IntegerLiteral(value)),
+            Some(Token::BigNumber(value)) => Ok(SurfaceTerm::IntegerLiteral(value)),
             Some(Token::UnsuffixedInt64(value)) => {
-                Ok(ContractExpression::IntegerLiteral(value.to_string()))
+                Ok(SurfaceTerm::IntegerLiteral(value.to_string()))
             }
             Some(Token::UnsuffixedUInt64(value)) => {
-                Ok(ContractExpression::IntegerLiteral(value.to_string()))
+                Ok(SurfaceTerm::IntegerLiteral(value.to_string()))
             }
             Some(Token::ByteString(bytes)) => Ok(byte_list_expression(&bytes)),
-            Some(Token::UInt8Number(value)) => Ok(ContractExpression::ProgramExpression(
+            Some(Token::UInt8Number(value)) => Ok(SurfaceTerm::ProgramExpression(
                 ProgramExpression::Value(crate::kernel::uint8(u32::from(value))),
             )),
-            Some(Token::UInt32Number(value)) => Ok(ContractExpression::ProgramExpression(
+            Some(Token::UInt32Number(value)) => Ok(SurfaceTerm::ProgramExpression(
                 ProgramExpression::Value(ProgramValue::UInt32(MachineTerm::uint32_constant(value))),
             )),
             Some(Token::Int64MinimumMagnitude) => Err(self.error(
                 "positive int64 literal `9223372036854775808i64` is outside 0..9223372036854775807; this magnitude is allowed only after unary minus",
             )),
-            Some(Token::Int64Number(value)) => Ok(ContractExpression::ProgramExpression(
+            Some(Token::Int64Number(value)) => Ok(SurfaceTerm::ProgramExpression(
                 ProgramExpression::Value(ProgramValue::Int64(MachineTerm::int64_constant(value))),
             )),
-            Some(Token::UInt64Number(value)) => Ok(ContractExpression::ProgramExpression(
+            Some(Token::UInt64Number(value)) => Ok(SurfaceTerm::ProgramExpression(
                 ProgramExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(value))),
             )),
-            Some(Token::CharLiteral(value)) => Ok(ContractExpression::ProgramExpression(
+            Some(Token::CharLiteral(value)) => Ok(SurfaceTerm::ProgramExpression(
                 ProgramExpression::Value(self.character_constant_value(value)?),
             )),
             Some(Token::LParen) => {
@@ -17715,7 +17680,7 @@ impl Parser {
                         return Err(self.error("expression type context currently requires `Integer`"));
                     }
                     self.expect(Token::RParen)?;
-                    return Ok(ContractExpression::IntegerContext(Box::new(self.at_integer_position(expression))));
+                    return Ok(SurfaceTerm::IntegerContext(Box::new(self.at_integer_position(expression))));
                 }
                 self.expect(Token::RParen)?;
                 Ok(expression)
@@ -17725,15 +17690,14 @@ impl Parser {
         }
     }
 
-    fn parse_contract_sequence_literal(&mut self) -> Result<ContractExpression, ClickError> {
+    fn parse_contract_sequence_literal(&mut self) -> Result<SurfaceTerm, ClickError> {
         let mut frames = vec![Vec::new()];
         self.position += 1;
         loop {
             if self.peek() == Some(&Token::RBracket) {
                 self.position += 1;
-                let sequence = ContractExpression::SequenceLiteral(
-                    frames.pop().expect("sequence literal frame"),
-                );
+                let sequence =
+                    SurfaceTerm::SequenceLiteral(frames.pop().expect("sequence literal frame"));
                 if let Some(parent) = frames.last_mut() {
                     parent.push(sequence);
                     if self.peek() == Some(&Token::Comma) {
@@ -17769,7 +17733,7 @@ impl Parser {
         }
     }
 
-    fn parse_contract_value_let_expression(&mut self) -> Result<ContractExpression, ClickError> {
+    fn parse_contract_value_let_expression(&mut self) -> Result<SurfaceTerm, ClickError> {
         let bool_body = std::mem::take(&mut self.bool_value_context);
         let mut bindings = Vec::new();
         let mut shadowed_lets = Vec::new();
@@ -17816,7 +17780,7 @@ impl Parser {
         }
         let mut body = body?;
         for (name, click_type, value, _, _) in bindings.into_iter().rev() {
-            body = ContractExpression::Let {
+            body = SurfaceTerm::Let {
                 name: name.into(),
                 click_type,
                 value: Box::new(value),
@@ -17828,7 +17792,7 @@ impl Parser {
 
     /// The value of an `if` branch, `match` arm or `let` body: a `bool`
     /// value when the enclosing expression is one.
-    fn parse_branch_value(&mut self, bool_value: bool) -> Result<ContractExpression, ClickError> {
+    fn parse_branch_value(&mut self, bool_value: bool) -> Result<SurfaceTerm, ClickError> {
         if bool_value {
             self.parse_bool_value()
         } else {
@@ -17840,7 +17804,7 @@ impl Parser {
     /// branch of one. A proposition written here is its truth value, so
     /// `x > 0` is `if x > 0 { true } else { false }`; a value written alone
     /// is itself. `if`, `match` and `let` pass the context to their branches.
-    fn parse_bool_value(&mut self) -> Result<ContractExpression, ClickError> {
+    fn parse_bool_value(&mut self) -> Result<SurfaceTerm, ClickError> {
         if matches!(self.peek_ident(), Some("if" | "match" | "let"))
             && self.peek_next() != Some(&Token::LParen)
         {
@@ -17902,7 +17866,7 @@ impl Parser {
         }
     }
 
-    fn parse_contract_if_expression(&mut self) -> Result<ContractExpression, ClickError> {
+    fn parse_contract_if_expression(&mut self) -> Result<SurfaceTerm, ClickError> {
         let bool_branches = std::mem::take(&mut self.bool_value_context);
         self.position += 1;
         // These children are boxed in the AST. Box each one as soon as it is
@@ -17919,7 +17883,7 @@ impl Parser {
         self.expect(Token::LBrace)?;
         let else_branch = Box::new(self.parse_branch_value(bool_branches)?);
         self.expect(Token::RBrace)?;
-        Ok(ContractExpression::If {
+        Ok(SurfaceTerm::If {
             condition,
             then_branch,
             else_branch,
@@ -18123,7 +18087,7 @@ impl Parser {
     fn refuse_result_in_program_point_expression(
         &self,
         selector: Option<&ProgramPointSelector>,
-        expression: &ContractExpression,
+        expression: &SurfaceTerm,
     ) -> Result<(), ClickError> {
         let mut names = BTreeSet::new();
         collect_current_contract_expression_variables(expression, &mut names);
@@ -18134,7 +18098,7 @@ impl Parser {
     fn refuse_result_in_program_point_proposition(
         &self,
         selector: &ProgramPointSelector,
-        proposition: &ClickProposition,
+        proposition: &SurfaceProposition,
     ) -> Result<(), ClickError> {
         self.refuse_result_in_program_point(Some(selector), proposition_names_result(proposition))
     }
@@ -18227,9 +18191,9 @@ impl Parser {
 
     fn parse_range_fold(
         &mut self,
-        start: ContractExpression,
-        end: ContractExpression,
-    ) -> Result<ContractExpression, ClickError> {
+        start: SurfaceTerm,
+        end: SurfaceTerm,
+    ) -> Result<SurfaceTerm, ClickError> {
         self.expect(Token::Dot)?;
         let method = self.expect_ident("range method")?;
         if method != "fold" {
@@ -18274,7 +18238,7 @@ impl Parser {
         self.expect(Token::RParen)?;
 
         self.loop_proof_value_names = binder_scope;
-        Ok(ContractExpression::RangeFold {
+        Ok(SurfaceTerm::RangeFold {
             start: Box::new(start),
             end: Box::new(end),
             initial: Box::new(initial),
@@ -19390,26 +19354,24 @@ fn source_nesting_error_message(
 
 /// `aligned(p, n)` is sugar for `address(p) & (n - 1) == 0`; the kernel
 /// decides that shape from the pointer's formation.
-fn aligned_proposition(pointer: ProgramExpression, alignment: u64) -> ClickProposition {
+fn aligned_proposition(pointer: ProgramExpression, alignment: u64) -> SurfaceProposition {
     let uint64 = |value: u64| {
-        ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt64(
+        SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt64(
             MachineTerm::uint64_constant(value),
         )))
     };
-    ClickProposition::Comparison {
-        left: ContractExpression::BitwiseAnd(
-            Box::new(ContractExpression::ProgramExpression(
-                ProgramExpression::Cast {
-                    expression: Box::new(pointer),
-                    target_type: ProgramType::UInt64,
-                    integer_mode: crate::kernel::IntegerCastMode::Standard,
-                    pointee_struct: None,
-                    pointee_struct_size: None,
-                    pointee_volatile: false,
-                    pointee_constant: false,
-                    explicit_qualification: false,
-                },
-            )),
+    SurfaceProposition::Comparison {
+        left: SurfaceTerm::BitwiseAnd(
+            Box::new(SurfaceTerm::ProgramExpression(ProgramExpression::Cast {
+                expression: Box::new(pointer),
+                target_type: ProgramType::UInt64,
+                integer_mode: crate::kernel::IntegerCastMode::Standard,
+                pointee_struct: None,
+                pointee_struct_size: None,
+                pointee_volatile: false,
+                pointee_constant: false,
+                explicit_qualification: false,
+            })),
             Box::new(uint64(alignment - 1)),
         ),
         operator: ComparisonOperator::Equal,
@@ -19429,7 +19391,7 @@ fn aligned_proposition(pointer: ProgramExpression, alignment: u64) -> ClickPropo
 fn object_alignment_fact(
     clause: &ResourceClause,
     struct_layouts: &BTreeMap<String, crate::languages::interface::RecordLayout>,
-) -> Option<ClickProposition> {
+) -> Option<SurfaceProposition> {
     let (ResourceClause::OwnMemory(segment) | ResourceClause::ViewMemory(segment)) = clause else {
         return None;
     };
@@ -19452,7 +19414,7 @@ fn object_alignment_fact(
 fn requirement_object_alignment_facts(
     requirement: &Requirement,
     struct_layouts: &BTreeMap<String, crate::languages::interface::RecordLayout>,
-    out: &mut Vec<ClickProposition>,
+    out: &mut Vec<SurfaceProposition>,
 ) {
     match requirement {
         Requirement::Resource(clause) => out.extend(object_alignment_fact(clause, struct_layouts)),
@@ -19543,7 +19505,7 @@ mod integer_quantifier_parser_tests {
         let proposition = parser.parse_proposition().unwrap();
         assert!(matches!(
             proposition,
-            ClickProposition::ForAll {
+            SurfaceProposition::ForAll {
                 click_type: ClickType::Integer,
                 ..
             }
@@ -19559,7 +19521,7 @@ mod integer_quantifier_parser_tests {
         let proposition = parser.parse_proposition().unwrap();
         assert!(matches!(
             proposition,
-            ClickProposition::ForAll {
+            SurfaceProposition::ForAll {
                 click_type: ClickType::Integer,
                 ..
             }
@@ -19592,12 +19554,12 @@ mod integer_quantifier_parser_tests {
         ] {
             let mut parser = Parser::new(text).unwrap();
             parser.integer_arithmetic = true;
-            let ClickProposition::Comparison { right, .. } = parser.parse_proposition().unwrap()
+            let SurfaceProposition::Comparison { right, .. } = parser.parse_proposition().unwrap()
             else {
                 panic!("expected a comparison");
             };
             assert!(
-                matches!(right, ContractExpression::Let { .. }),
+                matches!(right, SurfaceTerm::Let { .. }),
                 "{text}: {right:?}"
             );
         }
@@ -19606,11 +19568,12 @@ mod integer_quantifier_parser_tests {
         )
         .unwrap();
         parser.integer_arithmetic = true;
-        let ClickProposition::Comparison { right, .. } = parser.parse_proposition().unwrap() else {
+        let SurfaceProposition::Comparison { right, .. } = parser.parse_proposition().unwrap()
+        else {
             panic!("expected a comparison");
         };
-        assert!(matches!(right, ContractExpression::Call { name, arguments }
-            if name == "to_integer" && matches!(arguments.as_slice(), [ContractExpression::Let { .. }])));
+        assert!(matches!(right, SurfaceTerm::Call { name, arguments }
+            if name == "to_integer" && matches!(arguments.as_slice(), [SurfaceTerm::Let { .. }])));
     }
 
     #[test]
@@ -19628,24 +19591,24 @@ mod integer_quantifier_parser_tests {
             .unwrap()
             .parse_file_items(&[])
             .expect("adjacent function contracts should parse");
-        let Ensure::Proposition(ClickProposition::Comparison { left, .. }) =
+        let Ensure::Proposition(SurfaceProposition::Comparison { left, .. }) =
             file.function_blocks()[0].ensures()[0].ensure()
         else {
             panic!("expected the first function's proposition");
         };
         assert!(matches!(
             left,
-            ContractExpression::Let { body, .. }
-                if matches!(body.as_ref(), ContractExpression::Binding(name) if name == "saved")
+            SurfaceTerm::Let { body, .. }
+                if matches!(body.as_ref(), SurfaceTerm::Binding(name) if name == "saved")
         ));
-        let Ensure::Proposition(ClickProposition::Comparison { left, .. }) =
+        let Ensure::Proposition(SurfaceProposition::Comparison { left, .. }) =
             file.function_blocks()[1].ensures()[0].ensure()
         else {
             panic!("expected the second function's proposition");
         };
         assert!(matches!(
             left,
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) if name.is_named("saved")
+            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name)) if name.is_named("saved")
         ));
     }
 
@@ -20236,7 +20199,7 @@ mod preserve_syntax_tests {
                     expected,
                     "{resource}"
                 );
-                let ProofTactic::Preserve(ClickProposition::Separate { right, .. }) =
+                let ProofTactic::Preserve(SurfaceProposition::Separate { right, .. }) =
                     parser(&format!("preserve({resource}, statement(0));"))
                         .parse_proof_tactic()
                         .unwrap()
@@ -20244,7 +20207,7 @@ mod preserve_syntax_tests {
                     panic!("expected preserve")
                 };
                 assert_eq!(right, expected, "{resource}");
-                let ClickProposition::Separate { right, .. } =
+                let SurfaceProposition::Separate { right, .. } =
                     parser(&format!("separate(statement(0).footprint, {resource})"))
                         .parse_proposition()
                         .unwrap()
@@ -20256,14 +20219,11 @@ mod preserve_syntax_tests {
                 if subject == "Node()" {
                     // Constructor calls are resolved after all declarations,
                     // including when nested under a snapshot.
-                    assert!(
-                        matches!(actual, ContractExpression::At { .. }),
-                        "{resource}"
-                    );
+                    assert!(matches!(actual, SurfaceTerm::At { .. }), "{resource}");
                 } else {
                     assert_eq!(
                         actual,
-                        ContractExpression::Resource(Box::new(expected.clone())),
+                        SurfaceTerm::Resource(Box::new(expected.clone())),
                         "{resource}"
                     );
                 }
@@ -20273,7 +20233,7 @@ mod preserve_syntax_tests {
             assert!(
                 matches!(
                     parser(value).parse_contract_expression().unwrap(),
-                    ContractExpression::At { .. }
+                    SurfaceTerm::At { .. }
                 ),
                 "{value}"
             );
@@ -20503,14 +20463,14 @@ mod exact_syntax_tests {
                 .unwrap();
             assert_eq!(reparsed, parsed, "{source}");
         }
-        let ContractExpression::Exact(place) = Parser::new("exact(p[0])")
+        let SurfaceTerm::Exact(place) = Parser::new("exact(p[0])")
             .unwrap()
             .parse_contract_expression()
             .unwrap()
         else {
             panic!("`exact(...)` is its own form")
         };
-        assert!(!matches!(place.as_ref(), ContractExpression::Exact(_)));
+        assert!(!matches!(place.as_ref(), SurfaceTerm::Exact(_)));
         // A proposition that starts with `exact(` is a comparison, not a
         // predicate call.
         assert!(matches!(
@@ -20518,7 +20478,7 @@ mod exact_syntax_tests {
                 .unwrap()
                 .parse_proposition()
                 .unwrap(),
-            ClickProposition::Comparison { .. }
+            SurfaceProposition::Comparison { .. }
         ));
     }
 }

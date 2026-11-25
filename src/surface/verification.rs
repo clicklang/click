@@ -765,7 +765,7 @@ fn contract_refinement_targets(file: &ClickFile, theorem_name: &str) -> BTreeSet
         return targets;
     };
     for ensure in theorem.ensures() {
-        let Ensure::Proposition(ClickProposition::PredicateCall { name, arguments }) =
+        let Ensure::Proposition(SurfaceProposition::PredicateCall { name, arguments }) =
             ensure.ensure()
         else {
             continue;
@@ -2632,10 +2632,10 @@ fn verify_program_in_context(
         let implicit_safety_clause = EnsureClause {
             proof_bindings: Vec::new(),
             name: None,
-            ensure: Ensure::Proposition(ClickProposition::Comparison {
-                left: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
+            ensure: Ensure::Proposition(SurfaceProposition::Comparison {
+                left: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
                 operator: ComparisonOperator::Equal,
-                right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
+                right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
             }),
             proof: SourceProof::Tactic(SmartTactic::ImplicitTail),
             borrowed: false,
@@ -4264,8 +4264,8 @@ fn termination_refusal_report(
 /// the plan and the loop head render the same clause, so the two agree by
 /// construction. It exists so a diagnostic can print what the user wrote,
 /// since a lowered specification expression has no source spelling.
-pub(in crate::surface) fn termination_measure_source(expression: &ContractExpression) -> String {
-    let binary = |left: &ContractExpression, right: &ContractExpression, operator: &str| {
+pub(in crate::surface) fn termination_measure_source(expression: &SurfaceTerm) -> String {
+    let binary = |left: &SurfaceTerm, right: &SurfaceTerm, operator: &str| {
         format!(
             "{} {operator} {}",
             termination_measure_source(left),
@@ -4273,19 +4273,17 @@ pub(in crate::surface) fn termination_measure_source(expression: &ContractExpres
         )
     };
     match expression {
-        ContractExpression::IntegerLiteral(literal) => literal.clone(),
-        ContractExpression::Binding(name)
-        | ContractExpression::ProgramBinding(name)
-        | ContractExpression::QualifiedC { name, .. } => name.clone(),
-        ContractExpression::ProgramExpression(expression) => {
-            crate::kernel::ranking_measure_identity(
-                &crate::kernel::RankingComponent::ProgramExpression(expression.clone()),
-            )
-        }
-        ContractExpression::Field { base, field, .. } => {
+        SurfaceTerm::IntegerLiteral(literal) => literal.clone(),
+        SurfaceTerm::Binding(name)
+        | SurfaceTerm::ProgramBinding(name)
+        | SurfaceTerm::QualifiedC { name, .. } => name.clone(),
+        SurfaceTerm::ProgramExpression(expression) => crate::kernel::ranking_measure_identity(
+            &crate::kernel::RankingComponent::ProgramExpression(expression.clone()),
+        ),
+        SurfaceTerm::Field { base, field, .. } => {
             format!("{}.{field}", termination_measure_source(base))
         }
-        ContractExpression::Call { name, arguments } => format!(
+        SurfaceTerm::Call { name, arguments } => format!(
             "{name}({})",
             crate::surface::diagnostics::slice_call_arguments(
                 name,
@@ -4293,11 +4291,11 @@ pub(in crate::surface) fn termination_measure_source(expression: &ContractExpres
             )
             .join(", ")
         ),
-        ContractExpression::ResourceField(access) => {
+        SurfaceTerm::ResourceField(access) => {
             format!("{}.{}", access.owner, access.field)
         }
-        ContractExpression::Old(inner) => format!("old({})", termination_measure_source(inner)),
-        ContractExpression::At {
+        SurfaceTerm::Old(inner) => format!("old({})", termination_measure_source(inner)),
+        SurfaceTerm::At {
             selector,
             expression,
         } => format!(
@@ -4305,13 +4303,13 @@ pub(in crate::surface) fn termination_measure_source(expression: &ContractExpres
             crate::surface::diagnostics::describe_program_point_selector(selector),
             termination_measure_source(expression)
         ),
-        ContractExpression::Negate(inner) => format!("-{}", termination_measure_source(inner)),
-        ContractExpression::Add(left, right) => binary(left, right, "+"),
-        ContractExpression::Subtract(left, right) => binary(left, right, "-"),
-        ContractExpression::Multiply(left, right) => binary(left, right, "*"),
-        ContractExpression::Divide(left, right) => binary(left, right, "/"),
-        ContractExpression::Remainder(left, right) => binary(left, right, "%"),
-        ContractExpression::Index(base, index) => format!(
+        SurfaceTerm::Negate(inner) => format!("-{}", termination_measure_source(inner)),
+        SurfaceTerm::Add(left, right) => binary(left, right, "+"),
+        SurfaceTerm::Subtract(left, right) => binary(left, right, "-"),
+        SurfaceTerm::Multiply(left, right) => binary(left, right, "*"),
+        SurfaceTerm::Divide(left, right) => binary(left, right, "/"),
+        SurfaceTerm::Remainder(left, right) => binary(left, right, "%"),
+        SurfaceTerm::Index(base, index) => format!(
             "{}[{}]",
             termination_measure_source(base),
             termination_measure_source(index)
@@ -4348,9 +4346,9 @@ fn termination_measure_binder_name(measure: &TerminationMeasure) -> Option<&str>
         return None;
     };
     match component {
-        ContractExpression::Binding(name)
-        | ContractExpression::ProgramBinding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+        SurfaceTerm::Binding(name)
+        | SurfaceTerm::ProgramBinding(name)
+        | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) => Some(name),
         _ => None,
@@ -6169,7 +6167,7 @@ pub(super) fn function_resource_summary_with_entry_ranges(
         };
         let result_binding = BTreeMap::from([(
             "result".to_string(),
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::CONTRACT_RESULT,
             )),
         )]);
@@ -6308,7 +6306,7 @@ pub(in crate::surface) fn function_resource_constructors(
         .map(|resource| {
             let result_binding = BTreeMap::from([(
                 "result".to_string(),
-                ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                     crate::kernel::CONTRACT_RESULT,
                 )),
             )]);
@@ -6731,7 +6729,7 @@ fn resource_clause_to_resource_specs_with_metadata(
         retained_state,
         pointer_element_types,
     )?;
-    fn declared_arguments(resource: &ResourceClause) -> Option<&[ContractExpression]> {
+    fn declared_arguments(resource: &ResourceClause) -> Option<&[SurfaceTerm]> {
         match resource {
             ResourceClause::Named { resource, .. }
             | ResourceClause::Quantified { resource, .. } => declared_arguments(resource),
@@ -7317,7 +7315,7 @@ pub(in crate::surface) fn substitute_contract_segment(
             base, start, end, ..
         } = &surface
     {
-        let lower = |original: &ProgramExpression, source: &ContractExpression| {
+        let lower = |original: &ProgramExpression, source: &SurfaceTerm| {
             let rewritten = substitute_program_expression_in(original, substitutions)?;
             if rewritten == *original {
                 return Ok(original.clone());

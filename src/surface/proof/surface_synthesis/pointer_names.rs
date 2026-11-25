@@ -82,9 +82,9 @@ mod tests {
                         &state,
                         &BTreeMap::new(),
                     ),
-                    Some(ContractExpression::ProgramExpression(
-                        ProgramExpression::Variable(name.into())
-                    )),
+                    Some(SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                        name.into()
+                    ))),
                     "pointer equality must preserve the complete selected value name",
                 );
                 let expression = synthesize_surface_value(

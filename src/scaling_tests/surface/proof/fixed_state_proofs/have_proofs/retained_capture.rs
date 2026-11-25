@@ -9,13 +9,12 @@ fn certificate_argument_capture_keeps_growing_machine_terms_shared() {
             let mut previous = None;
             for size in [8, 32, 128] {
                 let _session = crate::kernel::VerificationSession::enter();
-                let atom = ContractExpression::ProgramExpression(ProgramExpression::Value(
+                let atom = SurfaceTerm::ProgramExpression(ProgramExpression::Value(
                     ProgramValue::UInt64(MachineTerm::Variable(Variable(997010))),
                 ));
                 let mut expression = atom.clone();
                 for _ in 0..size {
-                    expression =
-                        ContractExpression::Add(Box::new(expression), Box::new(atom.clone()));
+                    expression = SurfaceTerm::Add(Box::new(expression), Box::new(atom.clone()));
                 }
                 let exports = KernelTermExport::machine_export_count();
                 let (captured, work) =

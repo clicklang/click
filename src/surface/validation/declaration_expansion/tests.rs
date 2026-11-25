@@ -39,8 +39,8 @@ fn negated_resource_fields_receive_their_declared_metadata() {
     scope.definitions.get_mut("reference").unwrap().fields =
         std::sync::Arc::new(BTreeMap::from([("value".into(), (3, field_type.clone()))]));
     for name in ["value", "missing"] {
-        let expression = ContractExpression::Negate(Box::new(ContractExpression::Negate(
-            Box::new(ContractExpression::ResourceField(ResourceFieldAccess {
+        let expression = SurfaceTerm::Negate(Box::new(SurfaceTerm::Negate(Box::new(
+            SurfaceTerm::ResourceField(ResourceFieldAccess {
                 owner: "r".into(),
                 resource_name: "reference".into(),
                 identity: InstanceId::from_variable(Variable(0)).into(),
@@ -48,8 +48,8 @@ fn negated_resource_fields_receive_their_declared_metadata() {
                 field: name.into(),
                 field_index: 0,
                 click_type: None,
-            })),
-        )));
+            }),
+        ))));
         let result = expand_declared_resource_expression(expression, &scope);
         if name == "missing" {
             assert!(
@@ -60,13 +60,13 @@ fn negated_resource_fields_receive_their_declared_metadata() {
             );
             continue;
         }
-        let ContractExpression::Negate(outer) = result.unwrap() else {
+        let SurfaceTerm::Negate(outer) = result.unwrap() else {
             panic!()
         };
-        let ContractExpression::Negate(inner) = *outer else {
+        let SurfaceTerm::Negate(inner) = *outer else {
             panic!()
         };
-        let ContractExpression::ResourceField(access) = *inner else {
+        let SurfaceTerm::ResourceField(access) = *inner else {
             panic!()
         };
         assert_eq!(access.field_index, 3);
@@ -123,7 +123,7 @@ fn inferred_constructor_type_arguments_are_written_into_the_declaration() {
     )
     .expect("the short constructors are inferred");
     let function = &file.click_function_definitions()[0];
-    let ContractExpression::AlgebraicConstructor {
+    let SurfaceTerm::AlgebraicConstructor {
         algebraic_type,
         arguments,
         ..
@@ -133,13 +133,13 @@ fn inferred_constructor_type_arguments_are_written_into_the_declaration() {
     };
     let int32_list = vec![ClickType::Program(InterfaceType::Int32)];
     assert_eq!(algebraic_type.arguments, int32_list);
-    let ContractExpression::AlgebraicConstructor { algebraic_type, .. } = &arguments[1] else {
+    let SurfaceTerm::AlgebraicConstructor { algebraic_type, .. } = &arguments[1] else {
         panic!("the tail is a constructor");
     };
     assert_eq!(algebraic_type.arguments, int32_list);
 }
 
-fn authority_test_protected(argument: ContractExpression) -> ResourceClause {
+fn authority_test_protected(argument: SurfaceTerm) -> ResourceClause {
     ResourceClause::Declared {
         type_schema: None,
         resource_type_arguments: Vec::new(),
@@ -154,9 +154,8 @@ fn authority_test_protected(argument: ContractExpression) -> ResourceClause {
 
 #[test]
 fn authority_type_argument_requires_exact_unary_pointer_family() {
-    let pointer = ContractExpression::ProgramExpression(ProgramExpression::Variable(
-        ("p".to_string()).into(),
-    ));
+    let pointer =
+        SurfaceTerm::ProgramExpression(ProgramExpression::Variable(("p".to_string()).into()));
     let accepted = expand_resource_type_arguments(
         "authority",
         vec![authority_test_protected(pointer.clone())],
@@ -203,7 +202,7 @@ fn authority_type_argument_requires_exact_unary_pointer_family() {
         ),
         (
             authority_test_scope(ResourceKind::Composite, InterfaceType::Int32Pointer, false),
-            ContractExpression::ResourceWildcard,
+            SurfaceTerm::ResourceWildcard,
         ),
     ] {
         assert!(
@@ -413,7 +412,7 @@ fn certification_checks_only_the_cited_library_theorem() {
 
 #[test]
 fn authority_field_schema_and_count_admission_are_independent_of_instance_fields() {
-    let pointer = ContractExpression::ProgramExpression(ProgramExpression::Variable("p".into()));
+    let pointer = SurfaceTerm::ProgramExpression(ProgramExpression::Variable("p".into()));
     let mut scope =
         authority_test_scope(ResourceKind::Composite, InterfaceType::Int32Pointer, true);
     scope.definitions.get_mut("reference").unwrap().fields =
@@ -430,14 +429,14 @@ fn authority_field_schema_and_count_admission_are_independent_of_instance_fields
     assert!(
         matches!(&accepted[0], ResourceClause::Declared { type_schema: Some(schema), .. } if schema.fields().len() == 1)
     );
-    let count = ContractExpression::ResourceCount(Box::new(authority_test_protected(pointer)));
+    let count = SurfaceTerm::ResourceCount(Box::new(authority_test_protected(pointer)));
     assert!(
         expand_declared_resource_expression(count.clone(), &scope).is_err(),
         "the standard library's expansion applies no family rules"
     );
     scope.family_rules = true;
     assert!(
-        matches!(expand_declared_resource_expression(count, &scope).unwrap(), ContractExpression::ResourceCount(resource) if matches!(resource.as_ref(), ResourceClause::Declared { type_schema: Some(schema), .. } if schema.fields().len() == 1))
+        matches!(expand_declared_resource_expression(count, &scope).unwrap(), SurfaceTerm::ResourceCount(resource) if matches!(resource.as_ref(), ResourceClause::Declared { type_schema: Some(schema), .. } if schema.fields().len() == 1))
     );
 }
 
@@ -446,8 +445,8 @@ fn authority_field_schema_and_count_admission_are_independent_of_instance_fields
 /// `authorized`, whether or not it declares fields.
 #[test]
 fn authorization_not_field_presence_selects_countability() {
-    let pointer = ContractExpression::ProgramExpression(ProgramExpression::Variable("p".into()));
-    let count = ContractExpression::ResourceCount(Box::new(authority_test_protected(pointer)));
+    let pointer = SurfaceTerm::ProgramExpression(ProgramExpression::Variable("p".into()));
+    let count = SurfaceTerm::ResourceCount(Box::new(authority_test_protected(pointer)));
     for has_fields in [false, true] {
         for authorized in [false, true] {
             let mut scope = authority_test_scope(

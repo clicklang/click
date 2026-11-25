@@ -4,17 +4,17 @@ use super::*;
 
 pub(crate) use crate::kernel::proof::fact_reasoning::*;
 
-pub(super) fn negate_click_proposition(proposition: &ClickProposition) -> ClickProposition {
+pub(super) fn negate_click_proposition(proposition: &SurfaceProposition) -> SurfaceProposition {
     match proposition {
-        ClickProposition::Comparison {
+        SurfaceProposition::Comparison {
             operator: ComparisonOperator::In,
             ..
-        } => ClickProposition::Not(Box::new(proposition.clone())),
-        ClickProposition::Comparison {
+        } => SurfaceProposition::Not(Box::new(proposition.clone())),
+        SurfaceProposition::Comparison {
             left,
             operator,
             right,
-        } => ClickProposition::Comparison {
+        } => SurfaceProposition::Comparison {
             left: left.clone(),
             operator: match operator {
                 ComparisonOperator::Equal => ComparisonOperator::NotEqual,
@@ -27,8 +27,8 @@ pub(super) fn negate_click_proposition(proposition: &ClickProposition) -> ClickP
             },
             right: right.clone(),
         },
-        ClickProposition::Not(body) => body.as_ref().clone(),
-        proposition => ClickProposition::Not(Box::new(proposition.clone())),
+        SurfaceProposition::Not(body) => body.as_ref().clone(),
+        proposition => SurfaceProposition::Not(Box::new(proposition.clone())),
     }
 }
 

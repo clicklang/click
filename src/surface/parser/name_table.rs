@@ -17,7 +17,7 @@ use super::*;
 #[derive(Clone, Debug, Default)]
 pub(super) struct ResourceTargets {
     names: BTreeMap<String, ResourceClause>,
-    calls: std::collections::HashMap<ContractExpression, BTreeSet<ResourceTargetKey>>,
+    calls: std::collections::HashMap<SurfaceTerm, BTreeSet<ResourceTargetKey>>,
     placeholders: BTreeSet<String>,
     hidden: std::collections::HashMap<ResourceClause, BTreeSet<crate::kernel::InstanceId>>,
     unnamed: BTreeMap<crate::kernel::InstanceId, ResourceClause>,
@@ -37,7 +37,7 @@ impl std::ops::Deref for ResourceTargets {
 }
 
 impl ResourceTargets {
-    fn call(target: &ResourceClause) -> Option<ContractExpression> {
+    fn call(target: &ResourceClause) -> Option<SurfaceTerm> {
         let ResourceClause::Named { resource, .. } = target else {
             return None;
         };
@@ -56,7 +56,7 @@ impl ResourceTargets {
         if !resource_type_arguments.is_empty() || !resource_arguments.is_empty() {
             return None;
         }
-        Some(ContractExpression::Call {
+        Some(SurfaceTerm::Call {
             name: name.clone(),
             arguments: arguments.clone(),
         })
@@ -145,7 +145,7 @@ impl ResourceTargets {
         Some(target)
     }
 
-    pub(super) fn select(&self, call: &ContractExpression) -> Result<Option<&ResourceClause>, ()> {
+    pub(super) fn select(&self, call: &SurfaceTerm) -> Result<Option<&ResourceClause>, ()> {
         crate::instrumentation::record_deterministic_work(1);
         let Some(names) = self.calls.get(call) else {
             return Ok(None);
@@ -178,7 +178,7 @@ pub(super) enum ShadowRestore {
     /// fresh and its block's end ends it.
     Fact {
         name: String,
-        previous: Option<ClickProposition>,
+        previous: Option<SurfaceProposition>,
     },
     /// A resource instance a proof binder of a value with the same spelling
     /// hid.
@@ -321,7 +321,7 @@ pub(super) struct NameTable {
     /// The facts `have name: P` named, visible from the `have` to the end
     /// of its block, nested blocks included. A citation by name is read as
     /// the proposition, exactly as if it were restated there.
-    pub(super) fact_names: BTreeMap<String, ClickProposition>,
+    pub(super) fact_names: BTreeMap<String, SurfaceProposition>,
     /// What each scoped binding replaced, undone when its block ends.
     pub(super) undo: Vec<ShadowRestore>,
     pub(super) ended_fact_names: BTreeSet<String>,

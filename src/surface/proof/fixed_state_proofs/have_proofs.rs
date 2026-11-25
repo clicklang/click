@@ -53,7 +53,7 @@ fn drop_spec_proposition_iteratively(proposition: SpecProposition) {
 /// (`PureFactList`, `PureFactStore`), so lowering at a loop does not rebuild it
 /// from every fact the path holds; a plain vector still folds its facts.
 pub(in crate::surface::proof) fn lower_fixed_state_proposition(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     available: &(impl crate::kernel::proof::PropositionSource + ?Sized),
     parameter_binding: ParameterBinding<'_>,
     fixed_state: FixedStateFrame<'_>,
@@ -75,7 +75,7 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition(
 /// `object_type[...]` receipts for those domains, which the join exports
 /// beside it.
 pub(in crate::surface::proof) fn lower_fixed_state_interface_join_proposition(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     available: &(impl crate::kernel::proof::PropositionSource + ?Sized),
     parameter_binding: ParameterBinding<'_>,
     fixed_state: FixedStateFrame<'_>,
@@ -114,7 +114,7 @@ pub(in crate::surface::proof) fn lower_fixed_state_interface_join_proposition(
 /// local step does not rebuild it by scanning every unrelated fact. Legacy
 /// vector callers continue through `lower_fixed_state_proposition` above.
 pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_assumptions(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     assumptions: &PureFactContext,
     parameter_binding: ParameterBinding<'_>,
     fixed_state: FixedStateFrame<'_>,
@@ -134,7 +134,7 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_assumptions(
 
 /// The names a proposition reads: the parameters and locals its lowering
 /// looks up, and so all of the contract environment it needs.
-fn proposition_referenced_names(proposition: &ClickProposition) -> BTreeSet<String> {
+fn proposition_referenced_names(proposition: &SurfaceProposition) -> BTreeSet<String> {
     let mut names = BTreeSet::new();
     crate::surface::lowering::collect_click_proposition_referenced_names(proposition, &mut names);
     names
@@ -145,7 +145,7 @@ fn proposition_referenced_names(proposition: &ClickProposition) -> BTreeSet<Stri
 /// so callers pass them explicitly just as Integer proof locals are passed by
 /// the companion helper below.
 pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_algebraic_values(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     assumptions: &PureFactContext,
     parameter_binding: ParameterBinding<'_>,
     fixed_state: FixedStateFrame<'_>,
@@ -167,7 +167,7 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_algebraic_va
 
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_proof_locals(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     assumptions: &PureFactContext,
     parameter_binding: ParameterBinding<'_>,
     fixed_state: FixedStateFrame<'_>,
@@ -204,7 +204,7 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_proof_locals
 /// The ordinary helper remains the default for C-only propositions; this path
 /// is used when a fold law's explicit guard names an Integer binding.
 pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_integer_values(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     assumptions: &PureFactContext,
     parameter_binding: ParameterBinding<'_>,
     fixed_state: FixedStateFrame<'_>,
@@ -235,7 +235,7 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_integer_valu
 /// [`lower_fixed_state_proposition_with_assumptions`], also returning the
 /// head chain the kernel recorded for the lowered proposition.
 pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_assumptions_recording_introductions(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     assumptions: &PureFactContext,
     parameter_binding: ParameterBinding<'_>,
     fixed_state: FixedStateFrame<'_>,
@@ -271,7 +271,7 @@ pub(in crate::surface::proof) fn lower_fixed_state_proposition_with_assumptions_
 /// and the execution's facts are. The state carries the parameters at
 /// their entry values, the proof-local bindings, and `result`.
 pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
     fixed_state: FixedStateFrame<'_>,
@@ -318,7 +318,7 @@ pub(in crate::surface) struct FixedStateLoweringOptions<'a> {
 /// [`lower_fixed_state_proposition_through_kernel_with_facts`], keeping only
 /// the lowered proposition.
 pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
     fixed_state: FixedStateFrame<'_>,
@@ -342,7 +342,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with(
 /// outermost nodes lowering inserted and which written binder each universal
 /// bound.
 pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_introductions(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
     fixed_state: FixedStateFrame<'_>,
@@ -381,7 +381,7 @@ impl std::fmt::Display for StatedPropositionRefusal {
 
 /// Lower a proof-side proposition and return the recorded introductions and facts.
 pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_facts(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
     fixed_state: FixedStateFrame<'_>,
@@ -407,7 +407,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_fact
 }
 
 pub(in crate::surface) fn lower_stated_proposition(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
     fixed_state: FixedStateFrame<'_>,
@@ -452,7 +452,7 @@ pub(in crate::surface) fn lower_stated_proposition(
 
 /// Retain mandatory requirements for a proof boundary that will discharge them.
 pub(in crate::surface) fn lower_fixed_state_proposition_retaining_requirements(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
     fixed_state: FixedStateFrame<'_>,
@@ -479,7 +479,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_retaining_requirements(
 }
 
 pub(in crate::surface) fn lower_stated_proposition_retaining_requirements(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
     fixed_state: FixedStateFrame<'_>,
@@ -600,7 +600,7 @@ pub(in crate::surface) fn lower_stated_proposition_retaining_requirements(
 /// at the proof's state. Calls named in `opaque_click_functions` stay
 /// applications: the proof unfolds them itself.
 pub(in crate::surface) fn evaluate_fixed_state_expression_through_kernel(
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
     fixed_state: FixedStateFrame<'_>,
@@ -620,7 +620,7 @@ pub(in crate::surface) fn evaluate_fixed_state_expression_through_kernel(
 
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface) fn evaluate_fixed_state_expression_through_kernel_with_algebraic_values(
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
@@ -642,7 +642,7 @@ pub(in crate::surface) fn evaluate_fixed_state_expression_through_kernel_with_al
 
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface) fn evaluate_fixed_state_expression_through_kernel_with_algebraic_and_integer_values(
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
@@ -668,7 +668,7 @@ pub(in crate::surface) fn evaluate_fixed_state_expression_through_kernel_with_al
 // ordinary evaluator. Logical load observations do not request extra access
 // authority merely because a theorem takes their values as arguments.
 pub(in crate::surface) fn capture_fixed_state_retained_expression_with_guards(
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
@@ -739,7 +739,7 @@ pub(in crate::surface) fn capture_fixed_state_retained_expression_with_guards(
 /// be justified by the supplied proof assumptions. Heap observations use the
 /// existing logical specification read semantics and grant no access authority.
 pub(in crate::surface::proof) fn capture_fixed_state_integer_expression(
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
@@ -759,7 +759,7 @@ pub(in crate::surface::proof) fn capture_fixed_state_integer_expression(
 }
 
 pub(in crate::surface::proof) fn capture_fixed_state_integer_expression_with_guards(
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
@@ -834,7 +834,7 @@ pub(in crate::surface::proof) fn capture_fixed_state_integer_expression_with_gua
 /// this proof state. The kernel will evaluate the captured term together with
 /// the theorem clause that consumes it.
 pub(in crate::surface) fn capture_fixed_state_algebraic_expression(
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     contract_environment: ContractEnvironment<'_>,
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
@@ -850,7 +850,7 @@ pub(in crate::surface) fn capture_fixed_state_algebraic_expression(
 }
 
 pub(in crate::surface) fn capture_fixed_state_algebraic_expression_with_values(
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
@@ -883,7 +883,7 @@ pub(in crate::surface) fn capture_fixed_state_algebraic_expression_with_values(
 
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface::proof) fn capture_fixed_state_algebraic_value(
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
@@ -925,7 +925,7 @@ pub(in crate::surface::proof) fn capture_fixed_state_algebraic_value(
 /// caller retains the value while the driver obtains proofs of the obligations.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface::proof) fn capture_resource_field_initializer(
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     ty: &crate::kernel::ResourceFieldType,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
@@ -1077,7 +1077,7 @@ pub(in crate::surface) fn evaluate_resource_fragment_through_kernel(
 }
 
 pub(in crate::surface) fn evaluate_resource_argument_through_kernel(
-    original: &ContractExpression,
+    original: &SurfaceTerm,
     lowered: &ProgramExpression,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
@@ -1115,9 +1115,9 @@ fn evaluate_program_expression_with_binding_policy(
     state: &ExecutionState,
     result: Option<&ProgramValue>,
     logical_arguments: bool,
-    original: Option<&ContractExpression>,
+    original: Option<&SurfaceTerm>,
 ) -> Result<ProgramValue, ClickError> {
-    let fragment = ContractExpression::ProgramExpression(expression.clone());
+    let fragment = SurfaceTerm::ProgramExpression(expression.clone());
     let elaborated = original.unwrap_or(&fragment);
     // Bind only the names the fragment reads: a contract evaluates one
     // fragment per clause, and binding every value in scope for each would
@@ -1214,7 +1214,7 @@ fn expression_evaluation_error_message(error: ClickError) -> String {
 /// expression reads (`old(...)` the entry, `at(...)` its state), with the
 /// element type the expression's array reference declares.
 pub(in crate::surface) fn evaluate_fixed_state_array_ref_through_kernel(
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     assumptions: &PureFactContext,
     contract_environment: ContractEnvironment<'_>,
     algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
@@ -1222,11 +1222,11 @@ pub(in crate::surface) fn evaluate_fixed_state_array_ref_through_kernel(
     fixed_state: FixedStateFrame<'_>,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<(ClickArrayRef, crate::kernel::Pointer), String> {
-    if let ContractExpression::Binding(name)
-    | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+    if let SurfaceTerm::Binding(name)
+    | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
         crate::kernel::BindingName::Named(name),
     ))
-    | ContractExpression::ProgramBinding(name) = expression
+    | SurfaceTerm::ProgramBinding(name) = expression
         && let Some(array_ref) = contract_environment.array_refs.get(name)
         && let Some(ProgramValue::Pointer(value)) = contract_environment.values.get(name)
     {
@@ -1252,8 +1252,8 @@ pub(in crate::surface) fn evaluate_fixed_state_array_ref_through_kernel(
         ));
     };
     let point = match expression {
-        ContractExpression::Old(_) => fixed_state.pre_state.program_point(),
-        ContractExpression::At { selector, .. } => {
+        SurfaceTerm::Old(_) => fixed_state.pre_state.program_point(),
+        SurfaceTerm::At { selector, .. } => {
             selected_program_state(selector, fixed_state.pre_state, fixed_state.recorded_states)?
                 .program_point()
         }
@@ -1323,7 +1323,7 @@ impl FixedStateLowering {
     // handles retain complete memory/resources, while indexed local queries avoid
     // work proportional to unrelated caller bindings.
     fn for_expression(
-        expression: &ContractExpression,
+        expression: &SurfaceTerm,
         contract_environment: ContractEnvironment<'_>,
         pre_state: &ExecutionState,
         state: &ExecutionState,
@@ -1342,7 +1342,7 @@ impl FixedStateLowering {
     /// [`Self::new`] for the names `expression` reads: the environment's
     /// value for each of them, under the same binding rule.
     fn for_expression_values(
-        expression: &ContractExpression,
+        expression: &SurfaceTerm,
         contract_environment: ContractEnvironment<'_>,
         pre_state: &ExecutionState,
         state: &ExecutionState,
@@ -1359,7 +1359,7 @@ impl FixedStateLowering {
     }
 
     fn for_proposition(
-        proposition: &ClickProposition,
+        proposition: &SurfaceProposition,
         contract_environment: ContractEnvironment<'_>,
         pre_state: &ExecutionState,
         state: &ExecutionState,
@@ -1552,19 +1552,19 @@ impl FixedStateLowering {
 }
 
 pub(in crate::surface::proof) fn reverse_surface_equality(
-    proposition: &ClickProposition,
-) -> Option<ClickProposition> {
-    if let ClickProposition::At {
+    proposition: &SurfaceProposition,
+) -> Option<SurfaceProposition> {
+    if let SurfaceProposition::At {
         selector,
         proposition,
     } = proposition
     {
-        return reverse_surface_equality(proposition).map(|reversed| ClickProposition::At {
+        return reverse_surface_equality(proposition).map(|reversed| SurfaceProposition::At {
             selector: selector.clone(),
             proposition: Box::new(reversed),
         });
     }
-    let ClickProposition::Comparison {
+    let SurfaceProposition::Comparison {
         left,
         operator: ComparisonOperator::Equal,
         right,
@@ -1572,7 +1572,7 @@ pub(in crate::surface::proof) fn reverse_surface_equality(
     else {
         return None;
     };
-    Some(ClickProposition::Comparison {
+    Some(SurfaceProposition::Comparison {
         left: right.clone(),
         operator: ComparisonOperator::Equal,
         right: left.clone(),
@@ -1909,7 +1909,7 @@ mod retained_capture_tests {
     use super::*;
     use crate::kernel::{ExecutionValue, KernelTerm, KernelTermExport, MachineTerm, Variable};
 
-    fn capture(expression: &ContractExpression) -> Result<(KernelTerm, Vec<Proposition>), String> {
+    fn capture(expression: &SurfaceTerm) -> Result<(KernelTerm, Vec<Proposition>), String> {
         let state = ExecutionState::new();
         capture_fixed_state_retained_expression_with_guards(
             expression,
@@ -1941,7 +1941,7 @@ mod retained_capture_tests {
         ];
         for value in values {
             let expression =
-                ContractExpression::ProgramExpression(ProgramExpression::Value(value.clone()));
+                SurfaceTerm::ProgramExpression(ProgramExpression::Value(value.clone()));
             let exports = KernelTermExport::machine_export_count();
             let (root, guards) = capture(&expression).unwrap();
             assert!(guards.is_empty());
@@ -1979,7 +1979,7 @@ mod retained_binding_tests {
         let arrays = ClickArrayRefs::new();
         let state = ExecutionState::new();
         let lowering = FixedStateLowering::for_expression_values(
-            &ContractExpression::Binding("value".into()),
+            &SurfaceTerm::Binding("value".into()),
             ContractEnvironment::new(&values, &arrays),
             &state,
             &state,
@@ -2028,14 +2028,14 @@ fn fixed_array_argument_retains_the_selected_point_with_equal_memory() {
     let mut recorded = RecordedStates::new();
     recorded.insert(selector.clone(), later.clone());
     let binding = || {
-        Box::new(ContractExpression::ProgramExpression(
-            ProgramExpression::Variable("a".into()),
-        ))
+        Box::new(SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+            "a".into(),
+        )))
     };
     for (expression, expected) in [
-        (ContractExpression::Old(binding()), entry_id),
+        (SurfaceTerm::Old(binding()), entry_id),
         (
-            ContractExpression::At {
+            SurfaceTerm::At {
                 selector,
                 expression: binding(),
             },

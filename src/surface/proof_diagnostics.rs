@@ -133,7 +133,7 @@ pub(crate) trait ProofDiagnosticState: Send + Sync {
     fn kernel_goal(&self) -> Option<&Proposition>;
 
     /// Source retained when the current goal was lowered or refined.
-    fn written_goal(&self) -> Option<&super::ClickProposition> {
+    fn written_goal(&self) -> Option<&super::SurfaceProposition> {
         None
     }
 

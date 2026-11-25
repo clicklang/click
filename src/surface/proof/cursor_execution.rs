@@ -1064,9 +1064,9 @@ pub(super) fn record_code_region_program_state(
 pub(super) const PROGRAM_POINT_ANNOTATION_DEPTH_LIMIT: usize = 32;
 
 pub(super) fn surface_at_program_point<K: RecordedStateKey + ?Sized>(
-    surface: &ClickProposition,
+    surface: &SurfaceProposition,
     key: &K,
-) -> Result<ClickProposition, ClickError> {
+) -> Result<SurfaceProposition, ClickError> {
     let selector = key.to_selector();
     annotate_surface_at_program_point(surface, &selector, ProgramPointAnnotation::Reread)
 }
@@ -1074,9 +1074,9 @@ pub(super) fn surface_at_program_point<K: RecordedStateKey + ?Sized>(
 /// Freeze a case selector at its checked frontier without retargeting explicit
 /// states or `old` expressions already carried by the selector.
 pub(super) fn surface_frozen_at_program_point<K: RecordedStateKey + ?Sized>(
-    surface: &ClickProposition,
+    surface: &SurfaceProposition,
     key: &K,
-) -> Result<ClickProposition, ClickError> {
+) -> Result<SurfaceProposition, ClickError> {
     annotate_surface_at_program_point(surface, &key.to_selector(), ProgramPointAnnotation::Freeze)
 }
 
@@ -1090,18 +1090,18 @@ enum ProgramPointAnnotation {
 }
 
 fn annotate_surface_at_program_point(
-    surface: &ClickProposition,
+    surface: &SurfaceProposition,
     selector: &ProgramPointSelector,
     annotation: ProgramPointAnnotation,
-) -> Result<ClickProposition, ClickError> {
+) -> Result<SurfaceProposition, ClickError> {
     if matches!(
         surface,
-        ClickProposition::Loadable { .. }
-            | ClickProposition::Separate { .. }
-            | ClickProposition::ResourceViewable { .. }
-            | ClickProposition::Contains { .. }
+        SurfaceProposition::Loadable { .. }
+            | SurfaceProposition::Separate { .. }
+            | SurfaceProposition::ResourceViewable { .. }
+            | SurfaceProposition::Contains { .. }
     ) {
-        return Ok(ClickProposition::At {
+        return Ok(SurfaceProposition::At {
             selector: selector.clone(),
             proposition: Box::new(surface.clone()),
         });
@@ -1111,130 +1111,128 @@ fn annotate_surface_at_program_point(
     // C constant, so `at(S, -9223372036854775808)` would negate a `uint64`
     // magnitude rather than denote the `int64` minimum it spelled. Every
     // other numeral reads the same either way and keeps its anchor.
-    let integer_literal = |expression: &ContractExpression| match expression {
-        ContractExpression::Negate(inner) => matches!(
+    let integer_literal = |expression: &SurfaceTerm| match expression {
+        SurfaceTerm::Negate(inner) => matches!(
             inner.as_ref(),
-            ContractExpression::IntegerLiteral(magnitude) if magnitude.parse::<i64>().is_err()
+            SurfaceTerm::IntegerLiteral(magnitude) if magnitude.parse::<i64>().is_err()
         ),
         _ => false,
     };
-    let expression_at_program_point =
-        |expression: &ContractExpression| match (annotation, expression) {
-            (_, ContractExpression::Old(_))
-            | (ProgramPointAnnotation::Freeze, ContractExpression::At { .. }) => expression.clone(),
-            (_, literal) if integer_literal(literal) => literal.clone(),
-            (ProgramPointAnnotation::Reread, ContractExpression::At { expression, .. }) => {
-                ContractExpression::At {
-                    selector: selector.clone(),
-                    expression: expression.clone(),
-                }
-            }
-            (_, expression) => ContractExpression::At {
-                selector: selector.clone(),
-                expression: Box::new(expression.clone()),
-            },
-        };
+    let expression_at_program_point = |expression: &SurfaceTerm| match (annotation, expression) {
+        (_, SurfaceTerm::Old(_)) | (ProgramPointAnnotation::Freeze, SurfaceTerm::At { .. }) => {
+            expression.clone()
+        }
+        (_, literal) if integer_literal(literal) => literal.clone(),
+        (ProgramPointAnnotation::Reread, SurfaceTerm::At { expression, .. }) => SurfaceTerm::At {
+            selector: selector.clone(),
+            expression: expression.clone(),
+        },
+        (_, expression) => SurfaceTerm::At {
+            selector: selector.clone(),
+            expression: Box::new(expression.clone()),
+        },
+    };
     // Construct one node outside the traversal frame. In debug builds these
     // by-value syntax temporaries are large; retaining them on every recursive
     // visit used tens of KiB per level inside an already nested proof planner.
     #[inline(never)]
     fn rebuild(
-        proposition: &ClickProposition,
-        expression_at_program_point: &impl Fn(&ContractExpression) -> ContractExpression,
+        proposition: &SurfaceProposition,
+        expression_at_program_point: &impl Fn(&SurfaceTerm) -> SurfaceTerm,
         selector: &ProgramPointSelector,
-        completed: &mut Vec<ClickProposition>,
-    ) -> ClickProposition {
+        completed: &mut Vec<SurfaceProposition>,
+    ) -> SurfaceProposition {
         let mut child = || Box::new(completed.pop().expect("visited state child"));
         match proposition {
-            ClickProposition::Value(expression) => {
-                ClickProposition::Value(expression_at_program_point(expression))
+            SurfaceProposition::Value(expression) => {
+                SurfaceProposition::Value(expression_at_program_point(expression))
             }
-            ClickProposition::Comparison {
+            SurfaceProposition::Comparison {
                 left,
                 operator,
                 right,
-            } => ClickProposition::Comparison {
+            } => SurfaceProposition::Comparison {
                 left: expression_at_program_point(left),
                 operator: *operator,
                 right: expression_at_program_point(right),
             },
-            ClickProposition::FloatClassification {
+            SurfaceProposition::FloatClassification {
                 expression,
                 classification,
-            } => ClickProposition::FloatClassification {
+            } => SurfaceProposition::FloatClassification {
                 expression: expression_at_program_point(expression),
                 classification: *classification,
             },
-            ClickProposition::IsA { class, pointer } => ClickProposition::IsA {
+            SurfaceProposition::IsA { class, pointer } => SurfaceProposition::IsA {
                 class: class.clone(),
                 pointer: expression_at_program_point(pointer),
             },
-            ClickProposition::Defined { .. } => ClickProposition::At {
+            SurfaceProposition::Defined { .. } => SurfaceProposition::At {
                 selector: selector.clone(),
                 proposition: Box::new(proposition.clone()),
             },
-            ClickProposition::At { .. } => proposition.clone(),
-            ClickProposition::And(_, _) => {
+            SurfaceProposition::At { .. } => proposition.clone(),
+            SurfaceProposition::And(_, _) => {
                 let right = child();
-                ClickProposition::And(child(), right)
+                SurfaceProposition::And(child(), right)
             }
-            ClickProposition::Or(_, _) => {
+            SurfaceProposition::Or(_, _) => {
                 let right = child();
-                ClickProposition::Or(child(), right)
+                SurfaceProposition::Or(child(), right)
             }
-            ClickProposition::Not(_) => ClickProposition::Not(child()),
-            ClickProposition::Implies(_, _) => {
+            SurfaceProposition::Not(_) => SurfaceProposition::Not(child()),
+            SurfaceProposition::Implies(_, _) => {
                 let right = child();
-                ClickProposition::Implies(child(), right)
+                SurfaceProposition::Implies(child(), right)
             }
-            ClickProposition::ForAll {
+            SurfaceProposition::ForAll {
                 click_type: interface_type,
                 name,
                 ..
-            } => ClickProposition::ForAll {
+            } => SurfaceProposition::ForAll {
                 click_type: interface_type.clone(),
                 name: name.clone(),
                 written_name: proposition.written_quantifier_name().map(str::to_string),
                 body: child(),
             },
-            ClickProposition::Exists {
+            SurfaceProposition::Exists {
                 click_type: interface_type,
                 name,
                 ..
-            } => ClickProposition::Exists {
+            } => SurfaceProposition::Exists {
                 click_type: interface_type.clone(),
                 name: name.clone(),
                 written_name: proposition.written_quantifier_name().map(str::to_string),
                 body: child(),
             },
-            ClickProposition::RangeAll {
+            SurfaceProposition::RangeAll {
                 start, end, item, ..
-            } => ClickProposition::RangeAll {
+            } => SurfaceProposition::RangeAll {
                 start: expression_at_program_point(start),
                 end: expression_at_program_point(end),
                 item: item.clone(),
                 written_item: proposition.written_quantifier_name().map(str::to_string),
                 body: child(),
             },
-            ClickProposition::RangeAny {
+            SurfaceProposition::RangeAny {
                 start, end, item, ..
-            } => ClickProposition::RangeAny {
+            } => SurfaceProposition::RangeAny {
                 start: expression_at_program_point(start),
                 end: expression_at_program_point(end),
                 item: item.clone(),
                 written_item: proposition.written_quantifier_name().map(str::to_string),
                 body: child(),
             },
-            ClickProposition::PredicateCall { name, arguments } => {
-                ClickProposition::PredicateCall {
+            SurfaceProposition::PredicateCall { name, arguments } => {
+                SurfaceProposition::PredicateCall {
                     name: name.clone(),
                     arguments: arguments.iter().map(expression_at_program_point).collect(),
                 }
             }
-            ClickProposition::Separate { .. }
-            | ClickProposition::ResourceViewable { .. }
-            | ClickProposition::Contains { .. }
-            | ClickProposition::Loadable { .. } => proposition.clone(),
+            SurfaceProposition::Separate { .. }
+            | SurfaceProposition::ResourceViewable { .. }
+            | SurfaceProposition::Contains { .. }
+            | SurfaceProposition::Loadable { .. } => proposition.clone(),
         }
     }
     // Postorder traversal stores references and completed output on the heap,
@@ -1261,17 +1259,17 @@ fn annotate_surface_at_program_point(
         }
         pending.push((proposition, depth, true));
         match proposition {
-            ClickProposition::And(left, right)
-            | ClickProposition::Or(left, right)
-            | ClickProposition::Implies(left, right) => {
+            SurfaceProposition::And(left, right)
+            | SurfaceProposition::Or(left, right)
+            | SurfaceProposition::Implies(left, right) => {
                 pending.push((right, depth + 1, false));
                 pending.push((left, depth + 1, false));
             }
-            ClickProposition::Not(body)
-            | ClickProposition::ForAll { body, .. }
-            | ClickProposition::Exists { body, .. }
-            | ClickProposition::RangeAll { body, .. }
-            | ClickProposition::RangeAny { body, .. } => {
+            SurfaceProposition::Not(body)
+            | SurfaceProposition::ForAll { body, .. }
+            | SurfaceProposition::Exists { body, .. }
+            | SurfaceProposition::RangeAll { body, .. }
+            | SurfaceProposition::RangeAny { body, .. } => {
                 pending.push((body, depth + 1, false));
             }
             _ => {}
@@ -1286,44 +1284,44 @@ fn annotate_surface_at_program_point(
 /// re-lower any newly anchored form and check that it denotes the exact
 /// retained kernel fact.
 pub(in crate::surface) fn surface_program_point_selector(
-    surface: &ClickProposition,
+    surface: &SurfaceProposition,
 ) -> Option<ProgramPointSelector> {
-    let expression_site = |expression: &ContractExpression| match expression {
-        ContractExpression::At { selector, .. } => Some(selector.clone()),
+    let expression_site = |expression: &SurfaceTerm| match expression {
+        SurfaceTerm::At { selector, .. } => Some(selector.clone()),
         _ => None,
     };
     match surface {
-        ClickProposition::Value(expression) => expression_site(expression),
-        ClickProposition::Comparison { left, right, .. } => {
+        SurfaceProposition::Value(expression) => expression_site(expression),
+        SurfaceProposition::Comparison { left, right, .. } => {
             expression_site(left).or_else(|| expression_site(right))
         }
-        ClickProposition::FloatClassification { expression, .. } => expression_site(expression),
-        ClickProposition::At { selector, .. } => Some(selector.clone()),
-        ClickProposition::And(left, right)
-        | ClickProposition::Or(left, right)
-        | ClickProposition::Implies(left, right) => {
+        SurfaceProposition::FloatClassification { expression, .. } => expression_site(expression),
+        SurfaceProposition::At { selector, .. } => Some(selector.clone()),
+        SurfaceProposition::And(left, right)
+        | SurfaceProposition::Or(left, right)
+        | SurfaceProposition::Implies(left, right) => {
             surface_program_point_selector(left).or_else(|| surface_program_point_selector(right))
         }
-        ClickProposition::Not(body)
-        | ClickProposition::ForAll { body, .. }
-        | ClickProposition::Exists { body, .. } => surface_program_point_selector(body),
-        ClickProposition::RangeAll {
+        SurfaceProposition::Not(body)
+        | SurfaceProposition::ForAll { body, .. }
+        | SurfaceProposition::Exists { body, .. } => surface_program_point_selector(body),
+        SurfaceProposition::RangeAll {
             start, end, body, ..
         }
-        | ClickProposition::RangeAny {
+        | SurfaceProposition::RangeAny {
             start, end, body, ..
         } => expression_site(start)
             .or_else(|| expression_site(end))
             .or_else(|| surface_program_point_selector(body)),
-        ClickProposition::PredicateCall { arguments, .. } => {
+        SurfaceProposition::PredicateCall { arguments, .. } => {
             arguments.iter().find_map(expression_site)
         }
-        ClickProposition::Separate { .. }
-        | ClickProposition::ResourceViewable { .. }
-        | ClickProposition::Contains { .. }
-        | ClickProposition::Loadable { .. }
-        | ClickProposition::Defined { .. } => None,
-        ClickProposition::IsA { pointer, .. } => expression_site(pointer),
+        SurfaceProposition::Separate { .. }
+        | SurfaceProposition::ResourceViewable { .. }
+        | SurfaceProposition::Contains { .. }
+        | SurfaceProposition::Loadable { .. }
+        | SurfaceProposition::Defined { .. } => None,
+        SurfaceProposition::IsA { pointer, .. } => expression_site(pointer),
     }
 }
 
@@ -3213,7 +3211,7 @@ fn execute_step_from_frontier_position_selecting_path(
         {
             continue;
         }
-        if let Some(ClickProposition::Comparison {
+        if let Some(SurfaceProposition::Comparison {
             left,
             operator,
             right,
@@ -3223,28 +3221,27 @@ fn execute_step_from_frontier_position_selecting_path(
                 region: CodeRegionRef::Region(statement_index),
                 kind: ProgramPointKind::Entry,
             };
-            let at =
-                |point: &ProgramPointRef, expression: ContractExpression| ContractExpression::At {
-                    selector: ProgramPointSelector::ProgramPoint(point.clone()),
-                    expression: Box::new(expression),
-                };
+            let at = |point: &ProgramPointRef, expression: SurfaceTerm| SurfaceTerm::At {
+                selector: ProgramPointSelector::ProgramPoint(point.clone()),
+                expression: Box::new(expression),
+            };
             // The neutral pointer addition makes the Index use the outer
             // exit state's memory while its base and index retain their
             // entry values.
-            let exit_load = if let ContractExpression::Index(base, index) = left {
-                ContractExpression::Index(
-                    Box::new(ContractExpression::Add(
+            let exit_load = if let SurfaceTerm::Index(base, index) = left {
+                SurfaceTerm::Index(
+                    Box::new(SurfaceTerm::Add(
                         Box::new(at(&store_entry_point, *base)),
-                        Box::new(ContractExpression::ProgramExpression(
-                            ProgramExpression::Value(int32(0)),
-                        )),
+                        Box::new(SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+                            int32(0),
+                        ))),
                     )),
                     Box::new(at(&store_entry_point, *index)),
                 )
             } else {
                 left
             };
-            let surface = ClickProposition::Comparison {
+            let surface = SurfaceProposition::Comparison {
                 left: at(&store_exit_point, exit_load),
                 operator,
                 right: at(&store_entry_point, right),
@@ -3977,7 +3974,7 @@ pub(super) fn condition_path_case_split_condition(
     available: &dyn Fn(&Proposition) -> bool,
     state: &ExecutionState,
     proof_context: &ExecutionProofContext<'_>,
-) -> Option<(ConditionTerm, ClickProposition)> {
+) -> Option<(ConditionTerm, SurfaceProposition)> {
     let cases = path_facts
         .iter()
         .map(|path_facts| PathCase { path_facts })
@@ -4006,7 +4003,7 @@ fn enum_switch_proof_match(
     };
     let (scrutinee, name, native) = match value.as_ref() {
         ProgramExpression::Variable(name) => (
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(name.clone())),
+            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name.clone())),
             name.to_string(),
             state.locals().get_native(name)?,
         ),
@@ -4090,7 +4087,7 @@ fn path_case_split_condition(
     available: &dyn Fn(&Proposition) -> bool,
     state: &ExecutionState,
     proof_context: &ExecutionProofContext<'_>,
-) -> Option<(ConditionTerm, ClickProposition)> {
+) -> Option<(ConditionTerm, SurfaceProposition)> {
     let facts = cases.iter().map(|case| case.path_facts).collect::<Vec<_>>();
     let decides = |case: &PathCase<'_>, condition: &ConditionTerm, value: bool| {
         case.path_facts
@@ -4144,7 +4141,7 @@ fn path_case_split_condition(
 /// proof `if` on the condition a planner would split on first, which gives
 /// each side its own frontier.
 fn describe_path_case_split_guidance(
-    split_condition: Option<&ClickProposition>,
+    split_condition: Option<&SurfaceProposition>,
     case_count: usize,
 ) -> String {
     let split = match split_condition {
@@ -4475,19 +4472,17 @@ pub(super) fn describe_statement_head(statement: &ProgramStatement) -> String {
 mod cursor_sequence_tests {
     use super::*;
 
-    fn state_test_leaf(name: String) -> ClickProposition {
-        ClickProposition::Comparison {
-            left: ContractExpression::ProgramBinding(name),
+    fn state_test_leaf(name: String) -> SurfaceProposition {
+        SurfaceProposition::Comparison {
+            left: SurfaceTerm::ProgramBinding(name),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::Old(Box::new(ContractExpression::ProgramBinding(
-                "entry".into(),
-            ))),
+            right: SurfaceTerm::Old(Box::new(SurfaceTerm::ProgramBinding("entry".into()))),
         }
     }
 
     fn annotate_on_small_stack(
-        surface: ClickProposition,
-    ) -> (Result<ClickProposition, ClickError>, usize) {
+        surface: SurfaceProposition,
+    ) -> (Result<SurfaceProposition, ClickError>, usize) {
         std::thread::Builder::new()
             .name("program-point-annotation-small-stack".into())
             .stack_size(256 * 1024)
@@ -4507,14 +4502,14 @@ mod cursor_sequence_tests {
 
     #[test]
     fn state_annotation_leaves_the_int64_minimum_unanchored() {
-        let observed = ContractExpression::Call {
+        let observed = SurfaceTerm::Call {
             name: "to_integer".into(),
-            arguments: vec![ContractExpression::ProgramBinding("q".into())],
+            arguments: vec![SurfaceTerm::ProgramBinding("q".into())],
         };
-        let minimum = ContractExpression::Negate(Box::new(ContractExpression::IntegerLiteral(
+        let minimum = SurfaceTerm::Negate(Box::new(SurfaceTerm::IntegerLiteral(
             "9223372036854775808".into(),
         )));
-        let surface = ClickProposition::Comparison {
+        let surface = SurfaceProposition::Comparison {
             left: minimum.clone(),
             operator: ComparisonOperator::LessEqual,
             right: observed.clone(),
@@ -4525,23 +4520,23 @@ mod cursor_sequence_tests {
                 .unwrap();
         assert_eq!(
             annotated,
-            ClickProposition::Comparison {
+            SurfaceProposition::Comparison {
                 left: minimum,
                 operator: ComparisonOperator::LessEqual,
-                right: ContractExpression::At {
+                right: SurfaceTerm::At {
                     selector: selector.clone(),
                     expression: Box::new(observed.clone()),
                 },
             }
         );
         // A numeral `at(..)` reads the same way keeps its anchor.
-        let zero = ContractExpression::IntegerLiteral("0".into());
-        let surface = ClickProposition::Comparison {
+        let zero = SurfaceTerm::IntegerLiteral("0".into());
+        let surface = SurfaceProposition::Comparison {
             left: zero.clone(),
             operator: ComparisonOperator::LessEqual,
             right: observed,
         };
-        let ClickProposition::Comparison { left, .. } =
+        let SurfaceProposition::Comparison { left, .. } =
             annotate_surface_at_program_point(&surface, &selector, ProgramPointAnnotation::Reread)
                 .unwrap()
         else {
@@ -4549,7 +4544,7 @@ mod cursor_sequence_tests {
         };
         assert_eq!(
             left,
-            ContractExpression::At {
+            SurfaceTerm::At {
                 selector,
                 expression: Box::new(zero),
             }
@@ -4561,33 +4556,33 @@ mod cursor_sequence_tests {
         for depth in [7, 15, 23, PROGRAM_POINT_ANNOTATION_DEPTH_LIMIT - 1] {
             let mut surface = state_test_leaf("current".into());
             for _ in 0..depth {
-                surface = ClickProposition::Not(Box::new(surface));
+                surface = SurfaceProposition::Not(Box::new(surface));
             }
             let (result, work) = annotate_on_small_stack(surface);
             let result = result.unwrap();
             assert_eq!(work, depth + 1);
             let mut leaf = &result;
             for _ in 0..depth {
-                let ClickProposition::Not(body) = leaf else {
+                let SurfaceProposition::Not(body) = leaf else {
                     panic!("annotation must preserve every connective");
                 };
                 leaf = body;
             }
-            let ClickProposition::Comparison { left, right, .. } = leaf else {
+            let SurfaceProposition::Comparison { left, right, .. } = leaf else {
                 panic!("annotation must preserve the leaf");
             };
             assert!(matches!(
                 left,
-                ContractExpression::At {
+                SurfaceTerm::At {
                     selector: ProgramPointSelector::Mark(_),
                     ..
                 }
             ));
-            assert!(matches!(right, ContractExpression::Old(_)));
+            assert!(matches!(right, SurfaceTerm::Old(_)));
         }
         let mut too_deep = state_test_leaf("current".into());
         for _ in 0..PROGRAM_POINT_ANNOTATION_DEPTH_LIMIT {
-            too_deep = ClickProposition::Not(Box::new(too_deep));
+            too_deep = SurfaceProposition::Not(Box::new(too_deep));
         }
         let (result, work) = annotate_on_small_stack(too_deep);
         assert!(
@@ -4610,7 +4605,7 @@ mod cursor_sequence_tests {
                 level = Vec::new();
                 while let Some(left) = children.next() {
                     let right = children.next().unwrap();
-                    level.push(ClickProposition::Implies(Box::new(left), Box::new(right)));
+                    level.push(SurfaceProposition::Implies(Box::new(left), Box::new(right)));
                 }
             }
             let (result, work) = annotate_on_small_stack(level.pop().unwrap());
@@ -4620,17 +4615,17 @@ mod cursor_sequence_tests {
             let mut index = 0;
             while let Some(node) = pending.pop() {
                 match node {
-                    ClickProposition::Implies(left, right) => {
+                    SurfaceProposition::Implies(left, right) => {
                         pending.push(right);
                         pending.push(left);
                     }
-                    ClickProposition::Comparison { left, .. } => {
-                        let ContractExpression::At { expression, .. } = left else {
+                    SurfaceProposition::Comparison { left, .. } => {
+                        let SurfaceTerm::At { expression, .. } = left else {
                             panic!("the comparison must read the selected state");
                         };
                         assert_eq!(
                             expression.as_ref(),
-                            &ContractExpression::ProgramBinding(index.to_string())
+                            &SurfaceTerm::ProgramBinding(index.to_string())
                         );
                         index += 1;
                     }
@@ -4682,7 +4677,7 @@ fn word_store_source(
     entry: &ExecutionState,
     outcome: &StatementOutcome,
     exit_point: &ProgramPointRef,
-) -> Option<ClickProposition> {
+) -> Option<SurfaceProposition> {
     use crate::kernel::{MachineTerm, ProgramType, ProgramValue};
 
     let (pointer, value) = match statement {
@@ -4720,20 +4715,20 @@ fn word_store_source(
         return None;
     }
     let index = match index {
-        None => ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0))),
+        None => SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
         Some(ProgramExpression::Variable(index)) if stable(index, ProgramType::Int32) => {
-            ContractExpression::Binding(index.source_spelling()?.to_owned())
+            SurfaceTerm::Binding(index.source_spelling()?.to_owned())
         }
         Some(
             index @ ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Constant { .. })),
-        ) => ContractExpression::ProgramExpression(index.clone()),
+        ) => SurfaceTerm::ProgramExpression(index.clone()),
         _ => return None,
     };
     entry
         .locals()
         .nonvolatile_scalar(value, ProgramType::UInt32)?;
 
-    let at = |point: &ProgramPointRef, expression| ContractExpression::At {
+    let at = |point: &ProgramPointRef, expression| SurfaceTerm::At {
         selector: ProgramPointSelector::ProgramPoint(point.clone()),
         expression: Box::new(expression),
     };
@@ -4741,18 +4736,16 @@ fn word_store_source(
         region: exit_point.region.clone(),
         kind: ProgramPointKind::Entry,
     };
-    let read = ContractExpression::Index(
-        Box::new(ContractExpression::Binding(
-            pointer.source_spelling()?.to_owned(),
-        )),
+    let read = SurfaceTerm::Index(
+        Box::new(SurfaceTerm::Binding(pointer.source_spelling()?.to_owned())),
         Box::new(index),
     );
-    Some(ClickProposition::Comparison {
+    Some(SurfaceProposition::Comparison {
         left: at(exit_point, read),
         operator: crate::surface::ComparisonOperator::Equal,
         right: at(
             &entry_point,
-            ContractExpression::Binding(value.source_spelling()?.to_owned()),
+            SurfaceTerm::Binding(value.source_spelling()?.to_owned()),
         ),
     })
 }

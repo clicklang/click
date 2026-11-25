@@ -39,8 +39,8 @@ pub(super) fn machine_integer_source_type(interface_type: InterfaceType) -> bool
 
 pub(super) fn integer_conversion_argument<'a>(
     name: &str,
-    arguments: &'a [ContractExpression],
-) -> Result<&'a ContractExpression, String> {
+    arguments: &'a [SurfaceTerm],
+) -> Result<&'a SurfaceTerm, String> {
     let [argument] = arguments else {
         return Err(format!(
             "conversion `{name}` expects one argument, got {}",
@@ -461,22 +461,22 @@ theorem refuted(a: Integer, b: Integer, c: Integer, d: Integer) {
     #[test]
     fn integer_order_axiom_declarations_match_an_independent_bigint_oracle() {
         use num_bigint::BigInt;
-        fn expression(term: &ContractExpression, values: &BTreeMap<String, BigInt>) -> BigInt {
+        fn expression(term: &SurfaceTerm, values: &BTreeMap<String, BigInt>) -> BigInt {
             match term {
-                ContractExpression::Binding(name)
-                | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                SurfaceTerm::Binding(name)
+                | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                     crate::kernel::BindingName::Named(name),
                 )) => values[name].clone(),
-                ContractExpression::IntegerLiteral(value) => value.parse().unwrap(),
-                ContractExpression::Add(a, b) => expression(a, values) + expression(b, values),
-                ContractExpression::Subtract(a, b) => expression(a, values) - expression(b, values),
-                ContractExpression::Multiply(a, b) => expression(a, values) * expression(b, values),
-                ContractExpression::Negate(a) => -expression(a, values),
+                SurfaceTerm::IntegerLiteral(value) => value.parse().unwrap(),
+                SurfaceTerm::Add(a, b) => expression(a, values) + expression(b, values),
+                SurfaceTerm::Subtract(a, b) => expression(a, values) - expression(b, values),
+                SurfaceTerm::Multiply(a, b) => expression(a, values) * expression(b, values),
+                SurfaceTerm::Negate(a) => -expression(a, values),
                 _ => panic!("unexpected order axiom expression: {term:?}"),
             }
         }
-        fn proposition(p: &ClickProposition, values: &BTreeMap<String, BigInt>) -> bool {
-            let ClickProposition::Comparison {
+        fn proposition(p: &SurfaceProposition, values: &BTreeMap<String, BigInt>) -> bool {
+            let SurfaceProposition::Comparison {
                 left,
                 operator,
                 right,
