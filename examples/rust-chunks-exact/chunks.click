@@ -32,6 +32,13 @@ fn cover(bytes: &[u8]) -> usize {
                 step_until(loop(0).back_edge);
                 have (bytes.len() - bytes.len() % 4u64 - at(head, iter.v.len())) + 4u64 == bytes.len() - bytes.len() % 4u64 - iter.v.len();
                 have iter.v == bytes + (bytes.len() - bytes.len() % 4u64 - iter.v.len());
+                have iter.v.len() < at(head, iter.v.len()) by {
+                    normalize() using { at(head, 4u64 <= iter.v.len()); };
+                }
+                have tail.len() == bytes.len() % 4u64 implies iter.chunk_size == 4u64 implies
+                    iter.v == bytes + (bytes.len() - bytes.len() % 4u64 - iter.v.len()) by {
+                    intro() { intro() { close(); } }
+                }
             } else {
                 step(); step(); step();
             }

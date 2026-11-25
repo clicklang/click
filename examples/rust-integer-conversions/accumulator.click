@@ -20,6 +20,17 @@ fn bump(value: &mut u16) {
     requires *value <= 65534;
     owns *value;
     ensures (*value as u32) == old(*value as u32) + 1u32;
+} by {
+    step_until(function.exit);
+    have 0 <= old(to_integer(*value)) + 1;
+    have old(to_integer(*value)) <= 65534;
+    have old(to_integer(*value)) + 1 <= 65535 by {
+        apply(click::integer::add_le(old(to_integer(*value)), 65534, 1, 1));
+    }
+    have to_integer(*value as u32) == old(to_integer(*value)) + 1 by {
+        normalize() using { 0 <= old(to_integer(*value)) + 1; old(to_integer(*value)) + 1 <= 65535; };
+    }
+    close();
 }
 
 fn bump_a(state: &mut Accumulator) {
@@ -28,4 +39,15 @@ fn bump_a(state: &mut Accumulator) {
     views state.b;
     ensures (state.a as u32) == old(state.a as u32) + 1u32;
     ensures state.b == old(state.b);
+} by {
+    step_until(function.exit);
+    have 0 <= old(to_integer(state.a)) + 1;
+    have old(to_integer(state.a)) <= 65534;
+    have old(to_integer(state.a)) + 1 <= 65535 by {
+        apply(click::integer::add_le(old(to_integer(state.a)), 65534, 1, 1));
+    }
+    have to_integer(state.a as u32) == old(to_integer(state.a)) + 1 by {
+        normalize() using { 0 <= old(to_integer(state.a)) + 1; old(to_integer(state.a)) + 1 <= 65535; };
+    }
+    close();
 }
