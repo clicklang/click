@@ -157,8 +157,8 @@ void arena_release(struct region* region) {
         rewrite(region->arena, at(after_assignment, region->arena));
         close();
     }
+    have defined(region->arena) by { close() using { at(statement(2).exit, defined(region->arena)); }; }
     step_until(function.exit);
-    have defined(region->arena) by { close(); }
     have region->start == s by {
         close();
     }

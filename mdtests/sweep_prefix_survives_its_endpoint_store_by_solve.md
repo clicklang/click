@@ -49,7 +49,31 @@ void sweep(int32 visited[], int32 n) {
             }
             have i < 2147483647 by { close() using { i < 1073741823; }; }
             step();
-            have unmarked(visited, 0, i) == 0;
+            have unmarked(visited, 0, i) == 0 by {
+                have forall (k: int32) {
+                    0 <= k and k < i implies visited[k] == at(iter, visited[k])
+                } by {
+                    intro() {
+                        intro() {
+                            have k < n by { close() using { k < i; i < n; }; }
+                            have i != k by { close() using { k < i; }; }
+                            have separate(memory(visited[i]), memory(visited[k])) by {
+                                apply(click::separation::separate_elements(visited, i, k));
+                            }
+                            have separate(loop(0).statement(0).footprint, memory(visited[k])) by {
+                                close() using { separate(memory(visited[i]), memory(visited[k])); };
+                            }
+                            preserve(memory(visited[k]), loop(0).statement(0));
+                        }
+                    }
+                }
+                have viewable(visited[0..n]) by { observe(visited[0..n]); close(); }
+                have 0 <= 0 by { close(); }
+                have i <= i by { close(); }
+                apply(unmarked_frame(visited, at(iter, visited), 0, n, i, i));
+                rewrite(unmarked(visited, 0, i), unmarked(at(iter, visited), 0, i));
+                close();
+            }
             have unmarked(visited, 0, i + 1) == 0 by {
                 unfold(unmarked(visited, 0, i + 1));
                 close();
