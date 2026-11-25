@@ -12097,6 +12097,7 @@ fn struct_value_equality_costs_what_its_field_equalities_cost() {
     // out is.
     verify_c_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
     let mut samples = Vec::new();
+    let mut replay_examples = Vec::new();
     for fields in [2usize, 4, 6] {
         let names = (0..fields).map(|i| format!("f{i}")).collect::<Vec<_>>();
         let declaration = names
@@ -12120,11 +12121,13 @@ fn struct_value_equality_costs_what_its_field_equalities_cost() {
             let source = format!(
                 "verifying \"probe.c\"; void copy(struct wide* dst, const struct wide* src) {{ owns *dst; views *src; requires separate(memory(*dst), memory(*src)); ensures {claim}; }}"
             );
-            let (result, work) = measure_deterministic_work(|| {
-                verify_c_sources(&source, &[("probe.c", program.as_str())])
-            });
+            let sources = [("probe.c", program.as_str())];
+            let (result, work) = measure_deterministic_work(|| verify_c_sources(&source, &sources));
             result.unwrap_or_else(|error| panic!("{fields} fields: {}", error.message()));
             pair.push(work);
+            if fields == 4 {
+                replay_examples.push((claim, source, program.clone()));
+            }
         }
         assert!(
             pair[0] <= pair[1] * 2,
@@ -12133,4 +12136,13 @@ fn struct_value_equality_costs_what_its_field_equalities_cost() {
         samples.push((fields, pair));
     }
     eprintln!("struct value equality work (fields, [value, written]): {samples:?}");
+    for (claim, source, program) in replay_examples {
+        let sources = [("probe.c", program.as_str())];
+        let expanded = expand_c_claim_source_by_label(&source, &sources, "copy.contract")
+            .unwrap_or_else(|error| panic!("{claim}: {}", error.report()));
+        crate::surface::without_implicit_solve_for_claim("copy.contract", || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{claim}: {error}"));
+    }
 }

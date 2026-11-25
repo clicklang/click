@@ -98,6 +98,46 @@ fn observed_reordered_indicator_sum(surface: &SyntaxProposition) -> Option<Synta
     })
 }
 
+fn is_field_observation(term: &SyntaxTerm) -> bool {
+    match term {
+        SyntaxTerm::Field { .. } => true,
+        SyntaxTerm::At { expression, .. } => {
+            matches!(expression.as_ref(), SyntaxTerm::Field { .. })
+        }
+        _ => false,
+    }
+}
+
+fn field_at_two_points<'a>(
+    left: &'a SyntaxTerm,
+    right: &'a SyntaxTerm,
+) -> Option<(&'a SyntaxTerm, &'a SyntaxTerm)> {
+    fn anchor(term: &SyntaxTerm) -> (Option<&ProgramPointSelector>, &SyntaxTerm) {
+        match term {
+            SyntaxTerm::At {
+                selector,
+                expression,
+            } => (Some(selector), expression),
+            _ => (None, term),
+        }
+    }
+    for (earlier, current) in [(left, right), (right, left)] {
+        let (earlier_point, earlier_read) = anchor(earlier);
+        let (current_point, current_read) = anchor(current);
+        let across_entry = earlier_point == current_point
+            && matches!(earlier_read, SyntaxTerm::Old(read) if read.as_ref() == current_read);
+        let across_named_points = earlier_point.is_some()
+            && current_point.is_some()
+            && earlier_point != current_point
+            && earlier_read == current_read;
+        if matches!(current_read, SyntaxTerm::Field { .. }) && (across_entry || across_named_points)
+        {
+            return Some((earlier, current_read));
+        }
+    }
+    None
+}
+
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// Retain a computational `known` leaf when possible, otherwise the exact
     /// legacy normalizer requested by this search route. Premise-restricted
@@ -7687,6 +7727,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_struct_field_equalities");
+        if let Some(goal @ SyntaxProposition::And(..)) = search_input.surface_goal() {
+            return Self::try_written_field_equalities(search_input, goal);
+        }
         let Some(SyntaxProposition::Comparison {
             left:
                 SyntaxTerm::AlgebraicConstructor {
@@ -7711,6 +7754,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(None);
         }
+        if let Some(read) = right_fields.first()
+            && let Some(proof) = Self::try_unchanged_struct_operand(search_input, read)?
+        {
+            return Ok(Some(proof));
+        }
 
         let mut proof = search_input.clone();
         for (left, right) in left_fields.iter().zip(right_fields) {
@@ -7733,6 +7781,87 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))
     }
 
+    fn try_written_field_equalities(
+        search_input: &Proof<'a>,
+        target: &SyntaxProposition,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_written_field_equalities");
+        let mut pending = vec![target];
+        let mut fields = Vec::new();
+        while let Some(proposition) = pending.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            match proposition {
+                SyntaxProposition::And(left, right) => {
+                    pending.push(right);
+                    pending.push(left);
+                }
+                SyntaxProposition::Comparison {
+                    left,
+                    operator: ComparisonOperator::Equal,
+                    right: SyntaxTerm::Field { .. },
+                } if is_field_observation(left) => fields.push(proposition),
+                _ => return Ok(None),
+            }
+        }
+        if let Some(SyntaxProposition::Comparison { right, .. }) = fields.first()
+            && let Some(proof) = Self::try_unchanged_struct_operand(search_input, right)?
+        {
+            return Ok(Some(proof));
+        }
+        let mut proof = search_input.clone();
+        for field in fields {
+            check_verification_deadline()?;
+            let Some(scope) = attempt::candidate_outcome(proof.driver().open_have(field.clone()))?
+            else {
+                return Ok(None);
+            };
+            let Some(closed) = scope.driver().try_struct_field_equality(field)? else {
+                return Ok(None);
+            };
+            proof = closed.join()?;
+        }
+        attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))
+    }
+
+    /// Make the unchanged source read available before checking the group.
+    /// The other field reads may already have indexed versions at this point.
+    fn try_unchanged_struct_operand(
+        search_input: &Proof<'a>,
+        read: &SyntaxTerm,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_unchanged_struct_operand");
+        let SyntaxTerm::Field { .. } = read else {
+            return Ok(None);
+        };
+        let Some(anchor) = search_input
+            .focused_outcome_data()
+            .and_then(|outcome| outcome.premise_anchor.as_ref())
+        else {
+            return Ok(None);
+        };
+        let at = |expression| SyntaxTerm::At {
+            selector: ProgramPointSelector::ProgramPoint(anchor.clone()),
+            expression: Box::new(expression),
+        };
+        let unchanged = SyntaxProposition::Comparison {
+            left: at(SyntaxTerm::Old(Box::new(read.clone()))),
+            operator: ComparisonOperator::Equal,
+            right: at(read.clone()),
+        };
+        let Some(scope) =
+            attempt::candidate_outcome(search_input.driver().open_have(unchanged.clone()))?
+        else {
+            return Ok(None);
+        };
+        let Some(closed) = scope.driver().try_struct_field_equality(&unchanged)? else {
+            return Ok(None);
+        };
+        let proof = closed.join()?;
+        attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))
+    }
+
     pub(in crate::surface::proof) fn try_struct_field_equality(
         search_input: &Proof<'a>,
         equality: &SyntaxProposition,
@@ -7750,23 +7879,30 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         Self::try_struct_field_equalities(search_input)
     }
 
-    /// Select a recorded store across which one operand is unchanged.
-    /// The mixed-state equality is checked first, so unsuccessful candidates
-    /// do not need to search for footprint separation.
-    fn try_struct_field_store_bridge(
+    /// Retain a chain of checked field equalities across recent disjoint stores.
+    /// At each entry, also try the mixed-state equality with the other operand.
+    pub(in crate::surface::proof) fn try_struct_field_store_bridge(
         search_input: &Proof<'a>,
         equality: &SyntaxProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_struct_field_store_bridge");
         let SyntaxProposition::Comparison {
-            left: other @ SyntaxTerm::Field { .. },
+            left,
             operator: ComparisonOperator::Equal,
-            right: read @ SyntaxTerm::Field { .. },
+            right,
         } = equality
         else {
             return Ok(None);
         };
+        let (other, read) =
+            if matches!(right, SyntaxTerm::Field { .. }) && is_field_observation(left) {
+                (left, right)
+        } else if let Some(pair) = field_at_two_points(left, right) {
+                pair
+            } else {
+                return Ok(None);
+            };
         let Some((
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
@@ -7807,6 +7943,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let records = view.fixed_state.recorded_states;
         let known =
             ProofCertificate::from_steps(vec![ProofStep::Known]).expect("ordinary equality");
+        let mut proof = search_input.clone();
         for (selector, _) in records.recent(MAX_TRANSPORT_SOURCE_POINTS) {
             check_verification_deadline()?;
             let ProgramPointSelector::ProgramPoint(ProgramPointRef {
@@ -7835,17 +7972,18 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 operator: ComparisonOperator::Equal,
                 right: entry.clone(),
             };
-            let Some(stored) =
-                attempt::candidate_outcome(search_input.driver().apply_have_step(&stored, &known))?
-            else {
-                continue;
-            };
+            let stored =
+                attempt::candidate_outcome(proof.driver().apply_have_step(&stored, &known))?;
             let separation = SyntaxProposition::Separate {
                 left: ResourceSubject::Footprint(region.clone()),
                 right: kept.clone(),
             };
-            let Some(separated) =
-                Self::try_memory_footprint_separation(&stored, &footprint, &kept, &separation)?
+            let Some(separated) = Self::try_memory_footprint_separation(
+                stored.as_ref().unwrap_or(&proof),
+                &footprint,
+                &kept,
+                &separation,
+            )?
             else {
                 continue;
             };
@@ -7856,13 +7994,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             };
             let preserve = ProofCertificate::from_steps(vec![ProofStep::Preserve(separation)])
                 .expect("ordinary field preservation");
-            let candidate = separated
-                .driver()
-                .apply_have_step(&bridge, &preserve)
-                .and_then(|preserved| preserved.driver().apply_step(ProofStep::Known));
-            if let Some(proof) = attempt::candidate_outcome(candidate)? {
-                return Ok(Some(proof));
+            let Some(preserved) =
+                attempt::candidate_outcome(separated.driver().apply_have_step(&bridge, &preserve))?
+            else {
+                continue;
+            };
+            if let Some(closed) =
+                attempt::candidate_outcome(preserved.driver().apply_step(ProofStep::Known))?
+            {
+                return Ok(Some(closed));
             }
+            proof = preserved;
         }
         Ok(None)
     }
