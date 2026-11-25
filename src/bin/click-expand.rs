@@ -1207,18 +1207,46 @@ theorem rounding_can_merge(x: float) {
             assert!(expanded.contains(law), "{expanded}");
         }
 
-        let finiteness = directory.path().join("finiteness.click");
+        let finiteness = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/float_finiteness_from_interval.md");
+        for (claim, law) in [
+            ("finite_identity.ensures_0", "float64_finite_between"),
+            ("finite_between.ensures_0", "float32_finite_between"),
+            ("strict_infinities.ensures_0", "float64_finite_between"),
+            ("inclusive_bounds.ensures_0", "float32_finite_between"),
+            ("finite_negated.ensures_0", "float64_finite_between"),
+            ("finite_widened.ensures_0", "float32_finite_between"),
+            (
+                "zero_product_with_ordered_operand.ensures_0",
+                "float64_finite_between",
+            ),
+        ] {
+            let expanded = check(&finiteness, claim).unwrap();
+            assert!(expanded.contains(law), "{claim}: {expanded}");
+        }
+
+        let infinity = directory.path().join("infinity.click");
         fs::write(
-            &finiteness,
-            r#"theorem finite_between(x: float) {
-    requires x > float32_from_bits(0xbf800000);
-    requires x < float32_from_bits(0x3f800000);
+            &infinity,
+            r#"theorem may_be_infinite(x: double) {
+    requires x >= float64_from_bits(0xfff0000000000000u64);
+    requires x < float64_from_bits(0x7ff0000000000000u64);
     ensures isfinite(x) by close();
+}
+theorem infinite_addition(x: double) {
+    requires x >= float64_from_bits(0x7ff0000000000000u64);
+    ensures x + float64_from_bits(0x3ff0000000000000u64)
+        >= float64_from_bits(0x7ff0000000000000u64) by close();
 }
 "#,
         )
         .unwrap();
-        let generated = check(&finiteness, "finite_between.ensures_0").unwrap_err();
+        let missing_bound = check(&infinity, "may_be_infinite.ensures_0").unwrap_err();
+        assert!(
+            missing_bound.contains("unsuccessful search"),
+            "{missing_bound}"
+        );
+        let generated = check(&infinity, "infinite_addition.ensures_0").unwrap_err();
         assert!(
             generated.contains("Expanded proof still contains normalize()"),
             "{generated}"

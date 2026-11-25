@@ -311,6 +311,7 @@ prepare_float_interval_bounds
 retain_float_adjacent_bound
 try_retain_float_interval_fact
 try_float_zero_product_bound
+try_float_finite_interval
 try_float_square_bound
 try_rounded_int32_to_float32_bound
 try_struct_field_equalities

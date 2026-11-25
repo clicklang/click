@@ -4354,6 +4354,28 @@ pub(crate) fn float_finiteness_bounds(goal: &Proposition) -> Option<[Proposition
     ])
 }
 
+/// The largest finite endpoints give an inclusive interval for finiteness.
+pub(crate) fn float_finite_interval(
+    goal: &Proposition,
+) -> Option<(KernelFloatType, [Proposition; 2])> {
+    let operand = float_finiteness_operand(goal)?;
+    let format = operand.format();
+    let maximum = float_infinity(format) - 1;
+    Some((
+        format,
+        [
+            float_bound_proposition(
+                format,
+                operand,
+                maximum | float_sign_bit(format),
+                true,
+                false,
+            )?,
+            float_bound_proposition(format, operand, maximum, false, false)?,
+        ],
+    ))
+}
+
 /// Finite self-subtraction gives zero. Finite, nonzero self-division gives
 /// one, including when the shared operand is subnormal.
 pub(super) fn float_self_operation_bounds(

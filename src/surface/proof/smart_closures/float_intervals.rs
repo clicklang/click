@@ -241,6 +241,46 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         )
     }
 
+    pub(super) fn try_float_finite_interval(
+        input: &Proof<'a>,
+        goal: &Proposition,
+        introduced_surfaces: &[SyntaxProposition],
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_float_finite_interval");
+        let Some((format, bounds)) =
+            crate::kernel::proof::arithmetic_special::float_finite_interval(goal)
+        else {
+            return Ok(None);
+        };
+        let Some((proof, premises)) =
+            Self::establish_arithmetic_bounds(input, &bounds, introduced_surfaces)?
+        else {
+            return Ok(None);
+        };
+        let [lower, upper] = premises.as_slice() else {
+            unreachable!("both finite endpoints were established");
+        };
+        let (Some((lo, x)), Some((_, hi))) = (
+            surface_nonstrict_parts(&surface_comparison_with_anchored_operands(lower)),
+            surface_nonstrict_parts(&surface_comparison_with_anchored_operands(upper)),
+        ) else {
+            return Ok(None);
+        };
+        let name = match format {
+            KernelFloatType::Float32 => "click::float_order::float32_finite_between",
+            KernelFloatType::Float64 => "click::float_order::float64_finite_between",
+        };
+        let step = ProofStep::ApplyPlannedTheorem {
+            application: TheoremApplication {
+                name: name.into(),
+                arguments: vec![x, lo.clone(), hi.clone()],
+            },
+            premises: vec![lower.clone(), upper.clone(), finite(&lo), finite(&hi)],
+        };
+        attempt::candidate_outcome(proof.driver().apply_step(step))
+    }
+
     pub(in crate::surface::proof) fn try_float_zero_product_bound(
         input: &Proof<'a>,
         goal: &Proposition,
