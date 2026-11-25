@@ -20,6 +20,14 @@ fn verification_only_fact_transport_has_no_source_expansion() {
     );
 }
 
+#[test]
+fn verification_only_normalization_has_no_source_expansion() {
+    let tactics = [ProofTactic::CompatibilityNormalize(None)];
+    let rendered = printing::format_partial_tactic_sequence(&tactics);
+    let error = require_surface_expansion(rendered).unwrap_err();
+    assert!(error.message().contains("used legacy normalization"));
+}
+
 // Read proof fixtures at runtime, as the markdown harness does, so editing a
 // fixture does not invalidate the Rust test executable.
 fn mdtest_markdown(name: &str) -> String {
@@ -3562,6 +3570,44 @@ fn selected_bounds_and_cross_width_viewability_expand_and_replay() {
         })
         .unwrap();
     }
+}
+
+#[test]
+fn nested_machine_arms_replay_with_only_the_cited_guards() {
+    let filename = "nested_machine_conditionals.md";
+    let fixture =
+        crate::cli::parse_mdtest(std::path::Path::new(filename), &mdtest_markdown(filename))
+            .unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    for label in [
+        "nested_true.ensures_0",
+        "nested_false.ensures_0",
+        "nested_wide.ensures_0",
+    ] {
+        let expanded = expand_c_claim_source_by_label(source, &[], label)
+            .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
+        assert!(expanded.contains("rewrite("), "{expanded}");
+        assert!(!expanded.contains("normalize()"), "{expanded}");
+        crate::surface::check_audit_claim(label, true, || {
+            verify_c_sources(&expanded, &[]).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+
+    let omitted = r#"
+        theorem omitted(x: int32, y: int32) {
+            requires x < y;
+            requires y == 5;
+            ensures (if x < y { if y == 5 { 8 } else { 3 } } else { 0 }) == 8 by {
+                close() using { x < y; };
+            }
+        }
+    "#;
+    let error = expand_c_claim_source_by_label(omitted, &[], "omitted.ensures_0").unwrap_err();
+    assert!(
+        error.message().contains("from only its listed premises"),
+        "{error:?}"
+    );
 }
 
 #[test]

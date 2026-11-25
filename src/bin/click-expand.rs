@@ -964,7 +964,7 @@ int32 identity(int32 x) {
     }
 
     #[test]
-    fn check_normalize_removal_replays_checked_bounds_and_rejects_legacy_proofs() {
+    fn check_normalize_removal_replays_checked_bounds_and_nested_conditionals() {
         let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("mdtests/arithmetic_expression_float_bound_composition.md");
         let check = |path: &Path, claim: &str| {
@@ -1351,9 +1351,9 @@ theorem unchecked_cast_bound(x: uint64) {
             .join("mdtests/normalize_using_reads_every_spelling_of_a_cited_premise.md");
         check(&guard_spellings, "integer_mirror.ensures_0").unwrap();
 
-        let hidden = directory.path().join("nested.click");
+        let nested_source = directory.path().join("nested.click");
         fs::write(
-            &hidden,
+            &nested_source,
             r#"theorem nested(x: int32, y: int32) {
     requires x < y;
     requires y == 5;
@@ -1364,11 +1364,8 @@ theorem unchecked_cast_bound(x: uint64) {
 "#,
         )
         .unwrap();
-        let compatibility = check(&hidden, "nested.ensures_0").unwrap_err();
-        assert!(
-            compatibility.contains("used legacy normalization"),
-            "{compatibility}"
-        );
+        let nested = check(&nested_source, "nested.ensures_0").unwrap();
+        assert!(nested.contains("rewrite("), "{nested}");
     }
 
     #[test]
