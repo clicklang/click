@@ -9119,7 +9119,7 @@ impl ExecutionState {
         let point = self.program_point();
         let version = point.abstract_local_version(slot, value_type).or_else(|| {
             (value_type.has_abstract_size() && point.has_certified_read_view())
-                .then(|| point.for_exact_read())
+                .then(|| point.clone().for_exact_read())
         });
         if let Some(version) = version {
             return Some(AlgebraicTermNode::parameter_load_at(
@@ -9130,6 +9130,7 @@ impl ExecutionState {
         }
         Some(AlgebraicTermNode::parameter_load(
             crate::kernel::intern_memory_ref(self.memory()),
+            &point,
             slot.clone(),
             value_type,
         ))

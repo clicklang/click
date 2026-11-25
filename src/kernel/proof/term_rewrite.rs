@@ -9548,8 +9548,11 @@ mod pointer_integer_rewrite_tests {
             },
             stored.clone(),
         ));
-        let read =
-            AlgebraicTermNode::parameter_load(memory.clone(), from.address().clone(), parameter);
+        let read = AlgebraicTermNode::parameter_load_unsited(
+            memory.clone(),
+            from.address().clone(),
+            parameter,
+        );
         // A separate four-byte observation must not replace the generic
         // read's eight-byte origin when the same version name is reused.
         let partial = crate::kernel::intern_memory(memory.memory().clone().store(
@@ -9561,7 +9564,8 @@ mod pointer_integer_rewrite_tests {
         ));
         let _ =
             crate::kernel::memory_history::canonical_value_load_memory(&partial, from.address(), 4);
-        let expected = AlgebraicTermNode::parameter_load(memory, to.address().clone(), parameter);
+        let expected =
+            AlgebraicTermNode::parameter_load_unsited(memory, to.address().clone(), parameter);
         assert_ne!(expected, stored, "a rewritten logical read stays a read");
         let rewritten = TermRewrite::for_pointer_value_exact(&from, &to).value(&read);
         assert_eq!(rewritten, expected);

@@ -5363,10 +5363,22 @@ impl AlgebraicTermNode {
         }
     }
 
+    /// [`Self::parameter_load`] read at `memory` itself, for tests.
+    #[cfg(test)]
+    pub(crate) fn parameter_load_unsited(
+        memory: SharedMemory,
+        pointer: Address,
+        parameter: TypeParameterName,
+    ) -> ProgramValue {
+        let site = ProgramPoint::at(&memory);
+        Self::parameter_load(memory, &site, pointer, parameter)
+    }
+
     /// The value of abstract type `parameter` that `memory` holds at
-    /// `pointer`.
+    /// `pointer`, read at `site`.
     pub(crate) fn parameter_load(
         memory: SharedMemory,
+        site: &ProgramPoint,
         pointer: Address,
         parameter: TypeParameterName,
     ) -> ProgramValue {
@@ -5377,7 +5389,7 @@ impl AlgebraicTermNode {
             &pointer,
             AccessExtent::of_algebraic(&parameter.algebraic_type()),
         );
-        Self::parameter_load_at(ProgramPoint::unplaced(&memory), pointer, parameter)
+        Self::parameter_load_at(ProgramPoint::walked(&memory, site), pointer, parameter)
     }
 
     /// A checked cell observation uses the same typed version as a logical read.
@@ -5391,7 +5403,7 @@ impl AlgebraicTermNode {
         {
             return Self::parameter_load_at(version, pointer, parameter);
         }
-        Self::parameter_load(source.shared_memory().clone(), pointer, parameter)
+        Self::parameter_load(source.shared_memory().clone(), source, pointer, parameter)
     }
 
     pub(crate) fn parameter_load_at(

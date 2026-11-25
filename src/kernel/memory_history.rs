@@ -4224,30 +4224,36 @@ fn recorded_load_history_uncached(
 /// proves the cell unchanged from, named by the assumption-free naming walk
 /// so that facts spelled with that older name apply exactly.
 pub(crate) fn resolve_load_along_memory_derivations(
-    memory: &SharedMemory,
+    origin: &ProgramPoint,
     pointer: &Address,
     kind: LoadKind,
     assumptions: &PureFactContext,
 ) -> Option<MachineTerm> {
+    let memory = origin.shared_memory();
     let _assumptions_id_scope = assumptions.enter_id_scope();
     let previous = EXPLICIT_DAG_CHECK.with(|flag| flag.replace(true));
-    let result =
-        with_extended_dag_bridging(|| {
-            let bytes = crate::kernel::load_term_access_width(memory, pointer, kind);
-            let cell = memory_dag_cell_source(memory, pointer, bytes, assumptions, true)?;
-            if let Some(value) = cell.resolved_value(pointer, kind) {
-                return match value {
-                    crate::kernel::integer32_c_value!(value) => Some(value),
-                    _ => None,
-                };
+    let result = with_extended_dag_bridging(|| {
+        let bytes = crate::kernel::load_term_access_width(memory, pointer, kind);
+        let cell = memory_dag_cell_source(memory, pointer, bytes, assumptions, true)?;
+        if let Some(value) = cell.resolved_value(pointer, kind) {
+            return match value {
+                crate::kernel::integer32_c_value!(value) => Some(value),
+                _ => None,
+            };
+        }
+        match cell {
+            MemoryDagCell::Stored { .. } => None,
+            // The node is an earlier memory the history walk reached
+            // from the origin; it is placed only as walked from there.
+            MemoryDagCell::Unwritten { node, .. } => {
+                Some(crate::kernel::canonical_form_of_load_at(
+                    &ProgramPoint::walked(&node, origin),
+                    pointer.clone(),
+                    kind,
+                ))
             }
-            match cell {
-                MemoryDagCell::Stored { .. } => None,
-                MemoryDagCell::Unwritten { node, .. } => Some(
-                    crate::kernel::canonical_form_of_load(node, pointer.clone(), kind),
-                ),
-            }
-        });
+        }
+    });
     EXPLICIT_DAG_CHECK.with(|flag| flag.set(previous));
     result
 }
@@ -4272,12 +4278,9 @@ pub(crate) fn resolve_prerequisite_loads_along_memory_derivations(
         else {
             continue;
         };
-        let Some(form) = resolve_load_along_memory_derivations(
-            origin.shared_memory(),
-            &pointer,
-            kind,
-            assumptions,
-        ) else {
+        let Some(form) =
+            resolve_load_along_memory_derivations(&origin, &pointer, kind, assumptions)
+        else {
             continue;
         };
         if form == MachineTerm::Variable(variable) {
