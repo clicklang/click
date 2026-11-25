@@ -1225,6 +1225,19 @@ theorem rounding_can_merge(x: float) {
             assert!(expanded.contains(law), "{claim}: {expanded}");
         }
 
+        let infinite_sum = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/float_addition_at_infinite_bounds.md");
+        for (claim, law) in [
+            ("add_at_infinity.ensures_0", "float64_add_finite_monotone"),
+            ("positive_right.ensures_0", "float32_add_finite_monotone"),
+            ("negative_left.ensures_0", "float32_add_finite_monotone"),
+            ("positive_left.ensures_0", "float64_add_finite_monotone"),
+            ("negative_right.ensures_0", "float64_add_finite_monotone"),
+        ] {
+            let expanded = check(&infinite_sum, claim).unwrap();
+            assert!(expanded.contains(law), "{claim}: {expanded}");
+        }
+
         let infinity = directory.path().join("infinity.click");
         fs::write(
             &infinity,
@@ -1233,9 +1246,14 @@ theorem rounding_can_merge(x: float) {
     requires x < float64_from_bits(0x7ff0000000000000u64);
     ensures isfinite(x) by close();
 }
-theorem infinite_addition(x: double) {
+theorem opposite_infinities(x: double) {
     requires x >= float64_from_bits(0x7ff0000000000000u64);
-    ensures x + float64_from_bits(0x3ff0000000000000u64)
+    ensures x + float64_from_bits(0xfff0000000000000u64)
+        >= float64_from_bits(0x7ff0000000000000u64) by close();
+}
+theorem infinite_subtraction(x: double) {
+    requires x >= float64_from_bits(0x7ff0000000000000u64);
+    ensures x - float64_from_bits(0x3ff0000000000000u64)
         >= float64_from_bits(0x7ff0000000000000u64) by close();
 }
 "#,
@@ -1246,7 +1264,9 @@ theorem infinite_addition(x: double) {
             missing_bound.contains("unsuccessful search"),
             "{missing_bound}"
         );
-        let generated = check(&infinity, "infinite_addition.ensures_0").unwrap_err();
+        let opposite = check(&infinity, "opposite_infinities.ensures_0").unwrap_err();
+        assert!(opposite.contains("unsuccessful search"), "{opposite}");
+        let generated = check(&infinity, "infinite_subtraction.ensures_0").unwrap_err();
         assert!(
             generated.contains("Expanded proof still contains normalize()"),
             "{generated}"

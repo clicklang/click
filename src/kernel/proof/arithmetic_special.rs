@@ -4621,11 +4621,17 @@ pub(crate) fn float_pair_bound_weakening(
     ))
 }
 
+pub(crate) enum FloatLiteralSumOperation {
+    Add,
+    AddAtInfinity,
+    Subtract,
+}
+
 /// An addition or subtraction law can use reflexive order for a literal operand.
 pub(crate) fn float_literal_sum_or_difference_bound(
     source: &Proposition,
     goal: &Proposition,
-) -> Option<(FloatBoundWeakening, u64, bool, bool)> {
+) -> Option<(FloatBoundWeakening, u64, bool, FloatLiteralSumOperation)> {
     use crate::kernel::FloatBinaryOperator::{Add, Subtract};
     let input = float_bound(source)?;
     let result = float_bound(goal)?;
@@ -4642,12 +4648,19 @@ pub(crate) fn float_literal_sum_or_difference_bound(
     if !same_float_operand(input.operand, operand) || !float_bound_weakens(source, goal) {
         return None;
     }
+    let law = if operator == Subtract {
+        FloatLiteralSumOperation::Subtract
+    } else if input.endpoint & !float_sign_bit(input.format) == float_infinity(input.format) {
+        FloatLiteralSumOperation::AddAtInfinity
+    } else {
+        FloatLiteralSumOperation::Add
+    };
     let (endpoint, strict) = operation.apply(result.format, input.endpoint, false);
     Some((
         FloatBoundWeakening::from_goal(goal, endpoint, strict)?,
         literal,
         literal_on_left,
-        operator == Subtract,
+        law,
     ))
 }
 
