@@ -1,6 +1,7 @@
 //! Exact interface identity modulo lexical parameter names. This is not
 //! behavioral refinement: it neither executes nor proves implications.
 use super::*;
+use crate::kernel::GeneratedBinderId;
 
 pub(super) fn same_interface(contract: &FunctionContract, function: &ProgramFunction) -> bool {
     // Proof binders are introduced by the named contract's explicit
@@ -8,23 +9,32 @@ pub(super) fn same_interface(contract: &FunctionContract, function: &ProgramFunc
     // ordinary one-call refinement relation compares the shared behavioral
     // interface after that separate check, just as the previous template
     // comparison did.
-    let mut normalized_contract = normalize(contract.interface());
+    // Both copies use the same fresh IDs in traversal order. A free binding
+    // keeps its original identity, even when it is itself a generated ID.
+    let mut canonical_binders = Vec::new();
+    let mut normalized_contract = normalize(contract.interface(), &mut canonical_binders);
     normalized_contract.proof_parameters = Default::default();
-    let normalized_function = normalize(function.contract_interface());
+    let normalized_function = normalize(function.contract_interface(), &mut canonical_binders);
     normalized_contract.exactly_matches(&normalized_function)
 }
 
-fn normalize(interface: &FunctionContractInterface) -> FunctionContractInterface {
+fn normalize(
+    interface: &FunctionContractInterface,
+    canonical_binders: &mut Vec<GeneratedBinderId>,
+) -> FunctionContractInterface {
     let mut interface = interface.clone();
-    let mut names = Names::default();
+    let mut names = Names::new(canonical_binders);
     for parameter in &mut interface.parameters {
         let original = parameter.name.binding().clone();
-        let mut source = parameter.name.source_name().to_owned();
-        names.bind(&mut source);
-        parameter.name = BindingName::from(source).into();
-        names
-            .program_bindings
-            .insert(original, parameter.name.binding().clone());
+        let source = parameter.name.source_name().into();
+        let canonical = names.next_binder();
+        // A typed parameter can be reached by its identity or by its
+        // spelling in a contract clause.
+        if !matches!(original, BindingName::Named(_)) {
+            names.bindings.insert(original, canonical.clone());
+        }
+        names.bindings.insert(source, canonical.clone());
+        parameter.name = canonical.into();
     }
     for proposition in interface
         .contract_requires
@@ -71,7 +81,11 @@ fn normalize(interface: &FunctionContractInterface) -> FunctionContractInterface
 mod tests {
     use super::*;
 
-    fn interface(parameter: &str, local: &str, body: &str) -> ProgramFunction {
+    fn interface(
+        parameter: &str,
+        local: impl Into<BindingName>,
+        body: impl Into<BindingName>,
+    ) -> ProgramFunction {
         program_function(
             ProgramType::Void,
             "interface",
@@ -82,7 +96,7 @@ mod tests {
             vec![],
             vec![SpecProposition::Comparison {
                 left: SpecExpression::Let {
-                    name: local.to_string().into(),
+                    name: local.into(),
                     value: Box::new(SpecExpression::ProgramExpression(
                         crate::kernel::program_expression::variable(parameter),
                     )),
@@ -110,6 +124,28 @@ mod tests {
         let free = FunctionContract::new("Free", interface("p", "q", "global")).unwrap();
         assert!(same_interface(&free, &interface("x", "y", "global")));
         assert!(!same_interface(&free, &interface("x", "y", "different")));
+    }
+
+    #[test]
+    fn lexical_identity_distinguishes_free_and_bound_generated_ids() {
+        let original = GeneratedBinderId::fresh().binding_name();
+        let renamed = GeneratedBinderId::fresh().binding_name();
+        let bound =
+            FunctionContract::new("Bound", interface("x", original.clone(), original.clone()))
+                .unwrap();
+        assert!(same_interface(
+            &bound,
+            &interface("y", renamed.clone(), renamed.clone())
+        ));
+        assert!(!same_interface(
+            &bound,
+            &interface("y", renamed.clone(), original.clone())
+        ));
+
+        let free =
+            FunctionContract::new("Free", interface("x", "local", original.clone())).unwrap();
+        assert!(same_interface(&free, &interface("y", "renamed", original)));
+        assert!(!same_interface(&free, &interface("y", "renamed", renamed)));
     }
 
     #[test]
@@ -150,9 +186,10 @@ mod tests {
     #[test]
     fn interface_visits_scale_with_explicit_specification_nodes() {
         for size in [1, 16, 64, 256] {
-            let mut names = Names::default();
+            let mut canonical_binders = Vec::new();
+            let mut names = Names::new(&mut canonical_binders);
             for index in 0..size {
-                names.bind(&mut format!("argument{index}"));
+                names.bind_program(&mut BindingName::from(format!("argument{index}")));
             }
             for index in 0..size {
                 let mut proposition = SpecProposition::Comparison {
@@ -208,92 +245,66 @@ mod tests {
     }
 }
 
-#[derive(Default)]
-struct Names {
-    program_bindings: BTreeMap<BindingName, BindingName>,
-    bindings: BTreeMap<String, Vec<String>>,
+struct Names<'a> {
+    canonical_binders: &'a mut Vec<GeneratedBinderId>,
+    bindings: BTreeMap<BindingName, BindingName>,
     next: usize,
     #[cfg(test)]
     visits: usize,
 }
 
-impl Names {
+impl<'a> Names<'a> {
+    fn new(canonical_binders: &'a mut Vec<GeneratedBinderId>) -> Self {
+        Self {
+            canonical_binders,
+            bindings: BTreeMap::new(),
+            next: 0,
+            #[cfg(test)]
+            visits: 0,
+        }
+    }
+
     fn visit(&mut self) {
         #[cfg(test)]
         {
             self.visits += 1;
         }
     }
-    fn reference(&self, name: &mut String) {
-        *name = self
-            .bindings
-            .get(name)
-            .and_then(|stack| stack.last())
-            .cloned()
-            .unwrap_or_else(|| format!("free:{name}"));
-    }
-    fn bind(&mut self, name: &mut String) -> String {
-        let original = name.clone();
-        *name = format!("bound:{}", self.next);
+
+    fn next_binder(&mut self) -> BindingName {
+        if self.next == self.canonical_binders.len() {
+            self.canonical_binders.push(GeneratedBinderId::fresh());
+        }
+        let binder = self.canonical_binders[self.next].binding_name();
         self.next += 1;
-        self.bindings
-            .entry(original.clone())
-            .or_default()
-            .push(name.clone());
-        original
+        binder
     }
-    fn unbind(&mut self, name: String) {
-        let stack = self.bindings.get_mut(&name).unwrap();
-        stack.pop();
-        if stack.is_empty() {
+
+    fn bind_program(&mut self, name: &mut BindingName) -> (BindingName, Option<BindingName>) {
+        let original = std::mem::replace(name, self.next_binder());
+        let previous = self.bindings.insert(original.clone(), name.clone());
+        (original, previous)
+    }
+
+    fn unbind_program(&mut self, (name, previous): (BindingName, Option<BindingName>)) {
+        if let Some(previous) = previous {
+            self.bindings.insert(name, previous);
+        } else {
             self.bindings.remove(&name);
         }
     }
-    fn bind_program(&mut self, name: &mut BindingName) -> (BindingName, Option<BindingName>) {
-        let original = name.clone();
-        if let BindingName::Named(name) = name {
-            self.bind(name);
-            return (original, None);
-        }
-        *name = BindingName::from(format!("bound:{}", self.next));
-        self.next += 1;
-        let previous = self.program_bindings.insert(original.clone(), name.clone());
-        (original, previous)
-    }
-    fn unbind_program(&mut self, (name, previous): (BindingName, Option<BindingName>)) {
-        if let BindingName::Named(name) = name {
-            self.unbind(name);
-        } else if let Some(previous) = previous {
-            self.program_bindings.insert(name, previous);
-        } else {
-            self.program_bindings.remove(&name);
-        }
-    }
+
     fn program_reference(&self, name: &mut BindingName) {
-        if let BindingName::Named(name) = name {
-            self.reference(name);
-        } else if let Some(bound) = self.program_bindings.get(name) {
+        if let Some(bound) = self.bindings.get(name) {
             *name = bound.clone();
         }
     }
+
     fn c(&mut self, expression: &mut ProgramExpression) {
         self.visit();
         use ProgramExpression::*;
         match expression {
-            Variable(name) => match name {
-                BindingName::Named(source) => self.reference(source),
-                BindingName::ReferenceCarrier(_)
-                | BindingName::SliceLength(_)
-                | BindingName::Local(_)
-                | BindingName::Generated(_)
-                | BindingName::Static(_)
-                | BindingName::ContractResult
-                | BindingName::ContractException => {
-                    if let Some(bound) = self.program_bindings.get(name) {
-                        *name = bound.clone();
-                    }
-                }
-            },
+            Variable(name) => self.program_reference(name),
             StringLiteral(_) | Value(_) | FunctionAddress(_) | StepResult { .. } => {}
             Cast { expression, .. }
             | FloatClassification { expression, .. }
@@ -426,20 +437,7 @@ impl Names {
             AggregateFieldValue {
                 parameter, pointer, ..
             } => {
-                match parameter {
-                    BindingName::Named(name) => self.reference(name),
-                    BindingName::ReferenceCarrier(_)
-                    | BindingName::SliceLength(_)
-                    | BindingName::Local(_)
-                    | BindingName::Static(_)
-                    | BindingName::ContractResult
-                    | BindingName::ContractException
-                    | BindingName::Generated(_) => {
-                        if let Some(bound) = self.program_bindings.get(parameter) {
-                            *parameter = bound.clone();
-                        }
-                    }
-                }
+                self.program_reference(parameter);
                 self.expression(pointer);
             }
             CountedResourceCount { arguments, .. } => {
