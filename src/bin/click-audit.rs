@@ -1478,31 +1478,30 @@ fn without_excluded(sources: Vec<PathBuf>, exclude: &[PathBuf]) -> Result<Vec<Pa
 fn audit_targets(path: &Path) -> Result<Vec<PathBuf>, String> {
     let examples = path.join("examples");
     let mdtests = path.join("mdtests");
-    if examples.is_dir() && mdtests.is_dir() {
+    let paths = if examples.is_dir() && mdtests.is_dir() {
         let mut sources = audit_targets(&examples)?;
         sources.extend(find_mdtests(&mdtests)?);
-        sources.sort();
-        sources.dedup();
-        return Ok(sources);
-    }
-    match select_targets(path)? {
-        TargetSelection::Mdtests(paths) => Ok(paths),
-        TargetSelection::Sidecars(selection) => {
-            let mut sources = selection
-                .sidecars()
-                .map(Path::to_path_buf)
-                .collect::<Vec<_>>();
-            sources.sort();
-            sources
-                .into_iter()
-                .map(|source| {
-                    fs::canonicalize(&source).map_err(|error| {
-                        format!("failed to resolve `{}`: {error}", source.display())
-                    })
-                })
-                .collect()
+        sources
+    } else {
+        match select_targets(path)? {
+            TargetSelection::Mdtests(paths) => paths,
+            TargetSelection::Sidecars(selection) => {
+                selection.sidecars().map(Path::to_path_buf).collect()
+            }
         }
-    }
+    };
+    // Changed-site selection compares these paths with the canonical paths in
+    // the inventory.
+    let mut sources = paths
+        .into_iter()
+        .map(|source| {
+            fs::canonicalize(&source)
+                .map_err(|error| format!("failed to resolve `{}`: {error}", source.display()))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    sources.sort();
+    sources.dedup();
+    Ok(sources)
 }
 
 #[derive(Clone)]

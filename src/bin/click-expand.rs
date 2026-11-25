@@ -1470,6 +1470,7 @@ int32 identity(int32 x) {
             limits: RunLimits::expand(),
             output: None,
             in_place: false,
+            check_normalize_removal: false,
         })
         .expect("the generated preservation proof should parse and verify");
     }

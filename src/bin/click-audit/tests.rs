@@ -462,6 +462,64 @@ int32 unrelated(int32 x) { ensures result == x; }
 }
 
 #[test]
+fn changed_audit_selects_markdown_claims_for_relative_targets() {
+    let cwd = std::env::current_dir().unwrap();
+    let repo = tempfile::tempdir_in(&cwd).unwrap();
+    let fixture_dir = repo.path().join("mdtests");
+    fs::create_dir(&fixture_dir).unwrap();
+    let fixture = fixture_dir.join("scalar.md");
+    let original = include_str!("../../../mdtests/scalar.md");
+    fs::write(&fixture, original).unwrap();
+
+    let git = |args: &[&str]| {
+        let output = Command::new("git")
+            .current_dir(repo.path())
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    };
+    git(&["init", "-q"]);
+    git(&["add", "mdtests/scalar.md"]);
+    git(&[
+        "-c",
+        "user.name=Click Test",
+        "-c",
+        "user.email=test@example.com",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-qm",
+        "baseline",
+    ]);
+
+    let changed = original.replacen("(1 + 2) == 3", "(1 + 3) == 4", 1);
+    assert_ne!(original, changed);
+    fs::write(&fixture, changed).unwrap();
+
+    for path in [
+        fixture.strip_prefix(&cwd).unwrap(),
+        fixture_dir.strip_prefix(&cwd).unwrap(),
+        &fixture,
+    ] {
+        let arguments = parse_arguments(
+            ["--changed-since", "HEAD", path.to_str().unwrap()].map(str::to_string),
+        )
+        .unwrap();
+        let inventory =
+            prepare_audit(&arguments, Instant::now() + Duration::from_secs(30)).unwrap();
+        assert_eq!(inventory.scoped_sites.len(), 1, "{}", path.display());
+        let site = &inventory.scoped_sites[0];
+        assert_eq!(site.click_path, fs::canonicalize(&fixture).unwrap());
+        assert_eq!(site.claim, "scalar.arithmetic_result");
+    }
+}
+
+#[test]
 fn click_engine_changes_force_a_full_changed_audit() {
     let repo = Path::new(env!("CARGO_MANIFEST_DIR"));
     assert!(changed_paths_require_full_audit(
