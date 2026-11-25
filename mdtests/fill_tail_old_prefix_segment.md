@@ -34,6 +34,33 @@ int32 fill_tail_old_prefix_segment(int32 p[], int32 n) {
         invariant forall (k: int32) {
             0 <= k and k < 1 implies p[k] == old(p[k])
         };
+        maintain by {
+            mark iter;
+            step();
+            have forall (k: int32) {
+                0 <= k and k < 1 implies p[k] == old(p[k])
+            } by {
+                intro() {
+                    intro() {
+                        instantiate(at(iter, forall (j: int32) { 0 <= j and j < 1 implies p[j] == old(p[j]) }), k);
+                        have at(iter, p[k]) == old(p[k]) by { close(); }
+                        have k < i by { close() using { k < 1; 1 <= i; }; }
+                        have i != k by { close() using { k < i; }; }
+                        have separate(memory(p[i]), memory(p[k])) by {
+                            apply(click::separation::separate_elements(p, i, k));
+                        }
+                        have separate(loop(0).statement(0).footprint, memory(p[k])) by {
+                            close() using { separate(memory(p[i]), memory(p[k])); };
+                        }
+                        have p[k] == at(iter, p[k]) by {
+                            preserve(memory(p[k]), loop(0).statement(0));
+                        }
+                        close() using { p[k] == at(iter, p[k]); at(iter, p[k]) == old(p[k]); };
+                    }
+                }
+            }
+            step();
+        }
     }
     step();
     close();
