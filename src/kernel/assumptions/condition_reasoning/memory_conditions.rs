@@ -312,7 +312,7 @@ impl PureFactContext {
             return None;
         };
         let value = match self
-            .resolve_memory_load_value(memory.memory(), pointer, *kind)?
+            .resolve_memory_load_value(memory, pointer, *kind)?
             .numeric_value()
             .clone()
         {
@@ -357,10 +357,11 @@ impl PureFactContext {
     /// the same kind, when no cell may alias it.
     pub(in crate::kernel) fn resolve_memory_load_value(
         &self,
-        memory: &SymbolicMemory,
+        point: &crate::kernel::ProgramPoint,
         pointer: &Address,
         kind: LoadKind,
     ) -> Option<ProgramValue> {
+        let memory = point.memory();
         let byte_width = kind.byte_width();
         if let Some(value) = memory.known_value(pointer) {
             return kind.read_cell(&value);
@@ -522,16 +523,16 @@ impl PureFactContext {
             return None;
         }
         match kind {
-            LoadKind::Int8 => Some(memory.symbolic_int8_load(None, pointer)),
-            LoadKind::UInt8 => Some(memory.symbolic_uint8_load(None, pointer)),
-            LoadKind::Int16 => Some(memory.symbolic_int16_load(None, pointer)),
-            LoadKind::UInt16 => Some(memory.symbolic_uint16_load(None, pointer)),
-            LoadKind::Int32 => Some(memory.symbolic_int32_load(None, pointer)),
-            LoadKind::UInt32 => Some(memory.symbolic_uint32_load(None, pointer)),
-            LoadKind::Bits64 => Some(memory.symbolic_int64_load(None, pointer)),
+            LoadKind::Int8 => Some(memory.symbolic_int8_load(point, pointer)),
+            LoadKind::UInt8 => Some(memory.symbolic_uint8_load(point, pointer)),
+            LoadKind::Int16 => Some(memory.symbolic_int16_load(point, pointer)),
+            LoadKind::UInt16 => Some(memory.symbolic_uint16_load(point, pointer)),
+            LoadKind::Int32 => Some(memory.symbolic_int32_load(point, pointer)),
+            LoadKind::UInt32 => Some(memory.symbolic_uint32_load(point, pointer)),
+            LoadKind::Bits64 => Some(memory.symbolic_int64_load(point, pointer)),
             // A value of algebraic type is its own decoding of the cell.
             LoadKind::Algebraic(parameter) => {
-                Some(memory.symbolic_algebraic_load(None, pointer, parameter))
+                Some(memory.symbolic_algebraic_load(point, pointer, parameter))
             }
             LoadKind::Int128 => {
                 memory.symbolic_wide_integer_load(pointer, MachineIntegerType::Int128)

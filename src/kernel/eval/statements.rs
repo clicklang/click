@@ -6725,7 +6725,7 @@ fn refresh_scalar_local_binding(
     } else {
         crate::kernel::eval::symbolic_load_value(
             &state.memory,
-            Some(&state.program_point()),
+            &state.program_point(),
             &slot,
             program_type,
         )

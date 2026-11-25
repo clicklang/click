@@ -8889,14 +8889,14 @@ impl SymbolicMemory {
 
     /// The point a legacy symbolic read of this memory is named at: this
     /// memory, recording `site` as the read site when the caller has one.
-    fn legacy_read_point(&self, site: Option<&ProgramPoint>) -> ProgramPoint {
-        ProgramPoint::read_at_optional(&crate::kernel::intern_memory(self.clone()), site)
+    fn legacy_read_point(&self, site: &ProgramPoint) -> ProgramPoint {
+        ProgramPoint::read_at(&crate::kernel::intern_memory(self.clone()), site)
     }
 
     #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_int32_load(
         &self,
-        site: Option<&ProgramPoint>,
+        site: &ProgramPoint,
         pointer: &Address,
     ) -> ProgramValue {
         int32(crate::kernel::MachineTerm::read_named(
@@ -8911,7 +8911,7 @@ impl SymbolicMemory {
     #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_int8_load(
         &self,
-        site: Option<&ProgramPoint>,
+        site: &ProgramPoint,
         pointer: &Address,
     ) -> ProgramValue {
         int8(MachineTerm::read_named(
@@ -8924,7 +8924,7 @@ impl SymbolicMemory {
     #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_int16_load(
         &self,
-        site: Option<&ProgramPoint>,
+        site: &ProgramPoint,
         pointer: &Address,
     ) -> ProgramValue {
         int16(crate::kernel::MachineTerm::read_named(
@@ -8937,7 +8937,7 @@ impl SymbolicMemory {
     #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_uint8_load(
         &self,
-        site: Option<&ProgramPoint>,
+        site: &ProgramPoint,
         pointer: &Address,
     ) -> ProgramValue {
         uint8(crate::kernel::MachineTerm::read_named(
@@ -8950,7 +8950,7 @@ impl SymbolicMemory {
     #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_uint16_load(
         &self,
-        site: Option<&ProgramPoint>,
+        site: &ProgramPoint,
         pointer: &Address,
     ) -> ProgramValue {
         uint16(crate::kernel::MachineTerm::read_named(
@@ -8963,7 +8963,7 @@ impl SymbolicMemory {
     #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_uint32_load(
         &self,
-        site: Option<&ProgramPoint>,
+        site: &ProgramPoint,
         pointer: &Address,
     ) -> ProgramValue {
         uint32(crate::kernel::MachineTerm::read_named(
@@ -8976,7 +8976,7 @@ impl SymbolicMemory {
     #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_int64_load(
         &self,
-        site: Option<&ProgramPoint>,
+        site: &ProgramPoint,
         pointer: &Address,
     ) -> ProgramValue {
         ProgramValue::Int64(crate::kernel::MachineTerm::read_named(
@@ -8991,7 +8991,7 @@ impl SymbolicMemory {
     /// stand-in of an algebraic read.
     pub(in crate::kernel) fn symbolic_algebraic_load(
         &self,
-        site: Option<&ProgramPoint>,
+        site: &ProgramPoint,
         pointer: &Address,
         parameter: crate::kernel::TypeParameterName,
     ) -> ProgramValue {
@@ -9005,7 +9005,7 @@ impl SymbolicMemory {
     #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_uint64_load(
         &self,
-        site: Option<&ProgramPoint>,
+        site: &ProgramPoint,
         pointer: &Address,
     ) -> ProgramValue {
         ProgramValue::UInt64(crate::kernel::MachineTerm::read_named(

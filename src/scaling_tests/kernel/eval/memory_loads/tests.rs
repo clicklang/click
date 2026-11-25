@@ -1470,7 +1470,7 @@ fn complete_pointer_domains_across_cached_observations_scale_with_new_cells() {
         let address = Address::symbolic(Variable(199_101));
         let mut memory = SymbolicMemory::new();
         let ProgramValue::Pointer(original) =
-            symbolic_load_value(&memory, None, &address, ProgramType::Int64Pointer).unwrap()
+            symbolic_load_value(&memory, &crate::kernel::ProgramPoint::of_memory(&memory), &address, ProgramType::Int64Pointer).unwrap()
         else {
             panic!("pointer read")
         };
@@ -1482,7 +1482,7 @@ fn complete_pointer_domains_across_cached_observations_scale_with_new_cells() {
                         .clone()
                         .materialize_symbolic_cell(cell, ProgramType::Int32);
                     let ProgramValue::Pointer(read) =
-                        symbolic_load_value(&memory, None, &address, ProgramType::Int64Pointer)
+                        symbolic_load_value(&memory, &crate::kernel::ProgramPoint::of_memory(&memory), &address, ProgramType::Int64Pointer)
                             .unwrap()
                     else {
                         panic!("pointer read")

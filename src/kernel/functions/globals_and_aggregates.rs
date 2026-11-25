@@ -1338,7 +1338,10 @@ pub(super) fn copy_aggregate_fields_from(
                         .or_else(|| {
                             crate::kernel::eval::symbolic_load_value_unrecorded(
                                 &memory,
-                                captured_point(),
+                                &ProgramPoint::read_at_optional(
+                                    &crate::kernel::intern_memory(memory.clone()),
+                                    captured_point(),
+                                ),
                                 &source_field,
                                 element_type,
                             )
