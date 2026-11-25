@@ -3773,6 +3773,7 @@ fn collect_scope_declared_names(statement: &ProgramStatement, names: &mut Vec<Bi
         | ProgramStatement::UnwindCleanup { .. }
         // Everything else declares nothing.
         | ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::BuiltinConstantP { .. }
         | ProgramStatement::Skip
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -4215,6 +4216,7 @@ fn verification_operation_name(statement: &ProgramStatement) -> &'static str {
         ProgramStatement::HeapAllocate { .. } => "verification statement: heap allocate",
         ProgramStatement::HeapFree { .. } => "verification statement: heap free",
         ProgramStatement::Assert { .. } => "verification statement: assert",
+        ProgramStatement::BuiltinConstantP { .. } => "verification statement: __builtin_constant_p",
         ProgramStatement::StepValue { .. } => "verification statement: step value",
         ProgramStatement::Return(_) => "verification statement: return",
         ProgramStatement::Throw(_) | ProgramStatement::ThrowOpaque(_) => {
@@ -4914,6 +4916,23 @@ fn execute_execution_statement_leaf_paths(
         }
         ProgramStatement::Assert { condition, label } => {
             execute_program_assert_paths(state, condition, label.as_deref(), assumptions, budget)?
+        }
+        ProgramStatement::BuiltinConstantP { step } => {
+            let value = MachineTerm::Variable(budget.allocate_kernel_variable()?);
+            let equals = |constant| {
+                Box::new(Proposition::condition_is(
+                    ConditionTerm::equal(value.clone(), MachineTerm::constant(constant)),
+                    true,
+                ))
+            };
+            let possible_values = Proposition::Or(equals(0), equals(1));
+            let mut next = state.clone();
+            next.set_step_result(*step, ProgramValue::Int32(value));
+            vec![StatementExecutionPath::new(
+                StatementOutcome::Normal(Box::new(next)),
+                vec![ExecutionPureFact::certified(possible_values)].into(),
+                Vec::new(),
+            )]
         }
         // The operator's value on this path is the step's result, with the
         // operator's type as an assignment would give it.

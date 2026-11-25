@@ -2348,10 +2348,6 @@ id = "library.theorem.string::len_has_terminator"
 path = "reference/library/index.md#stringlen_has_terminator"
 
 [[item]]
-id = "primitive.extern.__click_constant_p_unknown"
-path = "reference/language/index.md#__click_constant_p_unknown"
-
-[[item]]
 id = "library.theorem.stdout_non_null"
 path = "reference/library/index.md#stdout"
 

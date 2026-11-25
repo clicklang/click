@@ -4426,6 +4426,9 @@ fn substitute_program_expression_as_contract_with_numerals_in(
         // A step's result is spelled by its step.
         ProgramExpression::StepResult { step, origin, .. } => {
             crate::surface::diagnostics::step_result_expression(*step).ok_or_else(|| match origin {
+                crate::kernel::StepOrigin::BuiltinConstantP => {
+                    "the result of `__builtin_constant_p` has no source spelling".to_string()
+                }
                 crate::kernel::StepOrigin::Call(function) => {
                     format!("the result of the call to `{function}` has no source spelling")
                 }

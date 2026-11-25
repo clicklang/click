@@ -36,6 +36,11 @@ int32 either(int32 value) {
 
 int32 flag(int32 value) {
     ensures result == 0 or result == 1;
+} by {
+    let { result: flag_value } = step();
+    have flag_value == statement(0).region(0).result by close();
+    have statement(0).region(0).result == 0 or statement(0).region(0).result == 1 by close();
+    step_until(function.exit);
 }
 
 void assign(struct node* parent, struct node* new) {

@@ -11,11 +11,9 @@ Each library declaration is in one of three layers, and its layer decides
 how far it is trusted:
 
 - **Verifier primitives** are part of the language, not the library. The
-  abstract resources `mutex_guard`, `mutex_live`, `mutex_use`, `publisher`,
-  `subscriber`, `authority` and `allocation`, and
-  `__click_constant_p_unknown`, are given their meaning by the kernel or the
-  C front end. Their declarations sit in `library/primitives.click` and
-  `library/c/builtins.interface.click`, and are documented under
+  kernel gives meaning to the abstract resources `mutex_guard`, `mutex_live`,
+  `mutex_use`, `publisher`, `subscriber`, `authority` and `allocation`.
+  Their declarations sit in `library/primitives.click` and are documented under
   [verifier primitives](../language/index.md#verifier-primitives) in the
   language reference, not here.
 - **Language library interfaces** state what the C, C++ or Rust library the
