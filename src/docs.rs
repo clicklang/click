@@ -79,25 +79,6 @@ impl TacticClass {
     }
 }
 
-/// What a refusal by an elided form means: a smart form whose argument a
-/// search fills, beside a simple form that takes the argument written. The
-/// fourth refusal meaning, after the three classes'.
-pub const SEARCH_MISS_MEANING: &str = "a search fills its elided argument; if the search finds nothing, that is a search miss: write the argument";
-
-/// The simple form that writes the argument `form` elides: the `using` form
-/// the reference lists beside a smart form, such as `apply(fact) using
-/// { P; ... }`. `None` for a form that elides
-/// nothing, including `close()`, whose `using` form is smart too.
-fn explicit_form<'a>(forms: &'a [(String, TacticClass)], form: &str) -> Option<&'a str> {
-    let elided = format!("{} using ", form.trim_matches('`'));
-    forms
-        .iter()
-        .find(|(other, class)| {
-            *class == TacticClass::Simple && other.trim_matches('`').starts_with(&elided)
-        })
-        .map(|(other, _)| other.as_str())
-}
-
 struct TacticEntry {
     name: String,
     forms: Vec<(String, TacticClass)>,
@@ -236,23 +217,6 @@ pub fn written_tactic_class(written: &str) -> Option<(String, TacticClass)> {
         .then(|| (name.to_owned(), class))
 }
 
-/// Whether a written tactic is a smart form that elides an argument a
-/// simple form of the same tactic takes written. Its refusal uses
-/// [`SEARCH_MISS_MEANING`].
-pub fn written_tactic_elides_argument(written: &str) -> bool {
-    let Some((name, TacticClass::Smart)) = written_tactic_class(written) else {
-        return false;
-    };
-    tactic_entries()
-        .iter()
-        .find(|entry| entry.name == name)
-        .is_some_and(|entry| {
-            entry.forms.iter().any(|(form, class)| {
-                *class == TacticClass::Smart && explicit_form(&entry.forms, form).is_some()
-            })
-        })
-}
-
 /// Every name `click docs` answers: tactics first, then pages.
 pub fn index() -> String {
     let mut text = String::from(
@@ -322,17 +286,11 @@ pub fn lookup(name: &str) -> Result<String, String> {
 fn render_tactic(entry: &TacticEntry, pages: &[Page]) -> String {
     let mut text = format!("# `{}`\n\nForms:\n\n", entry.name);
     for (form, class) in &entry.forms {
-        match explicit_form(&entry.forms, form).filter(|_| *class == TacticClass::Smart) {
-            Some(explicit) => text.push_str(&format!(
-                "- {form}: {}; {SEARCH_MISS_MEANING}, as {explicit} does.\n",
-                class.label(),
-            )),
-            None => text.push_str(&format!(
-                "- {form}: {}; {}.\n",
-                class.label(),
-                class.refusal_meaning()
-            )),
-        }
+        text.push_str(&format!(
+            "- {form}: {}; {}.\n",
+            class.label(),
+            class.refusal_meaning()
+        ));
     }
     let directory = TACTIC_REFERENCE.rsplit_once('/').map_or("", |(dir, _)| dir);
     for section in &entry.sections {
@@ -575,25 +533,19 @@ mod tests {
     }
 
     #[test]
-    fn tactics_without_a_written_counterpart_use_their_class_meaning() {
-        assert!(!written_tactic_elides_argument("apply(t(x));"));
-        assert!(!written_tactic_elides_argument("apply(fact);"));
-        assert!(!written_tactic_elides_argument("transport(p, q);"));
-        assert!(!written_tactic_elides_argument(
-            "apply(a == b implies c == d) using { a == b; };"
-        ));
-        assert!(!written_tactic_elides_argument("close();"));
-        assert!(!written_tactic_elides_argument(
-            "close() using { a == b; };"
-        ));
+    fn tactic_help_uses_the_form_class() {
+        let transport = lookup("transport").unwrap();
+        assert!(
+            transport.contains("- `transport(P, Q)`: smart; it may miss;"),
+            "{transport}"
+        );
         let apply = lookup("apply").unwrap();
         assert!(apply.contains("- `apply(fact)`: simple;"), "{apply}");
         let close = lookup("close").unwrap();
         assert!(
-            close.contains("- `close() using { P; ... }`: smart;"),
+            close.contains("- `close() using { P; ... }`: smart; it may miss;"),
             "{close}"
         );
-        assert!(!close.contains(SEARCH_MISS_MEANING), "{close}");
     }
 
     #[test]
