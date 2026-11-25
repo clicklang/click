@@ -1,8 +1,8 @@
 # A closer before function exit names itself
 
-`normalize()` closes the outcome claims at function exit, but this script
+`close()` closes the outcome claims at function exit, but this script
 writes it while the frontier is still at the `return`. The refusal names
-`normalize` and where the frontier stands. It used to say that no driver
+`close` and where the frontier stands. It used to say that no driver
 supports the script's shape and blame the earlier `have`, which is a
 valid step at that point.
 
@@ -29,11 +29,11 @@ int32 frame(int32 w, int32 h) {
     ensures to_integer(result) == to_integer(w * h + 1) by {
         step(); step();
         have to_integer(w * h) <= 1000000;
-        normalize();
+        close();
     }
 }
 ```
 
 ```expect
-fail: `normalize` works on the outcome claims at function exit and does not execute
+fail: `close` closes the outcome claims at function exit and does not execute
 ```

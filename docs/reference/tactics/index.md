@@ -2081,7 +2081,7 @@ cited premise is accepted:
   `to_integer(total) == to_integer(prefix) + 3`. A native sum
   (`total == prefix + suffix`) does not, because it may wrap
   ([`element_offsets_from_exact_index_sum.md`](https://github.com/clicklang/click/blob/master/mdtests/element_offsets_from_exact_index_sum.md),
-  [`normalize_using_refuses_a_wrapping_index_sum_for_an_address.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_refuses_a_wrapping_index_sum_for_an_address.md)).
+  [`close_using_refuses_a_wrapping_index_sum_for_an_address.md`](https://github.com/clicklang/click/blob/master/mdtests/close_using_refuses_a_wrapping_index_sum_for_an_address.md)).
 - For a top-level read equality of any width, a pointer read equality, or a
   pointer-offset equality, the cited conditions can justify the read's
   recorded stored value or the offsets' equality directly, and for
