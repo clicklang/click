@@ -121,8 +121,12 @@ Review frontend and lowering changes against these checks.
   prepared argument local of the caller, tagged with the callee parameter it
   is passed as (`LocalBindingId::prepared_argument_for`), declared and then
   initialized by an aggregate copy, and its lifetime ends when the call
-  returns. The call itself is one transition, so its `.entry` is the callee's
-  entry. The source layout maps each call region's parameters to their
+  returns. C, C++ and Rust all prepare such arguments (a Rust drop operand is
+  already its call's prepared object), and the kernel refuses a program call
+  whose by-value aggregate argument is not a prepared object
+  (`bind_contract_arguments`, `AggregateArgumentBinding::Call`): only a
+  proof's entry builds its own input objects. The call itself is one
+  transition, so its `.entry` is the callee's entry. The source layout maps each call region's parameters to their
   objects from the program text (`call_parameter_object`, `prepared_parameter`),
   so `<region>.parameter(name)` names the object like a local, from its
   allocation on, and any fact about it, a separation goal for the copy's

@@ -778,6 +778,25 @@ pub(super) fn contract_argument_binding_error(
             "incompatible signature for function pointer argument to {}",
             name
         )
+    } else if let Some(parameter) =
+        interface
+            .parameters()
+            .iter()
+            .zip(values)
+            .find_map(|(parameter, value)| {
+                let ProgramValue::Pointer(pointer) = value else {
+                    return None;
+                };
+                (parameter.aggregate_layout().is_some()
+                    && pointer.base.prepared_argument_binding().is_none()
+                    && pointer.base != AddressBase::ExternalArgument)
+                    .then_some(parameter)
+            })
+    {
+        format!(
+            "could not bind arguments for {name}: its by-value aggregate argument `{}` is not a parameter object prepared before the call (a frontend defect)",
+            parameter.name()
+        )
     } else {
         format!("could not bind arguments for {name}")
     }
@@ -834,6 +853,51 @@ enum AggregateArgumentBinding {
     Call,
     ProofEntry,
     IntroduceProofInputs,
+}
+
+/// A top-level execution's arguments as an external caller passes them:
+/// each by-value aggregate argument that is not already a prepared object
+/// is copied into one in `state`, before the call, as a frontend prepares a
+/// program call's. The call then receives the objects and is one transition.
+pub(in crate::kernel) fn prepare_external_aggregate_arguments(
+    state: &ExecutionState,
+    function: &ProgramFunction,
+    mut arguments: Vec<ProgramExpression>,
+) -> (ExecutionState, Vec<ProgramExpression>) {
+    let mut state = state.clone();
+    for (index, parameter) in function.parameters().iter().enumerate() {
+        let Some(layout) = parameter.aggregate_layout() else {
+            continue;
+        };
+        let Some(ProgramExpression::Value(ProgramValue::Pointer(pointer))) = arguments.get(index)
+        else {
+            continue;
+        };
+        if pointer.is_null()
+            || pointer.base == AddressBase::ExternalArgument
+            || is_prepared_aggregate_argument(&state, pointer.address(), layout)
+        {
+            continue;
+        }
+        let Ok(ordinal) = u32::try_from(index) else {
+            continue;
+        };
+        let name = BindingName::from(LocalBindingId::prepared_argument(
+            crate::kernel::LocalFunctionId::new(None, "external caller".into()),
+            ordinal,
+        ));
+        let slot = SymbolicMemory::frame_local_pointer(state.next_local_frame(), name.clone());
+        register_block_alignment(&slot.base, layout.alignment_bytes());
+        let memory = copy_aggregate_fields(state.memory.clone(), pointer.address(), &slot, layout)
+            .with_block(slot.base.clone(), layout.size());
+        state.set_memory(memory);
+        state
+            .locals
+            .set_aggregate_object_at(name, layout.clone(), slot.clone());
+        arguments[index] =
+            ProgramExpression::Value(ProgramValue::typed_pointer(slot, ProgramType::UInt8Pointer));
+    }
+    (state, arguments)
 }
 
 pub(in crate::kernel) fn bind_program_function_arguments(
@@ -1012,6 +1076,12 @@ fn bind_program_function_arguments_impl(
                     source,
                 );
                 continue;
+            }
+            // A call receives a by-value aggregate as the object its frontend
+            // prepared before the call, so the call is one transition. Only a
+            // proof's entry builds its own input objects here.
+            if aggregate_binding == AggregateArgumentBinding::Call {
+                return None;
             }
             let slot = SymbolicMemory::frame_local_pointer(frame, parameter.binding_name());
             register_block_alignment(&slot.base, layout.alignment_bytes());
@@ -1198,6 +1268,13 @@ pub(super) fn bind_contract_arguments(
                     source,
                 );
                 continue;
+            }
+            // A program call receives a by-value aggregate as the object its
+            // frontend prepared before the call, so the call is one
+            // transition. Only an external argument, which no program region
+            // passes, is copied here.
+            if source.base != AddressBase::ExternalArgument {
+                return None;
             }
             let slot = SymbolicMemory::frame_local_pointer(frame, parameter.binding_name());
             register_block_alignment(&slot.base, layout.alignment_bytes());

@@ -970,16 +970,19 @@ impl LoweringContext<'_> {
                     },
                 ) => {
                     let layout = self.record_layout(name)?;
-                    let (prefix, actual) = self.normalize_arguments(arguments)?;
+                    let (prefix, actual, prepared) = self.normalize_arguments(callee, arguments)?;
                     Ok(evaluate_then(
                         prefix,
                         program_seq(
                             program_allocate_aggregate_destination(local.name.clone(), layout),
-                            self.coerced(program_call_construct(
-                                local.name.clone(),
-                                self.callee_name(callee)?,
-                                actual,
-                            )),
+                            end_prepared_arguments(
+                                self.coerced(program_call_construct(
+                                    local.name.clone(),
+                                    self.callee_name(callee)?,
+                                    actual,
+                                )),
+                                prepared,
+                            ),
                         ),
                     ))
                 }
@@ -1496,7 +1499,7 @@ impl LoweringContext<'_> {
                     );
                 };
                 let layout = self.record_layout(name)?;
-                let (prefix, actual) = self.normalize_arguments(arguments)?;
+                let (prefix, actual, prepared) = self.normalize_arguments(callee, arguments)?;
                 let temporary = self.fresh_aggregate_capture(name)?;
                 let (materialize, address) = self.retain_materialized(&temporary);
                 // The RHS is a separate object: the live LHS may be read by
@@ -1506,11 +1509,14 @@ impl LoweringContext<'_> {
                     program_seq(
                         program_allocate_aggregate_destination(temporary.clone(), layout.clone()),
                         program_seq(
-                            self.coerced(program_call_construct(
-                                temporary.clone(),
-                                self.callee_name(callee)?,
-                                actual,
-                            )),
+                            end_prepared_arguments(
+                                self.coerced(program_call_construct(
+                                    temporary.clone(),
+                                    self.callee_name(callee)?,
+                                    actual,
+                                )),
+                                prepared,
+                            ),
                             program_seq(
                                 program_seq(
                                     materialize,
@@ -1529,7 +1535,7 @@ impl LoweringContext<'_> {
             CppStatement::ReturnConstruct {
                 callee, arguments, ..
             } => {
-                let (prefix, arguments) = self.normalize_arguments(arguments)?;
+                let (prefix, arguments, prepared) = self.normalize_arguments(callee, arguments)?;
                 let mut actual = vec![crate::kernel::program_expression::cast(
                     crate::kernel::program_expression::variable(crate::kernel::CONTRACT_RESULT),
                     ProgramType::Int32Pointer,
@@ -1538,7 +1544,10 @@ impl LoweringContext<'_> {
                 Ok(evaluate_then(
                     prefix,
                     program_seq(
-                        self.coerced(program_call(self.callee_name(callee)?, actual)),
+                        end_prepared_arguments(
+                            self.coerced(program_call(self.callee_name(callee)?, actual)),
+                            prepared,
+                        ),
                         program_return(crate::kernel::program_expression::variable(
                             crate::kernel::CONTRACT_RESULT,
                         )),
@@ -1548,15 +1557,18 @@ impl LoweringContext<'_> {
             CppStatement::ReturnAggregateCall {
                 callee, arguments, ..
             } => {
-                let (prefix, arguments) = self.normalize_arguments(arguments)?;
+                let (prefix, arguments, prepared) = self.normalize_arguments(callee, arguments)?;
                 Ok(evaluate_then(
                     prefix,
                     program_seq(
-                        self.coerced(program_call_construct(
-                            crate::kernel::CONTRACT_RESULT,
-                            self.callee_name(callee)?,
-                            arguments,
-                        )),
+                        end_prepared_arguments(
+                            self.coerced(program_call_construct(
+                                crate::kernel::CONTRACT_RESULT,
+                                self.callee_name(callee)?,
+                                arguments,
+                            )),
+                            prepared,
+                        ),
                         program_return(crate::kernel::program_expression::variable(
                             crate::kernel::CONTRACT_RESULT,
                         )),
@@ -1808,10 +1820,7 @@ impl LoweringContext<'_> {
                 let (prefix, arguments, temporaries) = self.normalize_temporary_arguments_for(
                     arguments,
                     &parameter_names,
-                    arguments.iter().any(|argument| {
-                        argument.is_opaque_copy()
-                            || matches!(argument, CppCallArgument::RecordCopy { .. })
-                    }),
+                    arguments.iter().any(CppCallArgument::is_opaque_copy),
                 )?;
                 // Keep the callee's own type until the source conversion
                 // reads the value, including reference loads.
@@ -1891,13 +1900,16 @@ impl LoweringContext<'_> {
         }
     }
 
+    /// The arguments of a call to `callee` whose full expression holds no
+    /// other temporaries, with the prepared parameter objects of its
+    /// by-value record copies; the caller ends those once the call returns.
     fn normalize_arguments(
         &mut self,
+        callee: &super::CppFunctionReference,
         arguments: &[CppCallArgument],
-    ) -> Result<(ProgramStatement, Vec<ProgramExpression>), String> {
-        let (prefix, actual, temporaries) = self.normalize_temporary_arguments(arguments, false)?;
-        debug_assert!(temporaries.is_empty());
-        Ok((prefix, actual))
+    ) -> Result<(ProgramStatement, Vec<ProgramExpression>, Vec<BindingName>), String> {
+        let parameter_names = self.callee_parameter_names(callee);
+        self.normalize_temporary_arguments_for(arguments, &parameter_names, false)
     }
 
     /// The parameter names of `callee`, by position, when it is a known
@@ -1994,7 +2006,6 @@ impl LoweringContext<'_> {
                 value_type: CppType::Record { name, .. },
                 ..
             } = argument
-                && allow_temporaries
             {
                 // The trivial copy into the callee's parameter object is a
                 // region of its own before the call, as C's is: the call
@@ -3161,4 +3172,16 @@ fn is_const_int64(value_type: &CppType) -> bool {
 
 fn is_native_object_pointer(value_type: &CppType) -> bool {
     matches!(value_type, CppType::Pointer { pointee } if Scalar::pointer_element(pointee, true).is_some())
+}
+
+/// `call`, then the end of the prepared parameter objects it received.
+fn end_prepared_arguments(call: ProgramStatement, prepared: Vec<BindingName>) -> ProgramStatement {
+    if prepared.is_empty() {
+        call
+    } else {
+        program_seq(
+            call,
+            program_end_automatic_lifetimes(prepared.into_iter().rev().collect()),
+        )
+    }
 }
