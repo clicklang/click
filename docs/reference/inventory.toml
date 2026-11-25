@@ -5703,3 +5703,11 @@ path = "reference/library/index.md#float_orderfloat32_divide_positive_lower"
 [[item]]
 id = "library.theorem.float_order::float32_divide_positive_upper"
 path = "reference/library/index.md#float_orderfloat32_divide_positive_upper"
+
+[[item]]
+id = "library.theorem.float_order::float32_divide_negative_lower"
+path = "reference/library/index.md#float_orderfloat32_divide_negative_lower"
+
+[[item]]
+id = "library.theorem.float_order::float32_divide_negative_upper"
+path = "reference/library/index.md#float_orderfloat32_divide_negative_upper"
