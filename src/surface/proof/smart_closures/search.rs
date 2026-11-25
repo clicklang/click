@@ -14941,7 +14941,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // each case's facts, and that split belongs to the planner.
         match apply(search_input) {
             Ok(proof) => Ok(Some(proof)),
-            Err(error) if error.is_path_case_split() => {
+            Err(error) if error.is_path_case_split() || error.requires_call_outcomes() => {
                 check_verification_deadline()?;
                 Ok(None)
             }
