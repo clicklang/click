@@ -1164,7 +1164,7 @@ fn rbtree_erase_refuses_a_skipped_root_replacement() {
     general_erase_refuses_mutation(
         "\t\t__rb_change_child(node, child, parent, root);\n",
         "\t\tchild = child;\n",
-        "requires a call to `__rb_change_child#inline:rb_erase.c` at the current frontier; next operation: child = child",
+        "requires a call to `__rb_change_child` at the current frontier",
     );
 }
 
@@ -1212,7 +1212,7 @@ fn rbtree_erase_child_successor_requires_blackening() {
     general_erase_refuses_mutation(
         "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n",
         "\t\t\trb_set_parent_color(child2, parent, RB_RED);\n",
-        "could not establish `cid->__rb_parent_color == (address(mp) | 1)`",
+        "`have` failed for `child2->__rb_parent_color == (address(parent) | 1)`",
     );
 }
 
@@ -1224,7 +1224,7 @@ fn rbtree_erase_child_successor_requires_parent_color_write() {
     general_erase_refuses_mutation(
         "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n",
         "\t\t\tchild2 = child2;\n",
-        "could not establish `cid->__rb_parent_color == (address(mp) | 1)`",
+        "`have` failed for `child2->__rb_parent_color == (address(parent) | 1)`",
     );
 }
 
@@ -1248,7 +1248,7 @@ fn rbtree_erase_red_leaf_requires_no_fixup() {
     general_erase_refuses_mutation(
         "\t\t\trebalance = __rb_is_black(pc) ? parent : NULL;\n",
         "\t\t\trebalance = parent;\n",
-        "goal: erased_parent == 0",
+        "unproved obligation: `result == 0`",
     );
 }
 
@@ -1272,7 +1272,7 @@ fn rbtree_erase_left_child_requires_blackening() {
     general_erase_refuses_mutation(
         "\t\ttmp->__rb_parent_color = pc = node->__rb_parent_color;\n",
         "\t\ttmp->__rb_parent_color = pc = node->__rb_parent_color & ~1;\n",
-        "`have` failed for `(pc & 1) == color_bit(Color::Black())`",
+        "unproved obligation: `(tmp->__rb_parent_color & 1) == color_bit(Color::Black())`",
     );
 }
 
@@ -1284,7 +1284,7 @@ fn rbtree_erase_right_child_requires_no_fixup() {
     general_erase_refuses_mutation(
         "\t\t\tchild->__rb_parent_color = pc;\n\t\t\trebalance = NULL;",
         "\t\t\tchild->__rb_parent_color = pc;\n\t\t\trebalance = parent;",
-        "goal: erased_parent == 0",
+        "unproved obligation: `result == 0`",
     );
 }
 
@@ -1296,7 +1296,7 @@ fn rbtree_erase_left_child_requires_no_fixup() {
     general_erase_refuses_mutation(
         "\t\t__rb_change_child(node, tmp, parent, root);\n\t\trebalance = NULL;",
         "\t\t__rb_change_child(node, tmp, parent, root);\n\t\trebalance = parent;",
-        "goal: erased_parent == 0",
+        "unproved obligation: `result == 0`",
     );
 }
 
@@ -1356,7 +1356,7 @@ fn rbtree_erase_successor_requires_root_replacement() {
     general_erase_refuses_mutation(
         "\t\t__rb_change_child(node, successor, tmp, root);\n",
         "\t\ttmp = tmp;\n",
-        "requires a call to `__rb_change_child#inline:rb_erase.c` at the current frontier; next operation: tmp = tmp",
+        "requires a call to `__rb_change_child` at the current frontier",
     );
 }
 
@@ -1368,7 +1368,7 @@ fn rbtree_erase_deep_successor_refuses_a_skipped_splice() {
     general_erase_refuses_mutation(
         "\t\t\tWRITE_ONCE(parent->rb_left, child2);\n",
         "\t\t\tWRITE_ONCE(parent->rb_left, successor);\n",
-        "could not establish `parent->rb_left == 0`",
+        "`have` failed for `parent->rb_left == child2`",
     );
 }
 
@@ -1380,7 +1380,7 @@ fn rbtree_erase_deep_successor_refuses_the_wrong_replacement_parent() {
     general_erase_refuses_mutation(
         "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n",
         "\t\t\trb_set_parent_color(child2, successor, RB_BLACK);\n",
-        "could not establish `cid->__rb_parent_color == (address(mp) | 1)`",
+        "`have` failed for `child2->__rb_parent_color == (address(parent) | 1)`",
     );
 }
 
