@@ -3417,6 +3417,25 @@ fn pure_witness_declaration_aliases_keep_literal_types_and_source_scope() {
         }
     "#;
     verify_c_sources(source, &[]).expect("aliases retain their C, Integer and algebraic types");
+    let captured = r#"
+        function double(x: Integer) -> Integer { x + x }
+        theorem capture(p: Integer) {
+            let saved: Integer = p;
+            let twice = double(saved);
+            ensures forall (p: Integer) { exists (q: Integer) { q == twice } } by {
+                intro() {
+                    witness(twice);
+                    close();
+                }
+            }
+        }
+    "#;
+    let expanded = expand_c_claim_source_by_label(captured, &[], "capture.ensures_0")
+        .expect("an inferred Integer alias can capture a function of an outer binding");
+    assert!(expanded.contains("witness(twice)"), "{expanded}");
+    assert!(!expanded.contains("binder("), "{expanded}");
+    verify_c_sources(&expanded, &[]).expect("the expanded witness keeps its lexical scope");
+
     let later = r#"
         theorem later(p: int32) {
             ensures exists (q: int32) { q == p } by { witness(saved); close(); }

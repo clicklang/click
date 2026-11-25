@@ -1858,10 +1858,18 @@ impl<'a> Proof<'a> {
         let checked_witness = ProofWitness::single(
             self.substitute_fixed_state_locals_in_expression(witness.value())?,
         );
+        let integer_bindings = &context.theorem_context.integer_values;
         let non_machine_type = match checked_witness.value() {
             SyntaxTerm::Binding(name)
-                if context.theorem_context.integer_values.get(name).is_some()
+                if integer_bindings.get(name).is_some()
                     || self.local_integer_values().get(name).is_some() =>
+            {
+                Some("Integer".to_owned())
+            }
+            SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
+                name @ crate::kernel::BindingName::Generated(_),
+            )) if integer_bindings.get(name).is_some()
+                || self.local_integer_values().get(name).is_some() =>
             {
                 Some("Integer".to_owned())
             }
@@ -2254,18 +2262,28 @@ impl<'a> Proof<'a> {
     /// type, in exactly the environment used by explicit instantiation.
     pub(in crate::surface::proof) fn capture_native_argument(
         &self,
-        argument: &SyntaxTerm,
+        written_argument: &SyntaxTerm,
     ) -> Result<ProgramValue, ClickError> {
-        let argument = self.substitute_fixed_state_locals_in_expression(argument)?;
+        let argument = self.substitute_fixed_state_locals_in_expression(written_argument)?;
         let value = if let ProofContext::Pure(context) = self.context.as_ref() {
-            let names = contract_expression_referenced_names(&argument);
-            if let Some(name) = names.iter().find(|name| {
-                self.local_integer_values().get(*name).is_some()
-                    || context.theorem_context.integer_values.get(*name).is_some()
-            }) {
-                return Err(self.step_error(format!(
-                    "`instantiate` argument requires int32 values; `{name}` is an Integer binding"
-                )));
+            let mut binders = BinderSet::new();
+            collect_contract_expression_referenced_binders(&argument, &mut binders);
+            let mut names = Vec::new();
+            for binder in binders {
+                if self.local_integer_values().get(&binder).is_some()
+                    || context.theorem_context.integer_values.get(&binder).is_some()
+                {
+                    let name = binder.written().map_or_else(
+                        || crate::surface::diagnostics::describe_contract_expression(written_argument),
+                        str::to_owned,
+                    );
+                    return Err(self.step_error(format!(
+                        "`instantiate` argument requires int32 values; `{name}` is an Integer binding"
+                    )));
+                }
+                if let SurfaceBinder::Written(name) = binder {
+                    names.push(name);
+                }
             }
             let values = names
                 .iter()

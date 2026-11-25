@@ -271,12 +271,11 @@ impl PureTheoremContext {
                     SyntaxTerm::ProgramExpression(ProgramExpression::Value(value.clone())),
                 );
             } else if let Some(value) = self.integer_values.get(&name) {
-                // This spelling cannot be written by a source-level binder.
-                let captured = format!("@declaration:{name}");
+                let captured = SurfaceBinder::fresh();
+                substitutions.insert(name, captured.reference());
                 context.integer_values = context
                     .integer_values
-                    .with_inserted(captured.clone(), value.clone());
-                substitutions.insert(name, SyntaxTerm::Binding(captured));
+                    .with_inserted(captured, value.clone());
             }
         }
         let assumptions = assumptions_from_propositions(&context.requires);
@@ -288,6 +287,11 @@ impl PureTheoremContext {
                 &context.integer_values,
                 &PersistentBinderMap::default(),
             );
+            let referenced_binders = || {
+                let mut binders = BinderSet::new();
+                collect_contract_expression_referenced_binders(&promoted, &mut binders);
+                binders
+            };
             let is_integer = match click_type.as_ref() {
                 Some(ClickType::Integer) => true,
                 Some(_) => false,
@@ -297,9 +301,9 @@ impl PureTheoremContext {
                 {
                     false
                 }
-                None => contract_expression_referenced_names(&promoted)
-                    .iter()
-                    .any(|name| context.integer_values.get(name).is_some()),
+                None => referenced_binders()
+                    .into_iter()
+                    .any(|binder| context.integer_values.get(&binder).is_some()),
             };
             let value = if is_integer {
                 let value = match crate::surface::lowering::lower_contract_integer_to_spec(
@@ -312,7 +316,7 @@ impl PureTheoremContext {
                         // need shared terms. Inlining their source expressions
                         // would double a binary alias chain at every binding.
                         let state = ExecutionState::at_point(&context.point);
-                        let integer_values = contract_expression_referenced_names(&promoted)
+                        let integer_values = referenced_binders()
                             .into_iter()
                             .filter_map(|name| {
                                 context
@@ -350,11 +354,10 @@ impl PureTheoremContext {
                         crate::kernel::SpecIntegerExpression::Term(term)
                     }
                 };
-                let captured = format!("@declaration:{name}");
-                context.integer_values = context
-                    .integer_values
-                    .with_inserted(captured.clone(), value);
-                SyntaxTerm::Binding(captured)
+                let captured = SurfaceBinder::fresh();
+                let reference = captured.reference();
+                context.integer_values = context.integer_values.with_inserted(captured, value);
+                reference
             } else if crate::surface::lowering::narrow_typed_arithmetic(click_type.as_ref(), &value)
             {
                 // A narrow typed `let` names its native sum (G2), as the
