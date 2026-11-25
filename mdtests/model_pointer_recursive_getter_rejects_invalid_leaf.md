@@ -11,7 +11,7 @@ function parent(t: Tree) -> struct node* decreases t {
         },
     }
 }
-theorem unrelated() { ensures 1 == 1 by normalize(); }
+theorem unrelated() { ensures 1 == 1 by close(); }
 ```
 
 ```expect

@@ -2,7 +2,7 @@
 
 ```click
 function wrong(p: int32*) -> Integer { p }
-theorem unrelated() { ensures 1 == 1 by normalize(); }
+theorem unrelated() { ensures 1 == 1 by close(); }
 ```
 
 ```expect

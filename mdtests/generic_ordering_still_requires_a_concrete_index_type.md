@@ -6,7 +6,7 @@ an arbitrary type parameter in a user theorem.
 ```click
 theorem ordered<T>(a: T, b: T) {
     requires a <= b;
-    ensures true by { normalize(); }
+    ensures true by { close(); }
 }
 ```
 

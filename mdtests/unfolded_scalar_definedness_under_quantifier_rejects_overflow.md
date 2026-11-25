@@ -21,7 +21,7 @@ void check(int32* data) {
     step();
     have forall (k: int32) {
         0 <= k and to_integer(k) < to_integer(p + 1) implies data[k] == data[k]
-    } by { intro() { intro() { normalize(); } } }
+    } by { intro() { intro() { close(); } } }
     step();
 }
 ```
