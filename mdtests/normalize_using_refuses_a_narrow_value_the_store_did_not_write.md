@@ -1,4 +1,4 @@
-# `normalize() using` refuses a narrow value the store did not write
+# A narrow read requires the store to write its bytes
 
 The negative of
 [`normalize_using_reads_a_narrow_stored_value.md`](normalize_using_reads_a_narrow_stored_value.md).
@@ -26,7 +26,8 @@ int32 s(int32 j) {
         step();
         step();
         step();
-        have defined(t[2u64]) by { normalize() using { j == 2; }; }
+        have &t[3u64] == &t[j + 1] by { rewrite(j, 2); close(); }
+        have defined(t[2u64]) by { close(); }
     } else {
         if j == 1 { } else { }
     }
@@ -34,5 +35,5 @@ int32 s(int32 j) {
 ```
 
 ```expect
-fail: did not normalize to true
+fail: could not establish `defined(t[2u64])`
 ```
