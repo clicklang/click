@@ -16,7 +16,7 @@ quantified claim. The complete round trip also preserves the quantifier and
 its scope. The `KernelTerm` to `SurfaceTerm` round trip applies to those
 operands in their enclosing scopes and to standalone terms that expansion
 writes directly, such as witnesses or call arguments.
-Until the [typed Surface](../../design/typed-surface.md) migration
+Until the [typed Surface](https://github.com/clicklang/click/blob/master/design/typed-surface.md) migration
 introduces typed Surface types, raising produces today's
 `SyntaxProposition` and `SyntaxTerm` trees.
 
