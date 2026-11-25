@@ -541,7 +541,7 @@ pub(crate) fn logical_pointer_read_term(value: &Address) -> Option<MachineTerm> 
     });
     let load = application?.as_loaded_value()?;
     Some(crate::kernel::MachineTerm::read_named(
-        ProgramPoint::unplaced(&load.defining_memory),
+        ProgramPoint::viewing(&load.defining_memory, &load.point),
         load.defining_address,
         LoadKind::Int32,
     ))

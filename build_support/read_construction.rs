@@ -155,7 +155,7 @@ const BASELINE: &[(&str, Form, usize)] = &[
         1,
     ),
     ("src/kernel/assumptions.rs", Form::UnplacedPoint, 1),
-    ("src/kernel/equality_graph.rs", Form::UnplacedPoint, 2),
+    ("src/kernel/equality_graph.rs", Form::UnplacedPoint, 1),
     ("src/kernel/equality_graph/terms.rs", Form::UnplacedPoint, 1),
     ("src/kernel/eval/memory_loads.rs", Form::UnplacedPoint, 12),
     (
@@ -196,34 +196,17 @@ const BASELINE: &[(&str, Form, usize)] = &[
         Form::UnplacedPoint,
         2,
     ),
-    ("src/kernel/proof/execution.rs", Form::UnplacedPoint, 1),
     (
         "src/kernel/reasoning/substitution.rs",
         Form::UnplacedPoint,
         1,
     ),
-    (
-        "src/kernel/reasoning/variable_collection.rs",
-        Form::UnplacedPoint,
-        1,
-    ),
     ("src/kernel/spec.rs", Form::UnplacedPoint, 1),
-    (
-        "src/surface/lowering/resource_lowering.rs",
-        Form::UnplacedPoint,
-        2,
-    ),
     (
         "src/surface/proof/fixed_state_proofs/fact_transport.rs",
         Form::UnplacedPoint,
         1,
     ),
-    (
-        "src/surface/proof/smart_closures/search.rs",
-        Form::UnplacedPoint,
-        2,
-    ),
-    ("src/surface/proof_trace.rs", Form::UnplacedPoint, 1),
 ];
 
 /// Direct constructions of each form in `file`, outside test code.
