@@ -14,7 +14,7 @@ void keep(int32 a, int32 b, int32 c) {
     ensures to_integer(a + c) == to_integer(b + c);
 } by {
     step_until(function.exit);
-    normalize() using { };
+    close();
 }
 
 theorem offsets(p: int32*, a: int32, b: int32, c: int32) {
@@ -22,7 +22,7 @@ theorem offsets(p: int32*, a: int32, b: int32, c: int32) {
     requires defined(a + c);
     requires defined(b + c);
     ensures p + (a + c) == p + (b + c) by {
-        normalize() using { };
+        close();
     }
 }
 
@@ -31,7 +31,7 @@ theorem choose(a: int32, b: int32, c: int32) {
     requires defined(a + c);
     requires defined(b + c);
     ensures (if to_integer(a + c) == to_integer(b + c) { 7 } else { 0 }) == 7 by {
-        normalize() using { };
+        close();
     }
 }
 ```

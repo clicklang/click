@@ -13,20 +13,20 @@ void keep(int32* p, int32 i, int32 j, int32 k) {
     ensures p + i == p + k;
 } by {
     step_until(function.exit);
-    normalize() using { };
+    close();
 }
 
 theorem choose(p: int32*, i: int32, j: int32) {
     requires i == j;
     ensures (if p + i == p + j { 7 } else { 0 }) == 7 by {
-        normalize() using { };
+        close();
     }
 }
 
 theorem literal(p: int32*, i: int32) {
     requires i == 1;
     ensures p + i == p + 1 by {
-        normalize() using { };
+        close();
     }
 }
 ```
