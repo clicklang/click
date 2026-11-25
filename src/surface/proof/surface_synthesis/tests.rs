@@ -239,6 +239,43 @@ fn a_wide_equality_with_a_narrow_operand_round_trips() {
     );
 }
 
+/// A pointer whose address is an integer word, as a tagged parent pointer
+/// is read, raises as the conversion it was written as, with its word
+/// unsigned. (Lowering the conversion needs a state that records the word's
+/// address, so this checks the spelling.)
+#[test]
+fn an_integer_converted_pointer_is_spelled_as_its_conversion() {
+    let word = MachineTerm::Variable(Variable(910_201));
+    let other = Address::symbolic(Variable(910_202));
+    let state = ExecutionState::new()
+        .with_local("word", ProgramValue::UInt64(word.clone()))
+        .with_local(
+            "other",
+            ProgramValue::typed_pointer(other.clone(), ProgramType::Int32Pointer),
+        );
+    let masked = MachineTerm::bitwise_and_at(
+        MachineIntegerType::UInt64,
+        word,
+        MachineTerm::uint64_constant(!3),
+    );
+    let fact = Proposition::condition_is(
+        ConditionTerm::pointer_equal(
+            crate::kernel::Pointer::new(
+                Address::from_integer_address(masked),
+                ProgramType::Int32Pointer,
+            ),
+            crate::kernel::Pointer::new(other, ProgramType::Int32Pointer),
+        ),
+        true,
+    );
+    let raised = synthesize_surface_proposition(&fact, ParameterBinding::default(), &state)
+        .expect("the conversion must be spellable");
+    assert_eq!(
+        crate::surface::printing::source_click_proposition(&raised),
+        "((word & 18446744073709551612u64) as (int32 *)) == other"
+    );
+}
+
 fn relower_written_proposition_with_states(
     surface: &ClickProposition,
     pre_state: &ExecutionState,
