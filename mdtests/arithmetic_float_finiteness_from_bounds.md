@@ -29,10 +29,9 @@ theorem finite_from_bounds(x: float) {
     requires x >= float32_from_bits(0xbf800000);
     requires x <= float32_from_bits(0x3f800000);
     ensures isfinite(x) by {
-        normalize() using {
-            x >= float32_from_bits(0xbf800000);
-            x <= float32_from_bits(0x3f800000);
-        };
+        apply(click::float_order::float32_finite_between(
+            x, float32_from_bits(0xbf800000), float32_from_bits(0x3f800000)
+        ));
     }
 }
 theorem finite_integer(x: int64) {

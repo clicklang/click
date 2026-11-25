@@ -6,19 +6,10 @@ theorem selected_array_cell(whole: Resource, kept: Resource, p: int32*, len: int
     requires 0 <= i;
     requires i < len;
     ensures separate(kept, memory(p[i])) by {
-        have i <= 2147483646 by { close() using { i < len; }; }
-        have defined(i + 1) by { close() using { 0 <= i; i <= 2147483646; }; }
-        have i <= ((i + 1) as int32) by { close() using { 0 <= i; i < len; }; }
-        have ((i + 1) as int32) <= len by { close() using { 0 <= i; i < len; }; }
-        have contains(memory(p[0..len]), memory(p[i..i + 1])) by {
-            apply(separation::contains_subrange(p, 0, len, i, i + 1));
+        have contains(memory(p[0..len]), memory(p[i])) by {
+            apply(separation::contains_element(p, 0, len, i));
         }
-        have separate(kept, memory(p[i..i + 1])) by {
-            apply(separation::separate_restrict(whole, memory(p[0..len]), kept, memory(p[i..i + 1])));
-        }
-        have contains(kept, kept) by { apply(click::separation::contains_refl(kept)); }
-        have contains(memory(p[i..i + 1]), memory(p[i])) by { normalize(); }
-        apply(separation::separate_restrict(kept, memory(p[i..i + 1]), kept, memory(p[i])));
+        apply(separation::separate_restrict(whole, memory(p[0..len]), kept, memory(p[i])));
     }
 }
 
@@ -129,11 +120,11 @@ int32 owned_segmented_buffer_set_first(
     ensures owner->second_data == old(owner->second_data);
 } by {
     mark before_store;
-    have contains(memory(*owner), memory(owner->first_data)) by { normalize(); }
+    have contains(memory(*owner), memory(owner->first_data)) by { close(); }
     have separate(memory(owner->first_data), memory(owner->first_data[index])) by {
         apply(selected_array_cell(memory(*owner), memory(owner->first_data), owner->first_data, owner->first_len, index));
     }
-    have contains(memory(*owner), memory(owner->second_data)) by { normalize(); }
+    have contains(memory(*owner), memory(owner->second_data)) by { close(); }
     have separate(memory(owner->second_data), memory(owner->first_data[index])) by {
         apply(selected_array_cell(memory(*owner), memory(owner->second_data), owner->first_data, owner->first_len, index));
     }
@@ -179,11 +170,11 @@ int32 owned_segmented_buffer_set_second(
     ensures owner->second_data == old(owner->second_data);
 } by {
     mark before_store;
-    have contains(memory(*owner), memory(owner->first_data)) by { normalize(); }
+    have contains(memory(*owner), memory(owner->first_data)) by { close(); }
     have separate(memory(owner->first_data), memory(owner->second_data[index])) by {
         apply(selected_array_cell(memory(*owner), memory(owner->first_data), owner->second_data, owner->second_len, index));
     }
-    have contains(memory(*owner), memory(owner->second_data)) by { normalize(); }
+    have contains(memory(*owner), memory(owner->second_data)) by { close(); }
     have separate(memory(owner->second_data), memory(owner->second_data[index])) by {
         apply(selected_array_cell(memory(*owner), memory(owner->second_data), owner->second_data, owner->second_len, index));
     }

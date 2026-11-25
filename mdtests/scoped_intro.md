@@ -57,7 +57,7 @@ int32 scoped_claim(int32 x) {
     step_until(function.exit);
     intro() {
         have result == outer.x by { close(); }
-        normalize();
+        close();
     }
     close();
 }

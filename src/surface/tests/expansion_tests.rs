@@ -21204,7 +21204,7 @@ fn normalize_using_pointer_addition_expands_and_rechecks() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_72")]
-fn normalize_using_graph_conditions_expands_and_rechecks() {
+fn graph_conditions_expand_and_recheck_without_normalize() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/normalize_using_graph_conditions.md");
     let text = std::fs::read_to_string(&path).expect("read graph condition fixture");
@@ -21215,12 +21215,17 @@ fn normalize_using_graph_conditions_expands_and_rechecks() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     let source = fixture.click_source.as_deref().expect("Click source");
-    verify_c_sources(source, &c_sources).expect("graph conditions should normalize");
-    let expanded = expand_c_claim_source(source, &c_sources, "keep", ContractProofClaim::Ensure(0))
-        .expect("graph condition normalization should expand");
-    assert!(expanded.contains("normalize() using"), "{expanded}");
-    verify_c_sources(&expanded, &c_sources).expect("expanded graph condition should recheck");
-    let (keep_only, _) = expanded
+    verify_c_sources(source, &c_sources).expect("indexed pointer equality should decide the guard");
+    for claim in ["keep.contract", "mixed.ensures_0"] {
+        let expanded = expand_c_claim_source_by_label(source, &c_sources, claim)
+            .unwrap_or_else(|error| panic!("{claim}\n{}", error.report()));
+        assert!(!expanded.contains("normalize("), "{expanded}");
+        without_proof_search_for_claim(claim, || {
+            verify_c_sources(&expanded, &c_sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{claim}\n{error}\n{expanded}"));
+    }
+    let (keep_only, _) = source
         .split_once("theorem mixed")
         .expect("mixed theorem retained");
     let missing = keep_only.replace("requires a == b;", "");
@@ -21233,19 +21238,22 @@ fn normalize_using_graph_conditions_expands_and_rechecks() {
         )
         .is_err()
     );
-    // This congruence is known from a == b even when it was not separately
-    // recorded. A cited premise uses the same scoped equality lookup.
-    let derived = source.replacen("using { }", "using { a + 1 == b + 1; }", 1);
-    verify_c_sources(&derived, &c_sources).expect("cited congruence is already known");
-    let unavailable = source.replacen("using { }", "using { a + 1 == b + 2; }", 1);
+    // The checked congruence lookup can also publish the guard explicitly.
+    let derived = source.replacen(
+        "    close();",
+        "    have a + 1 == b + 1 by { close(); }\n    close();",
+        1,
+    );
+    verify_c_sources(&derived, &c_sources).expect("indexed congruence is already known");
+    let unavailable = derived.replace("have a + 1 == b + 1", "have a + 1 == b + 2");
     assert!(verify_c_sources(&unavailable, &c_sources).is_err());
     let negated = source.replace("== b + 1 { 7 } else { 0 }", "!= b + 1 { 0 } else { 7 }");
     verify_c_sources(&negated, &c_sources)
         .expect("known equality should also decide a negated guard");
-    let uncited = source.replace("using { x < 0; }", "using { }");
+    let missing_order = source.replace("    requires x < 0;\n", "");
     assert!(
-        verify_c_sources(&uncited, &c_sources).is_err(),
-        "uncited order conditions stay unavailable"
+        verify_c_sources(&missing_order, &c_sources).is_err(),
+        "the outer guard needs its order fact"
     );
 }
 
@@ -26667,7 +26675,7 @@ test_batches! {
     expansion_batch_72: [
         normalize_using_c_pointer_equality_expands_and_rechecks,
         normalize_using_pointer_addition_expands_and_rechecks,
-        normalize_using_graph_conditions_expands_and_rechecks,
+        graph_conditions_expand_and_recheck_without_normalize,
         normalize_using_int32_equality_expands_and_rechecks,
     ],
     expansion_batch_73: [

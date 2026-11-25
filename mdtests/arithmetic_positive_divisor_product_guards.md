@@ -25,14 +25,14 @@ theorem upper(x: int32, y: int32) {
     requires y > 0;
     requires x <= 2147483647 / y;
     ensures to_integer(x) * to_integer(y) <= 2147483647 by {
-        normalize() using { y > 0; x <= 2147483647 / y; };
+        close() using { y > 0; x <= 2147483647 / y; };
     }
 }
 theorem lower(x: int32, y: int32) {
     requires y > 0;
     requires x >= (-2147483647 - 1) / y;
     ensures to_integer(x) * to_integer(y) >= -2147483648 by {
-        normalize() using { y > 0; x >= (-2147483647 - 1) / y; };
+        close() using { y > 0; x >= (-2147483647 - 1) / y; };
     }
 }
 ```

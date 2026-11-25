@@ -2,7 +2,7 @@
 
 ```click
 theorem selected_invalid_equality_shift() {
-    ensures (if 9u64 == 9u64 { 1u64 << 64u64 } else { 3u64 }) == 3u64 by { normalize(); }
+    ensures (if 9u64 == 9u64 { 1u64 << 64u64 } else { 3u64 }) == 3u64 by { close(); }
 }
 ```
 

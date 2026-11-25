@@ -34,9 +34,9 @@ int32 setup(struct s* p, int32 d[], int32 n) {
     observe(src(d, n));
     have separate(memory(*p), memory(d[0..n])) by { close(); }
     have contains(memory(d[0..n]), memory(d[0..n])) by { apply(click::separation::contains_refl(memory(d[0..n]))); }
-    have contains(memory(*p), memory(p->a)) by { normalize(); }
-    have contains(memory(*p), memory(p->b)) by { normalize(); }
-    have contains(memory(*p), memory(p->d)) by { normalize(); }
+    have contains(memory(*p), memory(p->a)) by { close(); }
+    have contains(memory(*p), memory(p->b)) by { close(); }
+    have contains(memory(*p), memory(p->d)) by { close(); }
     have separate(memory(p->a), memory(d[0..n])) by {
         apply(click::separation::separate_restrict(memory(*p), memory(d[0..n]), memory(p->a), memory(d[0..n])));
     }

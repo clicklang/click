@@ -14,7 +14,7 @@ theorem over_integer(n: Integer) {
     requires n >= 0;
     ensures n == n by {
         let ih = induct(n);
-        normalize();
+        close();
     }
 }
 ```

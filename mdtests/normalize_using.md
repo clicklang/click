@@ -54,7 +54,9 @@ theorem nested(x: int32, y: int32) {
     requires x < y;
     requires y == 5;
     ensures (if x < y { if y == 5 { 8 } else { 3 } } else { 0 }) == 8 by {
-        normalize() using { x < y; y == 5; };
+        have (if y == 5 { 8 } else { 3 }) == 8 by close();
+        rewrite((if y == 5 { 8 } else { 3 }), 8);
+        close();
     }
 }
 

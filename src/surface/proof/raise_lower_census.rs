@@ -627,7 +627,9 @@ mod tests {
         let wrong = source.replacen("else { y }) == x", "else { y }) == y", 1);
         let error = crate::surface::verify_c_sources(&wrong, &[]).unwrap_err();
         assert!(
-            error.to_string().contains("goal did not normalize to true"),
+            error
+                .to_string()
+                .contains("could not establish `(if 1 == 1 { x } else { y }) == y`"),
             "{error}"
         );
     }

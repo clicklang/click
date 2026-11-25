@@ -118,18 +118,18 @@ int32 input_cursor_clone(
     ensures target->data == source->data;
 } by {
     observe(input_cursor(source));
-    have contains(memory(*source), memory(source->data)) by { normalize(); }
-    have contains(memory(*target), memory(target->pos)) by { normalize(); }
+    have contains(memory(*source), memory(source->data)) by { close(); }
+    have contains(memory(*target), memory(target->pos)) by { close(); }
     have separate(memory(target->pos), memory(source->data)) by {
         apply(separation::separate_restrict(memory(*target), memory(*source),
             memory(target->pos), memory(source->data)));
     }
-    have contains(memory(*target), memory(target->len)) by { normalize(); }
+    have contains(memory(*target), memory(target->len)) by { close(); }
     have separate(memory(target->len), memory(source->data)) by {
         apply(separation::separate_restrict(memory(*target), memory(*source),
             memory(target->len), memory(source->data)));
     }
-    have contains(memory(*target), memory(target->data)) by { normalize(); }
+    have contains(memory(*target), memory(target->data)) by { close(); }
     have separate(memory(target->data), memory(source->data)) by {
         apply(separation::separate_restrict(memory(*target), memory(*source),
             memory(target->data), memory(source->data)));

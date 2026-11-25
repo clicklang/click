@@ -34,7 +34,7 @@ int32 divide_two(float x) {
 theorem negative_divisor_bound(x: float) {
     requires x >= float32_from_bits(0xc1200000);
     ensures x / float32_from_bits(0xc0000000) <= float32_from_bits(0x40a00000) by {
-        normalize() using { x >= float32_from_bits(0xc1200000); };
+        close();
     }
 }
 

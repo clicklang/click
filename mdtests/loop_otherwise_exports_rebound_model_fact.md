@@ -38,7 +38,7 @@ void finish(int32* p, int32* stop) {
             have pending(w.model) == 0 by {
                 rewrite(w.model, Walk::Done);
                 unfold(pending(Walk::Done));
-                normalize();
+                close();
             }
             step();
         }

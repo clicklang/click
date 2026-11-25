@@ -4,7 +4,8 @@
 theorem equal_guard(a: Bool, b: Bool, x: int32) {
     ensures (a == b) implies (if a == b { x } else { 3 }) == x by {
         intro() {
-            normalize() using { a == b; };
+            rewrite(a, b);
+            close();
         }
     }
 }

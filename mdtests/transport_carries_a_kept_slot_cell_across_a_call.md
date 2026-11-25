@@ -75,7 +75,7 @@ void two_puts(struct pool* pool, struct slot* first, struct slot* second) {
     have separate(memory(*pool), memory(*first)) by { close(); }
     have separate(b, memory(*first)) by { close(); }
     apply(separation::separate_star(memory(*pool), b, memory(*first)));
-    have contains(memory(*first), memory(first->at)) by { normalize(); }
+    have contains(memory(*first), memory(first->at)) by { close(); }
     apply(separation::contains_refl(memory(*pool) * b));
     apply(separation::separate_restrict(memory(*pool) * b, memory(*first), memory(*pool) * b, memory(first->at)));
 
@@ -83,7 +83,7 @@ void two_puts(struct pool* pool, struct slot* first, struct slot* second) {
     have separate(b, memory(pool->data[first_at..first_end])) by { close(); }
     apply(separation::separate_star(memory(*pool), b, memory(pool->data[first_at..first_end])));
     apply(separation::contains_element(pool->data, first_at, first_end, first_at));
-    have contains(memory(pool->data[first_at]), memory(*(pool->data + first_at))) by { normalize(); }
+    have contains(memory(pool->data[first_at]), memory(*(pool->data + first_at))) by { close(); }
     apply(separation::contains_trans(memory(pool->data[first_at..first_end]), memory(pool->data[first_at]), memory(*(pool->data + first_at))));
     apply(separation::separate_restrict(memory(*pool) * b, memory(pool->data[first_at..first_end]), memory(*pool) * b, memory(*(pool->data + first_at))));
     have pool->data[first_at] == 11 by { close(); }

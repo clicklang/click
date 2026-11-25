@@ -33,7 +33,7 @@ int32 f(struct cell* root) {
     unfold(child);
     have separate(memory((root->base.left as (void *) as (struct cell *))->value), memory(root->base.left));
     step_until(statement(3).entry);
-    have contains(memory(selected->value), memory((&selected->value)[0..1])) by { normalize(); }
+    have contains(memory(selected->value), memory((&selected->value)[0..1])) by { close(); }
     have contains(memory(root->base.left), memory(root->base.left)) by { apply(click::separation::contains_refl(memory(root->base.left))); }
     have separate(memory((&selected->value)[0..1]), memory(root->base.left)) by {
         apply(click::separation::separate_restrict(memory(selected->value), memory(root->base.left), memory((&selected->value)[0..1]), memory(root->base.left)));

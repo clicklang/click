@@ -454,3 +454,18 @@ axiom float32_divide_positive_upper(divisor: float, x: float, bound: float) {
     requires float32_from_bits(0) < divisor;
     ensures x / divisor <= bound / divisor;
 }
+
+// Rounded division by a finite negative divisor reverses order.
+axiom float32_divide_negative_lower(divisor: float, x: float, bound: float) {
+    requires x <= bound;
+    requires isfinite(divisor);
+    requires divisor < float32_from_bits(0);
+    ensures x / divisor >= bound / divisor;
+}
+
+axiom float32_divide_negative_upper(divisor: float, x: float, bound: float) {
+    requires x >= bound;
+    requires isfinite(divisor);
+    requires divisor < float32_from_bits(0);
+    ensures x / divisor <= bound / divisor;
+}

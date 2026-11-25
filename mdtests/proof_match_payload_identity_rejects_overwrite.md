@@ -39,7 +39,7 @@ void probe(struct node *p) {
             have p == id by {
                 rewrite(p, identity(a.model));
                 rewrite(a.model, Tag::At(id, color));
-                unfold(identity(Tag::At(id, color))); normalize();
+                unfold(identity(Tag::At(id, color))); close();
             }
             let {kid: original_kid} = unfold(a);
             let joined = fold(frame(), { model: Tag::At(id, color), kid: original_kid });

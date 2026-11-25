@@ -43,7 +43,7 @@ int32 paint(struct node* p, const int32* q, int32 flag) {
     ensures result == q[0];
 } by {
     have separate(memory(p->shade), memory(q[0..1])) by { close(); }
-    have contains(memory(p->shade), memory((p as (uint8*))[0..4])) by { normalize(); }
+    have contains(memory(p->shade), memory((p as (uint8*))[0..4])) by { close(); }
     have contains(memory(q[0..1]), memory(q[0..1])) by { apply(click::separation::contains_refl(memory(q[0..1]))); }
     have separate(memory((p as (uint8*))[0..4]), memory(q[0..1])) by {
         apply(click::separation::separate_restrict(memory(p->shade), memory(q[0..1]), memory((p as (uint8*))[0..4]), memory(q[0..1])));

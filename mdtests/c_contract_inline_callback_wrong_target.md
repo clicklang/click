@@ -12,8 +12,8 @@ int caller(void) { return invoke(&table); }
 ```click
 verifying "inline_wrong.c";
 contract int32 One() { ensures result == 1; }
-int32 one() { ensures result == 1; } by { step_until(function.exit); normalize(); }
-int32 two() { ensures result == 2; } by { step_until(function.exit); normalize(); }
+int32 one() { ensures result == 1; } by { step_until(function.exit); close(); }
+int32 two() { ensures result == 2; } by { step_until(function.exit); close(); }
 theorem one_contract() {
     ensures One(&one) by { unfold(One(&one)); close(); }
 }

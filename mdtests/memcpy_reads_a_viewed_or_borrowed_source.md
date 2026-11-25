@@ -32,7 +32,7 @@ void copy_viewed(uint8* dst, const uint8* src) {
         have contains(statement(0).footprint, statement(0).footprint) by {
             apply(click::separation::contains_refl(statement(0).footprint));
         }
-        have contains(memory(src[0..4]), memory(src[0u64..4u64])) by { normalize(); }
+        have contains(memory(src[0..4]), memory(src[0u64..4u64])) by { close(); }
         have forall (k: uint64) { k < 4u64 implies src[k] == old(src[k]) } by {
             intro() {
                 intro() {

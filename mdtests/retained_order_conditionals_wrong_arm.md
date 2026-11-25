@@ -3,7 +3,7 @@
 ```click
 theorem wrong_arm() {
     ensures (if 9u64 < 10u64 { 1u64 << 64u64 } else { 3u64 }) == 3u64 by {
-        normalize();
+        close();
     }
 }
 ```

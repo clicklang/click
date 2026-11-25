@@ -6,19 +6,10 @@ theorem selected_array_cell(whole: Resource, kept: Resource, p: int32*, len: int
     requires 0 <= i;
     requires i < len;
     ensures separate(kept, memory(p[i])) by {
-        have i <= 2147483646 by { close() using { i < len; }; }
-        have defined(i + 1) by { close() using { 0 <= i; i <= 2147483646; }; }
-        have i <= ((i + 1) as int32) by { close() using { 0 <= i; i < len; }; }
-        have ((i + 1) as int32) <= len by { close() using { 0 <= i; i < len; }; }
-        have contains(memory(p[0..len]), memory(p[i..i + 1])) by {
-            apply(separation::contains_subrange(p, 0, len, i, i + 1));
+        have contains(memory(p[0..len]), memory(p[i])) by {
+            apply(separation::contains_element(p, 0, len, i));
         }
-        have separate(kept, memory(p[i..i + 1])) by {
-            apply(separation::separate_restrict(whole, memory(p[0..len]), kept, memory(p[i..i + 1])));
-        }
-        have contains(kept, kept) by { apply(separation::contains_refl(kept)); }
-        have contains(memory(p[i..i + 1]), memory(p[i])) by { normalize(); }
-        apply(separation::separate_restrict(kept, memory(p[i..i + 1]), kept, memory(p[i])));
+        apply(separation::separate_restrict(whole, memory(p[0..len]), kept, memory(p[i])));
     }
 }
 
@@ -251,7 +242,7 @@ int32 arena_init(struct arena* arena, int32 capacity) {
     have separate(memory(*arena), memory(data[0..capacity])) by { close(); }
     step();
     have separate(memory(occupied[0..capacity]), memory(*arena)) by { close(); }
-    have contains(memory(*arena), memory(arena->live_regions)) by { normalize(); }
+    have contains(memory(*arena), memory(arena->live_regions)) by { close(); }
     mark initialize_entry;
     have arena->live_regions == 0;
     loop initialize_occupied {
