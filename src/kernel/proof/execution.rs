@@ -2892,8 +2892,10 @@ impl CheckedResourceObservation {
                         "resource observation carries mismatched borrow dependency sidecar",
                     );
                 }
+                // Compare everything but memory: take the before state's memory
+                // and place, without making a point for the scratch copy.
                 let mut concrete_after = after_state.clone();
-                concrete_after.set_memory(before_state.memory.clone());
+                concrete_after.keep_memory_of(before_state);
                 concrete_after =
                     concrete_after.with_resource_context(before_state.resources.clone());
                 if concrete_after != *before_state {
