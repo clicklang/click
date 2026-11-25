@@ -96,11 +96,14 @@ when the default misses or when a proof must not search.
   or write `close()` to close the first open goal and continue. Use
   `close() using { ... }` to restrict proof search to listed facts.
   For a proof that must replay without search, use `click verify --checked-only`.
-- **Equalities and states: `rewrite`, `transport`.** `rewrite(from, to)` is the
-  default: it rewrites the goal with an equality at the current state.
+- **Equalities and states.** `rewrite(from, to)` rewrites the goal with an
+  equality at the current state.
   `transport(P, Q)` carries a fact stated at an earlier state to the current
-  one when `step` did not carry it; its `using` form, which lists the frame
-  evidence, is expansion output. `close()` tries both within its bounds.
+  one when `step` did not carry it. For explicit frame evidence, establish
+  it with `have`, use `preserve` for a read across a separated footprint,
+  and apply the resulting equality with `rewrite`. Expansion emits these
+  ordinary steps when it has a replayable derivation. `close()` tries
+  rewriting and frame reasoning within its bounds.
   A full pointer-value equality also rewrites displaced copies such as `p + i`,
   retaining their selected bounds. An equality of `address(p)` and `address(q)`
   supplies numeric addresses without transferring object identity or bounds.
@@ -1215,8 +1218,8 @@ Expansion preserves the application.
 
 `enumerate` is how an explicit proof closes a finite case analysis over a
 constant-bounded universal, such as a `sorted(p, 3)` postcondition: the
-expanded proof spells one `have` per non-vacuous instance (typically closed by
-`intro`, `instantiate(...)`, an explicit transport, and `close()`),
+expanded proof spells one `have` per non-vacuous instance (typically using
+`intro`, `instantiate(...)`, and `close()` with any needed frame proofs),
 and `enumerate()` checks exactly those instances against the goal's own
 guard-derived ranges. A goal stated as a predicate call is unfolded to the
 body that binds the instances, and proof search proves nearest pairs
@@ -1270,15 +1273,15 @@ cursor forward, `v = v + cs`, carries `v == b + k` across the pass this way
 
 When a smart `have` needs memory permissions merely to lower its goal, its
 expanded proof retains the relevant viewability and order facts through
-explicit transports, rewrites, intermediate facts, or named theorem applications. A
+preservation steps, rewrites, intermediate facts, or named theorem applications. A
 context-free-looking result such as a normalized equality is not emitted as
 bare `normalize()` if checking still needs those premises to interpret an
 indexed load. A `close() using` equality may be selected through a bounded chain
 of exact equality facts whose intermediate load variables are kernel-internal
 names for the same user-level loads. When frame evidence is needed to relate an
-earlier load origin to the current one, the expanded proof first establishes the
-current surface form with an explicit `transport`; simple `rewrite` checking
-never searches for an equivalent equality. Expansion and audit verify the
+earlier load origin to the current one, the expanded proof first establishes
+the needed equality with ordinary proof steps. The `rewrite` step uses
+that exact equality. Expansion and audit verify the
 complete rewritten surface proof through the ordinary entry point.
 
 ### Conjunctions
