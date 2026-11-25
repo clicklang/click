@@ -466,18 +466,32 @@ fn program_update_expression(
     }
 }
 
+/// The storage `bytes` long at `pointer`: one element of a concrete size,
+/// or the bytes of a symbolic one.
+fn storage_range(pointer: &Address, bytes: crate::kernel::LayoutSize) -> MemoryRange {
+    match bytes.bytes() {
+        Some(bytes) => MemoryRange::new_with_element_width(
+            pointer.clone(),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(1),
+            bytes,
+        ),
+        None => MemoryRange::new_with_element_width(
+            pointer.clone(),
+            OldMachineTerm::constant(0),
+            bytes.term(),
+            1,
+        ),
+    }
+}
+
 pub(in crate::kernel) fn memory_write_storage_outcome(
     state: &ExecutionState,
     pointer: &Address,
-    bytes: u32,
+    bytes: impl Into<crate::kernel::LayoutSize>,
     assumptions: &PureFactContext,
 ) -> Option<StatementOutcome> {
-    let range = MemoryRange::new_with_element_width(
-        pointer.clone(),
-        OldMachineTerm::constant(0),
-        OldMachineTerm::constant(1),
-        bytes,
-    );
+    let range = storage_range(pointer, bytes.into());
     if let Some(error) = super::super::mutexes::storage_write_refusal(state, &range, assumptions) {
         return Some(StatementOutcome::RuntimeError(error));
     }
@@ -1410,7 +1424,7 @@ enum AggregateCopyDestination {
 fn memory_region_write_obligation_outcome(
     state: &ExecutionState,
     pointer: &Address,
-    bytes: u32,
+    bytes: impl Into<crate::kernel::LayoutSize>,
     destination: &MemoryRange,
     assumptions: &PureFactContext,
     obligations: &mut Vec<ProofObligation>,
@@ -1418,8 +1432,7 @@ fn memory_region_write_obligation_outcome(
     #[cfg(test)]
     let _fast =
         crate::kernel::search::FastOperationScope::enter("memory region write borrow check");
-    let storage =
-        MemoryRange::new_with_element_width(pointer.clone(), 0u32.into(), 1u32.into(), bytes);
+    let storage = storage_range(pointer, bytes.into());
     if let Some(error) = super::super::mutexes::storage_write_refusal(state, &storage, assumptions)
     {
         return Some(StatementOutcome::RuntimeError(error));
@@ -1483,7 +1496,7 @@ fn execute_program_aggregate_copy_paths(
             if let Some(refusal) = subobject_access_refusal(
                 source_pointer.address(),
                 &source_pointer,
-                layout.size_bytes(),
+                layout.size().extent(),
                 &facts,
                 &obligations,
                 &copy_assumptions,
@@ -1492,7 +1505,7 @@ fn execute_program_aggregate_copy_paths(
                 subobject_access_refusal(
                     target_pointer.address(),
                     &target_pointer,
-                    layout.size_bytes(),
+                    layout.size().extent(),
                     &facts,
                     &obligations,
                     &copy_assumptions,
@@ -1523,7 +1536,6 @@ fn execute_program_aggregate_copy_paths(
             let write_refusal = match destination {
                 AggregateCopyDestination::Assignment => {
                     // The byte slice covers the entire layout, including padding.
-                    let bytes = layout.size_bytes();
                     let byte_pointer = super::expression::cast_pointer_value(
                         target_pointer.clone(),
                         ProgramType::UInt8Pointer,
@@ -1531,13 +1543,16 @@ fn execute_program_aggregate_copy_paths(
                     let range = MemoryRange::from_pointer_value(
                         &byte_pointer,
                         0u32.into(),
-                        bytes.into(),
+                        layout
+                            .size()
+                            .bytes()
+                            .map_or_else(|| layout.size().term(), Into::into),
                         1,
                     );
                     memory_region_write_obligation_outcome(
                         state,
                         target_pointer.address(),
-                        bytes,
+                        layout.size(),
                         &range,
                         &copy_assumptions,
                         &mut obligations,
@@ -1546,7 +1561,7 @@ fn execute_program_aggregate_copy_paths(
                 AggregateCopyDestination::ResultTemporary => memory_write_storage_outcome(
                     state,
                     target_pointer.address(),
-                    layout.size_bytes(),
+                    layout.size(),
                     &copy_assumptions,
                 ),
             };
