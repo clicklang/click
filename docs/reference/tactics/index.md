@@ -2865,6 +2865,10 @@ At an execution frontier, including inside a loop's `maintain` block,
 statement. The next `step()` can use the fact.
 See [the checked loop example](https://github.com/clicklang/click/blob/master/mdtests/loop_decreases_index_ordered_walk.md).
 
+After function exit, a bare `instantiate` adds its facts to the current
+outcome, even while a resource claim is focused. An instance that adds the
+exact focused proposition closes that claim.
+See [the checked outcome example](https://github.com/clicklang/click/blob/master/mdtests/instantiate_at_function_exit.md).
 
 **Failure, checking, and tools:**
 

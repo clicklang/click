@@ -1682,12 +1682,6 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             .state
             .open_branches
             .get(self.focused_branch)
-            .filter(|branch| {
-                matches!(
-                    branch.obligation,
-                    ProofObligation::Proposition(_) | ProofObligation::Frontier(_)
-                )
-            })
             .ok_or(PropositionCloseError::NotProposition)?;
         let facts = &branch.state.facts;
         let quantified =
