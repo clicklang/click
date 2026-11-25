@@ -5917,13 +5917,23 @@ fn pinned_spanreader_ignore_verifies_both_outcomes_offline() {
     fs::write(&path, &source).unwrap();
     let project = read_click_project(&path, &source).unwrap();
     click::surface::with_proof_trace("SpanReader::ignore", || {
-        verify_program_prepared_project(&project, &import).unwrap_or_else(|error| {
+        let (summary, verification) =
+            click::surface::verify_project_with_summary(&project, &ProgramInputs::program(&import))
+                .unwrap_or_else(|error| panic!("{}", error.report()));
+        verification.unwrap_or_else(|error| {
             panic!(
                 "{}\n{}",
                 error.report(),
                 error.trace_context_report().unwrap_or_default()
             )
         });
+        let ignore = click::languages::cpp::names::path_name(&["SpanReader", "ignore"]);
+        for function in [ignore.as_str(), "probe"] {
+            assert!(summary.assumptions[function].iter().any(|assumption| {
+                assumption.family == click::surface::ModelFamily::CppStd
+                    && assumption.name == "std::ios_base::failure::failure"
+            }));
+        }
     });
     fs::remove_dir_all(root).unwrap();
 }

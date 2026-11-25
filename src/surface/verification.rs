@@ -3225,6 +3225,9 @@ fn required_functions(
                 .into_iter()
                 .flatten(),
         );
+        if let Some(constructor) = parsed.opaque_exception_constructor {
+            report.operations.insert((ModelFamily::CppStd, constructor));
+        }
         if let Some(lowered) = parsed.prelowered_kernel_function() {
             pending.extend(
                 crate::kernel::program_function_callees(lowered)

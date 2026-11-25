@@ -9833,6 +9833,7 @@ impl Parser {
             receiver_calls: Vec::new(),
             program_entry_state: None,
             prelowered_kernel_function: None,
+            opaque_exception_constructor: None,
             parameters: header.parameters,
             body,
             callback_statement_sources: std::sync::Arc::new(

@@ -19,6 +19,8 @@ pub struct ImportedFunction {
     /// directly while reusing this declaration interface for Surface Click
     /// contract checking. C parsing always leaves this absent.
     pub(super) prelowered_kernel_function: Option<crate::kernel::ProgramFunction>,
+    /// The pinned external constructor modeled by a throw in the prepared body.
+    pub(crate) opaque_exception_constructor: Option<&'static str>,
     pub(super) return_type: InterfaceType,
     pub(super) return_pointee_constant: bool,
     pub(super) return_reference: bool,
@@ -663,6 +665,7 @@ impl ImportedFunction {
             receiver_calls: Vec::new(),
             program_entry_state: None,
             prelowered_kernel_function: None,
+            opaque_exception_constructor: None,
             parameters,
             body: CStatement::Skip,
             callback_statement_sources: std::sync::Arc::default(),

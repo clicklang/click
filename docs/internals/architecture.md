@@ -226,9 +226,9 @@ broaden a normal-only import.
 
 The separate `ios_failure` profile propagates the exact opaque
 `std::ios_base::failure` class, without handlers or user cleanup. Its pinned
-standard-library constructor lowers to a fresh abstract value from a catalog
-factory; the runtime owns storage and destruction, and allocation failure is
-assumed to terminate. Direct exceptional interfaces can borrow raw memory:
+standard-library constructor is modeled by producing a fresh abstract value
+at the throw. The runtime owns storage and destruction, and allocation failure
+is assumed to terminate. Direct exceptional interfaces can borrow raw memory:
 normal and throwing call successors share footprint-bounded havoc, but receive
 only their own postcondition family. Both successors use the existing joint
 resource-return and borrow-recovery operations. Outcome claim cells keep borrowed

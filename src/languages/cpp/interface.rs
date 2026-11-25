@@ -29,15 +29,6 @@ pub(super) fn prepare(
             }
         })
         .collect::<Vec<_>>();
-    if import.export().uses_ios_failure_factory() {
-        functions.push(crate::languages::interface::ImportedFunction::external(
-            InterfaceType::Parameter(crate::kernel::TypeParameterName::intern(
-                "std::ios_base::failure",
-            )),
-            super::standard_library::IOS_FAILURE_FACTORY.to_string(),
-            Vec::new(),
-        ));
-    }
     // A call through a reference to a class another derives from, to its
     // method that overrides another, names a dispatch with the method's
     // interface. Its contract is the sidecar's, or the method's.
@@ -338,6 +329,7 @@ fn prepare_functions(
             let mut record_references = BTreeMap::new();
             let mut objects = BTreeSet::new();
             let mut ambiguous = BTreeSet::new();
+            let mut opaque_exception_constructor = None;
             let mut pending = vec![source.body.as_slice()];
             while let Some(body) = pending.pop() {
                 for statement in body {
@@ -370,6 +362,9 @@ fn prepare_functions(
                                 }
                                 locals.insert(local.name.clone(), name.clone());
                             }
+                        }
+                        CppStatement::ThrowIosFailure { .. } => {
+                            opaque_exception_constructor = Some(super::schema::IOS_FAILURE_CONSTRUCTOR);
                         }
                         CppStatement::Scope { body, .. } | CppStatement::While { body, .. } => {
                             pending.push(body)
@@ -439,6 +434,9 @@ fn prepare_functions(
                         .and_then(super::standard_library::library_generic)
                 });
             let mut imported = function_interface(source, kernel, layouts)?;
+            if imported.prelowered_kernel_function().is_some() {
+                imported.opaque_exception_constructor = opaque_exception_constructor;
+            }
             if source.axiom.is_some() && generic.is_none() {
                 imported = imported.with_positional_parameters();
             }
