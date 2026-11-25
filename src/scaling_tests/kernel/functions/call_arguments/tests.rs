@@ -321,15 +321,18 @@ fn proof_input_rebinding_retains_storage_without_reusing_it_for_calls() {
             1
         );
 
-        let ordinary = bind_program_function_arguments_retained(
-            &caller,
-            &function,
-            values,
-            &[],
-            &mut Vec::new(),
-        )
-        .unwrap();
-        assert_ne!(ordinary.locals.slot("parameter"), Some(&address));
+        // An ordinary call never reuses the proof input: it receives only an
+        // object its frontend prepared, so this one is refused.
+        assert!(
+            bind_program_function_arguments_retained(
+                &caller,
+                &function,
+                values,
+                &[],
+                &mut Vec::new(),
+            )
+            .is_none()
+        );
         let other_entry =
             bind_program_function_arguments(&caller, &other_function, values).unwrap();
         assert_ne!(other_entry.locals.slot("parameter"), Some(&address));
