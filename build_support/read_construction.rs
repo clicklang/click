@@ -42,6 +42,7 @@ pub(super) enum Form {
     Bits64,
     PointerWordRead,
     UnplacedPoint,
+    ProofPointInstall,
 }
 
 impl Form {
@@ -57,6 +58,9 @@ impl Form {
             Self::PointerWordRead => "`legacy_pointer_word_read(..)` calls",
             Self::UnplacedPoint => {
                 "`ProgramPoint::unplaced(..)`, `canonical_form_of_load(..)` and `memory_read(..)` calls"
+            }
+            Self::ProofPointInstall => {
+                "point-creating memory installs (`with_memory`, `set_memory`, ...)"
             }
         }
     }
@@ -76,6 +80,9 @@ impl Form {
             }
             Self::UnplacedPoint => {
                 "place the memory: `ProgramPoint::viewing` for a state or a view of one, `ProgramPoint::walked` for a legacy walk's memory (design/point-named-reads.md)"
+            }
+            Self::ProofPointInstall => {
+                "only C execution creates a program point: a proof step or a lowering installs memory as a view of its point (`with_materialized_memory_at_current_point`), and a state with no code location starts at `ProgramPoint::starting_at` (design/point-named-reads.md)"
             }
         }
     }
@@ -198,7 +205,51 @@ const BASELINE: &[(&str, Form, usize)] = &[
         Form::UnplacedPoint,
         1,
     ),
+    // Point-creating installs in proof and lowering code. Only C execution
+    // creates program points; these are the exceptions, each a state that
+    // stands where the code does: function-entry setup (`proof.rs`), a call's
+    // argument and return objects (`resource_lowering.rs`), a frame that
+    // reuses the point it is given (`predicates.rs`), and the root of a pure
+    // definition check (`definition_validation.rs`).
+    ("src/surface/proof.rs", Form::ProofPointInstall, 2),
+    (
+        "src/surface/lowering/resource_lowering.rs",
+        Form::ProofPointInstall,
+        2,
+    ),
+    (
+        "src/surface/checking/predicates.rs",
+        Form::ProofPointInstall,
+        1,
+    ),
+    (
+        "src/surface/validation/definition_validation.rs",
+        Form::ProofPointInstall,
+        1,
+    ),
 ];
+
+/// The `ExecutionState` methods that move a state to a new program point.
+const POINT_CREATING_INSTALLS: &[&str] = &[
+    "with_memory",
+    "set_memory",
+    "set_memory_with_checked_stores",
+    "set_memory_directly",
+    "set_memory_continuing",
+    "with_memory_continuing",
+    "set_memory_of",
+    "with_memory_of",
+    "with_call_return",
+    "with_memory_and_resources_continuing",
+    "set_loop_head_memory",
+];
+
+/// Only C execution creates program points, so point-creating installs are
+/// counted where proofs and lowering run: the surface and the kernel's
+/// proof checker.
+fn counts_proof_point_installs(path: &str) -> bool {
+    path.starts_with("src/surface") || path.starts_with("src/kernel/proof")
+}
 
 /// Direct constructions of each form in `file`, outside test code.
 pub(super) fn count(file: &syn::File) -> BTreeMap<Form, usize> {
@@ -219,6 +270,9 @@ pub(super) fn check(counts: &BTreeMap<(String, Form), usize>) -> Result<(), Vec<
         .collect();
     let mut errors = Vec::new();
     for ((path, form), &found) in counts {
+        if *form == Form::ProofPointInstall && !counts_proof_point_installs(path) {
+            continue;
+        }
         let expected = baseline.get(&(path.as_str(), *form)).copied().unwrap_or(0);
         let (spelling, advice) = (form.spelling(), form.advice());
         if found > expected {
@@ -317,6 +371,15 @@ impl<'ast> Visit<'ast> for Counter {
             }
         }
         syn::visit::visit_expr_call(self, call);
+    }
+    fn visit_expr_method_call(&mut self, call: &'ast syn::ExprMethodCall) {
+        if POINT_CREATING_INSTALLS
+            .iter()
+            .any(|name| call.method == name)
+        {
+            self.add(Form::ProofPointInstall);
+        }
+        syn::visit::visit_expr_method_call(self, call);
     }
     // Expression and pattern paths: a pattern's path is an `ExprPath` too.
     fn visit_expr_path(&mut self, path: &'ast syn::ExprPath) {

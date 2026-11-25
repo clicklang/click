@@ -1875,7 +1875,8 @@ pub(in crate::surface) fn lower_resource_clause(
         return Ok(facts.pop().expect("resource clause fact count was checked"));
     }
     let values = resource_clause_parameter_values(resource, parameter_binding)?;
-    let state = ExecutionState::new().with_memory(memory.clone());
+    // A clause lowered against a bare memory stands at its own root point.
+    let state = ExecutionState::at_point(&crate::kernel::ProgramPoint::starting_at(memory));
     lower_resource_clause_with_values(resource, parameter_binding, &values, &state, None)
 }
 
@@ -1886,7 +1887,7 @@ pub(in crate::surface) fn lower_resource_clause_facts(
     memory: &SymbolicMemory,
 ) -> Result<Vec<ResourceFact>, ClickError> {
     let values = resource_clause_parameter_values(resource, parameter_binding)?;
-    let state = ExecutionState::new().with_memory(memory.clone());
+    let state = ExecutionState::at_point(&crate::kernel::ProgramPoint::starting_at(memory));
     lower_resource_clause_facts_with_values(resource, parameter_binding, &values, &state, None)
 }
 
