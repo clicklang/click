@@ -4101,11 +4101,10 @@ fn evaluate_spec_algebraic_non_call_in(
                     && !budget.checked_reads
                     && (budget.in_pure_algebraic_match
                         || *pure_match.get_or_insert_with(|| {
-                            super::functions::spec_algebraic_expression_is_obligation_free(
-                                expression,
-                            ) && super::functions::spec_algebraic_expression_is_state_independent(
-                                expression,
-                            )
+                            super::functions::spec_algebraic_match_is_total(expression)
+                                && super::functions::spec_algebraic_expression_is_state_independent(
+                                    expression,
+                                )
                         }));
                 if retain_known || !known_constructor {
                     let mut lowered_arms = Vec::with_capacity(arms.len());

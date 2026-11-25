@@ -10195,3 +10195,91 @@ fn nested_operand_definedness_round_trips() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+#[test]
+fn retained_integer_comparison_raises_without_native_output() {
+    use crate::kernel::{KernelTermExport, KernelTermNode};
+    let fixture = ConditionalRoundTrip::new(MachineIntegerType::Int32, "int32");
+    for operator in ["==", "!=", "<", "<=", ">", ">="] {
+        let expected = fixture.lower(&format!("to_integer(x) + 1 {operator} to_integer(y)"));
+        let Proposition::ConditionIs(condition, _) = &expected else {
+            panic!("expected a retained comparison: {operator}");
+        };
+        let root = condition.root().unwrap();
+        assert!(matches!(root.node(), KernelTermNode::IntegerCompare { .. }));
+        assert!(!root.has_cached_native_argument());
+        let exports = KernelTermExport::integer_export_count();
+        let surface =
+            synthesize_surface_proposition(&expected, ParameterBinding::default(), &fixture.state)
+                .unwrap();
+        assert_eq!(KernelTermExport::integer_export_count(), exports);
+        assert!(!root.has_cached_native_argument());
+        let text = crate::surface::printing::source_click_proposition(&surface);
+        assert_eq!(
+            relower_written_proposition(&surface, &fixture.state).unwrap(),
+            expected,
+            "{text}"
+        );
+        assert_eq!(fixture.lower(&text), expected, "{text}");
+    }
+}
+
+#[test]
+fn guarded_algebraic_matches_on_written_constructors_round_trip() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let state = ExecutionState::new();
+    let written = "(match Input::Hold(true, 7) { Input::Hold(flag, n) =>
+        if flag { Box::Value(n) } else { Box::Value(0) } })
+        == (match Input::Hold(false, 8) { Input::Hold(flag, n) =>
+        if flag { Box::Value(0) } else { Box::Value(n - 1) } })";
+    let parse = |text: &str| {
+        parser::parse(&format!(
+            "spec enum Input {{ Hold(Bool, Integer) }} spec enum Box {{ Value(Integer) }}
+             theorem probe() {{ requires {text}; ensures true; }}"
+        ))
+        .unwrap()
+    };
+    let file = parse(written);
+    let functions = ClickFunctionEnvironment::with_algebraic_types(
+        file.click_function_definitions(),
+        file.algebraic_type_definitions(),
+    );
+    let lower = |proposition: &ClickProposition| {
+        crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
+            proposition,
+            &PureFactContext::new(),
+            ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
+            FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
+            SpecDefinitions::new(&PredicateEnvironment::new(&[]), &functions),
+            FixedStateLoweringOptions::default(),
+        )
+        .unwrap()
+        .0
+    };
+    let lower_written = |file: &crate::surface::ClickFile| {
+        let Requirement::Proposition(proposition) = &file.theorem_definitions()[0].requires()[0]
+        else {
+            panic!("expected a proposition");
+        };
+        lower(proposition)
+    };
+    let expected = lower_written(&file);
+    let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = &expected else {
+        panic!("expected two algebraic operands");
+    };
+    for operand in [left, right] {
+        assert!(matches!(
+            operand.root().unwrap().node(),
+            crate::kernel::KernelTermNode::Match(_)
+        ));
+    }
+    let surface =
+        synthesize_surface_proposition(&expected, ParameterBinding::default(), &state).unwrap();
+    let text = crate::surface::printing::source_click_proposition(&surface);
+    for actual in [lower(&surface), lower_written(&parse(&text))] {
+        assert!(
+            crate::kernel::proof::propositions_are_alpha_equal(&expected, &actual),
+            "{text}\nlowered: {actual:?}"
+        );
+    }
+}
