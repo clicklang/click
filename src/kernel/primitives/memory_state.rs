@@ -11200,6 +11200,13 @@ impl ExecutionState {
         super::ProgramPoint::of_state(&self.memory, &self.point)
     }
 
+    /// This state's memory as a memory-named point placed where the state
+    /// stands: the point a legacy read of this state is named by.
+    pub(crate) fn memory_named_point(&self) -> super::ProgramPoint {
+        let point = self.program_point();
+        super::ProgramPoint::viewing(point.shared_memory(), &point)
+    }
+
     /// A fresh state standing at `point`: its memory and its place on the
     /// path. A state that evaluates something at a point (a resource body,
     /// a callee frame) starts here, so its reads stay on the point's path.

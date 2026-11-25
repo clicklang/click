@@ -1169,7 +1169,7 @@ fn memory_only_adds_named_cells(
             }
             continue;
         }
-        let load = crate::kernel::canonical_form_of_load(base.clone(), pointer.clone(), kind);
+        let load = crate::kernel::canonical_form_of_load_at(&source, pointer.clone(), kind);
         if !cell_value_is_exactly_load(&value, &load) {
             return Err(describe_unnamed_cell_addition(base, pointer, &value, &load));
         }

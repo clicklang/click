@@ -3413,8 +3413,8 @@ fn exact_read_comparison_input(term: &MachineTerm) -> MachineTerm {
         {
             // Select the read identity without recovering a cached value.
             // Already-selected reads above retain their producer's identity.
-            return crate::kernel::canonical_form_of_load(
-                memory.shared_memory().clone(),
+            return crate::kernel::canonical_form_of_load_at(
+                memory,
                 pointer.as_ref().clone(),
                 *kind,
             );
