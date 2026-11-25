@@ -81,11 +81,9 @@ this section shows how they appear in scripts.
 Smart tactics plan or search. `close()` checks the goal directly before
 searching and `close() using { ... }` searches from listed premises. The implicit tail, which runs the C a
 script leaves and closes what is open, is smart work too, including the
-`close()` closure of each loop-bundle member at a back edge, as are the
-searches behind elided arguments. An elided form
-such as bare `apply(...)` or bare `transport(...)` is a smart site: a search
-looks up the argument its `using` form writes, and a fact it does not find is a
-search miss to write. `click expand` writes out all of them.
+`close()` closure of each loop-bundle member at a back edge. Bare
+`transport(P, Q)` is a smart tactic that searches for frame evidence.
+`click expand` emits ordinary steps when it finds a replayable proof.
 
 Simple tactics request one deterministic checked operation without planning or
 search, and their checkers must be fast and output-sensitive. Paired operations

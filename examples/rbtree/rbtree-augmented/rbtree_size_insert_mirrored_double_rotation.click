@@ -297,21 +297,9 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have p->rb_left == parent->rb_left by { close(); }
                     have separate(memory(parent->rb_left), memory(node->rb_right)) by { close(); }
                     have separate(memory(parent->rb_left), memory(parent->__rb_parent_color)) by { close(); }
-                    transport(at(after_inner_child_store, parent->rb_left == 0), parent->rb_left == 0) using {
-                        at(after_inner_child_store, parent->rb_left == 0);
-                        parent == p;
-                        at(after_inner_child_store, parent) == p;
-                        separate(memory(parent->rb_left), memory(node->rb_right));
-                        separate(memory(parent->rb_left), memory(parent->__rb_parent_color));
-                    };
+                    have parent->rb_left == 0 by { close(); }
                     have p->rb_left == 0 by { close(); }
-                    transport(at(before_inner_rotation, p->rb_right == 0), p->rb_right == 0) using {
-                        at(before_inner_rotation, p->rb_right == 0);
-                        parent == p;
-                        separate(memory(p->rb_right), memory(p->rb_left));
-                        separate(memory(p->rb_right), memory(node->rb_right));
-                        separate(memory(p->rb_right), memory(p->__rb_parent_color));
-                    };
+                    have p->rb_right == 0 by { close(); }
                     let p_right = fold(sized_at(p->rb_right), { model: SizedTree::Empty });
                     let p_left = fold(sized_at(p->rb_left), { model: SizedTree::Empty });
                     have at(before_inner_rotation, old(root->rb_node)->rb_right) == parent by { close(); }
@@ -344,13 +332,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         };
                     }
                     let demoted = fold(sized_recompute_at(p), { model: SizedTree::Node(p, node, Color::Red, 2, SizedTree::Empty, SizedTree::Empty), metadata: p_size, right: p_right, left: p_left });
-                    transport(at(before_inner_stores, node->rb_left == 0), node->rb_left == 0) using {
-                        at(before_inner_stores, node->rb_left == 0);
-                        at(before_inner_stores, gparent->rb_right) == parent;
-                        separate(memory(node->rb_left), memory(parent->rb_left));
-                        separate(memory(node->rb_left), memory(node->rb_right));
-                        separate(memory(node->rb_left), memory(parent->__rb_parent_color));
-                    };
+                    have node->rb_left == 0 by { close(); }
                     let other = fold(sized_at(node->rb_left), { model: SizedTree::Empty });
                     have sized_parent_is(SizedTree::Node(p, node, Color::Red, 2, SizedTree::Empty, SizedTree::Empty), node) == 1 by { unfold(sized_parent_is(SizedTree::Node(p, node, Color::Red, 2, SizedTree::Empty, SizedTree::Empty), node)); normalize(); }
                     have sized_parent_is(SizedTree::Empty, node) == 1 by { unfold(sized_parent_is(SizedTree::Empty, node)); normalize(); }
@@ -364,19 +346,8 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         rewrite(sized_value(SizedTree::Node(p, node, Color::Red, 2, SizedTree::Empty, SizedTree::Empty)), 2);
                         rewrite(sized_value(SizedTree::Empty), 0); normalize();
                     }
-                    transport(at(after_inner_right_write, node->rb_right == parent), node->rb_right == p) using {
-                        at(after_inner_right_write, node->rb_right == parent);
-                        parent == p;
-                        at(before_inner_stores, gparent->rb_right) == parent;
-                        separate(memory(node->rb_right), memory(parent->__rb_parent_color));
-                    };
-                    transport(at(before_inner_stores, node->__rb_parent_color) == at(before_inner_stores, node->__rb_parent_color),
-                              node->__rb_parent_color == at(before_inner_stores, node->__rb_parent_color)) using {
-                        at(before_inner_stores, gparent->rb_right) == parent;
-                        separate(memory(node->__rb_parent_color), memory(parent->rb_left));
-                        separate(memory(node->__rb_parent_color), memory(node->rb_right));
-                        separate(memory(node->__rb_parent_color), memory(parent->__rb_parent_color));
-                    };
+                    have node->rb_right == p by { close(); }
+                    have node->__rb_parent_color == at(before_inner_stores, node->__rb_parent_color) by { close(); }
                     let rotated = fold(sized_rotation_right_at(p, node), { model: SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Node(p, node, Color::Red, 2, SizedTree::Empty, SizedTree::Empty)), metadata: n_size, demoted: demoted, other: other });
                     unfold(sized_right(SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Node(p, node, Color::Red, 2, SizedTree::Empty, SizedTree::Empty))));
                     have 0 <= sized_value(sized_right(sized_right(SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Node(p, node, Color::Red, 2, SizedTree::Empty, SizedTree::Empty))))) by { rewrite(sized_right(SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Node(p, node, Color::Red, 2, SizedTree::Empty, SizedTree::Empty))), SizedTree::Node(p, node, Color::Red, 2, SizedTree::Empty, SizedTree::Empty)); rewrite(sized_right(SizedTree::Node(p, node, Color::Red, 2, SizedTree::Empty, SizedTree::Empty)), SizedTree::Empty); rewrite(sized_value(SizedTree::Empty), 0); normalize(); }
@@ -417,11 +388,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have separate(memory(gparent->rb_right), memory(node->rb_left));
                     mark after_outer_right_write;
                     step(); step(); step();
-                    transport(at(after_outer_right_write, gparent->rb_right == 0), gparent->rb_right == 0) using {
-                        at(after_outer_right_write, gparent->rb_right == 0);
-                        parent == node;
-                        separate(memory(gparent->rb_right), memory(node->rb_left));
-                    };
+                    have gparent->rb_right == 0 by { close(); }
                     let { metadata: p_size, right: p_empty_right, left: p_empty_left } = unfold(p_leaf);
                     unfold(p_size); unfold(n_size);
                     have separate(memory(g->__rb_parent_color), memory(p->__rb_parent_color)) by { close(); }
@@ -434,22 +401,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have separate(memory(g->__rb_parent_color), memory((node as (uint8 *) as (struct sized_node *))->size)) by { close(); }
                     have separate(memory(g->__rb_parent_color), memory(g->rb_right)) by { close(); }
                     have at(before_inner_rotation, old(root->rb_node)->__rb_parent_color == 1) by { close(); }
-                    transport(at(before_inner_rotation, old(root->rb_node)->__rb_parent_color == 1), old(root->rb_node)->__rb_parent_color == 1) using {
-                        at(before_inner_rotation, old(root->rb_node)->__rb_parent_color == 1);
-                        old(root->rb_node) == g;
-                        at(before_inner_rotation, old(root->rb_node)->rb_right) == p;
-                        gparent == g;
-                        parent == node;
-                        separate(memory(g->__rb_parent_color), memory(p->__rb_parent_color));
-                        separate(memory(g->__rb_parent_color), memory(p->rb_right));
-                        separate(memory(g->__rb_parent_color), memory(p->rb_left));
-                        separate(memory(g->__rb_parent_color), memory((p as (uint8 *) as (struct sized_node *))->size));
-                        separate(memory(g->__rb_parent_color), memory(node->__rb_parent_color));
-                        separate(memory(g->__rb_parent_color), memory(node->rb_right));
-                        separate(memory(g->__rb_parent_color), memory(node->rb_left));
-                        separate(memory(g->__rb_parent_color), memory((node as (uint8 *) as (struct sized_node *))->size));
-                        separate(memory(g->__rb_parent_color), memory(g->rb_right));
-                    };
+                    have old(root->rb_node)->__rb_parent_color == 1 by { close(); }
                     let p_size = fold(size_metadata(p), { value: 1 });
                     let n_size = fold(size_metadata(node), { value: 2 });
                     let p_leaf = fold(sized_at(p), { model: SizedTree::Node(p, node, Color::Red, 1, SizedTree::Empty, SizedTree::Empty), metadata: p_size, right: p_empty_right, left: p_empty_left });
@@ -465,30 +417,10 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     }
                     mark before_outer_parent_helper;
                     step();
-                    transport(at(before_outer_parent_helper, gparent->rb_right == 0), gparent->rb_right == 0) using {
-                        at(before_outer_parent_helper, gparent->rb_right == 0);
-                        parent == node;
-                        separate(memory(gparent->rb_right), memory(gparent->__rb_parent_color));
-                        separate(memory(gparent->rb_right), memory(node->__rb_parent_color));
-                        separate(memory(gparent->rb_right), memory(root->rb_node));
-                    };
+                    have gparent->rb_right == 0 by { close(); }
                     have g->rb_right == 0 by { close(); }
                     let g_right = fold(sized_at(0), { model: SizedTree::Empty });
-                    transport(at(before_inner_rotation, old(root->rb_node)->rb_left == 0), old(root->rb_node)->rb_left == 0) using {
-                        at(before_inner_rotation, old(root->rb_node)->rb_left == 0);
-                        old(root->rb_node) == g;
-                        at(before_inner_rotation, old(root->rb_node)->rb_right) == p;
-                        gparent == g;
-                        parent == node;
-                        separate(memory(g->rb_left), memory(p->rb_left));
-                        separate(memory(g->rb_left), memory(node->rb_right));
-                        separate(memory(g->rb_left), memory(p->__rb_parent_color));
-                        separate(memory(g->rb_left), memory(g->rb_right));
-                        separate(memory(g->rb_left), memory(node->rb_left));
-                        separate(memory(g->rb_left), memory(g->__rb_parent_color));
-                        separate(memory(g->rb_left), memory(node->__rb_parent_color));
-                        separate(memory(g->rb_left), memory(root->rb_node));
-                    };
+                    have old(root->rb_node)->rb_left == 0 by { close(); }
                     have g->rb_left == 0 by { close(); }
                     let g_left = fold(sized_at(0), { model: SizedTree::Empty });
                     let demoted = fold(sized_recompute_at(g), {
@@ -496,12 +428,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         metadata: g_size, right: g_right, left: g_left
                     });
                     unfold(kept_right);
-                    transport(at(region(67).exit, parent->rb_left == gparent), parent->rb_left == gparent) using {
-                        at(region(67).exit, parent->rb_left == gparent);
-                        separate(memory(parent->rb_left), memory(root->rb_node));
-                        separate(memory(parent->rb_left), memory(parent->__rb_parent_color));
-                        separate(memory(parent->rb_left), memory(gparent->__rb_parent_color));
-                    };
+                    have parent->rb_left == gparent by { close(); }
                     have node->rb_left == g by {
                         rewrite(node, parent);
                         rewrite(g, gparent);

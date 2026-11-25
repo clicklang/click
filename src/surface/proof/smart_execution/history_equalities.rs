@@ -341,9 +341,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }])
             .expect("ordinary index disequality");
             let checked = || {
-                let scope = proof
-                    .driver()
-                    .open_have_with_goal_observations(distinct.clone(), true)?;
+                let scope = proof.driver().open_have_as_written(distinct.clone())?;
                 scope
                     .driver()
                     .try_authoritative_linear_script(&proof_steps.to_proof_tactics())?
@@ -680,9 +678,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             // Expose the selected endpoint terms to ordinary equality reasoning.
             // No premise or memory history is reconstructed during replay.
             let candidate = (|| {
-                let scope = proof
-                    .driver()
-                    .open_have_with_goal_observations(equality, true)?;
+                let scope = proof.driver().open_have_as_written(equality)?;
                 scope.driver().apply_step(ProofStep::Known)?.join()
             })();
             if let Some(unchanged) = attempt::candidate_outcome(candidate)? {

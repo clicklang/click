@@ -498,3 +498,32 @@ axiom float64_divide_negative_upper(divisor: double, x: double, bound: double) {
     requires divisor < float64_from_bits(0u64);
     ensures x / divisor <= bound / divisor;
 }
+
+// Multiplication by a finite negative factor reverses rounded order.
+axiom float32_scale_negative_lower(factor: float, x: float, bound: float) {
+    requires x <= bound;
+    requires isfinite(factor);
+    requires factor < float32_from_bits(0);
+    ensures factor * x >= factor * bound;
+}
+
+axiom float32_scale_negative_upper(factor: float, x: float, bound: float) {
+    requires x >= bound;
+    requires isfinite(factor);
+    requires factor < float32_from_bits(0);
+    ensures factor * x <= factor * bound;
+}
+
+axiom float32_scale_negative_right_lower(factor: float, x: float, bound: float) {
+    requires x <= bound;
+    requires isfinite(factor);
+    requires factor < float32_from_bits(0);
+    ensures x * factor >= bound * factor;
+}
+
+axiom float32_scale_negative_right_upper(factor: float, x: float, bound: float) {
+    requires x >= bound;
+    requires isfinite(factor);
+    requires factor < float32_from_bits(0);
+    ensures x * factor <= bound * factor;
+}

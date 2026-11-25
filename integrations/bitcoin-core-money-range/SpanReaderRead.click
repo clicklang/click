@@ -219,9 +219,7 @@ void SpanReader::read(std::span<std::byte> dst) throws std::ios_base::failure {
                     preserve(memory(at(call(4).exit, call(4).result)[k]), region(21));
                 }
                 have defined(load<uint8>((call(4).result + k))) by {
-                    transport(at(region(21).exit, defined(load<uint8>((call(4).result + k)))), defined(load<uint8>((call(4).result + k)))) using {
-                        separate(memory(at(copied, (dst as (uint8 *)))[0..16]), memory(at(call(4).exit, call(4).result)[k]));
-                    };
+                    transport(at(region(21).exit, defined(load<uint8>((call(4).result + k)))), defined(load<uint8>((call(4).result + k))));
                 }
                 have old(std_span_data(dst)) == call(4).result by { close(); }
                 rewrite(old(std_span_data(dst)), call(4).result);

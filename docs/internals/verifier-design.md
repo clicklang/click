@@ -216,9 +216,8 @@ Viewability checking looks up an exactly stated view directly. A candidate
 address-shape bucket supplies implicit evidence only when it contains one fact;
 an ambiguous bucket is refused without iteration. The planner's
 `search_memory_loadable_candidates_for_base` requires `SearchPermission` and
-charges each visited candidate. Search can choose a covering view and expansion
-writes `transport(source, target) using { ... }`; explicit selection checks in
-a restricted context. The build boundary rejects kernel calls to that search
+charges each visited candidate. Search can choose a covering view. Expansion retains ordinary view restriction
+steps when it records a replayable proof. The build boundary rejects kernel calls to that search
 entry point and rejects the test-only whole-block census. The atomic coverage
 fallback uses the same checked candidate lookup. Checked view lookup uses
 structural offsets, the maintained affine class coordinate and its unique
@@ -387,7 +386,7 @@ without traversing equality evidence edges.
 Store ownership footprint lookup uses only the additive bases written in the
 access. It does not enumerate their pointer alias classes. When a resource is
 owned under another form, state the alias and separation explicitly and
-use `transport ... using` to carry the required read across the write, as in
+use `preserve` and `rewrite` to carry the required read across the write, as in
 `mdtests/do_while_restored_field_frame_remains_separate.md`. Build-boundary
 checks reject the removed evidence and alias enumeration routes. Automatic
 store preservation selects at most one owned member per written base from the

@@ -1640,7 +1640,7 @@ pub(super) enum PostExecutionTactic {
     Apply(TheoremApplication),
     Have(ProofHave),
     /// A bare `transport`, which searches for its premises. A written
-    /// `transport using` is a leaf.
+    /// `rewrite` is a leaf.
     Transport {
         source: SyntaxProposition,
         target: SyntaxProposition,

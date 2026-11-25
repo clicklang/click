@@ -9,9 +9,38 @@ subtraction is nonnegative.
 import click::integer;
 
 theorem tail_bounds(n: uint64, size: uint64) {
+    let tail: Integer = truncating_remainder(to_integer(n), to_integer(size));
     requires 0u64 < size;
     ensures n % size <= n by { close() using { 0u64 < size; }; }
-    ensures n % size < size by { normalize() using { 0u64 < size; }; }
+    ensures n % size < size by {
+        have 0 < to_integer(size) by close();
+        have size != 0u64 by {
+            have 1 <= to_integer(size) by {
+                apply(integer::lt_step_le(0, to_integer(size)));
+                close();
+            }
+            apply(integer::nonzero_from_one(to_integer(size)));
+            close();
+        }
+        apply(integer::uint64_remainder_to_integer(n, size));
+        apply(integer::positive_divisor_remainder_upper(to_integer(n), to_integer(size)));
+        have tail + 1 <= (to_integer(size) - 1) + 1 by {
+            apply(integer::add_right_order(tail, to_integer(size) - 1, 1));
+        }
+        have tail + 1 <= to_integer(size) by {
+            have (to_integer(size) - 1) + 1 == to_integer(size) by close();
+            rewrite(to_integer(size), (to_integer(size) - 1) + 1);
+            close();
+        }
+        have tail < to_integer(size) by {
+            apply(integer::step_le_lt(tail, to_integer(size)));
+        }
+        have to_integer(n % size) < to_integer(size) by {
+            rewrite(to_integer(n % size), tail);
+            close();
+        }
+        close();
+    }
 }
 theorem complete_prefix(n: uint64) {
     let tail: uint64 = n % 4u64;
@@ -110,7 +139,15 @@ theorem consume_chunk(n: int32) {
 theorem short_tail(n: int32) {
     requires 0 <= n;
     requires n < 4;
-    ensures n % 4 == n by { normalize() using { 0 <= n; n < 4; }; }
+    ensures n % 4 == n by {
+        have to_integer(n) <= 3 by {
+            apply(integer::lt_le_predecessor(to_integer(n), 4));
+            close();
+        }
+        apply(integer::nonnegative_remainder_from_reconstruction(to_integer(n), 4, 0, to_integer(n)));
+        apply(integer::int32_remainder_to_integer(n, 4));
+        close();
+    }
 }
 ```
 

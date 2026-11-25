@@ -33,7 +33,7 @@ viewed.
 
 The sidecar mixes concise smart proofs with expanded exact certificates. Read
 the small accessors with omitted proofs first. The longer `step()`, `rewrite`,
-`transport(...) using`, and named-theorem applications are checked simple
+and named-theorem applications are checked simple
 certificates retained for predictable performance and expansion coverage; they
 are not the recommended first draft of a Click proof. All restricted
 simplifications in this project expand to those explicit rules.

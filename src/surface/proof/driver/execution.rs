@@ -1173,14 +1173,7 @@ fn apply_frontier_source_tactic<'a>(
             .driver()
             .apply_close_invariants_body(&[ProofTactic::Solve], None, true)?
     } else if let Some(step) = SourceContext::ExecutionFrontier.leaf_step(&indexed.tactic) {
-        proof
-            .driver()
-            .apply_step_at(step, indexed.source_index)
-            .inspect_err(|_| {
-                if matches!(indexed.tactic, ProofTactic::TransportUsing { .. }) {
-                    proof.record_certification_failure_trace(proof.claim_label(), 0);
-                }
-            })?
+        proof.driver().apply_step_at(step, indexed.source_index)?
     } else if let ProofTactic::StepProved {
         step,
         proof: step_proof,
@@ -1296,13 +1289,7 @@ fn apply_frontier_source_tactic<'a>(
     // completed checked operation cannot hand control to a later tactic after
     // exhausting its own budget. The stopped tactic has no accepted successor;
     // retain its checked predecessor just as an operation refusal does.
-    check_verification_deadline().map_err(|error| {
-        if matches!(indexed.tactic, ProofTactic::TransportUsing { .. }) {
-            proof.attach_transport_budget_diagnostic(error, &next)
-        } else {
-            proof.attach_step_diagnostic(error)
-        }
-    })?;
+    check_verification_deadline().map_err(|error| proof.attach_step_diagnostic(error))?;
     // Generated certificates retain the source index of the smart operation
     // that produced them. Their nested steps are part of that operation's
     // already-recorded branch certificate, not independent expansions of the
@@ -2899,13 +2886,6 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                                             "the checked execution region nesting limit is {MAX_CHECKED_EXECUTION_REGION_DEPTH}",
                                         ))
                                         .with_kind(ClickErrorKind::Unsupported),
-                                    Ok(_) | Err(Decline::Shape)
-                                        if matches!(indexed.tactic, ProofTactic::Instantiate { .. }) =>
-                                    {
-                                        diagnostic
-                                            .with_context("For proposition-only work, move the operation into `have proposition by { ... }`.")
-                                            .with_kind(ClickErrorKind::Unsupported)
-                                    }
                                     Ok(_) | Err(Decline::Shape) => {
                                         diagnostic.with_kind(ClickErrorKind::Internal)
                                     }
@@ -5031,11 +5011,7 @@ fn advance_linear_open_scope<'a>(
             continue;
         }
         if let Some(step) = SourceContext::ExecutionFrontier.leaf_step(&indexed.tactic) {
-            scope = scope.driver().apply_step(step).inspect_err(|_| {
-                if matches!(indexed.tactic, ProofTactic::TransportUsing { .. }) {
-                    scope.record_certification_failure_trace();
-                }
-            })?;
+            scope = scope.driver().apply_step(step)?;
             continue;
         }
         if matches!(indexed.tactic, ProofTactic::StepProved { .. }) {

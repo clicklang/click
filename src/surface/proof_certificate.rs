@@ -137,11 +137,6 @@ pub enum ProofStep {
     Contradiction(SyntaxProposition),
     Rewrite(SyntaxProposition),
     Preserve(SyntaxProposition),
-    TransportUsing {
-        source: SyntaxProposition,
-        target: SyntaxProposition,
-        premises: Vec<SyntaxProposition>,
-    },
     CompatibilityFactTransport {
         source: SyntaxProposition,
         target: SyntaxProposition,
@@ -816,15 +811,6 @@ impl ProofStep {
             ProofTactic::Contradiction(proposition) => Self::Contradiction(proposition.clone()),
             ProofTactic::Preserve(proposition) => Self::Preserve(proposition.clone()),
             ProofTactic::Rewrite(proposition) => Self::Rewrite(proposition.clone()),
-            ProofTactic::TransportUsing {
-                source,
-                target,
-                premises,
-            } => Self::TransportUsing {
-                source: source.clone(),
-                target: target.clone(),
-                premises: premises.clone(),
-            },
             ProofTactic::CompatibilityFactTransport {
                 source,
                 target,
@@ -1021,15 +1007,6 @@ impl ProofStep {
             Self::Contradiction(proposition) => ProofTactic::Contradiction(proposition.clone()),
             Self::Preserve(proposition) => ProofTactic::Preserve(proposition.clone()),
             Self::Rewrite(proposition) => ProofTactic::Rewrite(proposition.clone()),
-            Self::TransportUsing {
-                source,
-                target,
-                premises,
-            } => ProofTactic::TransportUsing {
-                source: source.clone(),
-                target: target.clone(),
-                premises: premises.clone(),
-            },
             Self::CompatibilityFactTransport {
                 source,
                 target,
@@ -1221,7 +1198,7 @@ pub(super) fn smart_site_spelling(site: SmartSite) -> &'static str {
         SmartSite::Engine(SmartTacticKind::Arithmetic) => "arithmetic",
         SmartSite::Engine(SmartTacticKind::Solve) => "solve",
         SmartSite::Engine(SmartTacticKind::Execute) => "implicit tail",
-        SmartSite::Elided(ElidedArgument::FrameEvidence) => "transport",
+        SmartSite::FactTransport => "transport",
         SmartSite::CloseInvariants => "close_invariants",
         SmartSite::Implicit => "implicit tail",
     }
@@ -1280,7 +1257,7 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         ProofStep::Enumerate => TacticClass::Simple(SimpleTactic::Enumerate),
         ProofStep::Contradiction(_) => TacticClass::Simple(SimpleTactic::Contradiction),
         ProofStep::Rewrite(_) => TacticClass::Simple(SimpleTactic::Rewrite),
-        ProofStep::TransportUsing { .. } | ProofStep::CompatibilityFactTransport { .. } => {
+        ProofStep::CompatibilityFactTransport { .. } => {
             TacticClass::Simple(SimpleTactic::FactTransport)
         }
         ProofStep::Instantiate { .. } => TacticClass::Simple(SimpleTactic::Instantiate),

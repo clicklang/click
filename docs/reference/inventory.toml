@@ -1557,9 +1557,6 @@ path = "reference/tactics/index.md#proposition-reasoning"
 id = "tactic-form.transport"
 path = "reference/tactics/index.md#resources-and-transport"
 [[item]]
-id = "tactic-form.transport-using"
-path = "reference/tactics/index.md#resources-and-transport"
-[[item]]
 id = "tactic-form.instantiate"
 path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
@@ -5727,3 +5724,19 @@ path = "reference/library/index.md#float_orderfloat64_divide_negative_lower"
 [[item]]
 id = "library.theorem.float_order::float64_divide_negative_upper"
 path = "reference/library/index.md#float_orderfloat64_divide_negative_upper"
+
+[[item]]
+id = "library.theorem.float_order::float32_scale_negative_lower"
+path = "reference/library/index.md#float_orderfloat32_scale_negative_lower"
+
+[[item]]
+id = "library.theorem.float_order::float32_scale_negative_upper"
+path = "reference/library/index.md#float_orderfloat32_scale_negative_upper"
+
+[[item]]
+id = "library.theorem.float_order::float32_scale_negative_right_lower"
+path = "reference/library/index.md#float_orderfloat32_scale_negative_right_lower"
+
+[[item]]
+id = "library.theorem.float_order::float32_scale_negative_right_upper"
+path = "reference/library/index.md#float_orderfloat32_scale_negative_right_upper"

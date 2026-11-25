@@ -14,14 +14,20 @@ theorem short_fold_sum() {
 }
 
 theorem short_fold_in_arithmetic() {
-    ensures to_integer((1..3).fold(5, |acc: int32, k: int32| -> int32 { acc + k }) + 1) == 9
-        by { normalize(); }
+    let total: int32 = (1..3).fold(5, |acc: int32, k: int32| -> int32 { acc + k });
+    ensures to_integer(total + 1) == 9 by {
+        have total == 8 by { close(); }
+        close();
+    }
 }
 
 theorem short_fold_with_symbolic_arithmetic(seed: int32) {
     requires seed < 2147483647;
-    ensures to_integer((1..2).fold(seed, |acc: int32, k: int32| -> int32 { acc + k }))
-        == to_integer(seed + 1) by { normalize(); }
+    let total: int32 = (1..2).fold(seed, |acc: int32, k: int32| -> int32 { acc + k });
+    ensures to_integer(total) == to_integer(seed + 1) by {
+        have total == ((seed + 1) as int32) by { close(); }
+        close();
+    }
 }
 
 theorem short_fold_below_zero() {

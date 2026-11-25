@@ -638,7 +638,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     | ProofTactic::ApplyInduction { .. }
                     | ProofTactic::Instantiate { .. }
                     | ProofTactic::Transport { .. }
-                    | ProofTactic::TransportUsing { .. }
                     | ProofTactic::CompatibilityFactTransport { .. }
                     | ProofTactic::LetSatisfy(_)
             ) && tactics.get(index + 1).is_some_and(|next| {
@@ -1020,7 +1019,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     // answer. A pure theorem has no frontier to select from.
                     if !matches!(proof.context.as_ref(), ProofContext::Execution(_)) {
                         return Err(proof.step_error(
-                            "bare `transport` selects its premises at a C execution frontier, and this proof has none; write `transport(P, Q) using { ... }` with the premises it needs",
+                            "`transport` requires a C execution frontier; use `have`, `rewrite`, or `close() using` to prove the goal here",
                         ));
                     }
                     proof = match crate::kernel::search::ProofSearch::try_execution_fact_transport_or_refusal(&(proof), source, target)? {
@@ -1081,7 +1080,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     | ProofTactic::ApplyInduction { .. }
                     | ProofTactic::Instantiate { .. }
                     | ProofTactic::Transport { .. }
-                    | ProofTactic::TransportUsing { .. }
                     | ProofTactic::CompatibilityFactTransport { .. }
                     | ProofTactic::LetSatisfy(_)
             ) && !proof.focused_discharged()

@@ -481,11 +481,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have buf == at(before_block, buf) + 16 by close();
    have buf == old(buf) + 16u64 by close();
    have viewable(buf[0u64..len]) by {
-    transport(at(before_block, viewable(buf[0u64..16u64])), viewable(buf[0u64..len])) using {
-     buf == at(before_block, buf) + 16;
-     at(before_block, viewable(buf[0u64..16u64]));
-     len == 0u64;
-    };
+    transport(at(before_block, viewable(buf[0u64..16u64])), viewable(buf[0u64..len]));
    }
    have zlib_prefix_count(16u64, len) == 16 by { unfold(zlib_prefix_count(16u64, len)); close(); }
    have len <= 16u64 by close() using { len == 0u64; };

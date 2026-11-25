@@ -1107,7 +1107,6 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn begin_have(
         &self,
         proposition: SyntaxProposition,
-        observe_goal: bool,
         observed_spelling: bool,
     ) -> Result<ProofScope<'a>, ClickError> {
         #[cfg(test)]
@@ -1141,30 +1140,24 @@ impl<'a> Proof<'a> {
         // context. Its written proof establishes separation from selected
         // evidence; the direct held-resource observation below is independent.
         let at_frontier = matches!(self.focused_obligation(), Some(Obligation::Frontier(_)));
-        // A single written transport is already the selected proof of this
-        // goal. Do not search for an alternative separation or copy the
-        // effect history before that explicit operation can run.
-        let mut body_facts = self.facts().clone();
-        if observe_goal {
-            let resource_unfolded = self
-                .execution()
-                .is_some_and(|execution| execution.presentation.resource_unfolded);
-            // The current partition can answer a selected owned-field query
-            // directly. Try it before general reasoning over older compositions:
-            // those may require expensive state/range transport even though
-            // both current owners already establish this goal.
-            let held_facts = if let Some(execution) = self.execution() {
-                self.facts()
-                    .with_selected_held_resource_separation(&body_kernel, &execution.core.state)
-            } else {
-                self.facts().clone()
-            };
-            body_facts = if !at_frontier || resource_unfolded {
-                held_facts.with_selected_resource_separation(&body_kernel)
-            } else {
-                held_facts
-            };
-        }
+        let resource_unfolded = self
+            .execution()
+            .is_some_and(|execution| execution.presentation.resource_unfolded);
+        // The current partition can answer a selected owned-field query
+        // directly. Try it before general reasoning over older compositions:
+        // those may require expensive state/range transport even though
+        // both current owners already establish this goal.
+        let held_facts = if let Some(execution) = self.execution() {
+            self.facts()
+                .with_selected_held_resource_separation(&body_kernel, &execution.core.state)
+        } else {
+            self.facts().clone()
+        };
+        let body_facts = if !at_frontier || resource_unfolded {
+            held_facts.with_selected_resource_separation(&body_kernel)
+        } else {
+            held_facts
+        };
         let body_execution = self.branch_execution().cloned();
         // Outcome certification must see the assumptions that preceded this
         // scope, not the facts its checked premise-selection operations just

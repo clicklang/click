@@ -3201,6 +3201,29 @@ fn synthesize_surface_atomic_proposition(
             right: pointer(right, parameter_binding, state, bound_variables)?,
         });
     }
+    if let Some([left, right]) =
+        crate::kernel::machine_integer::comparison::native_int32_fold_equality(
+            condition.native_compat(),
+        )
+    {
+        let observe = |term: &MachineTerm| -> Option<crate::kernel::SharedIntegerTerm> {
+            crate::kernel::IntegerTerm::from_machine(MachineIntegerType::Int32, term.clone())
+                .map(Into::into)
+        };
+        return integer_observation_comparison(
+            &observe(left)?,
+            if *value {
+                ComparisonOperator::Equal
+            } else {
+                ComparisonOperator::NotEqual
+            },
+            &observe(right)?,
+            true,
+            parameter_binding,
+            state,
+            bound_variables,
+        );
+    }
     if let ConditionTerm::Compare {
         format,
         relation,

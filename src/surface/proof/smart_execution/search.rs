@@ -315,7 +315,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
 
     /// The bounded source-local form of mid-execution fact transport, as
     /// [`Self::try_execution_fact_transport`], keeping the refusal of its
-    /// last candidate: the checked `transport using` with the source as its
+    /// last candidate: the frame check with the source as its
     /// only premise. A bare `transport` whose premise planner then fails
     /// reports that refusal, which names what the frame could not carry
     /// (`fact_transport_planning_failure`). Keeping it costs nothing: the

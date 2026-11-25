@@ -3256,7 +3256,7 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::Close
             | ProofTactic::Normalize
             | ProofTactic::NormalizeUsing(_)
-                    | ProofTactic::CompatibilityNormalize(_)
+            | ProofTactic::CompatibilityNormalize(_)
             | ProofTactic::ArithmeticUsing(_)
             | ProofTactic::Intro
             | ProofTactic::IntroAs(_)
@@ -3271,14 +3271,8 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::Choose(_)
             | ProofTactic::Solve
             | ProofTactic::ImplicitSolve
-            // `transport(P, Q) using { ... }` names its source, its target,
-            // and every premise, so it needs no state: the explicit facts
-            // decide it. The smart `transport(P, Q)` form still does not
-            // belong here, because it selects its premises from a fixed
-            // state's ambient facts.
-             |  ProofTactic::TransportUsing { .. }
-             |  ProofTactic::CompatibilityFactTransport { .. }
-             |  ProofTactic::SolveUsing(_) => {}
+            | ProofTactic::CompatibilityFactTransport { .. }
+            | ProofTactic::SolveUsing(_) => {}
             ProofTactic::IntroBlock { body, .. } => {
                 validate_pure_theorem_tactics(theorem_name, body)?;
             }
@@ -3403,9 +3397,9 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::CloseInvariantsBy(_) => "close_invariants",
         ProofTactic::Preserve(_) => "preserve",
         ProofTactic::Rewrite(_) => "rewrite",
-        ProofTactic::Transport { .. }
-        | ProofTactic::TransportUsing { .. }
-        | ProofTactic::CompatibilityFactTransport { .. } => "transport",
+        ProofTactic::Transport { .. } | ProofTactic::CompatibilityFactTransport { .. } => {
+            "transport"
+        }
         ProofTactic::Instantiate { .. } => "instantiate",
         ProofTactic::Solve => "solve",
         ProofTactic::ImplicitSolve => "implicit tail",

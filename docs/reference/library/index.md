@@ -10865,3 +10865,47 @@ axiom float64_divide_negative_upper(divisor: double, x: double, bound: double) {
     ensures x / divisor <= bound / divisor;
 }
 ```
+
+### `float_order::float32_scale_negative_lower`
+
+```click
+axiom float32_scale_negative_lower(factor: float, x: float, bound: float) {
+    requires x <= bound;
+    requires isfinite(factor);
+    requires factor < float32_from_bits(0);
+    ensures factor * x >= factor * bound;
+}
+```
+
+### `float_order::float32_scale_negative_upper`
+
+```click
+axiom float32_scale_negative_upper(factor: float, x: float, bound: float) {
+    requires x >= bound;
+    requires isfinite(factor);
+    requires factor < float32_from_bits(0);
+    ensures factor * x <= factor * bound;
+}
+```
+
+### `float_order::float32_scale_negative_right_lower`
+
+```click
+axiom float32_scale_negative_right_lower(factor: float, x: float, bound: float) {
+    requires x <= bound;
+    requires isfinite(factor);
+    requires factor < float32_from_bits(0);
+    ensures x * factor >= bound * factor;
+}
+```
+
+### `float_order::float32_scale_negative_right_upper`
+
+```click
+axiom float32_scale_negative_right_upper(factor: float, x: float, bound: float) {
+    requires x >= bound;
+    requires isfinite(factor);
+    requires factor < float32_from_bits(0);
+    ensures x * factor <= bound * factor;
+}
+```

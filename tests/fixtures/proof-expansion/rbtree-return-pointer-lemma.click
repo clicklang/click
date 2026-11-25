@@ -210,12 +210,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         have rb_old->__rb_parent_color == old(rb_old->__rb_parent_color) by { rewrite(rb_old, rb_new->rb_left); close(); }
                                         have old(rb_old->__rb_parent_color) == address(parent) + (old(rb_old->__rb_parent_color) & 1) by { close(); }
                                         have rb_old->__rb_parent_color == address(parent) + (rb_old->__rb_parent_color & 1) by { close(); }
-                                        transport(at(before_rotate, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *))) == parent, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent) using {
-                                            at(before_rotate, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *))) == parent;
-                                            rb_old == at(before_rotate, rb_new->rb_left);
-                                            separate(memory(rb_old->__rb_parent_color), memory((rb_old as (uint8 *) as (struct sized_node *))->size));
-                                            separate(memory(rb_old->__rb_parent_color), memory((rb_new as (uint8 *) as (struct sized_node *))->size));
-                                        };
+                                        transport(at(before_rotate, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *))) == parent, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent);
                                         let demoted_checked = fold(sized_at(rb_old), { model: SizedTree::Node(identity, parent, color, 1, left_model, right_model), metadata: metadata, left: left, right: right });
                                         have sized_shape(demoted_checked.model) == sized_shape(SizedTree::Node(identity, parent, color, value, left_model, right_model)) by {
                                             rewrite(demoted_checked.model, SizedTree::Node(identity, parent, color, 1, left_model, right_model));
@@ -329,12 +324,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         have rb_old->__rb_parent_color == old(rb_old->__rb_parent_color) by { normalize(); }
                                         have old(rb_old->__rb_parent_color) == address(parent) + (old(rb_old->__rb_parent_color) & 1) by { close(); }
                                         have rb_old->__rb_parent_color == address(parent) + (rb_old->__rb_parent_color & 1) by { close(); }
-                                        transport(at(before_rotate, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *))) == parent, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent) using {
-                                            at(before_rotate, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *))) == parent;
-                                            rb_old == at(before_rotate, rb_new->rb_left);
-                                            separate(memory(rb_old->__rb_parent_color), memory((rb_old as (uint8 *) as (struct sized_node *))->size));
-                                            separate(memory(rb_old->__rb_parent_color), memory((rb_new as (uint8 *) as (struct sized_node *))->size));
-                                        };
+                                        transport(at(before_rotate, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *))) == parent, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent);
                                         let demoted_checked = fold(sized_at(rb_old), { model: SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model), metadata: metadata, left: left, right: right });
                                         have sized_shape(demoted_checked.model) == sized_shape(SizedTree::Node(identity, parent, color, value, left_model, right_model)) by {
                                             rewrite(demoted_checked.model, SizedTree::Node(identity, parent, color, 1 + rv, left_model, right_model));
@@ -462,12 +452,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         have rb_old->__rb_parent_color == old(rb_old->__rb_parent_color) by { normalize(); }
                                         have old(rb_old->__rb_parent_color) == address(parent) + (old(rb_old->__rb_parent_color) & 1) by { close(); }
                                         have rb_old->__rb_parent_color == address(parent) + (rb_old->__rb_parent_color & 1) by { close(); }
-                                        transport(at(before_rotate, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *))) == parent, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent) using {
-                                            at(before_rotate, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *))) == parent;
-                                            rb_old == at(before_rotate, rb_new->rb_left);
-                                            separate(memory(rb_old->__rb_parent_color), memory((rb_old as (uint8 *) as (struct sized_node *))->size));
-                                            separate(memory(rb_old->__rb_parent_color), memory((rb_new as (uint8 *) as (struct sized_node *))->size));
-                                        };
+                                        transport(at(before_rotate, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *))) == parent, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent);
                                         let demoted_checked = fold(sized_at(rb_old), { model: SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model), metadata: metadata, left: left, right: right });
                                         have sized_shape(demoted_checked.model) == sized_shape(SizedTree::Node(identity, parent, color, value, left_model, right_model)) by {
                                             rewrite(demoted_checked.model, SizedTree::Node(identity, parent, color, 1 + lv, left_model, right_model));
@@ -586,12 +571,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         have rb_old->__rb_parent_color == old(rb_old->__rb_parent_color) by { normalize(); }
                                         have old(rb_old->__rb_parent_color) == address(parent) + (old(rb_old->__rb_parent_color) & 1) by { close(); }
                                         have rb_old->__rb_parent_color == address(parent) + (rb_old->__rb_parent_color & 1) by { close(); }
-                                        transport(at(before_rotate, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *))) == parent, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent) using {
-                                            at(before_rotate, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *))) == parent;
-                                            rb_old == at(before_rotate, rb_new->rb_left);
-                                            separate(memory(rb_old->__rb_parent_color), memory((rb_old as (uint8 *) as (struct sized_node *))->size));
-                                            separate(memory(rb_old->__rb_parent_color), memory((rb_new as (uint8 *) as (struct sized_node *))->size));
-                                        };
+                                        transport(at(before_rotate, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *))) == parent, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent);
                                         let demoted_checked = fold(sized_at(rb_old), { model: SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model), metadata: metadata, left: left, right: right });
                                         have sized_shape(demoted_checked.model) == sized_shape(SizedTree::Node(identity, parent, color, value, left_model, right_model)) by {
                                             rewrite(demoted_checked.model, SizedTree::Node(identity, parent, color, 1 + lv + rv, left_model, right_model));

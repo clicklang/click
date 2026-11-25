@@ -2796,56 +2796,6 @@ fn restricted_solve_premises_retain_declared_resource_argument_types() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_20")]
-fn transport_using_retains_declared_resource_argument_types() {
-    let source = r#"
-        resource wrapper(owner: int32*) {}
-
-        int32 inspect(int32* owner) {
-            ensures result == 0;
-        } by {
-            have contains(wrapper(owner), memory(owner[0..1])) by {
-                transport(
-                    contains(wrapper(owner), memory(owner[0..1])),
-                    contains(wrapper(owner), memory(owner[0..1]))
-                ) using {
-                    contains(wrapper(owner), memory(owner[0..1]));
-                }
-                close();
-            }
-        }
-    "#;
-    let file = parse(source).expect("transport resource premises should parse");
-    let SourceProof::Script(tactics) = file.function_blocks()[0].grouped_proof().unwrap() else {
-        panic!("expected grouped proof script");
-    };
-    let ProofTactic::Have(ProofHave {
-        proof: SourceProof::Script(have_tactics),
-        ..
-    }) = &tactics[0]
-    else {
-        panic!("expected have proof");
-    };
-    let ProofTactic::TransportUsing {
-        source,
-        target,
-        premises,
-    } = &have_tactics[0]
-    else {
-        panic!("expected explicit transport");
-    };
-    for proposition in [source, target, &premises[0]] {
-        assert!(matches!(
-            proposition,
-            SyntaxProposition::Contains {
-                parent: ResourceSubject::Declared { parameter_types, .. },
-                ..
-            } if parameter_types == &[InterfaceType::Int32Pointer]
-        ));
-    }
-}
-
-#[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_21")]
 fn rejects_reversed_constant_loadable_segment() {
     let c_source = r#"
@@ -5561,7 +5511,6 @@ test_batches! {
         parses_resource_relation_propositions,
         parses_memory_separate_requirement,
         restricted_solve_premises_retain_declared_resource_argument_types,
-        transport_using_retains_declared_resource_argument_types,
     ],
     surface_syntax_batch_21: [
         rejects_reversed_constant_loadable_segment,

@@ -4155,7 +4155,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         crate::kernel::search::record_discovery("try_float_scale_bound");
         use crate::kernel::KernelFloatType;
         use crate::kernel::proof::arithmetic_special::{
-            FloatScaleOperation::{DivideNegative, DividePositive, MultiplyLeft, MultiplyRight},
+            FloatScaleOperation::{
+                DivideNegative, DividePositive, MultiplyLeft, MultiplyNegativeLeft,
+                MultiplyNegativeRight, MultiplyRight,
+            },
             float_scale_bound_weakening,
         };
         let Some((plan, factor, scale)) = float_scale_bound_weakening(source, goal) else {
@@ -4165,7 +4168,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some((left, right)) = surface_nonstrict_parts(&source_order) else {
             return Ok(None);
         };
-        let reverse = matches!(scale, DivideNegative);
+        let reverse = matches!(
+            scale,
+            DivideNegative | MultiplyNegativeLeft | MultiplyNegativeRight
+        );
         let (x, endpoint) = if plan.lower != reverse {
             (right, left)
         } else {
@@ -4204,6 +4210,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             (MultiplyLeft, false) => "scale_upper",
             (MultiplyRight, true) => "scale_right_lower",
             (MultiplyRight, false) => "scale_right_upper",
+            (MultiplyNegativeLeft, true) => "scale_negative_lower",
+            (MultiplyNegativeLeft, false) => "scale_negative_upper",
+            (MultiplyNegativeRight, true) => "scale_negative_right_lower",
+            (MultiplyNegativeRight, false) => "scale_negative_right_upper",
             (DividePositive, true) => "divide_positive_lower",
             (DividePositive, false) => "divide_positive_upper",
             (DivideNegative, true) => "divide_negative_lower",
@@ -8182,7 +8192,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// mid-execution, such as loop-invariant initialization and preservation.
     /// The candidate space is the execution's
     /// recorded-state index, not the ambient fact set; every accepted source
-    /// and target is checked by `TransportUsing` on this immutable Proof.
+    /// and target is checked against this immutable proof.
     pub(in crate::surface::proof) fn try_state_transport_closure(
         search_input: &Proof<'a>,
         surface_goal: &SyntaxProposition,
@@ -13419,9 +13429,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .into_iter()
                 .try_fold(prepared, |proof, (proposition, steps)| {
                     let candidate = (|| {
-                        let mut scope = proof
-                            .driver()
-                            .open_have_with_goal_observations(proposition, true)?;
+                        let mut scope = proof.driver().open_have_as_written(proposition)?;
                         for step in steps {
                             scope = scope.driver().apply_step(step)?;
                         }

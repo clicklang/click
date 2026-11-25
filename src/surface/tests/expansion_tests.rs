@@ -23243,6 +23243,23 @@ fn loop_maintain_expansion_preserves_pointer_arm_binding() {
     verify_c_sources(&expanded, &sources).expect("the expanded proof checks");
 }
 
+#[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_68")]
+fn loop_maintain_instantiation_expands_and_replays() {
+    let (source, sources) = mdtest_sources("mdtests/loop_decreases_index_ordered_walk.md");
+    let sources = crate::cli::source_refs(&sources);
+    let label = "walk.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+        .expect("the loop proof with bare instantiation should expand");
+    let maintain = expanded.split_once("maintain by {").unwrap().1;
+    let before_step = maintain.split_once("step()").unwrap().0;
+    assert!(before_step.contains("instantiate(forall"), "{expanded}");
+    crate::surface::without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
+    })
+    .expect("the expanded proof should replay with the instantiated fact");
+}
+
 /// A loop phase written in a grouped proof's `loop` tactic is a claim of its
 /// own: its label, and a line of its proof, select just that phase, and the
 /// expansion replaces only the phase's `by` clause with its checked
@@ -26745,6 +26762,7 @@ test_batches! {
         unfolded_conjunction_have_solve_expands_and_rechecks,
         outcome_predecessor_bound_solve_expands_to_arithmetic_steps,
         loop_preservation_case_after_step_expands_in_place,
+        loop_maintain_instantiation_expands_and_replays,
     ],
     expansion_batch_69: [
         loop_preservation_case_before_step_expands_in_place,

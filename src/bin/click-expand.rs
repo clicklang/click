@@ -1025,17 +1025,33 @@ int32 identity(int32 x) {
             }
         }
 
-        let negative_product = directory.path().join("negative_product.click");
+        let negative_multiplication = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/float32_negative_literal_multiplication.md");
+        check(&negative_multiplication, "negative_product.ensures_0").unwrap();
+        for (claim, side) in [
+            ("multiply_left.ensures_0", ""),
+            ("multiply_right.ensures_0", "right_"),
+        ] {
+            let expanded = check(&negative_multiplication, claim).unwrap();
+            for bound in ["lower", "upper"] {
+                assert!(
+                    expanded.contains(&format!("float32_scale_negative_{side}{bound}")),
+                    "{claim}: {expanded}"
+                );
+            }
+        }
+
+        let double_product = directory.path().join("double_product.click");
         fs::write(
-            &negative_product,
-            r#"theorem negative_product(x: float) {
-    requires x >= float32_from_bits(0xc1200000);
-    ensures x * float32_from_bits(0xc0000000) <= float32_from_bits(0x41a00000) by close();
+            &double_product,
+            r#"theorem double_product(x: double) {
+    requires x <= float64_from_bits(0x4024000000000000u64);
+    ensures x * float64_from_bits(0x4000000000000000u64) <= float64_from_bits(0x4034000000000000u64) by close();
 }
 "#,
         )
         .unwrap();
-        let generated = check(&negative_product, "negative_product.ensures_0").unwrap_err();
+        let generated = check(&double_product, "double_product.ensures_0").unwrap_err();
         assert!(
             generated.contains("Expanded proof still contains normalize()"),
             "{generated}"

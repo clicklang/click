@@ -705,7 +705,7 @@ fn rejects_apply_theorem_with_explicit_premises() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_07")]
-fn parses_transport_with_explicit_premises() {
+fn rejects_transport_with_explicit_premises() {
     let source = FILL3_CLICK.replace(
         "== 2;",
         "== 2 by {
@@ -717,13 +717,11 @@ fn parses_transport_with_explicit_premises() {
             close();
         }",
     );
-    let file = parse(&source).expect("explicit-premise transport should parse");
-    let ensure = &file.function_blocks()[0].ensures()[0];
-
-    assert!(matches!(
-        &ensure.proof().tactics().expect("expected tactics")[1],
-        ProofTactic::TransportUsing { premises, .. } if premises.len() == 1
-    ));
+    let error = parse(&source).expect_err("the selected-premise form is retired");
+    assert!(
+        error.message().contains("`transport ... using` is retired"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -797,10 +795,10 @@ fn parses_and_classifies_simple_and_smart_tactics() {
             target: transport_target.clone(),
         }
         .class(),
-        TacticClass::Smart(SmartSite::Elided(ElidedArgument::FrameEvidence))
+        TacticClass::Smart(SmartSite::FactTransport)
     ));
     assert!(matches!(
-        ProofTactic::TransportUsing {
+        ProofTactic::CompatibilityFactTransport {
             source: transport_source,
             target: transport_target,
             premises: Vec::new(),
@@ -1470,7 +1468,7 @@ test_batches! {
         rejects_apply_theorem_with_explicit_premises,
     ],
     control_batch_07: [
-        parses_transport_with_explicit_premises,
+        rejects_transport_with_explicit_premises,
         parses_and_classifies_simple_and_smart_tactics,
         canonical_tactic_printer_round_trips_nested_surface_certificate,
         canonical_tactic_printer_round_trips_cases_certificate,

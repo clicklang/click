@@ -121,7 +121,7 @@ without changing C or weakening contracts.
 
 Open item (b): retire the legacy `transport` tactic, written and generated.
 
-Written `transport(source, target)` (bare or `transport ... using`) carries a
+Written `transport(source, target)` carries a
 fact across execution. Its fixed-state route rebuilds transition contexts
 with `assume_proposition_uncharged` (`count_uncharged_context_entries`
 counts them), which grows with the path; see "Uncharged transport contexts"
@@ -170,7 +170,7 @@ verifier defect gets its own diagnosis rather than growing a chunk.
 | 33 | Delete the transition-context rebuilding implementation |
 | 34 | Enforce that an expanded proof cannot create `ProofSearch` (a test, not a text search) |
 
-Producer anchors for chunk 30, which construct `TransportUsing`:
+Producer anchors investigated in chunk 30:
 `plan_explicit_universal_conclusion_discharge` and
 `plan_explicit_loadability_transport`
 (`src/surface/proof/surface_certificates.rs`), `try_carry_entry_conjunct`

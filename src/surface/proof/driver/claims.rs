@@ -5046,21 +5046,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     );
                                 }
                             }
-                            PostExecutionTactic::Transport { source, target }
-                            | PostExecutionTactic::Leaf(ProofTactic::TransportUsing {
-                                source,
-                                target,
-                                ..
-                            }) => {
-                                // A written `transport using` is the same
-                                // checked leaf it is at an execution
-                                // frontier; a bare `transport` searches.
-                                let written = match post_tactic {
-                                    PostExecutionTactic::Leaf(tactic) => {
-                                        SourceContext::PostExecution.leaf_step(tactic)
-                                    }
-                                    _ => None,
-                                };
+                            PostExecutionTactic::Transport { source, target } => {
                                 if !matches!(outcome, FunctionOutcome::Return { .. }) {
                                     return Err(ClickError::new(format!(
                                         "`{proof_label}` path {path_index}, tactic {tactic_index}: `transport` requires a return outcome"
@@ -5069,29 +5055,15 @@ pub(super) fn finish_ordered_proof<'a>(
                                 let (checked_facts, certificate) = if let Some(evolving) =
                                     outcome_proof.take()
                                 {
-                                    // Both forms advance this path's
-                                    // evolving outcome proof, which records
-                                    // the checked lowerings on the goal
-                                    // atomically. A bare `transport` is
-                                    // planned exactly as at an execution
-                                    // frontier, against the outcome's state.
+                                    // Plan against the evolving outcome state and
+                                    // retain its checked lowerings.
                                     let prepared = evolving.with_outcome_store_consequences()?;
                                     let before = prepared.checkpoint();
-                                    let transported = if let Some(step) = written {
-                                        prepared.driver().apply_step(step)
-                                    } else {
-                                        match crate::kernel::search::ProofSearch::try_execution_fact_transport_or_refusal(&(prepared),
-                                            source, target,
-                                        )? {
-                                            Ok(transported) => Ok(transported),
-                                            Err(source_refusal) => crate::kernel::search::ProofSearch::apply_planned_fact_transport(
- &prepared,
-                                                    source,
-                                                    target,
-                                                    *tactic_index,
-                                                    source_refusal.as_ref(),
-                                                ),
-                                        }
+                                    let transported = match crate::kernel::search::ProofSearch::try_execution_fact_transport_or_refusal(&prepared, source, target)? {
+                                        Ok(transported) => Ok(transported),
+                                        Err(source_refusal) => crate::kernel::search::ProofSearch::apply_planned_fact_transport(
+                                            &prepared, source, target, *tactic_index, source_refusal.as_ref(),
+                                        ),
                                     }
                                     .inspect_err(|_| {
                                         prepared.record_certification_failure_trace(
@@ -5746,16 +5718,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         }
                         if let Err(error) = check_verification_deadline() {
                             let current = outcome_proof.as_ref().unwrap_or(&proof);
-                            return Err(
-                                if matches!(
-                                    post_tactic,
-                                    PostExecutionTactic::Leaf(ProofTactic::TransportUsing { .. })
-                                ) {
-                                    current.attach_transport_budget_diagnostic(error, current)
-                                } else {
-                                    current.attach_step_diagnostic(error)
-                                },
-                            );
+                            return Err(current.attach_step_diagnostic(error));
                         }
                     }
                     drop(_post_execution_timing);

@@ -32,7 +32,7 @@ have_by_integer_arithmetic
 open_contract_claim
 open_contract_claim_without_lowering_facts
 open_have
-open_have_with_goal_observations
+open_have_as_written
 open_have_with_presentation
 open_source_have
 plan_invariant_bundle_member_closure

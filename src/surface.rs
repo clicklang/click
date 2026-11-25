@@ -6356,11 +6356,6 @@ pub enum ProofTactic {
         source: SyntaxProposition,
         target: SyntaxProposition,
     },
-    TransportUsing {
-        source: SyntaxProposition,
-        target: SyntaxProposition,
-        premises: Vec<SyntaxProposition>,
-    },
     /// A legacy frame check with no ordinary Surface expansion.
     CompatibilityFactTransport {
         source: SyntaxProposition,
@@ -6476,34 +6471,14 @@ pub enum SmartTacticKind {
     Execute,
 }
 
-/// A simple tactic written with one argument elided. The search behind it
-/// only looks the argument up, and the same tactic with the argument
-/// written is [`ElidedArgument::written_form`].
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ElidedArgument {
-    /// `apply(theorem(args))`: the theorem's premises.
-    /// `apply(ih(m))`: the hypothesis's premises.
-    /// `transport(P, Q)`: the frame evidence.
-    FrameEvidence,
-}
-
-impl ElidedArgument {
-    /// The simple tactic the elided form is, once its argument is written.
-    pub fn written_form(self) -> SimpleTactic {
-        match self {
-            Self::FrameEvidence => SimpleTactic::FactTransport,
-        }
-    }
-}
-
 /// What a smart site searches with. Each runs on the smart budget, is
 /// refused by a certificate, and is replaced by `click expand`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SmartSite {
-    /// One of the four smart tactics.
+    /// A smart tactic engine.
     Engine(SmartTacticKind),
-    /// A simple tactic whose argument a lookup fills.
-    Elided(ElidedArgument),
+    /// Bare `transport(P, Q)` searches for frame evidence.
+    FactTransport,
     /// Bare `close_invariants()`: a fixed expansion into
     /// `close_invariants() by { ... }` with `close()` on each member.
     CloseInvariants,
@@ -6793,11 +6768,6 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "smart",
     },
     PublicTacticForm {
-        id: "transport-using",
-        syntax: "transport(P, Q) using",
-        class: "simple",
-    },
-    PublicTacticForm {
         id: "instantiate",
         syntax: "instantiate(F, value, ...)",
         class: "simple",
@@ -6971,10 +6941,8 @@ impl ProofTactic {
             Self::CloseInvariantsBy(_) => TacticClass::Control(ControlTactic::CloseInvariants),
             Self::StepProved { .. } => TacticClass::Control(ControlTactic::StepProofs),
             Self::Rewrite(_) => TacticClass::Simple(SimpleTactic::Rewrite),
-            Self::Transport { .. } => {
-                TacticClass::Smart(SmartSite::Elided(ElidedArgument::FrameEvidence))
-            }
-            Self::TransportUsing { .. } | Self::CompatibilityFactTransport { .. } => {
+            Self::Transport { .. } => TacticClass::Smart(SmartSite::FactTransport),
+            Self::CompatibilityFactTransport { .. } => {
                 TacticClass::Simple(SimpleTactic::FactTransport)
             }
             Self::Instantiate { .. } => TacticClass::Simple(SimpleTactic::Instantiate),

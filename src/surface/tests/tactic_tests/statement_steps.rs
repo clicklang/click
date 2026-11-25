@@ -20,9 +20,7 @@ fn pure_proofs_use_rewrite_instead_of_transport_using() {
     );
     let error = verify_c_sources(&retired, &[]).unwrap_err();
     assert!(
-        error
-            .message()
-            .contains("`transport ... using` is retired in pure proofs"),
+        error.message().contains("`transport ... using` is retired"),
         "{error}"
     );
 }
@@ -907,7 +905,7 @@ fn execute_step_omits_materialization_only_transport() {
     assert!(
         !expanded
             .iter()
-            .any(|tactic| matches!(tactic, ProofTactic::TransportUsing { .. })),
+            .any(|tactic| matches!(tactic, ProofTactic::CompatibilityFactTransport { .. })),
         "{expanded:#?}"
     );
     ProofCertificate::from_proof_tactics(&expanded)
@@ -973,7 +971,7 @@ fn execute_step_omits_materialized_mixed_state_transport() {
     assert!(
         !expanded
             .iter()
-            .any(|tactic| matches!(tactic, ProofTactic::TransportUsing { .. })),
+            .any(|tactic| matches!(tactic, ProofTactic::CompatibilityFactTransport { .. })),
         "{expanded:#?}"
     );
     ProofCertificate::from_proof_tactics(&expanded)
@@ -1042,7 +1040,7 @@ fn execute_step_omits_materialization_transport_across_statements() {
     assert_eq!(
         expanded
             .iter()
-            .filter(|tactic| matches!(tactic, ProofTactic::TransportUsing { .. }))
+            .filter(|tactic| matches!(tactic, ProofTactic::CompatibilityFactTransport { .. }))
             .count(),
         0,
         "{expanded:#?}"

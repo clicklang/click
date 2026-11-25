@@ -95,7 +95,7 @@ pub(super) struct TheoremApplicationContext<'a> {
 /// ambient fact becomes evidence for anything else.
 ///
 /// Every checker that turns a `using` list into evidence (`apply using` in
-/// pure and fixed-state proofs, `transport using`) calls this one rule.
+/// pure and fixed-state proofs) calls this one rule.
 pub(super) fn cite_range_span_guards(
     premise: &Proposition,
     evidence: &mut Vec<Proposition>,

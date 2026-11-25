@@ -1392,23 +1392,6 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ProofTactic::CompatibilityFactTransport { .. } => {
             line(output, &prefix, COMPATIBILITY_FACT_TRANSPORT)
         }
-        ProofTactic::TransportUsing {
-            source,
-            target,
-            premises,
-        } => {
-            line(
-                output,
-                &prefix,
-                &format!(
-                    "transport({}, {}) using {{",
-                    source_click_proposition(source),
-                    source_click_proposition(target)
-                ),
-            );
-            write_premise_list(output, premises, indent + 1);
-            line(output, &prefix, "};");
-        }
         ProofTactic::Instantiate {
             quantified,
             arguments,
