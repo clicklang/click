@@ -603,6 +603,9 @@ pub(super) struct TermClasses {
     class_casts: PersistentMap<u64, PersistentMap<machine_relations::CastKey, u64>>,
     fired_machine_relations: PersistentSet<(u64, u64)>,
     pending_machine_relations: Vec<(machine_relations::Relation, u64, u64)>,
+    // Pairs of complete pointer values whose classes merged, still to be
+    // joined component by component (provenance, bounds and address).
+    pending_pointer_joins: Vec<(crate::kernel::Pointer, crate::kernel::Pointer)>,
     relating_machine_terms: bool,
     // Constant signed int32 bounds belong to a value class, not a spelling.
     // A class union intersects two intervals in constant local work.
@@ -677,6 +680,9 @@ pub(super) struct TermClasses {
     // A domain query reads this index without registering terms or reads.
     bounds_origin_nodes: PersistentMap<Address, u64>,
     pointer_value_merges: imbl::Vector<(AddressBase, AddressBase)>,
+    // Addresses of complete pointer values found equal by a class merge,
+    // for the block layer to join as a stated pointer equality does.
+    pointer_address_merges: imbl::Vector<(crate::kernel::Address, crate::kernel::Address)>,
     nodes: PersistentMap<Node, u64>,
     load_blocks: PersistentMap<AddressBase, u64>,
     // The load nodes, four-byte and narrow, already queued for registration.
@@ -1001,6 +1007,12 @@ impl TermClasses {
 
     pub(super) fn take_pointer_value_merges(&mut self) -> imbl::Vector<(AddressBase, AddressBase)> {
         std::mem::take(&mut self.pointer_value_merges)
+    }
+
+    pub(super) fn take_pointer_address_merges(
+        &mut self,
+    ) -> imbl::Vector<(crate::kernel::Address, crate::kernel::Address)> {
+        std::mem::take(&mut self.pointer_address_merges)
     }
 
     #[cfg(test)]
@@ -3007,6 +3019,10 @@ impl TermClasses {
                     self.fire_machine_relation(&mut pending);
                     continue;
                 }
+                if let Some((left, right)) = self.pending_pointer_joins.pop() {
+                    self.join_pointer_components(&left, &right, &mut pending);
+                    continue;
+                }
                 break;
             };
             crate::instrumentation::record_deterministic_work(1);
@@ -3035,6 +3051,13 @@ impl TermClasses {
             }
             if let Some(value) = self.pointer_values.get(&moved).cloned() {
                 self.pointer_values.remove(&moved);
+                // Two complete pointer values in one class are one value:
+                // their provenance, bounds and address are equal too, as for
+                // a stated pointer equality. Injectivity of a constructor
+                // over a pointer field reaches the components this way.
+                if let Some(previous) = self.pointer_values.get(&kept).cloned() {
+                    self.pending_pointer_joins.push((previous, value.clone()));
+                }
                 self.retain_pointer_value(kept, value);
             }
             if let Some(value) = self.bounds_values.get(&moved).cloned() {
