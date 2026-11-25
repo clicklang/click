@@ -1667,6 +1667,7 @@ pub(in crate::surface) fn kernel_loop_by_index<'a>(
             .iter()
             .find_map(|case| kernel_loop_by_index(&case.body, target, next_loop_index)),
         ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::BuiltinConstantP { .. }
         | ProgramStatement::Skip
         | ProgramStatement::Break
         | ProgramStatement::Continue

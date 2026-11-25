@@ -124,6 +124,7 @@ pub(super) fn statement_expressions<'a>(
 
         ProgramStatement::Seq(statements) => statement_expressions(statements.first(), expressions),
         ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::BuiltinConstantP { .. }
         | ProgramStatement::Skip
         | ProgramStatement::Break
         | ProgramStatement::Continue

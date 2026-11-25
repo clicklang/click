@@ -554,6 +554,9 @@ impl<'a> Proof<'a> {
                 Ok(FrontierResult::Local(target))
             }
             ProgramStatement::CallResult { call, .. } => Ok(FrontierResult::Retained(call)),
+            ProgramStatement::BuiltinConstantP { step } if allow_non_call => {
+                Ok(FrontierResult::Retained(step))
+            }
             ProgramStatement::StepValue { aggregate_layout: None, steps, .. }
                 if allow_non_call && !steps.is_empty() =>
             {

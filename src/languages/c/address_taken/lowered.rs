@@ -57,6 +57,7 @@ pub(super) fn summarize(function: &ProgramFunction, summary: &mut AddressTakenSu
                 summary.taken.insert(name.clone().into());
             }
             ProgramStatement::ThrowOpaque(_)
+            | ProgramStatement::BuiltinConstantP { .. }
             | ProgramStatement::Skip
             | ProgramStatement::Break
             | ProgramStatement::Continue

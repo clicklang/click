@@ -5290,6 +5290,7 @@ fn c_syntax_models_missing_else_and_empty_statements_as_skip() {
             | syntax::CStatement::Update { .. }
             | syntax::CStatement::Assert { .. }
             | syntax::CStatement::StepValue { .. }
+            | syntax::CStatement::BuiltinConstantP { .. }
             | syntax::CStatement::LoopTest { .. } => false,
         }
     }

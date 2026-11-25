@@ -4224,6 +4224,7 @@ pub(super) fn describe_statement_head(statement: &ProgramStatement) -> String {
         ProgramStatement::Assert { condition, .. } => {
             format!("assert({})", describe_program_expression(condition))
         }
+        ProgramStatement::BuiltinConstantP { .. } => "__builtin_constant_p(…)".into(),
         ProgramStatement::StepValue { expression, .. } => {
             format!("value {}", describe_program_expression(expression))
         }

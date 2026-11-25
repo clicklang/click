@@ -127,10 +127,6 @@ The external catalog symbols `memcmp` and `strlen` are verified in
 and `memset`'s fill conversion is checked at a call in
 [`c_builtin_memset_header_checks_its_contract.md`](c_builtin_memset_header_checks_its_contract.md).
 
-The external catalog symbol `__click_constant_p_unknown`, the value of the C
-builtin `__builtin_constant_p`, is verified in
-[`c_builtin_constant_p.md`](c_builtin_constant_p.md).
-
 The linked `stdout` value and the exported `stdout_non_null` theorem are used in
 [`hosted_stdout_uses_its_library_value.md`](hosted_stdout_uses_its_library_value.md).
 

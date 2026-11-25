@@ -6471,6 +6471,10 @@ pub(super) fn describe_program_expression(expression: &ProgramExpression) -> Str
             describe_contract_expression(&spelled)
         }
         ProgramExpression::StepResult {
+            origin: crate::kernel::StepOrigin::BuiltinConstantP,
+            ..
+        } => "__builtin_constant_p(…)".into(),
+        ProgramExpression::StepResult {
             origin: crate::kernel::StepOrigin::Call(function_name),
             ..
         } => format!("{}(…)", describe_called_function(function_name)),
@@ -7300,6 +7304,7 @@ pub(super) fn describe_execution_statement_head(statement: &ProgramStatement) ->
             describe_called_function(function_name),
             describe_program_expression_list(arguments)
         ),
+        ProgramStatement::BuiltinConstantP { .. } => "__builtin_constant_p(…);".into(),
         ProgramStatement::HeapAllocate {
             target,
             bytes,
