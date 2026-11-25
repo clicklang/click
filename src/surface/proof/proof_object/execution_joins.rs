@@ -970,10 +970,16 @@ impl<'a> Proof<'a> {
             .kernel_variable_mark()
             .max(arms[1].execution.core.kernel_variable_mark());
 
-        let abstract_arm = |arm: &CheckedExecutionJoinArm<'_>| -> Result<
-            (ExecutionProofState, PureFactStore),
-            ClickError,
-        > {
+        let split_state = checked_condition_split.as_ref().map_or_else(
+            || parent_execution.core.reached_state(),
+            CheckedBranchSplit::state,
+        );
+        let arm_endpoints = arms
+            .each_ref()
+            .map(|arm| arm.execution.core.reached_state());
+        let abstract_arm = |arm: &CheckedExecutionJoinArm<'_>,
+                            other_abstraction: Option<&ExecutionState>|
+         -> Result<(ExecutionProofState, PureFactStore), ClickError> {
             let mut execution = arm.execution.clone();
             let mut facts = arm.facts.clone();
             let ProofContext::Execution(context) = self.context.as_ref() else {
@@ -986,12 +992,17 @@ impl<'a> Proof<'a> {
                 &mut execution,
                 context,
                 &mut facts,
-                Some(crate::surface::proof::cursor_execution::BranchInterfaceJoinInputs {
-                    sibling_states: &sibling_join_states,
-                    recorded_states: &common_states,
-                    proof: self,
-                    entry_facts: parent_facts,
-                }),
+                Some(
+                    crate::surface::proof::cursor_execution::BranchInterfaceJoinInputs {
+                        sibling_states: &sibling_join_states,
+                        arm_endpoints,
+                        split_state,
+                        other_abstraction,
+                        recorded_states: &common_states,
+                        proof: self,
+                        entry_facts: parent_facts,
+                    },
+                ),
                 join_next_kernel_variable,
             )
             .map_err(|error| {
@@ -1003,8 +1014,9 @@ impl<'a> Proof<'a> {
             })?;
             Ok((execution, facts))
         };
-        let (then_abstract, then_interface_facts) = abstract_arm(&arms[0])?;
-        let (else_abstract, else_interface_facts) = abstract_arm(&arms[1])?;
+        let (then_abstract, then_interface_facts) = abstract_arm(&arms[0], None)?;
+        let (else_abstract, else_interface_facts) =
+            abstract_arm(&arms[1], Some(&then_abstract.core.state))?;
 
         let then_interface_vec = then_interface_facts.to_vec();
         let else_interface_vec = else_interface_facts.to_vec();
