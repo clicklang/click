@@ -210,6 +210,14 @@ void set_parent(struct rb_node* node, struct rb_node* parent) {
     requires aligned(parent, 8);
     owns node->__rb_parent_color;
     ensures node->__rb_parent_color == address(parent) + (old(node->__rb_parent_color) & 1);
+} by {
+    step();
+    step();
+    have to_integer(node->__rb_parent_color) ==
+         to_integer(address(parent) + (old(node->__rb_parent_color) & 1)) by {
+        normalize() using { at(function.entry, aligned(parent, 8)); };
+    }
+    close();
 }
 
 void set_black_parent(struct rb_node* node, struct rb_node* parent) {
@@ -259,7 +267,7 @@ int32 relinked_is_empty(struct rb_node* node, struct rb_node* parent) {
     ensures result == 0;
 } by {
     step();
-    have address(parent) == (node->__rb_parent_color & ~3) by close() using {
+    have address(parent) == (node->__rb_parent_color & ~3) by normalize() using {
         aligned(parent, 8);
     };
     have address(node) == (address(node) & ~3) by close() using {

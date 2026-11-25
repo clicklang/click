@@ -119,10 +119,10 @@ bool pop(struct stack* s, int32* out) {
                 List::Cons(next_value, next_items) => {
                     let { tail: next } = unfold(tail);
                     let after = fold(nodes(s->head), { items: List::Cons(next_value, next_items), tail: next });
-                    have to_integer(old(s->count)) == length(tail_items) + 1 by close() using {
-                        to_integer(old(s->count)) == length(List::Cons(value, tail_items));
-                        length(List::Cons(value, tail_items)) == length(tail_items) + 1;
-                    };
+                    have to_integer(old(s->count)) == length(tail_items) + 1 by {
+                        rewrite(to_integer(old(s->count)), length(List::Cons(value, tail_items)));
+                        close();
+                    }
                     have to_integer(old(s->count) - 1u64) == to_integer(old(s->count)) - to_integer(1u64);
                     have to_integer(old(s->count) - 1u64) == length(tail_items) by close() using {
                         to_integer(old(s->count) - 1u64) == to_integer(old(s->count)) - to_integer(1u64);
