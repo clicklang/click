@@ -1036,8 +1036,8 @@ pub(super) fn through_single_arm_matches_mut(
 }
 
 /// Appends a suffix at the one leaf of a surface certificate selected by
-/// `branch_path`, following each terminal surface `if` outermost first. The
-/// leaf takes the suffix the way [`append_surface_step_to_leaves`] would.
+/// `branch_path`, following terminal proof cases and call outcomes outermost
+/// first. The leaf takes the suffix the way [`append_surface_step_to_leaves`] would.
 pub(super) fn append_surface_steps_at_step_branch_path(
     steps: &mut Vec<ProofStep>,
     branch_path: &[bool],

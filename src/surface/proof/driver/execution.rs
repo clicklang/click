@@ -3215,7 +3215,7 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                 continue;
             }
             InternalProofNode::CallOutcomes { .. } => Err(ClickError::new(
-                "`outcomes` is available only after function execution, not in a loop preservation proof",
+                "loop preservation proofs cannot split a call with `outcomes`",
             )),
             InternalProofNode::Open {
                 index,
