@@ -75,7 +75,10 @@ theorem subtract_from_literal(x: float) {
 theorem add_bound(x: float) {
     requires x >= float32_from_bits(0xc1200000);
     ensures x + float32_from_bits(0x3f800000) >= float32_from_bits(0xc1100000) by {
-        normalize() using { x >= float32_from_bits(0xc1200000); };
+        apply(click::float_order::float32_add_lower(
+            x, float32_from_bits(0x3f800000), float32_from_bits(0xc1200000), float32_from_bits(0x3f800000)
+        ));
+        close();
     }
 }
 theorem scaled_lower(x: float) {

@@ -4056,22 +4056,23 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         Self::try_apply_float_pair_bound(input, &plan, subtract, [left, right], [first, second])
     }
 
-    fn try_float_literal_subtraction_bound(
+    fn try_float_literal_sum_or_difference_bound(
         input: &Proof<'a>,
         source: &Proposition,
         goal: &Proposition,
         source_surface: &ClickProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
-        crate::kernel::search::record_discovery("try_float_literal_subtraction_bound");
+        crate::kernel::search::record_discovery("try_float_literal_sum_or_difference_bound");
         use crate::kernel::KernelFloatType;
-        use crate::kernel::proof::arithmetic_special::float_literal_subtraction_bound;
-        let Some((plan, bits, literal_on_left)) = float_literal_subtraction_bound(source, goal)
+        use crate::kernel::proof::arithmetic_special::float_literal_sum_or_difference_bound;
+        let Some((plan, bits, literal_on_left, subtract)) =
+            float_literal_sum_or_difference_bound(source, goal)
         else {
             return Ok(None);
         };
         let Some(symbolic) =
-            ordered_float_bound_parts(source_surface, plan.lower != literal_on_left)
+            ordered_float_bound_parts(source_surface, plan.lower != (subtract && literal_on_left))
         else {
             return Ok(None);
         };
@@ -4081,21 +4082,18 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             KernelFloatType::Float64 => crate::kernel::program_expression::float64_literal(bits),
         });
-        let premises = [
-            source_surface.clone(),
-            ClickProposition::Comparison {
-                left: literal.clone(),
-                operator: ComparisonOperator::LessEqual,
-                right: literal.clone(),
-            },
-        ];
-        let constant = (literal.clone(), literal);
-        let operands = if literal_on_left {
-            [constant, symbolic]
-        } else {
-            [symbolic, constant]
+        let reflexive = ClickProposition::Comparison {
+            left: literal.clone(),
+            operator: ComparisonOperator::LessEqual,
+            right: literal.clone(),
         };
-        Self::try_apply_float_pair_bound(input, &plan, true, operands, premises)
+        let constant = (literal.clone(), literal);
+        let (operands, premises) = if literal_on_left {
+            ([constant, symbolic], [reflexive, source_surface.clone()])
+        } else {
+            ([symbolic, constant], [source_surface.clone(), reflexive])
+        };
+        Self::try_apply_float_pair_bound(input, &plan, subtract, operands, premises)
     }
 
     fn try_apply_float_pair_bound(
@@ -4149,9 +4147,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_float_scale_bound");
-        use crate::kernel::proof::arithmetic_special::float_scale_bound_weakening;
-        let Some((plan, factor, literal_on_left)) = float_scale_bound_weakening(source, goal)
-        else {
+        use crate::kernel::proof::arithmetic_special::{
+            FloatScaleOperation, float_scale_bound_weakening,
+        };
+        let Some((plan, factor, scale)) = float_scale_bound_weakening(source, goal) else {
             return Ok(None);
         };
         let source_order = surface_comparison_with_anchored_operands(source_surface);
@@ -4181,11 +4180,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             operator: ComparisonOperator::LessThan,
             right: factor.clone(),
         };
-        let name = match (literal_on_left, plan.lower) {
-            (true, true) => "float32_scale_lower",
-            (true, false) => "float32_scale_upper",
-            (false, true) => "float32_scale_right_lower",
-            (false, false) => "float32_scale_right_upper",
+        use FloatScaleOperation::{Divide, MultiplyLeft, MultiplyRight};
+        let name = match (scale, plan.lower) {
+            (MultiplyLeft, true) => "float32_scale_lower",
+            (MultiplyLeft, false) => "float32_scale_upper",
+            (MultiplyRight, true) => "float32_scale_right_lower",
+            (MultiplyRight, false) => "float32_scale_right_upper",
+            (Divide, true) => "float32_divide_positive_lower",
+            (Divide, false) => "float32_divide_positive_upper",
         };
         let application = ProofStep::ApplyPlannedTheorem {
             application: TheoremApplication {
@@ -4280,7 +4282,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(Some(closed));
         }
         if let Some(closed) =
-            Self::try_float_literal_subtraction_bound(input, source, goal, source_surface)?
+            Self::try_float_literal_sum_or_difference_bound(input, source, goal, source_surface)?
         {
             return Ok(Some(closed));
         }

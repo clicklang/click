@@ -27287,7 +27287,7 @@ fn selected_float_bounds_expand_and_cold_replay() {
     for (fixture, functions) in [
         (
             "float_bound_composition",
-            &["scale_twice", "double_twice"][..],
+            &["scale_twice", "double_twice", "add_one"][..],
         ),
         (
             "float_signed_ranges",
