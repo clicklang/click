@@ -115,7 +115,7 @@ int32 bubble_pass3(int32 p[3]) {
                                         };
                                     }
                                     have p[j + 1] == at(before_swap, p[j]) by { close(); }
-                                    close() using {
+                                    normalize() using {
                                         p[k] == at(before_swap, p[k]);
                                         p[j + 1] == at(before_swap, p[j]);
                                         at(before_swap, p[k] <= p[j]);
@@ -141,7 +141,7 @@ int32 bubble_pass3(int32 p[3]) {
                         intro() {
                             intro() {
                                 instantiate(forall (i: int32) { 0 <= i and 0 <= i and i < j implies p[i] <= p[j] }, k);
-                                close() using { p[k] <= p[j]; p[j] <= p[j + 1]; };
+                                apply(click::integer::int32_less_equal_transitive(p[k], p[j], p[j + 1]));
                             }
                         }
                     }

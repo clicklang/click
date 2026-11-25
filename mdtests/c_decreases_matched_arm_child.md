@@ -71,7 +71,12 @@ int32 tree_depth_ok(struct node* root) {
             branch {
                 true => {
                     step();
-                    let t = fold(tree_at(root), { model: old(t.model), left: l, right: r });
+                    let t = fold(tree_at(root), { model: old(t.model), left: l, right: r }) {
+                        requires root->value == value by {
+                            rewrite(at(function.entry, value), at(function.entry, root->value));
+                            normalize() using {};
+                        }
+                    }
                     close();
                 }
                 false => {}
@@ -80,7 +85,12 @@ int32 tree_depth_ok(struct node* root) {
             step();
             have root->left == old(root->left) by { close(); }
             have root->right == old(root->right) by { close(); }
-            let t = fold(tree_at(root), { model: old(t.model), left: l, right: r });
+            let t = fold(tree_at(root), { model: old(t.model), left: l, right: r }) {
+                requires root->value == value by {
+                    rewrite(at(function.entry, value), at(function.entry, root->value));
+                    normalize() using {};
+                }
+            }
             close();
         },
     }
