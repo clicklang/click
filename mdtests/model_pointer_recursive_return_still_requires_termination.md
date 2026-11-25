@@ -2,7 +2,7 @@
 
 ```click
 function forever(p: struct node*) -> struct node* { forever(p) }
-theorem unrelated() { ensures 1 == 1 by normalize(); }
+theorem unrelated() { ensures 1 == 1 by close(); }
 ```
 
 ```expect

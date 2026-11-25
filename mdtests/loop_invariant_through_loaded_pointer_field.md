@@ -72,7 +72,7 @@ int32 probe_contract(struct job *j) {
 
         initialize by {
             have j->lo <= i and i <= j->hi by {
-                all { j->lo <= i => { normalize(); } i <= j->hi => { close(); } }
+                all { j->lo <= i => { close(); } i <= j->hi => { close(); } }
             }
             have forall (k: int32) { j->lo <= k and k < i implies j->p[k] == j->v } by {
                 intro() {
@@ -93,31 +93,29 @@ int32 probe_contract(struct job *j) {
                 memory(*j), memory(j->p[i])));
             step() by { close(); }
 
-            have separate(statement(2).statement(0).footprint, at(before_write, memory(*j))) by {
-                normalize() using {
-                    separate(at(before_write, memory(j->p[i])), at(before_write, memory(*j)));
-                };
+            have at(before_write, separate(statement(2).statement(0).footprint, memory(*j))) by {
+                close();
             }
             apply(separation::contains_refl(statement(2).statement(0).footprint));
-            have contains(at(before_write, memory(*j)), at(before_write, memory(j->lo))) by { normalize(); }
+            have contains(at(before_write, memory(*j)), at(before_write, memory(j->lo))) by { close(); }
             apply(separation::separate_restrict(statement(2).statement(0).footprint, at(before_write, memory(*j)),
                 statement(2).statement(0).footprint, at(before_write, memory(j->lo))));
             have j->lo == at(before_write, j->lo) by {
                 preserve(at(before_write, memory(j->lo)), statement(2).statement(0));
             }
-            have contains(at(before_write, memory(*j)), at(before_write, memory(j->p))) by { normalize(); }
+            have contains(at(before_write, memory(*j)), at(before_write, memory(j->p))) by { close(); }
             apply(separation::separate_restrict(statement(2).statement(0).footprint, at(before_write, memory(*j)),
                 statement(2).statement(0).footprint, at(before_write, memory(j->p))));
             have j->p == at(before_write, j->p) by {
                 preserve(at(before_write, memory(j->p)), statement(2).statement(0));
             }
-            have contains(at(before_write, memory(*j)), at(before_write, memory(j->hi))) by { normalize(); }
+            have contains(at(before_write, memory(*j)), at(before_write, memory(j->hi))) by { close(); }
             apply(separation::separate_restrict(statement(2).statement(0).footprint, at(before_write, memory(*j)),
                 statement(2).statement(0).footprint, at(before_write, memory(j->hi))));
             have j->hi == at(before_write, j->hi) by {
                 preserve(at(before_write, memory(j->hi)), statement(2).statement(0));
             }
-            have contains(at(before_write, memory(*j)), memory(at(before_write, &j->v)[0])) by { normalize(); }
+            have contains(at(before_write, memory(*j)), memory(at(before_write, &j->v)[0])) by { close(); }
             apply(separation::separate_restrict(statement(2).statement(0).footprint, at(before_write, memory(*j)),
                 statement(2).statement(0).footprint, memory(at(before_write, &j->v)[0])));
             have load<int32>(at(before_write, &j->v)) == at(before_write, load<int32>(&j->v)) by {
@@ -142,10 +140,8 @@ int32 probe_contract(struct job *j) {
                             have separate(at(before_write, memory(j->p[k])), at(before_write, memory(j->p[i]))) by {
                                 apply(separation::separate_elements(at(before_write, j->p), k, at(before_write, i)));
                             }
-                            have separate(statement(2).statement(0).footprint, at(before_write, memory(j->p[k]))) by {
-                                normalize() using {
-                                    separate(at(before_write, memory(j->p[k])), at(before_write, memory(j->p[i])));
-                                };
+                            have at(before_write, separate(statement(2).statement(0).footprint, memory(j->p[k]))) by {
+                                close();
                             }
                             have load<int32>(at(before_write, &j->p[k])) == at(before_write, j->p[k]) by {
                                 preserve(at(before_write, memory(j->p[k])), statement(2).statement(0));

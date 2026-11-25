@@ -8,7 +8,7 @@ function g(a: uint64) -> uint64 { a }
 
 theorem narrow(n: int32) {
     requires (0..n).all(|k| { g(k) == g(k) });
-    ensures true by { normalize(); }
+    ensures true by { close(); }
 }
 ```
 

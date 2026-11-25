@@ -1041,17 +1041,35 @@ int32 identity(int32 x) {
             }
         }
 
-        let double_product = directory.path().join("double_product.click");
+        let double_scaling = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/float64_multiplication_by_literal.md");
+        check(&double_scaling, "double_product.ensures_0").unwrap();
+        for (claim, law) in [
+            ("positive_left.ensures_0", "scale_"),
+            ("positive_right.ensures_0", "scale_right_"),
+            ("negative_left.ensures_0", "scale_negative_"),
+            ("negative_right.ensures_0", "scale_negative_right_"),
+        ] {
+            let expanded = check(&double_scaling, claim).unwrap();
+            for bound in ["lower", "upper"] {
+                assert!(
+                    expanded.contains(&format!("float64_{law}{bound}")),
+                    "{claim}: {expanded}"
+                );
+            }
+        }
+
+        let nonzero = directory.path().join("nonzero.click");
         fs::write(
-            &double_product,
-            r#"theorem double_product(x: double) {
-    requires x <= float64_from_bits(0x4024000000000000u64);
-    ensures x * float64_from_bits(0x4000000000000000u64) <= float64_from_bits(0x4034000000000000u64) by close();
+            &nonzero,
+            r#"theorem nonzero(x: uint64) {
+    requires 0u64 < x;
+    ensures x != 0u64 by close();
 }
 "#,
         )
         .unwrap();
-        let generated = check(&double_product, "double_product.ensures_0").unwrap_err();
+        let generated = check(&nonzero, "nonzero.ensures_0").unwrap_err();
         assert!(
             generated.contains("Expanded proof still contains normalize()"),
             "{generated}"

@@ -5740,3 +5740,35 @@ path = "reference/library/index.md#float_orderfloat32_scale_negative_right_lower
 [[item]]
 id = "library.theorem.float_order::float32_scale_negative_right_upper"
 path = "reference/library/index.md#float_orderfloat32_scale_negative_right_upper"
+
+[[item]]
+id = "library.theorem.float_order::float64_scale_lower"
+path = "reference/library/index.md#float_orderfloat64_scale_lower"
+
+[[item]]
+id = "library.theorem.float_order::float64_scale_upper"
+path = "reference/library/index.md#float_orderfloat64_scale_upper"
+
+[[item]]
+id = "library.theorem.float_order::float64_scale_right_lower"
+path = "reference/library/index.md#float_orderfloat64_scale_right_lower"
+
+[[item]]
+id = "library.theorem.float_order::float64_scale_right_upper"
+path = "reference/library/index.md#float_orderfloat64_scale_right_upper"
+
+[[item]]
+id = "library.theorem.float_order::float64_scale_negative_lower"
+path = "reference/library/index.md#float_orderfloat64_scale_negative_lower"
+
+[[item]]
+id = "library.theorem.float_order::float64_scale_negative_upper"
+path = "reference/library/index.md#float_orderfloat64_scale_negative_upper"
+
+[[item]]
+id = "library.theorem.float_order::float64_scale_negative_right_lower"
+path = "reference/library/index.md#float_orderfloat64_scale_negative_right_lower"
+
+[[item]]
+id = "library.theorem.float_order::float64_scale_negative_right_upper"
+path = "reference/library/index.md#float_orderfloat64_scale_negative_right_upper"
