@@ -3172,57 +3172,113 @@ pub(crate) fn word_order_excludes_literal(goal: &Proposition, premise: &Proposit
 /// An odd multiplier is invertible modulo 2^width. Match the native
 /// product, since an Integer product is a different expression.
 pub(crate) fn odd_product_nonzero_requirement(goal: &Proposition) -> Option<Proposition> {
-    use crate::kernel::MachineOperandView as View;
-    use crate::kernel::machine_integer::comparison::condition_for_operand_views;
+    use crate::kernel::{
+        BooleanOperandView, IntegerComparisonOperator, KernelTermNode, MachineOperandView as View,
+    };
 
-    let Proposition::ConditionIs(condition, false) = goal else {
+    let Proposition::ConditionIs(condition, truth) = goal else {
         return None;
     };
-    let (comparison_format, CompareRelation::Equal, [left, right]) =
-        condition.operand_view().comparison()?
-    else {
-        return None;
-    };
-    for (product, zero) in [(left, right), (right, left)] {
-        let Some(zero) = zero.literal() else {
-            continue;
-        };
-        let zero_matches_width = match comparison_format.format().bits() {
-            32 => zero.constant32() == Some(0),
-            64 => zero.bitvector64_as_const() == Some(0),
-            _ => false,
-        };
-        if !zero_matches_width {
-            continue;
-        }
-        // Equality uses the same bits at either signedness. In particular,
-        // native UInt64 equality is stored with an Int64 comparison format.
-        let (format, MachineBinaryOp::Multiply, [a, b]) = product.binary()? else {
-            return None;
-        };
-        if !matches!(
-            format,
-            MachineIntegerType::UInt32 | MachineIntegerType::UInt64
-        ) || comparison_format.format().bits() != format.format().bits()
-        {
+    let view = condition.operand_view();
+    if let Some((format, relation, [left, right])) = view.comparison() {
+        if relation != CompareRelation::Equal || *truth {
             return None;
         }
-        let constant = |operand: View<'_>| format.constant_from_term(&operand.literal()?);
-        for (operand, multiplier) in [(a, b), (b, a)] {
-            if constant(multiplier).is_some_and(|value| value.bits() & 1 == 1) {
-                let zero = crate::kernel::machine_integer::range::constant_word(format, &0.into())?;
-                return Some(Proposition::condition_is(
-                    condition_for_operand_views(
-                        format,
-                        CompareRelation::Equal,
-                        [operand, View::Legacy(&zero)],
-                    ),
-                    false,
-                ));
-            }
-        }
+        let width = format.format().bits();
+        return [(left, right), (right, left)]
+            .into_iter()
+            .find_map(|(product, zero)| {
+                let zero = zero.literal()?;
+                let is_zero = match width {
+                    32 => zero.constant32() == Some(0),
+                    64 => zero.bitvector64_as_const() == Some(0),
+                    _ => false,
+                };
+                if is_zero {
+                    odd_product_operand_nonzero(width, product)
+                } else {
+                    None
+                }
+            });
     }
-    None
+
+    // Explicit normalization may compare an exact word observation to
+    // Integer zero. Read only those two roots, just as for native equality.
+    let [left, right] = match view {
+        BooleanOperandView::Shared(root) => match root.node() {
+            KernelTermNode::IntegerCompare {
+                operator,
+                arguments,
+            } if matches!(
+                (operator, *truth),
+                (IntegerComparisonOperator::Equal, false)
+                    | (IntegerComparisonOperator::NotEqual, true)
+            ) =>
+            {
+                arguments.each_ref()
+            }
+            _ => return None,
+        },
+        BooleanOperandView::Native(condition) => match (condition, *truth) {
+            (ConditionTerm::IntegerEqual(left, right), false)
+            | (ConditionTerm::IntegerNotEqual(left, right), true) => [left.root(), right.root()],
+            _ => return None,
+        },
+    };
+    [(left, right), (right, left)]
+        .into_iter()
+        .find_map(|(product, zero)| {
+            let KernelTermNode::IntegerLiteral(value) = zero.node() else {
+                return None;
+            };
+            if value.sign() != num_bigint::Sign::NoSign {
+                return None;
+            }
+            let KernelTermNode::MachineObservation { format, operand } = product.node() else {
+                return None;
+            };
+            odd_product_operand_nonzero(format.format().bits(), View::Shared(operand))
+        })
+}
+
+fn odd_product_operand_nonzero(
+    width: u32,
+    product: crate::kernel::MachineOperandView<'_>,
+) -> Option<Proposition> {
+    use crate::kernel::MachineOperandView as View;
+    use crate::kernel::machine_integer::{
+        comparison::condition_for_operand_views, range::constant_word,
+    };
+
+    // Equality uses the same bits at either signedness. Native UInt64
+    // equality, for example, uses the Int64 comparison format.
+    let (format, MachineBinaryOp::Multiply, [left, right]) = product.binary()? else {
+        return None;
+    };
+    if !matches!(
+        format,
+        MachineIntegerType::UInt32 | MachineIntegerType::UInt64
+    ) || width != format.format().bits()
+    {
+        return None;
+    }
+    [(left, right), (right, left)]
+        .into_iter()
+        .find_map(|(operand, multiplier)| {
+            let multiplier = format.constant_from_term(&multiplier.literal()?)?;
+            if multiplier.bits() & 1 == 0 {
+                return None;
+            }
+            let zero = constant_word(format, &0.into())?;
+            Some(Proposition::condition_is(
+                condition_for_operand_views(
+                    format,
+                    CompareRelation::Equal,
+                    [operand, View::Legacy(&zero)],
+                ),
+                false,
+            ))
+        })
 }
 
 /// Test only the root operands and their named word comparisons. OR is
