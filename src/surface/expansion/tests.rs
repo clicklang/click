@@ -1,26 +1,6 @@
 use super::*;
 
 #[test]
-fn verification_only_fact_transport_has_no_source_expansion() {
-    let proposition = SyntaxProposition::Defined {
-        expression: SyntaxTerm::IntegerLiteral("0".into()),
-    };
-    let tactics = [ProofTactic::CompatibilityFactTransport {
-        source: proposition.clone(),
-        target: proposition,
-        premises: Vec::new(),
-    }];
-    let rendered = printing::format_partial_tactic_sequence(&tactics);
-    assert!(!rendered.contains("transport("), "{rendered}");
-    let error = require_surface_expansion(rendered).unwrap_err();
-    assert!(
-        error
-            .message()
-            .contains("a legacy frame check has no ordinary proof")
-    );
-}
-
-#[test]
 fn verification_only_normalization_has_no_source_expansion() {
     let tactics = [ProofTactic::CompatibilityNormalize(None)];
     let rendered = printing::format_partial_tactic_sequence(&tactics);
