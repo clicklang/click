@@ -3016,6 +3016,76 @@ mod tests {
     }
 
     #[test]
+    fn conditional_match_identity_uses_only_its_operands() {
+        use crate::instrumentation::measure_deterministic_work;
+        use crate::kernel::{
+            AlgebraicBitvectorMatchArm, AlgebraicTerm, AlgebraicTermNode, AlgebraicType,
+            AlgebraicValue, ConditionTerm, IntegerTerm, MachineIntegerType, ProgramValue,
+            VerificationSession,
+        };
+        let _session = VerificationSession::enter();
+        let observe = |term| IntegerTerm::from_machine(MachineIntegerType::Int32, term).unwrap();
+        let guard = Variable(10);
+        let zero = IntegerTerm::constant_i64(0);
+        let conditional = |binder, body| {
+            observe(MachineTerm::If {
+                condition: Box::new(ConditionTerm::integer_equal(
+                    observe(MachineTerm::Variable(guard)),
+                    zero.clone(),
+                )),
+                then_term: Box::new(MachineTerm::AlgebraicMatch {
+                    scrutinee: Box::new(AlgebraicTerm {
+                        algebraic_type: AlgebraicType::parameter("Payload".into()),
+                        node: AlgebraicTermNode::Variable(Variable(11)),
+                    }),
+                    arms: vec![AlgebraicBitvectorMatchArm {
+                        variant: "Item".into(),
+                        bindings: vec![AlgebraicValue::Program(ProgramValue::Int32(
+                            MachineTerm::Variable(Variable(binder)),
+                        ))],
+                        body: MachineTerm::Variable(Variable(body)),
+                        binding_names: Default::default(),
+                    }],
+                }),
+                else_term: Box::new(MachineTerm::constant(0)),
+            })
+        };
+        let equality = |right| {
+            Proposition::condition_is(
+                ConditionTerm::integer_equal(conditional(12, 12), right),
+                true,
+            )
+        };
+        let equal = equality(conditional(13, 13));
+        let different_capture = equality(conditional(13, 12));
+        let mut baseline = None;
+        for size in [0, 32, 256] {
+            let mut facts = PureFactStore::default();
+            for n in 0..size {
+                for left in [guard, Variable(1_000 + n)] {
+                    facts = facts.with_fact(Proposition::condition_is(
+                        ConditionTerm::integer_less_than(
+                            observe(MachineTerm::Variable(left)),
+                            observe(MachineTerm::Variable(2_000 + n)),
+                        ),
+                        true,
+                    ));
+                }
+            }
+            let proof = known_computation_proof(equal.clone(), facts.clone());
+            let (checked, work) =
+                measure_deterministic_work(|| proof.apply_known(PropositionKnownContext::Pure));
+            assert!(checked.is_ok());
+            assert_eq!(work, *baseline.get_or_insert(work), "fact count {size}");
+            assert!(
+                known_computation_proof(different_capture.clone(), facts)
+                    .apply_known(PropositionKnownContext::Pure)
+                    .is_err()
+            );
+        }
+    }
+
+    #[test]
     fn checked_product_bounds_use_exact_citations_as_fact_sets_grow() {
         use crate::instrumentation::measure_deterministic_work;
         use crate::kernel::{ConditionTerm, IntegerTerm, MachineIntegerType, VerificationSession};
