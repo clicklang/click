@@ -25783,8 +25783,12 @@ fn structural_invariant_bundles_expand_as_ordered_member_haves() {
         printed.find("have a == 0").unwrap()
             < printed.find("have (to_integer(a) + 1) == 1").unwrap()
     );
-    // The second member's guard is supplied by the first member's exported
-    // fact. Replay the printed members without giving that guard as a premise.
+    // Replay the exported members in a pure theorem. The loop back edge
+    // would check the bundle directly, so replace its close with the matching
+    // pure proof of the conjunction.
+    let members = printed
+        .strip_suffix("    close();\n}")
+        .expect("the exported members end with a checked loop-bundle close");
     let replay = format!(
         r#"
         theorem replay(a: int32, b: int32) {{
@@ -25795,7 +25799,7 @@ fn structural_invariant_bundles_expand_as_ordered_member_haves() {
             }}
         }}
     "#,
-        printed.strip_suffix('}').unwrap()
+        members
     );
     without_implicit_solve(|| verify_click_theorems(&replay)).unwrap();
 }

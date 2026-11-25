@@ -1,13 +1,9 @@
 # byte count of two merged branches matches the C count
 
 Two `if` statements each add one to a counter when a byte equals `x`.
-After the omitted proof's implicit tail merges both branches, the result is a sum of conditional
-terms, and `close()` matches it against the unfolded `bytes::count` fold of
-the `uint8` prelude. Deciding the overflow of the second increment needs the
-signed interval of the first conditional, and the byte comparisons are
-resolved through equality facts anchored on the loaded bytes. This catches a
-byte-slice count whose merged conditional sum no longer simplifies to the
-prelude definition.
+The first join records its conditional count. Each arm of the second branch
+uses that count and its byte comparison to normalize the unfolded
+`bytes::count` fold, then the second join carries the result to the return.
 
 ```c filename=byte_count_of_two_merged_branches_matches_the_c_count.c
 int32 count_byte2(uint8 p[], uint8 x) {
@@ -26,12 +22,52 @@ int32 count_byte2(uint8 p[], uint8 x) {
 ```click
 import click::bytes;
 verifying "byte_count_of_two_merged_branches_matches_the_c_count.c";
-import click::bytes;
 
 int32 count_byte2(uint8 p[], uint8 x) {
     views p[0..2];
     ensures result == bytes::count(p, 0, 2, x) by {
-        unfold(bytes::count(p, 0, 2, x));
+        step();
+        step();
+        mark first;
+        branch ensuring {
+            fact count == (if at(first, p[0]) == at(first, x) { 1 } else { 0 });
+        } {
+            true => {
+                step();
+                have count == (if at(first, p[0]) == at(first, x) { 1 } else { 0 }) by {
+                    normalize() using { at(first, p[0]) == at(first, x); };
+                }
+            }
+            false => {
+                have count == (if at(first, p[0]) == at(first, x) { 1 } else { 0 }) by {
+                    normalize() using { at(first, p[0]) != at(first, x); };
+                }
+            }
+        }
+        mark second;
+        branch ensuring { fact count == bytes::count(p, 0, 2, x); } {
+            true => {
+                step();
+                have count == bytes::count(p, 0, 2, x) by {
+                    unfold(bytes::count(p, 0, 2, x));
+                    rewrite(at(second, count), (if at(first, p[0]) == at(first, x) { 1 } else { 0 }));
+                    normalize() using {
+                        at(second, p[1]) == at(second, x);
+                    };
+                }
+            }
+            false => {
+                have count == bytes::count(p, 0, 2, x) by {
+                    unfold(bytes::count(p, 0, 2, x));
+                    rewrite(at(second, count), (if at(first, p[0]) == at(first, x) { 1 } else { 0 }));
+                    normalize() using {
+                        at(second, p[1]) != at(second, x);
+                    };
+                }
+            }
+        }
+        step();
+        close();
     }
 }
 ```

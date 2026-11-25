@@ -2346,10 +2346,10 @@ struct ClaimAuditReport {
 
 fn requires_expansion_in_replay(tactic: &str) -> bool {
     // A direct closure is printed as `close()`. The source index can also
-    // attribute that closure to the enclosing checked `step` proof.
+    // attribute that closure to an enclosing checked proof block.
     !matches!(
         tactic,
-        "close" | "step" | click::instrumentation::IMPLICIT_TAIL_TACTIC
+        "close" | "step" | "intro" | "all" | click::instrumentation::IMPLICIT_TAIL_TACTIC
     )
 }
 
@@ -2405,8 +2405,7 @@ fn audit_claim_rewrite(
         &site.claim,
     )
     .map_err(|error| audit_phase_error("expansion fixed point", error))?;
-    // A written `close()` can be a direct check, including inside an
-    // explicit step proof whose source site is attributed to `step`.
+    // A written `close()` can be a direct check inside a proof block.
     // Cold replay below disables search and checks those sites in context.
     remaining.retain(|name| requires_expansion_in_replay(name));
     if !remaining.is_empty() {

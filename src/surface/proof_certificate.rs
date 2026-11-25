@@ -356,13 +356,13 @@ impl ProofCertificate {
         let mut tactics = Vec::with_capacity(steps.len());
         for step in steps {
             // A loop's back edge closes as a function's exit does: a bundle
-            // closed member by member, `have m by { ... }` for each and then
-            // the bundle from those facts, is written as those `have`s, and
-            // the end of the `maintain` script closes each member from them.
+            // closed member by member is written as those `have`s followed
+            // by a direct close of the bundle from the established members.
             if let ProofStep::CloseInvariantsBy(body) = step
                 && let Some(members) = body.invariant_member_tactics()
             {
                 tactics.extend(members);
+                tactics.push(ProofTactic::Known);
                 continue;
             }
             tactics.push(step.to_proof_tactic());

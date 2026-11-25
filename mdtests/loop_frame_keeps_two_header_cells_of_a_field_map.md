@@ -48,8 +48,8 @@ void mark_tail(struct arena* arena, int32 end) {
         initialize by close();
         maintain by {
             mark before_store;
-            have i != 0 by { close() using { 2 <= i; }; }
-            have i != 1 by { close() using { 2 <= i; }; }
+            have i != 0 by { normalize() using { 2 <= i; }; }
+            have i != 1 by { normalize() using { 2 <= i; }; }
             apply(click::separation::separate_elements(arena->occupied, i, 0));
             apply(click::separation::separate_elements(arena->occupied, i, 1));
             have contains(memory(arena->occupied[0..arena->capacity]), memory(arena->occupied[i])) by {
