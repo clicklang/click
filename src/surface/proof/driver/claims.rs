@@ -5733,27 +5733,26 @@ pub(super) fn finish_ordered_proof<'a>(
                                         )
                                     });
                                     match focused {
-                                        Ok((index, _, focused))
-                                            if focused.goal().is_some_and(|goal| {
-                                                applied.added_facts().contains(goal)
-                                            }) =>
-                                        {
-                                            let completed = focused.complete_known_proposition()?;
-                                            outcome_proof = Some(applied.clone());
-                                            record_claim_closure(
-                                                &mut outcome_proof,
-                                                &mut closures,
-                                                claims,
-                                                &completed_execution,
-                                                path_index,
-                                                index,
-                                                ClaimClosure::by_continued_proposition(
-                                                    claims[index].key(),
+                                        Ok((index, _, focused)) => {
+                                            if let Some(completed) = focused
+                                                .complete_matching_instance(applied.added_facts())?
+                                            {
+                                                outcome_proof = Some(applied.clone());
+                                                record_claim_closure(
+                                                    &mut outcome_proof,
+                                                    &mut closures,
+                                                    claims,
+                                                    &completed_execution,
                                                     path_index,
-                                                    Vec::new(),
-                                                    completed,
-                                                ),
-                                            )?;
+                                                    index,
+                                                    ClaimClosure::by_continued_proposition(
+                                                        claims[index].key(),
+                                                        path_index,
+                                                        Vec::new(),
+                                                        completed,
+                                                    ),
+                                                )?;
+                                            }
                                         }
                                         Err(error)
                                             if error.verification_stopped()

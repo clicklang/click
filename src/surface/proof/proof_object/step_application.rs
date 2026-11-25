@@ -729,11 +729,28 @@ impl<'a> Proof<'a> {
 
     /// Complete a proposition from an already published fact without a new
     /// surface tactic. The enclosing outcome step supplies the certificate.
-    pub(in crate::surface::proof) fn complete_known_proposition(
+    pub(in crate::surface::proof) fn complete_matching_instance(
         &self,
-    ) -> Result<crate::kernel::proof::CheckedProposition, ClickError> {
+        instances: &[Proposition],
+    ) -> Result<Option<crate::kernel::proof::CheckedProposition>, ClickError> {
+        let Some(goal) = self.goal() else {
+            return Ok(None);
+        };
+        // Contract goals and instantiated facts can carry the same term in
+        // shared and native form. Compare their checked identities as well.
+        let identity = crate::kernel::proof::proposition_identity_key(goal);
+        if !instances.iter().any(|instance| {
+            instance == goal
+                || identity.as_ref().is_some_and(|identity| {
+                    crate::kernel::proof::proposition_identity_key(instance).as_ref()
+                        == Some(identity)
+                })
+        }) {
+            return Ok(None);
+        }
         self.apply_known()?
             .completed_proposition()
+            .map(Some)
             .ok_or_else(|| self.step_error("completed proof is not a proposition judgment"))
     }
 
