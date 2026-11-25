@@ -23,8 +23,8 @@ impl AnnotationLowerer<'_> {
             })
         };
         if let (Some(left_element), Some(right_element)) = (
-            self.contract_pointer_element_type(left, environment),
-            self.contract_pointer_element_type(right, environment),
+            self.contract_pointer_element_type(left, &TypingEnvironment::of(environment)),
+            self.contract_pointer_element_type(right, &TypingEnvironment::of(environment)),
         ) && left_element != right_element
         {
             return Err(format!(

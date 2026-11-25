@@ -49,6 +49,39 @@ impl<'a> TypingEnvironment<'a> {
         }
     }
 
+    /// The element type of a name bound to an array reference. A binder is
+    /// never one: lowering drops the outer name's array reference when it
+    /// binds the name.
+    pub(super) fn bound_array_element_type<Q: crate::surface::binders::BinderKey + ?Sized>(
+        &self,
+        name: &Q,
+    ) -> Option<ProgramType> {
+        match self.binders.get(name) {
+            Some(_) => None,
+            None => self.outer.bound_array_element_type(name),
+        }
+    }
+
+    /// The pointee type of a name bound to a pointer: a pointer binder's
+    /// declared pointee, or an outer name's lowered pointer's.
+    pub(super) fn bound_pointer_pointee_type<Q: crate::surface::binders::BinderKey + ?Sized>(
+        &self,
+        name: &Q,
+    ) -> Option<ProgramType> {
+        match self.binders.get(name) {
+            Some(click_type) => click_type
+                .interface_type()
+                .map(InterfaceType::to_kernel_type)
+                .and_then(ProgramType::pointee_type),
+            None => self.outer.bound_pointer_pointee_type(name),
+        }
+    }
+
+    /// Whether bare `result` names the contract's return value here.
+    pub(super) fn contract_result_in_scope(&self) -> bool {
+        self.outer.contract_result_in_scope
+    }
+
     /// The type of a name read as a program binding. Lowering keeps an
     /// Integer binder in `integer_values` and an algebraic one in
     /// `algebraic_values`, and every other binder in `values`, which is all a
