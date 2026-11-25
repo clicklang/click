@@ -4656,8 +4656,10 @@ fn source_backed_call_requirement_surface(
         })
         .collect::<BTreeMap<_, _>>();
     if !aggregate_parameters.is_empty() {
-        // Each by-value aggregate parameter is the prepared object the call
-        // receives: `R.parameter(name)` at the call's region.
+        // A by-value aggregate parameter the caller copied into a prepared
+        // object is that object, `R.parameter(name)` at the call's region.
+        // One the call receives as it is, such as a moved Rust local, keeps
+        // the argument's own spelling.
         for (parameter, argument) in source_parameter_names
             .iter()
             .zip(site.source_arguments.iter())
@@ -4666,9 +4668,11 @@ fn source_backed_call_requirement_surface(
             if !aggregate_parameters.contains(&name) {
                 continue;
             }
-            let object = prepared_argument_binding(argument)?;
-            let (region, prepared, _) =
-                context.constants.source_layout.prepared_parameter(object)?;
+            let Some((region, prepared, _)) = prepared_argument_binding(argument)
+                .and_then(|object| context.constants.source_layout.prepared_parameter(object))
+            else {
+                continue;
+            };
             if prepared != name {
                 return None;
             }
