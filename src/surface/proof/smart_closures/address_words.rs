@@ -145,9 +145,9 @@ impl Words<'_, '_> {
             || self.written_steps > 4096
             || crate::instrumentation::deadline_exceeded_with_work(1)
         {
-            return Err(self.input.step_error(
-                "Address-word expansion reached its work, depth or 4096-step bound",
-            ));
+            return Err(self
+                .input
+                .step_error("Address-word expansion reached its work, depth or 4096-step bound"));
         }
         Ok(())
     }
