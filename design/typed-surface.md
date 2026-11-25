@@ -183,6 +183,30 @@ to the same term, which Surface-to-Kernel's many-to-one direction allows.
   elaboration uses for that inference, so printing and elaboration cannot
   disagree.
 
+## Stage 2 progress
+
+Comparisons are typed first. `src/surface/typed_surface.rs` holds
+`SurfaceProposition::Comparison { kind, left, operator, right }` with
+`ComparisonKind::{Native, Integer, Algebraic, Sequence}`; operands are still
+`SurfaceTerm::Untyped`. `elaborate_comparison`
+(`src/surface/lowering/annotations/comparison_elaboration.rs`) chooses the
+kind, with the rules lowering used, and also expands a struct equality into
+its fields' equalities; `lower_surface_proposition` reads the kind and
+inspects no operand.
+
+`Native` stands for the shapes listed above as `Machine(format)`, `Pointer`,
+`Address`, `Bool` and `Float`. Which of these a native comparison is, and its
+format, is the C type of its operands, built bottom-up from them; that is
+compositional, so lowering may compute it. It becomes a recorded field once
+program expressions are typed Surface (stage 3). The kind elaboration records
+now is the top-down decision: whether a written comparison is native, Integer,
+algebraic or sequence, which depends on both operands at once.
+
+Still to do in stage 2: elaboration runs where lowering reaches a comparison,
+not as a pass before lowering; the raiser still returns Syntax and keeps its
+guessing special cases; and arithmetic kind is still chosen by which lowering
+function the comparison's kind calls.
+
 ## Open questions
 
 - **Point-dependent types: answered.** Lowering's lookup (`c_variable_type`)
