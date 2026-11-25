@@ -1152,7 +1152,7 @@ fn rbtree_erase_refuses_a_skipped_left_child_parent_color() {
     general_erase_refuses_mutation(
         "\t\ttmp->__rb_parent_color = pc = node->__rb_parent_color;\n",
         "\t\tpc = pc = node->__rb_parent_color;\n",
-        "could not establish `el_id->__rb_parent_color == pc`",
+        "`have` failed for `tmp->__rb_parent_color == pc`",
     );
 }
 
@@ -1176,7 +1176,7 @@ fn rbtree_erase_successor_refuses_a_skipped_left_parent_write() {
     general_erase_refuses_mutation(
         "\t\trb_set_parent(tmp, successor);\n",
         "\t\ttmp = tmp;\n",
-        "fold requires the instance body facts for the proposed fields",
+        "`step(rb_set_parent)` requires a call to `rb_set_parent` at the current frontier",
     );
 }
 
@@ -1188,7 +1188,7 @@ fn rbtree_erase_successor_refuses_a_skipped_parent_color_write() {
     general_erase_refuses_mutation(
         "\t\tsuccessor->__rb_parent_color = pc;\n",
         "\t\ttmp = tmp;\n",
-        "fact 5 of 10 of arm `Right` is not established",
+        "`have` failed for `successor->__rb_parent_color == pc`",
     );
 }
 
@@ -1308,7 +1308,7 @@ fn rbtree_erase_successor_requires_left_subtree_link() {
     general_erase_refuses_mutation(
         "\t\tWRITE_ONCE(successor->rb_left, tmp);\n",
         "\t\ttmp = tmp;\n",
-        "`have` failed for `mid->rb_left == lid`",
+        "`have` failed for `successor->rb_left == tmp`",
     );
 }
 
@@ -1320,7 +1320,7 @@ fn rbtree_erase_red_successor_requires_no_fixup() {
     general_erase_refuses_mutation(
         "\t\t\trebalance = rb_is_black(successor) ? parent : NULL;\n",
         "\t\t\trebalance = parent;\n",
-        "goal: result == 0",
+        "`have` failed for `rebalance == 0`",
     );
 }
 
@@ -1332,7 +1332,7 @@ fn rbtree_erase_child_successor_requires_no_fixup() {
     general_erase_refuses_mutation(
         "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n\t\t\trebalance = NULL;",
         "\t\t\trb_set_parent_color(child2, parent, RB_BLACK);\n\t\t\trebalance = parent;",
-        "goal: result == 0",
+        "`have` failed for `rebalance == 0`",
     );
 }
 
@@ -1392,7 +1392,7 @@ fn rbtree_erase_deep_successor_refuses_a_skipped_right_attachment() {
     general_erase_refuses_mutation(
         "\t\t\tWRITE_ONCE(successor->rb_right, child);\n",
         "\t\t\tWRITE_ONCE(successor->rb_right, successor->rb_right);\n",
-        "could not establish `mid->rb_right == child`",
+        "`have` failed for `successor->rb_right == child`",
     );
 }
 
@@ -1416,7 +1416,7 @@ fn rbtree_erase_deep_black_leaf_requires_the_splice_parent() {
     general_erase_refuses_mutation(
         "\t\t\trebalance = rb_is_black(successor) ? parent : NULL;\n",
         "\t\t\trebalance = successor;\n",
-        "equality: rebalance == mp",
+        "`have` failed for `rebalance == parent`",
     );
 }
 
@@ -1428,7 +1428,7 @@ fn rbtree_erase_deep_black_leaf_requires_right_parent_update() {
     general_erase_refuses_mutation(
         "\t\t\trb_set_parent(child, successor);\n",
         "\t\t\tchild = child;\n",
-        "`have` failed for `child->__rb_parent_color == (address(mid) + (child->__rb_parent_color & 1))`",
+        "`step(rb_set_parent)` requires a call to `rb_set_parent` at the current frontier",
     );
 }
 
@@ -2069,7 +2069,7 @@ fn rbtree_erase_color_general_red_left_requires_parent_blackening() {
         "rb_set_black(parent);",
         "parent->__rb_parent_color = parent->__rb_parent_color;",
         2,
-        "`have` failed for `parent->__rb_parent_color == (at(red_flip, parent->__rb_parent_color) + 1)`",
+        "`have` failed for `id->__rb_parent_color == click::integer::uint64_wrapping_add(at(red_flip, id->__rb_parent_color), 1u64)`",
     );
 }
 
@@ -2105,7 +2105,7 @@ fn rbtree_erase_color_general_root_left_requires_the_null_parent_cursor() {
         "parent = rb_parent(node);",
         "parent = node;",
         2,
-        "`have` failed for `parent == above`",
+        "`have` failed for `parent == at(decode_parent, ((load<uint64>(node) & ~3) as (struct rb_node *)))`",
     );
 }
 
@@ -2117,7 +2117,7 @@ fn rbtree_erase_color_general_flips_requires_focus_ascent() {
         "node = parent;",
         "node = node;",
         2,
-        "missing resource fact",
+        "`have` failed for `node == parent`",
     );
 }
 
@@ -2165,7 +2165,7 @@ fn rbtree_erase_color_general_flips_outer_requires_near_parent() {
         "rb_set_parent(tmp2, parent);",
         "rb_set_parent(tmp2, sibling);",
         2,
-        "`have` failed for `tmp2->__rb_parent_color == (color_bit(nc) | (parent as uint64))`",
+        "`have` failed for `((load<uint64>(tmp2) & ~3) as (struct rb_node *)) == parent`",
     );
 }
 
@@ -2177,7 +2177,7 @@ fn rbtree_erase_color_general_flips_rotations_right_requires_sibling_child_link(
         "WRITE_ONCE(sibling->rb_right, tmp1);",
         "WRITE_ONCE(sibling->rb_right, parent);",
         1,
-        "`have` failed for `sid->rb_right == tmp1`",
+        "`have` failed for `sibling->rb_right == tmp1`",
     );
 }
 
@@ -2189,7 +2189,7 @@ fn rbtree_erase_color_general_flips_rotations_right_requires_inner_child_link() 
         "WRITE_ONCE(tmp2->rb_left, sibling);",
         "WRITE_ONCE(tmp2->rb_left, parent);",
         1,
-        "`have` failed for `iid->rb_left == sid`",
+        "`have` failed for `tmp2->rb_left == sibling`",
     );
 }
 
@@ -2249,7 +2249,7 @@ fn rbtree_erase_color_general_flips_red_exit_left_requires_parent_link() {
         "WRITE_ONCE(parent->rb_right, tmp1);",
         "WRITE_ONCE(parent->rb_right, NULL);",
         1,
-        "`have` failed for `parent->rb_right == zid`",
+        "`have` failed for `parent->rb_right == tmp1`",
     );
 }
 
@@ -2261,7 +2261,7 @@ fn rbtree_erase_color_general_flips_red_exit_left_requires_sibling_link() {
         "WRITE_ONCE(sibling->rb_left, parent);\n\t\t\t\trb_set_parent_color(tmp1, parent, RB_BLACK);",
         "WRITE_ONCE(sibling->rb_left, NULL);\n\t\t\t\trb_set_parent_color(tmp1, parent, RB_BLACK);",
         1,
-        "`have` failed for `sid->rb_left == parent`",
+        "`have` failed for `sibling->rb_left == parent`",
     );
 }
 
@@ -2273,7 +2273,7 @@ fn rbtree_erase_color_general_flips_red_exit_right_requires_parent_link() {
         "WRITE_ONCE(parent->rb_left, tmp1);",
         "WRITE_ONCE(parent->rb_left, NULL);",
         1,
-        "`have` failed for `parent->rb_left == zid`",
+        "`have` failed for `parent->rb_left == tmp1`",
     );
 }
 
@@ -2285,7 +2285,7 @@ fn rbtree_erase_color_general_flips_red_exit_right_requires_sibling_link() {
         "WRITE_ONCE(sibling->rb_right, parent);\n\t\t\t\trb_set_parent_color(tmp1, parent, RB_BLACK);",
         "WRITE_ONCE(sibling->rb_right, NULL);\n\t\t\t\trb_set_parent_color(tmp1, parent, RB_BLACK);",
         1,
-        "`have` failed for `sid->rb_right == parent`",
+        "`have` failed for `sibling->rb_right == parent`",
     );
 }
 
@@ -2297,7 +2297,7 @@ fn rbtree_erase_color_general_flips_red_exit_requires_near_parent() {
         "rb_set_parent_color(tmp1, parent, RB_BLACK);",
         "rb_set_parent_color(tmp1, sibling, RB_BLACK);",
         2,
-        "`have` failed for `tmp1->__rb_parent_color == ((parent as uint64) | 1)`",
+        "`have` failed for `tmp1->__rb_parent_color == (address(parent) | 1)`",
     );
 }
 
@@ -2309,7 +2309,7 @@ fn rbtree_erase_color_general_flips_red_exit_requires_near_blackening() {
         "rb_set_parent_color(tmp1, parent, RB_BLACK);",
         "rb_set_parent_color(tmp1, parent, RB_RED);",
         2,
-        "`have` failed for `tmp1->__rb_parent_color == ((parent as uint64) | 1)`",
+        "`have` failed for `tmp1->__rb_parent_color == (address(parent) | 1)`",
     );
 }
 
@@ -2321,7 +2321,7 @@ fn rbtree_erase_color_general_flips_red_exit_requires_red_parent() {
         "__rb_rotate_set_parents(parent, sibling, root,\n\t\t\t\t\t\t\tRB_RED);",
         "__rb_rotate_set_parents(parent, sibling, root,\n\t\t\t\t\t\t\tRB_BLACK);",
         2,
-        "`have` failed for `parent->__rb_parent_color == (sibling as uint64)`",
+        "`have` failed for `parent->__rb_parent_color == address(sibling)`",
     );
 }
 
@@ -2357,7 +2357,7 @@ fn rbtree_erase_color_general_outer_left_requires_parent_blackening() {
         "__rb_rotate_set_parents(parent, sibling, root,\n\t\t\t\t\t\tRB_BLACK);",
         "__rb_rotate_set_parents(parent, sibling, root,\n\t\t\t\t\t\tRB_RED);",
         2,
-        "`have` failed for `parent->__rb_parent_color == ((iid as uint64) + 1)`",
+        "`have` failed for `parent->__rb_parent_color == (address(sibling) + 1)`",
     );
 }
 
@@ -2405,7 +2405,7 @@ fn rbtree_erase_color_general_inner_left_requires_detached_inner_child() {
         "WRITE_ONCE(sibling->rb_left, tmp1);",
         "WRITE_ONCE(sibling->rb_left, tmp2);",
         1,
-        "`have` failed for `sid->rb_left == tmp1`",
+        "`have` failed for `sibling->rb_left == tmp1`",
     );
 }
 
@@ -2417,7 +2417,7 @@ fn rbtree_erase_color_general_inner_left_requires_attached_old_sibling() {
         "WRITE_ONCE(tmp2->rb_right, sibling);",
         "WRITE_ONCE(tmp2->rb_right, NULL);",
         1,
-        "`have` failed for `iid->rb_right == sid`",
+        "`have` failed for `tmp2->rb_right == sibling`",
     );
 }
 
@@ -2441,7 +2441,7 @@ fn rbtree_erase_color_general_inner_right_requires_detached_inner_child() {
         "WRITE_ONCE(sibling->rb_right, tmp1);",
         "WRITE_ONCE(sibling->rb_right, tmp2);",
         1,
-        "`have` failed for `sid->rb_right == tmp1`",
+        "`have` failed for `sibling->rb_right == tmp1`",
     );
 }
 
@@ -2453,7 +2453,7 @@ fn rbtree_erase_color_general_inner_right_requires_attached_old_sibling() {
         "WRITE_ONCE(tmp2->rb_left, sibling);",
         "WRITE_ONCE(tmp2->rb_left, NULL);",
         1,
-        "`have` failed for `iid->rb_left == sid`",
+        "`have` failed for `tmp2->rb_left == sibling`",
     );
 }
 
@@ -2517,7 +2517,7 @@ fn rbtree_erase_color_flips_red_all_requires_left_detached_child_link() {
         1,
     );
     assert!(
-        error.contains("rb_left == tmp1"),
+        error.contains("`have` failed for `sibling->rb_left == tmp1`"),
         "unexpected refusal: {error}"
     );
 }
@@ -2534,7 +2534,7 @@ fn rbtree_erase_color_flips_red_all_requires_left_inner_parent_link() {
         1,
     );
     assert!(
-        error.contains("iid->rb_right == sid"),
+        error.contains("`have` failed for `tmp2->rb_right == sibling`"),
         "unexpected refusal: {error}"
     );
 }
