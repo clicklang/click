@@ -1458,6 +1458,32 @@ pub(in crate::surface) fn algebraic_field_c_type_supported(interface_type: Inter
     )
 }
 
+struct ParsedParameterType {
+    ty: ParsedType,
+    declared_bytes: Option<u32>,
+    struct_array: bool,
+}
+
+impl ParsedParameterType {
+    fn with_name(self, name: String) -> ParsedParameter {
+        ParsedParameter {
+            parameter: FunctionParameter {
+                slice_length: None,
+                click_type: ClickType::Program(self.ty.interface_type),
+                name,
+                struct_name: self.ty.struct_name.clone(),
+                function_pointer_signature: None,
+                constant: self.ty.constant,
+                pointee_constant: self.ty.pointee_constant,
+                reference: self.ty.reference,
+            },
+            struct_name: self.ty.struct_name,
+            declared_bytes: self.declared_bytes,
+            struct_array: self.struct_array,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ParsedParameter {
     parameter: FunctionParameter,
@@ -7003,7 +7029,9 @@ impl Parser {
                     pointee_constant: false,
                     reference: false,
                 };
-                let parsed_parameter = self.array_parameter(name, parsed_type, Some(length))?;
+                let parsed_parameter = self
+                    .array_parameter_type(parsed_type, Some(length))?
+                    .with_name(name);
                 if let Some(bytes) = parsed_parameter.declared_bytes {
                     declared_loadable_bytes.push((parsed_parameter.parameter.name.clone(), bytes));
                 }
@@ -7863,17 +7891,14 @@ impl Parser {
                         self.error("function-pointer parameters cannot pass structs by value")
                     );
                 }
-                let parameter_name = if matches!(self.peek(), Some(Token::Ident(_))) {
-                    self.expect_ident("function-pointer parameter name")?
-                } else {
-                    "__click_callback_parameter".to_string()
-                };
-                let parsed_parameter =
-                    self.parse_parameter_array_suffix(parameter_name, parsed_type)?;
+                if matches!(self.peek(), Some(Token::Ident(_))) {
+                    self.expect_ident("function-pointer parameter name")?;
+                }
+                let parameter = self.parse_parameter_type_suffix(parsed_type)?.ty;
                 parameters.push(crate::languages::interface::CallbackParameter::new(
-                    parsed_parameter.parameter.interface_type(),
-                    parsed_parameter.struct_name,
-                    parsed_parameter.parameter.pointee_is_constant(),
+                    parameter.interface_type,
+                    parameter.struct_name,
+                    parameter.pointee_constant,
                 ));
                 match self.peek() {
                     Some(Token::Comma) => self.position += 1,
@@ -7927,61 +7952,34 @@ impl Parser {
         name: String,
         parsed_type: ParsedType,
     ) -> Result<ParsedParameter, ClickError> {
-        if parsed_type.interface_type == InterfaceType::Void {
+        Ok(self
+            .parse_parameter_type_suffix(parsed_type)?
+            .with_name(name))
+    }
+
+    /// Parse parameter type and array adjustment before associating a name.
+    fn parse_parameter_type_suffix(
+        &mut self,
+        mut ty: ParsedType,
+    ) -> Result<ParsedParameterType, ClickError> {
+        if ty.interface_type == InterfaceType::Void {
             return Err(self.error("parameters cannot have type `void`"));
         }
         if self.peek() != Some(&Token::LBracket) {
-            let struct_name = parsed_type.struct_name;
-            let interface_type = if let Some(struct_name) = struct_name.as_deref()
-                && !parsed_type.struct_pointer
+            if let Some(struct_name) = ty.struct_name.as_deref()
+                && !ty.struct_pointer
             {
-                self.scalar_struct_value_type(struct_name)?
-            } else {
-                parsed_type.interface_type
-            };
-            return Ok(ParsedParameter {
-                parameter: FunctionParameter {
-                    slice_length: None,
-                    click_type: ClickType::Program(interface_type),
-                    // The parameter is the pointer that carries the
-                    // reference; the written name is the referent.
-                    name,
-                    struct_name: struct_name.clone(),
-                    function_pointer_signature: None,
-                    constant: parsed_type.constant,
-                    pointee_constant: parsed_type.pointee_constant,
-                    reference: parsed_type.reference,
-                },
-                struct_name,
+                ty.interface_type = self.scalar_struct_value_type(struct_name)?;
+            }
+            return Ok(ParsedParameterType {
+                ty,
                 declared_bytes: None,
                 struct_array: false,
             });
         }
-        let struct_name = parsed_type.struct_name.clone();
-        if struct_name.is_some() {
-            if parsed_type.struct_pointer {
-                return Err(self.error("only arrays of struct values are supported"));
-            }
-            self.position += 1;
-            if matches!(self.peek(), Some(Token::Number(_))) {
-                self.position += 1;
-            }
-            self.expect(Token::RBracket)?;
-            return Ok(ParsedParameter {
-                parameter: FunctionParameter {
-                    slice_length: None,
-                    click_type: ClickType::Program(InterfaceType::Int32Pointer),
-                    name,
-                    struct_name: struct_name.clone(),
-                    function_pointer_signature: None,
-                    constant: false,
-                    pointee_constant: parsed_type.constant || parsed_type.pointee_constant,
-                    reference: false,
-                },
-                struct_name,
-                declared_bytes: None,
-                struct_array: true,
-            });
+        let struct_array = ty.struct_name.is_some();
+        if struct_array && ty.struct_pointer {
+            return Err(self.error("only arrays of struct values are supported"));
         }
         self.position += 1;
         let length = match self.peek() {
@@ -7993,18 +7991,29 @@ impl Parser {
             _ => None,
         };
         self.expect(Token::RBracket)?;
-        self.array_parameter(name, parsed_type, length)
+        if struct_array {
+            ty.interface_type = InterfaceType::Int32Pointer;
+            ty.struct_pointer = true;
+            ty.pointee_constant |= ty.constant;
+            ty.constant = false;
+            ty.reference = false;
+            return Ok(ParsedParameterType {
+                ty,
+                declared_bytes: None,
+                struct_array,
+            });
+        }
+        self.array_parameter_type(ty, length)
     }
 
     /// A scalar array parameter, `int values[3]`, which C passes as a
     /// pointer to its first element; `length`, when written, bounds the
     /// bytes the head declares.
-    fn array_parameter(
+    fn array_parameter_type(
         &self,
-        name: String,
         parsed_type: ParsedType,
         length: Option<u32>,
-    ) -> Result<ParsedParameter, ClickError> {
+    ) -> Result<ParsedParameterType, ClickError> {
         let (pointer_type, element_width) = match parsed_type.interface_type {
             InterfaceType::Int8 => (InterfaceType::Int8Pointer, 1),
             InterfaceType::Int16 => (InterfaceType::Int16Pointer, 2),
@@ -8031,18 +8040,15 @@ impl Parser {
             _ => return Err(self.error("only scalar array parameters are supported")),
         };
         let declared_bytes = length.and_then(|length| length.checked_mul(element_width));
-        Ok(ParsedParameter {
-            parameter: FunctionParameter {
-                slice_length: None,
-                click_type: ClickType::Program(pointer_type),
-                name,
+        Ok(ParsedParameterType {
+            ty: ParsedType {
+                interface_type: pointer_type,
                 struct_name: None,
-                function_pointer_signature: None,
+                struct_pointer: false,
                 constant: false,
                 pointee_constant: parsed_type.constant || parsed_type.pointee_constant,
                 reference: false,
             },
-            struct_name: None,
             declared_bytes,
             struct_array: false,
         })

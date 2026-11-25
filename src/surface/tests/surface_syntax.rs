@@ -1026,7 +1026,7 @@ fn rejects_integer_as_an_algebraic_type_name() {
 fn parses_c_function_pointer_type_in_pure_theorem_parameter() {
     let source = r#"
             theorem callback_identity(
-                callback: int32 (*)(int32, struct item*)
+                callback: int32 (*)(int32, struct item*, const uint8[3])
             ) {
                 ensures callback == callback by close();
             }
@@ -1042,7 +1042,7 @@ fn parses_c_function_pointer_type_in_pure_theorem_parameter() {
         .function_pointer_signature()
         .expect("the parameter should retain its nominal signature");
     assert_eq!(signature.return_type(), InterfaceType::Int32);
-    assert_eq!(signature.parameters().len(), 2);
+    assert_eq!(signature.parameters().len(), 3);
     assert_eq!(
         signature.parameters()[0].interface_type(),
         InterfaceType::Int32
@@ -1052,6 +1052,18 @@ fn parses_c_function_pointer_type_in_pure_theorem_parameter() {
         InterfaceType::Int32Pointer
     );
     assert_eq!(signature.parameters()[1].struct_name(), Some("item"));
+    assert_eq!(
+        signature.parameters()[2].interface_type(),
+        InterfaceType::UInt8Pointer
+    );
+    assert!(signature.parameters()[2].pointee_is_constant());
+
+    let named = parse(&source.replace("const uint8[3]", "const uint8 bytes[3]"))
+        .expect("named array callback parameter should parse");
+    assert_eq!(
+        named.theorem_definitions()[0].parameters()[0].function_pointer_signature(),
+        Some(signature)
+    );
 }
 
 #[test]

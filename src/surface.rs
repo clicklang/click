@@ -1761,8 +1761,29 @@ impl std::fmt::Display for ContractApplication {
 struct ClickFunctionType {
     value_parameter: bool,
     type_parameters: Vec<String>,
-    parameters: Vec<FunctionParameter>,
+    parameters: Vec<ClickFunctionParameterType>,
     return_type: ClickType,
+}
+
+/// Type-checking a call only needs the type at each parameter position.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ClickFunctionParameterType {
+    click_type: ClickType,
+    /// Nominal C object information used in generic argument inference.
+    object_pointer_type: Option<ClickType>,
+}
+
+impl ClickFunctionParameterType {
+    fn click_type(&self) -> &ClickType {
+        &self.click_type
+    }
+
+    fn click_type_with_object_class(&self) -> ClickType {
+        self.object_pointer_type
+            .as_ref()
+            .unwrap_or(&self.click_type)
+            .clone()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
