@@ -577,3 +577,22 @@ uint32 probe(struct FixtureReader& stream) {
     ensures stream.data == old(stream.data) + 4;
     ensures stream.remaining == old(stream.remaining) - 4u64;
 }
+
+termination by {
+    check_termination_local("le32toh_internal");
+    check_termination_component("le32toh_internal", normal);
+    check_termination_local("__cpp_q_I3_std_X53_61735f7772697461626c655f62797465733c756e7369676e656420696e742c2031383434363734343037333730393535313631353e");
+    check_termination_component("__cpp_q_I3_std_X53_61735f7772697461626c655f62797465733c756e7369676e656420696e742c2031383434363734343037333730393535313631353e", normal);
+    check_termination_local("__cpp_q_I3_std_X18_7370616e3c756e7369676e656420696e743e_X20_7370616e3c756e7369676e656420696e74202a3e");
+    check_termination_component("__cpp_q_I3_std_X18_7370616e3c756e7369676e656420696e743e_X20_7370616e3c756e7369676e656420696e74202a3e", normal);
+    check_termination_local("__cpp_q_I3_std_X15_7370616e3c7374643a3a627974653e_X10_6f70657261746f725b5d");
+    check_termination_component("__cpp_q_I3_std_X15_7370616e3c7374643a3a627974653e_X10_6f70657261746f725b5d", normal);
+    check_termination_local("__cpp_q_I13_FixtureReader_I4_read");
+    check_termination_component("__cpp_q_I13_FixtureReader_I4_read", normal);
+    check_termination_local("__cpp_q_X29_7365725f726561646461746133323c466978747572655265616465723e");
+    check_termination_component("__cpp_q_X29_7365725f726561646461746133323c466978747572655265616465723e", normal);
+    check_termination_local("probe");
+    check_termination_component("probe", normal);
+    check_termination_callbacks();
+    close();
+}
