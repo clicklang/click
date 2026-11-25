@@ -180,10 +180,8 @@ fn authority_helper_returns_member_with_private_memory_body() {
 }
 
 #[test]
-#[cfg_attr(
-    feature = "fast-gate",
-    ignore = "covered by authority_private_body_batch_01"
-)]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn authority_helpers_create_and_consume_member_with_private_memory_body() {
     let c_source = r#"
         int32 acquire(int32* p) { p[0] = 7; p[1] = 9; return 7; }
@@ -743,7 +741,6 @@ test_batches! {
         authority_helper_returns_member_with_private_memory_body,
     ],
     authority_private_body_batch_01: [
-        authority_helpers_create_and_consume_member_with_private_memory_body,
         authority_creating_helper_cannot_outlive_caller_scalar_storage,
         authority_consuming_helper_cannot_return_the_wrong_private_body,
         authority_member_private_heap_body_cannot_back_two_births,

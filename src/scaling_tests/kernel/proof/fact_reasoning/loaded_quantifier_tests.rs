@@ -1,6 +1,8 @@
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn loaded_quantifier_matching_ignores_ambient_facts_and_retained_memory_size() {
     for format in [
         MachineIntegerType::Int32,

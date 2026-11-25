@@ -2481,6 +2481,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn project_config_selects_pthread_without_sidecar_profile_directives() {
         let root = std::env::temp_dir().join(format!(
             "click-project-profile-{}-{}",
@@ -2629,6 +2631,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn a_project_file_supplies_its_profile_to_sidecars_in_subdirectories() {
         let root = std::env::temp_dir().join(format!(
             "click-project-root-profile-{}-{}",

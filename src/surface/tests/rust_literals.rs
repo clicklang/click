@@ -8,6 +8,8 @@ fn prove(body: &str) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn rust_integer_literals_preserve_native_types_and_signed_boundaries() {
     for (ty, min, max) in [
         ("i8", "128", "127"),
@@ -131,6 +133,8 @@ fn rust_integer_literal_syntax_does_not_change_c_or_cpp_sidecars() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn rust_shift_contracts_wrap_bits_and_preserve_the_operand_width() {
     for claim in [
         "(-1i32 << 1u32) == -2i32",

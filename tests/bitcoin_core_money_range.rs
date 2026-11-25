@@ -4572,6 +4572,8 @@ fn axiomatic_std_array_element_access_verifies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 4.4s in the parallel gate"]
 fn axiomatic_std_array_reference_element_resources_verify() {
     for (name, harness, return_type, parameters, postcondition, clauses, refusals) in [
         (
@@ -4823,6 +4825,8 @@ fn check_pinned_byte_proof(root: &Path, import: &PreparedCppImport, source: &str
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.7s in the parallel gate"]
 // Consistent rehashing cannot substitute another nominal enum or move its
 // declaration to another locked source to manufacture byte alias privilege.
 fn pinned_std_byte_pointer_artifacts_reject_forged_declarations_offline() {

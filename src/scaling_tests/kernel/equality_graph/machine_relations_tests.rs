@@ -47,6 +47,8 @@ fn reinterpreted_chain(size: u64) -> (OldMachineTerm, OldMachineTerm) {
 /// each conversion meets one operator once, and each operand's conversion
 /// is interned once.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn sign_cast_distribution_is_linear_in_the_operation_chain() {
     let mut work = Vec::new();
     for size in SIZES {
@@ -65,6 +67,8 @@ fn sign_cast_distribution_is_linear_in_the_operation_chain() {
 /// each union fires its class's conversions once, so the facts and the
 /// queries cost linear work, not one pass over every conversion per fact.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn class_triggered_distribution_scales_with_merges() {
     let mut work = Vec::new();
     for size in SIZES {
@@ -98,6 +102,8 @@ fn class_triggered_distribution_scales_with_merges() {
 /// truncation of the same chain over an operand with the same low byte in
 /// work linear in `n`.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.9s in the parallel gate"]
 fn truncation_of_promoted_arithmetic_is_linear() {
     use crate::kernel::MachineBinaryOp as Op;
     let ops = [
@@ -206,6 +212,8 @@ fn narrow_chain(size: u64) -> (OldMachineTerm, OldMachineTerm) {
 /// narrowing, so relating a chain of `n` native operators to its promoted
 /// spelling costs work linear in `n`.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.6s in the parallel gate"]
 fn native_narrow_promotion_is_linear_in_the_operation_chain() {
     let mut work = Vec::new();
     for size in SIZES {
@@ -229,6 +237,8 @@ fn native_narrow_promotion_is_linear_in_the_operation_chain() {
 /// operands' widenings (rule K7'). Each firing is constant work, so `n`
 /// widened operators cost work linear in `n`.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.1s in the parallel gate"]
 fn widened_native_narrow_operators_are_linear() {
     use crate::kernel::MachineBinaryOp as Op;
     let ops = [Op::Add, Op::Multiply, Op::Subtract, Op::ShiftLeft];
@@ -287,6 +297,8 @@ fn sign_cast32_chain(size: u64) -> (OldMachineTerm, OldMachineTerm) {
 /// inverse is the word itself and interns no node. The bound below is
 /// per operation, so a constant blowup fails it at every size.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.6s in the parallel gate"]
 fn sign_cast32_distribution_is_linear_in_the_operation_chain() {
     let mut work = Vec::new();
     for size in SIZES {
@@ -309,6 +321,8 @@ fn sign_cast32_distribution_is_linear_in_the_operation_chain() {
 /// inversion each, so the facts and queries cost work linear in `n`, at a
 /// constant per pair bounded by a few times the cost of the facts alone.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn sign_cast32_inverse_is_constant_work_per_cast() {
     let sigma = |source: Ty, destination: Ty, value| {
         OldMachineTerm::sign_cast32(source, destination, value)
@@ -350,6 +364,8 @@ fn sign_cast32_inverse_is_constant_work_per_cast() {
 /// `int32`: an operator of either format is one e-graph operator, so
 /// deciding the chain over equal operands is the same work, linear in `n`.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn uint32_and_int32_chains_cost_alike() {
     use crate::kernel::MachineBinaryOp as Op;
     let ops = [

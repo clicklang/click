@@ -30,6 +30,8 @@ fn back_edge_checks_body_end_and_continue_and_expands() {
     }
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.1s in the parallel gate"]
 fn back_edge_rejects_exits_wrong_phase_and_false_invariants() {
     for body in [
         "break;",

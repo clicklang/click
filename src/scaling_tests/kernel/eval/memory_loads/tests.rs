@@ -1162,6 +1162,8 @@ fn cached_pointer_value_keeps_its_defining_coordinates_and_scales() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.9s in the parallel gate"]
 fn cached_pointer_reads_retain_their_current_cell_identity() {
     let _session = crate::kernel::VerificationSession::enter();
     let alias = OldAddress::symbolic(Variable(95_510));
@@ -2030,6 +2032,8 @@ fn scalar_projection_congruence_scales_with_selected_versions() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn symbolic_logical_wide_reads_do_not_scan_ambient_cells_or_facts() {
     let mut samples = Vec::new();
     let mut cold_samples = Vec::new();
@@ -2198,6 +2202,8 @@ fn symbolic_pointer_observations_scale_with_selected_cells() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn structural_index_read_chains_have_near_linear_producer_work() {
     for (unrelated, cold) in [
         (0, false),

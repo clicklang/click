@@ -7,6 +7,8 @@ use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn checked_attachment_is_flat_beside_unrelated_equality_history() {
     for raw_input in [false, true] {
         let mut samples = Vec::new();
@@ -1168,6 +1170,8 @@ fn ordered_symbolic_subrange_selects_its_retained_residual_without_scanning() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.1s in the parallel gate"]
 fn constant_memory_miss_ignores_unrelated_zero_bound_neighbors() {
     let p = OldAddress::symbolic(Variable(980_000));
     let required = view(&p, 0, 1);
@@ -1911,6 +1915,8 @@ fn opening_checkpoints_scale_with_selected_exchanges() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn query_read_definition_merges_scale_with_changed_suppliers() {
     fn work(count: u32, unrelated_count: u32, register_query: bool) -> usize {
         let _session = crate::kernel::VerificationSession::enter();

@@ -549,6 +549,8 @@ fn a_16_bit_constant_decides_the_other_read_of_its_cell() {
 /// `uint32` sum of the loads' `uint32` widenings (R-dist and R-comp), at
 /// every size.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn widening_chains_are_related_with_constant_work_per_widening() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = memory();

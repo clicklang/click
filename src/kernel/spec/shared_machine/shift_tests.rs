@@ -62,11 +62,15 @@ fn native_domain(value: &Proposition) -> Proposition {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.5s in the parallel gate"]
 fn program_shifts_match_native_terms_and_independently_typed_count_domains() {
     check_shift_parity(false);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.5s in the parallel gate"]
 fn rust_shifts_match_native_terms_and_original_width_count_domains() {
     check_shift_parity(true);
 }

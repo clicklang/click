@@ -68,6 +68,8 @@ fn wildcard_helper_death_does_not_scan_unrelated_imports() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.3s in the parallel gate"]
 fn exclusive_member_update_and_transfer_scale_over_neighboring_members() {
     let samples = [16_u32, 64, 256, 1024].map(|size| {
         let (scope, first) = opaque_scope(0);
@@ -135,6 +137,8 @@ fn exclusive_member_update_and_transfer_scale_over_neighboring_members() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn wildcard_helper_birth_does_not_scan_unrelated_imports() {
     let samples = [16_u32, 64, 256, 1024].map(|size| {
         let (scope, member) = opaque_scope(0);

@@ -120,6 +120,8 @@ fn stated_index_keys_each_fact_once_and_only_when_asked() {
 /// at the other, at the work of a lookup at its own, however many unrelated
 /// equalities the context holds; nothing is filed twice.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.7s in the parallel gate"]
 fn a_32_bit_equality_is_one_fact_at_either_signedness() {
     let x = OldMachineTerm::Variable(Variable(31_000));
     let equality = |format, right: u32| OldConditionTerm::Compare {

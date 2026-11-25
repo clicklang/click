@@ -1588,6 +1588,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn complete_machine_handoffs_keep_roots_across_native_memory_cells() {
         for rust in [false, true] {
             for size in [16, 64, 256] {

@@ -111,6 +111,8 @@ fn retained_integer_conditionals_share_different_guards_with_common_prefixes() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.1s in the parallel gate"]
 fn exact_observation_rewrite_uses_retained_integer_dags() {
     let _session = VerificationSession::enter();
     let signed = MachineIntegerType::Int32;

@@ -17,7 +17,8 @@ fn removed_transport_certificate_is_not_a_tactic() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_00")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn preserve_checks_byte_reads_without_search() {
     let (source, sources) = mdtest_sources("mdtests/preserve_byte_read.md");
     let sources = sources
@@ -65,7 +66,8 @@ fn preserve_checks_byte_reads_without_search() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_00")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.2s in the parallel gate"]
 fn preserve_checks_pointer_read() {
     let (source, sources) = mdtest_sources("mdtests/preserve_pointer_read.md");
     let sources = sources
@@ -234,6 +236,8 @@ fn region_footprint_identity_survives_unrelated_states() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.0s in the parallel gate"]
 fn region_footprint_free_and_call_preservation_expands_without_search() {
     for (fixture, claim) in [
         (
@@ -328,7 +332,8 @@ fn preserve_checks_integer_resource_field() {
     check_resource_field_certificate("Integer");
 }
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_02")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn preserve_checks_wide_resource_field() {
     for ty in ["int64", "uint64"] {
         check_resource_field_certificate(ty);
@@ -524,7 +529,8 @@ fn preserve_step_carries_a_fact_with_ordinary_rewriting() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_04")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn resource_viewability_restriction_expands_without_transport() {
     for (fixture, claim) in [
         ("viewable_restrict_memory.md", "first"),
@@ -609,6 +615,8 @@ fn single_write_resource_transport_expansion_replays_without_search() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn bare_transport_of_a_known_resource_read_expands_to_lookup() {
     let (source, sources) = mdtest_sources("mdtests/single_write_resource_transport_expansion.md");
     let bare = source;
@@ -695,6 +703,8 @@ fn multiple_write_transport_rejects_changed_reads_and_invalid_separation() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.1s in the parallel gate"]
 fn inequality_transport_expands_to_ordinary_steps() {
     let (source, sources) = mdtest_sources("mdtests/inequality_transport_expansion.md");
     let sources = sources
@@ -717,7 +727,8 @@ fn inequality_transport_expands_to_ordinary_steps() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_06")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn inequality_transport_handles_multiple_statements_and_resource_fields() {
     let (source, sources) = mdtest_sources("mdtests/inequality_transport_expansion.md");
     let c = sources[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
@@ -752,7 +763,8 @@ fn inequality_transport_handles_multiple_statements_and_resource_fields() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_06")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn known_value_transport_expands_to_ordinary_steps() {
     let (source, sources) = mdtest_sources("mdtests/known_value_transport_expansion.md");
     let sources = sources
@@ -809,6 +821,8 @@ fn known_value_transport_preserves_resource_fields_across_statements() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.4s in the parallel gate"]
 fn state_comparison_transport_expansion_replays_without_search() {
     let (source, sources) = mdtest_sources("mdtests/state_comparison_transport_expansion.md");
     let sources = sources
@@ -861,7 +875,8 @@ fn state_comparison_transport_retains_the_other_operands_state() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_07")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn state_comparison_transport_handles_resource_fields_across_statements() {
     let (source, sources) = mdtest_sources("mdtests/state_comparison_transport_expansion.md");
     let c = sources[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
@@ -892,6 +907,8 @@ fn state_comparison_transport_handles_resource_fields_across_statements() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 4.5s in the parallel gate"]
 fn two_read_transport_expansion_replays_without_search() {
     let (source, sources) = mdtest_sources("mdtests/two_read_transport_expansion.md");
     let sources = sources
@@ -916,7 +933,8 @@ fn two_read_transport_expansion_replays_without_search() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_07")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn two_read_transport_refuses_changed_reads_and_missing_source() {
     let (source, sources) = mdtest_sources("mdtests/two_read_transport_expansion.md");
     for read in ["q", "r"] {
@@ -934,7 +952,8 @@ fn two_read_transport_refuses_changed_reads_and_missing_source() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_07")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn two_read_transport_handles_resources_and_multiple_statements() {
     let (source, sources) = mdtest_sources("mdtests/two_read_transport_expansion.md");
     let c = sources[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
@@ -971,6 +990,8 @@ fn two_read_transport_handles_resources_and_multiple_statements() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.1s in the parallel gate"]
 fn conjunction_transport_expands_to_ordinary_steps() {
     let (source, sources) = mdtest_sources("mdtests/conjunction_transport_expansion.md");
     let sources = sources
@@ -995,7 +1016,8 @@ fn conjunction_transport_expands_to_ordinary_steps() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_07")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn conjunction_transport_requires_both_facts_and_preservations() {
     let (source, sources) = mdtest_sources("mdtests/conjunction_transport_expansion.md");
     for read in ["q", "r"] {
@@ -1019,7 +1041,8 @@ fn conjunction_transport_requires_both_facts_and_preservations() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_08")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn conjunction_transport_handles_resources_and_multiple_statements() {
     let (source, sources) = mdtest_sources("mdtests/conjunction_transport_expansion.md");
     let c = sources[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
@@ -1056,6 +1079,8 @@ fn conjunction_transport_handles_resources_and_multiple_statements() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.9s in the parallel gate"]
 fn nested_conjunction_transport_expands_and_replays() {
     let (source, files) = mdtest_sources("mdtests/nested_conjunction_transport_expansion.md");
     let files = files
@@ -1095,7 +1120,8 @@ fn nested_conjunction_transport_expands_and_replays() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_08")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.2s in the parallel gate"]
 fn nested_conjunction_transport_checks_deep_leaves_and_all_evidence() {
     let (source, files) = mdtest_sources("mdtests/nested_conjunction_transport_expansion.md");
     for read in ["q", "r", "s"] {
@@ -1116,6 +1142,8 @@ fn nested_conjunction_transport_checks_deep_leaves_and_all_evidence() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.7s in the parallel gate"]
 fn conjunction_projection_transport_expands_only_the_selected_leaf() {
     let (source, files) = mdtest_sources("mdtests/conjunction_projection_transport_expansion.md");
     let files = files
@@ -1149,6 +1177,8 @@ fn conjunction_projection_transport_expands_only_the_selected_leaf() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn conjunction_projection_transport_checks_source_and_preservation() {
     let (source, files) = mdtest_sources("mdtests/conjunction_projection_transport_expansion.md");
     let changed_c = files[0].1.replace("*p = 0;", "*q = 0;");
@@ -1168,6 +1198,8 @@ fn conjunction_projection_transport_checks_source_and_preservation() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn conjunction_projection_transport_crosses_multiple_statements() {
     let (source, files) = mdtest_sources("mdtests/conjunction_projection_transport_expansion.md");
     let c = files[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
@@ -1188,6 +1220,8 @@ fn conjunction_projection_transport_crosses_multiple_statements() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.0s in the parallel gate"]
 fn conjunction_selection_transport_expands_and_replays() {
     let (source, files) = mdtest_sources("mdtests/conjunction_selection_transport_expansion.md");
     let files = files
@@ -1229,6 +1263,8 @@ fn conjunction_selection_transport_expands_and_replays() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.6s in the parallel gate"]
 fn conjunction_selection_transport_checks_every_selected_leaf() {
     let (source, files) = mdtest_sources("mdtests/conjunction_selection_transport_expansion.md");
     for read in ["q", "r"] {
@@ -1250,6 +1286,8 @@ fn conjunction_selection_transport_checks_every_selected_leaf() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn conjunction_selection_transport_crosses_multiple_statements() {
     let (source, files) = mdtest_sources("mdtests/conjunction_selection_transport_expansion.md");
     let c = files[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
@@ -1273,6 +1311,8 @@ fn conjunction_selection_transport_crosses_multiple_statements() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.9s in the parallel gate"]
 fn implication_transport_expands_by_preserving_guard_and_conclusion() {
     let (source, files) = mdtest_sources("mdtests/implication_transport_expansion.md");
     let files = files
@@ -1310,6 +1350,8 @@ fn implication_transport_expands_by_preserving_guard_and_conclusion() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.2s in the parallel gate"]
 fn implication_transport_handles_four_distinct_reads() {
     let (mut source, files) = mdtest_sources("mdtests/implication_transport_expansion.md");
     let c = files[0].1.replace("int *r)", "int *r, int *s, int *t)");
@@ -1328,6 +1370,8 @@ fn implication_transport_handles_four_distinct_reads() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.1s in the parallel gate"]
 fn implication_transport_rejects_changed_guard_and_conclusion() {
     let (source, files) = mdtest_sources("mdtests/implication_transport_expansion.md");
     for (read, initial, write) in [
@@ -1368,6 +1412,8 @@ fn implication_transport_rejects_changed_guard_and_conclusion() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn implication_transport_crosses_multiple_statements() {
     let (source, files) = mdtest_sources("mdtests/implication_transport_expansion.md");
     let c = files[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
@@ -1391,6 +1437,8 @@ fn implication_transport_crosses_multiple_statements() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 4.0s in the parallel gate"]
 fn compound_implication_transport_expands_without_whole_goal_rewrites() {
     let (source, files) = mdtest_sources("mdtests/compound_implication_transport_expansion.md");
     let files = files
@@ -1430,6 +1478,8 @@ fn compound_implication_transport_expands_without_whole_goal_rewrites() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.6s in the parallel gate"]
 fn compound_implication_transport_rejects_changed_nested_guards() {
     let (source, files) = mdtest_sources("mdtests/compound_implication_transport_expansion.md");
     let original = "(*q == 7 and *r > 0) implies (*q > 0 implies *r == 8)";
@@ -1457,6 +1507,8 @@ fn compound_implication_transport_rejects_changed_nested_guards() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn compound_implication_transport_crosses_multiple_statements() {
     let (source, files) = mdtest_sources("mdtests/compound_implication_transport_expansion.md");
     let c = files[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
@@ -1485,8 +1537,6 @@ test_batches! {
     file: "preservation.rs",
     marker: "transport_batch_",
     transport_batch_00: [
-        preserve_checks_byte_reads_without_search,
-        preserve_checks_pointer_read,
         ordinary_equalities_compose_without_search,
         preserve_checks_signed_and_unsigned_64_bit_reads,
     ],
@@ -1497,7 +1547,6 @@ test_batches! {
         preserve_checks_integer_resource_field,
     ],
     transport_batch_02: [
-        preserve_checks_wide_resource_field,
         preserve_checks_pointer_resource_field,
         preserve_checks_algebraic_resource_field,
         preserve_resource_descriptors_follow_call_bindings,
@@ -1508,7 +1557,6 @@ test_batches! {
         preserve_step_carries_a_fact_with_ordinary_rewriting,
     ],
     transport_batch_04: [
-        resource_viewability_restriction_expands_without_transport,
         viewability_transport_expands_to_ordinary_restriction,
         single_write_transport_expansion_replays_without_search,
     ],
@@ -1519,20 +1567,8 @@ test_batches! {
         multiple_write_transport_rejects_changed_reads_and_invalid_separation,
     ],
     transport_batch_06: [
-        inequality_transport_handles_multiple_statements_and_resource_fields,
-        known_value_transport_expands_to_ordinary_steps,
         known_value_transport_preserves_resource_fields_across_statements,
         state_comparison_transport_retains_the_other_operands_state,
-    ],
-    transport_batch_07: [
-        state_comparison_transport_handles_resource_fields_across_statements,
-        two_read_transport_refuses_changed_reads_and_missing_source,
-        two_read_transport_handles_resources_and_multiple_statements,
-        conjunction_transport_requires_both_facts_and_preservations,
-    ],
-    transport_batch_08: [
-        conjunction_transport_handles_resources_and_multiple_statements,
-        nested_conjunction_transport_checks_deep_leaves_and_all_evidence,
     ],
 }
 
@@ -1604,6 +1640,8 @@ fn returned_have_transport_expansion_replays_without_search() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn returned_byte_across_a_separated_write_expands_to_preserve() {
     let (source, sources) = mdtest_sources("mdtests/a_separation_from_a_64_bit_range.md");
     let sources = sources
@@ -1624,6 +1662,8 @@ fn returned_byte_across_a_separated_write_expands_to_preserve() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn memory_observation_after_a_write_expands_and_replays() {
     let (source, sources) = mdtest_sources("mdtests/observe_memory_after_store.md");
     let sources = sources
@@ -1642,6 +1682,8 @@ fn memory_observation_after_a_write_expands_and_replays() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn memory_observation_does_not_establish_initialization() {
     let source = r#"
         verifying "unwritten.c";

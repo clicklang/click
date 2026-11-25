@@ -521,6 +521,8 @@ fn constructor_partition_reserves_algebraic_variables_in_opaque_environment_term
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.4s in the parallel gate"]
 fn constructor_partition_freshness_is_indexed_and_output_linear() {
     for size in [16, 64, 256] {
         let (core, value) = constructor_partition_fixture(2);

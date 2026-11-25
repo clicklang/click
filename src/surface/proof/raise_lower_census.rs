@@ -147,6 +147,8 @@ mod tests {
     use crate::kernel::{OldMachineTerm, Sort, Variable};
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn hidden_child_fields_have_structural_resource_surface_forms() {
         let fixture = crate::cli::parse_mdtest(
             std::path::Path::new("a_hidden_record_is_shown_beside_its_resource.md"),
@@ -200,6 +202,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn joined_structural_read_goals_keep_a_raisable_memory_version() {
         let fixture =
             include_str!("../../../mdtests/a_join_forgets_a_cell_the_arms_disagree_on.md");
@@ -495,6 +499,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn known_integer_matches_keep_order_after_lowering_and_rewrite() {
         let fixture = include_str!("../../../mdtests/integer_match_order_on_known_constructor.md");
         let source = fixture
@@ -591,6 +597,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn closed_word_equality_guards_keep_their_conditional() {
         let fixture = include_str!("../../../mdtests/closed_word_equality_conditionals.md");
         let source = fixture
@@ -853,6 +861,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn pure_uint64_sequences_raise_after_intro_and_rewrite() {
         let fixture = include_str!("../../../mdtests/pure_uint64_sequences_keep_structure.md");
         let source = fixture
@@ -978,6 +988,8 @@ void keep(int32* p) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn nested_algebraic_conditions_in_list_facts_are_raised() {
         check_algebraic_condition_fixture(include_str!(
             "../../../mdtests/stdlib_list_compositionality.md"
@@ -985,6 +997,8 @@ void keep(int32* p) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn rigid_algebraic_conditions_in_list_facts_are_raised() {
         // Exercise the generic proof itself: applications instantiate the
         // checked statement and no longer replay the library theorem's body.
@@ -1195,6 +1209,8 @@ void set(int32* a, int32 i, int32 j) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn facts_an_unfold_adds_at_the_execution_frontier_are_raised() {
         let c = "struct cell { int32 value; int32 other; };\n\
                  void bump(struct cell* p) { int32 seen = p->other; p->value = seen; }";
@@ -1269,6 +1285,8 @@ void pack(struct node* p, struct node* id) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 2.1s in the parallel gate"]
     fn a_rewritten_goal_with_no_written_template_is_spelled() {
         // `unfold(Adds(&add3))` opens a contract's obligation, which no written
         // proposition spells; the goals the rewrites inside `solve` leave are

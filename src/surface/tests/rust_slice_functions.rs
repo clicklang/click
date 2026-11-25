@@ -13,6 +13,8 @@ const SIZES: &str = "
 ";
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn a_pure_function_slice_parameter_is_its_pointer_and_length() {
     // A caller with no slice in scope builds one from the pointer and the
     // length; the slice is still one argument.

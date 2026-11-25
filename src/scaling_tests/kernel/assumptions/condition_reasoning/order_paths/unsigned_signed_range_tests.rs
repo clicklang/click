@@ -36,6 +36,8 @@ fn signed_range_admission_ignores_unrelated_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.5s in the parallel gate"]
 fn signed_range_decision_retains_shared_operands_without_history_or_exports() {
     for hit in [false, true] {
         let mut samples = Vec::new();

@@ -1406,6 +1406,8 @@ fn pointer_association_selected_guard_work_ignores_ambient_facts() {
 /// grow, and as bounds of the same shape on other indices grow, and the
 /// association is refused without its own bound.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn uint64_pointer_association_selected_guard_work_ignores_other_facts() {
     let i = OldMachineTerm::Variable(Variable(198301));
     let goal_condition = OldConditionTerm::address_offset_equal(
@@ -2113,6 +2115,8 @@ fn related_disequal_classes(n: usize) -> (PureFactContext, Vec<(OldConditionTerm
 /// and fuel at 64 related facts stay within a linear factor of its work at
 /// 16, with headroom for logarithmic indexing.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.3s in the parallel gate"]
 fn decide_work_is_near_linear_in_related_facts() {
     for (name, shape) in [
         ("order chain", related_order_chain as RelatedFacts),

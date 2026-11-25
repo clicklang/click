@@ -1,4 +1,6 @@
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn rust_shifts_are_fact_stable_and_do_not_scan_ambient_facts() {
     let mut samples = Vec::new();
     for size in [32u64, 128, 512] {

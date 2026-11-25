@@ -776,6 +776,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.8s in the parallel gate"]
     fn exact_index_normalization_preserves_nested_smart_constructors() {
         let _session = VerificationSession::enter();
         let facts = PureFactContext::new();

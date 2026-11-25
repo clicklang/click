@@ -177,6 +177,8 @@ mod tests {
     const PROOF: &str = "verifying \"lib.rs\"; fn demo::entry::CHUNK_SIZE() -> usize { ensures result == 22208u64; } fn demo::entry() -> usize { ensures result == 22208u64; }";
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn charon_constants_verify_bodies_and_reject_assumed_values() {
         let artifact: ExtractionArtifact = serde_json::from_slice(ARTIFACT).unwrap();
         let export = decode(&artifact).unwrap();

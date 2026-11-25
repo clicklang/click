@@ -2,7 +2,8 @@ use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_00")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn c_constant_spellings_preserve_declared_identifiers_in_both_source_paths() {
     use crate::languages::c::compiler_import::PreparedCImport;
 
@@ -127,7 +128,8 @@ int32 bad(int32 x) {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_01")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.3s in the parallel gate"]
 fn location_verification_ignores_an_unselected_function_ranked_loop() {
     // A location-scoped run verifies one proof unit, so it builds a verified
     // loop rule only for the loops it checks. Planning termination for every
@@ -1440,7 +1442,8 @@ int32 two() {
 /// An `extern` contract is trusted to return exactly as its `ensures` is
 /// trusted, so a ranked function that calls one has termination evidence.
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_04")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn an_extern_callee_is_assumed_to_return() {
     let c_source = r#"int32 poll();
 
@@ -2270,14 +2273,12 @@ test_batches! {
     file: "project_tests.rs",
     marker: "project_batch_",
     project_batch_00: [
-        c_constant_spellings_preserve_declared_identifiers_in_both_source_paths,
         c_constant_spellings_preserve_enumerators_and_functions,
         c_constant_spellings_do_not_prove_a_false_parameter_contract,
         c_constant_spellings_keep_actual_macro_expansion_authoritative,
     ],
     project_batch_01: [
         location_verification_skips_unrelated_function_proofs,
-        location_verification_ignores_an_unselected_function_ranked_loop,
         location_verification_assumes_unselected_callee_contracts,
         external_dependency_report_is_transitive_and_per_function,
     ],
@@ -2297,7 +2298,6 @@ test_batches! {
         required_termination_refuses_an_unranked_loop_and_its_caller,
         required_termination_spreads_diverges_to_callers,
         required_termination_certifies_loop_free_callers_unannotated,
-        an_extern_callee_is_assumed_to_return,
     ],
     project_batch_05: [
         unrelated_non_comparison_conditions_are_not_polarity_equivalent,

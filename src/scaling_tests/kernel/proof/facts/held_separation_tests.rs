@@ -58,6 +58,8 @@ fn held_field_separation_does_not_visit_unrelated_owners() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn held_separation_transitive_alias_uses_the_shared_resource_index() {
     let _session = crate::kernel::VerificationSession::enter();
     let mut samples = Vec::new();
@@ -140,6 +142,8 @@ fn exact_partition_known_does_not_treat_supported_views_as_independent() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn separation_carrier_key_ignores_unrelated_facts() {
     let mut samples = Vec::new();
     for size in [4, 16, 64, 256] {

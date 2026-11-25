@@ -7835,6 +7835,8 @@ mod modeled_pthread_binding_tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn targeted_mutex_proof_uses_the_modeled_calls_without_c_definitions() {
         let fixture = include_str!("../../mdtests/guarded_resource_mutex_flow.md");
         let c = fixture
@@ -7860,6 +7862,8 @@ mod modeled_pthread_binding_tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.9s in the parallel gate"]
     fn source_create_status_can_be_copied_and_tested_later() {
         let c = "#include <pthread.h>\n#include <stddef.h>\nstruct cell { int value; };\nvoid *worker(void *p) { struct cell *q = p; q->value = 77; return NULL; }\nint run(struct cell *p) { pthread_t h; int rc = pthread_create(&h, NULL, worker, p); int saved = rc; int unrelated = 7; if (saved != 0) return 0; pthread_join(h, NULL); return unrelated; }\n";
         let click = "target \"x86_64-unknown-linux-gnu\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nvoid *worker(void *p) { owns (p as (struct cell *))->value; }\nint32 run(struct cell *p) { owns p->value; ensures result == 0 or result == 7; } by { step(); step(); step(); step(); step(); step(); step(); step(); branch { true => { step(); close(); } false => {} } step(); step(); close(); }\n";
@@ -7877,6 +7881,8 @@ mod modeled_pthread_binding_tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn source_cannot_read_transferred_memory_before_status_and_join() {
         let c = "#include <pthread.h>\n#include <stddef.h>\nstruct cell { int value; };\nvoid *worker(void *p) { struct cell *q = p; q->value = 77; return NULL; }\nint run(struct cell *p) { pthread_t h; int rc = pthread_create(&h, NULL, worker, p); int early = p->value; if (rc != 0) return 0; pthread_join(h, NULL); return early; }\n";
         let click = "target \"x86_64-unknown-linux-gnu\";\nruntime \"modeled-pthread\";\nverifying \"fork_join.c\";\nvoid *worker(void *p) { owns (p as (struct cell *))->value; }\nint32 run(struct cell *p) { owns p->value; } by { step(); step(); step(); step(); step(); }\n";
@@ -8188,6 +8194,8 @@ int32 answer() {
     /// may write memory it owns beside it, and reads through the view stay
     /// stable across that write.
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn root_view_permits_an_owned_write_beside_it() {
         let click = r#"
 verifying "reader.c";
@@ -8275,6 +8283,8 @@ int32 reader(int32 p[], int32 q[]) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn root_view_checks_pointer_offset_aliases() {
         for (equality, separation) in [
             ("q == p + 1", ""),
@@ -8313,6 +8323,8 @@ int32 reader(int32 p[], int32 q[]) {{
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn root_view_accepts_adjacent_pointer_offset_aliases() {
         let click = r#"
 verifying "reader.c";
@@ -8395,6 +8407,8 @@ int32 read_retargeted(struct buffer* owner, int32* other) {
     /// view across its return without a binding for it, and the caller can
     /// still read the table afterwards.
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn carries_a_file_static_const_view_across_a_call() {
         let click = r#"
 verifying "reader.c";
@@ -8435,6 +8449,8 @@ static inline int set0(int *p) { p[0] = 9; return 0; }\n\
     /// An inline helper is call-site code: it reads through the caller's
     /// contract input view without lending, and the view stays bound.
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn inline_helper_reads_through_the_callers_rooted_view() {
         let click = r#"
 verifying "t.c";
@@ -8497,6 +8513,8 @@ int32 reader(int32 p[]) {
     /// copy over a lent field, is
     /// `owner_authorized_aggregate_copy_into_a_lent_range_requires_separation`.
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn root_view_refuses_an_aggregate_copy_into_it() {
         let click = r#"
 verifying "reader.c";
@@ -8520,6 +8538,8 @@ int32 copy_pair(struct pair* s, struct pair* t) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.1s in the parallel gate"]
     fn private_aggregate_parameters_can_lend_ownership_to_helpers() {
         let source = "struct packet { uint32 n; }; void change(uint32* n) { *n = 9; } uint32 consume(struct packet p) { uint32 before = p.n; change(&p.n); return before; } uint32 entry(uint32 x) { struct packet p = {x}; uint32 ignored = consume(p); return p.n; }";
         let proof = r#"verifying "reader.c";
@@ -8545,6 +8565,8 @@ int32 copy_pair(struct pair* s, struct pair* t) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.8s in the parallel gate"]
     fn unsigned_array_field_returns_preserve_values_in_c_callers() {
         let source = "struct packet { uint32 words[4]; }; struct packet make(uint32 x) { struct packet p = {{x, x, x, x}}; return p; } uint32 read(uint32 x) { struct packet p = make(x); return p.words[3]; }";
         let proof = r#"verifying "reader.c";
@@ -8588,6 +8610,8 @@ extern void drop_box(struct s* p) {
     /// write authority over the array while the box describes it (the
     /// write-authority check runs before the ledger, as in step 3).
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.9s in the parallel gate"]
     fn escaping_borrow_refuses_a_write_while_the_composite_lives() {
         let click = format!(
             "{BORROWING_BOX_PRELUDE}
@@ -8696,6 +8720,8 @@ int32 f(struct s* p, int32 d[], int32 n) {{
     /// A produced composite whose viewed piece no viewed input of the call
     /// backs describes memory nothing stabilizes; the call is refused.
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn produced_borrowing_composite_without_a_backing_input_is_refused() {
         let click = r#"
 verifying "reader.c";
@@ -8739,6 +8765,8 @@ int32 f(struct s* p, int32 n) {
     /// carries this call's own borrows, because lending has removed the owner
     /// from the preserved residual (docs/internals/stable-views.md).
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn call_retirement_requires_separation_from_its_own_borrow() {
         let click = r#"
 verifying "reader.c";
@@ -8836,6 +8864,8 @@ int read_view(const int *(*f)(const int *), const int *p) {{
         "int read_view(const int *(*f)(const int *), const int *p) { return f(p)[0]; }";
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn one_call_execution_theorem_still_needs_its_target_obligation() {
         // Reusing the proof's entry state must not discharge an obligation the
         // one-call proof never established: this target promises a value the

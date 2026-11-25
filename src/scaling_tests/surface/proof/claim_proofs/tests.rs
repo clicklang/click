@@ -95,11 +95,15 @@ fn check_return_claim_preparation_scaling(
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn return_known_views_scale_with_resources_and_claims() {
     check_return_claim_preparation_scaling("close();", [1, 2, 4, 8].map(|size| (size, size)));
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn return_normalization_views_scale_with_resources_and_claims() {
     check_return_claim_preparation_scaling("normalize();", [1, 2, 4, 8].map(|size| (size, size)));
 }
@@ -129,6 +133,8 @@ fn exact_return_closers_share_preparation_beside_unrelated_resources() {
 /// pairing every fact since execution ended made the `have` at position `k`
 /// cost about nine units per earlier `have`, quadratic over the proof.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.9s in the parallel gate"]
 fn post_execution_haves_before_a_fold_cost_the_same_at_every_position() {
     use crate::instrumentation::collect_tactic_work;
     crate::surface::verify_c_sources("theorem warm() { ensures true by normalize(); }", &[])

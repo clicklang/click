@@ -102,6 +102,8 @@ fn expansion_omits_finalization_after_an_explicit_claim_proof() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn expansion_closes_each_rewritten_postcondition() {
     let inputs = [("closing.c", "int32 value(int32 *p) { return *p; }")];
     let source = r#"
@@ -223,7 +225,8 @@ const SOURCE_CELLS_C: &[(&str, &str)] = &[(
 )];
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_02")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn grouped_source_only_claims_complete_and_expand_as_ordinary_proofs() {
     let source = source_only_clauses(true, 1);
     verify_c_sources(&source, SOURCE_CELLS_C).unwrap();
@@ -283,7 +286,8 @@ fn an_empty_loop_summary_does_not_publish_concrete_exit_evidence() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_03")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.3s in the parallel gate"]
 fn completed_descent_covers_a_concretely_avoided_recursive_loop() {
     let c = [(
         "retained_descent.c",
@@ -320,7 +324,8 @@ fn retained_context_does_not_discharge_an_unproved_recursive_descent() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_closing_batch_03")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn reassigned_numeric_parameter_descent_expands_into_ordinary_steps() {
     let c = [(
         "numeric_descent.c",
@@ -375,14 +380,11 @@ test_batches! {
         footprint_refusal_names_the_goal_and_the_closing_operation,
     ],
     contract_closing_batch_02: [
-        grouped_source_only_claims_complete_and_expand_as_ordinary_proofs,
         separate_source_only_clauses_complete_their_own_cells,
         proving_one_source_only_clause_cannot_cover_a_false_sibling,
         concrete_and_avoided_loops_need_no_summary_measure,
     ],
     contract_closing_batch_03: [
-        completed_descent_covers_a_concretely_avoided_recursive_loop,
         retained_context_does_not_discharge_an_unproved_recursive_descent,
-        reassigned_numeric_parameter_descent_expands_into_ordinary_steps,
     ],
 }

@@ -158,6 +158,8 @@ fn cells_state_beside_unrelated_ranges(capacity: u32, unrelated: u32) -> Executi
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.9s in the parallel gate"]
 fn opening_and_closing_one_slot_is_constant_in_unrelated_owned_ranges() {
     let mut taking = Vec::new();
     let mut giving = Vec::new();

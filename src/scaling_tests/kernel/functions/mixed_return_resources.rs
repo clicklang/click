@@ -1906,6 +1906,8 @@ fn recursive_call_preparation_does_not_deepen_a_decided_tail() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.8s in the parallel gate"]
 fn specialized_return_producers_ignore_retained_state_and_scale_with_their_bodies() {
     use super::specialized_return_tests::{
         anchor, authority, constructor, control, ledger, matched, named,
@@ -2263,6 +2265,8 @@ fn ordinary_return_construction_and_normalization_ignore_alias_history() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn summary_transfer_construction_scales_with_clauses_not_retained_owners_or_aliases() {
     use crate::kernel::program_expression::{int32_literal, variable};
     for axis in ["frame", "aliases", "same-block aliases", "clauses"] {
@@ -2405,6 +2409,8 @@ fn summary_transfer_construction_scales_with_clauses_not_retained_owners_or_alia
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn composite_parameter_footprints_scale_with_parts_not_the_frame_or_alias_classes() {
     use crate::kernel::program_expression::{int32_literal, variable};
     for axis in ["frame", "aliases", "same-block aliases", "parts"] {

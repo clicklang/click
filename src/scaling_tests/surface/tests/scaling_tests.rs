@@ -28,6 +28,8 @@ void probe(int32 a[], int32 n) {{
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.3s in the parallel gate"]
 fn first_entry_cell_lookup_has_bounded_work_after_disjoint_stores() {
     use crate::instrumentation::{VerificationEvent, collect};
 
@@ -82,6 +84,8 @@ fn first_entry_cell_lookup_has_bounded_work_after_disjoint_stores() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 4.5s in the parallel gate"]
 fn static_cell_read_steps_skip_same_array_store_history() {
     use crate::instrumentation::{VerificationEvent, collect};
 
@@ -164,6 +168,8 @@ int32 probe() {{
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.9s in the parallel gate"]
 fn static_cell_read_steps_skip_same_array_call_history() {
     use crate::instrumentation::{VerificationEvent, collect};
 
@@ -222,6 +228,8 @@ int32 probe() {{ owns g[0..256]; ensures result == 0; }} by {{
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn writing_the_entry_cell_changes_its_ordinary_read_version() {
     let (c, source) = entry_cell_after_local_stores(4, true, "a[0] == 7");
     verify_c_sources(&source, &[("probe.c", &c)]).expect("the read names the written value");
@@ -239,6 +247,8 @@ fn writing_the_entry_cell_changes_its_ordinary_read_version() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn trivial_disjuncts_do_not_spell_unrelated_premises() {
     let mut samples = Vec::new();
     for size in [1, 2, 8] {
@@ -377,6 +387,8 @@ int32 probe(int32* p) {{
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn refined_pure_arithmetic_does_not_rescan_unrelated_parameters() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/pure_arithmetic_retains_a_rewritten_fold_goal.md");
@@ -594,6 +606,8 @@ fn expanded_loop_claims_preserve_the_audit_work_bound() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn execution_target_resource_scope_parsing_is_linear_in_selected_declarations() {
     let samples = [1, 8, 32, 128].map(|count| {
         let mut source = "resource Counter() { field revision: int32; }\n".to_string();
@@ -618,6 +632,8 @@ fn execution_target_resource_scope_parsing_is_linear_in_selected_declarations() 
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn reversed_all_arm_matching_scales_with_written_labels() {
     fn conjunction(labels: &[String]) -> String {
         if let [one] = labels {
@@ -689,6 +705,8 @@ fn nested_conjunction_body_parsing_uses_small_frames_and_linear_work() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn repeated_execution_matches_keep_terminal_case_evidence_and_scale_linearly() {
     // Repeated matches can produce coincident outcome/fact records with
     // distinct case evidence. Every checked leaf must survive publication.
@@ -733,6 +751,8 @@ int32 unit() {{ owns m: marker(); ensures result == 0; }} by {{ {body} }}"
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn nested_execution_matches_fit_the_cli_stack_and_scale_linearly() {
     // The CLI's ordinary eight-megabyte stack must suffice: the fixture
     // harness's larger stack would hide the captured split-record frames.
@@ -848,6 +868,8 @@ fn symbolic_integer_match_lowering_has_near_linear_width_work() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn symbolic_integer_match_lowering_has_near_linear_nested_depth_work() {
     let mut samples = Vec::new();
     for depth in [2, 4, 8, 16, 32, 64] {
@@ -885,6 +907,8 @@ fn symbolic_integer_match_lowering_has_near_linear_nested_depth_work() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn parametric_theorem_declarations_have_near_linear_checking_work() {
     let mut samples = Vec::new();
     for size in [16, 32, 64, 128] {
@@ -902,6 +926,8 @@ fn parametric_theorem_declarations_have_near_linear_checking_work() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn transitive_module_chains_prepare_with_near_linear_deterministic_work() {
     let mut samples = Vec::new();
     for size in [4, 8, 16, 32] {
@@ -1225,6 +1251,8 @@ fn bounded_statement_successor_exclusion_ignores_unrelated_ambient_facts() {
 /// settle, which is the case a branch-deciding lowering would have searched
 /// for.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn specification_conditional_lowering_ignores_unrelated_ambient_facts() {
     let mut samples = Vec::new();
     let mut requirement_work = Vec::new();
@@ -1645,6 +1673,8 @@ fn parenthesized_contract_expression_parsing_has_linear_deterministic_work() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.1s in the parallel gate"]
 fn simple_unrelated_functions_have_a_deterministic_scaling_control() {
     let samples = [4, 8, 16, 32]
         .into_iter()
@@ -1697,6 +1727,8 @@ fn a_functions_tactic_work_does_not_grow_with_earlier_unrelated_functions() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn targeted_simple_verification_does_not_verify_unrelated_theorems() {
     let c_source = "int32 scaling_target(int32 x) { return x; }\n";
     let samples = [4, 8, 16, 32]
@@ -1738,6 +1770,8 @@ fn targeted_simple_verification_does_not_verify_unrelated_theorems() {
 /// copies only its own file's. Each copied the whole library several times,
 /// a fixed cost that dominated small verifications.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn verification_copies_only_its_own_theorem_declarations() {
     let c_source = "int32 scaling_target(int32 x) { return x; }\n";
     let library = standard_library_theorem_definitions()
@@ -1790,6 +1824,8 @@ fn targeted_certification_keeps_an_explicit_theorem_dependency() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn straight_line_proof_steps_scale_near_linearly_with_retained_states() {
     for program_point_claim in [false, true] {
         let mut finalization_views = Vec::new();
@@ -1860,6 +1896,8 @@ fn load_variable_construction_scales_near_linearly_with_statements() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.2s in the parallel gate"]
 fn exact_known_scales_near_linearly_with_unrelated_ambient_facts() {
     let samples = [16, 32, 64, 128]
         .into_iter()
@@ -1881,6 +1919,8 @@ fn exact_known_scales_near_linearly_with_unrelated_ambient_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.4s in the parallel gate"]
 fn transitive_order_derivation_scales_near_linearly_with_unrelated_conditions() {
     let samples = [4, 8, 16, 32]
         .into_iter()
@@ -1902,6 +1942,8 @@ fn transitive_order_derivation_scales_near_linearly_with_unrelated_conditions() 
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.3s in the parallel gate"]
 fn explicit_step_scales_near_linearly_with_unrelated_ambient_facts() {
     let samples = [8, 16, 32, 64]
         .into_iter()
@@ -1955,6 +1997,8 @@ fn step_with_written_obligation_proof_scales_near_linearly_with_unrelated_ambien
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.3s in the parallel gate"]
 fn explicit_return_fact_scales_near_linearly_with_unrelated_ambient_facts() {
     let samples = [8, 16, 32, 64]
         .into_iter()
@@ -2032,6 +2076,8 @@ fn explicit_separation_alias_transport_has_constant_selected_work() {
 /// variables, which a run over a block no variable names still visits slot
 /// by slot.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn symbolic_index_into_a_file_scope_array_scales_near_linearly_with_its_length() {
     let samples = [512, 1024, 2048, 4096]
         .into_iter()
@@ -2058,6 +2104,8 @@ fn symbolic_index_into_a_file_scope_array_scales_near_linearly_with_its_length()
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn same_kernel_fact_with_many_surface_forms_scales_near_linearly() {
     let samples = [4, 8, 16, 32]
         .into_iter()
@@ -2078,6 +2126,8 @@ fn same_kernel_fact_with_many_surface_forms_scales_near_linearly() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn grouped_claims_share_one_execution_with_near_linear_work() {
     let samples = [8, 32, 64]
         .into_iter()
@@ -3101,6 +3151,8 @@ fn call_with_structured_precondition(fact_count: usize) -> (String, String) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn call_requirement_checking_scales_near_linearly_with_unrelated_caller_facts() {
     let samples = [4, 8, 16, 32]
         .into_iter()
@@ -3141,6 +3193,8 @@ fn call_requirement_checking_scales_near_linearly_with_unrelated_caller_facts() 
 /// grew both axes at once, so that scan was charged once per query per fact.
 /// The retained exact routes read the index the goal names and nothing else.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.4s in the parallel gate"]
 fn explicit_simple_tactics_scale_with_source_while_ambient_facts_grow() {
     let samples = [8, 16, 32, 64]
         .into_iter()
@@ -3724,6 +3778,8 @@ fn an_array_fact_carried_across_declarations_and_calls_scales_linearly() {
 /// Each use of an array fact across disjoint local stores selects the same
 /// entry version through the recorded path index.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn an_array_fact_carried_across_local_stores_scales_linearly() {
     let samples = [4, 8, 16, 32]
         .into_iter()
@@ -3761,6 +3817,8 @@ fn an_array_fact_carried_across_local_stores_scales_linearly() {
 /// The first array read after a long run of disjoint statements must not
 /// traverse that run. Per-statement lookups can hide this behind memo hits.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn one_array_lookup_after_disjoint_local_stores_has_bounded_work() {
     let work = [4, 16, 64].map(|size| {
         let (c, source) = array_fact_across_local_stores(size, false);
@@ -5036,6 +5094,8 @@ fn counter_call_chain_ensure_lowering_stays_flat_per_call() {
 /// The callee sees one by-value argument, even when the caller has built
 /// a long arithmetic expression for that value before the call.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.1s in the parallel gate"]
 fn call_preparation_and_ensures_keep_the_computed_argument_shared() {
     use crate::instrumentation::VerificationEvent;
 
@@ -5109,6 +5169,8 @@ fn call_preparation_and_ensures_keep_the_computed_argument_shared() {
 /// The first call can register a previously unseen expression. Later statement
 /// publications must use the same graph when they add another result equality.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn repeated_call_publication_reuses_the_argument_registration() {
     use crate::instrumentation::VerificationEvent;
 
@@ -5145,6 +5207,8 @@ fn repeated_call_publication_reuses_the_argument_registration() {
 
 /// The return paths share the kernel's indexed effects for the common prefix.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn returning_branches_share_the_checked_effect_context() {
     for stores in [8, 32, 64] {
         let writes = (1..=stores)
@@ -5454,6 +5518,8 @@ fn call_separation_requirements_ignore_unrelated_owned_objects() {
 /// and 22062 beside 1000); a global array of 100000 elements exhausted the
 /// wall-clock limit.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn collecting_a_states_variables_visits_a_global_array_once() {
     let c_source = |length: u64, statements: usize| {
         format!(
@@ -5514,6 +5580,8 @@ fn collecting_a_states_variables_visits_a_global_array_once() {
 /// the simple-tactic budget, and `views a[0..1000000]` minted enough load
 /// identities to collide.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.1s in the parallel gate"]
 fn a_constant_view_costs_the_same_whatever_its_length() {
     let c_source = "int32 get(int32 *a, int32 i) { return a[i]; }\n";
     let click_source = |length: u64| {
@@ -6308,6 +6376,8 @@ fn resource_reference_entry_setup_has_near_linear_work() {
 /// names, so entry setup over one clause per parameter grows with the
 /// parameters and not with their square (roadmap/scaling.md, cause 8).
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn entry_resource_clauses_do_not_rebuild_every_parameter() {
     let samples = [16usize, 64, 256].map(|count| {
         let parameters = (0..count)
@@ -6721,6 +6791,8 @@ fn loop_exit_join_scaling_on_this_thread() {
 /// Each selected arm follows an earlier checked `have`, rather than a
 /// speculative traversal of the complete deferred script before checking it.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.6s in the parallel gate"]
 fn post_execution_ifs_with_earlier_haves_have_near_linear_work() {
     let c_source = "int32 pick(int32 a, int32 b) { if (a > b) { return a; } return b; }";
     let mut samples = Vec::new();
@@ -7273,6 +7345,8 @@ fn atomic_load_dependencies_ignore_other_state_cells() {
 /// instantiation needs, beside unrelated conditions and memory facts. This
 /// goal used to be proved from, and cite, the whole context.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.1s in the parallel gate"]
 fn atomic_evidence_without_one_source_cites_connected_facts() {
     use crate::kernel::{
         OldAddress, OldAddressOffset, OldConditionTerm, OldMachineTerm, Proposition,
@@ -8047,6 +8121,8 @@ fn long_proof_else_spines_parse_on_a_small_stack_and_restore_block_bindings() {
 /// at 4 and 364,310 at 16, and six equalities beside a loop's invariants
 /// exhausted the two-million budget.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.4s in the parallel gate"]
 fn a_linear_goal_costs_a_constant_per_equality_connected_to_its_atoms() {
     for size in [4usize, 16, 32] {
         let parameters = (0..size)
@@ -8070,6 +8146,8 @@ fn a_linear_goal_costs_a_constant_per_equality_connected_to_its_atoms() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn recorded_value_names_index_only_the_locals_each_point_changes() {
     use crate::kernel::{OldMachineTerm, Variable};
     let point = |index| ProgramPointRef {
@@ -8286,6 +8364,8 @@ void narrow(const uint8* bytes, int32 index) {
 
 // A store must not expand an unrelated shared byte view to narrow four bytes.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 4.1s in the parallel gate"]
 fn explicit_byte_view_narrowing_keeps_large_seeded_ranges_compact() {
     let (c_source, contract) = byte_view_narrowing_sources();
     let samples = [16u32, 64, 4096, 22208, 1048576].map(|size| {
@@ -9236,6 +9316,8 @@ ensures result == {expected};
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn source_only_transport_does_not_reconstruct_unrelated_integer_facts() {
     let mut work = Vec::new();
     let sizes = [8usize, 16, 32];
@@ -9469,6 +9551,8 @@ int32 count_once(int32 flag) {{
 /// A failing bare transport cites only its source and rebuilds no context per
 /// ambient fact.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.1s in the parallel gate"]
 fn failing_bare_transport_reuses_candidate_assumptions() {
     use crate::instrumentation::collect;
     let mut samples = Vec::new();
@@ -9511,6 +9595,8 @@ transport(at(filled, dst[0]) == 7, dst[0] == 7);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.8s in the parallel gate"]
 fn branch_view_entry_loadability_ignores_prior_effects() {
     for slot in [0, 2] {
         let contract = if slot == 0 {
@@ -9567,6 +9653,8 @@ fn branch_view_entry_loadability_ignores_prior_effects() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 5.2s in the parallel gate"]
 fn named_unfold_constructs_the_selected_arm_once() {
     use crate::instrumentation::{VerificationEvent, collect};
 
@@ -9642,6 +9730,8 @@ fn named_unfold_constructs_the_selected_arm_once() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 11s in the parallel gate"]
 fn scalar_read_after_branch_ignores_other_slots_on_its_line() {
     use crate::instrumentation::{VerificationEvent, collect};
 
@@ -9716,6 +9806,8 @@ fn scalar_read_after_branch_ignores_other_slots_on_its_line() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 4.3s in the parallel gate"]
 fn branch_interface_fact_publication_extends_one_indexed_context() {
     let c_source = "struct cell { int32 value; }; int32 bump(struct cell* p, int32 x, int32 flag) { p->value = flag; return 0; }";
     let mut samples = Vec::new();
@@ -9750,6 +9842,8 @@ fn branch_interface_fact_publication_extends_one_indexed_context() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.0s in the parallel gate"]
 fn branch_checking_ignores_unused_parameters_and_premises() {
     for grow_parameters in [false, true] {
         let mut samples = Vec::new();
@@ -9818,6 +9912,8 @@ fn branch_checking_ignores_unused_parameters_and_premises() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn mixed_width_owned_entry_work_is_independent_of_segment_length() {
     let program = "void entry(unsigned long *word, unsigned char *bytes) {}";
     verify_c_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
@@ -9839,6 +9935,8 @@ fn mixed_width_owned_entry_work_is_independent_of_segment_length() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.4s in the parallel gate"]
 fn native_read_equality_refusal_does_not_restart_state_search_as_integer() {
     let c = "int32 read_after_store(int32 *a, int32 k) { a[3] = 5; return a[k]; }";
     verify_c_sources(
@@ -9957,6 +10055,8 @@ pub(super) fn early_return_project(returns: usize) -> (String, String) {
 /// context: it cost each path its whole fact history (231, 567 and 1623
 /// units here) to find nothing to check.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.5s in the parallel gate"]
 fn completing_early_return_paths_borrows_their_shared_traces() {
     let copies = [4, 8, 16].map(|returns| {
         let (click, c) = early_return_project(returns);
@@ -10018,6 +10118,8 @@ fn expanded_early_return_proof(returns: usize) -> (String, String) {
 /// fresh stream: a deeper path is republished at every enclosing join, and
 /// copying its history there made checking the expansion cubic.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.8s in the parallel gate"]
 fn early_return_expansions_stay_flat_and_join_without_copying_paths() {
     std::thread::Builder::new()
         .name("early-return-expansion".into())
@@ -10257,6 +10359,8 @@ fn assert_early_return_finishing_shares_prefixes(sizes: &[usize]) {
 /// cost 663, 2,139, 7,587 and 28,467 units and path preparation 1,843,
 /// 4,127, 10,423 and 29,927).
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.4s in the parallel gate"]
 fn early_return_finishing_shares_path_prefixes() {
     assert_early_return_finishing_shares_prefixes(&[4, 8, 16]);
 }
@@ -10503,6 +10607,8 @@ fn written_preservation_links(stores: usize, read: &str) -> String {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.0s in the parallel gate"]
 fn multi_statement_transport_replay_scales_with_explicit_links() {
     let mut costs = Vec::new();
     for size in [2, 4, 8, 16] {
@@ -10548,6 +10654,8 @@ fn multi_statement_transport_replay_scales_with_explicit_links() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.0s in the parallel gate"]
 fn inequality_transport_replay_scales_with_explicit_links() {
     let mut costs = Vec::new();
     for size in [2, 4, 8, 16] {
@@ -10593,6 +10701,8 @@ fn inequality_transport_replay_scales_with_explicit_links() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.0s in the parallel gate"]
 fn known_value_transport_replay_scales_with_explicit_links() {
     let mut costs = Vec::new();
     for size in [2, 4, 8, 16] {
@@ -10638,6 +10748,8 @@ fn known_value_transport_replay_scales_with_explicit_links() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.0s in the parallel gate"]
 fn state_comparison_transport_replay_scales_with_explicit_links() {
     let mut costs = Vec::new();
     for size in [2, 4, 8, 16] {
@@ -10683,6 +10795,8 @@ fn state_comparison_transport_replay_scales_with_explicit_links() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.3s in the parallel gate"]
 fn two_read_transport_replay_scales_with_explicit_links() {
     two_read_transport_replay_cost(false);
 }
@@ -10752,6 +10866,8 @@ fn two_read_transport_replay_cost(indexed: bool) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.4s in the parallel gate"]
 fn conjunction_transport_replay_scales_with_explicit_links() {
     let mut costs = Vec::new();
     for size in [2, 4, 8, 16] {
@@ -11036,6 +11152,8 @@ fn conjunction_selection_transport_scales_with_sources_targets_and_premises() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.1s in the parallel gate"]
 fn implication_transport_replay_scales_with_explicit_links() {
     let mut costs = Vec::new();
     for size in [2, 4, 8, 16] {
@@ -11255,6 +11373,8 @@ fn volatile_read_results_use_selected_event_indexes() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.5s in the parallel gate"]
 fn entry_separation_of_an_unconditional_resource_scales_with_the_owned_clauses() {
     // Run on the CLI's eight-megabyte stack, as `click verify` does.
     std::thread::Builder::new()
@@ -11302,6 +11422,8 @@ fn entry_separation_samples() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.1s in the parallel gate"]
 fn separation_of_an_owned_instance_scales_with_owned_clauses_and_steps() {
     // Run on the CLI's eight-megabyte stack, as `click verify` does.
     std::thread::Builder::new()
@@ -11366,6 +11488,8 @@ fn instance_separation_samples() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.7s in the parallel gate"]
 fn separation_of_a_folded_instance_scales_with_owned_clauses_and_folds() {
     // Run on the CLI's eight-megabyte stack, as `click verify` does.
     std::thread::Builder::new()
@@ -11439,6 +11563,8 @@ fn folded_instance_separation_samples() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.1s in the parallel gate"]
 fn consuming_call_bound_scales_with_its_transferred_inputs() {
     // Run on the CLI's eight-megabyte stack, as `click verify` does.
     std::thread::Builder::new()
@@ -11553,6 +11679,8 @@ fn a_loop_exit_reads_only_the_points_its_pass_recorded() {
 /// statements is work linear in `n`, with no result carried past its
 /// statement.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn nested_call_results_scale_with_the_statements_that_read_them() {
     use crate::instrumentation::measure_deterministic_work;
     let sidecar = "verifying \"probe.c\";
@@ -11692,6 +11820,8 @@ fn recorded_call_snapshots_read_one_point_and_one_call() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.3s in the parallel gate"]
 fn have_at_frontier_shares_the_context_across_call_history() {
     use crate::instrumentation::{VerificationEvent, collect};
 
@@ -11795,21 +11925,29 @@ fn check_struct_value_equality_cost(fields: usize) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.1s in the parallel gate"]
 fn struct_value_equality_costs_what_its_two_field_equalities_cost() {
     check_struct_value_equality_cost(2);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 7.9s in the parallel gate"]
 fn struct_value_equality_costs_what_its_four_field_equalities_cost() {
     check_struct_value_equality_cost(4);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 16s in the parallel gate"]
 fn struct_value_equality_costs_what_its_six_field_equalities_cost() {
     check_struct_value_equality_cost(6);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 10s in the parallel gate"]
 fn struct_copy_field_equalities_expand_and_replay() {
     let program = r#"
         struct frame_record { int32 f0; int32 f1; int32 f2; int32 f3; };

@@ -404,6 +404,14 @@ ratchets over the whole corpus. On 2026-10-15 the warm local gate took 11.7
 minutes on four cores, from one example: `examples/rbtree/rbtree-augmented` grew
 from 259 to 5,467 proof lines in a day and verified in 261 seconds of the
 examples harness's 317, so it joined the other rbtree examples in nightly.
+On 2026-11-25 the cold local gate took 30m40s on Claude Code cloud: an 8m40s
+build, 602s of unit/API tests and 682s of fixtures. The merge queue's test
+shards had grown from 1,753 test-seconds on 2026-10-26 to 3,128; tests present
+in both runs were only 16% slower, and the rest came from new tests that never
+met the half-second rule. Applying the rule to that run's timings sent 921
+unit tests, 215 batched cases and 924 mdtests to nightly, about 1,900 of the
+2,377 unit test-seconds and 1,650 of the 2,305 mdtest file-seconds. Where a
+test module would have lost every gate test, its fastest stayed.
 
 ### Nightly report
 

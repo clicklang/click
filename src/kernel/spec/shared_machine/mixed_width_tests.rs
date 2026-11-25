@@ -72,6 +72,8 @@ pub(super) fn native_domain(value: &Proposition) -> Proposition {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn mixed_arithmetic_matches_native_terms_and_domains() {
     let _session = VerificationSession::enter();
     for a in FORMATS {

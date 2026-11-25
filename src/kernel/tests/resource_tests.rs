@@ -2413,6 +2413,8 @@ fn zero_owned_resource_is_identity_after_symbolic_resolution() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn resource_context_fork_updates_are_persistent_and_logarithmic() {
     for size in [16_usize, 64, 256, 1024, 4096] {
         let context = unrelated_token_context(size);
@@ -7257,6 +7259,8 @@ fn equal_resource_contexts_share_one_canonical_fact_set() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.1s in the parallel gate"]
 fn comparing_equal_resource_contexts_walks_no_facts() {
     // Contexts holding the same facts are told equal by their canonical
     // fact sets' roots, whatever their size: no fact is visited.

@@ -50,6 +50,8 @@ fn opening_one_body_does_not_visit_previously_opened_bodies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.9s in the parallel gate"]
 fn generation_and_execution_scale_with_requirements_and_completion_only_moves_the_proof() {
     for size in [16_usize, 64, 256, 512] {
         let rules = (0..size)

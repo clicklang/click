@@ -622,6 +622,8 @@ mod tests {
         assert_eq!(scope.get(&second), None);
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn lexical_binders_and_beta_capture_roundtrip() {
         for source in [
             "theorem check() { ensures forall (value: Integer) { value == value } by { intro(other) { close(); } } }",
@@ -638,6 +640,8 @@ mod tests {
         }
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.8s in the parallel gate"]
     fn generated_binders_expand_and_cold_replay_without_search() {
         for source in [
             "theorem check() { ensures answer: forall (value: Integer) { value == value } by { intro() { close(); } } }",

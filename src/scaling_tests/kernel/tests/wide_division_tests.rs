@@ -81,6 +81,8 @@ fn wide_division_guard_queries_do_not_scan_unrelated_ambient_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn wide_division_work_scales_with_explicit_operations() {
     for ty in [MachineIntegerType::Int128, MachineIntegerType::UInt128] {
         for remainder in [false, true] {

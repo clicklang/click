@@ -6,6 +6,8 @@ use super::*;
 
 #[cfg(test)]
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn memory_resolution_graph_offset_queries_scale_without_legacy_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let scalar = |id| OldMachineTerm::Variable(Variable(92_000 + id));
@@ -454,6 +456,8 @@ fn wide_offset_step_retains_dags_and_ignores_unrelated_facts() {
 /// unrelated bounded indices and their facts grow.
 #[cfg(test)]
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.3s in the parallel gate"]
 fn a_byte_product_comparison_ignores_unrelated_bounded_indices() {
     let mut samples = Vec::new();
     for size in [16u64, 64, 256, 512] {

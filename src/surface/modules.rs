@@ -884,6 +884,8 @@ theorem local_conditional(x: int32) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn imported_theorem_statement_can_certify_a_selected_c_contract() {
         let project = ClickProject::new(
             "entry.click",
@@ -919,6 +921,8 @@ int32 identity(int32 x) {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn imported_c_contract_and_tactic_are_assumed_until_their_module_is_selected() {
         let library = ClickModuleSource::new(
             "library.click",
@@ -988,6 +992,8 @@ void user() { ensures 0 == 1; } by { impossible(0); step_until(function.exit); c
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn explicit_function_selection_respects_imported_proof_ownership() {
         let library = ClickModuleSource::new(
             "library.click",
@@ -1056,6 +1062,8 @@ tactic keep(x: int32) { ensures x == x; } by { have x == x by normalize(); }
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn artifacts_bind_imported_inputs_and_retain_the_selection_boundary() {
         let entry = ClickModuleSource::new(
             "entry.click",
@@ -1218,6 +1226,8 @@ theorem sibling_bad() { ensures 0 == 1 by close(); }
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn prepared_c_inputs_use_the_same_module_selection_and_expansion_path() {
         let project = ClickProject::new(
             "entry.click",
@@ -1347,6 +1357,8 @@ int32 caller(int32 x) { requires x >= 0; ensures result == x; }
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn c_interface_constants_link_as_stable_values() {
         let interface = r#"FILE *const stdout;
 const int32 library_status;
@@ -1401,6 +1413,8 @@ FILE* via_library() { ensures result == stdout; }
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn standalone_theorems_share_linked_library_values_with_c() {
         let interface = r#"FILE *const default_stream;
 theorem default_nonnull() {
@@ -1472,6 +1486,8 @@ FILE *output(void) { return default_stream; }
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn proofless_interface_theorems_are_assumptions_for_consumers() {
         let export = r#"theorem library_value(n: int32) {
     requires n > 0;

@@ -2,6 +2,8 @@ use super::*;
 use crate::kernel::{KernelTerm, KernelType, MachineBinaryOp, Variable};
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn shared_bound_consumers_preserve_dag_operands() {
     let mut samples = Vec::new();
     for size in [8, 32, 96] {
@@ -65,6 +67,8 @@ fn shared_bound_consumers_preserve_dag_operands() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn shared_comparison_class_queries_do_not_export_dag_prefixes() {
     let mut samples = Vec::new();
     for size in [8, 32, 96] {

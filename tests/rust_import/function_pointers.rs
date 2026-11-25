@@ -113,6 +113,8 @@ fn charon_function_pointer_tools_recheck_expanded_certificates() {
 // which verifies as suggested; a function that does not meet the contract is
 // refused by the same theorem.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.4s in the parallel gate"]
 fn charon_refinement_theorems_name_crate_functions_as_values() {
     let p = function_pointer_project();
     let prepared = p.prepared().unwrap();

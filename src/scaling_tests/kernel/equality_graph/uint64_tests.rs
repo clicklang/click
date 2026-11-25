@@ -69,6 +69,8 @@ fn wide_congruence_queries_do_not_scan_unrelated_equalities() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn range_values_and_constants_resolve_long_wide_equality_chains() {
     use crate::kernel::{OldConditionTerm, PureFactContext};
     for size in [16u64, 64, 256, 1024] {
@@ -96,6 +98,8 @@ fn range_values_and_constants_resolve_long_wide_equality_chains() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.6s in the parallel gate"]
 fn an_aliased_read_uses_its_store_equation_without_scanning_unrelated_cells_or_aliases() {
     let mut previous = None;
     for size in [16_u64, 64, 256, 1024] {
@@ -235,6 +239,8 @@ fn a_late_alias_rechecks_only_the_reads_of_its_own_address_class() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn a_recorded_address_fact_is_found_through_its_word_class_without_scanning() {
     let mut previous = None;
     for size in [16_u64, 64, 256, 1024] {

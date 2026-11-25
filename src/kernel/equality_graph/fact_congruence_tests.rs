@@ -644,6 +644,8 @@ fn refreshed_address_aliases_do_not_establish_pointer_identity() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn selected_native_cursor_normalization_is_stable_across_context_orders() {
     use crate::kernel::proof::{PureFactStore, fact_reasoning::normalize_using_conditions};
     let original = OldPointer::new(

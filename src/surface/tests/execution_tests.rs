@@ -974,7 +974,8 @@ fn early_return_completes_without_a_body_rerun() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_08")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.4s in the parallel gate"]
 fn symbolic_loop_bound_invariant_completes_without_a_body_rerun() {
     let c_source = r#"
             int32 count_to_n(int32 n) {
@@ -1088,7 +1089,8 @@ fn post_execution_case_split_completes_without_a_body_rerun() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_08")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn have_after_loop_completes_without_a_body_rerun() {
     let c_source = r#"
             int32 count_then_add() {
@@ -1141,7 +1143,8 @@ fn have_after_loop_completes_without_a_body_rerun() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_09")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn applied_user_theorem_completes_without_a_body_rerun() {
     let c_source = r#"
             int32 increment(int32 x) {
@@ -1180,7 +1183,8 @@ fn applied_user_theorem_completes_without_a_body_rerun() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_09")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn verified_loop_summary_completes_without_a_body_rerun() {
     let c_source = r#"
             int32 count_to_three() {
@@ -1982,7 +1986,8 @@ fn expanded_read_step_uses_contextual_range_separation() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_11")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn decrement_contract_checks_nonnegative_and_equality_certificates() {
     let c_source = r#"
         int32 decrement(int32 value, int32 count) {
@@ -2437,7 +2442,8 @@ fn solve_keeps_valid_integer_offset_function_goals() {
 /// field's read at the loop head. That read names it; it is not named again
 /// at the projected state (`docs/internals/raise-lower-principle.md`).
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_14")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.1s in the parallel gate"]
 fn a_read_retained_across_a_call_through_a_loop_alias_keeps_its_name() {
     let mdtest = crate::cli::parse_mdtest(
         std::path::Path::new("a_retained_pointer_field_fact_transports_through_a_loop_alias.md"),
@@ -2698,14 +2704,10 @@ test_batches! {
         early_return_completes_without_a_body_rerun,
     ],
     execution_batch_08: [
-        symbolic_loop_bound_invariant_completes_without_a_body_rerun,
         malloc_null_check_completes_without_a_body_rerun,
         post_execution_case_split_completes_without_a_body_rerun,
-        have_after_loop_completes_without_a_body_rerun,
     ],
     execution_batch_09: [
-        applied_user_theorem_completes_without_a_body_rerun,
-        verified_loop_summary_completes_without_a_body_rerun,
         linear_execute_checks_the_branch_arm_refusal_program,
         execute_in_loop_preservation_keeps_the_function_exit_miss,
     ],
@@ -2718,7 +2720,6 @@ test_batches! {
     execution_batch_11: [
         pointer_constness_signature_mismatch_displays_both_qualifiers,
         struct_name_signature_mismatch_reports_direct_error,
-        decrement_contract_checks_nonnegative_and_equality_certificates,
         branch_continuation_tactics_are_timed_as_source_operations,
     ],
     execution_batch_12: [
@@ -2735,7 +2736,6 @@ test_batches! {
     ],
     execution_batch_14: [
         solve_keeps_valid_integer_offset_function_goals,
-        a_read_retained_across_a_call_through_a_loop_alias_keeps_its_name,
     ],
 }
 

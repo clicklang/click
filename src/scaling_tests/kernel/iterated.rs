@@ -1,6 +1,8 @@
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
     for unfold_clause in [false, true] {
         for axis in ["owners", "aliases", "same-block aliases", "range premises"] {

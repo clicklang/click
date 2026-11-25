@@ -4,6 +4,8 @@ const SIDECAR: &str = include_str!("../../design/charon-trial/inclusive-ranges/i
 
 /// Inclusive ranges yield their endpoint once, even at the type's maximum.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 6.8s in the parallel gate"]
 fn charon_inclusive_range_loops_yield_their_end_once() {
     let p = Project::from_fixture("design/charon-trial/inclusive-ranges");
     fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();

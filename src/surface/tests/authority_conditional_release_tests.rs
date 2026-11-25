@@ -90,6 +90,8 @@ fn verify(source: &str) -> Result<Vec<VerifiedProgramTheorem>, ClickError> {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.3s in the parallel gate"]
 fn authority_conditional_release_certifies_its_resource_guard() {
     let source = SOURCE
         .split("void release_one(struct child* obj)")
@@ -99,6 +101,8 @@ fn authority_conditional_release_certifies_its_resource_guard() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn authority_conditional_release_rejects_returning_control_after_free() {
     let source = SOURCE.replace("if old(obj->refs) > 1", "if old(obj->refs) >= 1");
     let error = verify(&source).expect_err("the final branch cannot return freed control");
@@ -113,6 +117,8 @@ fn authority_conditional_release_rejects_missing_returned_control_witness() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.7s in the parallel gate"]
 fn authority_conditional_release_keeps_undischarged_ensure_premise() {
     let source = SOURCE.replace(
         "old(count(child_ref(obj))) > 1 implies",
@@ -326,6 +332,8 @@ fn authority_nonterminal_detach_keeps_folded_named_output_once() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn mirrored_execution_bound_expands_to_checked_successor_rule() {
     let source = r#"verifying "bound.c";
 void bound(int32 value) {
@@ -367,6 +375,8 @@ void bound(int32 value) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn mirrored_strict_signed_bound_expands_to_checked_successor_rule() {
     let source = "theorem bound(value: int32) {\nrequires 2 <= value;\nensures value > 1 by {\nclose();\n}\n}\n";
     crate::instrumentation::with_default_tactic_limits(|| {

@@ -3361,6 +3361,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.3s in the parallel gate"]
     fn pure_requirements_use_earlier_evaluation_guards_without_dropping_them() {
         for (parameters, arguments, expression, wrong_expression) in [
             ("n: int32", "n", "n + 1", "n - 1"),
@@ -3583,6 +3585,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 9.1s in the parallel gate"]
     fn numeric_induction_retains_partial_expression_requirements() {
         // A guarded addition in the conclusion must lower in the theorem's
         // requirement scope, including when building and applying its IH.
@@ -3894,6 +3898,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn pure_instantiate_preserves_an_unrelated_open_goal() {
         let open = INSTANTIATE_BOUND
             .replace("ensures x <= upper", "ensures x == upper")
@@ -3917,6 +3923,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn pure_instantiate_resolves_introduced_binders_and_nested_shadowing() {
         let source = r#"
             theorem shadowed(x: int32) {
@@ -3984,6 +3992,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn pure_instantiate_shares_unrelated_facts_and_bindings() {
         let mut allocations = Vec::new();
         for size in [8usize, 16, 32, 64] {
@@ -4385,6 +4395,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn unsigned_unpacking_declarations_require_exact_bounds_words_and_unsigned_shift() {
         for (ty, suffix, packed) in [
             ("uint32", "u32", "(high << 16) | low"),
@@ -4431,6 +4443,8 @@ mod tests {
         }
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn unsigned_packing_declarations_require_exact_fields_bounds_and_result() {
         for (ty, suffix, order) in [
             ("uint32", "u32", ""),
@@ -4462,6 +4476,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.9s in the parallel gate"]
     fn integer_truncation_declarations_reject_forged_guards_operands_and_types() {
         for (name, requirements, goal) in [
             (

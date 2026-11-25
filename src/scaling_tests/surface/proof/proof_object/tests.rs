@@ -1203,6 +1203,8 @@ fn state_premise_raising_does_no_per_state_work() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
@@ -1848,6 +1850,8 @@ fn mixed_entry_and_current_premise_spelling_ignores_unrelated_states() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.8s in the parallel gate"]
 fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
@@ -2403,6 +2407,8 @@ fn typed_intro_records_bound_spellings_without_scanning_ambient_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn smart_goal_spelling_does_not_scan_ambient_facts_or_same_value_names() {
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
@@ -2479,6 +2485,8 @@ fn smart_goal_spelling_does_not_scan_ambient_facts_or_same_value_names() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.4s in the parallel gate"]
 fn fixed_state_goal_opening_ignores_load_equality_buckets() {
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
@@ -2557,6 +2565,8 @@ fn fixed_state_goal_opening_ignores_load_equality_buckets() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.8s in the parallel gate"]
 fn exact_goal_solve_stops_at_known_as_related_and_unrelated_facts_grow() {
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
@@ -2644,6 +2654,8 @@ fn exact_goal_solve_stops_at_known_as_related_and_unrelated_facts_grow() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn fixed_state_application_proves_premises_and_replays_explicitly() {
     let file = crate::surface::parse(
         "theorem nonnegative(n: int32) { requires n >= 0; ensures n >= 0 by close(); }",
@@ -3050,21 +3062,29 @@ fn proof_binding_name_production_and_queries_follow_only_changed_bindings() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn local_predicate_unfold_ignores_unrelated_and_same_predicate_facts() {
     check_local_predicate_unfold_scaling(false, true);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn local_predicate_unfold_miss_ignores_unrelated_and_same_predicate_facts() {
     check_local_predicate_unfold_scaling(false, false);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn local_quantified_unfold_ignores_unrelated_and_same_predicate_facts() {
     check_local_predicate_unfold_scaling(true, true);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn local_quantified_unfold_miss_ignores_unrelated_and_same_predicate_facts() {
     check_local_predicate_unfold_scaling(true, false);
 }

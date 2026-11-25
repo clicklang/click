@@ -249,7 +249,8 @@ fn proof_match_closes_impossible_constructor_without_executing_c() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by proof_match_batch_00")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn proof_match_nested_impossible_arms_keep_their_scopes() {
     let source = r#"
 verifying "id.c";
@@ -451,7 +452,6 @@ test_batches! {
     file: "proof_match.rs",
     marker: "proof_match_batch_",
     proof_match_batch_00: [
-        proof_match_nested_impossible_arms_keep_their_scopes,
         proof_match_int64_payloads_are_typed,
         proof_match_compound_scrutinee_expansion_rechecks,
         proof_match_nested_generic_fields_and_repeated_values,

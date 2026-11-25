@@ -196,6 +196,8 @@ fn partial_division_production_retains_prefixes_and_debts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn signed_shift_production_retains_prefixes_and_debts() {
     let mut costs = Vec::new();
     for size in [16, 64, 256] {
@@ -405,6 +407,8 @@ fn same_format_casts_keep_deferred_prefixes_and_obligations() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 4.0s in the parallel gate"]
 fn closed_order_lowering_ignores_unrelated_state_and_facts() {
     for format in [
         MachineIntegerType::Int32,

@@ -653,6 +653,8 @@ fn bitwise_guard_comparison(
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn bitwise_guard_comparisons_ignore_ambient_truth_and_operand_aliases() {
     for format in [
         MachineIntegerType::Int32,
@@ -754,6 +756,8 @@ fn bitwise_guard_comparisons_ignore_ambient_truth_and_operand_aliases() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn bitwise_guard_comparison_work_scales_with_written_source() {
     let mut samples = Vec::new();
     for size in [8, 32, 128, 512] {

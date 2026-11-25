@@ -1139,6 +1139,8 @@ fn active_memory_witness_ignores_unrelated_live_borrows() {
 /// composition reads only the pieces under the view, never the unrelated owners
 /// beside them.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn mixed_width_view_backing_joins_only_its_own_pieces() {
     let (ledger, caller, callee) = participants();
     let piece = |start: u32, end: u32, width: u32| {
@@ -1202,6 +1204,8 @@ fn mixed_width_view_backing_joins_only_its_own_pieces() {
 /// The call needs a fixed range. A gap immediately after its first four-byte cell cannot
 /// be filled by any of the growing, disjoint fragments farther into the range.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.1s in the parallel gate"]
 fn call_fragment_composition_stops_at_a_fixed_gap() {
     let mut curves = Vec::new();
     for case in ["gap", "joined", "owner", "observations"] {
@@ -1336,6 +1340,8 @@ fn cache_protection_does_not_enumerate_overlapping_borrows() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn write_barrier_does_not_enumerate_overlapping_borrows() {
     for (name, start, end, blocked) in [
         ("inside", 2, 4, true),

@@ -111,6 +111,8 @@ fn conjunction_construction_and_index_keys_do_not_rewalk_prefixes() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn conjunction_lowering_visits_written_operands_not_ambient_facts() {
     fn cost(n: usize, right_nested: bool, ambient: usize, memory: bool) -> usize {
         let _session = crate::kernel::VerificationSession::enter();

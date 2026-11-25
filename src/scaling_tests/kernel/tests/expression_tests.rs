@@ -5,6 +5,8 @@
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn wide_equality_bounds_use_incremental_index_and_preserve_branches() {
     for size in [16usize, 64, 256, 1024] {
         let start = crate::persistent::persistent_node_allocations();
@@ -84,6 +86,8 @@ fn loadable_object_provenance_lookup_ignores_unrelated_external_pointers() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn exact_signed_constant_bound_lookup_ignores_unrelated_facts() {
     let value = OldMachineTerm::Variable(Variable(87_901));
     let query = OldConditionTerm::signed_greater_than(value.clone(), OldMachineTerm::constant(1));
@@ -217,6 +221,8 @@ fn resource_object_provenance_does_not_scan_same_raw_block() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn stored_pointer_bounds_ignore_unrelated_numeric_classes() {
     for size in [8u64, 32, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();

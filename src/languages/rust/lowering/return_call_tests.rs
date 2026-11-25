@@ -116,6 +116,8 @@ fn returned_calls_preserve_nested_argument_order_and_distinct_results() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn returned_call_results_verify_expand_and_reject_false_claims() {
     let prepared = super::super::import::prepared_for_test(fixture("value")).unwrap();
     let source = r#"verifying "returns.rs";
@@ -141,6 +143,8 @@ fn caller(value: i32) -> i32 { ensures result == value; } by {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn short_circuit_arms_publish_one_result_and_replay() {
     use crate::surface::{
         ProgramVerificationSession, expand_program_prepared_claim_source_by_label,
@@ -198,6 +202,8 @@ fn caller(value: bool) -> bool {{ ensures result == {expected}; }}
 /// A claim selected by its Rust path is the one the checker enters under
 /// its importer name, so checking it with the implicit closer off visits it.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn a_claim_selected_by_its_rust_path_is_checked_without_the_closer() {
     use crate::languages::rust::names::path_name;
     use crate::surface::without_implicit_solve_for_claim;
@@ -255,6 +261,8 @@ fn verify_operand_expansion(export: RustExport, source: &str) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn operand_capture_keeps_the_read_before_a_mutating_call() {
     let mut export = fixture("unused");
     let span = json!({"line":1,"column":1});

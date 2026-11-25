@@ -5,6 +5,8 @@
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn explicit_integer_order_laws_scale_with_related_and_unrelated_facts() {
     for related in [false, true] {
         let mut measured = Vec::new();
@@ -40,6 +42,8 @@ fn explicit_integer_order_laws_scale_with_related_and_unrelated_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn integer_conversion_aliases_preserve_shared_expression_scaling() {
     let mut measured = Vec::new();
     for depth in [8, 16, 32, 64] {
@@ -69,6 +73,8 @@ fn integer_conversion_aliases_preserve_shared_expression_scaling() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn integer_function_let_aliases_preserve_shared_expression_scaling() {
     let mut measured = Vec::new();
     for depth in [8, 16, 32, 64] {
@@ -396,6 +402,8 @@ fn normalized_opposite_bound_certificates_scale_with_steps_and_unused_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn divisor_sign_applications_scale_with_explicit_steps_and_surrounding_facts() {
     for related in [false, true] {
         let mut measured = Vec::new();

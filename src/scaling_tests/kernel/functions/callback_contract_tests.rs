@@ -367,6 +367,8 @@ fn callback_fact_lookup_scales_with_calls_not_unrelated_supported_facts() {
 /// length(items(this))`, is decided by the same routes, as unrelated
 /// `Integer` facts grow beside it.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn contract_refinement_work_is_flat_in_unrelated_facts() {
     let variable = |index| OldMachineTerm::Variable(Variable(index));
     let bound = OldConditionTerm::signed_less_than(variable(70_001), OldMachineTerm::constant(10));

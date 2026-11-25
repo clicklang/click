@@ -1,6 +1,8 @@
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn division_domain_checks_do_not_scan_unrelated_assumptions() {
     for established in [false, true] {
         let mut costs = Vec::new();

@@ -2954,8 +2954,9 @@ mod shared_order_pipeline_tests {
     }
 
     macro_rules! operation_parity {
-        ($name:ident, $format:ident, $op:ident) => {
+        ($(#[$attr:meta])* $name:ident, $format:ident, $op:ident) => {
             #[test]
+            $(#[$attr])*
             fn $name() {
                 let _session = crate::kernel::VerificationSession::enter();
                 let format = MachineIntegerType::$format;
@@ -2979,15 +2980,22 @@ mod shared_order_pipeline_tests {
     operation_parity!(unsigned_add_checking_parity, UInt32, Add);
     operation_parity!(unsigned_subtract_checking_parity, UInt32, Subtract);
     operation_parity!(unsigned_multiply_checking_parity, UInt32, Multiply);
-    operation_parity!(unsigned_divide_checking_parity, UInt32, Divide);
+    operation_parity!(
+        #[cfg(not(feature = "fast-gate"))]
+        #[ignore = "nightly: 0.6s in the parallel gate"]
+        unsigned_divide_checking_parity,
+        UInt32,
+        Divide
+    );
     operation_parity!(unsigned_remainder_checking_parity, UInt32, Remainder);
     operation_parity!(unsigned_bitwiseand_checking_parity, UInt32, BitwiseAnd);
     operation_parity!(unsigned_bitwiseor_checking_parity, UInt32, BitwiseOr);
     operation_parity!(unsigned_bitwisexor_checking_parity, UInt32, BitwiseXor);
 
     macro_rules! nested_parity {
-        ($name:ident, $format:ident, $outer:ident) => {
+        ($(#[$attr:meta])* $name:ident, $format:ident, $outer:ident) => {
             #[test]
+            $(#[$attr])*
             fn $name() {
                 let _session = crate::kernel::VerificationSession::enter();
                 let format = MachineIntegerType::$format;
@@ -3013,9 +3021,23 @@ mod shared_order_pipeline_tests {
     nested_parity!(signed_nested_add_checking_parity, Int32, Add);
     nested_parity!(signed_nested_subtract_checking_parity, Int32, Subtract);
     nested_parity!(signed_nested_bitwisexor_checking_parity, Int32, BitwiseXor);
-    nested_parity!(unsigned_nested_add_checking_parity, UInt32, Add);
-    nested_parity!(unsigned_nested_subtract_checking_parity, UInt32, Subtract);
     nested_parity!(
+        #[cfg(not(feature = "fast-gate"))]
+        #[ignore = "nightly: 0.8s in the parallel gate"]
+        unsigned_nested_add_checking_parity,
+        UInt32,
+        Add
+    );
+    nested_parity!(
+        #[cfg(not(feature = "fast-gate"))]
+        #[ignore = "nightly: 0.7s in the parallel gate"]
+        unsigned_nested_subtract_checking_parity,
+        UInt32,
+        Subtract
+    );
+    nested_parity!(
+        #[cfg(not(feature = "fast-gate"))]
+        #[ignore = "nightly: 0.7s in the parallel gate"]
         unsigned_nested_bitwisexor_checking_parity,
         UInt32,
         BitwiseXor

@@ -2,6 +2,8 @@
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn nested_pointer_call_registration_and_late_merges_scale_with_selected_dag() {
     let _session = VerificationSession::enter();
     let samples = [4, 16, 64, 256].map(|depth| {

@@ -806,6 +806,8 @@ fn field_quantity_cannot_spend_a_global_count_without_member_custody() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn field_quantity_batch_work_ignores_quantity_and_unrelated_facts() {
     let description = member_description(AddressBase::ExternalArgument);
     let quantity = OldMachineTerm::Variable(Variable(940_142));

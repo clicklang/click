@@ -6816,6 +6816,8 @@ mod evidence_tests {
     use super::*;
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn outcome_resource_evidence_rejects_missing_wrong_claim_and_wrong_path() {
         let source = r#"
             resource marker() { fact 0 == 0; }

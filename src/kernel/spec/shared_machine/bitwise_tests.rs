@@ -26,6 +26,8 @@ fn input(format: MachineIntegerType, term: &OldMachineTerm, shared: bool) -> Spe
     }
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn bitwise_all_promotions_match_native_terms_without_exports() {
     let _session = VerificationSession::enter();
     for a in FORMATS {

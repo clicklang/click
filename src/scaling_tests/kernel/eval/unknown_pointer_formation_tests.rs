@@ -71,6 +71,8 @@ fn pointer_formation_uses_selected_bounds_beside_unrelated_ranges_and_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn symbolic_offset_zero_query_does_not_build_unrelated_stated_keys() {
     let mut samples = Vec::new();
     for size in [16u64, 64, 256, 1024] {

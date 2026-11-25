@@ -6,6 +6,8 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::surface::proof::pure_theorems::PureTheoremContext;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn failed_integer_bridge_does_not_construct_unused_facts() {
     let mut samples = Vec::new();
     for size in [4, 16, 64] {
@@ -122,6 +124,8 @@ fn failed_integer_bridge_does_not_construct_unused_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn disequality_refutation_work_ignores_unrelated_facts() {
     let mut samples = Vec::new();
     for size in [4, 16, 64] {

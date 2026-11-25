@@ -253,6 +253,8 @@ mod tests {
             .unwrap_or_else(|e| panic!("{}", e.message()));
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.2s in the parallel gate"]
     fn pointer_alignment_and_tagged_words_expand_without_normalize() {
         let mut failures = Vec::new();
         for (requirements, goal, listed) in [
@@ -326,6 +328,8 @@ mod tests {
         assert!(failures.is_empty(), "{}", failures.join("\n\n"));
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn returning_pointer_alignment_replays_without_normalize() {
         let c = [("bump.c", "int32* bump(int32* p) { return p + 2; }")];
         let source = "verifying \"bump.c\"; int32* bump(int32* p) { requires viewable(p[0..3]); views p[0..3]; requires aligned(p,8); ensures aligned(result,8) by { step_until(function.exit); close() using { aligned(p,8); }; } }";
@@ -337,6 +341,8 @@ mod tests {
             .unwrap_or_else(|e| panic!("{}\n{expanded}", e.message()));
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn tagged_word_field_read_expands_without_normalize() {
         let c = [(
             "untag.c",
@@ -361,6 +367,8 @@ mod tests {
             .unwrap_or_else(|e| panic!("{}\n{expanded}", e.message()));
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 2.1s in the parallel gate"]
     fn address_word_expansion_keeps_alignment_and_mask_guards() {
         for (requires, goal, listed) in [
             (
@@ -424,6 +432,8 @@ mod tests {
         }
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn polynomial_distribution_expands_into_ordinary_rewrites() {
         replay(
             "a: Integer, b: Integer",
@@ -468,6 +478,8 @@ mod tests {
         );
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn specialized_normalization_refuses_missing_evidence_and_false_identities() {
         for source in [
             "theorem bad(a: Integer,b: Integer,f: Integer) { requires a <= b; ensures b*f <= a*f by { normalize() using { a <= b; }; } }",

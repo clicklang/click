@@ -5906,6 +5906,8 @@ fn constant_normalization_follows_equality_chains_of_any_length() {
 /// A solve derivation has no step budget: a balanced conjunction of any
 /// width whose parts are exact facts derives, its work following the goal.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.2s in the parallel gate"]
 fn solve_derivations_have_no_step_budget() {
     for width in [64u64, 128, 256, 512] {
         let variable = |index: u64| OldMachineTerm::Variable(Variable(7_500_000 + index));
@@ -5944,6 +5946,8 @@ fn solve_derivations_have_no_step_budget() {
 /// disjunctive consequent that only instantiation decides is proved for a
 /// domain wider than the old cap of 128.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn finite_forall_instantiates_domains_of_any_width() {
     for width in [129i64, 200, 400] {
         let i = Variable(7_600_000);
@@ -8192,6 +8196,8 @@ fn finite_forall_lazy_pairs_keep_nearest_first_order_for_unequal_domains() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn false_quantified_frame_does_not_exhaust_a_small_load_registry() {
     crate::kernel::eval::with_load_variable_registry_capacity(1000, || {
         let source = "verifying \"probe.c\"; int32 untouched_element(int32* a) { owns a[0..1000000]; ensures result == old(a[2]); ensures (0..1000000).all(|k| { a[k] == old(a[k]) }); }";

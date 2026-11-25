@@ -169,7 +169,8 @@ fn explicit_nonnegative_add_definedness_certifies_the_whole_contract() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_01")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn apply_using_checks_only_with_its_explicit_premises() {
     let c_source = r#"
             int32 increment(int32 x) {
@@ -1007,6 +1008,8 @@ fn rejects_predicate_call_with_wrong_arity() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 // An assumed `requires` carries its own definedness: `sorted_pair(p)` cannot be
 // true in a state where `p[0]`/`p[1]` do not denote, so assuming the
 // requirement also assumes their loadability. The dual direction stays a proof
@@ -1205,7 +1208,8 @@ fn unfolds_predicate_goal_to_prove_compare_swap_sorted() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_09")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn unfolds_general_sorted_predicate() {
     let c_source = r#"
             int32 keep_sorted(int32* p, int32 n) {
@@ -1976,7 +1980,8 @@ fn smart_pure_have_theorem_search_retains_the_checked_scope_body_directly() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_14")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn smart_pure_theorem_application_discharges_exact_goal() {
     let click_source = r#"
         theorem positive_predecessor_decreases(value: int32) {
@@ -2661,7 +2666,8 @@ fn disjunctive_premise_solve_expands_to_a_replayable_certificate() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_17")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.5s in the parallel gate"]
 fn explicit_pointer_translation_checks_only_named_premises() {
     let source = r#"
         theorem translated(p: int32*, arr: int32*, i: int32, n: int32) {
@@ -2902,7 +2908,8 @@ fn apply_predecessor_upper_bound_closes_from_both_listed_legs() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_19")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn outcome_predecessor_upper_bound_writes_a_rewritten_nonnegative_leg() {
     // The decrement's kernel derivation pins `p->low` through the written
     // equality, so the nonnegativity leg of the predecessor rule is not a
@@ -2949,7 +2956,8 @@ fn outcome_predecessor_upper_bound_writes_a_rewritten_nonnegative_leg() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_20")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn apply_predecessor_upper_bound_requires_its_nonnegative_leg_listed() {
     // Without `0 <= value` established, the theorem's first requirement has
     // no proof, so the explicit application must fail instead of
@@ -3266,7 +3274,8 @@ fn pure_machine_witness_preserves_lexical_bindings_and_pointer_types() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_22")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn pure_machine_witness_preserves_binder_widths() {
     for scalar_type in [
         "int8", "int16", "int32", "uint8", "uint16", "uint32", "int64", "uint64",
@@ -3539,7 +3548,6 @@ test_batches! {
         explicit_nonnegative_add_definedness_certifies_the_whole_contract,
     ],
     logical_tactics_batch_01: [
-        apply_using_checks_only_with_its_explicit_premises,
         apply_using_uses_ambient_loadability_only_to_lower_explicit_premises,
         source_expander_makes_theorem_application_premises_explicit,
         defined_rejects_concrete_undefined_expression,
@@ -3587,7 +3595,6 @@ test_batches! {
         unfolds_predicate_goal_to_prove_compare_swap_sorted,
     ],
     logical_tactics_batch_09: [
-        unfolds_general_sorted_predicate,
         verifies_click_proposition_logic,
         single_solve_call_and_block_have_the_same_frontier_semantics,
         every_claim_proof_form_retains_expandable_evidence,
@@ -3617,7 +3624,6 @@ test_batches! {
         smart_pure_have_theorem_search_retains_the_checked_scope_body_directly,
     ],
     logical_tactics_batch_14: [
-        smart_pure_theorem_application_discharges_exact_goal,
         smart_fixed_state_nested_have_theorem_search_retains_checked_scopes,
         leading_logical_have_decomposition_stays_on_one_proof,
         leading_universal_have_scopes_stay_on_one_proof,
@@ -3637,7 +3643,6 @@ test_batches! {
     logical_tactics_batch_17: [
         enumerate_requires_a_constant_bounded_universal_goal,
         disjunctive_premise_solve_expands_to_a_replayable_certificate,
-        explicit_pointer_translation_checks_only_named_premises,
         pure_rewrite_rejects_an_int32_equality_that_is_not_available,
     ],
     logical_tactics_batch_18: [
@@ -3650,10 +3655,8 @@ test_batches! {
         smart_rewrite_folds_substituted_constants_to_a_strict_constant_bound,
         apply_lt_le_transitive_rejects_a_false_constant_leg,
         apply_predecessor_upper_bound_closes_from_both_listed_legs,
-        outcome_predecessor_upper_bound_writes_a_rewritten_nonnegative_leg,
     ],
     logical_tactics_batch_20: [
-        apply_predecessor_upper_bound_requires_its_nonnegative_leg_listed,
         apply_predecessor_upper_bound_rejects_a_false_nonnegative_leg,
         three_arm_cases_verifies_and_expands,
         reordered_cases_check_bodies_under_their_written_assumptions,
@@ -3665,7 +3668,6 @@ test_batches! {
         pure_machine_witness_preserves_lexical_bindings_and_pointer_types,
     ],
     logical_tactics_batch_22: [
-        pure_machine_witness_preserves_binder_widths,
         pure_machine_witness_rejects_different_widths_and_signedness,
         pure_witness_aliases_preserve_outer_binding_and_do_not_prove_false_bodies,
         pure_witness_declaration_aliases_keep_literal_types_and_source_scope,
@@ -3683,6 +3685,8 @@ fn solve_trivial_disjuncts_expand_and_replay() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn solve_nested_trivial_disjuncts_expand_and_replay() {
     check_trivial_disjuncts_expand_and_replay(&[
         "n == 1u64 or (n == 2u64 or true)",
@@ -3707,6 +3711,8 @@ fn check_trivial_disjuncts_expand_and_replay(goals: &[&str]) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn solve_trivial_disjuncts_reject_false_goals() {
     for goal in [
         "false or n == 1u64",
@@ -3786,6 +3792,8 @@ fn local_predicate_unfold_accepts_an_explicit_quantified_target() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn local_predicate_unfold_selects_an_explicit_snapshot_and_expands() {
     let source = r#"
         verifying "identity.c";
@@ -3813,6 +3821,8 @@ fn local_predicate_unfold_selects_an_explicit_snapshot_and_expands() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn local_predicate_unfold_keeps_heap_snapshots_distinct() {
     let source = r#"
         verifying "overwrite.c";
@@ -3861,6 +3871,8 @@ fn local_predicate_unfold_preserves_proposition_values() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn apply_fact_checks_source_and_antecedents() {
     let source = r#"
         theorem demo(x: int32, y: int32) {
@@ -3897,6 +3909,8 @@ fn apply_fact_checks_source_and_antecedents() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.1s in the parallel gate"]
 fn apply_fact_is_available_at_execution_frontiers_and_outcomes() {
     let c = "int32 identity(int32 x) { return x; }";
     let template = r#"

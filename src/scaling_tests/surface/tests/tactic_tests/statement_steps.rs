@@ -111,6 +111,8 @@ void set(int32* data, int32 len, int32 x0{parameters}) {{
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.6s in the parallel gate"]
 fn explicit_adjacent_pointer_frames_compose_without_history_search() {
     let mut samples = Vec::new();
     for size in [2, 4, 8, 16, 32] {
@@ -900,6 +902,8 @@ void make(int32* p, int32 n) {
 /// statements themselves do. A miss, where the index may equal the cell's,
 /// must stay as prompt: the false claim is refused at every size.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.7s in the parallel gate"]
 fn store_index_separation_search_scales_with_unrelated_stores_and_facts() {
     store_index_separation_search_scales("int", "int32", "");
 }
@@ -965,6 +969,8 @@ fn direct_store_source_publication_ignores_rhs_depth() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.6s in the parallel gate"]
 fn indexed_store_source_publication_ignores_rhs_depth() {
     check_word_store_source_publication("p[0]", "p[0]", "", "owns *p;");
     check_word_store_source_publication("p[1]", "p[1]", "", "owns p[0..4];");

@@ -7,6 +7,8 @@ const SIDECAR: &str = include_str!("../../design/charon-trial/panics/panics.clic
 /// under the precondition that rules it out, and without it the refusal
 /// names the panic by its message.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.7s in the parallel gate"]
 fn charon_panics_are_obligations() {
     let p = Project::from_fixture("design/charon-trial/panics");
     fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();

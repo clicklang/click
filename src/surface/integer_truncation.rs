@@ -24,6 +24,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.8s in the parallel gate"]
     fn integer_truncation_constants_and_full_width_signs_verify_and_expand() {
         for (term, expected) in [
             ("truncating_quotient(-7, 3)", "-2"),
@@ -56,6 +58,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn integer_truncation_symbolic_domain_survives_proofs_and_expansion() {
         for function in ["truncating_quotient", "truncating_remainder"] {
             for expression in [
@@ -80,6 +84,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn integer_truncation_rejects_zero_wrong_types_arities_and_shadowing() {
         for expression in [
             "truncating_quotient(7, 0)",
@@ -120,6 +126,8 @@ mod tests {
         }
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn integer_truncation_function_arguments_keep_their_domain() {
         for helper in ["truncating_quotient", "truncating_remainder"] {
             let expression = format!("identity({helper}(a, b))");

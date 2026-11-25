@@ -55,6 +55,8 @@ fn successful_zero_prefixes_reuse_word_classes() {
     growing_prefixes(false, false);
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn unresolved_zero_prefixes_reuse_word_classes() {
     growing_prefixes(true, false);
 }
@@ -63,11 +65,15 @@ fn successful_cancellation_prefixes_reuse_word_classes() {
     growing_prefixes(false, true);
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn unresolved_cancellation_prefixes_reuse_word_classes() {
     growing_prefixes(true, true);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn wide_mask_queries_retain_growing_shared_operands() {
     use crate::kernel::MachineOperandView as V;
     use crate::kernel::machine_integer::comparison::condition_for_operand_views;

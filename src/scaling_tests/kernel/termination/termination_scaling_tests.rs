@@ -35,6 +35,8 @@ fn one_long_call_chain_costs_linear_termination_work() {
 /// The widest graph: one level of `n` leaves, and a root whose own call
 /// list is the whole edge set.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn wide_fan_out_costs_linear_termination_work() {
     let leaf = |index: usize| format!("leaf{index:06}");
     let mut samples = Vec::new();
@@ -61,6 +63,8 @@ fn wide_fan_out_costs_linear_termination_work() {
 /// refused for unmeasured recursion, every refusal is pushed through the
 /// level worklist, and every caller then reads a refused callee.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn many_small_unmeasured_cycles_cost_linear_termination_work() {
     let ping = |index: usize| format!("ping{index:06}");
     let pong = |index: usize| format!("pong{index:06}");

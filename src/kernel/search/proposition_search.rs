@@ -2046,6 +2046,8 @@ mod condition_premise_tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn indexed_component_preserves_scan_answers_and_removes_its_quadratic_work() {
         let mut visits = Vec::new();
         for size in [8, 16, 32, 64] {

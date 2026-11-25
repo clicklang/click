@@ -651,6 +651,8 @@ mod unit_tests {
     /// committed adler2 artifact: the sidecar names the crate root by its own
     /// relative path, verifies, and a changed crate file is refused by name.
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn project_unit_loads_an_external_crate_offline() {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         let root = fs::canonicalize(std::env::temp_dir())

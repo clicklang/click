@@ -137,6 +137,8 @@ fn two_resolved_four_byte_load_queries_scale_without_fact_index() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn direct_composite_int32_argument_graph_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let _session = VerificationSession::enter();
@@ -235,6 +237,8 @@ fn typed_int32_value_graph_queries_scale_without_fact_index() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn certified_int32_graph_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let _session = VerificationSession::enter();
@@ -287,6 +291,8 @@ fn graph_equal_addend_matching_scales_without_the_legacy_index() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn int32_context_insertion_and_forks_scale_with_indexed_work() {
     for size in [16u64, 64, 256, 1024] {
         let _session = VerificationSession::enter();
@@ -429,6 +435,8 @@ fn offset_premise_shallow_decision_and_forks_scale() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn shared_constant_discovery_scales_with_the_admitted_chain() {
     for size in [16u64, 64, 256, 1024] {
         let _session = VerificationSession::enter();
@@ -553,6 +561,8 @@ fn unrelated_offset_inputs_preserve_the_selected_parameter_partition() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn complete_pointer_scalar_evidence_ignores_unrelated_inputs() {
     for size in [16u64, 64, 256, 1024] {
         let _session = VerificationSession::enter();
