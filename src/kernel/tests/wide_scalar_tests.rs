@@ -616,7 +616,7 @@ fn wide_cast_hostile_metadata_and_word_payloads_are_rejected_locally() {
 
 #[test]
 fn wide_cast_canonicalization_keeps_source_load_width_and_memory_dependencies() {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: "wide-cast-source".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -760,7 +760,7 @@ fn uint64_to_int64_specification_cast_requires_exact_representable_range() {
 #[test]
 fn wide_cached_load_canonicalization_preserves_kind_and_all_bits() {
     for signed in [false, true] {
-        let pointer = Address {
+        let pointer = OldAddress {
             base: "wide-cached-read".into(),
             offset: OldAddressOffset::Constant(0),
         };

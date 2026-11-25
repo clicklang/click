@@ -54,7 +54,7 @@ fn ordinary_authority_wrapper_checks_only_its_delta() {
             before = before.with_local(format!("local_{index}"), int32(index as u32));
             memory = memory.with_block(format!("block_{index}"), 4);
             resources = resources.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
-                Address {
+                OldAddress {
                     base: format!("block_{index}").into(),
                     offset: crate::kernel::OldAddressOffset::Constant(0),
                 },
@@ -130,7 +130,7 @@ fn ordinary_authority_wrapper_checks_only_its_delta() {
             "the unrelated frame must remain authenticated"
         );
         let unrelated_memory = ResourceFact::own_memory(MemoryRange::new(
-            Address {
+            OldAddress {
                 base: "block_0".into(),
                 offset: crate::kernel::OldAddressOffset::Constant(0),
             },

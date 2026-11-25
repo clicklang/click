@@ -18,7 +18,7 @@ fn value_path() -> ExpressionPath {
 
 fn width_mismatch() -> RuntimeError {
     RuntimeError::LoadTypeMismatch {
-        pointer: Address::null(),
+        pointer: OldAddress::null(),
         value_type: ProgramType::Int32,
         stored: Some(Box::new(ProgramValue::UInt64(
             OldMachineTerm::uint64_constant(6),

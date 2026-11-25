@@ -5,9 +5,9 @@ use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use std::sync::Arc;
 
-fn anchor(range: &MemoryRange) -> Option<Address> {
+fn anchor(range: &MemoryRange) -> Option<OldAddress> {
     let offset = crate::kernel::assumptions::memory_range_anchor(range)?;
-    Some(Address {
+    Some(OldAddress {
         base: range.base().base.clone(),
         offset,
     })

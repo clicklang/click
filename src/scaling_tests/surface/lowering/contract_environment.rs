@@ -6,7 +6,7 @@ fn named_parameter_shadowing_ignores_unrelated_globals() {
     for size in [0, 16, 128] {
         let state = globals(size);
         let value = ProgramValue::typed_pointer(
-            Address {
+            OldAddress {
                 base: "parameter-bytes".into(),
                 offset: OldAddressOffset::Constant(0),
             },

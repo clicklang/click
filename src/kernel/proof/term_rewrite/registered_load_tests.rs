@@ -6,9 +6,9 @@
 use super::*;
 use crate::kernel::binary_node;
 use crate::kernel::{
-    Address, AddressBase, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType, OldAddressOffset,
-    SharedIntegerRangeEndpoint, SharedIntegerTerm, SharedMachineIntegerTerm, SharedMemory,
-    SymbolicMemory, Term, Variable,
+    AddressBase, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType, OldAddress,
+    OldAddressOffset, SharedIntegerRangeEndpoint, SharedIntegerTerm, SharedMachineIntegerTerm,
+    SharedMemory, SymbolicMemory, Term, Variable,
 };
 use std::collections::BTreeMap;
 
@@ -20,7 +20,7 @@ fn memory() -> SharedMemory {
 fn checked_index_substitution_reprojects_the_selected_scalar_read() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = crate::kernel::intern_memory(memory().memory().clone().store(
-        Address {
+        OldAddress {
             base: AddressBase::Concrete("registered-load-capture".into()),
             offset: OldAddressOffset::Constant(0),
         },
@@ -28,7 +28,7 @@ fn checked_index_substitution_reprojects_the_selected_scalar_read() {
     ));
     let from = OldMachineTerm::Variable(Variable(3_219_010));
     let to = OldMachineTerm::Variable(Variable(3_219_011));
-    let address = |index: OldMachineTerm| Address {
+    let address = |index: OldMachineTerm| OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scale_int32(index, 4),
     };
@@ -72,7 +72,7 @@ fn checked_index_substitution_reprojects_the_selected_scalar_read() {
     );
 }
 
-fn exact_load(memory: &SharedMemory, pointer: &Address) -> Variable {
+fn exact_load(memory: &SharedMemory, pointer: &OldAddress) -> Variable {
     crate::kernel::eval::load_variable_for_exact_cell(
         memory,
         pointer,
@@ -122,7 +122,7 @@ fn checked_program_substitution_reserves_free_integer_in_registered_load_pointer
     let accumulator = Variable(3_210_002);
     let inner_load = exact_load(
         &memory,
-        &Address {
+        &OldAddress {
             base: AddressBase::Concrete("registered-load-capture".into()),
             offset: OldAddressOffset::scaled_int32_node(
                 OldMachineTerm::IntegerToMachine {
@@ -135,7 +135,7 @@ fn checked_program_substitution_reserves_free_integer_in_registered_load_pointer
     );
     let load = exact_load(
         &memory,
-        &Address {
+        &OldAddress {
             base: AddressBase::Concrete("registered-load-capture".into()),
             offset: OldAddressOffset::Variable(inner_load),
         },
@@ -189,7 +189,7 @@ fn checked_program_substitution_reserves_free_program_in_registered_load_pointer
     let accumulator = Variable(3_220_002);
     let load = exact_load(
         &memory,
-        &Address {
+        &OldAddress {
             base: AddressBase::Concrete("registered-load-capture".into()),
             offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(free_c), 4),
         },
@@ -224,14 +224,14 @@ fn checked_program_substitution_reserves_free_program_in_registered_load_pointer
 fn checked_registered_load_rewrite_remints_nested_direct_offset() {
     let memory = memory();
     let source = Variable(3_230_000);
-    let inner_pointer = Address {
+    let inner_pointer = OldAddress {
         base: AddressBase::Concrete("registered-load-capture".into()),
         offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(source), 4),
     };
     let inner = exact_load(&memory, &inner_pointer);
     let outer = exact_load(
         &memory,
-        &Address {
+        &OldAddress {
             base: AddressBase::Concrete("registered-load-capture".into()),
             offset: OldAddressOffset::Variable(inner),
         },
@@ -281,7 +281,7 @@ fn checked_registered_load_rewrite_remints_nested_direct_offset() {
 fn checked_integer_binding_rewrites_registered_load_at_exact_state() {
     let memory = memory();
     let source = Variable(3_240_000);
-    let pointer = Address {
+    let pointer = OldAddress {
         base: AddressBase::Concrete("registered-load-capture".into()),
         offset: OldAddressOffset::scaled_int32_node(
             OldMachineTerm::IntegerToMachine {
@@ -327,7 +327,7 @@ fn checked_integer_binding_rewrites_registered_load_at_exact_state() {
 fn shared_carrier_cache_preserves_current_registered_load_dependencies() {
     let _session = VerificationSession::enter();
     let address_variable = Variable(982802);
-    let pointer = Address::symbolic(address_variable);
+    let pointer = OldAddress::symbolic(address_variable);
     let load = exact_load(&memory(), &pointer);
     let format = MachineIntegerType::Int32;
     let root = KernelTerm::machine_binary_shared(
@@ -367,7 +367,7 @@ fn shared_carrier_cache_preserves_current_registered_load_dependencies() {
 fn named_read_replacement_reaches_a_shared_integer_observation() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = memory();
-    let address = Address::symbolic(Variable(3_219_000));
+    let address = OldAddress::symbolic(Variable(3_219_000));
     let source = OldMachineTerm::Variable(exact_load(&memory, &address));
     let replacement = OldMachineTerm::constant(7);
     let observed = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
@@ -389,7 +389,7 @@ fn named_read_replacement_reaches_a_shared_integer_observation() {
 fn structural_read_replacement_matches_retained_name_at_native_value_boundary() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = memory();
-    let address = Address::symbolic(Variable(3_219_001));
+    let address = OldAddress::symbolic(Variable(3_219_001));
     let name = exact_load(&memory, &address);
     let named = OldMachineTerm::Variable(name);
     let read = OldMachineTerm::read_named(
@@ -429,7 +429,7 @@ fn structural_read_replacement_matches_retained_name_at_native_value_boundary() 
 #[test]
 fn resource_comparison_forms_reach_structural_scalar_read_arguments() {
     let _session = crate::kernel::VerificationSession::enter();
-    let address = Address::symbolic(Variable(3_219_020));
+    let address = OldAddress::symbolic(Variable(3_219_020));
     let memory = crate::kernel::intern_memory(
         SymbolicMemory::new().store(address.clone(), ProgramValue::Int32(37u32.into())),
     );
@@ -479,7 +479,7 @@ fn resource_comparison_forms_reach_structural_scalar_read_arguments() {
 #[test]
 fn fold_index_substitution_keeps_call_havoc_source() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::Constant(0),
     };
@@ -502,7 +502,7 @@ fn fold_index_substitution_keeps_call_havoc_source() {
     ));
     assert_eq!(after.memory().known_value(&base), None);
     let item = Variable(3_229_003);
-    let indexed = Address {
+    let indexed = OldAddress {
         base: base.base.clone(),
         offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(item), 4),
     };

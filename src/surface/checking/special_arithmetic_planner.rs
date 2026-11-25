@@ -392,7 +392,7 @@ fn alignment_is_relevant(
 
 fn proposition_mentions_pointer(
     proposition: &Proposition,
-    target: &crate::kernel::Address,
+    target: &crate::kernel::OldAddress,
 ) -> bool {
     let mut pending = vec![proposition];
     let mut shared_seen = std::collections::HashSet::new();
@@ -439,7 +439,7 @@ fn proposition_mentions_pointer(
     false
 }
 
-fn term_mentions_pointer(term: &OldMachineTerm, target: &crate::kernel::Address) -> bool {
+fn term_mentions_pointer(term: &OldMachineTerm, target: &crate::kernel::OldAddress) -> bool {
     let mut pending = vec![term];
     while let Some(current) = pending.pop() {
         match current {
@@ -478,7 +478,10 @@ fn term_mentions_pointer(term: &OldMachineTerm, target: &crate::kernel::Address)
     false
 }
 
-fn bounded_address_equal(left: &crate::kernel::Address, right: &crate::kernel::Address) -> bool {
+fn bounded_address_equal(
+    left: &crate::kernel::OldAddress,
+    right: &crate::kernel::OldAddress,
+) -> bool {
     if !bounded_pointer_work(left) || !bounded_pointer_work(right) || left.base != right.base {
         return false;
     }
@@ -830,7 +833,7 @@ fn bounded_term_work_count(root: &OldMachineTerm, count: &mut usize) -> bool {
     true
 }
 
-fn bounded_pointer_work(pointer: &crate::kernel::Address) -> bool {
+fn bounded_pointer_work(pointer: &crate::kernel::OldAddress) -> bool {
     bounded_address_base_work(&pointer.base) && bounded_offset_work(&pointer.offset)
 }
 
@@ -1028,7 +1031,7 @@ fn bounded_term_equal_count(
     true
 }
 
-fn alignment_shape(condition: &OldConditionTerm) -> Option<(&crate::kernel::Address, u64)> {
+fn alignment_shape(condition: &OldConditionTerm) -> Option<(&crate::kernel::OldAddress, u64)> {
     crate::kernel::proof::arithmetic_special::checked_pointer_alignment(condition)
 }
 

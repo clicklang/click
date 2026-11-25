@@ -820,8 +820,8 @@ impl PureFactContext {
     /// composition scan: unrelated ownership is not a candidate for this index.
     fn pointers_distinct_by_stated_separation(
         &self,
-        left: &Address,
-        right: &Address,
+        left: &OldAddress,
+        right: &OldAddress,
     ) -> Option<bool> {
         if left == right {
             return None;
@@ -849,7 +849,7 @@ impl PureFactContext {
         Some(false)
     }
 
-    fn pointers_distinct_by_nullness(&self, left: &Address, right: &Address) -> Option<bool> {
+    fn pointers_distinct_by_nullness(&self, left: &OldAddress, right: &OldAddress) -> Option<bool> {
         let left = self.pointer_nullness(left)?;
         let right = self.pointer_nullness(right)?;
         (left != right).then_some(false)
@@ -865,8 +865,8 @@ impl PureFactContext {
     /// and the walk visits only the component reachable from `start`.
     pub(in crate::kernel) fn pointer_equality_component(
         &self,
-        start: &Address,
-    ) -> Vec<(Address, Option<Address>)> {
+        start: &OldAddress,
+    ) -> Vec<(OldAddress, Option<OldAddress>)> {
         let mut seen = std::collections::BTreeSet::from([start.clone()]);
         let mut reached = vec![(start.clone(), None)];
         let mut frontier = vec![start.clone()];
@@ -892,8 +892,8 @@ impl PureFactContext {
     /// The null pointer is null intrinsically, and a pointer whose block is
     /// proven distinct from the null block is not null by the same rule that
     /// decides any other block disequality.
-    fn pointer_nullness(&self, pointer: &Address) -> Option<bool> {
-        let null = Address::null();
+    fn pointer_nullness(&self, pointer: &OldAddress) -> Option<bool> {
+        let null = OldAddress::null();
         if *pointer == null {
             return Some(true);
         }
@@ -925,7 +925,7 @@ impl PureFactContext {
             // The index only nominates the block. Both premises are then
             // taken through the exact check, so they are recorded exactly
             // and a stale entry can never decide anything on its own.
-            let pointer_at = |offset: &OldAddressOffset| Address {
+            let pointer_at = |offset: &OldAddressOffset| OldAddress {
                 base: block.clone(),
                 offset: offset.clone(),
             };
@@ -1262,7 +1262,7 @@ impl PureFactContext {
     }
 
     /// The same scoped fact through the shared condition application index.
-    /// Address-origin annotations do not alter a numeric condition's truth.
+    /// OldAddress-origin annotations do not alter a numeric condition's truth.
     pub(in crate::kernel) fn known_condition_value(
         &self,
         condition: &OldConditionTerm,
@@ -2625,11 +2625,11 @@ fn read_over_write_condition(condition: &OldConditionTerm) -> Option<OldConditio
 mod owned_anchor_tests {
     use super::*;
 
-    fn pointer(id: u64) -> Address {
-        Address::symbolic(Variable(991_000 + id))
+    fn pointer(id: u64) -> OldAddress {
+        OldAddress::symbolic(Variable(991_000 + id))
     }
 
-    fn owner_of(pointers: &[Address]) -> Proposition {
+    fn owner_of(pointers: &[OldAddress]) -> Proposition {
         Proposition::ResourceComposition(ResourceContext::new().unchecked_with_facts(
             pointers.iter().map(|pointer| {
                 ResourceFact::own_memory(MemoryRange::new_with_element_width(
@@ -3453,12 +3453,12 @@ mod intrinsic_context_tests {
 
     #[test]
     fn intrinsic_read_definitions_follow_growth_restore_and_new_sessions() {
-        use crate::kernel::{Address, SymbolicMemory, VerificationSession, intern_memory};
+        use crate::kernel::{OldAddress, SymbolicMemory, VerificationSession, intern_memory};
         let check = || {
             let memory = intern_memory(SymbolicMemory::new().with_block("intrinsic", 16));
-            let address = Address::symbolic(Variable(986010));
-            let value = Address::symbolic(Variable(986011));
-            let application = Address::loaded_value(&memory, &address);
+            let address = OldAddress::symbolic(Variable(986010));
+            let value = OldAddress::symbolic(Variable(986011));
+            let application = OldAddress::loaded_value(&memory, &address);
             let goal =
                 OldConditionTerm::AddressEqual(Box::new(value.clone()), Box::new(application));
             assert_eq!(PureFactContext::decide_intrinsically(&goal), None);
@@ -3584,7 +3584,7 @@ mod wide_observation_tag_regression {
         let one = OldMachineTerm::uint64_constant(1);
         let next = OldMachineTerm::uint64_add(x.clone(), one.clone());
         let tagged = OldMachineTerm::uint64_add(
-            OldMachineTerm::integer_address(Address::symbolic(Variable(993803))),
+            OldMachineTerm::integer_address(OldAddress::symbolic(Variable(993803))),
             one,
         );
         let observed = |value: &OldMachineTerm| {

@@ -7,7 +7,7 @@ use super::*;
 #[test]
 fn provisional_ensure_loadability_work_ignores_unrelated_facts() {
     let memory = SymbolicMemory::new();
-    let data = Address {
+    let data = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::Constant(0),
     };

@@ -6,8 +6,8 @@ use super::*;
 
 #[test]
 fn automatic_storage_lookup_does_not_walk_alias_history() {
-    let root = Address::symbolic(Variable(896_100));
-    let storage = Address {
+    let root = OldAddress::symbolic(Variable(896_100));
+    let storage = OldAddress {
         base: AddressBase::AutomaticLocal {
             binding: crate::kernel::LocalBindingId::new(
                 crate::kernel::LocalFunctionId::new(Some("indexed.c".into()), "f".into()),
@@ -29,12 +29,12 @@ fn automatic_storage_lookup_does_not_walk_alias_history() {
             facts = facts.assume_condition(
                 OldConditionTerm::address_equal(
                     root.clone(),
-                    Address::symbolic(Variable(897_000 + id)),
+                    OldAddress::symbolic(Variable(897_000 + id)),
                 ),
                 true,
             );
         }
-        let query = Address::symbolic(Variable(897_000 + size)).offset_by_bytes(8);
+        let query = OldAddress::symbolic(Variable(897_000 + size)).offset_by_bytes(8);
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             assert_eq!(
                 facts.equality_graph.storage_address(&query),
@@ -55,7 +55,7 @@ fn automatic_storage_lookup_does_not_walk_alias_history() {
 
 #[test]
 fn declared_alignment_lookup_does_not_walk_alias_history() {
-    let root = Address::symbolic(Variable(899_100));
+    let root = OldAddress::symbolic(Variable(899_100));
     let mut work = Vec::new();
     for size in [16u64, 64, 256, 1024] {
         let mut facts = PureFactContext::new();
@@ -63,14 +63,14 @@ fn declared_alignment_lookup_does_not_walk_alias_history() {
             facts = facts.assume_condition(
                 OldConditionTerm::address_equal(
                     root.clone(),
-                    Address::symbolic(Variable(900_000 + id)),
+                    OldAddress::symbolic(Variable(900_000 + id)),
                 ),
                 true,
             );
         }
         // Register after all equality merges as well as before them above.
         facts = facts.assume_condition(OldConditionTerm::pointer_aligned(root.clone(), 16), true);
-        let query = Address::symbolic(Variable(900_000 + size)).offset_by_bytes(8);
+        let query = OldAddress::symbolic(Variable(900_000 + size)).offset_by_bytes(8);
         let (_, units) = crate::instrumentation::measure_deterministic_work(|| {
             assert_eq!(
                 facts.decide(&OldConditionTerm::pointer_aligned(query.clone(), 8)),

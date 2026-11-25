@@ -364,7 +364,7 @@ mod tests {
             let expected = Some(CAccessClass::Scalar(class));
             let source = OldAddressOffset::scaled_int64_node(
                 OldMachineTerm::IntegerAddress(
-                    Box::new(Address::symbolic(Variable(994004))),
+                    Box::new(OldAddress::symbolic(Variable(994004))),
                     crate::kernel::AddressObjectClass::new(expected.clone()),
                 ),
                 1,

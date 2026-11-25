@@ -3,11 +3,11 @@ use crate::kernel::{MemoryRange, OldConditionTerm, OldMachineTerm, Resource, Var
 
 #[test]
 fn stated_symbolic_write_separation_ignores_nearby_facts_and_aliases() {
-    let write = Address::symbolic(Variable(70_100));
-    let protected = Address::symbolic(Variable(70_101));
-    let alias = Address::symbolic(Variable(70_102));
+    let write = OldAddress::symbolic(Variable(70_100));
+    let protected = OldAddress::symbolic(Variable(70_101));
+    let alias = OldAddress::symbolic(Variable(70_102));
     let symbolic = |value| OldMachineTerm::Variable(Variable(value));
-    let memory = |base: &Address, end| {
+    let memory = |base: &OldAddress, end| {
         Box::new(Resource::Memory(MemoryRange::new_with_element_width(
             base.clone(),
             0.into(),
@@ -38,7 +38,7 @@ fn stated_symbolic_write_separation_ignores_nearby_facts_and_aliases() {
             facts = facts.assume_condition(
                 OldConditionTerm::address_equal(
                     write.clone(),
-                    Address::symbolic(Variable(71_000 + candidate)),
+                    OldAddress::symbolic(Variable(71_000 + candidate)),
                 ),
                 true,
             );
@@ -57,7 +57,7 @@ fn stated_symbolic_write_separation_ignores_nearby_facts_and_aliases() {
             cold = cold.assume_condition(
                 OldConditionTerm::address_equal(
                     write.clone(),
-                    Address::symbolic(Variable(73_000 + candidate)),
+                    OldAddress::symbolic(Variable(73_000 + candidate)),
                 ),
                 true,
             );

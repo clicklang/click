@@ -90,7 +90,7 @@ enum PointerBounds {
 | Address of a declared object `&x`, array decay, `malloc`, string literal | `Root` (already exact: the block is the object) |
 | Typed pointer arithmetic `q + n`, `q - n`, `&q[n]` | same bounds as `q` |
 | Copy, local assignment, argument binding, return | same bounds |
-| Store to memory, then reload of that exact cell | same bounds: cached `CValue::Pointer` cells already return the stored value. The `pointer_read_stored_value` family in `memory_history.rs` must return the whole `CPointerValue`, not `Address`. |
+| Store to memory, then reload of that exact cell | same bounds: cached `CValue::Pointer` cells already return the stored value. The `pointer_read_stored_value` family in `memory_history.rs` must return the whole `CPointerValue`, not `OldAddress`. |
 | Reload of an unknown cell, havoc, modular result | Fresh opaque domain; formation and access require matching bounds evidence (Phase C) |
 | Conversion to `void*` or a non-character object pointer type | same bounds (a conversion neither narrows nor widens; D3, D4 revised) |
 | Conversion between character-pointer types | same bounds, including signedness changes (D4 refinement) |

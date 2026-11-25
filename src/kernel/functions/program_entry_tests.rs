@@ -281,7 +281,7 @@ fn zero_element(element_type: ProgramType) -> ProgramValue {
         ProgramType::UInt32 => uint32(0),
         ProgramType::Int64 => ProgramValue::Int64(OldMachineTerm::int64_constant(0)),
         ProgramType::UInt64 => ProgramValue::UInt64(OldMachineTerm::uint64_constant(0)),
-        pointer => ProgramValue::typed_pointer(Address::null(), pointer),
+        pointer => ProgramValue::typed_pointer(OldAddress::null(), pointer),
     }
 }
 
@@ -383,7 +383,7 @@ fn an_initialized_array_at_startup_holds_exactly_the_per_element_stores() {
             .expect("no run limit is installed");
         let mut reference = SymbolicMemory::new();
         let mut per_element =
-            |pointer: Address, element_type: ProgramType, contents: &ArrayContents| {
+            |pointer: OldAddress, element_type: ProgramType, contents: &ArrayContents| {
                 reference = reference.clone().with_block_or_read_only(
                     pointer.base.clone(),
                     length * element_type.byte_width(),

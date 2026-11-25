@@ -311,7 +311,7 @@ mod tests {
     #[test]
     fn selected_shared_atoms_preserve_literal_conversion_and_load_rules() {
         let _session = VerificationSession::enter();
-        let pointer = Address {
+        let pointer = OldAddress {
             base: AddressBase::Symbolic(Variable(1005300)),
             offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(1005301)), 4),
         };

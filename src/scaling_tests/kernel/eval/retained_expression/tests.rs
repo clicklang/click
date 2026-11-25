@@ -306,7 +306,7 @@ fn retained_pointer_step_receipts_do_not_walk_dags_or_sibling_results() {
                     vec![argument],
                 ),
                 SharedPointer::import(&OldPointer::new(
-                    Address::symbolic(Variable(1027951)),
+                    OldAddress::symbolic(Variable(1027951)),
                     ProgramType::Int32Pointer,
                 )),
             );

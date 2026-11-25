@@ -100,7 +100,7 @@ fn structural_type_lookup_and_algebraic_stand_in_do_not_scan_registered_types() 
     let target_name = TypeParameterName::of(&target);
     let memory = intern_memory(SymbolicMemory::new());
     let point = ProgramPoint::at(&memory);
-    let pointer = Address::symbolic(Variable(930_100));
+    let pointer = OldAddress::symbolic(Variable(930_100));
     let mut counts = Vec::new();
     for size in [16, 256, 4096] {
         for index in 0..size {

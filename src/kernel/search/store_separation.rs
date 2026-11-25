@@ -11,16 +11,16 @@
 //! this.
 use crate::kernel::primitives::HashedOrdMapChange;
 use crate::kernel::{
-    Address, CompareRelation, MachineIntegerType, Proposition, SharedMachineIntegerTerm,
+    CompareRelation, MachineIntegerType, OldAddress, Proposition, SharedMachineIntegerTerm,
     SymbolicMemory,
 };
 
 /// One cached cell a statement forgot beside a store into the same array.
 pub(crate) struct ForgottenStoreCell {
     /// The cached cell the statement no longer holds.
-    pub(crate) cell: Address,
+    pub(crate) cell: OldAddress,
     /// The cell the statement wrote beside it.
-    pub(crate) store: Address,
+    pub(crate) store: OldAddress,
     /// The fact the store-time check reads: the two element indices differ.
     pub(crate) indices_differ: Proposition,
     /// The written cell's element index, the left operand of the

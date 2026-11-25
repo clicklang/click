@@ -1923,15 +1923,15 @@ mod tests {
     #[test]
     fn exact_union_copy_checks_only_the_selected_typed_views() {
         let _session = VerificationSession::enter();
-        let source = Address {
+        let source = OldAddress {
             base: "copy-source".into(),
             offset: OldAddressOffset::Constant(4),
         };
-        let destination = Address {
+        let destination = OldAddress {
             base: "copy-destination".into(),
             offset: OldAddressOffset::Constant(4),
         };
-        let read = |memory: SymbolicMemory, pointer: &Address| {
+        let read = |memory: SymbolicMemory, pointer: &OldAddress| {
             OldMachineTerm::read_named(
                 ProgramPoint::at(&crate::kernel::intern_memory(memory)),
                 Box::new(pointer.clone()),
@@ -1953,7 +1953,7 @@ mod tests {
                 ProgramValue::Int32(copied.clone()),
             );
             for i in 0..count {
-                let other = Address {
+                let other = OldAddress {
                     base: format!("copy-unrelated-{i}").into(),
                     offset: OldAddressOffset::Constant(0),
                 };
@@ -1986,7 +1986,7 @@ mod tests {
             }
             let goal = Proposition::MemoryLoadable {
                 memory,
-                base: Address {
+                base: OldAddress {
                     base: "target".into(),
                     offset: OldAddressOffset::Constant(4),
                 },
@@ -2024,7 +2024,7 @@ mod tests {
                     };
                     let goal = Proposition::MemoryLoadable {
                         memory: memory.clone(),
-                        base: Address::symbolic(Variable(402901)),
+                        base: OldAddress::symbolic(Variable(402901)),
                         bytes,
                         wide,
                     };
@@ -2043,7 +2043,7 @@ mod tests {
     #[test]
     fn constant_span_separation_checks_the_entire_byte_interval() {
         let _session = VerificationSession::enter();
-        let base = Address::symbolic(Variable(402902));
+        let base = OldAddress::symbolic(Variable(402902));
         let span = |base, width| {
             Box::new(Resource::Memory(MemoryRange::new_with_element_width(
                 base,
@@ -2055,7 +2055,7 @@ mod tests {
         for (right, separate) in [
             (base.offset_by_bytes(7), false),
             (base.offset_by_bytes(8), true),
-            (Address::symbolic(Variable(402903)), false),
+            (OldAddress::symbolic(Variable(402903)), false),
         ] {
             let goal = Proposition::ResourceSeparate {
                 left: span(base.clone(), 8),

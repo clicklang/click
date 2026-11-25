@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn section_read_supply_preserves_zero_and_unknown_owned_quantities() {
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::Heap(8_991_700),
         offset: OldAddressOffset::Constant(0),
     };
@@ -25,7 +25,7 @@ fn section_read_supply_preserves_zero_and_unknown_owned_quantities() {
 
 #[test]
 fn memory_waiter_requires_a_whole_range_supplier() {
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::Concrete("resource-clause-adjacent".to_string()),
         offset: OldAddressOffset::Constant(0),
     };
@@ -102,7 +102,7 @@ fn memory_waiter_requires_a_whole_range_supplier() {
 /// `MemoryBlock` index would produce `size * size` visits here.
 #[test]
 fn same_block_disjoint_waiters_use_interval_candidates() {
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::Concrete("resource-clause-disjoint".to_string()),
         offset: OldAddressOffset::Constant(0),
     };
@@ -154,11 +154,11 @@ fn same_block_disjoint_waiters_use_interval_candidates() {
 #[test]
 fn comparable_constant_bases_share_interval_space() {
     let block = AddressBase::Concrete("resource-clause-base-aware".to_string());
-    let dependency_base = Address {
+    let dependency_base = OldAddress {
         base: block.clone(),
         offset: OldAddressOffset::Constant(0),
     };
-    let supplied_base = Address {
+    let supplied_base = OldAddress {
         base: block,
         offset: OldAddressOffset::Constant(8),
     };
@@ -183,7 +183,7 @@ fn comparable_constant_bases_share_interval_space() {
 
 #[test]
 fn concrete_memory_waiters_share_physical_byte_space_across_widths() {
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::Concrete("resource-clause-byte-space".to_string()),
         offset: OldAddressOffset::Constant(0),
     };
@@ -210,7 +210,7 @@ fn concrete_memory_waiters_share_physical_byte_space_across_widths() {
 
 #[test]
 fn symbolic_memory_waiters_keep_conservative_block_fallback() {
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::Concrete("resource-clause-symbolic".to_string()),
         offset: OldAddressOffset::Constant(0),
     };
@@ -235,7 +235,7 @@ fn symbolic_memory_waiters_keep_conservative_block_fallback() {
 
 #[test]
 fn concrete_waiter_block_fallback_registers_and_unregisters_symmetrically() {
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::Concrete("resource-clause-fallback-lifetime".to_string()),
         offset: OldAddressOffset::Constant(0),
     };
@@ -270,7 +270,7 @@ fn retrying_a_composite_clause_keeps_the_point_of_its_nested_bound_read() {
 
     let _session = crate::kernel::VerificationSession::enter();
     let slot = SymbolicMemory::global_pointer("retry_bound");
-    let target = Address::symbolic(Variable(8_991_709));
+    let target = OldAddress::symbolic(Variable(8_991_709));
     let ty = ProgramType::Int32Pointer;
     let definitions = [
         CompositeResourceDefinition::new(

@@ -20,8 +20,8 @@ use super::*;
 /// The guard cell array and the comparison that selects an index.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct IteratedGuard {
-    /// Address of the guard cell at index 0.
-    pub(in crate::kernel) base: Address,
+    /// OldAddress of the guard cell at index 0.
+    pub(in crate::kernel) base: OldAddress,
     /// The C type of one guard cell (its loads are read at this type).
     pub(in crate::kernel) cell_type: ProgramType,
     /// The byte width of one guard cell.
@@ -68,8 +68,8 @@ pub struct IteratedMemory {
     /// The resource definition whose body declared the clause the fact was
     /// formed from, for diagnostics only.
     pub(in crate::kernel) owner: IteratedOwnerLabel,
-    /// Address of element index 0's base (the clause's `base`).
-    pub(in crate::kernel) element_base: Address,
+    /// OldAddress of element index 0's base (the clause's `base`).
+    pub(in crate::kernel) element_base: OldAddress,
     /// Byte width of one logical element of `base`.
     pub(in crate::kernel) element_width: u32,
     /// Element `k` covers `base[stride * k + start_offset..stride * k +
@@ -91,7 +91,7 @@ impl IteratedMemory {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         owner: &str,
-        element_base: Address,
+        element_base: OldAddress,
         element_width: u32,
         stride: u32,
         start_offset: i32,
@@ -116,7 +116,7 @@ impl IteratedMemory {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new_stored(
         owner: &str,
-        element_base: Address,
+        element_base: OldAddress,
         element_width: u32,
         stride: u32,
         start_offset: i32,
@@ -151,7 +151,7 @@ impl IteratedMemory {
         &self.owner.0
     }
 
-    pub fn element_base(&self) -> &Address {
+    pub fn element_base(&self) -> &OldAddress {
         &self.element_base
     }
 
@@ -229,7 +229,7 @@ impl IteratedMemory {
     }
 
     /// The address of the guard cell at `index`.
-    pub(crate) fn guard_cell(&self, index: &OldMachineTerm) -> Address {
+    pub(crate) fn guard_cell(&self, index: &OldMachineTerm) -> OldAddress {
         self.guard
             .base
             .offset_by_elements(index.clone(), self.guard.cell_width)
@@ -281,7 +281,7 @@ impl IteratedMemory {
     pub(crate) fn map_terms(
         &self,
         mut term: impl FnMut(&OldMachineTerm) -> OldMachineTerm,
-        mut pointer: impl FnMut(&Address) -> Address,
+        mut pointer: impl FnMut(&OldAddress) -> OldAddress,
     ) -> Self {
         Self {
             owner: self.owner.clone(),
@@ -320,7 +320,7 @@ impl IteratedMemory {
     }
 
     /// Both pointers the fact carries.
-    pub(crate) fn pointers(&self) -> [&Address; 2] {
+    pub(crate) fn pointers(&self) -> [&OldAddress; 2] {
         [&self.element_base, &self.guard.base]
     }
 
@@ -332,7 +332,7 @@ impl IteratedMemory {
 
 impl IteratedGuard {
     pub(crate) fn new(
-        base: Address,
+        base: OldAddress,
         cell_type: ProgramType,
         cell_width: u32,
         holds_when_equal: bool,
@@ -341,7 +341,7 @@ impl IteratedGuard {
         Self::new_stored(base, cell_type, cell_width, holds_when_equal, value.into())
     }
     pub(crate) fn new_stored(
-        base: Address,
+        base: OldAddress,
         cell_type: ProgramType,
         cell_width: u32,
         holds_when_equal: bool,
@@ -356,7 +356,7 @@ impl IteratedGuard {
         }
     }
 
-    pub fn base(&self) -> &Address {
+    pub fn base(&self) -> &OldAddress {
         &self.base
     }
 

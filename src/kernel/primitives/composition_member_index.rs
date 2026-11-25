@@ -35,7 +35,7 @@
 //! state holding both whenever any stated composition does. The answer it
 //! derives from that state is the one `S` would give: owned members of a
 //! valid composition are disjoint, so each object finds the same member.
-use super::{Address, AddressBase, MemoryRange, OwnedMemberKey, ResourceContext};
+use super::{AddressBase, MemoryRange, OldAddress, OwnedMemberKey, ResourceContext};
 use crate::persistent::{PersistentMap, PersistentSet};
 
 /// How far in size a predecessor candidate may be from the state it
@@ -47,7 +47,7 @@ const NEAREST_SIZES: usize = 2;
 pub(in crate::kernel) struct CompositionMemberIndex {
     /// Each admitted composition, by admission ordinal in this context.
     compositions: PersistentMap<u32, ResourceContext>,
-    by_base: PersistentMap<Address, PersistentSet<u32>>,
+    by_base: PersistentMap<OldAddress, PersistentSet<u32>>,
     by_block: PersistentMap<AddressBase, PersistentSet<u32>>,
     by_member: PersistentMap<OwnedMemberKey, PersistentSet<u32>>,
     /// The last state admitted from each storage origin. Holding it keeps
@@ -166,7 +166,7 @@ impl CompositionMemberIndex {
     /// the root, in admission order, each once.
     pub(in crate::kernel) fn listed_under<'k>(
         &self,
-        bases: impl IntoIterator<Item = &'k Address>,
+        bases: impl IntoIterator<Item = &'k OldAddress>,
         blocks: impl IntoIterator<Item = &'k AddressBase>,
     ) -> Vec<&ResourceContext> {
         self.listed_in(
@@ -187,7 +187,7 @@ impl CompositionMemberIndex {
     /// reasoning retains the complete candidate query.
     pub(in crate::kernel) fn directly_listed_under_bases<'k>(
         &self,
-        bases: impl IntoIterator<Item = &'k Address>,
+        bases: impl IntoIterator<Item = &'k OldAddress>,
     ) -> Vec<&ResourceContext> {
         // With no listed deltas, only the root can answer. Avoid probing
         // every written base again for each cached read in this common case.

@@ -185,7 +185,8 @@ fn logical_argument_refusals_do_not_convert_growing_boolean_or_algebraic_trees()
 #[test]
 fn pointer_certification_visits_shared_address_dags_without_exporting_them() {
     use crate::kernel::{
-        Address, KernelAddressOffset, OldPointer, SharedAddress, SharedAddressOffset, SharedPointer,
+        KernelAddressOffset, OldAddress, OldPointer, SharedAddress, SharedAddressOffset,
+        SharedPointer,
     };
     let mut samples = Vec::new();
     for depth in [8, 32, 128] {
@@ -196,8 +197,10 @@ fn pointer_certification_visits_shared_address_dags_without_exporting_them() {
         for _ in 0..depth {
             offset = SharedAddressOffset::add(offset.clone(), offset);
         }
-        let base =
-            SharedPointer::import(&OldPointer::new(Address::null(), ProgramType::Int32Pointer));
+        let base = SharedPointer::import(&OldPointer::new(
+            OldAddress::null(),
+            ProgramType::Int32Pointer,
+        ));
         let mut value = base.node().clone();
         value.address = SharedAddress::new(value.address.node().base.clone(), offset);
         value.provenance = value.address.clone();

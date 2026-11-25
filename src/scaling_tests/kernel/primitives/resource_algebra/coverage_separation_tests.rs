@@ -15,7 +15,7 @@ fn range_coverage_ignores_related_separations() {
     let mut works = Vec::new();
     for size in [16u64, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Address::symbolic(Variable(9_889_001));
+        let base = OldAddress::symbolic(Variable(9_889_001));
         let n = OldMachineTerm::Variable(Variable(9_889_002));
         let count = OldMachineTerm::Variable(Variable(9_889_003));
         let window = |offset: OldMachineTerm, length: OldMachineTerm| {
@@ -45,7 +45,7 @@ fn range_coverage_ignores_related_separations() {
                     OldMachineTerm::uint64_constant(8),
                 ),
                 MemoryRange::new_wide(
-                    Address::symbolic(Variable(9_891_000 + index)),
+                    OldAddress::symbolic(Variable(9_891_000 + index)),
                     OldMachineTerm::uint64_constant(0),
                     OldMachineTerm::uint64_constant(8),
                     1,

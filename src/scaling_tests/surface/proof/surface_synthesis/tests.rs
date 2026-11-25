@@ -9,7 +9,7 @@ fn read_origin_raising_ignores_other_points_with_equal_memory() {
     let _session = crate::kernel::VerificationSession::enter();
     let source = ExecutionState::new().begin_function_entry_memory();
     let point = source.program_point();
-    let slot = Address {
+    let slot = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::Constant(0),
     };
@@ -115,11 +115,11 @@ fn pointer_spelling_skips_cyclic_offsets_and_tries_the_next_local() {
         .stack_size(1792 * 1024)
         .spawn(|| {
             for size in [1usize, 8, 32, 128] {
-                let pointer = Address {
+                let pointer = OldAddress {
                     base: crate::kernel::AddressBase::ExternalArgument,
                     offset: OldAddressOffset::Constant(0),
                 };
-                let cyclic = Address {
+                let cyclic = OldAddress {
                     base: pointer.base.clone(),
                     offset: OldAddressOffset::scaled_int32_node(
                         OldMachineTerm::integer_address(pointer.clone()),
@@ -170,10 +170,10 @@ fn pointer_local_synthesis_skips_unrelated_address_bases() {
         for i in 0..size {
             state = state.with_local(
                 format!("a_{i:04}"),
-                ProgramValue::pointer(Address::symbolic(Variable(982_000 + i as u64))),
+                ProgramValue::pointer(OldAddress::symbolic(Variable(982_000 + i as u64))),
             );
         }
-        let base = Address::symbolic(Variable(984_000));
+        let base = OldAddress::symbolic(Variable(984_000));
         state = state.with_local("z_base", ProgramValue::pointer(base.clone()));
         let selected = base.offset_by_bytes(8);
         let (expression, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -302,11 +302,11 @@ fn allocation_result_names_use_one_index_as_recorded_history_grows() {
         let layout =
             crate::surface::lowering::SourceExecutionLayout::for_function(&function).unwrap();
         let mut retained_states = RecordedStates::new().with_source_layout(layout.clone());
-        let mut last = Address::null();
+        let mut last = OldAddress::null();
         let mut last_region = 0;
         let mut insertion_work = 0;
         for n in 0..count {
-            last = Address {
+            last = OldAddress {
                 base: AddressBase::Heap(990_000 + n as u64),
                 offset: OldAddressOffset::Constant(0),
             };
@@ -687,8 +687,8 @@ fn nested_fold_match_call_surface_work_ignores_unrelated_locals() {
 #[test]
 fn array_argument_state_lookup_ignores_unrelated_recorded_history() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = ProgramValue::pointer(Address::symbolic(Variable(981_400)));
-    let cell = Address {
+    let pointer = ProgramValue::pointer(OldAddress::symbolic(Variable(981_400)));
+    let cell = OldAddress {
         base: AddressBase::Concrete("selected-array-memory".into()),
         offset: OldAddressOffset::Constant(0),
     };
@@ -894,7 +894,7 @@ fn pointer_comparison_spelling_does_not_export_bounds_payloads() {
     use crate::kernel::{KernelTermExport, KernelTermImport, OldPointer, SubobjectBounds};
     for size in [8, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Address::symbolic(Variable(999990));
+        let pointer = OldAddress::symbolic(Variable(999990));
         let mut width = OldMachineTerm::Variable(Variable(999991));
         for _ in 0..size {
             width = OldMachineTerm::logical_machine_binary(

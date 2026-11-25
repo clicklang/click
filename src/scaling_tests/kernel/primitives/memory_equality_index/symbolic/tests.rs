@@ -9,8 +9,8 @@ use super::*;
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn symbolic_footprint_selection_does_not_scan_same_base_ranges() {
-    let base = Address::symbolic(Variable(920_000));
-    let alias = Address::symbolic(Variable(920_001));
+    let base = OldAddress::symbolic(Variable(920_000));
+    let alias = OldAddress::symbolic(Variable(920_001));
     let n = OldMachineTerm::Variable(Variable(920_002));
     let empty = PureFactContext::new();
     let facts = empty.clone().assume_condition(
@@ -75,8 +75,8 @@ fn symbolic_footprint_selection_does_not_scan_same_base_ranges() {
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn symbolic_byte_read_consumer_refuses_ambiguous_suppliers_without_search() {
-    let base = Address::symbolic(Variable(960_000));
-    let alias = Address::symbolic(Variable(960_001));
+    let base = OldAddress::symbolic(Variable(960_000));
+    let alias = OldAddress::symbolic(Variable(960_001));
     let n = OldMachineTerm::Variable(Variable(960_002));
     let m = OldMachineTerm::Variable(Variable(960_003));
     let empty = PureFactContext::new();

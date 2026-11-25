@@ -8,7 +8,7 @@ use super::*;
 fn heap_variable_counts_follow_local_edits_and_keep_siblings_isolated() {
     for size in [16u64, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = |id| Address {
+        let pointer = |id| OldAddress {
             base: AddressBase::Symbolic(Variable(id)),
             offset: OldAddressOffset::Constant(0),
         };
@@ -98,7 +98,7 @@ fn shared_machine_variable_collection_keeps_state_deferral_and_load_addresses() 
     let memory = crate::kernel::intern_memory(SymbolicMemory::new());
     let load = crate::kernel::eval::load_variable_for_exact_cell(
         &memory,
-        &Address::symbolic(address),
+        &OldAddress::symbolic(address),
         crate::kernel::LoadKind::Int32,
         4,
     );

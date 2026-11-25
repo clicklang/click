@@ -5,7 +5,7 @@
 use super::*;
 
 fn read(point: &str, value_type: ProgramType, exact: bool) -> SpecExpression {
-    let cell = Address {
+    let cell = OldAddress {
         base: point.into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -39,11 +39,11 @@ fn evaluate(state: &ExecutionState, read: &SpecExpression) -> ProgramValue {
 #[test]
 fn an_exact_read_is_named_by_its_own_state_not_the_version_point() {
     let _session = crate::kernel::VerificationSession::enter();
-    let cell = Address {
+    let cell = OldAddress {
         base: "exact-read-cell".into(),
         offset: OldAddressOffset::Constant(0),
     };
-    let other = Address {
+    let other = OldAddress {
         base: "exact-read-other".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -74,11 +74,11 @@ fn an_exact_read_is_named_by_its_own_state_not_the_version_point() {
 #[test]
 fn an_exact_pointer_read_has_its_own_read_as_provenance() {
     let _session = crate::kernel::VerificationSession::enter();
-    let cell = Address {
+    let cell = OldAddress {
         base: "exact-pointer-cell".into(),
         offset: OldAddressOffset::Constant(0),
     };
-    let other = Address {
+    let other = OldAddress {
         base: "exact-pointer-other".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -114,7 +114,7 @@ fn an_exact_pointer_read_has_its_own_read_as_provenance() {
     };
     assert_eq!(
         ordinary.address(),
-        &Address::canonical_read(&state, None, &cell)
+        &OldAddress::canonical_read(&state, None, &cell)
     );
     assert_ne!(ordinary.address(), exact.address());
 }

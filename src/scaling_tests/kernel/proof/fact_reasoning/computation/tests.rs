@@ -426,7 +426,7 @@ fn constructor_match_computation_visits_shared_terms_once() {
 #[test]
 fn stored_byte_order_uses_only_the_exact_cells() {
     let _session = VerificationSession::enter();
-    let block = |name: &str| Address {
+    let block = |name: &str| OldAddress {
         base: AddressBase::Concrete(name.into()),
         offset: OldAddressOffset::Constant(0),
     };
@@ -434,7 +434,7 @@ fn stored_byte_order_uses_only_the_exact_cells() {
     let right = block("byte-order-right");
     let other = block("byte-order-other");
     let format = MachineIntegerType::Int32;
-    let read = |memory: &SymbolicMemory, pointer: Address| {
+    let read = |memory: &SymbolicMemory, pointer: OldAddress| {
         OldMachineTerm::machine_integer_cast(
             MachineIntegerType::UInt8,
             format,
@@ -512,11 +512,11 @@ fn stored_byte_order_uses_only_the_exact_cells() {
 #[test]
 fn cached_read_definedness_checks_only_the_selected_typed_cell() {
     let _session = VerificationSession::enter();
-    let selected = Address {
+    let selected = OldAddress {
         base: AddressBase::Concrete("local:definedness-read".into()),
         offset: OldAddressOffset::Constant(0),
     };
-    let unrelated = Address {
+    let unrelated = OldAddress {
         base: AddressBase::Concrete("local:other-definedness-read".into()),
         offset: OldAddressOffset::Constant(0),
     };
@@ -525,7 +525,7 @@ fn cached_read_definedness_checks_only_the_selected_typed_cell() {
         .with_block(selected.base.clone(), 4096)
         .with_block(unrelated.base.clone(), 4096);
     let defined =
-        |memory: &SymbolicMemory, pointer: Address, value_type| Proposition::MemoryReadDefined {
+        |memory: &SymbolicMemory, pointer: OldAddress, value_type| Proposition::MemoryReadDefined {
             at: None,
             memory: memory.clone(),
             pointer,
@@ -584,7 +584,7 @@ fn cached_read_definedness_checks_only_the_selected_typed_cell() {
 #[test]
 fn declared_word_definedness_requires_its_complete_initialized_representation() {
     let _session = VerificationSession::enter();
-    let pointer = Address {
+    let pointer = OldAddress {
         base: AddressBase::Concrete("local:initialized-word".into()),
         offset: OldAddressOffset::Constant(0),
     };
@@ -618,11 +618,11 @@ fn computation_refusal_is_independent_of_memory_history() {
     let mut costs = Vec::new();
     for size in [4, 16, 64, 256] {
         let _session = VerificationSession::enter();
-        let pointer = Address {
+        let pointer = OldAddress {
             base: AddressBase::Concrete("computation-read".into()),
             offset: OldAddressOffset::Constant(0),
         };
-        let other = Address {
+        let other = OldAddress {
             base: AddressBase::Concrete("computation-write".into()),
             offset: OldAddressOffset::Constant(0),
         };

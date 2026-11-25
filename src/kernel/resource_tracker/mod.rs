@@ -140,7 +140,7 @@ pub(crate) enum TrackedResource<'a> {
     /// the separated set, never grow it. A value of abstract type reaches its
     /// whole object, `sizeof(T)` bytes ([`AccessExtent::Object`]).
     Cell {
-        pointer: &'a Address,
+        pointer: &'a OldAddress,
         bytes: AccessExtent,
     },
     /// A whole memory block, as a pure function reads it through an array
@@ -214,7 +214,7 @@ impl TrackedResource<'_> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum OwnedResource {
     Cell {
-        pointer: Address,
+        pointer: OldAddress,
         bytes: AccessExtent,
     },
     Block(AddressBase),
@@ -310,17 +310,17 @@ impl Stop {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum Change {
     /// One address was assigned.
-    Store { pointer: Address },
+    Store { pointer: OldAddress },
     /// A compact range of cell values was recorded. The edge does not
     /// distinguish input materialization from a source-level range write.
-    CellsSeeded { pointer: Address },
+    CellsSeeded { pointer: OldAddress },
     /// A call may have written the ranges it declared.
     Call { ranges: Vec<MemoryRange> },
     /// A loop may have written the ranges its checked effect summary
     /// declared, or anything at all when it declared none.
     Loop { ranges: Option<Vec<MemoryRange>> },
     /// One heap allocation's lifetime ended.
-    Free { allocation: Address },
+    Free { allocation: OldAddress },
     /// A fresh heap block became live.
     Allocation { block: AddressBase },
     /// An allocation request has no resolved address yet.
@@ -328,7 +328,7 @@ pub(crate) enum Change {
     /// Allocation claims moved across a contract boundary.
     ContractAllocationClaims,
     /// A contract consumed an allocation and did not guarantee continuity.
-    ContractRetirement { allocation: Address },
+    ContractRetirement { allocation: OldAddress },
     /// A block entered the memory model.
     Declaration { block: AddressBase },
     /// An automatic-storage object was retired.
@@ -533,7 +533,7 @@ impl Explanation {
 
 thread_local! {
     static PATH_CELL_VERSION_MEMO: std::cell::RefCell<
-        std::collections::HashMap<(ProgramPointId, Address, AccessExtent), PathLink>,
+        std::collections::HashMap<(ProgramPointId, OldAddress, AccessExtent), PathLink>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
@@ -554,7 +554,7 @@ thread_local! {
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn cell_version_on_path(
     at: &PathLink,
-    pointer: &Address,
+    pointer: &OldAddress,
     bytes: AccessExtent,
 ) -> Option<PathLink> {
     at.id()?;
@@ -734,7 +734,7 @@ pub(crate) fn last_same(resource: TrackedResource<'_>, at: &ProgramPoint) -> Opt
 /// for pays no second walk.
 #[track_caller]
 pub(crate) fn last_same_named_cell(
-    pointer: &Address,
+    pointer: &OldAddress,
     bytes: AccessExtent,
     at: &ProgramPoint,
 ) -> Option<LastSame> {
@@ -751,7 +751,7 @@ pub(crate) fn last_same_named_cell(
 #[track_caller]
 pub(crate) fn last_same_cell_memory(
     memory: &SharedMemory,
-    pointer: &Address,
+    pointer: &OldAddress,
     bytes: AccessExtent,
 ) -> Option<(SharedMemory, Stop)> {
     let version = legacy_walk_audit::counted(&TrackedResource::Cell { pointer, bytes }, || {
@@ -1241,7 +1241,7 @@ struct NamedCellVersion {
 
 pub(super) fn cell_last_same_version_point(
     memory: &SharedMemory,
-    pointer: &Address,
+    pointer: &OldAddress,
     bytes: AccessExtent,
 ) -> Option<SharedMemory> {
     cell_last_same_version(memory, pointer, bytes).map(|version| version.memory)
@@ -1249,7 +1249,7 @@ pub(super) fn cell_last_same_version_point(
 
 fn cell_last_same_version(
     memory: &SharedMemory,
-    pointer: &Address,
+    pointer: &OldAddress,
     bytes: AccessExtent,
 ) -> Option<NamedCellVersion> {
     // Assumption-free and a function of the interned state, the pointer,
@@ -1400,7 +1400,7 @@ fn cell_last_same_version(
 /// `assumptions` hold.
 pub(crate) fn cell_value_on_path(
     at: &SharedMemory,
-    pointer: &Address,
+    pointer: &OldAddress,
     bytes: u32,
     assumptions: &PureFactContext,
 ) -> Option<crate::kernel::ExecutionValue> {
@@ -1422,7 +1422,7 @@ pub(crate) fn cell_value_on_path(
 #[track_caller]
 pub(crate) fn static_cell_unwritten_since_entry_on_path(
     at: &SharedMemory,
-    pointer: &Address,
+    pointer: &OldAddress,
     bytes: u32,
     assumptions: &PureFactContext,
 ) -> Option<(SharedMemory, SharedMemory)> {
@@ -1450,7 +1450,7 @@ pub(crate) fn static_cell_unwritten_since_entry_on_path(
 thread_local! {
     static CELL_VERSION_MEMO: std::cell::RefCell<
         std::collections::HashMap<
-            (crate::kernel::SharedMemory, Address, AccessExtent),
+            (crate::kernel::SharedMemory, OldAddress, AccessExtent),
             Option<NamedCellVersion>,
         >,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
@@ -1672,7 +1672,7 @@ fn collect_condition_reads(condition: &OldConditionTerm, reads: &mut Vec<Resourc
 
 /// A loaded pointer reads the complete pointer cell its name was defined at,
 /// at the point that name embeds, as an offset's load variable reads its cell.
-fn collect_pointer_reads(pointer: &Address, reads: &mut Vec<ResourceRead>) {
+fn collect_pointer_reads(pointer: &OldAddress, reads: &mut Vec<ResourceRead>) {
     collect_address_base_reads(&pointer.base, reads);
     collect_offset_reads(&pointer.offset, reads);
 }

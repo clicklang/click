@@ -298,12 +298,12 @@ mod tests {
     fn name(number: u64) -> MutexAuthorityId {
         MutexAuthorityId::from_variable(Variable(number))
     }
-    use crate::kernel::{Address, MutexIdentity, MutexUseIdentity, ResourceContext};
+    use crate::kernel::{MutexIdentity, MutexUseIdentity, OldAddress, ResourceContext};
 
     fn authority(epoch: u64) -> ResourceFact {
         ResourceFact::own(Resource::MutexLive(MutexIdentity {
             epoch: Some(epoch),
-            mutex: Address::symbolic(Variable(400)),
+            mutex: OldAddress::symbolic(Variable(400)),
         }))
     }
 
@@ -312,7 +312,7 @@ mod tests {
             protected: None,
             binding: None,
             initialization: Some(epoch),
-            mutex: Address::symbolic(mutex),
+            mutex: OldAddress::symbolic(mutex),
         }))
     }
 

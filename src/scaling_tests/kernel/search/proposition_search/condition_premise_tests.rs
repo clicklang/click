@@ -115,7 +115,7 @@ fn state_condition_index_builds_once_and_survives_scalar_updates() {
                 left: Box::new(term(20_000 + index as u64)),
                 right: Box::new(OldMachineTerm::read_named(
                     ProgramPoint::at(&memory),
-                    Box::new(Address {
+                    Box::new(OldAddress {
                         base: "other".into(),
                         offset: OldAddressOffset::Constant(index as i64 * 4),
                     }),
@@ -153,7 +153,7 @@ fn state_condition_index_builds_once_and_survives_scalar_updates() {
             left: Box::new(term(90_000)),
             right: Box::new(OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
-                Box::new(Address {
+                Box::new(OldAddress {
                     base: "other".into(),
                     offset: OldAddressOffset::Constant(0),
                 }),
@@ -262,7 +262,7 @@ fn covering_loadability_avoids_unrelated_adjacency_search() {
         let memory = SymbolicMemory::new();
         // The theorem frontend represents these pointers in one block, so
         // unrelated ranges remain candidates for the adjacency search.
-        let pointer = |index| Address {
+        let pointer = |index| OldAddress {
             base: AddressBase::ExternalArgument,
             offset: OldAddressOffset::scale_int32(term(index), 4),
         };
@@ -321,7 +321,7 @@ fn arithmetic_candidates_omit_registered_read_definitions() {
         for index in 0..size {
             let read = OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
-                Box::new(Address {
+                Box::new(OldAddress {
                     base: "buffer".into(),
                     offset: OldAddressOffset::Constant(index * 4),
                 }),

@@ -3619,7 +3619,7 @@ pub(in crate::surface) fn pure_function_parameter_argument(
         && argument_is_null_pointer_constant(literal, ty)
     {
         return SyntaxTerm::ProgramExpression(ProgramExpression::Value(
-            ProgramValue::typed_pointer(Address::null(), ty.to_kernel_type()),
+            ProgramValue::typed_pointer(OldAddress::null(), ty.to_kernel_type()),
         ));
     }
     let Some((target_type, integer_mode)) = pure_function_parameter_conversion(parameter) else {

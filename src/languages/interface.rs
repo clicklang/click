@@ -286,7 +286,7 @@ pub struct RecordLayout {
     /// Embedded struct fields are flattened here while preserving their
     /// declared names as qualified paths and their complete ABI offsets.
     pub(super) aggregate_fields: Vec<RecordScalarField>,
-    /// Address-overlapping union storage retained separately from scalar leaf
+    /// OldAddress-overlapping union storage retained separately from scalar leaf
     /// fields. Flattening union members into `aggregate_fields` would make a
     /// by-value copy overwrite one member with another.
     pub(super) aggregate_unions: Vec<RecordUnionLayout>,

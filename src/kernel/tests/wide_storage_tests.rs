@@ -1,7 +1,7 @@
 use super::*;
 
-fn address(offset: i64) -> Address {
-    Address {
+fn address(offset: i64) -> OldAddress {
+    OldAddress {
         base: "local:wide-storage".into(),
         offset: OldAddressOffset::Constant(offset),
     }
@@ -14,7 +14,7 @@ fn literal(value: ProgramExpression) -> ProgramValue {
     value
 }
 
-fn load(pointer: Address, ty: ProgramType) -> ProgramExpression {
+fn load(pointer: OldAddress, ty: ProgramType) -> ProgramExpression {
     crate::kernel::program_expression::typed_load(
         crate::kernel::program_expression::typed_pointer_value(pointer, ProgramType::VoidPointer),
         ty,
@@ -194,7 +194,7 @@ fn wide_storage_symbolic_load_requires_full_span_and_local_initialization() {
                 .is_none()
         );
     }
-    let pointer = Address {
+    let pointer = OldAddress {
         base: "local:wide-storage".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -332,7 +332,7 @@ fn wide_storage_overlapping_store_invalidates_high_bytes_and_gap_skip() {
 
 #[test]
 fn wide_storage_external_access_needs_sixteen_bytes_of_authority() {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: "wide-external".into(),
         offset: OldAddressOffset::Constant(0),
     };

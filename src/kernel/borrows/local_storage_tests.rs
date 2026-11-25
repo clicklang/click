@@ -1,10 +1,10 @@
 use super::*;
-use crate::kernel::{Address, OldAddressOffset, SymbolicMemory};
+use crate::kernel::{OldAddress, OldAddressOffset, SymbolicMemory};
 
 fn view(index: usize, end: u32) -> CheckedResourceFact {
     CheckedResourceFact {
         fact: ResourceFact::view_memory(MemoryRange::new(
-            Address {
+            OldAddress {
                 base: format!("local:borrow-{index}").into(),
                 offset: OldAddressOffset::Constant(0),
             },
@@ -89,8 +89,12 @@ fn automatic_storage_retirement_uses_the_retained_backing_identity() {
     let slot = SymbolicMemory::local_lifetime_pointer(1, "buffer");
     let other = SymbolicMemory::local_lifetime_pointer(2, "buffer");
     let bound = OldMachineTerm::Variable(Variable(91));
-    let symbolic = MemoryRange::new(Address::symbolic(Variable(90)), 0u32.into(), bound.clone())
-        .with_provenance(Arc::new(slot.clone()));
+    let symbolic = MemoryRange::new(
+        OldAddress::symbolic(Variable(90)),
+        0u32.into(),
+        bound.clone(),
+    )
+    .with_provenance(Arc::new(slot.clone()));
     let ledger = BorrowLedger::new();
     let lender = ledger.fresh_participant().unwrap();
     let borrower = ledger.fresh_participant().unwrap();
@@ -165,13 +169,13 @@ fn local_borrow_admission_distinguishes_overlap_from_missing_separation() {
         Err(StableViewPlanError::Borrow(BorrowRefusal::ActiveDependency)),
     );
 
-    let other = Address::symbolic(Variable(99_100));
+    let other = OldAddress::symbolic(Variable(99_100));
     let known_alias = PureFactContext::new().assume_condition(
         crate::kernel::OldConditionTerm::address_equal(range.base().clone(), other.clone()),
         true,
     );
     let unrelated = MemoryRange::new(
-        Address::symbolic(Variable(99_101)),
+        OldAddress::symbolic(Variable(99_101)),
         0u32.into(),
         1u32.into(),
     );

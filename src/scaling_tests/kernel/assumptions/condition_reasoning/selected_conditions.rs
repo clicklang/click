@@ -9,8 +9,8 @@ fn exact_memory_condition_matches_ignore_other_facts() {
             crate::kernel::IntegerTerm::var(Variable(right)).into(),
         ),
         1 => OldConditionTerm::address_equal(
-            Address::symbolic(Variable(left)),
-            Address::symbolic(Variable(right)),
+            OldAddress::symbolic(Variable(left)),
+            OldAddress::symbolic(Variable(right)),
         ),
         2 => OldConditionTerm::uint64_less_than(var(left), var(right)),
         3 => OldConditionTerm::signed_less_than(
@@ -308,7 +308,7 @@ fn compound_load_condition_hits_and_misses_ignore_other_facts() {
                 let var = |id| OldMachineTerm::Variable(Variable(id));
                 let raw = OldMachineTerm::read_named(
                     ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
-                    Box::new(Address::symbolic(Variable(997_000))),
+                    Box::new(OldAddress::symbolic(Variable(997_000))),
                     crate::kernel::LoadKind::Int32,
                 );
                 let named = OldMachineTerm::Variable(

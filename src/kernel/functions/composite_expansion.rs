@@ -6,7 +6,7 @@ use crate::kernel::ContractEntryRefusal;
 /// Whether a composite fact names the base of `pointer` among its pointer
 /// arguments by structure: the same pointer, or one that `pointer` is a
 /// constant offset from.
-pub(super) fn composite_names_pointer_base(composite: &ResourceFact, pointer: &Address) -> bool {
+pub(super) fn composite_names_pointer_base(composite: &ResourceFact, pointer: &OldAddress) -> bool {
     let Resource::Composite { arguments, .. } = composite.resource() else {
         return false;
     };

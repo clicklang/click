@@ -293,7 +293,7 @@ mod tests {
     }
     #[test]
     fn declared_provenance_supply_type_evidence_without_changing_pointer_views() {
-        let object = Address {
+        let object = OldAddress {
             base: "declared_node".into(),
             offset: OldAddressOffset::Constant(0),
         };
@@ -301,7 +301,7 @@ mod tests {
             SymbolicMemory::new().with_classed_block(object.base.clone(), Some(class()), 8);
         let make = |provenance| {
             let ProgramValue::Pointer(pointer) = ProgramValue::typed_pointer(
-                Address::symbolic(Variable(900_010)),
+                OldAddress::symbolic(Variable(900_010)),
                 ProgramType::Int32Pointer,
             ) else {
                 unreachable!()
@@ -331,7 +331,7 @@ mod tests {
         for (mut value, declared) in [
             (original.clone(), SymbolicMemory::new()),
             (
-                make(Address {
+                make(OldAddress {
                     offset: OldAddressOffset::Constant(4),
                     ..object
                 }),
@@ -354,7 +354,7 @@ mod tests {
     #[test]
     fn unrequired_formal_origins_survive_pointer_words_without_becoming_type_evidence() {
         let value = ProgramValue::typed_pointer(
-            Address::symbolic(Variable(900_001)),
+            OldAddress::symbolic(Variable(900_001)),
             ProgramType::Int32Pointer,
         )
         .with_contract_pointer_object_class(Some(class()), None, 0, 42);
@@ -393,7 +393,7 @@ mod tests {
     fn numeric_address_annotations_cannot_manufacture_nominal_type_evidence() {
         let _session = crate::kernel::VerificationSession::enter();
         let original = ProgramValue::typed_pointer(
-            Address::symbolic(Variable(900_002)),
+            OldAddress::symbolic(Variable(900_002)),
             ProgramType::Int32Pointer,
         )
         .with_pointer_object_class(Some(class()));
@@ -450,7 +450,7 @@ mod tests {
             .map(|index| {
                 PureFunctionArgument::Value(
                     ProgramValue::typed_pointer(
-                        Address::symbolic(Variable(900_002 + index as u64)),
+                        OldAddress::symbolic(Variable(900_002 + index as u64)),
                         ProgramType::Int32Pointer,
                     )
                     .with_contract_pointer_object_class(

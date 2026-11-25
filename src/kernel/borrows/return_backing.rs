@@ -75,12 +75,12 @@ mod tests {
     #[test]
     fn permission_updates_are_indexed_and_branch_local() {
         let a = ResourceFact::view_memory(MemoryRange::new(
-            Address::symbolic(Variable(8_910_001)),
+            OldAddress::symbolic(Variable(8_910_001)),
             0u32.into(),
             1u32.into(),
         ));
         let b = ResourceFact::view_memory(MemoryRange::new(
-            Address::symbolic(Variable(8_910_002)),
+            OldAddress::symbolic(Variable(8_910_002)),
             0u32.into(),
             1u32.into(),
         ));
@@ -90,7 +90,7 @@ mod tests {
         assert_eq!(parent.candidate(&b), Some(&a));
         assert_eq!(child.candidate(&b), Some(&b));
         let missing = ResourceFact::view_memory(MemoryRange::new(
-            Address::symbolic(Variable(8_910_003)),
+            OldAddress::symbolic(Variable(8_910_003)),
             0u32.into(),
             1u32.into(),
         ));

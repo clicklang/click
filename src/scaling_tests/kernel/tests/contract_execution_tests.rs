@@ -250,7 +250,7 @@ fn automatic_scalar_ownership_work_is_independent_of_unrelated_storage() {
         let mut memory = SymbolicMemory::new();
         let mut resources = ResourceContext::new();
         for index in 0..count {
-            let pointer = Address {
+            let pointer = OldAddress {
                 base: format!("global:unrelated:{index}").into(),
                 offset: OldAddressOffset::Constant(0),
             };

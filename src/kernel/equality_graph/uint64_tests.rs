@@ -1,7 +1,7 @@
 use super::*;
 use crate::kernel::VerificationSession;
 
-fn word(memory: &SharedMemory, pointer: &Address, bytes: u32) -> OldMachineTerm {
+fn word(memory: &SharedMemory, pointer: &OldAddress, bytes: u32) -> OldMachineTerm {
     OldMachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
         memory,
         pointer,
@@ -9,7 +9,7 @@ fn word(memory: &SharedMemory, pointer: &Address, bytes: u32) -> OldMachineTerm 
         bytes,
     ))
 }
-fn packed(value: &OldMachineTerm, parent: &Address) -> OldMachineTerm {
+fn packed(value: &OldMachineTerm, parent: &OldAddress) -> OldMachineTerm {
     OldMachineTerm::Binary {
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::Add,
@@ -28,14 +28,14 @@ fn packed(value: &OldMachineTerm, parent: &Address) -> OldMachineTerm {
 fn fact(a: OldMachineTerm, b: OldMachineTerm) -> Proposition {
     Proposition::condition_is(OldConditionTerm::uint64_equal(a, b), true)
 }
-fn alias(a: &Address, b: &Address) -> Proposition {
+fn alias(a: &OldAddress, b: &OldAddress) -> Proposition {
     Proposition::condition_is(OldConditionTerm::address_equal(a.clone(), b.clone()), true)
 }
 fn proved(context: &PureFactContext, goal: &Proposition) -> bool {
     crate::kernel::reasoning::required_obligation_is_exactly_discharged(context, goal)
 }
 
-fn raw_address(pointer: &Address) -> OldMachineTerm {
+fn raw_address(pointer: &OldAddress) -> OldMachineTerm {
     // Deliberately bypass the surface constructor's address cancellation.
     OldMachineTerm::IntegerAddress(Box::new(pointer.clone()), AddressObjectClass::NONE)
 }
@@ -44,8 +44,8 @@ fn raw_address(pointer: &Address) -> OldMachineTerm {
 fn integer_address_coordinates_join_word_classes_and_follow_scoped_equalities() {
     let _session = VerificationSession::enter();
     let bits = OldMachineTerm::Variable(Variable(960_001));
-    let pointer = Address::symbolic(Variable(960_002));
-    let decoded = Address::from_integer_address(bits.clone());
+    let pointer = OldAddress::symbolic(Variable(960_002));
+    let decoded = OldAddress::from_integer_address(bits.clone());
     let equation = fact(bits.clone(), raw_address(&pointer));
     let goal = Proposition::condition_is(
         OldConditionTerm::uint64_equal(raw_address(&decoded), raw_address(&pointer)),
@@ -95,8 +95,8 @@ fn integer_address_coordinates_join_word_classes_and_follow_scoped_equalities() 
 fn integer_address_definition_preserves_byte_displacements_and_load_states() {
     let _session = VerificationSession::enter();
     let bits = OldMachineTerm::Variable(Variable(960_003));
-    let decoded = Address::from_integer_address(bits.clone());
-    let shifted = Address {
+    let decoded = OldAddress::from_integer_address(bits.clone());
+    let shifted = OldAddress {
         base: decoded.base.clone(),
         offset: OldAddressOffset::Constant(8),
     };
@@ -106,7 +106,7 @@ fn integer_address_definition_preserves_byte_displacements_and_load_states() {
     assert!(!graph.are_uint64_equal(&raw_address(&shifted), &bits));
     // Equal numeric addresses connect compatible reads, not state identity.
     let memory = intern_memory(SymbolicMemory::new().with_block("coordinates", 32));
-    let pointer = Address {
+    let pointer = OldAddress {
         base: "coordinates".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -126,8 +126,8 @@ fn equal_integer_address_words_do_not_merge_pointer_names_or_domains() {
     let _session = VerificationSession::enter();
     let a = OldMachineTerm::Variable(Variable(960_005));
     let b = OldMachineTerm::Variable(Variable(960_006));
-    let p = Address::from_integer_address(a.clone());
-    let q = Address::from_integer_address(b.clone());
+    let p = OldAddress::from_integer_address(a.clone());
+    let q = OldAddress::from_integer_address(b.clone());
     let mut context = PureFactContext::new();
     assert!(
         !context
@@ -154,10 +154,10 @@ fn equal_integer_address_words_do_not_merge_pointer_names_or_domains() {
 fn wide_read_and_packed_word_congruence_compose_early_and_late() {
     let _session = VerificationSession::enter();
     let memory = intern_memory(SymbolicMemory::new().with_block("wide", 128));
-    let zid = Address::symbolic(Variable(910_001));
-    let sid = Address::symbolic(Variable(910_002));
-    let p = Address::loaded_value(&memory, &Address::symbolic(Variable(910_003)));
-    let q = Address::loaded_value(&memory, &Address::symbolic(Variable(910_004)));
+    let zid = OldAddress::symbolic(Variable(910_001));
+    let sid = OldAddress::symbolic(Variable(910_002));
+    let p = OldAddress::loaded_value(&memory, &OldAddress::symbolic(Variable(910_003)));
+    let q = OldAddress::loaded_value(&memory, &OldAddress::symbolic(Variable(910_004)));
     let v = word(&memory, &zid, 8);
     let a = word(&memory, &p, 8);
     let premise = fact(v.clone(), packed(&v, &sid));
@@ -195,8 +195,8 @@ fn wide_read_and_packed_word_congruence_compose_early_and_late() {
 fn wide_reads_preserve_state_width_and_value_sort() {
     let _session = VerificationSession::enter();
     let before = intern_memory(SymbolicMemory::new().with_block("wide", 128));
-    let p = Address::symbolic(Variable(920_001));
-    let q = Address::symbolic(Variable(920_002));
+    let p = OldAddress::symbolic(Variable(920_001));
+    let q = OldAddress::symbolic(Variable(920_002));
     let after = intern_memory(before.memory().clone().store(
         p.clone(),
         ProgramValue::UInt64(OldMachineTerm::uint64_constant(9)),
@@ -224,7 +224,7 @@ fn wide_reads_preserve_state_width_and_value_sort() {
     wide_only.add_uint64_equality(&x, &y);
     assert!(!wide_only.are_int32_equal(&x, &y));
     // Equality of applications never implies equality of their operands.
-    let r = Address::symbolic(Variable(920_003));
+    let r = OldAddress::symbolic(Variable(920_003));
     wide_only.add_uint64_equality(&packed(&x, &p), &packed(&x, &r));
     assert!(!wide_only.are_equal(&p, &r));
 }
@@ -232,8 +232,8 @@ fn wide_reads_preserve_state_width_and_value_sort() {
 #[test]
 fn wide_equality_inputs_reconstruct_in_derived_graphs() {
     let _session = VerificationSession::enter();
-    let p = Address::symbolic(Variable(930_001));
-    let q = Address::symbolic(Variable(930_002));
+    let p = OldAddress::symbolic(Variable(930_001));
+    let q = OldAddress::symbolic(Variable(930_002));
     let a = OldMachineTerm::Variable(Variable(930_003));
     let b = OldMachineTerm::Variable(Variable(930_004));
     let mut graph = EqualityGraph::default();
@@ -254,7 +254,7 @@ mod scaling_tests {
 fn a_wide_read_requires_an_explicit_store_equation_even_through_aliases() {
     let _session = VerificationSession::enter();
     let memory = intern_memory(SymbolicMemory::new().with_block("cells", 32));
-    let stored_at = Address {
+    let stored_at = OldAddress {
         base: "cells".into(),
         offset: OldAddressOffset::Constant(8),
     };
@@ -265,7 +265,7 @@ fn a_wide_read_requires_an_explicit_store_equation_even_through_aliases() {
             .clone()
             .store(stored_at.clone(), value.clone()),
     );
-    let alias_of = Address::symbolic(Variable(960_101));
+    let alias_of = OldAddress::symbolic(Variable(960_101));
     let read = word(&after, &alias_of, 8);
     let five = OldMachineTerm::uint64_constant(5);
     let base = PureFactContext::new();
@@ -299,7 +299,7 @@ fn a_wide_read_requires_an_explicit_store_equation_even_through_aliases() {
 fn raw_wide_read_requires_its_explicit_store_equation() {
     use crate::kernel::{KernelTermImport, MachineOperandView as V};
     let _session = VerificationSession::enter();
-    let pointer = Address {
+    let pointer = OldAddress {
         base: "wide".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -361,7 +361,7 @@ fn shared_wide_endpoint_queries_preserve_exact_sources_and_scope() {
     let root = KernelTermImport::default()
         .machine_arithmetic(ty, &query)
         .unwrap();
-    let address = OldMachineTerm::integer_address(Address::symbolic(Variable(984004)));
+    let address = OldMachineTerm::integer_address(OldAddress::symbolic(Variable(984004)));
     let parent = PureFactContext::new().assume_proposition(fact(source.clone(), address));
     let exports = KernelTermExport::machine_export_count();
     assert!(

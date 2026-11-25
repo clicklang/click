@@ -21,7 +21,7 @@ fn folded_without_read_views(state: ExecutionState) -> ExecutionState {
 fn separation_candidates_preserve_derived_aliases_and_loaded_bases() {
     let _session = crate::kernel::VerificationSession::enter();
     let scalar = |id: u64| OldMachineTerm::Variable(Variable(989_700 + id));
-    let base = |value| Address {
+    let base = |value| OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scale_int32(value, 4),
     };
@@ -85,7 +85,7 @@ fn separation_candidates_preserve_derived_aliases_and_loaded_bases() {
 
     // No condition names `a`: the owner's loaded base must remain a
     // candidate because the memory edge itself resolves it to `a`.
-    let slot = Address::symbolic(Variable(989_799));
+    let slot = OldAddress::symbolic(Variable(989_799));
     let retained_state = SymbolicMemory::new().store(slot.clone(), ProgramValue::Int32(a.clone()));
     let loaded = OldMachineTerm::read_named(
         ProgramPoint::at(&(crate::kernel::intern_memory(retained_state))),
@@ -108,13 +108,13 @@ fn separation_candidates_follow_a_block_alias_to_the_owner() {
     // parameter's address, so its owner lives in another block.
     let _session = crate::kernel::VerificationSession::enter();
     let a = OldMachineTerm::Variable(Variable(989_800));
-    let parameter = Address {
+    let parameter = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scale_int32(a, 4),
     };
-    let loaded = Address::symbolic(Variable(989_801));
-    let target = Address::symbolic(Variable(989_802));
-    let range = |pointer: Address, start: u32, end: u32| {
+    let loaded = OldAddress::symbolic(Variable(989_801));
+    let target = OldAddress::symbolic(Variable(989_802));
+    let range = |pointer: OldAddress, start: u32, end: u32| {
         MemoryRange::new_with_element_width(pointer, start.into(), end.into(), 4)
     };
     let frame = ResourceContext::new()
@@ -373,12 +373,12 @@ fn validated_resource_rebuilds_preserve_metadata_and_instance_bodies() {
 
 #[test]
 fn owned_range_access_survives_learning_a_symbolic_pointer_alias() {
-    let cell = Address::symbolic(Variable(100));
-    let slot = Address {
+    let cell = OldAddress::symbolic(Variable(100));
+    let slot = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(101)), 4),
     };
-    let unrelated = Address::symbolic(Variable(102));
+    let unrelated = OldAddress::symbolic(Variable(102));
     let range = MemoryRange::new(
         cell.clone(),
         OldMachineTerm::constant(0),
@@ -417,12 +417,12 @@ fn owned_range_read_survives_learning_a_symbolic_pointer_alias() {
     // the symbolic pointer to its non-symbolic alias and look only there,
     // refusing a read of a cell the state plainly owned (the insert fixup's
     // `gparent->__rb_parent_color` after `gparent == cgp`).
-    let cell = Address::symbolic(Variable(100));
-    let slot = Address {
+    let cell = OldAddress::symbolic(Variable(100));
+    let slot = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(101)), 4),
     };
-    let unrelated = Address::symbolic(Variable(102));
+    let unrelated = OldAddress::symbolic(Variable(102));
     let range = MemoryRange::new(
         cell.clone(),
         OldMachineTerm::constant(0),
@@ -448,13 +448,13 @@ fn owned_memory_consumption_survives_a_late_transitive_displaced_alias() {
     // An unfold can publish a cell before a later proof arm establishes the
     // equality used by fold. Keep the resource state fixed while the pure
     // context forks and learns the two links in either order.
-    let owner_root = Address::symbolic(Variable(210));
-    let owner = Address {
+    let owner_root = OldAddress::symbolic(Variable(210));
+    let owner = OldAddress {
         base: owner_root.base.clone(),
         offset: OldAddressOffset::Constant(8),
     };
-    let middle = Address::symbolic(Variable(211));
-    let requested = Address {
+    let middle = OldAddress::symbolic(Variable(211));
+    let requested = OldAddress {
         base: AddressBase::Symbolic(Variable(212)),
         offset: OldAddressOffset::Constant(8),
     };
@@ -477,7 +477,7 @@ fn owned_memory_consumption_survives_a_late_transitive_displaced_alias() {
     for reverse in [false, true] {
         let links = [
             OldConditionTerm::address_equal(owner_root.clone(), middle.clone()),
-            OldConditionTerm::address_equal(middle.clone(), Address::symbolic(Variable(212))),
+            OldConditionTerm::address_equal(middle.clone(), OldAddress::symbolic(Variable(212))),
         ];
         let mut assumptions = empty.clone();
         for link in if reverse {
@@ -500,7 +500,7 @@ fn owned_memory_consumption_survives_a_late_transitive_displaced_alias() {
             resources
                 .clone()
                 .without_fact_incrementally(
-                    &cell(Address {
+                    &cell(OldAddress {
                         base: requested.base.clone(),
                         offset: OldAddressOffset::Constant(12)
                     }),
@@ -525,9 +525,9 @@ fn paired_memory_index_tracks_resource_deltas_and_displaced_merges() {
             OldMachineTerm::constant(1),
         ))
     };
-    let owner = Address::symbolic(Variable(810_000));
-    let alias = Address::symbolic(Variable(810_001));
-    let shifted = Address {
+    let owner = OldAddress::symbolic(Variable(810_000));
+    let alias = OldAddress::symbolic(Variable(810_001));
+    let shifted = OldAddress {
         base: owner.base.clone(),
         offset: OldAddressOffset::Constant(8),
     };
@@ -541,7 +541,7 @@ fn paired_memory_index_tracks_resource_deltas_and_displaced_merges() {
         assumptions = assumptions.assume_condition(
             OldConditionTerm::address_equal(
                 alias.clone(),
-                Address::symbolic(Variable(810_000 + i)),
+                OldAddress::symbolic(Variable(810_000 + i)),
             ),
             true,
         );
@@ -598,8 +598,8 @@ fn paired_memory_index_tracks_resource_deltas_and_displaced_merges() {
 
 #[test]
 fn paired_memory_index_consumes_inside_a_displaced_aliased_range() {
-    let owner = Address::symbolic(Variable(830_000));
-    let alias = Address::symbolic(Variable(830_001));
+    let owner = OldAddress::symbolic(Variable(830_000));
+    let alias = OldAddress::symbolic(Variable(830_001));
     let resources =
         ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
             owner.clone(),
@@ -609,7 +609,7 @@ fn paired_memory_index_consumes_inside_a_displaced_aliased_range() {
     let assumptions = PureFactContext::new()
         .assume_condition(OldConditionTerm::address_equal(owner, alias.clone()), true);
     let required = ResourceFact::own_memory(MemoryRange::new(
-        Address {
+        OldAddress {
             base: alias.base.clone(),
             offset: OldAddressOffset::Constant(4),
         },
@@ -639,8 +639,8 @@ fn paired_memory_index_consumes_inside_a_displaced_aliased_range() {
 
 #[test]
 fn owned_fragment_reservation_checks_aliases_gaps_and_linear_consumption() {
-    let base = Address::symbolic(Variable(862_000));
-    let returned = Address::symbolic(Variable(862_001));
+    let base = OldAddress::symbolic(Variable(862_000));
+    let returned = OldAddress::symbolic(Variable(862_001));
     let bytes = |start: u32, end: u32| {
         ResourceFact::own_memory(MemoryRange::new_with_element_width(
             base.clone(),
@@ -669,7 +669,7 @@ fn owned_fragment_reservation_checks_aliases_gaps_and_linear_consumption() {
     );
     let facts = empty.clone().assume_condition(
         OldConditionTerm::address_equal(
-            Address {
+            OldAddress {
                 base: base.base.clone(),
                 offset: OldAddressOffset::Constant(8),
             },
@@ -718,7 +718,7 @@ fn owned_fragment_reservation_checks_aliases_gaps_and_linear_consumption() {
 
 #[test]
 fn owned_fragment_reservation_preserves_native_supplier_bounds() {
-    let base = Address::symbolic(Variable(862_019));
+    let base = OldAddress::symbolic(Variable(862_019));
     let owner = ResourceFact::own_memory(MemoryRange::new_wide(
         base.clone(),
         OldMachineTerm::uint64_constant(0),
@@ -760,8 +760,8 @@ fn owned_fragment_reservation_preserves_native_supplier_bounds() {
 fn owned_fragment_reservation_joins_mixed_width_fields_at_symbolic_bases() {
     let facts = PureFactContext::new();
     for base in [
-        Address::symbolic(Variable(862_020)),
-        Address {
+        OldAddress::symbolic(Variable(862_020)),
+        OldAddress {
             base: AddressBase::ExternalArgument,
             offset: OldAddressOffset::Variable(Variable(862_021)),
         },
@@ -842,7 +842,7 @@ fn instance_memory_fixture() -> (
         ResourceFieldType::Program(ProgramType::Int32),
     )])
     .unwrap();
-    let pointer = Address {
+    let pointer = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(100)), 4),
     };
@@ -969,9 +969,9 @@ fn recursive_child_fixture() -> (
         node: AlgebraicTermNode::Constructor {
             variant: "Set".into(),
             fields: vec![
-                ProgramValue::pointer(Address::null()).into(),
+                ProgramValue::pointer(OldAddress::null()).into(),
                 AlgebraicValue::Algebraic(empty.clone()),
-                ProgramValue::pointer(Address::null()).into(),
+                ProgramValue::pointer(OldAddress::null()).into(),
                 AlgebraicValue::Algebraic(empty),
             ],
         },
@@ -1166,12 +1166,16 @@ fn unfolding_a_child_retains_its_checked_pointer_read_in_the_callers_graph() {
     else {
         unreachable!()
     };
-    let stored = OldPointer::new(Address::symbolic(Variable(559)), ProgramType::Int32Pointer);
+    let stored = OldPointer::new(
+        OldAddress::symbolic(Variable(559)),
+        ProgramType::Int32Pointer,
+    );
     let state = state.with_memory(SymbolicMemory::new().store(
         parent.address().clone(),
         ProgramValue::Pointer(stored.clone()),
     ));
-    let observed = Address::loaded_value(&intern_memory(state.memory().clone()), parent.address());
+    let observed =
+        OldAddress::loaded_value(&intern_memory(state.memory().clone()), parent.address());
     let equation = ExecutionPureFact::logical_read_equation(stored, observed)
         .proposition()
         .clone();
@@ -1324,7 +1328,7 @@ fn recursive_child_kernel_keeps_unknown_submodels_folded() {
     let AlgebraicTermNode::Constructor { fields, .. } = &mut model.node else {
         unreachable!()
     };
-    fields[0] = ProgramValue::pointer(Address::symbolic(Variable(556))).into();
+    fields[0] = ProgramValue::pointer(OldAddress::symbolic(Variable(556))).into();
     fields[1] = AlgebraicValue::Algebraic(unknown.clone());
     // Rebuild the outer argument list after updating only its immediate fields.
     let model = model.clone();
@@ -1393,7 +1397,7 @@ fn instance_memory_guard_requires_a_proved_case_and_exposes_only_that_case() {
     else {
         panic!("fixture pointer");
     };
-    let guard = OldConditionTerm::address_equal(pointer.address().clone(), Address::null());
+    let guard = OldConditionTerm::address_equal(pointer.address().clone(), OldAddress::null());
     let unknown = PureFactContext::new();
     assert!(rewrite_resource_instance(&state, &instance, &definition, &unknown, true).is_err());
     for is_null in [false, true] {
@@ -2002,8 +2006,8 @@ fn resource_instance_contract_selects_current_fields_without_promising_preservat
 
 #[test]
 fn resource_instance_substitution_preserves_identity_without_memory_authority() {
-    let pointer = Address::symbolic(Variable(10));
-    let target = Address {
+    let pointer = OldAddress::symbolic(Variable(10));
+    let target = OldAddress {
         base: "instance-target".into(),
         offset: OldAddressOffset::Constant(12),
     };
@@ -2014,7 +2018,7 @@ fn resource_instance_substitution_preserves_identity_without_memory_authority() 
             AlgebraicValueType::Program(ProgramType::Int32),
         ],
     );
-    let make = |p: Address, value: OldMachineTerm| {
+    let make = |p: OldAddress, value: OldMachineTerm| {
         let model = AlgebraicTerm {
             algebraic_type: ty.clone(),
             node: AlgebraicTermNode::Constructor {
@@ -2259,8 +2263,8 @@ fn symbolic_resource_indices_distinguish_constructors() {
 
 #[test]
 fn symbolic_resource_indices_substitute_nested_payloads_without_memory_authority() {
-    let pointer = Address::symbolic(Variable(990_020));
-    let target = Address {
+    let pointer = OldAddress::symbolic(Variable(990_020));
+    let target = OldAddress {
         base: "indexed-target".into(),
         offset: OldAddressOffset::Constant(12),
     };
@@ -2271,7 +2275,7 @@ fn symbolic_resource_indices_substitute_nested_payloads_without_memory_authority
             AlgebraicValueType::Program(ProgramType::Int32),
         ],
     );
-    let model = |p: Address, value: OldMachineTerm| AlgebraicTerm {
+    let model = |p: OldAddress, value: OldMachineTerm| AlgebraicTerm {
         algebraic_type: ty.clone(),
         node: AlgebraicTermNode::Constructor {
             variant: "Set".into(),
@@ -2662,7 +2666,7 @@ fn duplicate_authority_occurrences_survive_normalization_in_order() {
     )));
     let first_view = ResourceFact::view_token("first_view".to_string(), Vec::new());
     let second_view = ResourceFact::view_token("second_view".to_string(), Vec::new());
-    let base = Address {
+    let base = OldAddress {
         base: "unrelated".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -2764,7 +2768,7 @@ fn cached_projection_finds_the_owned_resource_that_packages_a_fact() {
     let allocation = ResourceFact::own_token(
         ResourceFact::ALLOCATION_RESOURCE_NAME.to_string(),
         vec![
-            ProgramValue::pointer(Address {
+            ProgramValue::pointer(OldAddress {
                 base: "allocation".into(),
                 offset: OldAddressOffset::Constant(0),
             }),
@@ -2824,7 +2828,7 @@ fn resource_join_drops_projection_when_memory_footprints_diverge() {
     let support = ResourceFact::own_composite("join_memory_support".into(), Vec::new());
     let view = |block: &str| {
         ResourceFact::view_memory(MemoryRange::new(
-            Address {
+            OldAddress {
                 base: block.into(),
                 offset: OldAddressOffset::Constant(0),
             },
@@ -3015,7 +3019,7 @@ fn resource_memory_block_and_interval_indexes_update_logarithmically() {
     for size in [16_usize, 64, 256, 1024, 4096] {
         let context = ResourceContext::new().unchecked_with_facts((0..size).map(|index| {
             ResourceFact::own_memory(memory_range(
-                Address {
+                OldAddress {
                     base: format!("unrelated-{index}").into(),
                     offset: OldAddressOffset::Constant(0),
                 },
@@ -3024,7 +3028,7 @@ fn resource_memory_block_and_interval_indexes_update_logarithmically() {
             ))
         }));
         let target = ResourceFact::own_memory(memory_range(
-            Address {
+            OldAddress {
                 base: "target-block".into(),
                 offset: OldAddressOffset::Constant(0),
             },
@@ -3057,7 +3061,7 @@ fn resource_memory_block_and_interval_indexes_update_logarithmically() {
 fn direct_resource_match_candidates_ignore_unrelated_shapes_and_blocks() {
     let target = ResourceFact::own_token("target".to_string(), vec![int32(0)]);
     let target_memory = ResourceFact::view_memory(memory_range(
-        Address {
+        OldAddress {
             base: "target-block".into(),
             offset: OldAddressOffset::Constant(0),
         },
@@ -3067,7 +3071,7 @@ fn direct_resource_match_candidates_ignore_unrelated_shapes_and_blocks() {
     let context = unrelated_token_context(128)
         .unchecked_with_facts((0..128).map(|index| {
             ResourceFact::view_memory(memory_range(
-                Address {
+                OldAddress {
                     base: format!("unrelated-{index}").into(),
                     offset: OldAddressOffset::Constant(0),
                 },
@@ -3084,7 +3088,7 @@ fn direct_resource_match_candidates_ignore_unrelated_shapes_and_blocks() {
 
 #[test]
 fn installing_a_certified_resource_group_still_checks_the_existing_frame() {
-    let base = Address {
+    let base = OldAddress {
         base: "certified_group_cross_check".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -3114,7 +3118,7 @@ fn installing_a_certified_resource_group_still_checks_the_existing_frame() {
 /// whether the view was ever legitimate.
 #[test]
 fn an_unbound_view_beside_its_owner_normalizes_into_the_owner() {
-    let base = Address {
+    let base = OldAddress {
         base: "owner_absorbs_view".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -3140,7 +3144,7 @@ fn an_unbound_view_beside_its_owner_normalizes_into_the_owner() {
 /// sees two bare facts and cannot tell the two cases apart.
 #[test]
 fn a_borrow_bound_view_beside_an_owner_is_not_absorbed_by_normalization() {
-    let base = Address {
+    let base = OldAddress {
         base: "bound_view_survives".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -3181,7 +3185,7 @@ fn a_borrow_bound_view_beside_an_owner_is_not_absorbed_by_normalization() {
 
 #[test]
 fn resource_family_cores_are_view_facts() {
-    let base = Address {
+    let base = OldAddress {
         base: "p".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -3420,7 +3424,7 @@ fn declared_resource_quantities_are_part_of_context_equality() {
 /// body that had stored 9 into the cell and never refolded it.
 #[test]
 fn definitional_equality_reassembles_a_composite_only_where_its_facts_hold() {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: "reassembled-cell".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -3477,7 +3481,7 @@ fn definitional_equality_reassembles_a_composite_only_where_its_facts_hold() {
 
 #[test]
 fn missing_composite_query_ignores_ambient_memory_splits() {
-    let base = Address {
+    let base = OldAddress {
         base: "backing".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -3496,7 +3500,7 @@ fn owned_memory_query_without_owned_memory_is_rejected_structurally() {
         vec![int32(0)],
     ));
     let required = ResourceFact::own_memory(memory_range(
-        Address {
+        OldAddress {
             base: "p".into(),
             offset: OldAddressOffset::Constant(0),
         },
@@ -3509,7 +3513,7 @@ fn owned_memory_query_without_owned_memory_is_rejected_structurally() {
 
 #[test]
 fn batch_resource_consumption_splits_without_repeated_normalization() {
-    let base = Address {
+    let base = OldAddress {
         base: "p".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -3530,7 +3534,7 @@ fn batch_resource_consumption_splits_without_repeated_normalization() {
 #[test]
 fn incremental_memory_merge_retires_dependent_entries_once() {
     let assumptions = PureFactContext::new();
-    let base = Address {
+    let base = OldAddress {
         base: "supported-merge".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -3577,7 +3581,7 @@ fn incremental_memory_merge_retires_dependent_entries_once() {
 
 #[test]
 fn batch_resource_consumption_normalizes_when_a_requirement_needs_a_merge() {
-    let base = Address {
+    let base = OldAddress {
         base: "p".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -3595,7 +3599,7 @@ fn batch_resource_consumption_normalizes_when_a_requirement_needs_a_merge() {
 
 #[test]
 fn resource_context_observes_write_separation() {
-    let base = Address {
+    let base = OldAddress {
         base: "p".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -3621,7 +3625,7 @@ fn resource_context_observes_write_separation() {
 #[test]
 fn resource_context_observes_same_and_cross_family_separation() {
     let memory = Resource::Memory(memory_range(
-        Address {
+        OldAddress {
             base: "p".into(),
             offset: OldAddressOffset::Constant(0),
         },
@@ -3694,11 +3698,11 @@ fn observable_abstract_resources_use_one_indexed_composition() {
 
 #[test]
 fn composite_resource_arguments_respect_proven_pointer_equality() {
-    let left_pointer = Address {
+    let left_pointer = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(40_000)), 4),
     };
-    let right_pointer = Address {
+    let right_pointer = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(40_001)), 4),
     };
@@ -3734,7 +3738,7 @@ fn composite_resource_arguments_respect_proven_pointer_equality() {
 
 #[test]
 fn resource_separation_covers_larger_memory_range() {
-    let base = Address {
+    let base = OldAddress {
         base: "p".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -3763,9 +3767,9 @@ fn resource_separation_covers_larger_memory_range() {
 
 #[test]
 fn resource_separation_transports_across_equal_memory_ranges() {
-    let target = Address::symbolic(Variable(20_100));
-    let original_data = Address::symbolic(Variable(20_101));
-    let equal_data = Address::symbolic(Variable(20_102));
+    let target = OldAddress::symbolic(Variable(20_100));
+    let original_data = OldAddress::symbolic(Variable(20_101));
+    let equal_data = OldAddress::symbolic(Variable(20_102));
     let original_length = OldMachineTerm::Variable(Variable(20_103));
     let equal_length = OldMachineTerm::Variable(Variable(20_104));
     let target_resource = Resource::Memory(memory_range(target, 0, 4));
@@ -3798,7 +3802,7 @@ fn resource_separation_transports_across_equal_memory_ranges() {
 
 #[test]
 fn resource_contains_projects_separation_to_children() {
-    let base = Address {
+    let base = OldAddress {
         base: "p".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -3831,7 +3835,11 @@ fn resource_contains_projects_separation_to_children() {
 fn assumed_resource_composition_has_exact_membership() {
     let resources = ResourceContext::new()
         .try_compose_with_facts(
-            [own_memory_fact(Address::symbolic(Variable(41_001)), 0, 1)],
+            [own_memory_fact(
+                OldAddress::symbolic(Variable(41_001)),
+                0,
+                1,
+            )],
             &PureFactContext::new(),
         )
         .unwrap();
@@ -3845,7 +3853,7 @@ fn assumed_resource_composition_has_exact_membership() {
 
 #[test]
 fn checked_resource_composition_rejects_invalid_state_before_normalizing() {
-    let base = Address {
+    let base = OldAddress {
         base: "p".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -3870,8 +3878,8 @@ fn checked_resource_composition_rejects_invalid_state_before_normalizing() {
 
 #[test]
 fn equal_cross_block_pointer_bases_cannot_be_owned_twice() {
-    let symbolic = Address::symbolic(Variable(41_000));
-    let argument = Address {
+    let symbolic = OldAddress::symbolic(Variable(41_000));
+    let argument = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::Constant(0),
     };
@@ -3926,7 +3934,7 @@ fn equal_cross_block_pointer_bases_cannot_be_owned_twice() {
 
 #[test]
 fn equal_content_string_literals_remain_readable_without_separation_evidence() {
-    let literal = |identity: &str| Address {
+    let literal = |identity: &str| OldAddress {
         base: AddressBase::StringLiteral {
             identity: StringLiteralId::new(identity, 0),
             bytes: b"ok\0".to_vec(),
@@ -4289,7 +4297,7 @@ fn dependent_pair_entry_fixture() -> (
         ],
         vec![],
     );
-    let pointer = Address {
+    let pointer = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(910_000)), 4),
     };
@@ -4386,7 +4394,7 @@ fn resource_clauses_with_no_evaluable_order_name_two_positions() {
         ResourceSpec::owned_memory(MemorySegment {
             value_runs: Default::default(),
             base: ProgramExpression::Load(Box::new(ProgramExpression::Value(
-                ProgramValue::pointer(Address {
+                ProgramValue::pointer(OldAddress {
                     base: AddressBase::ExternalArgument,
                     offset: OldAddressOffset::scale_int32(
                         OldMachineTerm::Variable(Variable(variable)),
@@ -4598,7 +4606,7 @@ fn expanded_resource_clause_diagnostics_keep_source_positions() {
         ResourceSpec::owned_memory(MemorySegment {
             value_runs: Default::default(),
             base: ProgramExpression::Load(Box::new(ProgramExpression::Value(
-                ProgramValue::pointer(Address {
+                ProgramValue::pointer(OldAddress {
                     base: AddressBase::ExternalArgument,
                     offset: OldAddressOffset::scale_int32(
                         OldMachineTerm::Variable(Variable(variable)),
@@ -4639,20 +4647,20 @@ fn expanded_resource_clause_diagnostics_keep_source_positions() {
 /// pending scan.
 #[test]
 fn symbolic_supplied_range_wakes_concrete_pending_dependency() {
-    let seed = Address {
+    let seed = OldAddress {
         base: AddressBase::Concrete("resource-clause-symbolic-seed".to_string()),
         offset: OldAddressOffset::Constant(0),
     };
-    let intermediate = Address {
+    let intermediate = OldAddress {
         base: AddressBase::Concrete("resource-clause-symbolic-intermediate".to_string()),
         offset: OldAddressOffset::Constant(0),
     };
-    let target = Address {
+    let target = OldAddress {
         base: AddressBase::Concrete("resource-clause-symbolic-target".to_string()),
         offset: OldAddressOffset::Constant(0),
     };
     let length = OldMachineTerm::Variable(Variable(9_903));
-    let load = |pointer: Address| ProgramExpression::TypedLoad {
+    let load = |pointer: OldAddress| ProgramExpression::TypedLoad {
         pointer: Box::new(crate::kernel::program_expression::pointer_value(pointer)),
         value_type: ProgramType::Int32Pointer,
         volatile: false,
@@ -4711,7 +4719,7 @@ fn symbolic_supplied_range_wakes_concrete_pending_dependency() {
 fn observed_memory_projection_is_invalidated_by_overlap_but_not_disjoint_store() {
     let support = ResourceFact::own_composite("memory_support".to_string(), Vec::new());
     let observed_range = MemoryRange::new(
-        Address {
+        OldAddress {
             base: "observed-block".into(),
             offset: OldAddressOffset::Constant(0),
         },
@@ -4740,7 +4748,7 @@ fn observed_memory_projection_is_invalidated_by_overlap_but_not_disjoint_store()
         .with_memory(base.clone())
         .with_resource_context(resources);
     let disjoint = state.clone().with_memory(base.clone().store(
-        Address {
+        OldAddress {
             base: "observed-block".into(),
             offset: OldAddressOffset::Constant(16),
         },
@@ -4754,7 +4762,7 @@ fn observed_memory_projection_is_invalidated_by_overlap_but_not_disjoint_store()
     let overlapping = disjoint
         .clone()
         .with_memory(disjoint.memory().clone().store(
-            Address {
+            OldAddress {
                 base: "observed-block".into(),
                 offset: OldAddressOffset::Constant(0),
             },
@@ -4775,7 +4783,7 @@ fn observed_memory_projection_is_invalidated_by_overlap_but_not_disjoint_store()
 #[test]
 fn observed_projection_tracks_loaded_address_prerequisite() {
     let support = ResourceFact::own_composite("loaded_address_support".to_string(), Vec::new());
-    let selector = Address {
+    let selector = OldAddress {
         base: "loaded-address-selector".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -4790,7 +4798,7 @@ fn observed_projection_tracks_loaded_address_prerequisite() {
         crate::kernel::LoadKind::Int32,
     );
     let projected = ResourceFact::view_memory(MemoryRange::new(
-        Address {
+        OldAddress {
             base: "loaded-address-data".into(),
             offset: OldAddressOffset::Constant(0),
         },
@@ -4806,7 +4814,7 @@ fn observed_projection_tracks_loaded_address_prerequisite() {
         ),
     ));
     let unrelated = ResourceFact::view_memory(MemoryRange::new(
-        Address {
+        OldAddress {
             base: "loaded-address-unrelated".into(),
             offset: OldAddressOffset::Constant(0),
         },
@@ -4851,7 +4859,7 @@ fn observed_projection_tracks_loaded_address_prerequisite() {
 #[test]
 fn observed_projection_tracks_loaded_base_and_start_prerequisites() {
     let support = ResourceFact::own_composite("loaded_base_start_support".to_string(), Vec::new());
-    let selector = Address {
+    let selector = OldAddress {
         base: "base-start-selector".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -4866,7 +4874,7 @@ fn observed_projection_tracks_loaded_base_and_start_prerequisites() {
         crate::kernel::LoadKind::Int32,
     );
     let base_projected = ResourceFact::view_memory(MemoryRange::new(
-        Address {
+        OldAddress {
             base: "base-start-data".into(),
             offset: OldAddressOffset::scaled_int32_node(selector_load.clone(), 4),
         },
@@ -4874,7 +4882,7 @@ fn observed_projection_tracks_loaded_base_and_start_prerequisites() {
         OldMachineTerm::constant(1),
     ));
     let start_projected = ResourceFact::view_memory(MemoryRange::new(
-        Address {
+        OldAddress {
             base: "base-start-data".into(),
             offset: OldAddressOffset::Constant(8),
         },
@@ -4887,7 +4895,7 @@ fn observed_projection_tracks_loaded_base_and_start_prerequisites() {
         ),
     ));
     let unrelated = ResourceFact::view_memory(MemoryRange::new(
-        Address {
+        OldAddress {
             base: "base-start-unrelated".into(),
             offset: OldAddressOffset::Constant(0),
         },
@@ -4931,7 +4939,7 @@ fn observed_projection_tracks_loaded_base_and_start_prerequisites() {
 fn observed_wide_footprint_and_unknown_loop_barrier_are_invalidated() {
     let support = ResourceFact::own_composite("wide_support".to_string(), Vec::new());
     let range = MemoryRange::new_with_element_width(
-        Address {
+        OldAddress {
             base: "wide-block".into(),
             offset: OldAddressOffset::Constant(0),
         },
@@ -4990,7 +4998,7 @@ fn supported_projection_interval_updates_scale_with_index_height() {
             resources = resources.unchecked_with_fact(support.clone());
             let occurrence = resources.owned_occurrences_for_fact(&support)[0];
             let view = ResourceFact::view_memory(MemoryRange::new(
-                Address {
+                OldAddress {
                     base: "projection-curve".into(),
                     offset: OldAddressOffset::Constant((8 + index * 8) as i64),
                 },
@@ -5009,7 +5017,7 @@ fn supported_projection_interval_updates_scale_with_index_height() {
         resources = resources.unchecked_with_fact(target_support.clone());
         let target_occurrence = resources.owned_occurrences_for_fact(&target_support)[0];
         let target_view = ResourceFact::view_memory(MemoryRange::new(
-            Address {
+            OldAddress {
                 base: "projection-curve".into(),
                 offset: OldAddressOffset::Constant(0),
             },
@@ -5066,7 +5074,7 @@ fn removing_symbolic_memory_observations_does_not_leave_alias_bucket_entries() {
     let support_occurrence = resources.owned_occurrences_for_fact(&support)[0];
     for iteration in 0..4 {
         let view = ResourceFact::view_memory(MemoryRange::new(
-            Address {
+            OldAddress {
                 base: AddressBase::Symbolic(Variable(900 + iteration)),
                 offset: OldAddressOffset::Constant(0),
             },
@@ -5438,7 +5446,7 @@ fn v11_tampered_cstate_mirror_is_rejected_and_stale_sidecar_is_dropped() {
 #[test]
 fn memory_entailment_relates_two_spellings_of_one_byte_footprint() {
     let assumptions = PureFactContext::new();
-    let base = Address {
+    let base = OldAddress {
         base: "mixed-width-footprint".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -5492,7 +5500,7 @@ fn memory_entailment_relates_two_spellings_of_one_byte_footprint() {
 #[test]
 fn subtracting_a_byte_field_from_an_int32_owner_leaves_the_bytewise_remainder() {
     let assumptions = PureFactContext::new();
-    let base = Address {
+    let base = OldAddress {
         base: "mixed-width-split".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -5545,7 +5553,7 @@ fn subtracting_a_byte_field_from_an_int32_owner_leaves_the_bytewise_remainder() 
 #[test]
 fn bytewise_disjoint_mismatched_width_owners_compose_and_adjacent_ones_merge() {
     let assumptions = PureFactContext::new();
-    let base = Address {
+    let base = OldAddress {
         base: "mixed-width-composition".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -5609,12 +5617,12 @@ fn bytewise_disjoint_mismatched_width_owners_compose_and_adjacent_ones_merge() {
 /// restated over `x` they abut exactly.
 #[test]
 fn owned_pieces_over_displaced_bases_rejoin_where_they_abut() {
-    let x = Address {
+    let x = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(88_100)), 4),
     };
     let i = OldMachineTerm::Variable(Variable(88_101));
-    let own = |base: &Address, start: OldMachineTerm, end: OldMachineTerm| {
+    let own = |base: &OldAddress, start: OldMachineTerm, end: OldMachineTerm| {
         ResourceFact::own_memory(MemoryRange::new(base.clone(), start, end))
     };
     let constant = OldMachineTerm::constant;
@@ -5651,7 +5659,7 @@ fn owned_pieces_over_displaced_bases_rejoin_where_they_abut() {
 
 #[test]
 fn mixed_width_symbolic_ranges_do_not_join_across_gaps_or_overlaps() {
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(88_900)), 4),
     };
@@ -5689,12 +5697,12 @@ fn mixed_width_symbolic_ranges_do_not_join_across_gaps_or_overlaps() {
 /// wrap all leave the pieces as they were.
 #[test]
 fn owned_pieces_over_displaced_bases_that_may_not_abut_stay_apart() {
-    let x = Address {
+    let x = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(88_200)), 4),
     };
     let i = OldMachineTerm::Variable(Variable(88_201));
-    let own = |base: &Address, start: OldMachineTerm, end: OldMachineTerm| {
+    let own = |base: &OldAddress, start: OldMachineTerm, end: OldMachineTerm| {
         ResourceFact::own_memory(MemoryRange::new(base.clone(), start, end))
     };
     let constant = OldMachineTerm::constant;
@@ -5733,7 +5741,7 @@ fn owned_pieces_over_displaced_bases_that_may_not_abut_stay_apart() {
 
 #[test]
 fn distinct_heap_allocations_never_merge_under_contradictory_assumptions() {
-    let block = |id: u64| Address {
+    let block = |id: u64| OldAddress {
         base: AddressBase::Heap(id),
         offset: OldAddressOffset::Constant(0),
     };
@@ -5778,14 +5786,14 @@ fn distinct_heap_allocations_never_merge_under_contradictory_assumptions() {
 mod constant_range_containment {
     use super::*;
 
-    fn external(elements: i64) -> Address {
-        Address {
+    fn external(elements: i64) -> OldAddress {
+        OldAddress {
             base: AddressBase::ExternalArgument,
             offset: OldAddressOffset::Constant(elements * 4),
         }
     }
 
-    fn range(base: Address, start: i32, end: i32) -> MemoryRange {
+    fn range(base: OldAddress, start: i32, end: i32) -> MemoryRange {
         MemoryRange::new(
             base,
             OldMachineTerm::constant(start as u32),
@@ -5849,11 +5857,11 @@ mod constant_range_containment {
     #[test]
     fn a_base_delta_the_facts_pin_is_still_taken() {
         let index = OldMachineTerm::Variable(Variable(93_960));
-        let base = Address {
+        let base = OldAddress {
             base: AddressBase::ExternalArgument,
             offset: OldAddressOffset::Constant(0),
         };
-        let child = Address {
+        let child = OldAddress {
             base: AddressBase::ExternalArgument,
             offset: OldAddressOffset::scale_int32(index.clone(), 4),
         };
@@ -6090,8 +6098,8 @@ mod population_quantity_totals {
 mod concrete_partition_sweep {
     use super::*;
 
-    fn external() -> Address {
-        Address {
+    fn external() -> OldAddress {
+        OldAddress {
             base: AddressBase::ExternalArgument,
             offset: OldAddressOffset::Constant(0),
         }
@@ -6231,14 +6239,14 @@ mod concrete_partition_sweep {
 mod residue_bounds {
     use super::*;
 
-    fn external(elements: i64) -> Address {
-        Address {
+    fn external(elements: i64) -> OldAddress {
+        OldAddress {
             base: AddressBase::ExternalArgument,
             offset: OldAddressOffset::Constant(elements * 4),
         }
     }
 
-    fn range(base: Address, start: OldMachineTerm, end: OldMachineTerm) -> MemoryRange {
+    fn range(base: OldAddress, start: OldMachineTerm, end: OldMachineTerm) -> MemoryRange {
         MemoryRange::new(base, start, end)
     }
 
@@ -6316,7 +6324,7 @@ mod residue_bounds {
         let count = OldMachineTerm::Variable(Variable(93_971));
         let available = range(external(0), constant(0), count);
         let required = MemoryRange::new(
-            Address {
+            OldAddress {
                 base: AddressBase::ExternalArgument,
                 offset: OldAddressOffset::scale_int32(index.clone(), 4),
             },
@@ -6360,7 +6368,7 @@ fn named_population_members_keep_identity_and_fields_independent_of_count() {
     )])
     .unwrap();
     let block = AddressBase::Heap(940_501);
-    let pointer = Address {
+    let pointer = OldAddress {
         base: block.clone(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -6504,7 +6512,7 @@ fn named_population_members_keep_identity_and_fields_independent_of_count() {
 
 #[test]
 fn predicate_population_state_reads_saved_count_without_transfer_rights() {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: AddressBase::Heap(940_601),
         offset: OldAddressOffset::Constant(0),
     };
@@ -6608,7 +6616,7 @@ fn predicate_population_state_reads_saved_count_without_transfer_rights() {
 #[test]
 fn wide_shifted_suffix_coverage_checks_span_and_identity() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Address::symbolic(Variable(983_100));
+    let base = OldAddress::symbolic(Variable(983_100));
     let whole = OldMachineTerm::Variable(Variable(983_101));
     let taken = OldMachineTerm::Variable(Variable(983_102));
     let available = MemoryRange::new_wide(
@@ -6665,7 +6673,7 @@ fn wide_shifted_suffix_coverage_checks_span_and_identity() {
     );
     assert!(!covers(&available, &required, &low_words));
     let unrelated = MemoryRange::new_wide(
-        Address::symbolic(Variable(983_103)),
+        OldAddress::symbolic(Variable(983_103)),
         OldMachineTerm::uint64_constant(0),
         taken.clone(),
         4,
@@ -6711,7 +6719,7 @@ fn wide_shifted_suffix_coverage_checks_span_and_identity() {
 #[test]
 fn wide_range_observer_transport_rejects_changed_cells_and_low_word_equalities() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = Address::symbolic(Variable(983_200));
+    let pointer = OldAddress::symbolic(Variable(983_200));
     let before = SymbolicMemory::new().store(
         pointer.clone(),
         ProgramValue::UInt64(OldMachineTerm::uint64_constant(3)),
@@ -6751,7 +6759,7 @@ fn wide_range_observer_transport_rejects_changed_cells_and_low_word_equalities()
 /// question falls back to when the element widths differ. Both now answer.
 #[test]
 fn wide_ranges_are_compared_and_refused_without_a_32_bit_reading() {
-    let base = Address::symbolic(Variable(97_400));
+    let base = OldAddress::symbolic(Variable(97_400));
     let end = OldMachineTerm::Variable(Variable(97_401));
     let other_end = OldMachineTerm::Variable(Variable(97_402));
     let wide = |end: &OldMachineTerm, width| {
@@ -6786,13 +6794,13 @@ fn wide_ranges_are_compared_and_refused_without_a_32_bit_reading() {
 #[test]
 fn a_field_access_in_a_wide_struct_array_byte_range_is_placed_over_elements() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Address::symbolic(Variable(983_410));
+    let base = OldAddress::symbolic(Variable(983_410));
     let count = OldMachineTerm::Variable(Variable(983_411));
     let index = OldMachineTerm::Variable(Variable(983_412));
     // `m * 8u64` bytes of eight-byte structs, as a 64-bit heap block holds them.
     let bytes = OldMachineTerm::uint64_multiply(count.clone(), OldMachineTerm::uint64_constant(8));
     let range = MemoryRange::new_wide(base.clone(), OldMachineTerm::uint64_constant(0), bytes, 1);
-    let at = |offset: OldAddressOffset| Address {
+    let at = |offset: OldAddressOffset| OldAddress {
         base: base.base.clone(),
         offset,
     };
@@ -6853,7 +6861,7 @@ fn a_field_access_in_a_wide_struct_array_byte_range_is_placed_over_elements() {
 #[test]
 fn a_wide_struct_range_and_its_byte_range_are_respelled_under_no_wrap() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Address::symbolic(Variable(983_420));
+    let base = OldAddress::symbolic(Variable(983_420));
     let count = OldMachineTerm::Variable(Variable(983_421));
     let zero = OldMachineTerm::uint64_constant(0);
     let bytes = OldMachineTerm::uint64_multiply(count.clone(), OldMachineTerm::uint64_constant(8));
@@ -6914,7 +6922,7 @@ fn a_wide_struct_range_and_its_byte_range_are_respelled_under_no_wrap() {
 #[test]
 fn a_wide_respelling_refusal_names_the_undecided_product() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Address::symbolic(Variable(983_440));
+    let base = OldAddress::symbolic(Variable(983_440));
     let count = OldMachineTerm::Variable(Variable(983_441));
     let zero = OldMachineTerm::uint64_constant(0);
     let bytes = OldMachineTerm::uint64_multiply(count.clone(), OldMachineTerm::uint64_constant(8));
@@ -6942,7 +6950,7 @@ fn a_wide_respelling_refusal_names_the_undecided_product() {
 #[test]
 fn a_field_access_in_a_wide_struct_range_is_placed_over_its_count() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Address::symbolic(Variable(983_430));
+    let base = OldAddress::symbolic(Variable(983_430));
     let count = OldMachineTerm::Variable(Variable(983_431));
     let index = OldMachineTerm::Variable(Variable(983_432));
     let range = MemoryRange::new_wide(
@@ -6951,7 +6959,7 @@ fn a_field_access_in_a_wide_struct_range_is_placed_over_its_count() {
         count.clone(),
         8,
     );
-    let at = |offset: OldAddressOffset| Address {
+    let at = |offset: OldAddressOffset| OldAddress {
         base: base.base.clone(),
         offset,
     };
@@ -7000,7 +7008,7 @@ fn a_field_access_in_a_wide_struct_range_is_placed_over_its_count() {
 #[test]
 fn wide_byte_range_covers_a_word_through_a_checked_alias() {
     let _session = crate::kernel::VerificationSession::enter();
-    let bytes = Address::symbolic(Variable(983_410));
+    let bytes = OldAddress::symbolic(Variable(983_410));
     let word = SymbolicMemory::local_pointer("word");
     let length = OldMachineTerm::Variable(Variable(983_411));
     let range = MemoryRange::new_wide(
@@ -7023,7 +7031,7 @@ fn wide_byte_range_covers_a_word_through_a_checked_alias() {
 #[test]
 fn native_range_coverage_checks_complete_signed_observations() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Address::symbolic(Variable(983_400));
+    let base = OldAddress::symbolic(Variable(983_400));
     let index = OldMachineTerm::Variable(Variable(983_401));
     let next = OldMachineTerm::uint64_add(index.clone(), OldMachineTerm::uint64_constant(1));
     let available = MemoryRange::new_wide(base.clone(), index.clone(), next.clone(), 4);
@@ -7085,7 +7093,7 @@ fn native_range_coverage_checks_complete_signed_observations() {
     );
     assert!(!covers(&available, &too_long, &bounded));
     let wrong_base = MemoryRange::new(
-        Address::symbolic(Variable(983_402)),
+        OldAddress::symbolic(Variable(983_402)),
         narrow.clone(),
         OldMachineTerm::add(narrow, OldMachineTerm::constant(1)),
     );
@@ -7095,7 +7103,7 @@ fn native_range_coverage_checks_complete_signed_observations() {
 #[test]
 fn native_owned_fragments_supply_indexed_writes() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Address::symbolic(Variable(983_410));
+    let base = OldAddress::symbolic(Variable(983_410));
     let range = |start, end| {
         MemoryRange::new_wide(
             base.clone(),
@@ -7203,7 +7211,7 @@ mod scaling_tests {
 
 fn canonical_cell(index: i64) -> ResourceFact {
     ResourceFact::own_memory(MemoryRange::new(
-        Address {
+        OldAddress {
             base: AddressBase::Concrete(format!("object{index}")),
             offset: OldAddressOffset::Constant(0),
         },
@@ -7272,7 +7280,7 @@ fn constant_owner_neighbors_ignore_empty_ranges_and_preserve_branches() {
     for origin in [None, Some(0), Some(1u64 << 63)] {
         let _session = crate::kernel::VerificationSession::enter();
         let assumptions = PureFactContext::new();
-        let base = Address::symbolic(Variable(995_200));
+        let base = OldAddress::symbolic(Variable(995_200));
         let range = |start: u64, end: u64| match origin {
             Some(origin) => MemoryRange::new_wide(
                 base.clone(),
@@ -7342,7 +7350,7 @@ fn constant_owner_neighbors_ignore_empty_ranges_and_preserve_branches() {
 fn native_owner_neighbors_compare_exact_mixed_width_bytes() {
     let _session = crate::kernel::VerificationSession::enter();
     let assumptions = PureFactContext::new();
-    let base = Address::symbolic(Variable(995_201));
+    let base = OldAddress::symbolic(Variable(995_201));
     let owned = |start, end, width| {
         ResourceFact::own_memory(MemoryRange::new_wide(
             base.clone(),
@@ -7400,7 +7408,7 @@ fn translated_owner_coordinates_preserve_overlap_and_branch_isolation() {
         let assumptions = PureFactContext::new();
         let prefix = OldAddressOffset::Variable(Variable(995_400));
         let owned = |delta: i64, start: u32, end: u32, width: u32| {
-            let base = Address {
+            let base = OldAddress {
                 base: AddressBase::Symbolic(Variable(995_401)),
                 offset: OldAddressOffset::add(prefix.clone(), OldAddressOffset::Constant(delta)),
             };
@@ -7480,7 +7488,7 @@ fn translated_owner_coordinates_keep_native_span_and_symbolic_origin() {
     let assumptions = PureFactContext::new();
     let owned = |variable, delta, start, end| {
         ResourceFact::own_memory(MemoryRange::new_wide(
-            Address {
+            OldAddress {
                 base: AddressBase::Symbolic(Variable(995_402)),
                 offset: OldAddressOffset::add(
                     OldAddressOffset::Constant(delta),
@@ -7537,7 +7545,7 @@ fn translated_owner_coordinates_keep_native_span_and_symbolic_origin() {
 fn owned_root_neighbors_keep_alias_and_duplicate_refusals() {
     let _session = crate::kernel::VerificationSession::enter();
     let assumptions = PureFactContext::new();
-    let pointer = |id| Address {
+    let pointer = |id| OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scale_int32(OldMachineTerm::var(Variable(id)), 1),
     };
@@ -7602,14 +7610,14 @@ fn owned_root_neighbors_require_complete_coordinate_coverage() {
     let index = OldMachineTerm::var(Variable(995_620));
     let assumptions =
         PureFactContext::new().assume_proposition(equality(index.clone(), 5u32.into()));
-    let pointer = |id| Address {
+    let pointer = |id| OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scale_int32(OldMachineTerm::var(Variable(id)), 4),
     };
     let p = pointer(995_621);
     let q = pointer(995_622);
     let range = |base, start, end| MemoryRange::new_with_element_width(base, start, end, 4);
-    let shifted = Address {
+    let shifted = OldAddress {
         base: p.base.clone(),
         offset: OldAddressOffset::add(
             p.offset.clone(),
@@ -7688,8 +7696,8 @@ fn owned_root_neighbors_require_complete_coordinate_coverage() {
 #[test]
 fn exact_alias_owned_neighbors_preserve_translations_and_branch_isolation() {
     let _session = crate::kernel::VerificationSession::enter();
-    let p = Address::symbolic(Variable(995_650));
-    let q = Address::symbolic(Variable(995_651));
+    let p = OldAddress::symbolic(Variable(995_650));
+    let q = OldAddress::symbolic(Variable(995_651));
     let assumptions = PureFactContext::new()
         .assume_condition(OldConditionTerm::address_equal(p.clone(), q.clone()), true);
     let owned = |base, start: u32, end: u32| {
@@ -7700,7 +7708,7 @@ fn exact_alias_owned_neighbors_preserve_translations_and_branch_isolation() {
             4,
         ))
     };
-    let translated = Address {
+    let translated = OldAddress {
         base: q.base.clone(),
         offset: OldAddressOffset::add(q.offset.clone(), OldAddressOffset::Constant(8)),
     };
@@ -7739,8 +7747,8 @@ fn exact_alias_owned_neighbors_preserve_translations_and_branch_isolation() {
 #[test]
 fn exact_alias_owned_neighbors_retain_symbolic_ranges() {
     let _session = crate::kernel::VerificationSession::enter();
-    let p = Address::symbolic(Variable(995_660));
-    let q = Address::symbolic(Variable(995_661));
+    let p = OldAddress::symbolic(Variable(995_660));
+    let q = OldAddress::symbolic(Variable(995_661));
     let index = OldMachineTerm::var(Variable(995_662));
     let end = OldMachineTerm::add(index.clone(), 1u32.into());
     let assumptions = PureFactContext::new()
@@ -7774,13 +7782,13 @@ fn exact_alias_owned_neighbors_retain_symbolic_ranges() {
 #[test]
 fn exact_alias_owned_neighbors_keep_nonzero_displacements() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = |id| Address {
+    let pointer = |id| OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scale_int32(OldMachineTerm::var(Variable(id)), 4),
     };
     let p = pointer(995_670);
     let q = pointer(995_671);
-    let displaced = Address {
+    let displaced = OldAddress {
         base: q.base.clone(),
         offset: OldAddressOffset::add(q.offset.clone(), OldAddressOffset::Constant(8)),
     };
@@ -7809,8 +7817,8 @@ fn exact_alias_owned_neighbors_keep_nonzero_displacements() {
 #[test]
 fn owner_only_base_buckets_follow_persistent_consumption_and_reinsertion() {
     let _session = crate::kernel::VerificationSession::enter();
-    let p = Address::symbolic(Variable(995_710));
-    let q = Address::symbolic(Variable(995_711));
+    let p = OldAddress::symbolic(Variable(995_710));
+    let q = OldAddress::symbolic(Variable(995_711));
     let index = OldMachineTerm::var(Variable(995_712));
     let end = OldMachineTerm::add(index.clone(), 1u32.into());
     let assumptions = PureFactContext::new()
@@ -7852,8 +7860,8 @@ fn owner_only_base_buckets_follow_persistent_consumption_and_reinsertion() {
 #[test]
 fn skipping_unowned_alias_blocks_keeps_local_and_cross_block_refusals() {
     let _session = crate::kernel::VerificationSession::enter();
-    let p = Address::symbolic(Variable(995_800));
-    let q = Address::symbolic(Variable(995_801));
+    let p = OldAddress::symbolic(Variable(995_800));
+    let q = OldAddress::symbolic(Variable(995_801));
     let assumptions = PureFactContext::new()
         .assume_condition(OldConditionTerm::address_equal(p.clone(), q.clone()), true);
     for native in [false, true] {
@@ -7940,8 +7948,8 @@ fn skipping_unowned_alias_blocks_keeps_local_and_cross_block_refusals() {
 #[test]
 fn direct_constant_overlap_keeps_byte_widths_translations_and_alias_refusals() {
     let _session = crate::kernel::VerificationSession::enter();
-    let p = Address::symbolic(Variable(995_950));
-    let q = Address::symbolic(Variable(995_951));
+    let p = OldAddress::symbolic(Variable(995_950));
+    let q = OldAddress::symbolic(Variable(995_951));
     let assumptions = PureFactContext::new()
         .assume_condition(OldConditionTerm::address_equal(p.clone(), q.clone()), true);
     for native in [false, true] {

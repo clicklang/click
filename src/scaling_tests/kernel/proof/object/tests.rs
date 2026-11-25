@@ -1413,13 +1413,13 @@ fn known_compound_comparison_work_is_linear_in_selected_clauses() {
 #[test]
 fn automatic_object_separation_ignores_ambient_address_facts() {
     use crate::kernel::{
-        Address, AddressBase, LocalBindingId, LocalFunctionId, LocalStorageInstance, MemoryRange,
-        OldAddressOffset, OldConditionTerm, Resource, Variable,
+        AddressBase, LocalBindingId, LocalFunctionId, LocalStorageInstance, MemoryRange,
+        OldAddress, OldAddressOffset, OldConditionTerm, Resource, Variable,
     };
 
     let _session = crate::kernel::VerificationSession::enter();
     let function = LocalFunctionId::new(Some("separation.c".into()), "f".into());
-    let local = |index| Address {
+    let local = |index| OldAddress {
         base: AddressBase::AutomaticLocal {
             binding: LocalBindingId::new(function.clone(), false, index, None),
             instance: LocalStorageInstance::Implicit,
@@ -1427,11 +1427,11 @@ fn automatic_object_separation_ignores_ambient_address_facts() {
         offset: OldAddressOffset::Constant(0),
     };
     let selected = local(0);
-    let incoming = Address {
+    let incoming = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::Constant(0),
     };
-    let alias = Address::symbolic(Variable(1));
+    let alias = OldAddress::symbolic(Variable(1));
     let resource = |pointer| {
         Box::new(Resource::Memory(MemoryRange::new_with_element_width(
             pointer,
@@ -1461,7 +1461,10 @@ fn automatic_object_separation_ignores_ambient_address_facts() {
         )];
         for i in 0..size {
             facts.push(Proposition::condition_is(
-                OldConditionTerm::address_equal(alias.clone(), Address::symbolic(Variable(10 + i))),
+                OldConditionTerm::address_equal(
+                    alias.clone(),
+                    OldAddress::symbolic(Variable(10 + i)),
+                ),
                 true,
             ));
             facts.push(Proposition::Predicate {

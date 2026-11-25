@@ -82,7 +82,7 @@ fn destination<'a>(
         .uninitialized_objects
         .get(&selected.pointer)
         == Some(&layout.size_bytes());
-    let base = Address {
+    let base = OldAddress {
         base: selected.pointer.base.clone(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -165,7 +165,7 @@ pub(super) fn bind(
     let check_borrow_write =
         borrow_obligations.is_some() || interface.construction_parameter().is_some();
     let mut pending = Vec::new();
-    let mut writable = |pointer: &Address, bytes| {
+    let mut writable = |pointer: &OldAddress, bytes| {
         if caller
             .resources()
             .memory_write_range(pointer, bytes, &assumptions)

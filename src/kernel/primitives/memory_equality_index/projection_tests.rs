@@ -68,7 +68,7 @@ fn owned_frontier_context(
 
 fn prior_child(context: ResourceContext, head: &ResourceFact) -> ResourceContext {
     let child = ResourceFact::own_memory(MemoryRange::new(
-        Address::symbolic(Variable(881_000)),
+        OldAddress::symbolic(Variable(881_000)),
         OldMachineTerm::constant(0),
         OldMachineTerm::constant(1),
     ));
@@ -85,7 +85,7 @@ fn fixture() -> (
     PureFactContext,
     PureFactContext,
 ) {
-    let at = |id| Address::symbolic(Variable(id));
+    let at = |id| OldAddress::symbolic(Variable(id));
     let (slot, middle, alias, target) = (at(881_000), at(881_001), at(881_002), at(881_003));
     let typed = |pointer| ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer);
     let head = ResourceFact::view_composite(
@@ -147,7 +147,7 @@ fn dependent_composite_projection_selects_the_prior_child_by_graph_address() {
     // alone cannot establish that its resource index follows the graph.
     let context = projection_context(&head, &definition, &memory, &branch);
     let children = prior_child(context, &head);
-    let alias = Address::symbolic(Variable(881_002));
+    let alias = OldAddress::symbolic(Variable(881_002));
     let entries = children.concrete_read_entries(&alias, 4, &branch);
     assert!(
         entries.is_some_and(|entries| entries.exact()),
@@ -198,7 +198,7 @@ fn owned_composite_frontier_selects_the_prior_child_by_graph_address() {
     let state = ExecutionState::new().with_memory(memory);
     let context = owned_frontier_context(&head, &definition, &state, &branch);
     let children = prior_child(context, &head);
-    let alias = Address::symbolic(Variable(881_002));
+    let alias = OldAddress::symbolic(Variable(881_002));
     assert!(
         children
             .concrete_read_entries(&alias, 4, &branch)
@@ -231,7 +231,7 @@ fn coverage_context(
 
 fn coverage_piece(id: u64, start: u32, end: u32) -> ResourceFact {
     ResourceFact::own_memory(MemoryRange::new(
-        Address::symbolic(Variable(id)),
+        OldAddress::symbolic(Variable(id)),
         OldMachineTerm::constant(start),
         OldMachineTerm::constant(end),
     ))
@@ -246,7 +246,7 @@ fn frontier_coverage_selects_and_consumes_through_transitive_address_equality() 
         coverage_context(vec![owner.clone()], std::slice::from_ref(&wanted), &branch);
     assert!(
         input
-            .concrete_write_entries(&Address::symbolic(Variable(881_002)), 4, &branch)
+            .concrete_write_entries(&OldAddress::symbolic(Variable(881_002)), 4, &branch)
             .is_some_and(|entries| entries.exact()),
         "frontier coverage bypassed the graph's whole-cell ownership payload"
     );
@@ -337,7 +337,7 @@ fn resource_satisfaction_uses_transitive_addresses_without_restoring_consumed_ow
     assert!(!residual.satisfies_fact(&wanted, &sibling));
     assert!(!residual.satisfies_fact(&coverage_piece(881_002, 0, 1), &facts));
     assert!(!residual.satisfies_fact(&coverage_piece(881_002, 1, 4), &facts));
-    let alias = Address::symbolic(Variable(881_002));
+    let alias = OldAddress::symbolic(Variable(881_002));
     let shifted = ResourceFact::own_memory(MemoryRange::new(
         alias.offset_by_elements(OldMachineTerm::constant(1), 4),
         OldMachineTerm::constant(0),
@@ -390,7 +390,7 @@ fn fresh_resource_publication_tracks_late_equalities_and_persistent_deltas() {
     let (_, _, _, branch, sibling) = fixture();
     let original = ResourceContext::new_with_equalities(&sibling)
         .unchecked_with_fact(coverage_piece(881_000, 0, 1));
-    let alias = Address::symbolic(Variable(881_002));
+    let alias = OldAddress::symbolic(Variable(881_002));
     assert!(!original.satisfies_fact(&coverage_piece(881_002, 0, 1), &sibling));
     assert!(
         original
@@ -420,7 +420,7 @@ fn checked_composite_projection_keeps_the_point_of_a_bound_read() {
 
     let _session = VerificationSession::enter();
     let slot = SymbolicMemory::global_pointer("projection_bound");
-    let target = Address::symbolic(Variable(881_010));
+    let target = OldAddress::symbolic(Variable(881_010));
     let typed = |pointer| ProgramValue::typed_pointer(pointer, ProgramType::Int32Pointer);
     let head = ResourceFact::view_composite(
         "point_projection".into(),

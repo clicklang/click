@@ -3,7 +3,7 @@ fn known_domains_do_not_readmit_unrelated_path_facts() {
     for count in [0u64, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let opaque = OldPointer::new(
-            Address::symbolic(Variable(1013300)),
+            OldAddress::symbolic(Variable(1013300)),
             ProgramType::Int32Pointer,
         );
         let root = opaque.clone().with_root_bounds();
@@ -60,7 +60,7 @@ fn known_domains_do_not_readmit_unrelated_path_facts() {
         // An unresolved domain is also a read-only miss. Access authority is
         // checked separately, using the context the caller already prepared.
         let unknown = OldPointer::new(
-            Address::symbolic(Variable(1013700)),
+            OldAddress::symbolic(Variable(1013700)),
             ProgramType::Int32Pointer,
         );
         let context = PureFactContext::new();

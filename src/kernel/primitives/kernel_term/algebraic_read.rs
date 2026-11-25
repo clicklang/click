@@ -28,7 +28,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let second = intern_memory(SymbolicMemory::new());
         let ty = TypeParameterName::intern("RetainedReadT").algebraic_type();
-        let pointer = Address {
+        let pointer = OldAddress {
             base: AddressBase::Symbolic(Variable(999744)),
             offset: OldAddressOffset::scaled_int32_node(
                 OldMachineTerm::Variable(Variable(999745)),
@@ -64,7 +64,7 @@ mod tests {
         let changed_address = KernelTerm::algebraic_read(
             ty.clone(),
             crate::kernel::ProgramPoint::at(&intern_memory(SymbolicMemory::new())),
-            SharedAddress::import(&Address::symbolic(Variable(999750))),
+            SharedAddress::import(&OldAddress::symbolic(Variable(999750))),
         );
         assert!(!roots[0].algebraic_syntax_equal(&changed_address));
         let format = MachineIntegerType::Int32;

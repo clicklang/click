@@ -688,11 +688,11 @@ pub(in crate::surface::proof) struct StoreSeparationMiss {
     /// The statement that ran, as a proof names it (`statement(5)`).
     pub(in crate::surface::proof) statement: String,
     /// The cached cell the store dropped.
-    pub(in crate::surface::proof) cell: crate::kernel::Address,
+    pub(in crate::surface::proof) cell: crate::kernel::OldAddress,
     /// The dropped cell as the statement's C locals spell it, `q[0]`.
     pub(in crate::surface::proof) cell_text: Option<String>,
     /// The cell the store wrote.
-    pub(in crate::surface::proof) store: crate::kernel::Address,
+    pub(in crate::surface::proof) store: crate::kernel::OldAddress,
     /// The spelled disequality the search tried at the statement's pre-state.
     pub(in crate::surface::proof) fact: SyntaxProposition,
 }

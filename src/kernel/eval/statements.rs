@@ -468,7 +468,7 @@ fn program_update_expression(
 
 /// The storage `bytes` long at `pointer`: one element of a concrete size,
 /// or the bytes of a symbolic one.
-fn storage_range(pointer: &Address, bytes: crate::kernel::LayoutSize) -> MemoryRange {
+fn storage_range(pointer: &OldAddress, bytes: crate::kernel::LayoutSize) -> MemoryRange {
     match bytes.bytes() {
         Some(bytes) => MemoryRange::new_with_element_width(
             pointer.clone(),
@@ -487,7 +487,7 @@ fn storage_range(pointer: &Address, bytes: crate::kernel::LayoutSize) -> MemoryR
 
 pub(in crate::kernel) fn memory_write_storage_outcome(
     state: &ExecutionState,
-    pointer: &Address,
+    pointer: &OldAddress,
     bytes: impl Into<crate::kernel::LayoutSize>,
     assumptions: &PureFactContext,
 ) -> Option<StatementOutcome> {
@@ -503,7 +503,7 @@ pub(in crate::kernel) fn memory_write_storage_outcome(
 fn memory_write_obligation_outcome(
     state: &ExecutionState,
     range: &MemoryRange,
-    storage_pointer: &Address,
+    storage_pointer: &OldAddress,
     assumptions: &PureFactContext,
     obligations: &mut Vec<ProofObligation>,
 ) -> Option<StatementOutcome> {
@@ -1279,7 +1279,7 @@ fn write_program_lvalue_paths_for_initialization(
                     OldPointer::from_point_read(version, value_type, &written_pointer)
                 } else {
                     OldPointer::new(
-                        Address::canonical_read(
+                        OldAddress::canonical_read(
                             point.shared_memory(),
                             Some(&point),
                             &written_pointer,
@@ -1363,7 +1363,7 @@ fn execute_program_aggregate_step_paths(
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
     let layout = &result_layout.layout;
-    let pointer = Address {
+    let pointer = OldAddress {
         base: AddressBase::Temporary(budget.allocate_kernel_variable()?.0),
         offset: OldAddressOffset::constant(0),
     };
@@ -1423,7 +1423,7 @@ enum AggregateCopyDestination {
 
 fn memory_region_write_obligation_outcome(
     state: &ExecutionState,
-    pointer: &Address,
+    pointer: &OldAddress,
     bytes: impl Into<crate::kernel::LayoutSize>,
     destination: &MemoryRange,
     assumptions: &PureFactContext,
@@ -1935,7 +1935,7 @@ fn execute_program_heap_allocate_to_paths(
         let pointer = loop {
             let identity = budget.allocate_kernel_variable()?;
             if !state.memory.heap_identity_in_use(identity.0) {
-                break Address::symbolic(identity);
+                break OldAddress::symbolic(identity);
             }
         };
         // A failure that ends the program leaves no execution to continue:
@@ -2011,7 +2011,7 @@ fn execute_program_heap_allocate_to_paths(
     Ok(paths)
 }
 
-fn heap_allocation_element_width(state: &ExecutionState, base: &Address) -> u32 {
+fn heap_allocation_element_width(state: &ExecutionState, base: &OldAddress) -> u32 {
     state
         .locals
         .bindings
@@ -2046,7 +2046,7 @@ fn heap_range_element_width(size: &AllocationSize, requested_width: u32) -> u32 
 /// The owned range of a whole heap block, `base[0..count]` in the size's
 /// index kind, and its element width ([`heap_range_element_count`]).
 fn heap_block_range(
-    base: Address,
+    base: OldAddress,
     size: &AllocationSize,
     requested_width: u32,
 ) -> (MemoryRange, u32) {
@@ -2637,7 +2637,7 @@ fn execute_program_realloc_result_paths(
         let old_argument = match old_value {
             ProgramValue::Pointer(pointer) => pointer,
             ProgramValue::Int32(bits) if bits.as_const() == Some(0) => {
-                OldPointer::new(Address::null(), target_type)
+                OldPointer::new(OldAddress::null(), target_type)
             }
             _ => {
                 paths.push(StatementExecutionPath::new(
@@ -2653,7 +2653,7 @@ fn execute_program_realloc_result_paths(
         // C specifies realloc(NULL, size) as an allocation. Reuse the
         // existing pending-allocation machinery so a later null check can
         // resolve this branch just like malloc/calloc.
-        if old_pointer == Address::null() {
+        if old_pointer == OldAddress::null() {
             for allocation_path in execute_program_heap_allocate_to_paths(
                 state,
                 AllocationDestination::Value(target_type),
@@ -2980,7 +2980,7 @@ fn execute_program_realloc_result_paths(
             let pending_pointer = loop {
                 let identity = budget.allocate_kernel_variable()?;
                 if !state.memory.heap_identity_in_use(identity.0) {
-                    break Address::symbolic(identity);
+                    break OldAddress::symbolic(identity);
                 }
             };
             // Save the call-entry borrow footprint. Only success retires the
@@ -3071,7 +3071,7 @@ fn execute_program_heap_free_paths(
         let outcome = match outcome {
             ExpressionOutcome::Value(ProgramValue::Int32(bits)) if bits.as_const() == Some(0) => {
                 ExpressionOutcome::Value(ProgramValue::typed_pointer(
-                    Address::null(),
+                    OldAddress::null(),
                     ProgramType::Int32Pointer,
                 ))
             }
@@ -3653,12 +3653,12 @@ fn execute_program_return_expression_paths(
                         let AddressBase::Symbolic(variable) = pointer.base else {
                             unreachable!("pending malloc results have symbolic heap identities");
                         };
-                        Address {
+                        OldAddress {
                             base: AddressBase::Heap(variable.0),
                             offset: OldAddressOffset::Constant(0),
                         }
                     } else {
-                        Address::null()
+                        OldAddress::null()
                     };
                     let outcome = if let Some(refusal) = return_authority_refusal(&resolved_state) {
                         refusal
@@ -3715,7 +3715,7 @@ fn execute_program_return_expression_paths(
 }
 
 fn pending_allocation_outcome_paths(
-    pointer: Address,
+    pointer: OldAddress,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
@@ -6041,7 +6041,7 @@ pub(in crate::kernel) fn execute_program_loop_paths(
 fn local_declaration_pointer(
     state: &mut ExecutionState,
     name: &BindingName,
-) -> Result<Address, RuntimeError> {
+) -> Result<OldAddress, RuntimeError> {
     let previous = state.locals.slot(name).cloned();
     if let Some(previous) = previous
         && previous.base.is_local_block()
@@ -6110,7 +6110,7 @@ pub(in crate::kernel) fn retire_automatic_storage_owner(
 /// counter is monotone and every generation it hands out is declared, so the
 /// first candidate is free; checking it is what makes the uniqueness
 /// invariant enforced at the one place it is created.
-fn fresh_local_object_identity(state: &mut ExecutionState, name: &BindingName) -> Address {
+fn fresh_local_object_identity(state: &mut ExecutionState, name: &BindingName) -> OldAddress {
     loop {
         let lifetime = state.next_local_lifetime();
         assert!(
@@ -6233,7 +6233,7 @@ fn zero_fill_declared_array(
 /// A local array's frame owns its bytes, as a declared scalar's does, so the
 /// function can lend them to a callee that owns its buffer, such as
 /// `snprintf(tmp, sizeof(tmp), ...)`.
-fn own_local_array(state: &mut ExecutionState, pointer: &Address, bytes: u32) {
+fn own_local_array(state: &mut ExecutionState, pointer: &OldAddress, bytes: u32) {
     state.resources = state
         .resources
         .clone()
@@ -6671,11 +6671,11 @@ fn begin_aggregate_construction(
 /// comparison against that one object. No scan of the frame.
 pub(in crate::kernel) fn refresh_scalar_local_after_memory_store(
     state: &mut ExecutionState,
-    pointer: &Address,
+    pointer: &OldAddress,
     value: &ProgramValue,
     assumptions: &PureFactContext,
 ) {
-    let slot = Address {
+    let slot = OldAddress {
         base: pointer.base.clone(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -6702,7 +6702,7 @@ pub(in crate::kernel) fn refresh_scalar_local_after_memory_store(
 /// decides its current value and initialization; a postcondition is not a store.
 pub(in crate::kernel) fn refresh_scalar_local_from_memory(
     state: &mut ExecutionState,
-    slot: &Address,
+    slot: &OldAddress,
     assumptions: &PureFactContext,
 ) {
     let Some(name) = state.locals.name_for_slot(slot).cloned() else {
@@ -6717,7 +6717,7 @@ pub(in crate::kernel) fn refresh_scalar_local_from_memory(
 fn refresh_scalar_local_binding(
     state: &mut ExecutionState,
     name: BindingName,
-    slot: Address,
+    slot: OldAddress,
     program_type: ProgramType,
     assumptions: &PureFactContext,
     after_call: bool,
@@ -6827,15 +6827,15 @@ pub(in crate::kernel) fn sync_retained_stack_local(
 /// block. Its subobject bounds, which names the same block, moves with it.
 pub(in crate::kernel) fn rebase_resolved_allocation(
     value: &OldPointer,
-    base: &Address,
-    resolved: &Address,
+    base: &OldAddress,
+    resolved: &OldAddress,
 ) -> OldPointer {
     let resolved_value = value
         .map_pointers(|address| {
             if address == base {
                 resolved.clone()
             } else if address.base == base.base && base.offset == OldAddressOffset::Constant(0) {
-                Address {
+                OldAddress {
                     base: resolved.base.clone(),
                     offset: OldAddressOffset::add(resolved.offset.clone(), address.offset.clone()),
                 }

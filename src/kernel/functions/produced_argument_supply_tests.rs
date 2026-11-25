@@ -14,7 +14,7 @@ fn state(count: u32) -> ExecutionState {
     ExecutionState::new()
         .with_local(
             "cells",
-            ProgramValue::pointer(Address {
+            ProgramValue::pointer(OldAddress {
                 base: "produced-cells".into(),
                 offset: OldAddressOffset::Constant(0),
             }),

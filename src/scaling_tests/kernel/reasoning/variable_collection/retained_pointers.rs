@@ -8,7 +8,7 @@ fn pointer_readers_visit_shared_offset_and_index_dags_once() {
             .map(|i| KernelTerm::variable(KernelType::Integer, Variable(1002000 + i)))
             .collect::<Vec<_>>();
         for size in [16, 64, 256] {
-            let source = SharedAddress::import(&Address::symbolic(Variable(1003000)));
+            let source = SharedAddress::import(&OldAddress::symbolic(Variable(1003000)));
             let mut index =
                 KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(1003001));
             for _ in 0..size {

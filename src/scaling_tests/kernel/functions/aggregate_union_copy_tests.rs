@@ -10,7 +10,7 @@ use super::*;
 fn aggregate_argument_reads_require_authority_and_initialization_and_scale() {
     for count in [4u32, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let source = Address {
+        let source = OldAddress {
             base: "aggregate-argument-source".into(),
             offset: OldAddressOffset::Constant(0),
         };
@@ -73,11 +73,11 @@ fn unsigned_aggregate_array_copies_preserve_values_and_scale() {
     let mut samples = Vec::new();
     for count in [4u32, 1024, 1_000_000] {
         let _session = crate::kernel::VerificationSession::enter();
-        let source = Address {
+        let source = OldAddress {
             base: "local:aggregate-array-source".into(),
             offset: OldAddressOffset::Constant(0),
         };
-        let destination = Address {
+        let destination = OldAddress {
             base: "local:aggregate-array-target".into(),
             offset: OldAddressOffset::Constant(0),
         };

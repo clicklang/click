@@ -46,7 +46,7 @@ fn shared_integer_application_substitution_scales_with_dag_size() {
 fn public_integer_substitution_keeps_array_ref_states_opaque() {
     let source = Variable(840);
     let pointer = ProgramValue::Pointer(OldPointer::new(
-        Address {
+        OldAddress {
             base: AddressBase::Symbolic(Variable(841)),
             offset: OldAddressOffset::Constant(0),
         },

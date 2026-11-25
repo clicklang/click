@@ -298,9 +298,9 @@ fn loop_kept_pointer_frame_ignores_unrelated_owners_and_ambiguous_buckets() {
     let mut samples = Vec::new();
     for size in [4u32, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let field = Address::symbolic(Variable(980115));
-        let ambiguous = Address::symbolic(Variable(980116));
-        let range = |base: Address, count: u32| {
+        let field = OldAddress::symbolic(Variable(980115));
+        let ambiguous = OldAddress::symbolic(Variable(980116));
+        let range = |base: OldAddress, count: u32| {
             MemoryRange::new_with_element_width(base, 0u32.into(), count.into(), 1)
         };
         let mut owners = ResourceContext::new()
@@ -308,7 +308,7 @@ fn loop_kept_pointer_frame_ignores_unrelated_owners_and_ambiguous_buckets() {
         for index in 0..size {
             owners = owners
                 .unchecked_with_fact(ResourceFact::own_memory(range(
-                    Address::symbolic(Variable(981000 + u64::from(index))),
+                    OldAddress::symbolic(Variable(981000 + u64::from(index))),
                     8,
                 )))
                 .unchecked_with_fact(ResourceFact::own_memory(range(
@@ -326,10 +326,10 @@ fn loop_kept_pointer_frame_ignores_unrelated_owners_and_ambiguous_buckets() {
             Some(CallKeptRanges::new(owners, vec![], None)),
         ));
         let context = PureFactContext::new();
-        let query = |address: &Address| {
+        let query = |address: &OldAddress| {
             crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
-                &Address::loaded_value(&before, address),
-                &Address::loaded_value(&after, address),
+                &OldAddress::loaded_value(&before, address),
+                &OldAddress::loaded_value(&after, address),
                 &context,
             )
         };
@@ -429,7 +429,7 @@ fn shared_pointer_resource_read_collection_visits_each_node_once() {
     let mut costs = Vec::new();
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let address = Address::symbolic(crate::kernel::Variable(1081601));
+        let address = OldAddress::symbolic(crate::kernel::Variable(1081601));
         let memory = intern_memory(SymbolicMemory::new().store(address.clone(), one()));
         let read = OldMachineTerm::read_named(
             ProgramPoint::at(&memory),

@@ -1,5 +1,5 @@
 use super::*;
-use crate::kernel::{Address, AddressBase, MemoryRange, OldAddressOffset, OldMachineTerm};
+use crate::kernel::{AddressBase, MemoryRange, OldAddress, OldAddressOffset, OldMachineTerm};
 
 // Reading the pre-update tree is test setup, independent of how the producer
 // implements its update or prepares the resulting footprint.
@@ -72,7 +72,7 @@ fn partial_borrow_footprints_prepare_only_changed_tree_paths() {
         let owners = (0..size)
             .map(|index| {
                 MemoryRange::new(
-                    Address {
+                    OldAddress {
                         base: AddressBase::ExternalArgument,
                         offset: OldAddressOffset::scaled_int32_node(
                             OldMachineTerm::Variable(Variable(1_967_000 + index as u64)),

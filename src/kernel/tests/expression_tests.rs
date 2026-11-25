@@ -8,7 +8,7 @@ use crate::kernel::{constant_u32, int32_constant};
 #[test]
 fn pointer_values_do_not_adopt_fact_supplied_bounds() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = Address::symbolic(Variable(989_900));
+    let pointer = OldAddress::symbolic(Variable(989_900));
     let value = OldPointer::new(pointer.clone(), ProgramType::Int32Pointer);
     let bounded = value.clone().with_bounds(Some(SubobjectBounds {
         start: pointer,
@@ -1447,19 +1447,19 @@ fn int32_comparisons_return_c_int32_zero_or_one() {
 
 #[test]
 fn pointer_equality_returns_c_int32_zero_or_one() {
-    let p = Address {
+    let p = OldAddress {
         base: "array".into(),
         offset: OldAddressOffset::Constant(0),
     };
-    let same = Address {
+    let same = OldAddress {
         base: "array".into(),
         offset: OldAddressOffset::Constant(0),
     };
-    let next = Address {
+    let next = OldAddress {
         base: "array".into(),
         offset: OldAddressOffset::Constant(4),
     };
-    let other = Address {
+    let other = OldAddress {
         base: "other".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -1508,7 +1508,7 @@ fn pointer_equality_returns_c_int32_zero_or_one() {
 
 #[test]
 fn pointer_values_preserve_their_exact_c_types_without_changing_address_identity() {
-    let address = Address {
+    let address = OldAddress {
         base: "same-address".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -1555,7 +1555,7 @@ fn explicit_wide_integer_pointer_cast_accepts_only_proven_null_without_origin() 
             if known_value == Some(0) {
                 assert_eq!(
                     cast.unwrap(),
-                    ProgramValue::typed_pointer(Address::null(), ProgramType::UInt8Pointer),
+                    ProgramValue::typed_pointer(OldAddress::null(), ProgramType::UInt8Pointer),
                 );
             } else {
                 assert!(matches!(cast, Err(RuntimeError::PointerConversion(_))));
@@ -1569,7 +1569,7 @@ fn explicit_wide_integer_pointer_cast_accepts_only_proven_null_without_origin() 
 
 #[test]
 fn pointer_cast_retags_the_view_but_pointer_type_mismatch_is_not_implicit() {
-    let address = Address {
+    let address = OldAddress {
         base: "typed-pointer".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -1643,8 +1643,8 @@ fn pointer_cast_retags_the_view_but_pointer_type_mismatch_is_not_implicit() {
 
 #[test]
 fn spec_pointer_equality_lowers_to_a_pure_fact() {
-    let left = Address::symbolic(Variable(22_100));
-    let right = Address::symbolic(Variable(22_101));
+    let left = OldAddress::symbolic(Variable(22_100));
+    let right = OldAddress::symbolic(Variable(22_101));
     let equality = OldConditionTerm::PointerEqual(
         Box::new(OldPointer::new(left.clone(), ProgramType::Int32Pointer)),
         Box::new(OldPointer::new(right.clone(), ProgramType::Int32Pointer)),
@@ -1705,7 +1705,7 @@ fn finite_float_context_proves_reflexive_comparisons() {
 fn finite_structural_float_read_proves_reflexive_comparison() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-    let pointer = Address::symbolic(Variable(22_103));
+    let pointer = OldAddress::symbolic(Variable(22_103));
     let value = crate::kernel::eval::scalar_read_for_exact_cell(
         &memory,
         &pointer,
@@ -1728,11 +1728,11 @@ fn finite_structural_float_read_proves_reflexive_comparison() {
 
 #[test]
 fn spec_pointer_order_lowers_same_block_offsets() {
-    let left = Address {
+    let left = OldAddress {
         base: "array".into(),
         offset: OldAddressOffset::Constant(0),
     };
-    let right = Address {
+    let right = OldAddress {
         base: "array".into(),
         offset: OldAddressOffset::Constant(4),
     };
@@ -1752,7 +1752,7 @@ fn spec_pointer_order_lowers_same_block_offsets() {
 #[test]
 fn symbolic_pointer_truthiness_keeps_null_and_nonnull_paths() {
     let paths = program_truthiness_paths(
-        ProgramValue::pointer(Address::symbolic(Variable(22_000))),
+        ProgramValue::pointer(OldAddress::symbolic(Variable(22_000))),
         Vec::new().into(),
         Vec::new(),
         &PureFactContext::new(),
@@ -1765,11 +1765,11 @@ fn symbolic_pointer_truthiness_keeps_null_and_nonnull_paths() {
 
 #[test]
 fn pointer_equality_accepts_int32_zero_as_null_pointer_constant() {
-    let null = Address {
+    let null = OldAddress {
         base: "null".into(),
         offset: OldAddressOffset::Constant(0),
     };
-    let nonnull = Address {
+    let nonnull = OldAddress {
         base: "array".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -1831,19 +1831,19 @@ fn pointer_equality_accepts_int32_zero_as_null_pointer_constant() {
 
 #[test]
 fn not_equal_and_not_return_c_int32_zero_or_one() {
-    let null = Address {
+    let null = OldAddress {
         base: "null".into(),
         offset: OldAddressOffset::Constant(0),
     };
-    let p = Address {
+    let p = OldAddress {
         base: "array".into(),
         offset: OldAddressOffset::Constant(0),
     };
-    let same = Address {
+    let same = OldAddress {
         base: "array".into(),
         offset: OldAddressOffset::Constant(0),
     };
-    let next = Address {
+    let next = OldAddress {
         base: "array".into(),
         offset: OldAddressOffset::Constant(4),
     };
@@ -1923,7 +1923,7 @@ fn not_equal_and_not_return_c_int32_zero_or_one() {
 
 #[test]
 fn logical_and_or_short_circuit_right_operand() {
-    let invalid_pointer = Address {
+    let invalid_pointer = OldAddress {
         base: "missing".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -1932,7 +1932,7 @@ fn logical_and_or_short_circuit_right_operand() {
         ProgramType::Int32,
     );
     let state = ExecutionState::new().with_resource_context(view_memory_context(
-        Address {
+        OldAddress {
             base: "missing".into(),
             offset: OldAddressOffset::Constant(0),
         },
@@ -1993,7 +1993,7 @@ fn logical_and_or_short_circuit_right_operand() {
 
 #[test]
 fn void_pointer_dereferences_report_indeterminate_pointee_type() {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: "array".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -2028,7 +2028,7 @@ fn void_pointer_dereferences_report_indeterminate_pointee_type() {
 
 #[test]
 fn captured_typed_pointer_load_requires_read_authority() {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: "array".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -2052,7 +2052,7 @@ fn captured_typed_pointer_load_requires_read_authority() {
 
 #[test]
 fn captured_void_pointer_arithmetic_retains_the_gnu_byte_stride() {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: "bytes".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -2094,7 +2094,7 @@ fn captured_void_pointer_arithmetic_retains_the_gnu_byte_stride() {
 
 #[test]
 fn function_pointer_object_operations_report_their_model_errors() {
-    let pointer = Address::function("callback");
+    let pointer = OldAddress::function("callback");
     let function_type = ProgramType::FunctionPointer(ProgramType::function_pointer_signature(
         ProgramType::Int32,
         &[ProgramType::Int32],
@@ -2138,11 +2138,11 @@ fn function_pointer_object_operations_report_their_model_errors() {
 #[test]
 fn symbolic_pointer_equality_reports_branch_facts() {
     let offset = Variable(80);
-    let left = Address {
+    let left = OldAddress {
         base: "array".into(),
         offset: OldAddressOffset::Constant(0),
     };
-    let right = Address {
+    let right = OldAddress {
         base: "array".into(),
         offset: OldAddressOffset::Variable(offset),
     };
@@ -2279,7 +2279,7 @@ fn assignment_and_sequence_update_native_state() {
 
 #[test]
 fn store_then_load_threads_native_memory() {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: "block".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -2318,7 +2318,7 @@ fn store_then_load_threads_native_memory() {
 
 #[test]
 fn viewed_memory_resource_permits_symbolic_external_load_from_incomplete_memory() {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: "block".into(),
         offset: OldAddressOffset::Constant(4),
     };
@@ -2358,7 +2358,7 @@ fn viewed_memory_resource_permits_symbolic_external_load_from_incomplete_memory(
 
 #[test]
 fn block_backed_store_then_load_needs_no_memory_obligation() {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: "block".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -2400,7 +2400,7 @@ fn block_backed_store_then_load_needs_no_memory_obligation() {
 
 #[test]
 fn block_backed_missing_load_returns_symbolic_value_without_obligation() {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: "block".into(),
         offset: OldAddressOffset::Constant(4),
     };
@@ -2436,11 +2436,11 @@ fn block_backed_missing_load_returns_symbolic_value_without_obligation() {
 
 #[test]
 fn pointer_addition_scales_int32_offsets_for_loads() {
-    let base = Address {
+    let base = OldAddress {
         base: "block".into(),
         offset: OldAddressOffset::Constant(0),
     };
-    let second = Address {
+    let second = OldAddress {
         base: "block".into(),
         offset: OldAddressOffset::Constant(4),
     };
@@ -2473,7 +2473,7 @@ fn pointer_addition_scales_int32_offsets_for_loads() {
                     ExecutionState::new()
                         .with_local(
                             "p",
-                            ProgramValue::pointer(Address {
+                            ProgramValue::pointer(OldAddress {
                                 base: "block".into(),
                                 offset: OldAddressOffset::Constant(0),
                             }),
@@ -2492,7 +2492,7 @@ fn pointer_addition_scales_int32_offsets_for_loads() {
 
 #[test]
 fn pointer_addition_rejects_an_int32_index_beyond_the_object() {
-    let base = Address {
+    let base = OldAddress {
         base: "array".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -2523,7 +2523,7 @@ fn uint64_pointer_index_bounds_use_the_full_value() {
     let offset = OldAddressOffset::scaled_int64_node(index.clone(), 1, true);
     assert_eq!(byte_offset_from_pointer_offset(&offset), None);
 
-    let base = Address {
+    let base = OldAddress {
         base: "bytes".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -2566,7 +2566,7 @@ fn uint64_pointer_index_bounds_use_the_full_value() {
 
 #[test]
 fn pointer_index_sum_overflow_is_pointer_undefined_behavior() {
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::Constant(0),
     };
@@ -2594,7 +2594,7 @@ fn pointer_index_sum_overflow_is_pointer_undefined_behavior() {
 
 #[test]
 fn pointer_index_sum_overflow_is_undefined_for_a_uint8_pointer() {
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::Constant(0),
     };
@@ -2625,7 +2625,7 @@ fn pointer_index_sum_overflow_is_undefined_for_a_uint8_pointer() {
 
 #[test]
 fn pointer_addition_allows_the_one_past_int32_element() {
-    let base = Address {
+    let base = OldAddress {
         base: "array".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -2636,7 +2636,7 @@ fn pointer_addition_allows_the_one_past_int32_element() {
         crate::kernel::program_expression::variable("p"),
         crate::kernel::program_expression::int32_literal(2),
     );
-    let result = Address {
+    let result = OldAddress {
         base: "array".into(),
         offset: OldAddressOffset::Constant(8),
     };
@@ -2656,7 +2656,7 @@ fn pointer_addition_allows_the_one_past_int32_element() {
 
 #[test]
 fn pointer_addition_rejects_a_uint8_index_beyond_the_object() {
-    let base = Address {
+    let base = OldAddress {
         base: "bytes".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -2686,7 +2686,7 @@ fn pointer_addition_rejects_a_uint8_index_beyond_the_object() {
 
 #[test]
 fn byte_offset_rejects_a_pointer_beyond_the_object() {
-    let base = Address {
+    let base = OldAddress {
         base: "object".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -2713,11 +2713,11 @@ fn byte_offset_rejects_a_pointer_beyond_the_object() {
 
 #[test]
 fn pointer_relational_comparison_orders_same_block_elements() {
-    let first = Address {
+    let first = OldAddress {
         base: "array".into(),
         offset: OldAddressOffset::Constant(0),
     };
-    let second = Address {
+    let second = OldAddress {
         base: "array".into(),
         offset: OldAddressOffset::Constant(8),
     };
@@ -2772,11 +2772,11 @@ fn pointer_relational_comparison_orders_same_block_elements() {
 #[test]
 fn pointer_subtraction_returns_same_block_element_distance() {
     let distance = i64::from(i32::MAX) + 2;
-    let start = Address {
+    let start = OldAddress {
         base: "array".into(),
         offset: OldAddressOffset::Constant(0),
     };
-    let end = Address {
+    let end = OldAddress {
         base: "array".into(),
         offset: OldAddressOffset::Constant(distance * 4),
     };
@@ -2805,11 +2805,11 @@ fn pointer_subtraction_returns_same_block_element_distance() {
 
 #[test]
 fn uint8_pointer_subtraction_returns_byte_distance() {
-    let start = Address {
+    let start = OldAddress {
         base: "bytes".into(),
         offset: OldAddressOffset::Constant(0),
     };
-    let end = Address {
+    let end = OldAddress {
         base: "bytes".into(),
         offset: OldAddressOffset::Constant(3),
     };
@@ -2846,7 +2846,7 @@ fn uint8_pointer_subtraction_returns_byte_distance() {
 
 #[test]
 fn pointer_subtraction_by_one_steps_back_one_element() {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: "array".into(),
         offset: OldAddressOffset::Constant(8),
     };
@@ -2857,7 +2857,7 @@ fn pointer_subtraction_by_one_steps_back_one_element() {
         crate::kernel::program_expression::variable("p"),
         crate::kernel::program_expression::int32_literal(1),
     );
-    let result = Address {
+    let result = OldAddress {
         base: "array".into(),
         offset: OldAddressOffset::Constant(4),
     };
@@ -2877,11 +2877,11 @@ fn pointer_subtraction_by_one_steps_back_one_element() {
 
 #[test]
 fn pointer_comparison_rejects_different_blocks_as_undefined_behavior() {
-    let left = Address {
+    let left = OldAddress {
         base: "left".into(),
         offset: OldAddressOffset::Constant(0),
     };
-    let right = Address {
+    let right = OldAddress {
         base: "right".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -2908,11 +2908,11 @@ fn pointer_comparison_rejects_different_blocks_as_undefined_behavior() {
 
 #[test]
 fn pointer_subtraction_rejects_different_blocks_as_undefined_behavior() {
-    let left = Address {
+    let left = OldAddress {
         base: "left".into(),
         offset: OldAddressOffset::Constant(0),
     };
-    let right = Address {
+    let right = OldAddress {
         base: "right".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -2939,7 +2939,7 @@ fn pointer_subtraction_rejects_different_blocks_as_undefined_behavior() {
 
 #[test]
 fn pointer_order_and_subtraction_require_external_parameters_to_share_an_object() {
-    let external = |variable| Address {
+    let external = |variable| OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scaled_int32_node(
             OldMachineTerm::Variable(Variable(variable)),
@@ -3022,7 +3022,7 @@ fn pointer_order_and_subtraction_require_external_parameters_to_share_an_object(
 
 #[test]
 fn null_pointers_have_no_object_provenance_for_ordering_or_subtraction() {
-    let null = Address::null();
+    let null = OldAddress::null();
     let null_pointer = OldPointer::new(null.clone(), ProgramType::Int32Pointer);
     assert!(disprove_builtin_prop(
         &crate::kernel::eval::same_allocation_proposition(&null_pointer, &null_pointer)
@@ -3094,7 +3094,7 @@ fn null_pointers_have_no_object_provenance_for_ordering_or_subtraction() {
 
 #[test]
 fn an_external_pointer_does_not_share_an_object_with_itself_until_nonnull() {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(31_050)), 4),
     };
@@ -3144,7 +3144,7 @@ fn an_external_pointer_does_not_share_an_object_with_itself_until_nonnull() {
 
 #[test]
 fn nonempty_loadability_establishes_external_pointer_object_provenance() {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(31_060)), 4),
     };
@@ -3194,11 +3194,11 @@ fn nonempty_loadability_establishes_external_pointer_object_provenance() {
 
 #[test]
 fn pointer_arithmetic_preserves_external_object_identity() {
-    let left = Address {
+    let left = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(31_100)), 4),
     };
-    let right = Address {
+    let right = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(31_101)), 4),
     };
@@ -3221,11 +3221,11 @@ fn pointer_arithmetic_preserves_external_object_identity() {
 
 #[test]
 fn viewed_memory_resource_permits_pointer_addition_load_beyond_memory_block() {
-    let base = Address {
+    let base = OldAddress {
         base: "block".into(),
         offset: OldAddressOffset::Constant(0),
     };
-    let derived = Address {
+    let derived = OldAddress {
         base: "block".into(),
         offset: OldAddressOffset::Constant(4),
     };
@@ -3268,7 +3268,7 @@ fn viewed_memory_resource_permits_pointer_addition_load_beyond_memory_block() {
 
 #[test]
 fn fixed_bound_store_loop_touches_only_valid_pointer_range() {
-    let base = Address {
+    let base = OldAddress {
         base: "block".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -3308,21 +3308,21 @@ fn fixed_bound_store_loop_touches_only_valid_pointer_range() {
     );
     let final_memory = memory
         .store(
-            Address {
+            OldAddress {
                 base: "block".into(),
                 offset: OldAddressOffset::Constant(0),
             },
             int32(0),
         )
         .store(
-            Address {
+            OldAddress {
                 base: "block".into(),
                 offset: OldAddressOffset::Constant(4),
             },
             int32(1),
         )
         .store(
-            Address {
+            OldAddress {
                 base: "block".into(),
                 offset: OldAddressOffset::Constant(8),
             },
@@ -3331,7 +3331,7 @@ fn fixed_bound_store_loop_touches_only_valid_pointer_range() {
     let final_state = ExecutionState::new()
         .with_local(
             "p",
-            ProgramValue::pointer(Address {
+            ProgramValue::pointer(OldAddress {
                 base: "block".into(),
                 offset: OldAddressOffset::Constant(0),
             }),
@@ -3370,7 +3370,7 @@ fn symbolic_loadable_discharges_pointer_access_obligation() {
     let i_bits = OldMachineTerm::Variable(i);
     let n_bits = OldMachineTerm::Variable(n);
     let memory = SymbolicMemory::new();
-    let base = Address {
+    let base = OldAddress {
         base: "array".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -3566,7 +3566,7 @@ fn additive_upper_bound_covers_incremented_pointer_access() {
     let j = Variable(74);
     let j_bits = OldMachineTerm::Variable(j);
     let incremented = OldMachineTerm::add(j_bits.clone(), OldMachineTerm::constant(1));
-    let base = Address {
+    let base = OldAddress {
         base: "p".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -3605,7 +3605,7 @@ fn relative_dependent_range_is_covered_by_owned_range() {
     let index = OldMachineTerm::Variable(Variable(77));
     let length = OldMachineTerm::Variable(Variable(78));
     let capacity = OldMachineTerm::Variable(Variable(79));
-    let base = Address {
+    let base = OldAddress {
         base: "owner".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -4082,7 +4082,7 @@ fn signed_byte_arithmetic_promotes_with_range_facts() {
 
 #[test]
 fn exact_signed_constant_bounds_preserve_frozen_load_identity() {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: "bounded".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -4120,7 +4120,7 @@ fn exact_signed_constant_bounds_preserve_frozen_load_identity() {
     );
     let other_load = OldMachineTerm::read_named(
         ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
-        Box::new(Address {
+        Box::new(OldAddress {
             base: pointer.base,
             offset: OldAddressOffset::Constant(4),
         }),
@@ -4195,7 +4195,7 @@ fn exact_signed_constant_bounds_check_signed_endpoints() {
 
 #[test]
 fn exact_signed_mirror_normalization_checks_state_address_and_selected_premise() {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: "mirror".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -4230,7 +4230,7 @@ fn exact_signed_mirror_normalization_checks_state_address_and_selected_premise()
         (changed, pointer.clone()),
         (
             memory,
-            Address {
+            OldAddress {
                 base: pointer.base,
                 offset: OldAddressOffset::Constant(4),
             },
@@ -4416,7 +4416,7 @@ fn modulo_casts_are_explicit_integer_boundaries_and_preserve_operand_definedness
         ),
         crate::kernel::program_expression::integer_cast_modulo(
             ProgramExpression::Value(ProgramValue::typed_pointer(
-                Address::null(),
+                OldAddress::null(),
                 ProgramType::Int32Pointer,
             )),
             ProgramType::UInt64,
@@ -4548,14 +4548,14 @@ fn unsigned_narrowing_distributes_constant_subtraction_modulo_the_low_word() {
 /// pair + start + width)`, as `&pair.first` would carry.
 fn subobject_pointer(offset: i64, start: i64, width: u32) -> OldPointer {
     OldPointer::new(
-        Address {
+        OldAddress {
             base: "pair".into(),
             offset: OldAddressOffset::Constant(offset),
         },
         ProgramType::Int32Pointer,
     )
     .with_bounds(Some(SubobjectBounds {
-        start: Address {
+        start: OldAddress {
             base: "pair".into(),
             offset: OldAddressOffset::Constant(start),
         },
@@ -4634,7 +4634,7 @@ fn equal_addresses_with_different_bounds_are_different_values() {
 #[test]
 fn substitution_maps_the_bounds_start_with_the_address() {
     let base = Variable(98_101);
-    let address = |delta: i64| Address {
+    let address = |delta: i64| OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::add(
             OldAddressOffset::Variable(base),
@@ -4672,7 +4672,7 @@ mod scaling_tests {
 
 #[test]
 fn implicit_byte_pointer_coercion_retains_the_selected_bounds() {
-    let address = Address::symbolic(Variable(22_102));
+    let address = OldAddress::symbolic(Variable(22_102));
     let pointer = OldPointer::new(address.clone(), ProgramType::Int8Pointer).with_bounds(Some(
         SubobjectBounds {
             start: address,
@@ -4756,14 +4756,14 @@ fn implicit_byte_pointer_coercion_retains_the_selected_bounds() {
 #[test]
 fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
     let _session = crate::kernel::VerificationSession::enter();
-    let a = Address::symbolic(Variable(22_111));
-    let b = Address::symbolic(Variable(22_112));
+    let a = OldAddress::symbolic(Variable(22_111));
+    let b = OldAddress::symbolic(Variable(22_112));
     let stored = subobject_pointer(0, 0, 4);
     let before_b = SymbolicMemory::new().store(a.clone(), ProgramValue::Pointer(stored.clone()));
     let memory = before_b
         .clone()
         .store(b.clone(), ProgramValue::Pointer(stored.clone()));
-    let read = |memory: &SymbolicMemory, address: &Address| {
+    let read = |memory: &SymbolicMemory, address: &OldAddress| {
         OldPointer::from_read(
             stored.address().clone(),
             ProgramType::Int32Pointer,
@@ -4808,7 +4808,7 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
         })),
         &stored,
     ));
-    let c = Address::symbolic(Variable(22_113));
+    let c = OldAddress::symbolic(Variable(22_113));
     let before = SymbolicMemory::new();
     let original = read(&before, &c);
     let changed = before.clone().store(b.clone(), int32(1));
@@ -4868,7 +4868,7 @@ fn array_index_conversion_is_independent_of_bounds() {
         true,
     );
     let base = ProgramValue::typed_pointer(
-        Address::symbolic(Variable(989_972)),
+        OldAddress::symbolic(Variable(989_972)),
         ProgramType::Int32Pointer,
     );
     for index in [
@@ -4934,7 +4934,7 @@ fn widened_index_bounds_use_the_full_unsigned_value() {
 
 #[test]
 fn index_observation_follows_machine_arithmetic() {
-    let base = Address::symbolic(Variable(989_974));
+    let base = OldAddress::symbolic(Variable(989_974));
     let leaf = |value| SpecExpression::ProgramExpression(ProgramExpression::Value(value));
     for (index, bytes) in [
         (
@@ -5036,7 +5036,7 @@ fn tag_clearing_lowering_keeps_the_written_word_under_bounds() {
 #[test]
 fn specification_volatile_reads_do_not_create_execution_events() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = Address {
+    let pointer = OldAddress {
         base: "cell".into(),
         offset: OldAddressOffset::Constant(0),
     };

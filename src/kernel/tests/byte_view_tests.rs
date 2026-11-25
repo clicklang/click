@@ -6,8 +6,8 @@ use crate::kernel::binary_node;
 use crate::kernel::eval::{ContainingIntegerCell, containing_integer_cell, integer_cell_byte};
 use crate::kernel::{int32_constant, native_constant};
 
-fn word(offset: i64) -> Address {
-    Address {
+fn word(offset: i64) -> OldAddress {
+    OldAddress {
         base: AddressBase::from("global:word"),
         offset: OldAddressOffset::Constant(offset),
     }
@@ -402,7 +402,7 @@ fn big_endian_and_uninstalled_byte_orders_have_no_byte_view() {
 
 #[test]
 fn pointer_cells_have_no_byte_view() {
-    let target = Address {
+    let target = OldAddress {
         base: AddressBase::from("global:target"),
         offset: OldAddressOffset::Constant(0),
     };
@@ -704,7 +704,7 @@ fn declared_word_assembly_requires_four_complete_indexed_bytes() {
 fn declared_word_read_representation_is_typed_live_and_state_specific() {
     use crate::kernel::{ProgramPoint, eval::declared_uint32_read_representation};
 
-    let representation = |memory: &SymbolicMemory, address: &Address, order| {
+    let representation = |memory: &SymbolicMemory, address: &OldAddress, order| {
         declared_uint32_read_representation(&ProgramPoint::of_memory(memory), address, order)
     };
     let _session = crate::kernel::VerificationSession::enter();

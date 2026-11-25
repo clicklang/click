@@ -167,7 +167,7 @@ fn external_array_source_selection_skips_unrelated_parameter_cells() {
     for siblings in [1, 64, 2048] {
         let _session = crate::kernel::VerificationSession::enter();
         let source = external(935_000);
-        let target = Address {
+        let target = OldAddress {
             base: "local:indexed-copy".into(),
             offset: OldAddressOffset::Constant(0),
         };

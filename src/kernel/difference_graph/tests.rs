@@ -983,7 +983,7 @@ fn an_int64_division_guard_needs_a_nonzero_divisor() {
 /// names.
 #[test]
 fn a_load_spelled_as_itself_reads_facts_about_its_load_variable() {
-    let pointer = crate::kernel::Address {
+    let pointer = crate::kernel::OldAddress {
         base: "difference-graph-cell".into(),
         offset: crate::kernel::OldAddressOffset::Constant(0),
     };
@@ -1617,9 +1617,9 @@ fn field_offsets_from_equal_bases_are_equal() {
 /// leave it open or decide it unequal.
 #[test]
 fn field_offsets_from_pointers_stated_equal_are_equal() {
-    use crate::kernel::{Address, OldAddressOffset as O};
+    use crate::kernel::{OldAddress, OldAddressOffset as O};
     let base = |index| O::scale_int32(variable(index), 4);
-    let argument = |index| Address {
+    let argument = |index| OldAddress {
         base: crate::kernel::AddressBase::ExternalArgument,
         offset: base(index),
     };
@@ -1653,19 +1653,19 @@ fn field_offsets_from_pointers_stated_equal_are_equal() {
 /// asks for `p == q` is answered too.
 #[test]
 fn pointer_equalities_and_disequalities_compose() {
-    use crate::kernel::{Address, OldAddressOffset as O};
-    let argument = |index| Address {
+    use crate::kernel::{OldAddress, OldAddressOffset as O};
+    let argument = |index| OldAddress {
         base: crate::kernel::AddressBase::ExternalArgument,
         offset: O::scaled_int32_node(variable(index), 4),
     };
-    let null = Address {
+    let null = OldAddress {
         base: crate::kernel::AddressBase::Concrete("null".into()),
         offset: O::Constant(0),
     };
-    let equal = |a: &Address, b: &Address| {
+    let equal = |a: &OldAddress, b: &OldAddress| {
         OldConditionTerm::AddressEqual(Box::new(a.clone()), Box::new(b.clone()))
     };
-    let offsets = |a: &Address, b: &Address| {
+    let offsets = |a: &OldAddress, b: &OldAddress| {
         OldConditionTerm::AddressOffsetEqual(Box::new(a.offset.clone()), Box::new(b.offset.clone()))
     };
     let (p, q, r) = (argument(0), argument(1), argument(2));
@@ -1859,16 +1859,16 @@ fn an_unsigned_difference_that_cannot_wrap_is_at_most_its_minuend() {
 /// 8-aligned while one byte off does not.
 #[test]
 fn low_bits_from_alignment_survive_tagged_word_arithmetic() {
-    use crate::kernel::{Address, OldAddressOffset as O};
+    use crate::kernel::{OldAddress, OldAddressOffset as O};
     use OldMachineTerm as T;
     let u = T::uint64_constant;
     let boxed = |term: &OldMachineTerm| Box::new(term.clone());
-    let pointer = |offset| Address {
+    let pointer = |offset| OldAddress {
         base: crate::kernel::AddressBase::ExternalArgument,
         offset,
     };
     let scaled = |index, byte_width| O::scaled_int32_node(variable(index), byte_width);
-    let address = |pointer: Address| {
+    let address = |pointer: OldAddress| {
         T::IntegerAddress(Box::new(pointer), crate::kernel::AddressObjectClass::NONE)
     };
     let and = |a: &OldMachineTerm, mask| T::Binary {

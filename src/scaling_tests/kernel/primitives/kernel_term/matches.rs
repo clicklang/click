@@ -94,7 +94,7 @@ fn numeric_match_opaque_scrutinee_identity_keeps_exact_roots_and_shared_bodies()
             // producer payload in its argument to exercise this boundary.
             arguments: vec![PureFunctionArgument::Value(ProgramValue::Pointer(
                 OldPointer::new(
-                    Address::symbolic(Variable(991984)),
+                    OldAddress::symbolic(Variable(991984)),
                     ProgramType::Int32Pointer,
                 ),
             ))],
