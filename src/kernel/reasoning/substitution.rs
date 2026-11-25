@@ -878,6 +878,7 @@ fn walk_execution_state<S: VariableSubstitution + ?Sized>(
                 LocalBinding::GlobalObject {
                     program_type,
                     slot,
+                    library_value,
                     volatile,
                     pointee_volatile,
                     constant,
@@ -885,6 +886,7 @@ fn walk_execution_state<S: VariableSubstitution + ?Sized>(
                 } => LocalBinding::GlobalObject {
                     program_type: *program_type,
                     slot: s.local_slot(slot),
+                    library_value: library_value.clone(),
                     volatile: *volatile,
                     pointee_volatile: *pointee_volatile,
                     constant: *constant,

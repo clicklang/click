@@ -2258,6 +2258,11 @@ fn expand_macro_text(
                 continue;
             };
             match definition {
+                MacroDefinition::ObjectLike(_) if state.active.last() == Some(&name) => {
+                    // An object-like replacement can refer to the C name it
+                    // exposes. C11 6.10.3.4 suppresses that recursive expansion.
+                    expanded.push_str(&name);
+                }
                 MacroDefinition::ObjectLike(value) => {
                     let replacement = expand_macro_replacement(&name, &value, macros, state)?;
                     append_macro_tokens(&mut expanded, &replacement, chars.get(index).copied());

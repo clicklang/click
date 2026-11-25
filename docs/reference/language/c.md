@@ -2005,10 +2005,11 @@ are supported.
 
 ## Hosted standard output
 
-The userspace target supplies `stdout` as a stable, nonnull `FILE *`
-through the projected `<stdio.h>`. The pointee type is incomplete.
-Copying the handle preserves the stream's identity, and the sidecar
-can refer to its value as `stdout`.
+The projected `<stdio.h>` links `stdout` to the const pointer declared in
+`library/c/stdio.interface.click`. The pointee type is incomplete.
+C execution, sidecar contracts and standalone theorems use the same
+`stdout` value. A proof can cite `stdout_non_null()` for the non-null
+guarantee.
 
 Hosted startup supplies one `click::c::stdio::stream(stdout)` instance
 with an empty write history. A `main` contract can name it with a single
@@ -2579,8 +2580,8 @@ requirement on it there
 (`mdtests/an_extern_contract_reads_a_c_global.md`,
 `mdtests/an_extern_contract_requirement_on_a_global_is_checked_at_the_call.md`).
 A contract that owns the object may state the value the call leaves in it
-(`mdtests/an_extern_contract_writes_a_c_global_it_owns.md`). On the hosted
-target this includes `stdout`, which `printf`'s contract names.
+(`mdtests/an_extern_contract_writes_a_c_global_it_owns.md`).
+The hosted `printf` contract names the linked const value `stdout`.
 
 An external allocator can describe storage returned through a supported data
 pointer or pointer-array type. For example,

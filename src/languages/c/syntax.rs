@@ -204,17 +204,7 @@ impl CStringLiteral {
     }
 }
 
-// The projected header's reserved binding denotes a value, with no C
-// storage that a program can address or that a call can invalidate.
 const STDIO_FILE_TAG: &str = "__click_c_stdio_FILE";
-const HOSTED_STDOUT_BINDING: &str = "__click_c_stdio_stdout";
-
-fn hosted_stdout_value() -> crate::kernel::ProgramValue {
-    crate::kernel::ProgramValue::typed_pointer(
-        crate::kernel::SymbolicMemory::global_pointer("__click_c_stdio_stdout_stream"),
-        crate::kernel::ProgramType::Int32Pointer,
-    )
-}
 
 /// A file-scope scalar declaration collected from one C translation unit.
 /// `initializer` is absent for an `extern` declaration and present for the
@@ -343,6 +333,15 @@ impl CGlobal {
         self.initializer.is_some()
     }
 
+    /// An external declaration eligible to link with a const library value.
+    pub(crate) fn can_supply_library_value(&self) -> bool {
+        self.is_constant()
+            && !self.is_file_static()
+            && !self.is_defined()
+            && !self.is_volatile()
+            && !self.pointee_is_volatile()
+    }
+
     pub(crate) fn with_library_value(mut self, value: crate::kernel::ProgramValue) -> Self {
         self.library_value = Some(value);
         self
@@ -356,8 +355,8 @@ impl CGlobal {
         self.hosted_stdout
     }
 
-    pub(crate) fn hosted_stdout(&self) -> Option<crate::kernel::ProgramValue> {
-        self.is_hosted_stdout().then(hosted_stdout_value)
+    pub(crate) fn library_value(&self) -> Option<&crate::kernel::ProgramValue> {
+        self.library_value.as_ref()
     }
 
     /// Returns whether this is a C tentative definition such as `int x;`.
@@ -423,7 +422,10 @@ impl CGlobal {
 
     pub(crate) fn to_kernel_global(&self) -> Option<crate::kernel::Global> {
         if let Some(value) = &self.library_value {
-            return Some(self.to_kernel_global_with_value(value.clone()));
+            return Some(
+                self.to_kernel_global_with_value(value.clone())
+                    .with_linked_library_value(),
+            );
         }
         let initializer = self.initializer.as_ref()?;
         let value = match self.interface_type {
@@ -4518,9 +4520,6 @@ impl CExpression {
                 ends: true,
             },
             Self::Void => crate::kernel::program_void_value(),
-            Self::Variable(name) if name.is_named(HOSTED_STDOUT_BINDING) => {
-                crate::kernel::ProgramExpression::Value(hosted_stdout_value())
-            }
             Self::Variable(name) => crate::kernel::program_expression::variable(name.clone()),
             Self::VariableArguments(arguments) => super::variadic::arguments_expression(
                 arguments
@@ -8122,21 +8121,12 @@ impl Parser {
 
     fn from_tokens(
         source: &str,
-        mut tokens: Vec<Token>,
+        tokens: Vec<Token>,
         positions: Vec<SourcePosition>,
         abi: CAbi,
         source_identity: Option<&str>,
         import_mode: bool,
     ) -> Result<Self, CSyntaxError> {
-        // The modeled <stdio.h> projects the stdout macro through a reserved
-        // identifier. Keep the source name in both C and sidecar bindings.
-        for token in &mut tokens {
-            if let Token::Ident(name) = token
-                && name == HOSTED_STDOUT_BINDING
-            {
-                *name = "stdout".into();
-            }
-        }
         Ok(Self {
             tokens,
             positions,

@@ -13,15 +13,15 @@ use crate::kernel::binary_term;
 use crate::kernel::{
     Address, AddressOffset, AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, AlgebraicValueType,
     ConditionTerm, ExecutionState, ExpressionOutcome, IntegerRangeFoldIndex, IntegerTerm,
-    MachineTerm, Proposition, PureFunctionArgument, Resource, Sort, SpecCaptureRefusal,
-    SymbolicMemory, Term, Variable,
+    MachineTerm, ProgramValue, Proposition, PureFunctionArgument, Resource, Sort,
+    SpecCaptureRefusal, SymbolicMemory, Term, Variable,
 };
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{
     bits32_constant, constant_i64, constant_u32, constant_u64, int64_constant, uint64_constant,
 };
 use crate::surface::ParameterBinding;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write;
 
 mod legend;
@@ -1144,6 +1144,54 @@ thread_local! {
     /// Set while a `--trace-proof` trace is rendered: traces keep their
     /// typed notation, which names each read's width and state.
     static TYPED_NOTATION: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+thread_local! {
+    // Source names retained by the linked interface, also used when raising
+    // a library pointer back to a Surface term.
+    static C_LIBRARY_POINTERS: std::cell::RefCell<BTreeMap<Variable, (String, crate::kernel::ProgramType)>> =
+        const { std::cell::RefCell::new(BTreeMap::new()) };
+}
+
+pub(in crate::surface) struct CLibraryPointerNames(
+    BTreeMap<Variable, (String, crate::kernel::ProgramType)>,
+);
+
+impl CLibraryPointerNames {
+    pub(in crate::surface) fn enter(file: &crate::surface::ClickFile) -> Self {
+        let pointers = file
+            .c_library_values
+            .iter()
+            .filter_map(|(name, declaration)| {
+                let ProgramValue::Pointer(pointer) = declaration.linked_value.as_ref()? else {
+                    return None;
+                };
+                let crate::kernel::AddressBase::Symbolic(variable) = pointer.address().base else {
+                    return None;
+                };
+                Some((variable, (name.clone(), pointer.program_type())))
+            })
+            .collect();
+        Self(C_LIBRARY_POINTERS.replace(pointers))
+    }
+}
+
+impl Drop for CLibraryPointerNames {
+    fn drop(&mut self) {
+        C_LIBRARY_POINTERS.replace(std::mem::take(&mut self.0));
+    }
+}
+
+pub(in crate::surface) fn c_library_pointer_name(
+    pointer: &crate::kernel::Address,
+) -> Option<(String, crate::kernel::ProgramType)> {
+    let crate::kernel::AddressBase::Symbolic(variable) = pointer.base else {
+        return None;
+    };
+    if variable.producer() != Some(crate::kernel::Producer::CLibraryValue) {
+        return None;
+    }
+    C_LIBRARY_POINTERS.with(|names| names.borrow().get(&variable).cloned())
 }
 
 /// Starts verifying a C function whose parameters hold `arguments` in the

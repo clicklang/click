@@ -6678,6 +6678,9 @@ pub struct Global {
     pub(super) kernel_name: BindingDeclaration,
     pub(super) program_type: ProgramType,
     pub(super) initial_value: ProgramValue,
+    /// The value is supplied by a linked declaration of a const library
+    /// object and is available independently of a function's memory frame.
+    pub(super) linked_library_value: bool,
     pub(super) volatile: bool,
     pub(super) pointee_volatile: bool,
     pub(super) constant: bool,
@@ -9274,6 +9277,7 @@ pub(super) enum LocalBinding {
     GlobalObject {
         program_type: ProgramType,
         slot: Address,
+        library_value: Option<StoredExecutionValue>,
         volatile: bool,
         pointee_volatile: bool,
         constant: bool,

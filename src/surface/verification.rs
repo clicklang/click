@@ -584,6 +584,7 @@ fn verify_click_file_theorems_with_environment(
     file: &ClickFile,
     function_environment: Option<&ExecutionEnvironment>,
 ) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
+    let _library_names = super::proof_diagnostics::render::CLibraryPointerNames::enter(file);
     let predicate_definitions = combined_predicate_definitions(file)?;
     let click_function_definitions = combined_click_function_definitions(file)?;
     let predicate_environment = PredicateEnvironment::new(&predicate_definitions)
@@ -684,6 +685,7 @@ fn verify_click_file_theorem_context(
     modules::reject_theorem_justification_cycles(&file)?;
     let parsed_sources = parse_verified_sources_context(&file, sources)?;
     let (file, parsed_sources) = with_tactic_procedures(file, parsed_sources)?;
+    let _library_names = super::proof_diagnostics::render::CLibraryPointerNames::enter(&file);
     let theorem = file
         .theorem_definitions()
         .iter()
@@ -2189,6 +2191,7 @@ fn verify_program_in_context(
         .filter(|name| !admitted_functions.contains(name))
         .collect();
 
+    let _library_names = super::proof_diagnostics::render::CLibraryPointerNames::enter(&file);
     let standard_library_theorems = standard_library_theorem_definitions()?;
     let (
         predicate_environment,

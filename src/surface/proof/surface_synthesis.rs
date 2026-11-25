@@ -8754,6 +8754,18 @@ fn synthesize_surface_pointer_expression_routes(
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SurfaceTerm> {
     let _frame = SurfaceSynthesisFrame::enter("pointer-expression")?;
+    if pointer.offset == AddressOffset::Constant(0)
+        && let Some((name, pointer_type)) =
+            crate::surface::proof_diagnostics::render::c_library_pointer_name(pointer)
+    {
+        return Some(SurfaceTerm::QualifiedC {
+            name,
+            lowered: ProgramExpression::Value(ProgramValue::typed_pointer(
+                pointer.clone(),
+                pointer_type,
+            )),
+        });
+    }
     if let Some(read) = pointer.as_loaded_value()
         && let Some((base, value_type)) = synthesize_copied_parameter_pointer(&read)
     {

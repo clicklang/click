@@ -1822,7 +1822,8 @@ fn bind_hosted_startup(
     let Some(ProgramValue::Pointer(stdout)) = parsed
         .globals()
         .get("stdout")
-        .and_then(|global| global.hosted_stdout())
+        .filter(|global| global.is_hosted_stdout())
+        .and_then(|global| global.library_value())
     else {
         return Err(invalid_resource());
     };
