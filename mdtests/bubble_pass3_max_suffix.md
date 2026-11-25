@@ -87,14 +87,14 @@ int32 bubble_pass3(int32 p[3]) {
                             }
                             have separate(memory(p[j]), memory(p[0])) by { rewrite(j, 1); close(); }
                             have separate(memory(p[j + 1]), memory(p[0])) by { rewrite(j, 1); close(); }
-                            have separate(loop(0).statement(0).statement(1).footprint, memory(p[0])) by {
-                                normalize() using { separate(memory(p[j]), memory(p[0])); };
+                            have at(loop(0).statement(0).statement(1).entry, separate(loop(0).statement(0).statement(1).footprint, memory(p[0]))) by {
+                                close();
                             }
                             have at(loop(0).statement(0).statement(1).exit, p[0]) == at(loop(0).statement(0).statement(1).entry, p[0]) by {
                                 preserve(memory(p[0]), loop(0).statement(0).statement(1));
                             }
-                            have separate(loop(0).statement(0).statement(2).footprint, memory(p[0])) by {
-                                normalize() using { separate(memory(p[j + 1]), memory(p[0])); };
+                            have at(loop(0).statement(0).statement(2).entry, separate(loop(0).statement(0).statement(2).footprint, memory(p[0]))) by {
+                                close();
                             }
                             have at(loop(0).statement(0).statement(2).exit, p[0]) == at(loop(0).statement(0).statement(2).entry, p[0]) by {
                                 preserve(memory(p[0]), loop(0).statement(0).statement(2));
@@ -115,11 +115,9 @@ int32 bubble_pass3(int32 p[3]) {
                                         };
                                     }
                                     have p[j + 1] == at(before_swap, p[j]) by { close(); }
-                                    normalize() using {
-                                        p[k] == at(before_swap, p[k]);
-                                        p[j + 1] == at(before_swap, p[j]);
-                                        at(before_swap, p[k] <= p[j]);
-                                    };
+                                    rewrite(p[k], at(before_swap, p[k]));
+                                    rewrite(p[j + 1], at(before_swap, p[j]));
+                                    close();
                                 }
                             }
                         }
@@ -161,7 +159,7 @@ int32 bubble_pass3(int32 p[3]) {
         owns p[0..3];
     }
     have j == 2 by close();
-    have p[j] == p[2] by { normalize() using { j == 2; }; }
+    have p[j] == p[2] by { rewrite(j, 2); close(); }
     have all_le_range(p, 0, 2, p[2]) by {
         unfold(all_le_range(p, 0, 2, p[2]));
         intro() {
