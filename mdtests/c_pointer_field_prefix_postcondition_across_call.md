@@ -87,7 +87,7 @@ int32 vector_push(struct vector* owner, int32 value) {
                 have k < old(owner->cap) by {
                     close() using { k < old(owner->len); old(owner->len) <= old(owner->cap); };
                 }
-                have contains(memory(*owner), memory(owner->len)) by { normalize(); }
+                have contains(memory(*owner), memory(owner->len)) by { close(); }
                 have contains(memory(old(owner->data)[0..old(owner->cap)]), memory(old(owner->data)[k])) by {
                     apply(click::separation::contains_element(old(owner->data), 0, old(owner->cap), k));
                 }
