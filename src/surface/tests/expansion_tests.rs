@@ -1,6 +1,31 @@
 use super::*;
 
 #[test]
+fn field_copy_and_array_loop_expand_without_fact_transport() {
+    for (fixture, function) in [
+        (
+            "mdtests/a_struct_equality_compares_every_field.md",
+            "copy_both",
+        ),
+        ("mdtests/fill3_array_loop.md", "fill3_array_loop"),
+    ] {
+        let (source, sources) = mdtest_sources(fixture);
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        let claim = format!("{function}.contract");
+        let expanded = expand_c_claim_source_by_label(&source, &sources, &claim).unwrap();
+        assert!(expanded.contains("preserve("), "{expanded}");
+        assert!(!expanded.contains("transport("), "{expanded}");
+        crate::surface::check_audit_claim(&claim, true, || {
+            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+}
+
+#[test]
 fn shifted_one_replays_through_each_expansion_entry_point() {
     let source = r#"
         theorem shifted_one(d: uint32) {
@@ -25783,12 +25808,8 @@ fn structural_invariant_bundles_expand_as_ordered_member_haves() {
         printed.find("have a == 0").unwrap()
             < printed.find("have (to_integer(a) + 1) == 1").unwrap()
     );
-    // Replay the exported members in a pure theorem. The loop back edge
-    // would check the bundle directly, so replace its close with the matching
-    // pure proof of the conjunction.
-    let members = printed
-        .strip_suffix("    close();\n}")
-        .expect("the exported members end with a checked loop-bundle close");
+    // The second member's guard is supplied by the first member's exported
+    // fact. Replay the printed members without giving that guard as a premise.
     let replay = format!(
         r#"
         theorem replay(a: int32, b: int32) {{
@@ -25799,7 +25820,7 @@ fn structural_invariant_bundles_expand_as_ordered_member_haves() {
             }}
         }}
     "#,
-        members
+        printed.strip_suffix('}').unwrap()
     );
     without_implicit_solve(|| verify_click_theorems(&replay)).unwrap();
 }
@@ -27291,7 +27312,7 @@ fn selected_float_bounds_expand_and_cold_replay() {
     for (fixture, functions) in [
         (
             "float_bound_composition",
-            &["scale_twice", "double_twice"][..],
+            &["scale_twice", "double_twice", "add_one"][..],
         ),
         (
             "float_signed_ranges",

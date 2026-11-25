@@ -2030,6 +2030,16 @@ fn rewrite_verified_pure_theorem(
     theorem_name: &str,
     ensure_index: usize,
 ) -> Result<String, ClickError> {
+    rewrite_verified_pure_theorem_with_span(click_source, verified, theorem_name, ensure_index)
+        .map(|(source, _)| source)
+}
+
+fn rewrite_verified_pure_theorem_with_span(
+    click_source: &str,
+    verified: &[VerifiedPureTheorem],
+    theorem_name: &str,
+    ensure_index: usize,
+) -> Result<(String, Range<usize>), ClickError> {
     let theorem = verified
         .iter()
         .find(|theorem| {
@@ -2064,7 +2074,7 @@ fn rewrite_verified_pure_theorem(
             unreachable!("theorem ensure edits are never loop phases")
         }
     };
-    splice_source(click_source, &tokens, span, &replacement)
+    splice_source_with_span(click_source, &tokens, span, &replacement)
 }
 
 /// Spells the checked certificate that replaces a whole claim proof.
@@ -2623,6 +2633,15 @@ fn splice_source(
     span: &Range<usize>,
     replacement: &str,
 ) -> Result<String, ClickError> {
+    splice_source_with_span(source, tokens, span, replacement).map(|(source, _)| source)
+}
+
+fn splice_source_with_span(
+    source: &str,
+    tokens: &[SourceToken],
+    span: &Range<usize>,
+    replacement: &str,
+) -> Result<(String, Range<usize>), ClickError> {
     let replacement = require_surface_expansion(printing::spell_source_names(source, replacement))?;
     let replacement = replacement.as_str();
     let mut open_blocks = Vec::new();
@@ -2650,23 +2669,29 @@ fn splice_source(
             && replacement.trim_start().starts_with('{')
     });
     let mut spliced = String::with_capacity(source.len() + replacement.len() + 4);
-    match enclosing {
-        Some(block) if !whole_block_rewritten_as_a_block => {
-            spliced.push_str(&source[..block.start]);
-            spliced.push_str("{ ");
-            spliced.push_str(&source[block.start..span.start]);
-            spliced.push_str(replacement);
-            spliced.push_str(&source[span.end..block.end]);
-            spliced.push_str(" }");
-            spliced.push_str(&source[block.end..]);
-        }
-        _ => {
-            spliced.push_str(&source[..span.start]);
-            spliced.push_str(replacement);
-            spliced.push_str(&source[span.end..]);
-        }
+    let wrap = enclosing.filter(|_| !whole_block_rewritten_as_a_block);
+    if let Some(block) = &wrap {
+        spliced.push_str(&source[..block.start]);
+        spliced.push_str("{ ");
+        spliced.push_str(&source[block.start..span.start]);
+    } else {
+        spliced.push_str(&source[..span.start]);
     }
-    Ok(with_cited_library_imports(spliced, replacement, source))
+    let start = spliced.len();
+    spliced.push_str(replacement);
+    let end = spliced.len();
+    if let Some(block) = wrap {
+        spliced.push_str(&source[span.end..block.end]);
+        spliced.push_str(" }");
+        spliced.push_str(&source[block.end..]);
+    } else {
+        spliced.push_str(&source[span.end..]);
+    }
+    let spliced_len = spliced.len();
+    let rewritten = with_cited_library_imports(spliced, replacement, source);
+    // Library imports are prepended before the rewritten proof.
+    let shift = rewritten.len() - spliced_len;
+    Ok((rewritten, start + shift..end + shift))
 }
 
 /// `source` with an `import click::...;` line for each Click library module
@@ -3506,25 +3531,11 @@ pub struct SelectedTacticExpansion {
 }
 
 impl SelectedTacticExpansion {
-    fn whole_rewrite(original: &str, source: String) -> Self {
-        let prefix = original
-            .chars()
-            .zip(source.chars())
-            .take_while(|(a, b)| a == b)
-            .map(|(c, _)| c.len_utf8())
-            .sum::<usize>();
-        let suffix = original[prefix..]
-            .chars()
-            .rev()
-            .zip(source[prefix..].chars().rev())
-            .take_while(|(a, b)| a == b)
-            .map(|(c, _)| c.len_utf8())
-            .sum::<usize>();
-        let replacement_spans = std::iter::once(prefix..source.len() - suffix).collect();
-        Self {
-            source,
-            replacement_spans,
-        }
+    /// Audit the emitted bare closers as direct checks. Unselected proof text
+    /// still parses as written, and the ordinary syntax of `close() using`
+    /// still denotes search.
+    pub fn with_checked_closers<R>(&self, operation: impl FnOnce() -> R) -> Result<R, ClickError> {
+        parser::with_checked_expansion_closers(&self.source, &self.replacement_spans, operation)
     }
 }
 
@@ -3639,8 +3650,16 @@ fn expand_selected_tactics_context(
             Some(project) => verify_click_project_theorem_context(project, inputs, theorem_name)?,
             None => verify_click_theorem_context(source, inputs, theorem_name)?,
         };
-        return rewrite_verified_pure_theorem(source, &verified, theorem_name, *ensure_index)
-            .map(|rewritten| SelectedTacticExpansion::whole_rewrite(source, rewritten));
+        let (source, span) = rewrite_verified_pure_theorem_with_span(
+            source,
+            &verified,
+            theorem_name,
+            *ensure_index,
+        )?;
+        return Ok(SelectedTacticExpansion {
+            source,
+            replacement_spans: std::iter::once(span).collect(),
+        });
     }
     let contract_value_parameters = contract_value_parameter_names(file.contract_definitions());
     let site_signature = match &site {
@@ -3784,8 +3803,6 @@ fn expand_selected_tactics_context(
                 )));
             }
         };
-        let certificate = ProofCertificate::from_proof_tactics(&tactics)
-            .map_err(|error| ClickError::new(error.message().to_string()))?;
         let (mut span, replacement) = match target.edit {
             TacticSourceEdit::Partial(span) => (
                 span,
@@ -3797,10 +3814,16 @@ fn expand_selected_tactics_context(
             }
             TacticSourceEdit::PartialProofClause(span) => (
                 span,
-                super::printing::format_proof_certificate(&certificate),
+                super::printing::format_proof_certificate(
+                    &ProofCertificate::from_proof_tactics(&tactics)
+                        .map_err(|error| ClickError::new(error.message().to_string()))?,
+                ),
             ),
             TacticSourceEdit::WholeProof(edit) => {
-                let replacement = super::printing::format_proof_certificate(&certificate);
+                let replacement = super::printing::format_proof_certificate(
+                    &ProofCertificate::from_proof_tactics(&tactics)
+                        .map_err(|error| ClickError::new(error.message().to_string()))?,
+                );
                 let span = edit.span().clone();
                 let replacement = match edit {
                     ProofSourceEdit::Explicit(_) => replacement,

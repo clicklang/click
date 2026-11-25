@@ -4,6 +4,19 @@ use click::surface::{
 };
 
 #[test]
+fn theorem_replay_with_a_partial_expression_in_an_unselected_theorem() {
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests/retained_equality_conditionals.md");
+    let arguments = parse_arguments([
+        "--claim".to_string(),
+        "closed_int64_equality_guards.ensures_0".to_string(),
+        path.display().to_string(),
+    ])
+    .unwrap();
+    run_audit(arguments).unwrap();
+}
+
+#[test]
 #[ignore = "nightly: generic Rust claim expansion and retained/cold audit rechecks"]
 fn generic_rust_clause_proofs_stay_on_the_generic_function() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -445,6 +458,64 @@ int32 unrelated(int32 x) { ensures result == x; }
                 .collect::<Vec<_>>(),
             ["leaf.contract", "caller.contract"]
         );
+    }
+}
+
+#[test]
+fn changed_audit_selects_markdown_claims_for_relative_targets() {
+    let cwd = std::env::current_dir().unwrap();
+    let repo = tempfile::tempdir_in(&cwd).unwrap();
+    let fixture_dir = repo.path().join("mdtests");
+    fs::create_dir(&fixture_dir).unwrap();
+    let fixture = fixture_dir.join("scalar.md");
+    let original = include_str!("../../../mdtests/scalar.md");
+    fs::write(&fixture, original).unwrap();
+
+    let git = |args: &[&str]| {
+        let output = Command::new("git")
+            .current_dir(repo.path())
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    };
+    git(&["init", "-q"]);
+    git(&["add", "mdtests/scalar.md"]);
+    git(&[
+        "-c",
+        "user.name=Click Test",
+        "-c",
+        "user.email=test@example.com",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-qm",
+        "baseline",
+    ]);
+
+    let changed = original.replacen("(1 + 2) == 3", "(1 + 3) == 4", 1);
+    assert_ne!(original, changed);
+    fs::write(&fixture, changed).unwrap();
+
+    for path in [
+        fixture.strip_prefix(&cwd).unwrap(),
+        fixture_dir.strip_prefix(&cwd).unwrap(),
+        &fixture,
+    ] {
+        let arguments = parse_arguments(
+            ["--changed-since", "HEAD", path.to_str().unwrap()].map(str::to_string),
+        )
+        .unwrap();
+        let inventory =
+            prepare_audit(&arguments, Instant::now() + Duration::from_secs(30)).unwrap();
+        assert_eq!(inventory.scoped_sites.len(), 1, "{}", path.display());
+        let site = &inventory.scoped_sites[0];
+        assert_eq!(site.click_path, fs::canonicalize(&fixture).unwrap());
+        assert_eq!(site.claim, "scalar.arithmetic_result");
     }
 }
 
@@ -942,6 +1013,160 @@ fn cpp_mdtest_audit_inventories_imported_semantics() {
     assert!(source.project.is_some());
     let sites = inventory_sites(&[path]).expect("inventory C++ smart proof sites");
     assert!(sites.iter().any(|site| site.claim == "caller.ensures_0"));
+}
+
+#[test]
+fn partial_theorem_audit_keeps_the_region_of_a_byte_identical_expansion() {
+    let source = r#"// déjà vu
+theorem identity(x: int32) {
+    requires x == 0;
+    ensures x == 0 by {
+        have x == 0 by {
+            close();
+        }
+        close();
+    }
+}
+
+theorem neighbor(x: int32) {
+    ensures x == 0 implies x == 0 by close();
+}
+"#;
+    let sites = c_smart_tactic_source_sites(source, &[]).unwrap();
+    let artifact = click::surface::expand_c_tactics_source_at(
+        source,
+        &[],
+        std::slice::from_ref(&sites[0].position),
+    )
+    .unwrap();
+    assert_eq!(artifact.source, source);
+    assert_eq!(artifact.replacement_spans.len(), 1);
+    assert_eq!(
+        artifact.replacement_spans[0],
+        source.find("by {").unwrap()..source.find("\n}\n").unwrap()
+    );
+
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("partial_theorem.click");
+    fs::write(&path, source).unwrap();
+    let arguments = parse_arguments([
+        "--claim".to_string(),
+        "identity.ensures_0".to_string(),
+        "--max-sites".to_string(),
+        "1".to_string(),
+        path.display().to_string(),
+    ])
+    .unwrap();
+    run_audit(arguments).unwrap();
+}
+
+#[test]
+fn partial_audit_checks_emitted_closers_and_leaves_other_search_available() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("partial.md");
+    let mdtest = r#"```c filename=identity.c
+int32 identity(int32 x) { return x; }
+```
+
+```click
+verifying "identity.c";
+int32 identity(int32 x) {
+    requires x == 0;
+    ensures result == 0;
+} by {
+    have 0 == x by { close(); }
+    step_until(function.exit);
+}
+```
+
+```expect
+pass
+```
+"#;
+    fs::write(&path, mdtest).unwrap();
+    let arguments = parse_arguments([
+        "--claim".to_string(),
+        "identity.contract".to_string(),
+        "--max-sites".to_string(),
+        "1".to_string(),
+        path.display().to_string(),
+    ])
+    .unwrap();
+    run_audit(arguments).unwrap();
+
+    let path = directory.path().join("implication.click");
+    let source = "theorem identity(x: int32) { ensures x == 0 implies x == 0 by close(); }";
+    fs::write(&path, source).unwrap();
+    let original = load_audit_source(&path).unwrap();
+    let start = source.find("close").unwrap();
+    let artifact = click::surface::SelectedTacticExpansion {
+        source: source.to_string(),
+        replacement_spans: std::iter::once(start..start + "close();".len()).collect(),
+    };
+    let replay = || {
+        cold_verify_expansion(
+            source,
+            &original,
+            "identity.ensures_0",
+            AuditLimits::default().verification,
+            false,
+        )
+    };
+    assert!(replay().is_ok());
+    let error = artifact
+        .with_checked_closers(replay)
+        .unwrap()
+        .err()
+        .expect("a generated closer may not search for a proof");
+    assert!(error.contains("cold replay:"), "{error}");
+    assert!(
+        replay().is_ok(),
+        "the next replay restores ordinary closing"
+    );
+}
+
+#[test]
+fn complete_replay_allows_direct_close_and_refuses_its_search_fallback() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("implication.click");
+    let original = r#"
+theorem identity(x: int32) {
+    ensures x == 0 implies x == 0 by { close(); }
+}
+"#;
+    fs::write(&path, original).unwrap();
+    let claim = "identity.ensures_0";
+    let arguments = parse_arguments([
+        "--claim".to_string(),
+        claim.to_string(),
+        path.display().to_string(),
+    ])
+    .unwrap();
+    run_audit(arguments).expect("the expanded closer checks directly after intro");
+
+    let source = load_audit_source(&path).unwrap();
+    let limit = AuditLimits::default().verification;
+    assert!(cold_verify_expansion(original, &source, claim, limit, false).is_ok());
+    let error = cold_verify_expansion(original, &source, claim, limit, true)
+        .err()
+        .expect("the original closer still needs search");
+    assert!(
+        error.starts_with("cold replay: ") && error.contains(claim),
+        "{error}"
+    );
+}
+
+#[test]
+fn cpp_theorem_expansion_uses_imported_record_layouts() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/cpp_class_template_override_calls_its_own_method.md");
+    let arguments = parse_arguments([
+        "--claim".to_string(),
+        "stored_value.ensures_0".to_string(),
+        path.display().to_string(),
+    ])
+    .unwrap();
+    run_audit(arguments).unwrap();
 }
 
 #[test]

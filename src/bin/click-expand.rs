@@ -979,23 +979,49 @@ int32 identity(int32 x) {
             written.contains("Selected proof still contains normalize()"),
             "{written}"
         );
-        let generated = check(&fixture, "divide_two.ensures_0").unwrap_err();
+        let division = check(&fixture, "divide_two.ensures_0").unwrap();
+        for law in [
+            "float32_divide_positive_lower",
+            "float32_divide_positive_upper",
+        ] {
+            assert!(division.contains(law), "{division}");
+        }
+        check(&fixture, "add_one.ensures_0").unwrap();
+
+        let directory = tempfile::tempdir().unwrap();
+        let negative_divisor = directory.path().join("negative_divisor.click");
+        fs::write(
+            &negative_divisor,
+            "theorem negative_divisor_bound(x: float) {\n\
+                requires x >= float32_from_bits(0xc1200000);\n\
+                ensures x / float32_from_bits(0xc0000000) <= float32_from_bits(0x40a00000) by close();\n\
+            }\n",
+        )
+        .unwrap();
+        let generated = check(&negative_divisor, "negative_divisor_bound.ensures_0").unwrap_err();
         assert!(
             generated.contains("Expanded proof still contains normalize()"),
             "{generated}"
         );
 
-        let directory = tempfile::tempdir().unwrap();
-        let hidden = directory.path().join("mirror.click");
+        let guard_spellings = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/normalize_using_reads_every_spelling_of_a_cited_premise.md");
+        check(&guard_spellings, "integer_mirror.ensures_0").unwrap();
+
+        let hidden = directory.path().join("nested.click");
         fs::write(
             &hidden,
-            "theorem integer_mirror(i: Integer, j: Integer) {\n\
-                requires i < j;\n\
-                ensures (if j > i { 1 } else { 2 }) == 1 by { close() using { i < j; }; }\n\
-            }\n",
+            r#"theorem nested(x: int32, y: int32) {
+    requires x < y;
+    requires y == 5;
+    ensures (if x < y { if y == 5 { 8 } else { 3 } } else { 0 }) == 8 by {
+        close() using { x < y; y == 5; };
+    }
+}
+"#,
         )
         .unwrap();
-        let compatibility = check(&hidden, "integer_mirror.ensures_0").unwrap_err();
+        let compatibility = check(&hidden, "nested.ensures_0").unwrap_err();
         assert!(
             compatibility.contains("used legacy normalization"),
             "{compatibility}"
@@ -1458,6 +1484,21 @@ int32 identity(int32 x) {
         assert!(!expanded.contains("step_until(function.exit);"));
         assert!(!expanded.contains("solve();"));
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn expands_memory_with_a_current_pointer_and_saved_index() {
+        let click_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/borrowed_window_returns_what_was_lent.md");
+        run(&Arguments {
+            click_path,
+            selection: Selection::Claim("push.contract".to_string()),
+            limits: RunLimits::expand(),
+            output: None,
+            in_place: false,
+            check_normalize_removal: false,
+        })
+        .expect("the generated preservation proof should parse and verify");
     }
 
     #[test]
