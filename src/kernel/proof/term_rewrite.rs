@@ -148,7 +148,7 @@ pub(crate) enum TypedProgramValueReplacement {
     Bitvector(MachineTerm),
     /// The whole value: a use of the bound variable's address adopts its
     /// subobject bounds.
-    Pointer(Pointer),
+    Pointer(OldPointer),
 }
 
 type MatchFieldReplacements = (
@@ -1712,7 +1712,7 @@ fn exhausted_program_value(value: &ProgramValue) -> ProgramValue {
         ProgramValue::Float32(_) => ProgramValue::Float32(MachineTerm::constant(0)),
         ProgramValue::Float64(_) => ProgramValue::Float64(MachineTerm::uint64_constant(0)),
         ProgramValue::Pointer(pointer) => {
-            ProgramValue::Pointer(Pointer::new(exhausted_pointer(), pointer.program_type()))
+            ProgramValue::Pointer(OldPointer::new(exhausted_pointer(), pointer.program_type()))
         }
     }
 }
@@ -1993,7 +1993,7 @@ pub(crate) struct TermRewrite<'a> {
     pointer_variable: Option<(Variable, &'a Address)>,
     pointer_addresses_only: bool,
     pointer_exact: Option<(&'a Address, &'a Address)>,
-    pointer_value_exact: Option<(&'a Pointer, &'a Pointer)>,
+    pointer_value_exact: Option<(&'a OldPointer, &'a OldPointer)>,
     pointer_offset_exact: Option<OffsetReplacement<'a>>,
     /// A `Bool` equality's rewrite (Stage 5, rule L-Eq): every occurrence of
     /// the first condition is replaced by the second.
@@ -2696,7 +2696,7 @@ impl<'a> TermRewrite<'a> {
         rewrite
     }
 
-    pub(crate) fn for_pointer_value_exact(from: &'a Pointer, to: &'a Pointer) -> Self {
+    pub(crate) fn for_pointer_value_exact(from: &'a OldPointer, to: &'a OldPointer) -> Self {
         let mut rewrite = Self::empty();
         rewrite.pointer_value_exact = Some((from, to));
         // Reads named by load variables can sit at addresses formed from
@@ -4403,7 +4403,7 @@ impl<'a> TermRewrite<'a> {
                     }
                     // Lexical substitution replaces a complete formal value.
                     // Address-equality rewrites use a separate constructor.
-                    Some(Pointer::new(to.clone(), v.program_type()))
+                    Some(OldPointer::new(to.clone(), v.program_type()))
                 }));
                 let adopted = if !v.bounds_are_known() {
                     replacement.as_ref().and_then(|p| p.bounds().cloned())
@@ -6172,7 +6172,7 @@ impl<'a> TermRewrite<'a> {
                 else {
                     unreachable!()
                 };
-                let canonical = |value: Pointer| {
+                let canonical = |value: OldPointer| {
                     value.map_addresses(|p| Address {
                         base: p.base.clone(),
                         offset: crate::kernel::eval::canonical_offset_term(&p.offset),
@@ -7914,7 +7914,7 @@ mod tests {
                     "observe_array".into(),
                     vec![PureFunctionArgument::ArrayRef {
                         point: crate::kernel::ProgramPoint::of_memory(&memory),
-                        pointer: ProgramValue::Pointer(Pointer::new(
+                        pointer: ProgramValue::Pointer(OldPointer::new(
                             pointer,
                             ProgramType::VoidPointer,
                         )),
@@ -7984,7 +7984,7 @@ mod tests {
         let mut program_replacements = BTreeMap::new();
         program_replacements.insert(
             source,
-            TypedProgramValueReplacement::Pointer(Pointer::new(
+            TypedProgramValueReplacement::Pointer(OldPointer::new(
                 replacement.clone(),
                 ProgramType::Int32Pointer,
             )),
@@ -9525,14 +9525,14 @@ mod pointer_integer_rewrite_tests {
     #[test]
     fn a_generic_read_rewrite_keeps_the_substituted_cells_version_name() {
         let _session = crate::kernel::VerificationSession::enter();
-        let from = Pointer::new(
+        let from = OldPointer::new(
             Address {
                 base: AddressBase::ExternalArgument,
                 offset: AddressOffset::Constant(0),
             },
             ProgramType::Int32Pointer,
         );
-        let to = Pointer::new(
+        let to = OldPointer::new(
             Address::symbolic(Variable(996_021)),
             ProgramType::Int32Pointer,
         );
@@ -9574,11 +9574,11 @@ mod pointer_integer_rewrite_tests {
     #[test]
     fn full_pointer_rewrite_keeps_the_read_version_and_state() {
         let _session = crate::kernel::VerificationSession::enter();
-        let from = Pointer::new(
+        let from = OldPointer::new(
             Address::symbolic(Variable(996_010)),
             ProgramType::Int32PointerPointer,
         );
-        let to = Pointer::new(
+        let to = OldPointer::new(
             Address::symbolic(Variable(996_011)),
             ProgramType::Int32PointerPointer,
         );
@@ -9650,7 +9650,7 @@ mod pointer_integer_rewrite_tests {
     #[test]
     fn numeric_rewriting_retains_the_existing_record_without_creating_one() {
         let context = PureFactContext::new();
-        let pointer = Pointer::new(
+        let pointer = OldPointer::new(
             Address::symbolic(Variable(996_001)),
             ProgramType::Int32Pointer,
         );

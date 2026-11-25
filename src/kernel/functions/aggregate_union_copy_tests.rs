@@ -329,7 +329,7 @@ fn aggregate_copy_names_forgotten_pointer_fields_by_the_complete_typed_store() {
             ],
         );
         let domain = Address::symbolic(Variable(986_246));
-        let value = Pointer::new(domain.offset_by_bytes(4), ty).with_bounds(Some(
+        let value = OldPointer::new(domain.offset_by_bytes(4), ty).with_bounds(Some(
             crate::kernel::SubobjectBounds {
                 start: domain,
                 width: 16u32.into(),
@@ -416,7 +416,7 @@ fn aggregate_copy_union_reads_keep_the_caller_versions() {
     assert_eq!(*address, source_member);
 
     let domain = Address::symbolic(Variable(986_247));
-    let value = Pointer::new(domain.offset_by_bytes(4), pointer_type).with_bounds(Some(
+    let value = OldPointer::new(domain.offset_by_bytes(4), pointer_type).with_bounds(Some(
         crate::kernel::SubobjectBounds {
             start: domain,
             width: 16u32.into(),
@@ -506,7 +506,7 @@ fn aggregate_and_union_copies_keep_retained_pointer_producers() {
     let _session = crate::kernel::VerificationSession::enter();
     let source = SymbolicMemory::local_pointer("retained_copy_source");
     let target = SymbolicMemory::local_pointer("retained_copy_target");
-    let pointer = Pointer::new(
+    let pointer = OldPointer::new(
         Address::symbolic(Variable(1027800)),
         ProgramType::Int32Pointer,
     );

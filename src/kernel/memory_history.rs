@@ -3232,7 +3232,7 @@ fn pointer_read_domains_equal(
 pub(in crate::kernel) fn complete_pointer_read_value(
     origin: &Address,
     assumptions: &PureFactContext,
-) -> Option<Pointer> {
+) -> Option<OldPointer> {
     let ProgramValue::Pointer(value) = complete_pointer_carrier_read_value(origin, assumptions)?
     else {
         return None;
@@ -3480,7 +3480,7 @@ pub(in crate::kernel) fn pointer_read_stored_value(
     read: &Address,
     assumptions: &PureFactContext,
     max_hops: Option<usize>,
-) -> Option<Pointer> {
+) -> Option<OldPointer> {
     let MachineTerm::MemoryLoad(memory, address, kind) =
         crate::kernel::equality_graph::logical_pointer_read_term(read)?
     else {
@@ -3522,7 +3522,7 @@ fn pointer_value_at_stopping_store(
     kind: LoadKind,
     bytes: u32,
     assumptions: &PureFactContext,
-) -> Option<Pointer> {
+) -> Option<OldPointer> {
     let step = cell.node().derivation()?;
     let MemoryDerivation::Store {
         pointer: write,
@@ -6348,7 +6348,7 @@ pub(super) fn store_value_equation_at(
     {
         // The producer knows this exact store's value. Retain its read equation;
         // registration relates aliases by congruence, without looking in cells.
-        let read = Pointer::new(
+        let read = OldPointer::new(
             Address::loaded_value_at(after, pointer),
             value.program_type(),
         );
@@ -6903,10 +6903,10 @@ fn transport_framed_atomic_condition(
 }
 
 fn transport_framed_atomic_pointer_value(
-    value: &Pointer,
+    value: &OldPointer,
     after: &ProgramPoint,
     assumptions: Option<(&PureFactContext, bool)>,
-) -> Option<Pointer> {
+) -> Option<OldPointer> {
     // Only reconstructed complete words need their read provenance moved
     // alongside their numeric address. Ordinary pointers keep their origin.
     let reconstructed_word = value.address().integer_address_bits().is_some();
@@ -7859,7 +7859,7 @@ mod opaque_pointer_frame_tests {
         field: &Address,
         write: &Address,
         facts: &PureFactContext,
-    ) -> Option<(Pointer, Proposition)> {
+    ) -> Option<(OldPointer, Proposition)> {
         let resource = |p: Address, bytes| {
             Resource::Memory(MemoryRange::new_with_element_width(
                 p,
@@ -8112,7 +8112,7 @@ mod opaque_pointer_frame_tests {
         let field = header.clone().offset_by_bytes(8);
         let buffer = Address::symbolic(Variable(9_880_421));
         let target = Address::symbolic(Variable(9_880_422));
-        let stored = Pointer::new(target.clone(), ProgramType::Int32Pointer).with_bounds(Some(
+        let stored = OldPointer::new(target.clone(), ProgramType::Int32Pointer).with_bounds(Some(
             SubobjectBounds {
                 start: target,
                 width: 4u32.into(),
@@ -8128,7 +8128,7 @@ mod opaque_pointer_frame_tests {
                 .store(write.clone(), ProgramValue::Int32(7u32.into())),
         );
         let read = |memory: &SharedMemory| {
-            Pointer::from_read(
+            OldPointer::from_read(
                 stored.address().clone(),
                 ProgramType::Int32Pointer,
                 memory,
@@ -9431,7 +9431,7 @@ mod common_boolean_transport_tests {
                 right: Box::new(MachineTerm::constant(1)),
             },
             ConditionTerm::PointerEqual(
-                Box::new(Pointer::new(
+                Box::new(OldPointer::new(
                     Address {
                         base: AddressBase::Symbolic(Variable(972_003)),
                         offset: AddressOffset::scaled_int32_node(
@@ -9445,7 +9445,7 @@ mod common_boolean_transport_tests {
                     },
                     ProgramType::Int32Pointer,
                 )),
-                Box::new(Pointer::new(Address::null(), ProgramType::Int32Pointer)),
+                Box::new(OldPointer::new(Address::null(), ProgramType::Int32Pointer)),
             ),
             ConditionTerm::AddressEqual(
                 Box::new(Address {

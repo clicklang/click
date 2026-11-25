@@ -1003,7 +1003,7 @@ fn operand_reference(
         SpecValue::Native(value) => SpecExpression::Value(value),
         // A pointer's arithmetic reads its element width from its type, which
         // its retained native pointer keeps and a generated name does not.
-        SpecValue::Shared(root) if root.pointer_native().is_some() => {
+        SpecValue::Shared(root) if root.old_pointer_value().is_some() => {
             SpecExpression::Value(SpecValue::Shared(root).into_native())
         }
         value => {

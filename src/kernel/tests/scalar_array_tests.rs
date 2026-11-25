@@ -259,7 +259,7 @@ fn compact_scalar_array_initialization_rejects_readonly_storage() {
     let state = ExecutionState::new()
         .with_memory(memory)
         .with_resource_context(own_memory_context(target.clone(), 0, 4));
-    let pointer = Pointer::new(target.clone(), ProgramType::UInt32Pointer);
+    let pointer = OldPointer::new(target.clone(), ProgramType::UInt32Pointer);
     let theorem = prove_execution_statement_execution(
         state,
         program_initialize_scalar_array(
@@ -420,7 +420,7 @@ fn scalar_array_region_writes_require_separation_for_the_entire_destination() {
                 panic!("expected a borrow separation obligation");
             };
             let expected = MemoryRange::from_pointer_value(
-                &Pointer::new(pointer("local:array-target", 0), ProgramType::UInt32Pointer),
+                &OldPointer::new(pointer("local:array-target", 0), ProgramType::UInt32Pointer),
                 0u32.into(),
                 4u32.into(),
                 4,

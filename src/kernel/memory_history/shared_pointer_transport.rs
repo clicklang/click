@@ -335,7 +335,7 @@ mod tests {
             .memory()
             .clone()
             .store(other, ProgramValue::Int32(MachineTerm::constant(3)));
-        let source = Pointer::new(
+        let source = OldPointer::new(
             Address::symbolic(Variable(1007010)),
             ProgramType::VoidPointer,
         )
@@ -387,7 +387,7 @@ mod tests {
                 Box::new(AddressOffset::Constant(0)),
             ),
         ] {
-            let source = Pointer::new(
+            let source = OldPointer::new(
                 Address {
                     base: base.base.clone(),
                     offset,
@@ -424,7 +424,7 @@ mod tests {
             .clone()
             .store(other, ProgramValue::Int32(MachineTerm::constant(3)));
         let loaded = Arc::new(Address::loaded_value(&before, &field));
-        let source = Pointer::new(
+        let source = OldPointer::new(
             Address::from_integer_address(MachineTerm::read_named(
                 ProgramPoint::at(&before),
                 Box::new(field.clone()),

@@ -296,7 +296,7 @@ fn complete_parameter_pointer_reads_keep_their_write_point_across_sibling_stores
         offset: AddressOffset::Variable(Variable(38_154)),
     };
     let target = Address::symbolic(Variable(38_155));
-    let stored = Pointer::new(target.clone(), ProgramType::Int32Pointer)
+    let stored = OldPointer::new(target.clone(), ProgramType::Int32Pointer)
         .with_bounds(Some(SubobjectBounds::constant(target, 4)));
     let state = ExecutionState::new();
     let written = state.clone().with_memory(
@@ -321,7 +321,7 @@ fn complete_parameter_pointer_reads_keep_their_write_point_across_sibling_stores
                 .expect("complete pointer store at the parameter cell")
         });
         assert_eq!(version.read_version_id(), written.program_point_id());
-        let read = Pointer::from_point_read(version, stored.program_type(), &cell);
+        let read = OldPointer::from_point_read(version, stored.program_type(), &cell);
         assert_eq!(
             crate::kernel::eval::pointer_read_over_write_program_value(read.address()).as_ref(),
             Some(&stored)
@@ -353,9 +353,9 @@ fn boolean_and_complete_pointer_reads_keep_their_stores_across_sibling_writes() 
     let callback = flag.offset_by_bytes(16);
     let sibling = flag.offset_by_bytes(24);
     let target = Address::symbolic(Variable(38_143));
-    let pointer = Pointer::new(target.clone(), ProgramType::Int32Pointer)
+    let pointer = OldPointer::new(target.clone(), ProgramType::Int32Pointer)
         .with_bounds(Some(SubobjectBounds::constant(target, 4)));
-    let function = Pointer::new(
+    let function = OldPointer::new(
         Address::function("callback_target"),
         ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
     );
@@ -393,7 +393,7 @@ fn boolean_and_complete_pointer_reads_keep_their_stores_across_sibling_writes() 
                 let version = point
                     .indexed_typed_version(cell, stored.program_type())
                     .unwrap();
-                let read = Pointer::from_point_read(version, stored.program_type(), cell);
+                let read = OldPointer::from_point_read(version, stored.program_type(), cell);
                 assert_eq!(
                     read.address()
                         .as_loaded_value()

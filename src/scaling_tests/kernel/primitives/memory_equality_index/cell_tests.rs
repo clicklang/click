@@ -1530,17 +1530,17 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
             );
             let pointer = Address::loaded(&MachineTerm::Variable(variable)).unwrap();
             context.register_pointer_read(&pointer, &retained_state, &field);
-            Pointer::from_read(pointer, ProgramType::Int32Pointer, &retained_state, &field)
+            OldPointer::from_read(pointer, ProgramType::Int32Pointer, &retained_state, &field)
         };
         let source = read(&PureFactContext::new(), &SymbolicMemory::new());
         let before =
             SymbolicMemory::new().store(field.clone(), ProgramValue::Pointer(source.clone()));
-        let range = |base: Pointer, start: u32, end: u32| {
+        let range = |base: OldPointer, start: u32, end: u32| {
             MemoryRange::from_pointer_value(&base, start.into(), end.into(), 4)
         };
         let separation = Proposition::ResourceSeparate {
             left: Box::new(Resource::Memory(range(
-                Pointer::new(field.clone(), ProgramType::Int32Pointer),
+                OldPointer::new(field.clone(), ProgramType::Int32Pointer),
                 0,
                 2,
             ))),
@@ -1567,7 +1567,7 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
             .unchecked_with_fact(ResourceFact::own_memory(range(current.clone(), 0, 1)));
         for index in 0..size {
             resources = resources.unchecked_with_fact(ResourceFact::own_memory(range(
-                Pointer::new(
+                OldPointer::new(
                     Address::symbolic(Variable(9_911_000 + index)),
                     ProgramType::Int32Pointer,
                 ),
@@ -1661,7 +1661,7 @@ fn framed_pointer_read_selects_interior_writes_under_live_authority() {
         let source = read(&PureFactContext::new(), &SymbolicMemory::new());
         let before = SymbolicMemory::new().store(
             field.clone(),
-            ProgramValue::Pointer(Pointer::new(source.clone(), ProgramType::Int32Pointer)),
+            ProgramValue::Pointer(OldPointer::new(source.clone(), ProgramType::Int32Pointer)),
         );
         let range = |base: Address, start: u32, end: u32| {
             MemoryRange::new_with_element_width(base, start.into(), end.into(), 4)

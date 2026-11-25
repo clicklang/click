@@ -1,5 +1,5 @@
 //! Value-origin equality. Address congruence must never enter this index.
-use super::Pointer;
+use super::OldPointer;
 use crate::persistent::{PersistentComponents, PersistentMap, PersistentSet};
 
 /// Persistent union by size. Insertion touches two root paths; a branch
@@ -86,7 +86,7 @@ impl<K: Ord + Clone> ValueClasses<K> {
     }
 }
 
-pub(super) fn prefer_pointer(left: &Pointer, right: &Pointer) -> Pointer {
+pub(super) fn prefer_pointer(left: &OldPointer, right: &OldPointer) -> OldPointer {
     // A contract supplies the provenance of an opaque incoming value. Its
     // explicit subobject boundary takes precedence over unknown bounds.
     if !left.bounds_are_known() && right.bounds_are_known()
@@ -125,10 +125,10 @@ mod tests {
         assert!(!sibling.equal(&100, &500));
     }
 
-    fn value(id: u64) -> Pointer {
-        Pointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
+    fn value(id: u64) -> OldPointer {
+        OldPointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
     }
-    fn equality(a: &Pointer, b: &Pointer) -> Proposition {
+    fn equality(a: &OldPointer, b: &OldPointer) -> Proposition {
         Proposition::condition_is(
             ConditionTerm::PointerEqual(Box::new(a.clone()), Box::new(b.clone())),
             true,
@@ -139,7 +139,7 @@ mod tests {
         let a = MachineTerm::Variable(Variable(809_998));
         let b = MachineTerm::Variable(Variable(809_999));
         let pointer = |index| {
-            Pointer::new(
+            OldPointer::new(
                 Address {
                     base: AddressBase::ExternalArgument,
                     offset: AddressOffset::scale_int32(index, 4),
@@ -158,7 +158,7 @@ mod tests {
     #[test]
     fn a_proven_null_address_denotes_the_unique_null_value() {
         let pointer = value(810_000);
-        let null = Pointer::new(Address::null(), ProgramType::Int32Pointer);
+        let null = OldPointer::new(Address::null(), ProgramType::Int32Pointer);
         let empty = PureFactContext::new();
         assert!(!empty.pointer_provenance_match(&pointer, &null));
         let context = empty.assume_condition(
@@ -302,7 +302,7 @@ mod tests {
         let retained_state = crate::kernel::intern_memory(SymbolicMemory::new());
         let cell = Address::symbolic(Variable(824_002));
         let read_address = Address::symbolic(Variable(824_003));
-        let read = Pointer::from_read(
+        let read = OldPointer::from_read(
             read_address,
             ProgramType::Int32Pointer,
             &retained_state,
@@ -323,13 +323,13 @@ mod tests {
         let a = value(825_001);
         let b = value(825_002);
         let retained_state = crate::kernel::intern_memory(SymbolicMemory::new());
-        let x = Pointer::from_read(
+        let x = OldPointer::from_read(
             Address::symbolic(Variable(825_003)),
             ProgramType::Int32Pointer,
             &retained_state,
             a.address(),
         );
-        let y = Pointer::from_read(
+        let y = OldPointer::from_read(
             Address::symbolic(Variable(825_004)),
             ProgramType::Int32Pointer,
             &retained_state,

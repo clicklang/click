@@ -1567,7 +1567,7 @@ pub enum ConditionTerm {
     AddressOffsetEqual(Box<AddressOffset>, Box<AddressOffset>),
     AddressEqual(Box<Address>, Box<Address>),
     /// Specification pointer equality includes the designated object and bounds.
-    PointerEqual(Box<Pointer>, Box<Pointer>),
+    PointerEqual(Box<OldPointer>, Box<OldPointer>),
     IntegerLessThan(SharedIntegerTerm, SharedIntegerTerm),
     IntegerLessEqual(SharedIntegerTerm, SharedIntegerTerm),
     IntegerGreaterThan(SharedIntegerTerm, SharedIntegerTerm),
@@ -1623,7 +1623,7 @@ enum ConditionIdentity<'a> {
     Float64(&'a FloatCondition),
     AddressOffsetEqual(&'a AddressOffset, &'a AddressOffset),
     AddressEqual(&'a Address, &'a Address),
-    PointerEqual(&'a Pointer, &'a Pointer),
+    PointerEqual(&'a OldPointer, &'a OldPointer),
     IntegerLessThan(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
     IntegerLessEqual(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
     IntegerGreaterThan(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
@@ -2654,7 +2654,7 @@ pub(super) struct ObjectTypePremise {
 /// value and is not part of its identity: equality, ordering and hashing
 /// ignore it, as they ignore the declared object class and type evidence.
 #[derive(Clone, Debug)]
-pub struct Pointer {
+pub struct OldPointer {
     address: Address,
     /// The allocation designated when this value entered. Address aliases
     /// never replace this component; only value transport or substitution
@@ -2830,7 +2830,7 @@ impl SubobjectBounds {
     pub(crate) fn coverage_fact(&self, range: &MemoryRange) -> Proposition {
         let pointer = |pointer: Address| {
             Term::ProgramValue(
-                ProgramValue::Pointer(Pointer::new(pointer, ProgramType::VoidPointer)).into(),
+                ProgramValue::Pointer(OldPointer::new(pointer, ProgramType::VoidPointer)).into(),
             )
         };
         let width = range.element_width();
@@ -2942,7 +2942,7 @@ impl SubobjectBounds {
     }
 }
 
-impl Pointer {
+impl OldPointer {
     pub(crate) fn new(pointer: Address, program_type: ProgramType) -> Self {
         assert!(
             program_type.is_pointer(),
@@ -3302,7 +3302,7 @@ impl Pointer {
     }
 }
 
-impl Pointer {
+impl OldPointer {
     /// Everything that is the value's identity: the address, its provenance,
     /// and the subobject it
     /// designates, plus its opaque local-reference custody. A lease key is a
@@ -3333,7 +3333,7 @@ impl Pointer {
     }
 }
 
-impl Pointer {
+impl OldPointer {
     /// Whether the two have one C provenance, as identity compares it: the
     /// same allocation and the same array object.
     pub(crate) fn same_provenance_as(&self, other: &Self) -> bool {
@@ -3346,33 +3346,33 @@ impl Pointer {
     }
 }
 
-impl PartialEq for Pointer {
+impl PartialEq for OldPointer {
     fn eq(&self, other: &Self) -> bool {
         self.identity() == other.identity()
     }
 }
 
-impl Eq for Pointer {}
+impl Eq for OldPointer {}
 
-impl std::hash::Hash for Pointer {
+impl std::hash::Hash for OldPointer {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.identity().hash(state);
     }
 }
 
-impl PartialOrd for Pointer {
+impl PartialOrd for OldPointer {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for Pointer {
+impl Ord for OldPointer {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.identity().cmp(&other.identity())
     }
 }
 
-impl std::ops::Deref for Pointer {
+impl std::ops::Deref for OldPointer {
     type Target = Address;
 
     fn deref(&self) -> &Self::Target {
@@ -3960,7 +3960,7 @@ pub(in crate::kernel) enum PointerIntegerKind {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct PointerIntegerValue {
     pub(in crate::kernel) numeric: Box<ProgramValue>,
-    pub(in crate::kernel) pointer: Box<Pointer>,
+    pub(in crate::kernel) pointer: Box<OldPointer>,
     pub(in crate::kernel) kind: PointerIntegerKind,
 }
 
@@ -3995,7 +3995,7 @@ pub enum ProgramValue {
     Float32(MachineTerm),
     /// IEEE-754 binary64 payload represented in the shared checked term arena.
     Float64(MachineTerm),
-    Pointer(Pointer),
+    Pointer(OldPointer),
     /// A value of an abstract type parameter: the spec value of that rigid
     /// type it is.
     Parameter(Box<AlgebraicTerm>),
@@ -15690,7 +15690,7 @@ pub struct FunctionContractRefinementContext {
     /// not needed to lower the symbolic relation.
     pub(super) function_interface: FunctionContractInterface,
     pub(super) function_name: String,
-    pub(super) pointer: Pointer,
+    pub(super) pointer: OldPointer,
     pub(super) source_contract: Option<FunctionContract>,
     /// The values a fact fixed for the implementation side's own value
     /// parameters, when that side is a named contract found through one.

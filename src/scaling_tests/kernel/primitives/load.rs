@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::kernel::{
-    CallbackSignature, ExecutionState, Pointer, ProgramType, ProgramValue, SymbolicMemory, Variable,
+    CallbackSignature, ExecutionState, OldPointer, ProgramType, ProgramValue, SymbolicMemory, Variable,
 };
 
 fn cell(index: u64) -> Address {
@@ -111,7 +111,7 @@ fn one_load_per_cell_regardless_of_exactness_or_type() {
             .with_memory(SymbolicMemory::new().with_block(slot.base.clone(), 8));
         let written = start.clone().with_memory(start.memory().clone().store(
             slot.clone(),
-            ProgramValue::Pointer(Pointer::new(
+            ProgramValue::Pointer(OldPointer::new(
                 Address::symbolic(Variable(984_001)),
                 ProgramType::Int32Pointer,
             )),
@@ -133,7 +133,7 @@ fn one_load_per_cell_regardless_of_exactness_or_type() {
                 indexed.clone()
             };
             let ty = TYPES[read % TYPES.len()];
-            let value = Pointer::from_point_read(selection, ty, &slot);
+            let value = OldPointer::from_point_read(selection, ty, &slot);
             assert_eq!(value.address(), &first.address(), "read {read} at {ty:?}");
             assert_eq!(value.program_type(), ty, "the term keeps its own type");
         }

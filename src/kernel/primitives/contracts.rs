@@ -2466,7 +2466,7 @@ impl MemoryRange {
     /// Physical identity for separation only. This does not carry permission
     /// to access the bytes and must not be used for ownership or containment.
     pub(crate) fn spatial_key(&self) -> Self {
-        let carrier = Pointer::new(self.base.clone(), ProgramType::VoidPointer);
+        let carrier = OldPointer::new(self.base.clone(), ProgramType::VoidPointer);
         Self {
             carrier: carrier.array_object().clone(),
             provenance: std::sync::Arc::new(self.base.object_identity()),
@@ -2477,7 +2477,7 @@ impl MemoryRange {
     }
 
     pub(crate) fn from_retained_bounds(
-        base: &Pointer,
+        base: &OldPointer,
         start: crate::kernel::ExecutionValue,
         end: crate::kernel::ExecutionValue,
         element_width: u32,
@@ -2520,7 +2520,7 @@ impl MemoryRange {
         element_width: u32,
     ) -> Self {
         assert!(element_width > 0, "memory element width must be positive");
-        let carrier = Pointer::new(base.clone(), ProgramType::VoidPointer);
+        let carrier = OldPointer::new(base.clone(), ProgramType::VoidPointer);
         Self {
             carrier: carrier.array_object().clone(),
             provenance: std::sync::Arc::new(base.object_identity()),
@@ -2605,7 +2605,7 @@ impl MemoryRange {
     /// A typed clause carries the complete pointer's origin, independently of
     /// whichever address spelling the resource algebra subsequently selects.
     pub(crate) fn from_pointer_value(
-        value: &Pointer,
+        value: &OldPointer,
         start: MachineTerm,
         end: MachineTerm,
         element_width: u32,
@@ -2615,7 +2615,7 @@ impl MemoryRange {
     }
 
     pub(crate) fn from_pointer_value_wide(
-        value: &Pointer,
+        value: &OldPointer,
         start: MachineTerm,
         end: MachineTerm,
         element_width: u32,
@@ -2627,8 +2627,8 @@ impl MemoryRange {
     /// The origin and bounds ancestry retained by this admitted footprint.
     /// Its own bounds describe the authorized bytes; this carrier is not a
     /// new pointer access and does not infer a selected subobject bounds.
-    pub(in crate::kernel) fn pointer_carrier(&self) -> Pointer {
-        Pointer {
+    pub(in crate::kernel) fn pointer_carrier(&self) -> OldPointer {
+        OldPointer {
             address: self.base.clone(),
             provenance: self.provenance.clone(),
             array: self.carrier.clone(),
@@ -2637,7 +2637,7 @@ impl MemoryRange {
         }
     }
 
-    pub(in crate::kernel) fn with_pointer_carrier(mut self, value: &Pointer) -> Self {
+    pub(in crate::kernel) fn with_pointer_carrier(mut self, value: &OldPointer) -> Self {
         self.provenance = value.provenance.clone();
         self.carrier = value.array_object().with_bounds(None);
         self.typed_carrier = true;
@@ -3177,7 +3177,7 @@ impl MemoryRange {
 
     /// [`Self::access`] through the pointer value `value`, keeping its
     /// origin as a typed clause's range does.
-    pub(crate) fn access_through(value: &Pointer, program_type: ProgramType) -> Self {
+    pub(crate) fn access_through(value: &OldPointer, program_type: ProgramType) -> Self {
         Self::access(value.address().clone(), program_type).with_pointer_carrier(value)
     }
 

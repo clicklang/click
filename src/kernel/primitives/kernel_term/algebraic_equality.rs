@@ -168,8 +168,8 @@ impl KernelTerm {
                         return Some(false);
                     }
                 }
-                _ if left.pointer_native().is_some() && right.pointer_native().is_some() => {
-                    if left.pointer_native() != right.pointer_native() {
+                _ if left.old_pointer_value().is_some() && right.old_pointer_value().is_some() => {
+                    if left.old_pointer_value() != right.old_pointer_value() {
                         return Some(false);
                     }
                 }
@@ -184,7 +184,7 @@ impl KernelTerm {
 mod tests {
     use super::*;
 
-    fn constructor(pointer: Pointer) -> AlgebraicTerm {
+    fn constructor(pointer: OldPointer) -> AlgebraicTerm {
         let mut value = KernelMatch::test_scrutinee(vec![
             AlgebraicValueType::Program(ProgramType::Int32Pointer),
             AlgebraicValueType::Program(ProgramType::Int32),
@@ -205,7 +205,7 @@ mod tests {
     #[test]
     fn common_algebraic_equality_preserves_native_identity_and_exact_payloads() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer::new(
+        let pointer = OldPointer::new(
             Address::symbolic(Variable(999670)),
             ProgramType::Int32Pointer,
         );
@@ -274,7 +274,7 @@ mod tests {
     #[test]
     fn common_algebraic_equality_observation_matches_native_guard_keys() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Pointer::new(
+        let pointer = OldPointer::new(
             Address::symbolic(Variable(999672)),
             ProgramType::Int32Pointer,
         );

@@ -9,7 +9,7 @@ use crate::kernel::{constant_u32, int32_constant};
 fn pointer_values_do_not_adopt_fact_supplied_bounds() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = Address::symbolic(Variable(989_900));
-    let value = Pointer::new(pointer.clone(), ProgramType::Int32Pointer);
+    let value = OldPointer::new(pointer.clone(), ProgramType::Int32Pointer);
     let bounded = value.clone().with_bounds(Some(SubobjectBounds {
         start: pointer,
         width: 4u32.into(),
@@ -1623,8 +1623,8 @@ fn spec_pointer_equality_lowers_to_a_pure_fact() {
     let left = Address::symbolic(Variable(22_100));
     let right = Address::symbolic(Variable(22_101));
     let equality = ConditionTerm::PointerEqual(
-        Box::new(Pointer::new(left.clone(), ProgramType::Int32Pointer)),
-        Box::new(Pointer::new(right.clone(), ProgramType::Int32Pointer)),
+        Box::new(OldPointer::new(left.clone(), ProgramType::Int32Pointer)),
+        Box::new(OldPointer::new(right.clone(), ProgramType::Int32Pointer)),
     );
 
     assert_eq!(
@@ -2995,7 +2995,7 @@ fn pointer_order_and_subtraction_require_external_parameters_to_share_an_object(
 #[test]
 fn null_pointers_have_no_object_provenance_for_ordering_or_subtraction() {
     let null = Address::null();
-    let null_pointer = Pointer::new(null.clone(), ProgramType::Int32Pointer);
+    let null_pointer = OldPointer::new(null.clone(), ProgramType::Int32Pointer);
     assert!(disprove_builtin_prop(
         &crate::kernel::eval::same_allocation_proposition(&null_pointer, &null_pointer)
     ));
@@ -4487,8 +4487,8 @@ fn unsigned_narrowing_distributes_constant_subtraction_modulo_the_low_word() {
 
 /// A pointer at `pair + offset` whose subobject bounds are `[pair + start,
 /// pair + start + width)`, as `&pair.first` would carry.
-fn subobject_pointer(offset: i64, start: i64, width: u32) -> Pointer {
-    Pointer::new(
+fn subobject_pointer(offset: i64, start: i64, width: u32) -> OldPointer {
+    OldPointer::new(
         Address {
             base: "pair".into(),
             offset: AddressOffset::Constant(offset),
@@ -4504,7 +4504,7 @@ fn subobject_pointer(offset: i64, start: i64, width: u32) -> Pointer {
     }))
 }
 
-fn evaluated_pointer(state: &ExecutionState, expression: ProgramExpression) -> Pointer {
+fn evaluated_pointer(state: &ExecutionState, expression: ProgramExpression) -> OldPointer {
     let theorem = prove_program_expression_evaluation(state.clone(), expression)
         .expect("the pointer expression should evaluate");
     let Proposition::ProgramExpressionEvaluates {
@@ -4567,7 +4567,7 @@ fn equal_addresses_with_different_bounds_are_different_values() {
     assert_eq!(one_past_first.address(), second.address());
     assert_ne!(one_past_first, second);
     assert_ne!(
-        Pointer::new(second.address().clone(), ProgramType::Int32Pointer),
+        OldPointer::new(second.address().clone(), ProgramType::Int32Pointer),
         second
     );
 }
@@ -4583,7 +4583,7 @@ fn substitution_maps_the_bounds_start_with_the_address() {
         ),
     };
     let value = ProgramValue::Pointer(
-        Pointer::new(address(4), ProgramType::Int32Pointer).with_bounds(Some(SubobjectBounds {
+        OldPointer::new(address(4), ProgramType::Int32Pointer).with_bounds(Some(SubobjectBounds {
             start: address(0),
             width: MachineTerm::constant(4),
         })),
@@ -4614,7 +4614,7 @@ mod scaling_tests {
 #[test]
 fn implicit_byte_pointer_coercion_retains_the_selected_bounds() {
     let address = Address::symbolic(Variable(22_102));
-    let pointer = Pointer::new(address.clone(), ProgramType::Int8Pointer).with_bounds(Some(
+    let pointer = OldPointer::new(address.clone(), ProgramType::Int8Pointer).with_bounds(Some(
         SubobjectBounds {
             start: address,
             width: 4u32.into(),
@@ -4705,7 +4705,7 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
         .clone()
         .store(b.clone(), ProgramValue::Pointer(stored.clone()));
     let read = |memory: &SymbolicMemory, address: &Address| {
-        Pointer::from_read(
+        OldPointer::from_read(
             stored.address().clone(),
             ProgramType::Int32Pointer,
             &crate::kernel::intern_memory_ref(memory),

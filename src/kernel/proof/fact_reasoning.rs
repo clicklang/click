@@ -894,7 +894,7 @@ pub(crate) enum ForallInstantiationError {
 pub(crate) enum InstanceArgument {
     Machine(MachineTerm),
     Integer(IntegerTerm),
-    Pointer(Pointer),
+    Pointer(OldPointer),
 }
 
 pub(crate) fn discharge_instantiated_guards(

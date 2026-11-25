@@ -3405,7 +3405,7 @@ impl ImportedFunction {
             return None;
         }
         Some(crate::kernel::ProgramValue::Pointer(
-            crate::kernel::Pointer::new(address.pointer, declared_type.to_kernel_type())
+            crate::kernel::OldPointer::new(address.pointer, declared_type.to_kernel_type())
                 .with_bounds(address.bounds),
         ))
     }

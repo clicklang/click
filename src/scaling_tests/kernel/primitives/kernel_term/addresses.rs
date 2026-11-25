@@ -149,7 +149,7 @@ fn complete_pointer_conditions_keep_shared_domains_through_rewrites_and_observat
                 .unwrap();
         }
         let values = [999802, 999803].map(|variable| {
-            let source = SharedPointer::import(&Pointer::new(
+            let source = SharedPointer::import(&OldPointer::new(
                 Address::symbolic(Variable(variable)),
                 ProgramType::Int32Pointer,
             ));

@@ -85,8 +85,8 @@ fn pure_pointer_legacy_scalar_substitution_visits_the_shared_dag_once() {
 fn full_pointer_substitution_visits_shared_read_origins_once() {
     let _session = VerificationSession::enter();
     let memory = intern_memory(SymbolicMemory::new());
-    let p = Pointer::new(Address::symbolic(Variable(810)), ProgramType::Int32Pointer);
-    let q = Pointer::new(Address::symbolic(Variable(811)), ProgramType::Int32Pointer);
+    let p = OldPointer::new(Address::symbolic(Variable(810)), ProgramType::Int32Pointer);
+    let q = OldPointer::new(Address::symbolic(Variable(811)), ProgramType::Int32Pointer);
     let mut costs = Vec::new();
     for depth in [16, 32, 64] {
         let mut input = p.address().clone();
@@ -122,17 +122,17 @@ fn full_pointer_resource_relationship_rewriting_scales_with_its_arguments() {
     for size in [16usize, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = intern_memory(SymbolicMemory::new());
-        let source = Pointer::from_read(
+        let source = OldPointer::from_read(
             Address::symbolic(Variable(425_100)),
             ProgramType::Int32Pointer,
             &memory,
             &Address::symbolic(Variable(425_101)),
         );
-        let target = Pointer::new(
+        let target = OldPointer::new(
             Address::symbolic(Variable(425_102)),
             ProgramType::Int32Pointer,
         );
-        let relationship = |value: &Pointer| Proposition::ResourceSeparate {
+        let relationship = |value: &OldPointer| Proposition::ResourceSeparate {
             left: Box::new(Resource::Memory(MemoryRange::from_pointer_value(
                 value,
                 0u32.into(),
@@ -169,7 +169,7 @@ fn displaced_full_pointer_rewrite_scales_with_the_selected_offset() {
         let mut costs = Vec::new();
         for size in [8_u64, 32, 128] {
             let parameter = |id| {
-                Pointer::new(
+                OldPointer::new(
                     Address {
                         base: AddressBase::ExternalArgument,
                         offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(id)), 1),
@@ -179,7 +179,7 @@ fn displaced_full_pointer_rewrite_scales_with_the_selected_offset() {
             };
             let base = parameter(916_221);
             let source = if symbolic {
-                Pointer::new(
+                OldPointer::new(
                     Address::symbolic(Variable(916_222)),
                     ProgramType::UInt8Pointer,
                 )

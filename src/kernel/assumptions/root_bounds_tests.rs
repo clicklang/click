@@ -1,9 +1,9 @@
 use super::*;
 
-fn read_pointer(id: u64) -> Pointer {
+fn read_pointer(id: u64) -> OldPointer {
     let memory = crate::kernel::intern_memory(SymbolicMemory::new());
     let cell = Address::symbolic(Variable(id));
-    Pointer::from_read(
+    OldPointer::from_read(
         Address::loaded_value(&memory, &cell),
         ProgramType::Int32Pointer,
         &memory,
@@ -18,7 +18,7 @@ fn a_full_pointer_equality_connects_a_read_bounds_to_owned_root_storage() {
         base: AddressBase::Heap(981_000),
         offset: AddressOffset::Constant(0),
     };
-    let stored = Pointer::new(base.clone(), ProgramType::Int32Pointer);
+    let stored = OldPointer::new(base.clone(), ProgramType::Int32Pointer);
     let read = read_pointer(981_001);
     let held = MemoryRange::new(base.clone(), 0u32.into(), 8u32.into());
     let before = PureFactContext::new().assume_condition(
@@ -52,11 +52,12 @@ fn a_known_subobject_bounds_does_not_grant_root_storage_access() {
         base: AddressBase::Heap(981_002),
         offset: AddressOffset::Constant(0),
     };
-    let bounded =
-        Pointer::new(base.clone(), ProgramType::Int32Pointer).with_bounds(Some(SubobjectBounds {
+    let bounded = OldPointer::new(base.clone(), ProgramType::Int32Pointer).with_bounds(Some(
+        SubobjectBounds {
             start: base.clone(),
             width: 4u32.into(),
-        }));
+        },
+    ));
     let read = read_pointer(981_003);
     let facts = PureFactContext::new()
         .assume_condition(ConditionTerm::pointer_equal(read.clone(), bounded), true);

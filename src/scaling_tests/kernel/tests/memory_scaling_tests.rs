@@ -2936,7 +2936,7 @@ fn repeated_pointer_frame_work(compare_to_entry: bool, compose: bool) -> Vec<(u3
         let field = Address::symbolic(Variable(998_910));
         let write = Address::symbolic(Variable(998_911));
         let initial = crate::kernel::intern_memory(SymbolicMemory::new());
-        let original = Pointer::new(
+        let original = OldPointer::new(
             Address::loaded_value(&initial, &field),
             ProgramType::Int32Pointer,
         );
@@ -2962,7 +2962,7 @@ fn repeated_pointer_frame_work(compare_to_entry: bool, compose: bool) -> Vec<(u3
                     .clone()
                     .store(write.clone(), ProgramValue::Int32(index.into()));
                 let retained_state = crate::kernel::intern_memory_ref(&memory);
-                let current = Pointer::new(
+                let current = OldPointer::new(
                     Address::loaded_value(&retained_state, &field),
                     ProgramType::Int32Pointer,
                 );
@@ -3237,7 +3237,7 @@ fn pointer_read_naming_samples(with_history: bool, same_cell: bool) -> Vec<(u32,
             reads
                 .iter()
                 .map(|(address, read)| {
-                    crate::kernel::Pointer::from_read(
+                    crate::kernel::OldPointer::from_read(
                         read.clone(),
                         ProgramType::Int32Pointer,
                         &current,

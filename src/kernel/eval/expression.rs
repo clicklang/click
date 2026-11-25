@@ -921,7 +921,10 @@ pub(in crate::kernel) fn cast_program_value_to_type(
 ///
 /// Click's untyped [`ProgramType::Pointer`] is not a C type, so a cast to or
 /// from it is no C conversion: it keeps the value and forms no byte view.
-pub(in crate::kernel) fn cast_pointer_value(pointer: Pointer, target_type: ProgramType) -> Pointer {
+pub(in crate::kernel) fn cast_pointer_value(
+    pointer: OldPointer,
+    target_type: ProgramType,
+) -> OldPointer {
     let forms_byte_view = is_character_pointer(target_type)
         && !is_character_pointer(pointer.program_type())
         && pointer.program_type() != ProgramType::Pointer;
@@ -944,7 +947,7 @@ pub(in crate::kernel) fn cast_pointer_value(pointer: Pointer, target_type: Progr
 /// member is not an initial member's, and an array object that already
 /// covers the struct, such as an allocation used as an array of it, is not
 /// narrowed.
-fn struct_view_of_initial_member(pointer: Pointer, size: u32) -> Pointer {
+fn struct_view_of_initial_member(pointer: OldPointer, size: u32) -> OldPointer {
     if pointer.is_null() || pointer.address().base.is_function() {
         return pointer;
     }
@@ -1011,7 +1014,7 @@ fn cast_program_value_to_type_with_integer_origin(
                             target_type,
                         )
                         .map_err(RuntimeError::PointerConversion)?;
-                        if recovered.as_ref().map(Pointer::address)
+                        if recovered.as_ref().map(OldPointer::address)
                             != Some(record.pointer.address())
                         {
                             return Err(RuntimeError::PointerConversion(
@@ -1052,7 +1055,7 @@ fn cast_program_value_to_type_with_integer_origin(
                         let origin = integer_pointer_origin.ok_or_else(|| RuntimeError::PointerConversion(
                             "integer-to-pointer cast requires a complete representation or a fresh cast identity".into(),
                         ))?;
-                        Ok(ProgramValue::Pointer(Pointer::new(origin, target_type)
+                        Ok(ProgramValue::Pointer(OldPointer::new(origin, target_type)
                             .with_address(pointer.address().clone())
                             .with_declared_object_class(pointer.object_class())))
                     }
@@ -3882,7 +3885,7 @@ pub(in crate::kernel) fn address_of_lvalue_paths(
                     match pointer_type {
                         Some(pointer_type) => {
                             let facts = lvalue_path.facts;
-                            let mut address = Pointer::new(pointer, pointer_type)
+                            let mut address = OldPointer::new(pointer, pointer_type)
                                 .with_bounds(lvalue.bounds().cloned());
                             if lvalue.bounds_known() && lvalue.bounds().is_none() {
                                 address = address.with_root_bounds();
@@ -4585,7 +4588,7 @@ mod pointer_integer_tests {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
         let class = CAccessClass::Scalar(CScalarClass::Int);
         let root = Address::symbolic(Variable(991_085));
-        let source = Pointer::new(root.clone(), ProgramType::Int32Pointer)
+        let source = OldPointer::new(root.clone(), ProgramType::Int32Pointer)
             .with_object_class(Some(class.clone()))
             .with_bounds(Some(SubobjectBounds {
                 start: root,
@@ -4614,7 +4617,7 @@ mod pointer_integer_tests {
 
     #[test]
     fn pointer_integer_round_trip_retains_the_complete_pointer() {
-        let root = Pointer::new(
+        let root = OldPointer::new(
             Address::symbolic(Variable(991_001)),
             ProgramType::Int32Pointer,
         );
@@ -4651,7 +4654,7 @@ mod pointer_integer_tests {
 
     #[test]
     fn equal_integer_bits_do_not_exchange_pointer_bounds() {
-        let root = Pointer::new(
+        let root = OldPointer::new(
             Address::symbolic(Variable(991_002)),
             ProgramType::Int32Pointer,
         );
@@ -4711,7 +4714,7 @@ mod pointer_integer_partial_write_tests {
     fn a_partial_byte_write_discards_the_representation_even_when_bits_are_unchanged() {
         let context = PureFactContext::new();
         let word = cast_program_value_to_type(
-            ProgramValue::Pointer(Pointer::new(
+            ProgramValue::Pointer(OldPointer::new(
                 Address::symbolic(Variable(995_001)),
                 ProgramType::Int32Pointer,
             )),
@@ -4742,7 +4745,7 @@ mod pointer_integer_cast_identity_tests {
 
     #[test]
     fn identical_numeric_bits_cannot_copy_a_casts_established_bounds() {
-        let source = Pointer::new(
+        let source = OldPointer::new(
             Address::symbolic(Variable(997_001)),
             ProgramType::Int32Pointer,
         );
@@ -4784,7 +4787,7 @@ mod pointer_integer_cast_identity_tests {
 mod packed_word_contract_tests {
     use super::*;
 
-    fn cast(value: ProgramValue, assumptions: &PureFactContext) -> Pointer {
+    fn cast(value: ProgramValue, assumptions: &PureFactContext) -> OldPointer {
         let result = cast_program_value_to_type(
             value,
             ProgramType::Int32Pointer,
@@ -4851,7 +4854,7 @@ mod packed_word_contract_tests {
         let unrelated = cast(other, &empty);
         assert_eq!(reconstructed.address(), unrelated.address());
         assert!(!empty.pointer_provenance_match(&reconstructed, &unrelated));
-        let target = Pointer::new(
+        let target = OldPointer::new(
             Address::symbolic(Variable(997_004)),
             ProgramType::Int32Pointer,
         )

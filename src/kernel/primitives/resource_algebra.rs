@@ -14038,11 +14038,11 @@ impl ResourceFact {
 
     /// `allocation(base, bytes)` with the byte count in the size's format.
     pub(in crate::kernel) fn own_heap_allocation(base: Address, size: &AllocationSize) -> Self {
-        Self::own_designated_allocation(Pointer::new(base, ProgramType::Int32Pointer), size)
+        Self::own_designated_allocation(OldPointer::new(base, ProgramType::Int32Pointer), size)
     }
 
     pub(in crate::kernel) fn own_designated_allocation(
-        base: Pointer,
+        base: OldPointer,
         size: &AllocationSize,
     ) -> Self {
         Self::own(Resource::Token {
@@ -14093,7 +14093,7 @@ impl ResourceFact {
             .map(|(base, bytes)| (base.address(), bytes))
     }
 
-    pub(in crate::kernel) fn allocation_value(&self) -> Option<(&Pointer, &MachineTerm)> {
+    pub(in crate::kernel) fn allocation_value(&self) -> Option<(&OldPointer, &MachineTerm)> {
         let (base, bytes) = self.allocation_arguments()?;
         let (ProgramValue::Int32(bytes) | ProgramValue::UInt64(bytes)) = bytes else {
             return None;
@@ -14102,7 +14102,7 @@ impl ResourceFact {
     }
 
     /// The base and tagged size of an owned `allocation` token.
-    pub(in crate::kernel) fn allocation_size(&self) -> Option<(&Pointer, AllocationSize)> {
+    pub(in crate::kernel) fn allocation_size(&self) -> Option<(&OldPointer, AllocationSize)> {
         let Self::Own(Resource::Token { name, arguments }, _) = self else {
             return None;
         };
@@ -14118,7 +14118,7 @@ impl ResourceFact {
         ))
     }
 
-    fn allocation_arguments(&self) -> Option<(&Pointer, &ProgramValue)> {
+    fn allocation_arguments(&self) -> Option<(&OldPointer, &ProgramValue)> {
         let Self::Own(Resource::Token { name, arguments }, _) = self else {
             return None;
         };

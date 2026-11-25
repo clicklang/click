@@ -64,7 +64,7 @@ fn machine_call_roots_preserve_types_arguments_and_native_roundtrips() {
 #[test]
 fn machine_call_roots_preserve_opaque_producer_payloads() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = Pointer::new(Address::symbolic(Variable(995801)), ProgramType::VoidPointer);
+    let pointer = OldPointer::new(Address::symbolic(Variable(995801)), ProgramType::VoidPointer);
     let application = SharedPureApplication::intern(
         "pointer_arg".into(),
         vec![PureFunctionArgument::Value(ProgramValue::Pointer(

@@ -2482,7 +2482,7 @@ fn canonical_load_form_keeps_a_cell_a_wide_read_covers() {
     assert!(
         !canonical_equal_across_store_at(
             -4,
-            ProgramValue::Pointer(Pointer::new(arc_pointer(0), ProgramType::Int32Pointer))
+            ProgramValue::Pointer(OldPointer::new(arc_pointer(0), ProgramType::Int32Pointer))
         ),
         "a stored pointer is eight bytes, so one four bytes below the load \
          covers the load's first four bytes"
@@ -3131,8 +3131,8 @@ fn direct_pointer_reads_retain_their_projection_definitions() {
     );
     assert!(context.equality_graph.knows_condition(
         &ConditionTerm::pointer_equal(
-            Pointer::new(named.clone(), ProgramType::Int32Pointer),
-            Pointer::new(observed.clone(), ProgramType::Int32Pointer),
+            OldPointer::new(named.clone(), ProgramType::Int32Pointer),
+            OldPointer::new(observed.clone(), ProgramType::Int32Pointer),
         ),
         true
     ));
@@ -3467,7 +3467,7 @@ fn initialization_metadata_keeps_complete_pointer_identity_without_access_author
     assert!(after.memory().has_initialized_bytes_at(&address, 8));
 
     let read = |memory: &SharedMemory| {
-        Pointer::from_read(
+        OldPointer::from_read(
             Address::loaded_value(memory, &address),
             ProgramType::Int32Pointer,
             memory,
@@ -4038,7 +4038,7 @@ fn full_pointer_read_survives_a_join_of_stores_to_its_sibling() {
     let _session = crate::kernel::VerificationSession::enter();
     let before = intern_memory(SymbolicMemory::new());
     let p = Address::symbolic(Variable(998_710));
-    let q = Pointer::new(
+    let q = OldPointer::new(
         Address::symbolic(Variable(998_711)),
         ProgramType::Int32Pointer,
     );

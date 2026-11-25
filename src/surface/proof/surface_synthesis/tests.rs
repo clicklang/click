@@ -5,7 +5,7 @@ use crate::kernel::{MachineCastSpelling, MachineTerm};
 
 #[test]
 fn separation_names_loaded_pointer_fields_at_their_declared_type() {
-    use crate::kernel::{MemoryRange, Pointer, Resource};
+    use crate::kernel::{MemoryRange, OldPointer, Resource};
     for scalar in ["uint8", "uint16", "int32", "uint64"] {
         let _session = crate::kernel::VerificationSession::enter();
         let function = syntax::parse_function(&format!(
@@ -30,7 +30,7 @@ fn separation_names_loaded_pointer_fields_at_their_declared_type() {
             );
         let range = |pointer| {
             Resource::Memory(MemoryRange::from_pointer_value(
-                &Pointer::new(pointer, ProgramType::UInt8Pointer),
+                &OldPointer::new(pointer, ProgramType::UInt8Pointer),
                 MachineTerm::constant(0),
                 MachineTerm::constant(4),
                 1,
@@ -57,9 +57,9 @@ fn separation_names_loaded_pointer_fields_at_their_declared_type() {
 
 #[test]
 fn separate_round_trips_without_generating_span_obligations() {
-    use crate::kernel::{MemoryRange, Pointer, Resource};
+    use crate::kernel::{MemoryRange, OldPointer, Resource};
     for wide in [false, true] {
-        let pointer = Pointer::new(
+        let pointer = OldPointer::new(
             Address::symbolic(Variable(997001)),
             ProgramType::Int32Pointer,
         );
@@ -260,11 +260,11 @@ fn an_integer_converted_pointer_is_spelled_as_its_conversion() {
     );
     let fact = Proposition::condition_is(
         ConditionTerm::pointer_equal(
-            crate::kernel::Pointer::new(
+            crate::kernel::OldPointer::new(
                 Address::from_integer_address(masked),
                 ProgramType::Int32Pointer,
             ),
-            crate::kernel::Pointer::new(other, ProgramType::Int32Pointer),
+            crate::kernel::OldPointer::new(other, ProgramType::Int32Pointer),
         ),
         true,
     );
@@ -5516,12 +5516,12 @@ fn common_match_surface_preserves_typed_binders_and_relowers_nested_results() {
 #[test]
 fn common_pointer_calls_round_trip_nested_source_calls() {
     use crate::kernel::{
-        AddressBase, KernelTerm, KernelTermImport, Pointer, PureFunctionArgument, SharedPointer,
+        AddressBase, KernelTerm, KernelTermImport, OldPointer, PureFunctionArgument, SharedPointer,
     };
     let _session = crate::kernel::VerificationSession::enter();
     let declarations = "function select(p: int32*) -> int32* { p }";
     let file = parser::parse(declarations).unwrap();
-    let input = ProgramValue::Pointer(Pointer::new(
+    let input = ProgramValue::Pointer(OldPointer::new(
         Address::symbolic(Variable(1025900)),
         ProgramType::Int32Pointer,
     ));
@@ -5570,7 +5570,7 @@ fn common_pointer_calls_round_trip_nested_source_calls() {
         };
         // Reconstruct the same nested common roots that the producer test
         // checks, keeping inner calls as children rather than exporting them.
-        fn common(pointer: &Pointer) -> KernelTerm {
+        fn common(pointer: &OldPointer) -> KernelTerm {
             let value = SharedPointer::import(pointer);
             let AddressBase::PureFunctionApplication(application) = &pointer.base else {
                 return KernelTerm::shared_pointer_value(value);
@@ -5638,7 +5638,7 @@ fn string_literal_pointer_raising_names_the_exact_source_occurrence() {
 
 #[test]
 fn typed_word_reads_round_trip_their_observation_without_a_sign_cast() {
-    use crate::kernel::{IntegerTerm, Pointer};
+    use crate::kernel::{IntegerTerm, OldPointer};
     for (format, name) in [
         (MachineIntegerType::Int64, "load<int64>"),
         (MachineIntegerType::UInt64, "load<uint64>"),
@@ -5650,7 +5650,7 @@ fn typed_word_reads_round_trip_their_observation_without_a_sign_cast() {
             .with_memory(memory.clone())
             .with_local(
                 "p",
-                ProgramValue::Pointer(Pointer::new(pointer.clone(), ProgramType::UInt64Pointer)),
+                ProgramValue::Pointer(OldPointer::new(pointer.clone(), ProgramType::UInt64Pointer)),
             );
         let read = crate::kernel::canonical_form_of_load(
             crate::kernel::intern_memory(memory),
@@ -7152,7 +7152,7 @@ fn mixed_float_boolean_calls_round_trip_existing_surface_syntax() {
 #[test]
 fn shared_pointer_call_arguments_keep_exact_native_name_policy() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = crate::kernel::Pointer::new(
+    let pointer = crate::kernel::OldPointer::new(
         Address::symbolic(Variable(1008590)),
         ProgramType::Int32Pointer,
     );
@@ -7471,13 +7471,13 @@ fn shared_boolean_raising_preserves_overflow_and_algebraic_spelling() {
 
 #[test]
 fn shared_pointer_comparisons_preserve_native_spelling() {
-    use crate::kernel::{KernelTermImport, Pointer};
+    use crate::kernel::{KernelTermImport, OldPointer};
     let _session = crate::kernel::VerificationSession::enter();
-    let left = Pointer::new(
+    let left = OldPointer::new(
         Address::symbolic(Variable(999988)),
         ProgramType::Int32Pointer,
     );
-    let right = Pointer::new(
+    let right = OldPointer::new(
         Address::symbolic(Variable(999989)),
         ProgramType::Int32Pointer,
     );
@@ -9120,9 +9120,9 @@ fn wrapping_product_in_conditionals_round_trip_after_rewrite() {
 
 #[test]
 fn a_reflexive_pointer_equality_raises_as_contract_equality_that_lowers_back() {
-    use crate::kernel::Pointer;
+    use crate::kernel::OldPointer;
     let _session = crate::kernel::VerificationSession::enter();
-    let node = Pointer::new(
+    let node = OldPointer::new(
         Address::symbolic(Variable(999977)),
         ProgramType::Int32Pointer,
     );
@@ -9368,7 +9368,7 @@ fn recorded_volatile_read_slots_retain_the_producer_value() {
 #[test]
 fn identical_word_comparisons_keep_their_comparison_through_lowering() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = crate::kernel::Pointer::new(
+    let pointer = crate::kernel::OldPointer::new(
         Address::symbolic(Variable(999_962)),
         ProgramType::Int32Pointer,
     );

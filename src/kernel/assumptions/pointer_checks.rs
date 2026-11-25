@@ -15,7 +15,7 @@ pub(super) struct Origins<'a, A, W> {
     pub(super) known: bool,
 }
 impl<'a> Origins<'a, Address, MachineTerm> {
-    pub(super) fn native(value: &'a Pointer) -> Self {
+    pub(super) fn native(value: &'a OldPointer) -> Self {
         Self {
             provenance: value.provenance(),
             opaque: value.bounds_owner(),
@@ -219,7 +219,7 @@ mod tests {
         widths: HashMap<KernelTerm, MachineTerm>,
     }
     impl<'a> Selected<'a> {
-        fn new(facts: &'a PureFactContext, values: &[(&Pointer, &SharedPointer)]) -> Self {
+        fn new(facts: &'a PureFactContext, values: &[(&OldPointer, &SharedPointer)]) -> Self {
             let mut result = Self {
                 facts,
                 addresses: HashMap::new(),
@@ -354,7 +354,7 @@ mod tests {
         let b = Address::symbolic(Variable(1012001));
         let provenance = std::sync::Arc::new(Address::symbolic(Variable(1012002)));
         let make = |start, width| {
-            Pointer::new(a.clone(), ProgramType::Int32Pointer)
+            OldPointer::new(a.clone(), ProgramType::Int32Pointer)
                 .with_provenance(provenance.clone())
                 .with_bounds(Some(SubobjectBounds {
                     start,
@@ -393,7 +393,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let cell = Address::symbolic(Variable(1012100));
-        let read = Pointer::from_read(
+        let read = OldPointer::from_read(
             Address::loaded_value(&memory, &cell),
             ProgramType::Int32Pointer,
             &memory,
@@ -403,7 +403,7 @@ mod tests {
             base: AddressBase::Heap(1012101),
             offset: AddressOffset::Constant(0),
         };
-        let stored = Pointer::new(base.clone(), ProgramType::Int32Pointer);
+        let stored = OldPointer::new(base.clone(), ProgramType::Int32Pointer);
         let bounded = stored.clone().with_bounds(Some(SubobjectBounds {
             start: base.clone(),
             width: MachineTerm::constant(4),
@@ -453,7 +453,7 @@ mod scaling_tests {
 mod value_equality_tests {
     use crate::kernel::*;
 
-    fn equal(left: &Pointer, right: &Pointer) -> Proposition {
+    fn equal(left: &OldPointer, right: &OldPointer) -> Proposition {
         Proposition::Equal(
             Term::ProgramValue(ProgramValue::Pointer(left.clone()).into()),
             Term::ProgramValue(ProgramValue::Pointer(right.clone()).into()),
@@ -466,14 +466,14 @@ mod value_equality_tests {
     /// pointer until the two values are stated equal.
     #[test]
     fn same_allocation_and_address_do_not_make_an_opaque_pointer_a_block_pointer() {
-        let block = Pointer::new(
+        let block = OldPointer::new(
             Address {
                 base: AddressBase::Heap(4_211_001),
                 offset: AddressOffset::Constant(0),
             },
             ProgramType::Int32Pointer,
         );
-        let parameter = Pointer::new(
+        let parameter = OldPointer::new(
             Address::symbolic(Variable(4_211_002)),
             ProgramType::Int32Pointer,
         );
@@ -496,7 +496,7 @@ mod value_equality_tests {
     /// different array objects, so they are different values.
     #[test]
     fn a_pointer_is_not_decided_equal_to_its_byte_view() {
-        let parameter = Pointer::new(
+        let parameter = OldPointer::new(
             Address::symbolic(Variable(4_211_011)),
             ProgramType::Int32Pointer,
         );
@@ -511,7 +511,7 @@ mod value_equality_tests {
     /// their addresses, which are equal.
     #[test]
     fn a_pointer_unequal_to_its_byte_view_is_consistent() {
-        let parameter = Pointer::new(
+        let parameter = OldPointer::new(
             Address::symbolic(Variable(4_211_021)),
             ProgramType::Int32Pointer,
         );

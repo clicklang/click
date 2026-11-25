@@ -259,7 +259,7 @@ fn simplified_pointer_read_retention_work(count: u64, unrelated: u64) -> usize {
             let read = Address::loaded_value(&memory, &address);
             let named = Address::symbolic(Variable(93000 + index));
             let value =
-                Pointer::new(read.clone(), ProgramType::Int32Pointer).with_address(named.clone());
+                OldPointer::new(read.clone(), ProgramType::Int32Pointer).with_address(named.clone());
             let fact = crate::kernel::ExecutionPureFact::logical_read_equation(value, read.clone());
             (fact, named, read)
         })
@@ -371,7 +371,7 @@ fn complete_pointer_read_registration_scales_with_new_definitions() {
             );
         }
         let slot = Address::symbolic(Variable(988_001));
-        let mut value = Pointer::new(
+        let mut value = OldPointer::new(
             Address::symbolic(Variable(988_002)),
             ProgramType::Int32Pointer,
         );
@@ -381,7 +381,7 @@ fn complete_pointer_read_registration_scales_with_new_definitions() {
                 memory = memory
                     .clone()
                     .store(slot.clone(), ProgramValue::Pointer(value.clone()));
-                let next = Pointer::new(
+                let next = OldPointer::new(
                     Address::loaded_value(&intern_memory_ref(&memory), &slot),
                     ProgramType::Int32Pointer,
                 );

@@ -4,8 +4,8 @@
 
 use super::*;
 
-fn parameter_pointer(variable: u64) -> Pointer {
-    Pointer::new(
+fn parameter_pointer(variable: u64) -> OldPointer {
+    OldPointer::new(
         Address {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),

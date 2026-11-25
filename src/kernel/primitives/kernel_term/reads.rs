@@ -79,7 +79,7 @@ impl KernelTermImport {
 impl KernelTerm {
     /// Retain a pointer result only when its producer already retained a read
     /// definition. This reads term metadata, never hypotheses or stored values.
-    pub(crate) fn retained_pointer_read(value: &Pointer) -> Option<Self> {
+    pub(crate) fn retained_pointer_read(value: &OldPointer) -> Option<Self> {
         // Later arithmetic and ordinary pointer values belong to their own
         // producer slices. Do not clone or hash a growing displacement merely
         // to ask whether it is an undisplaced read atom.
@@ -281,7 +281,7 @@ mod tests {
         assert_eq!(retained_state.arena_id(), intern_memory(memory).arena_id());
         assert_eq!(cell, &SharedAddress::import(&address));
         assert!(matches!(
-            root.pointer_native(),
+            root.old_pointer_value(),
             Some(ProgramValue::Pointer(_))
         ));
     }
@@ -331,7 +331,7 @@ mod tests {
     fn shared_read_addresses_preserve_call_payloads_ignored_by_logical_identity() {
         let _session = VerificationSession::enter();
         let memory = intern_memory(SymbolicMemory::new());
-        let pointer = Pointer::new(
+        let pointer = OldPointer::new(
             Address::symbolic(Variable(1017200)),
             ProgramType::Int32Pointer,
         );

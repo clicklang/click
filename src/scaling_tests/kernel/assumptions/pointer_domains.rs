@@ -1,7 +1,7 @@
 use super::*;
 
-fn opaque(id: u64) -> Pointer {
-    Pointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
+fn opaque(id: u64) -> OldPointer {
+    OldPointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
 }
 
 /// The witness arrives after the entire related class has been built. Each
@@ -110,7 +110,7 @@ fn an_unregistered_pointer_domain_does_not_recover_memory_history() {
         }
         let memory = crate::kernel::intern_memory(memory);
         let cell = Address::symbolic(Variable(1_001_000));
-        let read = Pointer::from_read(
+        let read = OldPointer::from_read(
             Address::loaded_value(&memory, &cell),
             ProgramType::Int32Pointer,
             &memory,
@@ -124,7 +124,7 @@ fn an_unregistered_pointer_domain_does_not_recover_memory_history() {
     }
 }
 
-fn coverage(value: &Pointer, start: u32, end: u32) -> Proposition {
+fn coverage(value: &OldPointer, start: u32, end: u32) -> Proposition {
     value
         .opaque_coverage_fact(&MemoryRange::from_pointer_value(
             value,

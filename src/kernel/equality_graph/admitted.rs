@@ -21,8 +21,9 @@ pub(in crate::kernel) struct InputData {
     /// no provenance (`design/pointer-model.md`).
     pub(in crate::kernel) nonnull_allocations: crate::persistent::PersistentSet<Address>,
     pub(in crate::kernel) pointer_value_classes:
-        crate::kernel::pointer_provenance::ValueClasses<Pointer>,
-    pub(in crate::kernel) pointer_equalities: crate::persistent::PersistentSet<(Pointer, Pointer)>,
+        crate::kernel::pointer_provenance::ValueClasses<OldPointer>,
+    pub(in crate::kernel) pointer_equalities:
+        crate::persistent::PersistentSet<(OldPointer, OldPointer)>,
 
     /// Conservative source-dependency selectors for parameter-store shortcuts.
     /// These record syntax, not equality classes or permission authority.

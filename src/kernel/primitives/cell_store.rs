@@ -851,7 +851,7 @@ pub(crate) fn cell_run_value(element_type: ProgramType, load: MachineTerm) -> Pr
                         Some(&retained_state),
                         &address,
                     );
-                return ProgramValue::Pointer(crate::kernel::Pointer::from_read_at(
+                return ProgramValue::Pointer(crate::kernel::OldPointer::from_read_at(
                     value,
                     program_type,
                     retained_state.shared_memory(),

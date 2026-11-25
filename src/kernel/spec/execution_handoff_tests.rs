@@ -414,7 +414,7 @@ fn pointer_lowering_keeps_producers_and_complete_metadata() {
     let class = crate::kernel::effective_type::CAccessClass::Scalar(
         crate::kernel::effective_type::CScalarClass::Int,
     );
-    let source = Pointer::new(
+    let source = OldPointer::new(
         Address::symbolic(Variable(999982)),
         ProgramType::VoidPointer,
     )
@@ -541,12 +541,12 @@ fn explicit_pointer_cast_lowering_keeps_native_bounds_rules() {
         (ProgramType::Int32Pointer, ProgramType::UInt8Pointer, false),
         (ProgramType::Int8Pointer, ProgramType::UInt8Pointer, true),
     ] {
-        let pointer = Pointer::new(Address::symbolic(Variable(999940)), source).with_bounds(Some(
-            SubobjectBounds {
+        let pointer = OldPointer::new(Address::symbolic(Variable(999940)), source).with_bounds(
+            Some(SubobjectBounds {
                 start: Address::symbolic(Variable(999940)),
                 width: MachineTerm::constant(4),
-            },
-        ));
+            }),
+        );
         let expression = SpecExpression::Cast(
             Box::new(SpecExpression::Value(ProgramValue::Pointer(pointer))),
             target,
@@ -722,7 +722,7 @@ fn mixed_call_assembly_preserves_typed_roots_without_exports() {
         algebraic_type: algebraic_type.clone(),
         node: AlgebraicTermNode::Variable(Variable(999960)),
     };
-    let pointer = Pointer::new(
+    let pointer = OldPointer::new(
         Address::symbolic(Variable(999961)),
         ProgramType::Int32Pointer,
     );
