@@ -1647,20 +1647,12 @@ impl LoweringContext<'_> {
                 }
                 Ok(operation)
             }
-            CppStatement::ThrowIosFailure { .. } => {
-                let (construction, payload) = crate::kernel::program_call_value(
-                    self.result_step(),
-                    super::standard_library::IOS_FAILURE_FACTORY,
-                    Vec::new(),
-                );
-                Ok(program_seq(
-                    construction,
-                    self.lower_throwing_statement(
-                        ProgramStatement::Throw(payload),
-                        state.exit(unwind_base),
-                    )?,
-                ))
-            }
+            CppStatement::ThrowIosFailure { .. } => self.lower_throwing_statement(
+                ProgramStatement::ThrowOpaque(crate::kernel::TypeParameterName::intern(
+                    "std::ios_base::failure",
+                )),
+                state.exit(unwind_base),
+            ),
             CppStatement::Throw { value, .. } => {
                 let throw = ProgramStatement::Throw(self.lower_expression(value)?);
                 self.lower_throwing_statement(throw, state.exit(unwind_base))
