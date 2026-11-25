@@ -6191,6 +6191,7 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
         // An abstract value is the load of its type at the address.
         ProgramType::Parameter(parameter) => Some(AlgebraicTermNode::parameter_load(
             crate::kernel::intern_memory(memory.clone()),
+            site,
             pointer.clone(),
             parameter,
         )),

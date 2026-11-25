@@ -161,8 +161,7 @@ const BASELINE: &[(&str, Form, usize)] = &[
         Form::UnplacedPoint,
         3,
     ),
-    ("src/kernel/memory_history.rs", Form::UnplacedPoint, 3),
-    ("src/kernel/primitives.rs", Form::UnplacedPoint, 1),
+    ("src/kernel/memory_history.rs", Form::UnplacedPoint, 2),
     (
         "src/kernel/primitives/cell_store.rs",
         Form::UnplacedPoint,

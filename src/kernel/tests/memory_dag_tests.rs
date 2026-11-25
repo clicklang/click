@@ -3592,7 +3592,7 @@ fn a_stored_value_resolves_only_a_read_of_its_own_address_and_width() {
             crate::kernel::LoadKind::Int32,
         );
         let resolved = crate::kernel::memory_history::resolve_load_along_memory_derivations(
-            memory,
+            &ProgramPoint::at(memory),
             read,
             crate::kernel::LoadKind::Int32,
             &bare,
@@ -4657,7 +4657,7 @@ fn an_abstract_value_fact_carries_across_states_only_with_frame_evidence() {
         node: AlgebraicTermNode::Variable(Variable(98_481)),
     };
     let read = |memory: &SymbolicMemory| {
-        let ProgramValue::Parameter(load) = AlgebraicTermNode::parameter_load(
+        let ProgramValue::Parameter(load) = AlgebraicTermNode::parameter_load_unsited(
             crate::kernel::intern_memory(memory.clone()),
             field.clone(),
             parameter,
@@ -4795,7 +4795,7 @@ fn abstract_read_naming_retains_its_selected_width_origin() {
     );
     let parameter = TypeParameterName::intern("ReadOriginT");
     let ProgramValue::Parameter(named) =
-        AlgebraicTermNode::parameter_load(source.clone(), address.clone(), parameter)
+        AlgebraicTermNode::parameter_load_unsited(source.clone(), address.clone(), parameter)
     else {
         panic!("parameter read");
     };
