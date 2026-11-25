@@ -610,7 +610,6 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_zero_witness_
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_zero_witness_closure	try_solve_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::with_goal_operation_identities	prove_operation_identities	1
 src/surface/proof/smart_execution/search.rs	search	ProofSearch::try_execute_to_back_edge_descendant	driver	1
-src/surface/proof/smart_execution/search.rs	search	ProofSearch::try_execute_to_back_edge_descendant	try_smart_statement_step	1
 src/surface/proof/smart_execution/search.rs	search	ProofSearch::try_execute_to_exit	try_execute_to_exit_descendant	1
 src/surface/proof/smart_execution/search.rs	search	ProofSearch::try_execute_to_exit_descendant	try_focused_execute_to_exit_within	1
 src/surface/proof/smart_execution/search.rs	search	ProofSearch::try_execute_until	try_execute_until_descendant	1

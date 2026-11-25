@@ -25458,6 +25458,19 @@ fn store_index_separation_expands_and_replays() {
     );
 }
 
+#[test]
+fn step_until_needs_the_same_store_separation_as_written_steps() {
+    let (source, inputs) = mdtest_sources("mdtests/signed_byte_swap_uses_a_selected_frame.md");
+    let inputs = crate::cli::source_refs(&inputs);
+    let prerequisite = "have ((n - 1u64) as uint64) != 0u64 by close();";
+    assert!(source.contains(prerequisite));
+    verify_c_sources(&source, &inputs).expect("the stated index disequality keeps the cell");
+    let missing = source.replace(prerequisite, "have 0u64 < n - 1u64 by close();");
+    let error = verify_c_sources(&missing, &inputs)
+        .expect_err("step_until should require the same store separation as step");
+    assert!(error.message().contains("could not establish"), "{error}");
+}
+
 // The same for a `size_t` index: the retained `have` is the `uint64` word
 // fact `((n - 1u64) as uint64) != 0u64`. The program is the one function of
 // `a_store_at_the_last_size_t_heap_element_keeps_the_first.md` it replays.

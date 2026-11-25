@@ -4269,15 +4269,6 @@ pub(in crate::surface::proof) enum StepUntilTarget {
     FunctionExit,
 }
 
-impl StepUntilTarget {
-    fn describe(self) -> String {
-        match self {
-            Self::Region(index) => format!("region({index})"),
-            Self::FunctionExit => "function.exit".to_string(),
-        }
-    }
-}
-
 /// `step_until` never splits. Its refusal at a branch the facts do not
 /// decide, on the way to function exit, names the split to write there.
 fn step_until_refusal(

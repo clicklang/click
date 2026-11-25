@@ -1,8 +1,7 @@
 # Signed byte swap uses a selected frame
 
-The second store may discard the cached first cell. Its value is recovered
-from the recorded store using the cited index bound, through the matching
-signed-byte conversions.
+The stated index disequality keeps the cached first cell available across
+the second store, including through the matching signed-byte conversions.
 
 ```c filename=swap.c
 void swap(int8* p, uint64 n) {
@@ -19,7 +18,7 @@ void swap(int8* p, uint64 n) {
     requires n <= 1000u64;
     ensures p[0] == old(p[n - 1]);
 } by {
-    have 0u64 < n - 1u64 by { close(); }
+    have ((n - 1u64) as uint64) != 0u64 by close();
     step_until(function.exit);
     have p[0] == old(p[n - 1]) by {
         close();
