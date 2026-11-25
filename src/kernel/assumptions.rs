@@ -5081,7 +5081,7 @@ impl PureFactContext {
                         relation: CompareRelation::Equal,
                         left: Box::new(MachineTerm::Variable(*variable)),
                         right: Box::new(crate::kernel::MachineTerm::read_named(
-                            ProgramPoint::at(memory),
+                            ProgramPoint::unplaced(memory),
                             address.clone(),
                             kind,
                         )),

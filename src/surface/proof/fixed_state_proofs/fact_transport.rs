@@ -101,7 +101,7 @@ pub(in crate::surface::proof) fn plan_explicit_fact_transport(
         certified_fact_transport_reaches(
             source,
             target,
-            Some(state.memory()),
+            Some(&state.program_point()),
             &transport_assumptions,
         )
     };
@@ -630,7 +630,7 @@ fn check_fixed_state_fact_transport_inner(
                         certified_fact_transport_reaches_through(
                             from,
                             to,
-                            fixed_state.state.memory(),
+                            &fixed_state.state.program_point(),
                             &assumptions,
                             &transition_facts,
                         )
@@ -651,7 +651,7 @@ fn check_fixed_state_fact_transport_inner(
         if !certified_fact_transport_reaches_through(
             &source,
             &target,
-            fixed_state.state.memory(),
+            &fixed_state.state.program_point(),
             &transport_assumptions,
             &transition_facts,
         ) {
@@ -958,7 +958,7 @@ pub(in crate::surface::proof) fn memory_erased_comparison(
     fn erase_term(term: &MachineTerm) -> MachineTerm {
         match term {
             MachineTerm::MemoryLoad(_, pointer, kind) => crate::kernel::MachineTerm::read_named(
-                crate::kernel::ProgramPoint::at(
+                crate::kernel::ProgramPoint::unplaced(
                     &(crate::kernel::intern_memory(SymbolicMemory::default())),
                 ),
                 Address {
@@ -1146,14 +1146,14 @@ pub(in crate::surface::proof) fn path_condition_equivalent(
 pub(in crate::surface::proof) fn certified_fact_transport_reaches_through(
     source: &Proposition,
     target: &Proposition,
-    after: &SymbolicMemory,
+    after: &crate::kernel::ProgramPoint,
     assumptions: &PureFactContext,
     transitions: &(impl ExecutionFactSource + ?Sized),
 ) -> bool {
     crate::kernel::closure_memoized_fact_check(
         crate::kernel::ClosureFactCheck::Reachability,
         &[source, target],
-        Some(after),
+        Some(after.memory()),
         assumptions,
         transitions,
         || {
@@ -1171,7 +1171,7 @@ pub(in crate::surface::proof) fn certified_fact_transport_reaches_through(
 fn certified_fact_transport_reaches_through_unmemoized(
     source: &Proposition,
     target: &Proposition,
-    after: &SymbolicMemory,
+    after: &crate::kernel::ProgramPoint,
     assumptions: &PureFactContext,
     transitions: &(impl ExecutionFactSource + ?Sized),
 ) -> bool {
@@ -1204,7 +1204,7 @@ fn certified_fact_transport_reaches_through_unmemoized(
 pub(in crate::surface::proof) fn certified_fact_transport_reaches(
     source: &Proposition,
     target: &Proposition,
-    after: Option<&SymbolicMemory>,
+    after: Option<&crate::kernel::ProgramPoint>,
     assumptions: &PureFactContext,
 ) -> bool {
     // A checked read at a computed address includes its address-definedness

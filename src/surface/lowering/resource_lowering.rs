@@ -834,7 +834,7 @@ pub(in crate::surface) fn memory_with_symbolic_loadable_cells(
     entry: &crate::kernel::ProgramPoint,
     loadable_ranges: &BTreeMap<String, ConcreteMemoryRangeSeed>,
 ) -> SymbolicMemory {
-    let legacy = crate::kernel::ProgramPoint::at_read_site(entry.shared_memory(), entry);
+    let legacy = crate::kernel::ProgramPoint::read_at(entry.shared_memory(), entry);
     for range in loadable_ranges.values() {
         if let Some(layout) = &range.struct_layout {
             let mut offset: u32 = 0;
@@ -1362,7 +1362,8 @@ fn materialize_access_segment_cells(
             return Ok(memory);
         };
         let entry = entry_frame.program_point();
-        let fallback = crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory_ref(&memory));
+        let fallback =
+            crate::kernel::ProgramPoint::unplaced(&crate::kernel::intern_memory_ref(&memory));
         for field in 0..layout.field_count() {
             let Some(field_type) = layout
                 .field_type(field)
@@ -1394,7 +1395,8 @@ fn materialize_access_segment_cells(
     }
 
     let entry = entry_frame.program_point();
-    let fallback = crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory_ref(&memory));
+    let fallback =
+        crate::kernel::ProgramPoint::unplaced(&crate::kernel::intern_memory_ref(&memory));
 
     // A complete object (`*p`) is one struct at the base: its cells
     // take the field types of the layout, so a `uint64` or pointer field

@@ -5377,7 +5377,7 @@ impl AlgebraicTermNode {
             &pointer,
             AccessExtent::of_algebraic(&parameter.algebraic_type()),
         );
-        Self::parameter_load_at(ProgramPoint::at(&memory), pointer, parameter)
+        Self::parameter_load_at(ProgramPoint::unplaced(&memory), pointer, parameter)
     }
 
     /// A checked cell observation uses the same typed version as a logical read.

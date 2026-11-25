@@ -326,7 +326,11 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
         );
         let (one_theorem, unrelated_work) =
             crate::instrumentation::measure_deterministic_work(|| {
-                prove_program_condition_fact_transport(&source, &one_write, &context)
+                prove_program_condition_fact_transport(
+                    &source,
+                    &crate::kernel::ProgramPoint::of_memory(&one_write),
+                    &context,
+                )
             });
         assert!(one_theorem.is_some());
         assert!(unrelated_work > 0);
@@ -341,9 +345,12 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
                     field.offset_by_bytes(24),
                     ProgramValue::Int32(MachineTerm::constant(index)),
                 );
-                let theorem =
-                    prove_program_condition_fact_transport(&current, &after, &explicit_context)
-                        .expect("the supplied adjacent transition preserves the packed pointer");
+                let theorem = prove_program_condition_fact_transport(
+                    &current,
+                    &crate::kernel::ProgramPoint::of_memory(&after),
+                    &explicit_context,
+                )
+                .expect("the supplied adjacent transition preserves the packed pointer");
                 let (premises, target) = program_condition_fact_transport_parts(&theorem, &current)
                     .expect("a condition transport retains its explicit premises");
                 assert!(
@@ -357,7 +364,12 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
             after
         });
         assert!(
-            prove_program_condition_fact_transport(&source, &after, &context).is_none(),
+            prove_program_condition_fact_transport(
+                &source,
+                &crate::kernel::ProgramPoint::of_memory(&after),
+                &context
+            )
+            .is_none(),
             "a cold endpoint query must not search the older stores"
         );
         assert!(work > 0);

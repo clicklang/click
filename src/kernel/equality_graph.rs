@@ -541,7 +541,7 @@ pub(crate) fn logical_pointer_read_term(value: &Address) -> Option<MachineTerm> 
     });
     let load = application?.as_loaded_value()?;
     Some(crate::kernel::MachineTerm::read_named(
-        ProgramPoint::at(&load.defining_memory),
+        ProgramPoint::unplaced(&load.defining_memory),
         load.defining_address,
         LoadKind::Int32,
     ))
@@ -2879,7 +2879,7 @@ impl EqualityGraphState {
                     crate::kernel::registered_load_for_variable(variable).and_then(
                         |(memory, address)| {
                             crate::kernel::registered_load_kind_for_variable(variable)
-                                .map(|kind| (ProgramPoint::at(&memory), address, kind))
+                                .map(|kind| (ProgramPoint::unplaced(&memory), address, kind))
                         },
                     )
                 }

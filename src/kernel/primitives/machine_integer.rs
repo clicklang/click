@@ -527,7 +527,27 @@ impl MachineTerm {
         pointer: crate::kernel::Address,
         kind: crate::kernel::LoadKind,
     ) -> Self {
-        Self::read_named(crate::kernel::ProgramPoint::at(&memory), pointer, kind)
+        Self::read_named(
+            crate::kernel::ProgramPoint::unplaced(&memory),
+            pointer,
+            kind,
+        )
+    }
+
+    /// Whether this is the memory-named read of `kind` at `pointer` in
+    /// `memory`: the term a read made there would be, asked without
+    /// making a point for it.
+    pub(in crate::kernel) fn is_memory_named_read_of(
+        &self,
+        memory: &crate::kernel::SharedMemory,
+        pointer: &crate::kernel::Address,
+        kind: crate::kernel::LoadKind,
+    ) -> bool {
+        matches!(self, Self::MemoryLoad(_, cell, read_kind)
+            if *read_kind == kind
+                && cell.load().point().read_key()
+                    == crate::kernel::program_point::ReadKey::Memory(memory.arena_id())
+                && cell.load().cell() == pointer)
     }
 
     /// The read of `kind` at `pointer` named by `point`, as the caller

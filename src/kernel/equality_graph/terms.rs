@@ -253,7 +253,7 @@ pub(super) fn uint64_read(term: &crate::kernel::MachineTerm) -> Option<(ProgramP
                 && crate::kernel::registered_load_bytes_for_variable(variable) == Some(8) =>
         {
             let (memory, address) = crate::kernel::registered_load_for_variable(variable)?;
-            Some((ProgramPoint::at(&memory), address))
+            Some((ProgramPoint::unplaced(&memory), address))
         }
         _ => None,
     }

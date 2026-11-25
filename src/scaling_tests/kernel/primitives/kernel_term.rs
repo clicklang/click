@@ -1278,13 +1278,12 @@ fn refused_boolean_transport_does_not_export_shared_guard_prefixes() {
                 },
             );
         }
+        let after = crate::kernel::ProgramPoint::of_memory(&SymbolicMemory::new());
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {
                 assert!(
                     crate::kernel::memory_history::transport_framed_common_condition(
-                        &root,
-                        &SymbolicMemory::new(),
-                        None
+                        &root, &after, None
                     )
                     .is_none()
                 );
@@ -1318,7 +1317,7 @@ fn boolean_transport_keeps_shared_arithmetic_operands() {
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             let actual = crate::kernel::memory_history::transport_framed_common_condition(
                 &guard,
-                &SymbolicMemory::new(),
+                &crate::kernel::ProgramPoint::of_memory(&SymbolicMemory::new()),
                 None,
             )
             .unwrap();

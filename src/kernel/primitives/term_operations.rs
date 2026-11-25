@@ -5002,7 +5002,7 @@ impl Address {
     /// a memory state. A caller with a program point uses
     /// [`Self::loaded_value_at`].
     pub(crate) fn loaded_value(memory: &SharedMemory, address: &Address) -> Self {
-        crate::kernel::Load::at(ProgramPoint::at(memory), address).address()
+        crate::kernel::Load::at(ProgramPoint::unplaced(memory), address).address()
     }
 
     /// [`Self::loaded_value`] of `point`'s memory, recording `point` as the
@@ -5031,8 +5031,7 @@ impl Address {
         site: Option<&ProgramPoint>,
         address: &Address,
     ) -> Self {
-        crate::kernel::Load::at(ProgramPoint::at_optional_read_site(memory, site), address)
-            .address()
+        crate::kernel::Load::at(ProgramPoint::read_at_optional(memory, site), address).address()
     }
 
     /// The read of the pointer cell at `address` in `memory`, identified by
@@ -5184,7 +5183,7 @@ impl Address {
         // Pointer values retain the selected read directly. Observation metadata
         // records the live source independently of the term's identity.
         let bits = crate::kernel::MachineTerm::read_named(
-            ProgramPoint::at_optional_read_site(memory, site),
+            ProgramPoint::read_at_optional(memory, site),
             address.clone(),
             LoadKind::Int32,
         );

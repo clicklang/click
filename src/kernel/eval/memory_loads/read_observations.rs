@@ -45,7 +45,7 @@ pub(super) fn clear() {
 }
 
 pub(super) fn existing(memory: &SharedMemory, pointer: &Address, kind: LoadKind) -> Option<Id> {
-    existing_at(&ProgramPoint::at(memory), pointer, kind)
+    existing_at(&ProgramPoint::unplaced(memory), pointer, kind)
 }
 
 pub(super) fn existing_at(point: &ProgramPoint, pointer: &Address, kind: LoadKind) -> Option<Id> {
@@ -67,10 +67,10 @@ pub(super) fn record(
     bytes: u32,
 ) -> Id {
     record_at(
-        &ProgramPoint::at(memory),
+        &ProgramPoint::unplaced(memory),
         pointer,
         kind,
-        &ProgramPoint::at(origin),
+        &ProgramPoint::unplaced(origin),
         bytes,
     )
 }
@@ -92,10 +92,10 @@ pub(super) fn record_untyped(
     origin: &SharedMemory,
 ) -> Id {
     record_with_width(
-        &ProgramPoint::at(memory),
+        &ProgramPoint::unplaced(memory),
         pointer,
         kind,
-        &ProgramPoint::at(origin),
+        &ProgramPoint::unplaced(origin),
         kind.unrecorded_access_byte_width(),
         false,
     )
