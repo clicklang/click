@@ -15985,15 +15985,15 @@ impl Parser {
                     "cannot pass `struct {source_struct}` as a `struct {struct_name}` argument"
                 )));
             }
-            let owner = self
-                .binding_function
-                .clone()
-                .ok_or_else(|| self.error_here("a by-value struct argument requires a function body"))?;
+            let owner = self.binding_function.clone().ok_or_else(|| {
+                self.error_here("a by-value struct argument requires a function body")
+            })?;
             let ordinal = self.next_local_binding;
             self.next_local_binding = ordinal.checked_add(1).expect("binding ordinal fits u32");
-            let name: BindingName = LocalBindingId::prepared_argument_for(owner, ordinal, &parameter)
-                .with_scope_depth(self.scopes.len() as u32)
-                .into();
+            let name: BindingName =
+                LocalBindingId::prepared_argument_for(owner, ordinal, &parameter)
+                    .with_scope_depth(self.scopes.len() as u32)
+                    .into();
             self.variable_types
                 .insert(name.clone(), record_value_type(&layout));
             self.variable_structs

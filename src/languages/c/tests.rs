@@ -15203,10 +15203,18 @@ fn a_by_value_struct_argument_is_copied_before_its_call() {
     )
     .expect("by-value call parses");
     let body = format!("{:?}", functions[0].body());
-    let declare = body.rfind("DeclareStructValue").unwrap_or_else(|| panic!("{body}"));
-    let copy = body.find("AggregateCopy {").unwrap_or_else(|| panic!("{body}"));
-    let call = body.find("CallResult {").unwrap_or_else(|| panic!("{body}"));
-    let end = body.find("EndAggregateLifetimes").unwrap_or_else(|| panic!("{body}"));
+    let declare = body
+        .rfind("DeclareStructValue")
+        .unwrap_or_else(|| panic!("{body}"));
+    let copy = body
+        .find("AggregateCopy {")
+        .unwrap_or_else(|| panic!("{body}"));
+    let call = body
+        .find("CallResult {")
+        .unwrap_or_else(|| panic!("{body}"));
+    let end = body
+        .find("EndAggregateLifetimes")
+        .unwrap_or_else(|| panic!("{body}"));
     assert!(declare < copy && copy < call && call < end, "{body}");
 }
 

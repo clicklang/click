@@ -11398,7 +11398,6 @@ impl SymbolicExecutionPath {
         self.call_result.as_ref()
     }
 
-
     /// The entry premises this path was checked under.
     pub fn assumptions(&self) -> &PureFactContext {
         &self.assumptions

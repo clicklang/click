@@ -4658,13 +4658,17 @@ fn source_backed_call_requirement_surface(
     if !aggregate_parameters.is_empty() {
         // Each by-value aggregate parameter is the prepared object the call
         // receives: `R.parameter(name)` at the call's region.
-        for (parameter, argument) in source_parameter_names.iter().zip(site.source_arguments.iter()) {
+        for (parameter, argument) in source_parameter_names
+            .iter()
+            .zip(site.source_arguments.iter())
+        {
             let name = parameter.to_string();
             if !aggregate_parameters.contains(&name) {
                 continue;
             }
             let object = prepared_argument_binding(argument)?;
-            let (region, prepared, _) = context.constants.source_layout.prepared_parameter(object)?;
+            let (region, prepared, _) =
+                context.constants.source_layout.prepared_parameter(object)?;
             if prepared != name {
                 return None;
             }

@@ -9015,9 +9015,8 @@ fn synthesize_copied_parameter_pointer(
             base: read.defining_address.base.clone(),
             offset: AddressOffset::Constant(0),
         };
-        let name = crate::kernel::BindingName::from(
-            object.base.prepared_argument_binding()?.clone(),
-        );
+        let name =
+            crate::kernel::BindingName::from(object.base.prepared_argument_binding()?.clone());
         let (region, parameter, layout) = points.prepared_parameter(&name)?;
         let field = layout.fields().iter().find(|field| {
             let field_type = field.program_type();

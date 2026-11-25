@@ -2386,11 +2386,8 @@ impl LoweringContext<'_> {
             .checked_add(1)
             .ok_or("C++ temporary ordinal overflow")?;
         crate::instrumentation::record_deterministic_work(1);
-        let id = LocalBindingId::prepared_argument_for(
-            self.temporary_owner.clone(),
-            ordinal,
-            parameter,
-        );
+        let id =
+            LocalBindingId::prepared_argument_for(self.temporary_owner.clone(), ordinal, parameter);
         id.initialize_program_type(ProgramType::Int32Pointer);
         id.initialize_struct_name(record);
         Ok(id.into())
