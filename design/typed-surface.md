@@ -135,13 +135,66 @@ every test passing.
    lowering's inference functions; lowering takes only Surface and is
    compositional. Rename `SpecElaborationContext`.
 
+## Stage 2 shapes
+
+Surface records the kind the kernel distinguishes, using the kernel's own
+format enums:
+
+```rust
+pub enum ComparisonKind {
+    Machine(MachineIntegerType), // ConditionTerm::Compare at a format
+    Integer,                     // IntegerLessThan .. IntegerNotEqual
+    Pointer,                     // PointerEqual
+    Address,                     // AddressEqual: address(p) == address(q)
+    Algebraic,                   // AlgebraicEqual
+    Bool,                        // BoolEqual
+    Float(KernelFloatType),      // Float32, Float64
+}
+
+pub enum ArithmeticKind {
+    Machine(MachineIntegerType), // MachineTerm::Binary at a format
+    Integer,                     // IntegerTerm::Add, Subtract, ...
+}
+
+SurfaceProposition::Comparison { kind: ComparisonKind, left, operator, right }
+SurfaceTerm::Binary { op, kind: ArithmeticKind, left, right }
+SurfaceTerm::Negate { kind: ArithmeticKind, operand }
+SurfaceTerm::Untyped(SyntaxTerm) // transitional, until every construct is typed
+```
+
+Bitwise operators and shifts exist only on machine words, so their kind is
+always `Machine(format)`. A 32-bit equality is one kernel fact at either
+signedness (rule K6); `Machine(Int32)` and `Machine(UInt32)` equalities lower
+to the same term, which Surface-to-Kernel's many-to-one direction allows.
+
+- **Elaborate** fills each kind with the rules lowering uses today, moved, not
+  changed, so behavior stays the same: the expected-type rules of
+  `docs/reference/language/index.md`, with operand types from the typing
+  environment.
+- **Lower** reads the kind: a `Machine` comparison or operation lowers its
+  operands as machine words at that format, an `Integer` one as Integers. No
+  operand inspection, no caller-dependent path.
+- **Raise** copies the kind from the kernel term: `ConditionTerm::Compare
+  { format, .. }` gives `Machine(format)`, `IntegerEqual` gives `Integer`,
+  `MachineTerm::Binary { format, .. }` gives `Machine(format)`, an
+  `IntegerTerm` operation gives `Integer`.
+- **Print** writes `to_integer(...)` or a cast exactly where the kind differs
+  from what elaborating the bare text would infer. It asks the one function
+  elaboration uses for that inference, so printing and elaboration cannot
+  disagree.
+
 ## Open questions
 
-- **Point-dependent types.** Lowering's inference reads a local's type from
-  the program state at a point (`c_variable_type`: entry values, locals,
-  `local_type_state`). Stage 2 must establish what elaboration can know about
-  a local's type before lowering, and record anything that depends on the
-  point when the Surface term is formed at that point.
+- **Point-dependent types: answered.** Lowering's lookup (`c_variable_type`)
+  reads only declared types: the function's result type, a resolved
+  binding's type, parameters' declared types and entry values, locals at
+  entry, and a state's local object types. A C local's type never changes as
+  the program runs. What depends on the point is only which locals are in
+  scope there, through blocks and shadowing. So elaboration needs a typing
+  environment for the proof's position: the declared parameters and the
+  locals in scope at it. In an execution proof that position is the step's
+  frontier, so a proof statement is elaborated when its step is reached,
+  still once and before lowering.
 - **Abbreviation.** The printer needs one rule for when a cast or `to_integer`
   may be left out: exactly when elaborating the shorter text gives the same
   Surface term.
