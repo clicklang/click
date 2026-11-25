@@ -2436,7 +2436,6 @@ pub(super) fn prove_symbolic_program_function_verification_paths(
                         &path.obligations,
                     ));
                     SymbolicExecutionPath {
-                        call_parameters: None,
                         descent_step: None,
                         completion_origin: None,
                         call_result: None,

@@ -746,8 +746,13 @@ int32 short_sum(int32 seed) {
                     && line
                         .split('\t')
                         .nth(7)
-                        .is_some_and(|raised| raised.contains(".parameter(b).data + k"))
+                        .is_some_and(|raised| raised.contains(".parameter(b).data) + k"))
             }),
+            "{lines:#?}"
+        );
+        // Every fact about the prepared parameter object raises.
+        assert!(
+            !lines.iter().any(|line| line.starts_with("unraised\t")),
             "{lines:#?}"
         );
     }

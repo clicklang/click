@@ -7134,14 +7134,6 @@ fn describe_program_point_expression(
     selector: Option<&ProgramPointSelector>,
     expression: &SyntaxTerm,
 ) -> String {
-    // A read at a call's parameter point is a read through the call's copy
-    // of its argument: `R.parameter(v).f[i]`.
-    if let Some(ProgramPointSelector::ProgramPoint(point)) = selector
-        && point.kind == ProgramPointKind::Parameters
-        && let Some(read) = parameter_point_read(&point.region, expression)
-    {
-        return describe_contract_expression(&read);
-    }
     let wrap = |text: String| match selector {
         None => format!("old({text})"),
         Some(selector) => format!("at({}, {text})", describe_program_point_selector(selector)),
@@ -7843,10 +7835,7 @@ fn describe_contract_expression_grouping_casts(
             if matches!(
                 base.as_ref(),
                 SyntaxTerm::RegionParameter { .. } | SyntaxTerm::RegionResult(_)
-            ) || matches!(base.as_ref(), SyntaxTerm::At {
-                    selector: ProgramPointSelector::ProgramPoint(point),
-                    ..
-                } if point.kind == ProgramPointKind::Parameters) =>
+            ) =>
         {
             let field = field
                 .strip_prefix('_')
@@ -8381,12 +8370,6 @@ pub(super) fn describe_program_point_ref_as_recorded(point: &ProgramPointRef) ->
     let kind = match point.kind {
         ProgramPointKind::Entry => "entry",
         ProgramPointKind::Exit => "exit",
-        ProgramPointKind::Parameters => {
-            return format!(
-                "the parameters `{}` bound",
-                describe_code_region_ref(&point.region)
-            );
-        }
     };
     format!("{}.{}", describe_code_region_ref(&point.region), kind)
 }
@@ -9217,57 +9200,5 @@ mod assembly_fact_tests {
         let fallback =
             describe_unestablished_assembly_fact(&error, &[], &[], binding, &[]).unwrap();
         assert!(fallback.contains("missing pure fact: false"), "{fallback}");
-    }
-}
-
-/// `expression`, a read of a field or element of a call's parameter object
-/// at that call's parameter point, rooted at `R.parameter(v)` instead of `v`.
-fn parameter_point_read(region: &CodeRegionRef, expression: &SyntaxTerm) -> Option<SyntaxTerm> {
-    Some(match expression {
-        SyntaxTerm::Binding(_)
-        | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
-            crate::kernel::BindingName::Named(_),
-        )) => parameter_point_root(region, expression)?,
-        SyntaxTerm::Field {
-            pointee_struct,
-            base,
-            field,
-            lowered,
-            offset_bytes,
-        } => SyntaxTerm::Field {
-            pointee_struct: pointee_struct.clone(),
-            base: Box::new(parameter_point_root(region, base)?),
-            field: field.clone(),
-            lowered: lowered.clone(),
-            offset_bytes: *offset_bytes,
-        },
-        SyntaxTerm::Index(base, index) => {
-            SyntaxTerm::Index(Box::new(parameter_point_read(region, base)?), index.clone())
-        }
-        SyntaxTerm::ArrayIndex {
-            base,
-            indexes,
-            dimensions,
-            lowered,
-        } => SyntaxTerm::ArrayIndex {
-            base: Box::new(parameter_point_read(region, base)?),
-            indexes: indexes.clone(),
-            dimensions: dimensions.clone(),
-            lowered: lowered.clone(),
-        },
-        _ => return None,
-    })
-}
-
-fn parameter_point_root(region: &CodeRegionRef, base: &SyntaxTerm) -> Option<SyntaxTerm> {
-    match base {
-        SyntaxTerm::Binding(name)
-        | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
-            crate::kernel::BindingName::Named(name),
-        )) => Some(SyntaxTerm::RegionParameter {
-            region: region.clone(),
-            name: crate::kernel::program_local_source_name(name).to_string(),
-        }),
-        _ => parameter_point_read(region, base),
     }
 }

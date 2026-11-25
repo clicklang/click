@@ -11398,12 +11398,6 @@ impl SymbolicExecutionPath {
         self.call_result.as_ref()
     }
 
-    /// The callee's by-value aggregate parameters as this path's call bound
-    /// them, when it is such a call.
-    pub(crate) fn call_parameters(&self) -> Option<&CallParameters> {
-        self.call_parameters.as_ref()
-    }
-
     /// The entry premises this path was checked under.
     pub fn assumptions(&self) -> &PureFactContext {
         &self.assumptions

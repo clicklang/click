@@ -5394,7 +5394,9 @@ pub(super) fn synthesize_surface_resource_subject(
     };
     // A scalar's storage is its address, not its current value or the zero
     // offset within its block. The slot index supplies the exact local name.
-    let surface_base = if is_materialized_address(range.base()) {
+    let surface_base = if let Some(object) = prepared_parameter_object(range.base()) {
+        object
+    } else if is_materialized_address(range.base()) {
         synthesize_materialized_result(range.base())?
     } else if let Some(name) = state.locals().name_for_slot(range.base()) {
         let object = ProgramExpression::Variable(surface_local_name(name));
@@ -8758,6 +8760,11 @@ fn synthesize_surface_pointer_expression_routes(
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SyntaxTerm> {
     let _frame = SurfaceSynthesisFrame::enter("pointer-expression")?;
+    // A call's prepared parameter object is `R.parameter(name)`, which
+    // lowers to the object's address as an aggregate local does.
+    if let Some(object) = prepared_parameter_object(pointer) {
+        return Some(object);
+    }
     if pointer.offset == AddressOffset::Constant(0)
         && let Some((name, pointer_type)) =
             crate::surface::proof_diagnostics::render::c_library_pointer_name(pointer)
@@ -8771,7 +8778,7 @@ fn synthesize_surface_pointer_expression_routes(
         });
     }
     if let Some(read) = pointer.as_loaded_value()
-        && let Some((base, value_type)) = synthesize_copied_parameter_pointer(&read)
+        && let Some((base, value_type)) = synthesize_copied_parameter_pointer(&read, state)
     {
         if read.displacement == AddressOffset::Constant(0) {
             return Some(base);
@@ -8998,48 +9005,53 @@ fn synthesize_surface_pointer_expression_routes(
 }
 
 /// A pointer read from the call's private parameter object is named by
-/// that call and field. Its defining memory selects the parameter scope.
+/// that call and field: the object is the prepared argument the caller
+/// passes as that parameter, `R.parameter(name)`. Like a local it is read in
+/// the current state; a read in another recorded memory is spelled at the
+/// point that holds it.
 fn synthesize_copied_parameter_pointer(
     read: &crate::kernel::LoadedPointerView,
+    state: &ExecutionState,
 ) -> Option<(SyntaxTerm, ProgramType)> {
     SYNTHESIS_RECORDED_POINTS.with(|slot| {
         let points = slot.borrow();
-        let (selector, state) = points
-            .as_ref()?
-            .point_reading_memory(&read.defining_memory)?;
-        let ProgramPointSelector::ProgramPoint(ProgramPointRef {
-            region,
-            kind: ProgramPointKind::Parameters,
-        }) = selector
-        else {
-            return None;
-        };
+        let points = points.as_ref()?;
         let object = Address {
             base: read.defining_address.base.clone(),
             offset: AddressOffset::Constant(0),
         };
-        let name = state.locals().name_for_slot(&object)?;
-        let layout = state.locals().aggregate_layout(name)?;
+        let name =
+            crate::kernel::BindingName::from(object.base.prepared_argument_binding()?.clone());
+        let (region, parameter, layout) = points.prepared_parameter(&name)?;
         let field = layout.fields().iter().find(|field| {
             let field_type = field.program_type();
             field_type.is_pointer()
                 && object.offset_by_layout(field.offset()) == read.defining_address
         })?;
         let value_type = field.program_type();
-        let base = SyntaxTerm::RegionParameter {
-            region: region.clone(),
-            name: name.named()?.to_owned(),
+        let term = SyntaxTerm::Field {
+            pointee_struct: None,
+            base: Box::new(SyntaxTerm::RegionParameter {
+                region,
+                name: parameter,
+            }),
+            field: field.name().to_owned(),
+            lowered: typed_load_expression(
+                owner_field_pointer(&ProgramExpression::Variable(name.clone()), field.offset()),
+                value_type,
+            ),
+            offset_bytes: field.offset(),
         };
+        if crate::kernel::interned_storage_of(state.memory())?.read_identity()
+            == read.defining_memory.read_identity()
+        {
+            return Some((term, value_type));
+        }
+        let (selector, _) = points.point_reading_memory(&read.defining_memory)?;
         Some((
-            SyntaxTerm::Field {
-                pointee_struct: None,
-                base: Box::new(base),
-                field: field.name().to_owned(),
-                lowered: typed_load_expression(
-                    owner_field_pointer(&ProgramExpression::Variable(name.clone()), field.offset()),
-                    value_type,
-                ),
-                offset_bytes: field.offset(),
+            SyntaxTerm::At {
+                selector: selector.clone(),
+                expression: Box::new(term),
             },
             value_type,
         ))
@@ -9557,5 +9569,23 @@ fn surface_algebraic_type(
             .map(super::pure_theorems::click_type_from_algebraic_value_type)
             .collect::<Result<_, _>>()
             .ok()?,
+    })
+}
+
+/// A call's prepared parameter object, by its address: the call's
+/// `R.parameter(name)`, which lowers to the object as a local does.
+fn prepared_parameter_object(slot: &Address) -> Option<SyntaxTerm> {
+    if slot.offset != AddressOffset::Constant(0) {
+        return None;
+    }
+    let binding = slot.base.prepared_argument_binding()?;
+    binding.call_parameter()?;
+    let name = crate::kernel::BindingName::from(binding.clone());
+    SYNTHESIS_RECORDED_POINTS.with(|points| {
+        let (region, parameter, _) = points.borrow().as_ref()?.prepared_parameter(&name)?;
+        Some(SyntaxTerm::RegionParameter {
+            region,
+            name: parameter,
+        })
     })
 }

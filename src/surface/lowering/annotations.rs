@@ -7392,11 +7392,9 @@ impl AnnotationLowerer<'_> {
                         .region_result_value_at(region, environment.call_result_point.as_ref())?,
                 ))
             }
-            SyntaxTerm::RegionParameter { region, name } => Err(format!(
-                "`{}.parameter({name})` is the call's copy of an aggregate argument; read a field of it, as `{}.parameter({name}).field`",
-                diagnostics::describe_code_region_ref(region),
-                diagnostics::describe_code_region_ref(region),
-            )),
+            SyntaxTerm::RegionParameter { region, name } => {
+                self.lower_region_parameter_object(region, name, environment)
+            }
 
             SyntaxTerm::Old(expression) => {
                 let old_environment =
@@ -9303,10 +9301,33 @@ impl AnnotationLowerer<'_> {
         )
     }
 
-    /// `R.parameter(name).field[i]`: the scalar the call at `R` read from
-    /// its copy of an aggregate argument. The copy's layout is the one the
-    /// call bound, recorded at `R`'s parameter point, so the read is the
-    /// typed load at that field (and element) of the copy, at that point.
+    /// `R.parameter(name)`: the object itself, as an aggregate local is, its
+    /// address. Out of line, so the recursive lowering's frame stays small.
+    #[inline(never)]
+    fn lower_region_parameter_object(
+        &mut self,
+        region: &CodeRegionRef,
+        name: &str,
+        environment: &SpecElaborationContext,
+    ) -> Result<SpecExpression, String> {
+        let retained_states = self.retained_states.ok_or_else(|| {
+            format!(
+                "`{}.parameter({name})` names a call of a function body being executed",
+                diagnostics::describe_code_region_ref(region)
+            )
+        })?;
+        let (object, _) = retained_states.region_parameter(region, name)?;
+        self.lower_contract_expression_to_spec(
+            &SyntaxTerm::ProgramExpression(ProgramExpression::Variable(object)),
+            environment,
+        )
+    }
+
+    /// `R.parameter(name).field[i]`: a field (and element) of the object the
+    /// call at `R` receives as its by-value aggregate parameter `name`. The
+    /// caller initializes that object before the call and it lives until the
+    /// call returns; like a local, it is read in the current state, so a read
+    /// after the call is written `at(R.entry, ...)`.
     fn lower_region_parameter_read(
         &mut self,
         region: &CodeRegionRef,
@@ -9326,26 +9347,8 @@ impl AnnotationLowerer<'_> {
                 spelled()
             )
         })?;
-        let index = retained_states
-            .result_region_index(region)
-            .map_err(|error| format!("`{}`: {error}", spelled()))?;
-        let point = ProgramPointRef {
-            region: CodeRegionRef::Region(index),
-            kind: ProgramPointKind::Parameters,
-        };
-        let bound = retained_states.get(&point).ok_or_else(|| {
-            format!(
-                "`{}` names a by-value aggregate argument of a call, and no call at `{}` has been prepared or stepped with one",
-                spelled(),
-                diagnostics::describe_code_region_ref(region)
-            )
-        })?;
-        let layout = bound.locals().aggregate_layout(name).ok_or_else(|| {
-            format!(
-                "the call at `{}` has no by-value aggregate parameter `{name}`",
-                diagnostics::describe_code_region_ref(region)
-            )
-        })?;
+        let (object, layout) = retained_states.region_parameter(region, name)?;
+        let layout = &layout;
         let field_count = accesses
             .iter()
             .take_while(|access| matches!(access, RegionParameterAccess::Field(_)))
@@ -9408,7 +9411,7 @@ impl AnnotationLowerer<'_> {
         }
         let read = SyntaxTerm::ProgramExpression(ProgramExpression::TypedLoad {
             pointer: Box::new(crate::kernel::program_expression::pointer_offset_bytes(
-                ProgramExpression::Variable(name.into()),
+                ProgramExpression::Variable(object),
                 offset,
             )),
             value_type,
@@ -9417,11 +9420,7 @@ impl AnnotationLowerer<'_> {
             access_class: None,
             source: Default::default(),
         });
-        self.lower_at_expression_to_spec(
-            &ProgramPointSelector::ProgramPoint(point),
-            &read,
-            environment,
-        )
+        self.lower_contract_expression_to_spec_one(&read, environment)
     }
 
     fn lower_at_expression_to_spec(
@@ -9508,9 +9507,6 @@ impl AnnotationLowerer<'_> {
         }
         let region = self.resolve_code_region_ref(&program_point.region)?;
         match (region, program_point.kind) {
-            (CodeRegion::Function | CodeRegion::Loop(_), ProgramPointKind::Parameters) => {
-                Err("`.parameter(name)` names a by-value parameter of a call's region".to_string())
-            }
             (CodeRegion::Function, ProgramPointKind::Entry) => {
                 Ok(ResolvedProgramPoint::FunctionEntry)
             }

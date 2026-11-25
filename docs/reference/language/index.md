@@ -4216,14 +4216,19 @@ temporary for a call held this way
 (`mdtests/an_unbound_call_result_is_reported_by_its_call.md`).
 
 A call's region also names the callee's copy of each by-value aggregate
-argument: `R.parameter(name)` is the object the call copied the argument into,
-read at the memory just after the copy, which is what the callee's contract
-reads. It is an object, read one field (or one element of an array field, by a
-literal index) at a time, as `statement(3).call(first, 0).parameter(p).a`. The
-step that runs the call has it while it proves the call's requirements at its
-pre-state, so a `requires` entry of that step can state one, and it names the
-same copy after the call. A name the callee does not take as a by-value
-aggregate, and a region whose call has not been prepared, are refused
+argument. As C specifies, the argument is copied into a parameter object
+before the call; that copy is an atomic region of its own (the object's
+allocation, then the copy), so the call's region is the call alone and its
+`.entry` is the callee's entry, where its contract is read; the object's
+lifetime ends when the call returns. `R.parameter(name)` names that object,
+the way a local's name does: from its allocation until the call returns, it
+is read in the current state, one field (or one element of an array field, by
+a literal index) at a time, as `statement(3).call(first, 0).parameter(p).a`,
+and the bare `R.parameter(name)` is the object itself, as in its `memory`.
+The step that runs the call starts at the call's entry, so a `requires` entry
+of that step can state a field of it; after the call, read it as
+`at(R.entry, R.parameter(name).a)`. A name the callee does not take as a
+by-value aggregate is refused
 (`mdtests/a_call_parameter_names_only_a_by_value_struct_parameter.md`).
 
 <!-- verified-example: mdtests/a_by_value_struct_argument_is_spelled_by_its_call_parameter.md -->
@@ -4231,7 +4236,7 @@ aggregate, and a region whose call has not been prepared, are refused
 step() {
     requires statement(3).call(first, 0).parameter(p).a <= 1000u32 by close();
 }
-have statement(3).call(first, 0).parameter(p).a == x;
+have at(statement(3).call(first, 0).entry, statement(3).call(first, 0).parameter(p).a) == x;
 ```
 
 A completed volatile read exposes its observed value as

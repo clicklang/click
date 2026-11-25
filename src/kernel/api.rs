@@ -5258,7 +5258,6 @@ pub fn prove_symbolic_program_execution_paths_with_environment_and_budget(
                 &path.obligations,
             ));
             SymbolicExecutionPath {
-                call_parameters: path.call_parameters,
                 descent_step: None,
                 completion_origin: None,
                 call_result: path.call_result,
@@ -5602,7 +5601,6 @@ fn symbolic_execution_statement_execution_with_loop_rule(
                 &path.obligations,
             ));
             SymbolicExecutionPath {
-                call_parameters: path.call_parameters,
                 descent_step: crate::kernel::DescentStep::under_state(environment, &state),
                 completion_origin: None,
                 call_result: path.call_result,
@@ -5843,7 +5841,6 @@ fn prove_symbolic_program_function_execution_paths_with_contract_resources(
                 &path.obligations,
             ));
             SymbolicExecutionPath {
-                call_parameters: None,
                 descent_step: None,
                 completion_origin: None,
                 call_result: None,
