@@ -54,11 +54,13 @@ fn source_contract_application(name: &str, arguments: &[SyntaxTerm]) -> Option<S
     })
 }
 
-pub(super) const COMPATIBILITY_NORMALIZATION: &str = "<verification-only normalization>";
+/// Click source that parses back. Every spelling is chosen by its caller;
+/// no output depends on who else is printing.
 /// Diagnostic spelling for a kernel conjunction without complete Surface labels.
+pub(super) const COMPATIBILITY_FACT_TRANSPORT: &str = "<verification-only fact transport>";
+pub(super) const COMPATIBILITY_NORMALIZATION: &str = "<verification-only normalization>";
 pub(super) const UNRAISED_CONJUNCT: &str = "<unraised conjunct>";
 
-/// Click source that parses back. The caller supplies the spelling.
 pub(in crate::surface) fn source_click_proposition(proposition: &SyntaxProposition) -> String {
     with_lexical_binder_names(|| identity_click_proposition(proposition))
 }
@@ -1387,6 +1389,9 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 source_click_proposition(target)
             ),
         ),
+        ProofTactic::CompatibilityFactTransport { .. } => {
+            line(output, &prefix, COMPATIBILITY_FACT_TRANSPORT)
+        }
         ProofTactic::Instantiate {
             quantified,
             arguments,

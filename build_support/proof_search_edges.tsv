@@ -649,14 +649,13 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_fora
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_preserve_selected_fact	try_indexed_read_preservation	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_universal_steps_with_arithmetic	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_universal_steps_with_arithmetic	try_ordinary_fact_transport	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_ordinary_fact_transport	driver	13
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_ordinary_fact_transport	driver	11
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_ordinary_fact_transport	try_ordinary_fact_transport	1
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_ordinary_fact_transport	try_ordinary_fact_transport	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_ordinary_fact_transport	try_indexed_read_preservation	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_ordinary_fact_transport	try_arithmetic_with_selected_premises	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_ordinary_fact_transport	try_preserve_selected_fact	1
-src/surface/proof/smart_execution/search.rs	search	ProofSearch::fact_transport_candidate_search	driver	1
-src/surface/proof/smart_execution/search.rs	search	ProofSearch::fact_transport_candidate_search	try_ordinary_fact_transport	1
+src/surface/proof/smart_execution/search.rs	search	ProofSearch::fact_transport_candidate_search	driver	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_forall_instantiation	try_universal_steps_with_arithmetic	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::check_typed_atomic_solve_candidate	try_ordinary_viewability_restriction_closure	1
 src/surface/proof/smart_execution/search.rs	search	ProofSearch::fact_transport_candidate_search	try_history_indexed_equalities	1

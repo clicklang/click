@@ -144,7 +144,14 @@ pub(in crate::surface::proof) fn plan_explicit_fact_transport(
     Ok(selected.into_iter().map(|(_, surface)| surface).collect())
 }
 
-/// Checks a selected frame to explain a failed written transport search.
+pub(in crate::surface::proof) struct CheckedFixedStateFactTransport {
+    pub(in crate::surface::proof) source: Proposition,
+    pub(in crate::surface::proof) target: Proposition,
+}
+
+/// Checks a fixed-state frame with selected premises for internal transport.
+/// It does not mutate surface bookkeeping or proof lineage; it returns the
+/// exact checked source and target for those owners to record atomically.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface::proof) fn check_fixed_state_fact_transport(
     surface_source: &SyntaxProposition,
@@ -158,7 +165,7 @@ pub(in crate::surface::proof) fn check_fixed_state_fact_transport(
     fixed_state: FixedStateFrame<'_>,
     surface_propositions: &SurfacePropositionMap,
     spec_definitions: SpecDefinitions<'_>,
-) -> Result<(), ClickError> {
+) -> Result<CheckedFixedStateFactTransport, ClickError> {
     // One explicit transport can ask the same failed alias/frame question
     // through several proof routes. Share their existing, fully keyed failure
     // memo within this check, just as the smart closure does.
@@ -182,7 +189,10 @@ pub(in crate::surface::proof) fn check_fixed_state_fact_transport(
             // A check may finish after consuming its allowance. Report the
             // goal it actually lowered, never re-evaluate it after the stop.
             result
-                .and_then(|()| check_verification_deadline())
+                .and_then(|checked| {
+                    check_verification_deadline()?;
+                    Ok(checked)
+                })
                 .map_err(|error| {
                     if crate::instrumentation::deadline_exceeded()
                         && let Some(target) = checked_target
@@ -214,7 +224,7 @@ fn check_fixed_state_fact_transport_inner(
     surface_propositions: &SurfacePropositionMap,
     spec_definitions: SpecDefinitions<'_>,
     checked_target: &mut Option<Proposition>,
-) -> Result<(), ClickError> {
+) -> Result<CheckedFixedStateFactTransport, ClickError> {
     // Materialize selected separation premises on the local checked state.
     // This keeps resource compositions compact.
     let mut available = available.clone();
@@ -340,7 +350,10 @@ fn check_fixed_state_fact_transport_inner(
     let target_is_available =
         concrete_source_is_true.then(|| available.available_across_effects(&target, effect_facts));
     if target_is_available == Some(true) {
-        return Ok(());
+        return Ok(CheckedFixedStateFactTransport {
+            source: ordinary_source,
+            target,
+        });
     }
     let source = if concrete_source_is_true
         && (proposition_contains_at_expression(surface_source)
@@ -381,7 +394,7 @@ fn check_fixed_state_fact_transport_inner(
                 .assume_proposition(source.clone()),
         )
     {
-        return Ok(());
+        return Ok(CheckedFixedStateFactTransport { source, target });
     }
     let resource_facts = fixed_state
         .state
@@ -540,7 +553,7 @@ fn check_fixed_state_fact_transport_inner(
                 )
             },
         ) {
-            return Ok(());
+            return Ok(CheckedFixedStateFactTransport { source, target });
         }
         // A fact about a checked range-fold application crosses a step that
         // provably misses every cell the fold reads. The kernel decides it
@@ -563,7 +576,7 @@ fn check_fixed_state_fact_transport_inner(
             },
         );
         let fold_refusal = match fold_frame {
-            Ok(_) => return Ok(()),
+            Ok(_) => return Ok(CheckedFixedStateFactTransport { source, target }),
             Err(refusal) => refusal,
         };
         // A quantified fact crosses the same steps leaf by leaf: each universal
@@ -667,7 +680,7 @@ fn check_fixed_state_fact_transport_inner(
                 // the kernel's checked load equality, a bounded walk over
                 // recorded history that looks up separation and order facts:
                 // the fast path's kind of decision, not a search.
-                return Ok(());
+                return Ok(CheckedFixedStateFactTransport { source, target });
             }
             // A repeat answered from the failure memo never ran the frame, so
             // this refusal names the leaf only if the frame runs once more:
@@ -743,7 +756,7 @@ fn check_fixed_state_fact_transport_inner(
             return Err(ClickError::new(rendered).with_report_labels(labels));
         }
     }
-    Ok(())
+    Ok(CheckedFixedStateFactTransport { source, target })
 }
 
 /// The refusal of a transport frame check whose source and premises

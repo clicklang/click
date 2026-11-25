@@ -1459,6 +1459,8 @@ A goal that held at function entry or at one of the eight most recently
 recorded points can use the frame evidence for that state. Lowering keeps
 an aliased read as written
 ([`fold_argument_reads_through_model_pointer.md`](https://github.com/clicklang/click/blob/master/mdtests/fold_argument_reads_through_model_pointer.md)).
+If verification needs a legacy frame check and search finds no ordinary
+proof, expansion reports that it is unavailable for the claim.
 
 A goal that is one disjunct of an available disjunction whose every other
 disjunct an exact fact refutes is proved by `cases` over that disjunction, the

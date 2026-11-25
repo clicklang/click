@@ -278,6 +278,12 @@ pub fn expand_c_claim_source(
 // The proof checker can use its compatibility rules without a Surface replay.
 // The formatter keeps that provenance even in nested or flattened proof edits.
 pub(super) fn require_surface_expansion(rendered: String) -> Result<String, ClickError> {
+    if rendered.contains(printing::COMPATIBILITY_FACT_TRANSPORT) {
+        return Err(ClickError::new(
+            "proof expansion is unavailable: a legacy frame check has no ordinary proof",
+        )
+        .with_kind(ClickErrorKind::Unsupported));
+    }
     if rendered.contains(printing::COMPATIBILITY_NORMALIZATION) {
         return Err(ClickError::new(
             "proof expansion is unavailable: verification used legacy normalization and no ordinary proof was recorded",

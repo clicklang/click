@@ -6358,6 +6358,12 @@ pub enum ProofTactic {
         source: SyntaxProposition,
         target: SyntaxProposition,
     },
+    /// A legacy frame check with no ordinary Surface expansion.
+    CompatibilityFactTransport {
+        source: SyntaxProposition,
+        target: SyntaxProposition,
+        premises: Vec<SyntaxProposition>,
+    },
     /// Substitute consecutive universal binders, preserving the residual body and guards.
     Instantiate {
         quantified: SyntaxProposition,
@@ -6938,6 +6944,9 @@ impl ProofTactic {
             Self::StepProved { .. } => TacticClass::Control(ControlTactic::StepProofs),
             Self::Rewrite(_) => TacticClass::Simple(SimpleTactic::Rewrite),
             Self::Transport { .. } => TacticClass::Smart(SmartSite::FactTransport),
+            Self::CompatibilityFactTransport { .. } => {
+                TacticClass::Simple(SimpleTactic::FactTransport)
+            }
             Self::Instantiate { .. } => TacticClass::Simple(SimpleTactic::Instantiate),
             Self::FoldResource(_) => TacticClass::Simple(SimpleTactic::FoldResource),
             Self::ReleaseView(_) => TacticClass::Simple(SimpleTactic::ReleaseView),

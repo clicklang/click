@@ -902,6 +902,12 @@ fn execute_step_omits_materialization_only_transport() {
         )
     });
 
+    assert!(
+        !expanded
+            .iter()
+            .any(|tactic| matches!(tactic, ProofTactic::CompatibilityFactTransport { .. })),
+        "{expanded:#?}"
+    );
     ProofCertificate::from_proof_tactics(&expanded)
         .expect("the materialization-free expansion should be a surface certificate");
     let execute_offset = click_source
@@ -962,6 +968,12 @@ fn execute_step_omits_materialized_mixed_state_transport() {
         )
     });
 
+    assert!(
+        !expanded
+            .iter()
+            .any(|tactic| matches!(tactic, ProofTactic::CompatibilityFactTransport { .. })),
+        "{expanded:#?}"
+    );
     ProofCertificate::from_proof_tactics(&expanded)
         .expect("the mixed-state expansion should be a surface certificate");
     let execute_offset = click_source
@@ -1025,6 +1037,14 @@ fn execute_step_omits_materialization_transport_across_statements() {
         )
     });
 
+    assert_eq!(
+        expanded
+            .iter()
+            .filter(|tactic| matches!(tactic, ProofTactic::CompatibilityFactTransport { .. }))
+            .count(),
+        0,
+        "{expanded:#?}"
+    );
     ProofCertificate::from_proof_tactics(&expanded)
         .expect("the multi-statement expansion should be a surface certificate");
     let execute_offset = click_source

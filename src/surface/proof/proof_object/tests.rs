@@ -6272,7 +6272,11 @@ fn fixed_state_transport_can_follow_another_checked_step() {
         let retained_refined = refined.clone();
         let rejected = refined
             .driver()
-            .apply_ordinary_transport_steps(&missing, vec![ProofStep::Known]);
+            .apply_step(ProofStep::CompatibilityFactTransport {
+                source: source.clone(),
+                target: missing.clone(),
+                premises: Vec::new(),
+            });
         assert!(rejected.is_err());
         assert!(refined.state.shares_state_with(&retained_refined.state));
         if size == 16 {
@@ -6310,11 +6314,16 @@ fn fixed_state_transport_can_follow_another_checked_step() {
             assert!(refined.state.shares_state_with(&retained_refined.state));
         }
 
+        let transport = ProofStep::CompatibilityFactTransport {
+            source: source.clone(),
+            target: source.clone(),
+            premises: Vec::new(),
+        };
         let before = fact_node_allocations();
         let transported = refined
             .driver()
-            .apply_ordinary_transport_steps(&source, vec![ProofStep::Known])
-            .expect("the exact ambient fact should verify");
+            .apply_step(transport.clone())
+            .expect("the exact ambient source should occupy its own checked slot");
         let allocations = fact_node_allocations() - before;
         let logarithmic_height = (u32::BITS - size.leading_zeros()) as usize;
         let allocation_bound = 16 * logarithmic_height + 64;
@@ -10504,10 +10513,15 @@ fn execution_transport_forks_without_copying_unrelated_state() {
             &theorem_environment,
         );
         let retained_root = root.clone();
+        let step = ProofStep::CompatibilityFactTransport {
+            source: surface.clone(),
+            target: surface.clone(),
+            premises: vec![surface.clone()],
+        };
         let successor = root
             .driver()
-            .apply_ordinary_transport_steps(&surface, vec![ProofStep::Known])
-            .expect("the exact ambient fact should verify");
+            .apply_step(step.clone())
+            .expect("an exact identity transport should succeed");
 
         assert!(root.state.shares_state_with(&retained_root.state));
         assert_eq!(root.certificate().steps(), &[]);
@@ -14614,7 +14628,11 @@ fn fixed_state_transport_retains_checked_spellings_for_rewrite() {
         );
         let transported = root
             .driver()
-            .apply_ordinary_transport_steps(&surface, vec![ProofStep::Known])
+            .apply_step(ProofStep::CompatibilityFactTransport {
+                source: surface.clone(),
+                target: surface.clone(),
+                premises: vec![surface.clone()],
+            })
             .unwrap();
         assert!(matches!(
             transported.certificate().steps(),

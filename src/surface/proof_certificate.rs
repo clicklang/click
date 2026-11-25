@@ -137,6 +137,11 @@ pub enum ProofStep {
     Contradiction(SyntaxProposition),
     Rewrite(SyntaxProposition),
     Preserve(SyntaxProposition),
+    CompatibilityFactTransport {
+        source: SyntaxProposition,
+        target: SyntaxProposition,
+        premises: Vec<SyntaxProposition>,
+    },
     /// Substitute consecutive universal binders, preserving the residual body and guards.
     Instantiate {
         quantified: SyntaxProposition,
@@ -806,6 +811,15 @@ impl ProofStep {
             ProofTactic::Contradiction(proposition) => Self::Contradiction(proposition.clone()),
             ProofTactic::Preserve(proposition) => Self::Preserve(proposition.clone()),
             ProofTactic::Rewrite(proposition) => Self::Rewrite(proposition.clone()),
+            ProofTactic::CompatibilityFactTransport {
+                source,
+                target,
+                premises,
+            } => Self::CompatibilityFactTransport {
+                source: source.clone(),
+                target: target.clone(),
+                premises: premises.clone(),
+            },
             ProofTactic::Instantiate {
                 quantified,
                 arguments,
@@ -993,6 +1007,15 @@ impl ProofStep {
             Self::Contradiction(proposition) => ProofTactic::Contradiction(proposition.clone()),
             Self::Preserve(proposition) => ProofTactic::Preserve(proposition.clone()),
             Self::Rewrite(proposition) => ProofTactic::Rewrite(proposition.clone()),
+            Self::CompatibilityFactTransport {
+                source,
+                target,
+                premises,
+            } => ProofTactic::CompatibilityFactTransport {
+                source: source.clone(),
+                target: target.clone(),
+                premises: premises.clone(),
+            },
             Self::Instantiate {
                 quantified,
                 arguments,
@@ -1234,6 +1257,9 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         ProofStep::Enumerate => TacticClass::Simple(SimpleTactic::Enumerate),
         ProofStep::Contradiction(_) => TacticClass::Simple(SimpleTactic::Contradiction),
         ProofStep::Rewrite(_) => TacticClass::Simple(SimpleTactic::Rewrite),
+        ProofStep::CompatibilityFactTransport { .. } => {
+            TacticClass::Simple(SimpleTactic::FactTransport)
+        }
         ProofStep::Instantiate { .. } => TacticClass::Simple(SimpleTactic::Instantiate),
         ProofStep::CloseInvariantsBy(_) => TacticClass::Control(ControlTactic::CloseInvariants),
         ProofStep::StepProved { .. } => TacticClass::Control(ControlTactic::StepProofs),

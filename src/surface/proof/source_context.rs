@@ -62,6 +62,7 @@ impl SourceContext {
                     | ProofTactic::Enumerate
                     | ProofTactic::Contradiction(_)
                     | ProofTactic::Rewrite(_)
+                    | ProofTactic::CompatibilityFactTransport { .. }
                     | ProofTactic::Instantiate { .. }
             ),
             Self::ExecutionFrontier => matches!(
@@ -72,6 +73,7 @@ impl SourceContext {
                     | ProofTactic::StepBind(_)
                     | ProofTactic::StepCall(_)
                     | ProofTactic::UserTactic(_)
+                    | ProofTactic::CompatibilityFactTransport { .. }
                     | ProofTactic::UnfoldProposition(_)
                     | ProofTactic::UnfoldFunction(_)
                     | ProofTactic::UnfoldResource(_)
@@ -107,6 +109,7 @@ impl SourceContext {
                     | ProofTactic::ArithmeticUsing(_)
                     | ProofTactic::Preserve(_)
                     | ProofTactic::Rewrite(_)
+                    | ProofTactic::CompatibilityFactTransport { .. }
             ),
         }
     }
