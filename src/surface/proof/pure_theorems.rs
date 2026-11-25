@@ -54,6 +54,10 @@ pub(in crate::surface) fn verify_theorem_definitions(
     let mut verified = Vec::new();
     let mut theorem_environment = dependencies;
     for theorem in theorem_definitions {
+        if theorem.is_interface_export() {
+            theorem_environment.insert(clone_theorem_definition_iteratively(theorem));
+            continue;
+        }
         crate::surface::enter_ambient_declaration(theorem.name());
         #[cfg(test)]
         PROVED_THEOREMS.with(|proved| proved.borrow_mut().push(theorem.name().to_string()));

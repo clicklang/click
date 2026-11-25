@@ -291,6 +291,7 @@ proved. Each family is an assumption in the same sense:
 | Family | Reported as | What is assumed | Where it is stated |
 | --- | --- | --- | --- |
 | Your `extern` contracts | `extern` | Each `extern` block a sidecar declares | Your sidecars |
+| Interface theorem exports | `loaded interface theorems` | The conclusions of each proofless pure theorem whenever its premises hold | A loaded `*.interface.click` file |
 | C library | `C library` | `memcpy`, `memcmp`, `memset` and `strlen` meet their contracts | `library/c/string.interface.click` |
 | C library objects | `C library` | A linked library-provided scalar or pointer object has a stable value of its declared type | The C object's declaration in an imported `*.interface.click` |
 | Allocator | `allocator` | `malloc`, `calloc`, `realloc` and `free` behave as the kernel's allocation model: a fresh block or null, released once | Built in, as a language primitive: the C front end and the kernel (`allocation` resource), documented in [heap allocation](../reference/language/c.md#heap-allocation) |

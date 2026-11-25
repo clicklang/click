@@ -9,9 +9,19 @@ another standard-library or core function or type.
 A `*.interface.click` file supplies callable contracts without selecting
 program bodies. Its function heads are declarations and its contracts are
 reported as assumptions when a caller depends on them. Predicates, resources
-and pure functions work as in other Click modules. Any helper theorems still
-have to be proved. A verification sidecar selects program source with
-`verifying` and can import an interface with `import "name.interface.click";`.
+and pure functions work as in other Click modules. A pure theorem declared
+without proof clauses in an interface is a published guarantee. Consumers
+can apply it after establishing its premises, and the verification summary
+lists the theorem exports available from loaded interfaces. A theorem with
+a proof clause has a proof to check in the declaring module. A verification
+sidecar selects program source with `verifying` and can import an interface
+with `import "name.interface.click";`.
+
+Consumers trust these published guarantees today. A future library
+verification step can check the implementation and proofs against the
+same interface. That check must establish the exports using the library's
+implementation and dependencies, with its own exports excluded from the
+available assumptions.
 
 A C interface can also declare a read-only scalar or pointer object supplied
 by the library. For example, `int32 *const table;` matches the linked C

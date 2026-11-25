@@ -4810,6 +4810,7 @@ impl Parser {
     }
 
     fn parse_theorem_definition(&mut self) -> Result<TheoremDefinition, ClickError> {
+        let interface = self.in_interface_file();
         // `axiom` states a trusted fact about the library's primitive
         // operations; it has the shape of a theorem without proofs.
         let axiom = self.peek_ident() == Some("axiom");
@@ -5174,8 +5175,22 @@ impl Parser {
                 )));
             }
         }
+        let kind = if axiom {
+            TheoremKind::Axiom
+        } else if interface
+            && ensures
+                .iter()
+                .all(|ensure| matches!(ensure.proof, SourceProof::Default))
+        {
+            if executes.is_some() {
+                return Err(self.error("an interface theorem export must state a pure proposition"));
+            }
+            TheoremKind::InterfaceExport
+        } else {
+            TheoremKind::Proved
+        };
         Ok(TheoremDefinition {
-            axiom,
+            kind,
             generic_pointer_parameters: parsed_parameters
                 .parameters
                 .iter()

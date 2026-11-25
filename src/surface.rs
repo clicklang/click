@@ -1369,11 +1369,18 @@ impl ResourceWitness {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TheoremKind {
+    Proved,
+    /// A built-in axiom about the library's primitive operations.
+    Axiom,
+    /// A claim published by a library for its callers to assume.
+    InterfaceExport,
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub struct TheoremDefinition {
-    /// A Click library `axiom`: trusted, never proved. Only a library module
-    /// declares one, about the library's primitive operations.
-    axiom: bool,
+    kind: TheoremKind,
     /// `T*` supplies a declared element type, not original-object provenance.
     generic_pointer_parameters: BTreeSet<String>,
     /// Where the parser read this theorem's clauses.
@@ -2902,7 +2909,7 @@ pub(crate) fn clone_theorem_definition_iteratively(
     #[cfg(test)]
     THEOREM_DEFINITION_COPIES.with(|copies| copies.set(copies.get() + 1));
     TheoremDefinition {
-        axiom: theorem.axiom,
+        kind: theorem.kind,
         generic_pointer_parameters: theorem.generic_pointer_parameters.clone(),
         body: theorem.body.clone(),
         name: theorem.name.clone(),
@@ -9348,11 +9355,14 @@ impl ClickFile {
         })
     }
 
-    fn theorem_is_selected(&self, name: &str) -> bool {
+    fn theorem_is_selected(&self, theorem: &TheoremDefinition) -> bool {
+        if theorem.is_interface_export() {
+            return false;
+        }
         match &self.entry_module {
             None => true,
             Some(entry) => {
-                self.declaration_owner(&DeclarationIdentity::Theorem(name.to_string()))
+                self.declaration_owner(&DeclarationIdentity::Theorem(theorem.name().to_owned()))
                     == Some(entry.as_str())
             }
         }
@@ -9571,7 +9581,12 @@ impl CompositeResourceBody {
 impl TheoremDefinition {
     /// Whether this is a Click library `axiom`, trusted without proof.
     pub fn is_axiom(&self) -> bool {
-        self.axiom
+        self.kind == TheoremKind::Axiom
+    }
+
+    /// Whether this statement is assumed through a library interface.
+    pub fn is_interface_export(&self) -> bool {
+        self.kind == TheoremKind::InterfaceExport
     }
 
     /// Where the parser read this theorem's clauses.

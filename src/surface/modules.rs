@@ -1394,6 +1394,69 @@ FILE* via_library() { ensures result == stdout; }
     }
 
     #[test]
+    fn proofless_interface_theorems_are_assumptions_for_consumers() {
+        let export = r#"theorem library_value(n: int32) {
+    requires n > 0;
+    ensures n != 41;
+}"#;
+        let caller = r#"import "values.interface.click";
+theorem caller(n: int32) {
+    requires n > 0;
+    ensures n != 41 by {
+        apply(library_value(n));
+        close();
+    }
+}"#;
+        let project = |source: &str| {
+            ClickProject::new(
+                "caller.click",
+                [
+                    ClickModuleSource::new("values.interface.click", export, []),
+                    ClickModuleSource::new(
+                        "caller.click",
+                        source,
+                        ["values.interface.click".to_string()],
+                    ),
+                ],
+            )
+        };
+        let inputs = ProgramInputs::Bundle(vec![]);
+        let (summary, result) = verify_project_with_summary(&project(caller), &inputs).unwrap();
+        result.unwrap();
+        assert_eq!(
+            summary.interface_theorem_assumptions,
+            BTreeSet::from(["library_value".into()])
+        );
+        assert_eq!(summary.selected_proof_count, 1);
+
+        let no_premise = caller.replace("    requires n > 0;\n", "");
+        let (_, result) = verify_project_with_summary(&project(&no_premise), &inputs).unwrap();
+        assert!(
+            result.is_err(),
+            "an assumed interface theorem still requires its premises"
+        );
+
+        let verify_declaration = |identity: &str, source: &str| {
+            verify_project_with_summary(
+                &ClickProject::new(identity, [ClickModuleSource::new(identity, source, [])]),
+                &inputs,
+            )
+            .unwrap()
+        };
+        let (summary, result) = verify_declaration("values.interface.click", export);
+        result.unwrap();
+        assert_eq!(summary.selected_proof_count, 0);
+
+        let (summary, result) = verify_declaration("values.click", export);
+        assert!(result.is_err(), "an ordinary theorem must be proved");
+        assert!(summary.interface_theorem_assumptions.is_empty());
+        let with_proof = export.replace("ensures n != 41;", "ensures n != 41 by { close(); }");
+        let (summary, result) = verify_declaration("values.interface.click", &with_proof);
+        assert!(result.is_err(), "proofs written in interfaces are checked");
+        assert!(summary.interface_theorem_assumptions.is_empty());
+    }
+
+    #[test]
     fn an_interface_cannot_select_program_bodies_or_prove_its_contracts() {
         for (source, expected) in [
             ("verifying \"body.c\";", "interface file cannot select"),
