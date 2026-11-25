@@ -26,6 +26,10 @@ The finite positive scaling bounds `float_order::float32_scale_lower`,
 `float_order::float32_scale_upper`, `float_order::float32_scale_right_lower`,
 and `float_order::float32_scale_right_upper` are exercised in
 [`arithmetic_expression_float_bound_composition.md`](arithmetic_expression_float_bound_composition.md).
+The negative scaling bounds `float_order::float32_scale_negative_lower`,
+`float_order::float32_scale_negative_upper`, `float_order::float32_scale_negative_right_lower`,
+and `float_order::float32_scale_negative_right_upper` are exercised in
+[`float32_negative_literal_multiplication.md`](float32_negative_literal_multiplication.md).
 The rounded division bounds `float_order::float32_divide_positive_lower` and
 `float_order::float32_divide_positive_upper` are exercised in
 [`float_division_by_positive_literal.md`](float_division_by_positive_literal.md).

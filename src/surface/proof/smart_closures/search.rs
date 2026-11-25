@@ -4155,7 +4155,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         crate::kernel::search::record_discovery("try_float_scale_bound");
         use crate::kernel::KernelFloatType;
         use crate::kernel::proof::arithmetic_special::{
-            FloatScaleOperation::{DivideNegative, DividePositive, MultiplyLeft, MultiplyRight},
+            FloatScaleOperation::{
+                DivideNegative, DividePositive, MultiplyLeft, MultiplyNegativeLeft,
+                MultiplyNegativeRight, MultiplyRight,
+            },
             float_scale_bound_weakening,
         };
         let Some((plan, factor, scale)) = float_scale_bound_weakening(source, goal) else {
@@ -4165,7 +4168,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some((left, right)) = surface_nonstrict_parts(&source_order) else {
             return Ok(None);
         };
-        let reverse = matches!(scale, DivideNegative);
+        let reverse = matches!(
+            scale,
+            DivideNegative | MultiplyNegativeLeft | MultiplyNegativeRight
+        );
         let (x, endpoint) = if plan.lower != reverse {
             (right, left)
         } else {
@@ -4204,6 +4210,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             (MultiplyLeft, false) => "scale_upper",
             (MultiplyRight, true) => "scale_right_lower",
             (MultiplyRight, false) => "scale_right_upper",
+            (MultiplyNegativeLeft, true) => "scale_negative_lower",
+            (MultiplyNegativeLeft, false) => "scale_negative_upper",
+            (MultiplyNegativeRight, true) => "scale_negative_right_lower",
+            (MultiplyNegativeRight, false) => "scale_negative_right_upper",
             (DividePositive, true) => "divide_positive_lower",
             (DividePositive, false) => "divide_positive_upper",
             (DivideNegative, true) => "divide_negative_lower",
