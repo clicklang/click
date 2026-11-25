@@ -3,7 +3,7 @@
 `mark_run` marks the cells `[start, end)` of an occupancy map through a
 loop that owns a field-bearing `window` instance, and the window owns the
 whole map. After the loop the proof tries to carry the value that
-`occupied[start]` had before the loop across it with `transport`, which
+`occupied[start]` had before the loop across it with `preserve`, which
 would let it conclude `start < 0` from `0 <= start` once the loop's own
 store is known.
 
@@ -147,8 +147,8 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
         }
     }
     let { next: n } = unfold(w);
-    transport(at(pre, occupied[start]) == 0, occupied[start] == 0) using {
-        at(pre, occupied[start]) == 0;
+    have occupied[start] == at(pre, occupied[start]) by {
+        preserve(memory(occupied[start]), loop(0));
     }
     have n == i by close();
     have n <= end by close();
@@ -175,5 +175,5 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
 ```
 
 ```expect
-fail: `transport using` found no frame evidence carrying its source fact
+fail: preserve separation is not exactly available
 ```

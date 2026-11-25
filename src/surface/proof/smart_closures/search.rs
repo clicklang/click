@@ -3041,6 +3041,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             scope.succeed();
             return Ok(Some(proof));
         }
+        if let Some(proof) = Self::try_struct_field_equalities(search_input)? {
+            scope.succeed();
+            return Ok(Some(proof));
+        }
         if let Some(proof) = attempt::candidate_outcome(
             Self::try_bounded_observation_identity_closure(search_input),
         )?
@@ -7477,6 +7481,193 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             std::iter::once(source.clone()).chain(premises),
         )
         .map(|proof| proof.filter(Proof::is_complete))
+    }
+
+    /// Prove a struct equality from its constructor's individual field
+    /// equalities. Each proof names its stored reads and footprint.
+    fn try_struct_field_equalities(
+        search_input: &Proof<'a>,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_struct_field_equalities");
+        let Some(ClickProposition::Comparison {
+            left:
+                ContractExpression::AlgebraicConstructor {
+                    variant: left_variant,
+                    arguments: left_fields,
+                    ..
+                },
+            operator: ComparisonOperator::Equal,
+            right:
+                ContractExpression::AlgebraicConstructor {
+                    variant: right_variant,
+                    arguments: right_fields,
+                    ..
+                },
+        }) = search_input.surface_goal()
+        else {
+            return Ok(None);
+        };
+        if left_variant != right_variant
+            || left_fields.len() != right_fields.len()
+            || crate::surface::struct_values::field_names(left_variant).is_none()
+        {
+            return Ok(None);
+        }
+
+        let mut proof = search_input.clone();
+        for (left, right) in left_fields.iter().zip(right_fields) {
+            check_verification_deadline()?;
+            let equality = ClickProposition::Comparison {
+                left: left.clone(),
+                operator: ComparisonOperator::Equal,
+                right: right.clone(),
+            };
+            let Some(field) =
+                attempt::candidate_outcome(proof.driver().open_have(equality.clone()))?
+            else {
+                return Ok(None);
+            };
+            let Some(closed) = field.driver().try_struct_field_equality(&equality)? else {
+                return Ok(None);
+            };
+            proof = closed.join()?;
+        }
+        attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))
+    }
+
+    pub(in crate::surface::proof) fn try_struct_field_equality(
+        search_input: &Proof<'a>,
+        equality: &ClickProposition,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_struct_field_equality");
+        if let Some(known) =
+            attempt::candidate_outcome(search_input.driver().apply_step(ProofStep::Known))?
+        {
+            return Ok(Some(known));
+        }
+        if let Some(read) = Self::try_struct_field_store_bridge(search_input, equality)? {
+            return Ok(Some(read));
+        }
+        Self::try_struct_field_equalities(search_input)
+    }
+
+    /// Select a recorded store across which one operand is unchanged.
+    /// The mixed-state equality is checked first, so unsuccessful candidates
+    /// do not need to search for footprint separation.
+    fn try_struct_field_store_bridge(
+        search_input: &Proof<'a>,
+        equality: &ClickProposition,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_struct_field_store_bridge");
+        let ClickProposition::Comparison {
+            left: other @ ContractExpression::Field { .. },
+            operator: ComparisonOperator::Equal,
+            right: read @ ContractExpression::Field { .. },
+        } = equality
+        else {
+            return Ok(None);
+        };
+        let Some((
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                right,
+                ..
+            },
+            true,
+        )) = search_input.goal().and_then(Proposition::condition_native)
+        else {
+            return Ok(None);
+        };
+        let load = match right.as_ref() {
+            MachineTerm::Variable(variable) => {
+                crate::kernel::registered_load_term_for_variable(variable)
+            }
+            term => Some(term.clone()),
+        };
+        let Some(MachineTerm::MemoryLoad(_, address, _)) = load else {
+            return Ok(None);
+        };
+        let Some(view) = search_input.premise_fixed_state_view() else {
+            return Ok(None);
+        };
+        let kept = Resource::Memory(crate::kernel::MemoryRange::new_with_element_width(
+            address.into(),
+            0u32.into(),
+            1u32.into(),
+            4,
+        ));
+        let Some(kept) = super::surface_synthesis::synthesize_surface_resource_subject(
+            &kept,
+            view.parameter_binding,
+            view.fixed_state.state,
+            &BTreeMap::new(),
+        ) else {
+            return Ok(None);
+        };
+        let records = view.fixed_state.recorded_states;
+        let known =
+            ProofCertificate::from_steps(vec![ProofStep::Known]).expect("ordinary equality");
+        for (selector, _) in records.recent(MAX_TRANSPORT_SOURCE_POINTS) {
+            check_verification_deadline()?;
+            let ProgramPointSelector::ProgramPoint(ProgramPointRef {
+                region: region @ CodeRegionRef::Region(_),
+                kind: ProgramPointKind::Exit,
+            }) = selector
+            else {
+                continue;
+            };
+            let Ok(Resource::Footprint(footprint)) = records.footprint(region) else {
+                continue;
+            };
+            if !footprint.complete || footprint.members.is_empty() {
+                continue;
+            }
+            let at = |kind| ContractExpression::At {
+                selector: ProgramPointSelector::ProgramPoint(ProgramPointRef {
+                    region: region.clone(),
+                    kind,
+                }),
+                expression: Box::new(read.clone()),
+            };
+            let entry = at(ProgramPointKind::Entry);
+            let stored = ClickProposition::Comparison {
+                left: other.clone(),
+                operator: ComparisonOperator::Equal,
+                right: entry.clone(),
+            };
+            let Some(stored) =
+                attempt::candidate_outcome(search_input.driver().apply_have_step(&stored, &known))?
+            else {
+                continue;
+            };
+            let separation = ClickProposition::Separate {
+                left: ResourceSubject::Footprint(region.clone()),
+                right: kept.clone(),
+            };
+            let Some(separated) =
+                Self::try_memory_footprint_separation(&stored, &footprint, &kept, &separation)?
+            else {
+                continue;
+            };
+            let bridge = ClickProposition::Comparison {
+                left: at(ProgramPointKind::Exit),
+                operator: ComparisonOperator::Equal,
+                right: entry,
+            };
+            let preserve = ProofCertificate::from_steps(vec![ProofStep::Preserve(separation)])
+                .expect("ordinary field preservation");
+            let candidate = separated
+                .driver()
+                .apply_have_step(&bridge, &preserve)
+                .and_then(|preserved| preserved.driver().apply_step(ProofStep::Known));
+            if let Some(proof) = attempt::candidate_outcome(candidate)? {
+                return Ok(Some(proof));
+            }
+        }
+        Ok(None)
     }
 
     /// Follow recorded stores back from the current memory, checking each

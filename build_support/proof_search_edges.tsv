@@ -93,7 +93,7 @@ src/surface/proof/driver/joins.rs	driver	ProofDriver::apply_execution_branch_wit
 src/surface/proof/driver/joins.rs	driver	ProofDriver::apply_execution_if_within	driver	2
 src/surface/proof/driver/joins.rs	driver	ProofDriver::apply_execution_steps_within	driver	2
 src/surface/proof/driver/joins.rs	driver	ProofDriver::apply_focused_expanded_execution_arm	driver	1
-src/surface/proof/driver/obligations.rs	driver	ProofDriver::apply_close_invariants_body	driver	2
+src/surface/proof/driver/obligations.rs	driver	ProofDriver::apply_close_invariants_body	driver	3
 src/surface/proof/driver/obligations.rs	driver	ProofDriver::apply_execution_statement_step	driver	1
 src/surface/proof/driver/obligations.rs	driver	ProofDriver::apply_step_with_obligation_proofs	driver	1
 src/surface/proof/driver/obligations.rs	driver	ProofDriver::close_bundle_member_by_solve	try_solve_closure	1
@@ -209,10 +209,8 @@ src/surface/proof/proof_object/execution_statements/search.rs	search	ProofSearch
 src/surface/proof/proof_object/execution_statements/search.rs	search	ProofSearch::apply_planned_fact_transport_inner	apply_planned_outcome_fact_transport	1
 src/surface/proof/proof_object/execution_statements/search.rs	search	ProofSearch::apply_planned_fact_transport_inner	derive_proposition	1
 src/surface/proof/proof_object/execution_statements/search.rs	search	ProofSearch::apply_planned_fact_transport_inner	try_ordinary_fact_transport	1
-src/surface/proof/proof_object/execution_statements/search.rs	search	ProofSearch::apply_planned_fact_transport_inner	driver	1
 src/surface/proof/proof_object/execution_statements/search.rs	search	ProofSearch::apply_planned_outcome_fact_transport	derive_proposition	1
 src/surface/proof/proof_object/execution_statements/search.rs	search	ProofSearch::apply_planned_outcome_fact_transport	try_ordinary_fact_transport	1
-src/surface/proof/proof_object/execution_statements/search.rs	search	ProofSearch::apply_planned_outcome_fact_transport	driver	1
 src/surface/proof/proof_object/fixed_state_steps.rs	operation	Proof::apply_pure_transport_using	derive_atomic_proposition	1
 src/surface/proof/proof_object/resource_steps/search.rs	search	ProofSearch::try_open_for_missing_resource	driver	1
 src/surface/proof/proof_object/scope.rs	operation-to-driver	Proof::finish_generated_intro	driver	2
@@ -967,3 +965,12 @@ src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_floa
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_bound_link	try_rounded_int32_to_float32_bound	1
 src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_rounded_int32_to_float32_bound	driver	1
 src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_rounded_int32_to_float32_bound	try_apply_float_interval_bound	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_struct_field_equalities	driver	3
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_struct_field_equalities	try_struct_field_equality	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_struct_field_equality	driver	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_struct_field_equality	try_struct_field_store_bridge	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_struct_field_equality	try_struct_field_equalities	1
+src/surface/proof/driver/scopes.rs	driver	ProofDriver::try_struct_field_equality	try_struct_field_equality	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_struct_field_equalities	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_struct_field_store_bridge	driver	3
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_struct_field_store_bridge	try_memory_footprint_separation	1
