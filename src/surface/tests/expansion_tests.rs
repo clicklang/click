@@ -22685,9 +22685,18 @@ fn terminal_throwing_call_requires_a_frontier_split_and_expands() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_77")]
-fn call_outcomes_cannot_split_an_already_executed_call() {
+fn call_outcomes_expand_and_replay_only_at_the_frontier() {
     let (source, sources) = mdtest_sources("mdtests/outcomes_payload_bindings.md");
     let sources = crate::cli::source_refs(&sources);
+    let label = "live.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+        .expect("payload proofs should expand in their original call arms");
+    assert_eq!(expanded.matches("outcomes {").count(), 1, "{expanded}");
+    crate::surface::without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
+    })
+    .expect("the expanded payload proof should replay without search");
+
     let prefix = source.trim_end().strip_suffix('}').unwrap();
     let late = "outcomes { returned => { close(); } threw(error) => { close(); } }";
     for suffix in [
@@ -26748,7 +26757,7 @@ test_batches! {
         exceptional_claim_label_expands_two_throwing_calls_fixture,
         exceptional_claim_label_expands_grouped_outcomes_fixture,
         terminal_throwing_call_requires_a_frontier_split_and_expands,
-        call_outcomes_cannot_split_an_already_executed_call,
+        call_outcomes_expand_and_replay_only_at_the_frontier,
         exceptional_claim_label_expands_routed_throw_fixture,
         exceptional_claim_labels_preserve_names_and_covering_proofs_in_projects,
     ],
