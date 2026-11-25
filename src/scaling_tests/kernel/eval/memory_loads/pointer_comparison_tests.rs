@@ -6,11 +6,11 @@ fn exact_pointer_read_reuses_the_indexed_store_across_local_history() {
         let _session = VerificationSession::enter();
         let slot = Address {
             base: "local:pointer-holding-slot".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let unrelated = Address {
             base: "local:unrelated-scalar".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let value_type = ProgramType::Int32Pointer;
         let target = OldPointer::new(Address::symbolic(Variable(989_013)), value_type);
@@ -54,7 +54,7 @@ fn stored_address_base_queries_scale_with_new_read_definitions() {
         let _session = VerificationSession::enter();
         let target = Address {
             base: AddressBase::Heap(989_010),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let other = AddressBase::Heap(989_011);
         let slot = Address::symbolic(Variable(989_012));
@@ -102,7 +102,7 @@ fn structural_read_comparison_forms_scale_with_selected_observations() {
         let _session = VerificationSession::enter();
         let address = |index| Address {
             base: AddressBase::Heap(index),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let mut memory = SymbolicMemory::new();
         for index in 0..selected + unrelated {
@@ -118,7 +118,7 @@ fn structural_read_comparison_forms_scale_with_selected_observations() {
                 );
                 let observed = IntegerTerm::from_machine(MachineIntegerType::Int32, read).unwrap();
                 Proposition::condition_is(
-                    ConditionTerm::integer_equal(observed, IntegerTerm::constant_i64(37)),
+                    OldConditionTerm::integer_equal(observed, IntegerTerm::constant_i64(37)),
                     true,
                 )
             })
@@ -152,7 +152,7 @@ fn algebraic_read_comparison_forms_scale_with_selected_observations() {
         let _session = VerificationSession::enter();
         let address = |index| Address {
             base: AddressBase::Heap(index),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         // A library instance, as Surface registers it: opaque, of fixed width.
         TypeParameterName::declare_library_instance("SliceIter<uint8>");
@@ -185,7 +185,7 @@ fn algebraic_read_comparison_forms_scale_with_selected_observations() {
                     },
                 };
                 Proposition::condition_is(
-                    ConditionTerm::AlgebraicEqual(Box::new(read), Box::new(stored(index))),
+                    OldConditionTerm::AlgebraicEqual(Box::new(read), Box::new(stored(index))),
                     true,
                 )
             })
@@ -195,7 +195,7 @@ fn algebraic_read_comparison_forms_scale_with_selected_observations() {
                 assert_eq!(
                     comparison_form(goal),
                     Some(Proposition::condition_is(
-                        ConditionTerm::AlgebraicEqual(
+                        OldConditionTerm::AlgebraicEqual(
                             Box::new(stored(index)),
                             Box::new(stored(index))
                         ),

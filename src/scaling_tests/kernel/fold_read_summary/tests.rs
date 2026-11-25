@@ -34,7 +34,7 @@ fn framing_is_linear_in_applications_and_ignores_unrelated_facts_and_interval_le
         let before = SymbolicMemory::new();
         let after = before.clone().store(element(&v, bv(HI)), one());
         let at = |memory: &SymbolicMemory, index: usize| {
-            fact(ConditionTerm::IntegerEqual(
+            fact(OldConditionTerm::IntegerEqual(
                 IntegerTerm::PureFunctionApplication(application(
                     memory,
                     &v,
@@ -178,7 +178,7 @@ fn retained_offset_summary_does_not_expand_index_dags() {
             );
         }
         let index = MachineOperandView::Shared(&root).retain(MachineIntegerType::Int32);
-        let offset = AddressOffset::Int32Scaled {
+        let offset = OldAddressOffset::Int32Scaled {
             value: index.clone(),
             byte_width: 4,
         };

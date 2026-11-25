@@ -335,12 +335,12 @@ mod tests {
     fn conditional_keys_preserve_guard_policy_and_shared_arms() {
         let _session = crate::kernel::VerificationSession::enter();
         for condition in [
-            ConditionTerm::Variable(Variable(998203)),
-            ConditionTerm::equal(
+            OldConditionTerm::Variable(Variable(998203)),
+            OldConditionTerm::equal(
                 OldMachineTerm::Variable(Variable(998204)),
                 OldMachineTerm::constant(0),
             ),
-            ConditionTerm::IntegerEqual(
+            OldConditionTerm::IntegerEqual(
                 crate::kernel::IntegerTerm::Variable(Variable(998205)).into(),
                 crate::kernel::IntegerTerm::constant_i64(0).into(),
             ),
@@ -436,7 +436,7 @@ mod tests {
         );
         let pointer = Address {
             base: "retained_state-comparison".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let variable = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
@@ -462,7 +462,7 @@ mod tests {
             CompareRelation::LessEqual,
         ] {
             let native = Proposition::condition_is(
-                ConditionTerm::machine_compare(format, relation, native.clone(), limit.clone()),
+                OldConditionTerm::machine_compare(format, relation, native.clone(), limit.clone()),
                 true,
             );
             let exports = KernelTermExport::machine_export_count();
@@ -486,7 +486,7 @@ mod tests {
         );
         let pointer = Address {
             base: "retained_state-key".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let variable = crate::kernel::load_variable_for_cell_with_origin(
             &memory,

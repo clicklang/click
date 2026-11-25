@@ -48,7 +48,7 @@ pub(in crate::surface) fn comparison_proposition(
             }
         };
         return Ok(Proposition::condition_is(
-            ConditionTerm::address_equal(left, right),
+            OldConditionTerm::address_equal(left, right),
             value,
         ));
     }
@@ -70,12 +70,12 @@ pub(in crate::surface) fn comparison_proposition(
         };
         if !left.is_null() && !right.is_null() {
             return Ok(Proposition::condition_is(
-                ConditionTerm::pointer_equal(left.clone(), right.clone()),
+                OldConditionTerm::pointer_equal(left.clone(), right.clone()),
                 value,
             ));
         }
         return Ok(Proposition::condition_is(
-            ConditionTerm::address_equal(left.address().clone(), right.address().clone()),
+            OldConditionTerm::address_equal(left.address().clone(), right.address().clone()),
             value,
         ));
     }
@@ -86,12 +86,12 @@ pub(in crate::surface) fn comparison_proposition(
         };
         let condition = match operator {
             ComparisonOperator::Equal | ComparisonOperator::NotEqual => {
-                ConditionTerm::uint64_equal(left, right)
+                OldConditionTerm::uint64_equal(left, right)
             }
-            ComparisonOperator::LessThan => ConditionTerm::uint64_less_than(left, right),
-            ComparisonOperator::LessEqual => ConditionTerm::uint64_less_equal(left, right),
-            ComparisonOperator::GreaterThan => ConditionTerm::uint64_greater_than(left, right),
-            ComparisonOperator::GreaterEqual => ConditionTerm::uint64_greater_equal(left, right),
+            ComparisonOperator::LessThan => OldConditionTerm::uint64_less_than(left, right),
+            ComparisonOperator::LessEqual => OldConditionTerm::uint64_less_equal(left, right),
+            ComparisonOperator::GreaterThan => OldConditionTerm::uint64_greater_than(left, right),
+            ComparisonOperator::GreaterEqual => OldConditionTerm::uint64_greater_equal(left, right),
             ComparisonOperator::In => {
                 return Err(ClickError::new("membership is not a scalar comparison"));
             }
@@ -108,15 +108,15 @@ pub(in crate::surface) fn comparison_proposition(
         };
         let condition = match operator {
             ComparisonOperator::Equal | ComparisonOperator::NotEqual => {
-                ConditionTerm::int64_equal(left, right)
+                OldConditionTerm::int64_equal(left, right)
             }
-            ComparisonOperator::LessThan => ConditionTerm::int64_signed_less_than(left, right),
-            ComparisonOperator::LessEqual => ConditionTerm::int64_signed_less_equal(left, right),
+            ComparisonOperator::LessThan => OldConditionTerm::int64_signed_less_than(left, right),
+            ComparisonOperator::LessEqual => OldConditionTerm::int64_signed_less_equal(left, right),
             ComparisonOperator::GreaterThan => {
-                ConditionTerm::int64_signed_greater_than(left, right)
+                OldConditionTerm::int64_signed_greater_than(left, right)
             }
             ComparisonOperator::GreaterEqual => {
-                ConditionTerm::int64_signed_greater_equal(left, right)
+                OldConditionTerm::int64_signed_greater_equal(left, right)
             }
             ComparisonOperator::In => {
                 return Err(ClickError::new("membership is not a scalar comparison"));
@@ -495,12 +495,12 @@ pub(in crate::surface) fn bitvector32_not(value: OldMachineTerm) -> OldMachineTe
 pub(in crate::surface) fn signed_less_than(
     left: OldMachineTerm,
     right: OldMachineTerm,
-) -> ConditionTerm {
+) -> OldConditionTerm {
     match (&left, &right) {
         (bits32_constant!(left), bits32_constant!(right)) => {
-            ConditionTerm::Constant((constant_u32(*left) as i32) < (constant_u32(*right) as i32))
+            OldConditionTerm::Constant((constant_u32(*left) as i32) < (constant_u32(*right) as i32))
         }
-        _ => ConditionTerm::Compare {
+        _ => OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left: Box::new(left),
@@ -512,12 +512,12 @@ pub(in crate::surface) fn signed_less_than(
 pub(in crate::surface) fn signed_less_equal(
     left: OldMachineTerm,
     right: OldMachineTerm,
-) -> ConditionTerm {
+) -> OldConditionTerm {
     match (&left, &right) {
-        (bits32_constant!(left), bits32_constant!(right)) => {
-            ConditionTerm::Constant((constant_u32(*left) as i32) <= (constant_u32(*right) as i32))
-        }
-        _ => ConditionTerm::Compare {
+        (bits32_constant!(left), bits32_constant!(right)) => OldConditionTerm::Constant(
+            (constant_u32(*left) as i32) <= (constant_u32(*right) as i32),
+        ),
+        _ => OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
             left: Box::new(left),
@@ -529,12 +529,12 @@ pub(in crate::surface) fn signed_less_equal(
 pub(in crate::surface) fn signed_greater_than(
     left: OldMachineTerm,
     right: OldMachineTerm,
-) -> ConditionTerm {
+) -> OldConditionTerm {
     match (&left, &right) {
         (bits32_constant!(left), bits32_constant!(right)) => {
-            ConditionTerm::Constant((constant_u32(*left) as i32) > (constant_u32(*right) as i32))
+            OldConditionTerm::Constant((constant_u32(*left) as i32) > (constant_u32(*right) as i32))
         }
-        _ => ConditionTerm::Compare {
+        _ => OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterThan,
             left: Box::new(left),
@@ -546,12 +546,12 @@ pub(in crate::surface) fn signed_greater_than(
 pub(in crate::surface) fn signed_greater_equal(
     left: OldMachineTerm,
     right: OldMachineTerm,
-) -> ConditionTerm {
+) -> OldConditionTerm {
     match (&left, &right) {
-        (bits32_constant!(left), bits32_constant!(right)) => {
-            ConditionTerm::Constant((constant_u32(*left) as i32) >= (constant_u32(*right) as i32))
-        }
-        _ => ConditionTerm::Compare {
+        (bits32_constant!(left), bits32_constant!(right)) => OldConditionTerm::Constant(
+            (constant_u32(*left) as i32) >= (constant_u32(*right) as i32),
+        ),
+        _ => OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
             left: Box::new(left),
@@ -563,12 +563,12 @@ pub(in crate::surface) fn signed_greater_equal(
 pub(in crate::surface) fn bitvector32_equal(
     left: OldMachineTerm,
     right: OldMachineTerm,
-) -> ConditionTerm {
+) -> OldConditionTerm {
     match (&left, &right) {
         (bits32_constant!(left), bits32_constant!(right)) => {
-            ConditionTerm::Constant(constant_u32(*left) == constant_u32(*right))
+            OldConditionTerm::Constant(constant_u32(*left) == constant_u32(*right))
         }
-        _ => ConditionTerm::Compare {
+        _ => OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(left),

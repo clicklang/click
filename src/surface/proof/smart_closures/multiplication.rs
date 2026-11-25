@@ -10,9 +10,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         crate::kernel::search::record_discovery("try_multiply_order_using");
         use crate::kernel::IntegerTerm as I;
         let Some((
-            ConditionTerm::IntegerLessEqual(gl, gr) | ConditionTerm::IntegerGreaterEqual(gl, gr),
+            OldConditionTerm::IntegerLessEqual(gl, gr)
+            | OldConditionTerm::IntegerGreaterEqual(gl, gr),
             _,
-        )) = input.goal().and_then(Proposition::condition_native)
+        )) = input.goal().and_then(Proposition::old_condition)
         else {
             return Ok(None);
         };
@@ -30,7 +31,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let goal = input.lower_integer_surface_proposition(&surface, "multiplication order")?;
-        let Some((ConditionTerm::IntegerLessEqual(left, right), true)) = goal.condition_native()
+        let Some((OldConditionTerm::IntegerLessEqual(left, right), true)) = goal.old_condition()
         else {
             return Ok(None);
         };
@@ -49,7 +50,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             };
             let kernel =
                 input.lower_integer_surface_proposition(&canonical, "multiplication premise")?;
-            let readings = if matches!(&kernel, condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { .. }, _))))
+            let readings = if matches!(&kernel, condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Compare { .. }, _))))
             {
                 crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
                     &kernel,
@@ -58,8 +59,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 vec![kernel]
             };
             for kernel in readings {
-                if let Some((ConditionTerm::IntegerLessEqual(x, y), true)) =
-                    (kernel).condition_native()
+                if let Some((OldConditionTerm::IntegerLessEqual(x, y), true)) =
+                    (kernel).old_condition()
                 {
                     orders.push((source, a.clone(), b.clone(), x.clone(), y.clone()));
                 }

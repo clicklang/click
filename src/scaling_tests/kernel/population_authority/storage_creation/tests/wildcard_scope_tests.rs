@@ -84,7 +84,7 @@ fn exclusive_member_update_and_transfer_scale_over_neighboring_members() {
             .import_opaque_wildcard_authority(&scope)
             .unwrap();
         let bounds = PureFactContext::new().assume_condition(
-            ConditionTerm::signed_greater_equal(
+            OldConditionTerm::signed_greater_equal(
                 OldMachineTerm::constant(i32::MAX as u32 - size - 1),
                 events.observe_symbolic(&scope).unwrap().entry_count,
             ),
@@ -149,19 +149,22 @@ fn wildcard_helper_birth_does_not_scan_unrelated_imports() {
         let counter = OldMachineTerm::Variable(Variable(960_721));
         let mut bounded = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     entry.observe_symbolic(&scope).unwrap().entry_count,
                     counter.clone(),
                 ),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_than(counter, OldMachineTerm::constant(i32::MAX as u32)),
+                OldConditionTerm::signed_less_than(
+                    counter,
+                    OldMachineTerm::constant(i32::MAX as u32),
+                ),
                 true,
             );
         for index in 0..size {
             bounded = bounded.assume_condition(
-                ConditionTerm::signed_less_than(
+                OldConditionTerm::signed_less_than(
                     OldMachineTerm::Variable(Variable(970_000 + u64::from(index))),
                     OldMachineTerm::constant(0),
                 ),

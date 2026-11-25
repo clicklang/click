@@ -83,7 +83,7 @@ pub(crate) fn admit_declared_entry_resources(
             || fact.owned_quantity_term().is_some_and(|quantity| {
                 quantity_condition_holds(
                     assumptions,
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterThan,
                         left: Box::new(quantity.clone()),
@@ -101,7 +101,7 @@ pub(crate) fn admit_declared_entry_resources(
                     && range.element_width() > 0
                     && quantity_condition_holds(
                         assumptions,
-                        ConditionTerm::Compare {
+                        OldConditionTerm::Compare {
                             format,
                             relation: CompareRelation::LessThan,
                             left: Box::new(start.clone()),

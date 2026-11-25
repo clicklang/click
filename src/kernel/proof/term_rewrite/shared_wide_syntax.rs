@@ -340,7 +340,7 @@ mod tests {
         let exports = KernelTermExport::machine_export_count();
         for (value, expected) in [(0, true), (1, false)] {
             let goal =
-                ConditionTerm::integer_equal(observed.clone(), IntegerTerm::constant_i64(value));
+                OldConditionTerm::integer_equal(observed.clone(), IntegerTerm::constant_i64(value));
             assert_eq!(PureFactContext::new().decide(&goal), Some(expected));
         }
         assert_eq!(KernelTermExport::machine_export_count(), exports);

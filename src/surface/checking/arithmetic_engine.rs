@@ -15,7 +15,7 @@ use super::special_arithmetic_planner::plan_special_arithmetic;
 use crate::kernel::proof::arithmetic_special::SpecialArithmeticPlan;
 use crate::kernel::proof::integer_arithmetic::{IntegerArithmeticNode, IntegerArithmeticPlan};
 use crate::kernel::proof::signed_arithmetic::SignedArithmeticPlan;
-use crate::kernel::{ConditionTerm, IntegerTerm, MachineBinaryOp, Proposition};
+use crate::kernel::{IntegerTerm, MachineBinaryOp, OldConditionTerm, Proposition};
 
 /// One arithmetic proof planner.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -131,7 +131,7 @@ pub(in crate::surface) fn machine_observations(
             return None;
         }
         let bound = crate::kernel::machine_integer::bounds::operation_bound(value, false)?;
-        let (ConditionTerm::IntegerLessEqual(_, input), true) = bound.condition_native()? else {
+        let (OldConditionTerm::IntegerLessEqual(_, input), true) = bound.old_condition()? else {
             return None;
         };
         let IntegerTerm::Machine(input) = input.as_ref() else {

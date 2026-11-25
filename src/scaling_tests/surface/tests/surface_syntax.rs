@@ -41,7 +41,7 @@ fn indexed_surface_resolution_ignores_unrelated_available_facts() {
         operator: ComparisonOperator::Equal,
         right: current_int(1),
     };
-    let target = Proposition::condition_is(ConditionTerm::Constant(true), true);
+    let target = Proposition::condition_is(OldConditionTerm::Constant(true), true);
     let mut spellings = SurfacePropositionMap::default();
     spellings.record_lowering(&surface, &target).unwrap();
     let samples = [16, 32, 64, 128]
@@ -49,7 +49,10 @@ fn indexed_surface_resolution_ignores_unrelated_available_facts() {
         .map(|size| {
             let mut available = std::collections::BTreeSet::from([target.clone()]);
             available.extend((0..size).map(|index| {
-                Proposition::condition_is(ConditionTerm::Variable(Variable(95_000 + index)), true)
+                Proposition::condition_is(
+                    OldConditionTerm::Variable(Variable(95_000 + index)),
+                    true,
+                )
             }));
             let (resolved, work) = crate::instrumentation::measure_deterministic_work(|| {
                 spellings.available_kernel_matching(&surface, |kernel| available.contains(kernel))
@@ -83,7 +86,7 @@ fn nested_implication_lowering_records_in_linear_work() {
                     right: current_int(index % 3),
                 },
                 Proposition::condition_is(
-                    ConditionTerm::Variable(Variable(u64::from(300_000 + index % 6))),
+                    OldConditionTerm::Variable(Variable(u64::from(300_000 + index % 6))),
                     true,
                 ),
             )
@@ -164,7 +167,7 @@ fn qualified_storage_source_index_preserves_forks_and_scales() {
     fn pair(index: u32) -> (Address, SyntaxTerm, SyntaxProposition, Proposition) {
         let pointer = Address {
             base: AddressBase::Concrete(format!("global:state#file-static:file{index}.c")),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let expression = SyntaxTerm::QualifiedC {
             name: format!("file{index}::state"),
@@ -185,7 +188,7 @@ fn qualified_storage_source_index_preserves_forks_and_scales() {
             right: current_int(index),
         };
         let kernel = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::read_named(
@@ -240,7 +243,7 @@ fn qualified_storage_source_index_preserves_forks_and_scales() {
 
 #[test]
 fn requirement_spelling_selects_one_recorded_enclosing_clause() {
-    let target = Proposition::condition_is(ConditionTerm::Variable(Variable(8000)), true);
+    let target = Proposition::condition_is(OldConditionTerm::Variable(Variable(8000)), true);
     let mut work = Vec::new();
     for size in [4, 16, 64, 256] {
         let mut spellings = SurfacePropositionMap::default();
@@ -254,7 +257,7 @@ fn requirement_spelling_selects_one_recorded_enclosing_clause() {
             let guarded = Proposition::And(
                 Box::new(target.clone()),
                 Box::new(Proposition::condition_is(
-                    ConditionTerm::Variable(Variable(index)),
+                    OldConditionTerm::Variable(Variable(index)),
                     true,
                 )),
             );

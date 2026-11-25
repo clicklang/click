@@ -419,13 +419,13 @@ impl SymbolicLayoutName {
     /// `rest + offsetof(L, f)`: the offset before it, if any, the layout,
     /// and the field.
     pub(crate) fn field_displacement(
-        offset: &super::AddressOffset,
-    ) -> Option<(Option<&super::AddressOffset>, Self, u32)> {
+        offset: &super::OldAddressOffset,
+    ) -> Option<(Option<&super::OldAddressOffset>, Self, u32)> {
         let (rest, last) = match offset {
-            super::AddressOffset::Add(rest, last) => (Some(&**rest), &**last),
+            super::OldAddressOffset::Add(rest, last) => (Some(&**rest), &**last),
             other => (None, other),
         };
-        let super::AddressOffset::Int64Scaled {
+        let super::OldAddressOffset::Int64Scaled {
             value,
             byte_width: 1,
             ..
@@ -443,10 +443,10 @@ impl SymbolicLayoutName {
     /// `rest` (offset 0 when there is none): `rest` itself is 0, and
     /// `rest + c` or, from a constant start, the constant `c` is `c`.
     pub(crate) fn constant_displacement(
-        rest: Option<&super::AddressOffset>,
-        offset: &super::AddressOffset,
+        rest: Option<&super::OldAddressOffset>,
+        offset: &super::OldAddressOffset,
     ) -> Option<u32> {
-        use super::AddressOffset::{Add, Constant};
+        use super::OldAddressOffset::{Add, Constant};
         let start = rest.unwrap_or(&Constant(0));
         if offset == start {
             return Some(0);

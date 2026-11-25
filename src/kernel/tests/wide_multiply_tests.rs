@@ -14,15 +14,15 @@ fn evaluated(expression: ProgramExpression) -> ExpressionOutcome {
 fn product_and_bounds(
     left: MachineIntegerType,
     right: MachineIntegerType,
-) -> (IntegerTerm, [ConditionTerm; 2]) {
+) -> (IntegerTerm, [OldConditionTerm; 2]) {
     let product = IntegerTerm::multiply(
         IntegerTerm::from_machine(left, OldMachineTerm::Variable(Variable(150_001))).unwrap(),
         IntegerTerm::from_machine(right, OldMachineTerm::Variable(Variable(150_002))).unwrap(),
     );
     let (min, max) = MachineIntegerType::Int128.format().bounds();
     let bounds = [
-        ConditionTerm::integer_greater_equal(product.clone(), IntegerTerm::constant(min)),
-        ConditionTerm::integer_less_equal(product.clone(), IntegerTerm::constant(max)),
+        OldConditionTerm::integer_greater_equal(product.clone(), IntegerTerm::constant(min)),
+        OldConditionTerm::integer_less_equal(product.clone(), IntegerTerm::constant(max)),
     ];
     (product, bounds)
 }
@@ -175,7 +175,7 @@ fn wide_multiply_unknown_bounds_retain_normal_and_both_overflow_paths() {
         let (product, _) =
             product_and_bounds(MachineIntegerType::Int128, MachineIntegerType::Int128);
         let definition =
-            Proposition::condition_is(ConditionTerm::integer_equal(observed, product), true);
+            Proposition::condition_is(OldConditionTerm::integer_equal(observed, product), true);
         assert!(
             normal
                 .facts

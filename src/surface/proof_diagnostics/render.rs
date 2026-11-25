@@ -11,8 +11,8 @@ use crate::kernel::ResourceFact;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::{
-    Address, AddressOffset, AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, AlgebraicValueType,
-    ConditionTerm, ExecutionState, ExpressionOutcome, IntegerRangeFoldIndex, IntegerTerm,
+    Address, AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, AlgebraicValueType, ExecutionState,
+    ExpressionOutcome, IntegerRangeFoldIndex, IntegerTerm, OldAddressOffset, OldConditionTerm,
     OldMachineTerm, ProgramValue, Proposition, PureFunctionArgument, Resource, Sort,
     SpecCaptureRefusal, SymbolicMemory, Term, Variable,
 };
@@ -115,7 +115,7 @@ fn value_binder(term: &OldMachineTerm) -> Option<Variable> {
     match widened_word(term) {
         OldMachineTerm::Variable(variable) => Some(*variable),
         OldMachineTerm::BoolCast { value, .. } => match value.as_ref() {
-            crate::kernel::ConditionTerm::Variable(variable) => Some(*variable),
+            crate::kernel::OldConditionTerm::Variable(variable) => Some(*variable),
             _ => None,
         },
         _ => None,
@@ -320,7 +320,7 @@ impl MemoryStateLabels {
             names
                 .iter()
                 .filter(|(base, _)| {
-                    base.base == pointer.base && base.offset == AddressOffset::Constant(0)
+                    base.base == pointer.base && base.offset == OldAddressOffset::Constant(0)
                 })
                 .map(|(_, name)| name.as_str())
                 .min_by(|left, right| left.len().cmp(&right.len()).then(left.cmp(right)))
@@ -841,7 +841,7 @@ fn distinct_pointers_at_one_address(
 }
 
 pub(super) fn pointer_comparison_needs_source(proposition: &Proposition) -> bool {
-    matches!(proposition.condition_native(), Some((ConditionTerm::PointerEqual(left, right), _))
+    matches!(proposition.old_condition(), Some((OldConditionTerm::PointerEqual(left, right), _))
         if distinct_pointers_at_one_address(left, right))
 }
 
@@ -899,7 +899,7 @@ pub(crate) fn render_read_resolution(
     let _typed = TypedNotationScope::enter();
     let query = render_proposition_labeled(
         &Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: Box::new(resolution.read.clone()),
@@ -2114,7 +2114,7 @@ impl Renderer<'_> {
         }
         self.depth -= 1;
     }
-    fn condition(&mut self, c: &ConditionTerm) {
+    fn condition(&mut self, c: &OldConditionTerm) {
         // Definedness of a partial machine operation is the condition a
         // capture or evaluation refusal most often names, so print the
         // operation instead of a placeholder.
@@ -2129,8 +2129,8 @@ impl Renderer<'_> {
             return;
         }
         match c {
-            ConditionTerm::Constant(v) => self.push(if *v { "true" } else { "false" }),
-            ConditionTerm::Variable(v) => {
+            OldConditionTerm::Constant(v) => self.push(if *v { "true" } else { "false" }),
+            OldConditionTerm::Variable(v) => {
                 let name = self.variable_name(*v, "condition");
                 self.push(&name);
             }
@@ -2138,27 +2138,27 @@ impl Renderer<'_> {
                 self.push("integer-condition(");
                 self.integer_shared(a);
                 self.push(match c {
-                    ConditionTerm::IntegerLessThan(..) => " < ",
-                    ConditionTerm::IntegerLessEqual(..) => " <= ",
-                    ConditionTerm::IntegerGreaterThan(..) => " > ",
-                    ConditionTerm::IntegerGreaterEqual(..) => " >= ",
-                    ConditionTerm::IntegerEqual(..) => " = ",
+                    OldConditionTerm::IntegerLessThan(..) => " < ",
+                    OldConditionTerm::IntegerLessEqual(..) => " <= ",
+                    OldConditionTerm::IntegerGreaterThan(..) => " > ",
+                    OldConditionTerm::IntegerGreaterEqual(..) => " >= ",
+                    OldConditionTerm::IntegerEqual(..) => " = ",
                     _ => " != ",
                 });
                 self.integer_shared(b);
                 self.push(")");
             }
-            ConditionTerm::AlgebraicEqual(a, b) => {
+            OldConditionTerm::AlgebraicEqual(a, b) => {
                 self.algebraic(a);
                 self.push(" = ");
                 self.algebraic(b);
             }
-            ConditionTerm::AddressOffsetEqual(a, b) => {
+            OldConditionTerm::AddressOffsetEqual(a, b) => {
                 self.offset(a, 0);
                 self.push(" = ");
                 self.offset(b, 0);
             }
-            ConditionTerm::PointerEqual(a, b) => {
+            OldConditionTerm::PointerEqual(a, b) => {
                 if distinct_pointers_at_one_address(a, b) {
                     self.push("pointer equality at ");
                     self.pointer(a.address());
@@ -2169,16 +2169,16 @@ impl Renderer<'_> {
                     self.pointer(b.address());
                 }
             }
-            ConditionTerm::AddressEqual(a, b) => {
+            OldConditionTerm::AddressEqual(a, b) => {
                 self.pointer(a);
                 self.push(" = ");
                 self.pointer(b);
             }
-            ConditionTerm::BoolApplication(application) => {
+            OldConditionTerm::BoolApplication(application) => {
                 self.push(application.name());
                 self.push("(...)");
             }
-            ConditionTerm::BoolIf {
+            OldConditionTerm::BoolIf {
                 condition,
                 then_condition,
                 else_condition,
@@ -2191,7 +2191,7 @@ impl Renderer<'_> {
                 self.condition(else_condition);
                 self.push(" }");
             }
-            ConditionTerm::BoolEqual(a, b) => {
+            OldConditionTerm::BoolEqual(a, b) => {
                 self.push("bool(");
                 self.condition(a);
                 self.push(" = ");
@@ -2566,18 +2566,18 @@ impl Renderer<'_> {
         self.bitvector(right);
         self.push(")");
     }
-    fn offset(&mut self, o: &AddressOffset, _depth: usize) {
+    fn offset(&mut self, o: &OldAddressOffset, _depth: usize) {
         if self.depth >= MAX_DEPTH || self.truncated {
             self.truncated = true;
             return;
         }
         match o {
-            AddressOffset::Constant(v) => self.fmt(format_args!("{v}")),
-            AddressOffset::Variable(v) => {
+            OldAddressOffset::Constant(v) => self.fmt(format_args!("{v}")),
+            OldAddressOffset::Variable(v) => {
                 let name = self.variable_name(*v, "offset");
                 self.push(&name);
             }
-            AddressOffset::Add(a, b) => {
+            OldAddressOffset::Add(a, b) => {
                 self.depth += 1;
                 self.push("(");
                 self.offset(a, 0);
@@ -2586,12 +2586,12 @@ impl Renderer<'_> {
                 self.push(")");
                 self.depth -= 1;
             }
-            AddressOffset::Int32Scaled { value, byte_width } => {
+            OldAddressOffset::Int32Scaled { value, byte_width } => {
                 self.push("int32(");
                 self.bitvector(value.structural_value());
                 self.fmt(format_args!(")*{byte_width} bytes"));
             }
-            AddressOffset::Int64Scaled {
+            OldAddressOffset::Int64Scaled {
                 value,
                 byte_width,
                 unsigned,
@@ -3072,7 +3072,7 @@ mod tests {
             width: OldMachineTerm::uint64_constant(4),
         }));
         let goal = Proposition::condition_is(
-            ConditionTerm::PointerEqual(Box::new(left), Box::new(right)),
+            OldConditionTerm::PointerEqual(Box::new(left), Box::new(right)),
             true,
         );
         let mut labels = MemoryStateLabels::ambient();
@@ -3085,19 +3085,19 @@ mod tests {
 
     #[test]
     fn retained_contract_offset_diagnostic_preserves_shape_and_width() {
-        use crate::kernel::{AddressOffset, OldMachineTerm, Term};
+        use crate::kernel::{OldAddressOffset, OldMachineTerm, Term};
         let _session = crate::kernel::VerificationSession::enter();
-        let offset = AddressOffset::Add(
-            Box::new(AddressOffset::scaled_int64_node(
+        let offset = OldAddressOffset::Add(
+            Box::new(OldAddressOffset::scaled_int64_node(
                 OldMachineTerm::uint64_constant(3),
                 8,
                 true,
             )),
-            Box::new(AddressOffset::Constant(-2)),
+            Box::new(OldAddressOffset::Constant(-2)),
         );
         let claim = Proposition::Equal(
             Term::PointerOffset(offset.into()),
-            Term::PointerOffset(AddressOffset::Constant(22).into()),
+            Term::PointerOffset(OldAddressOffset::Constant(22).into()),
         );
         let source = surface::source(&claim, &mut MemoryStateLabels::ambient());
         assert!(source.contains(" * 8 + -2"), "{source}");
@@ -3130,7 +3130,7 @@ mod tests {
             );
         }
         let fact = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::Variable(Variable(988002))),
@@ -3195,7 +3195,7 @@ mod tests {
         ] {
             let pointer = Address {
                 base: format!("local:{local}").into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             };
             let memory = SymbolicMemory::new()
                 .with_block(format!("local:{local}"), 4)
@@ -3215,7 +3215,7 @@ mod tests {
         let mut labels = MemoryStateLabels::default();
         labels.source_name(Variable(7), "cur".into());
         let proposition = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::Variable(Variable(7))),
@@ -3240,7 +3240,7 @@ mod tests {
             "path".into(),
             Variable(7),
             Sort::Algebraic(path),
-            Proposition::condition_is(ConditionTerm::Constant(true), true),
+            Proposition::condition_is(OldConditionTerm::Constant(true), true),
         );
         let rendered = render_proposition(&proposition);
         assert!(rendered.starts_with("∃path:Path<Integer>. "), "{rendered}");
@@ -3260,7 +3260,7 @@ mod tests {
         labels.source_name(Variable(7), "r".into());
         let equality = |variable| {
             Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(OldMachineTerm::Variable(variable)),
@@ -3281,7 +3281,7 @@ mod tests {
 
     #[test]
     fn deep_dag_is_bounded_and_marks_truncation() {
-        let mut proposition = Proposition::condition_is(ConditionTerm::Constant(true), true);
+        let mut proposition = Proposition::condition_is(OldConditionTerm::Constant(true), true);
         for _ in 0..128 {
             proposition = Proposition::Not(Box::new(proposition));
         }
@@ -3295,7 +3295,7 @@ mod tests {
         let left = SharedIntegerTerm::from(IntegerTerm::from(11));
         let right = SharedIntegerTerm::from(IntegerTerm::from(19));
         let proposition =
-            Proposition::condition_is(ConditionTerm::IntegerLessThan(left, right), true);
+            Proposition::condition_is(OldConditionTerm::IntegerLessThan(left, right), true);
         let rendered = render_proposition(&proposition);
         assert!(rendered.contains("integer-condition"));
         assert!(rendered.contains("<"));
@@ -3327,7 +3327,7 @@ mod tests {
             memory,
             base: Address {
                 base: crate::kernel::AddressBase::ExternalArgument,
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             bytes: (OldMachineTerm::constant(1)).into(),
             wide: false,
@@ -3515,7 +3515,7 @@ mod resource_detail_tests {
     fn typed_resource_arguments_keep_publication_payload_values() {
         let flag = Address {
             base: "ready".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let publication = |value| {
             ResourceFact::own(Resource::Publication(PublicationRight::new(
@@ -3542,11 +3542,11 @@ mod resource_detail_tests {
     fn typed_iterated_resources_keep_guards_elements_and_taken_indices() {
         let base = Address {
             base: "elements".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let guard = Address {
             base: "flags".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let iterated = IteratedMemory::new(
             "selected",

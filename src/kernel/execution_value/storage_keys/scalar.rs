@@ -120,7 +120,7 @@ impl ScalarStorageKey {
             ScalarArgument(ProgramType),
             WordBinary(MachineBinaryOp, MachineIntegerType),
             WordUnary(MachineIntegerType, MachineUnaryOp),
-            If(&'a ConditionTerm),
+            If(&'a OldConditionTerm),
             Fold(Variable, Variable),
             Match(&'a AlgebraicTerm, &'a [AlgebraicBitvectorMatchArm]),
             Cast(MachineCastSpelling, MachineIntegerType, MachineIntegerType),

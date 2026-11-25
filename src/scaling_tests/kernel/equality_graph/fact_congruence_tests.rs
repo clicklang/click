@@ -73,18 +73,21 @@ fn signed_addition_definedness_lookup_scales_with_alias_delta() {
     for size in [32u64, 64, 128] {
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             let mut facts = PureFactContext::new().assume_condition(
-                ConditionTerm::signed_add_overflows(var(61000), var(61001)),
+                OldConditionTerm::signed_add_overflows(var(61000), var(61001)),
                 false,
             );
             for index in 0..size {
                 facts = facts
                     .assume_proposition(eq(var(61000), var(62000 + index)))
                     .assume_condition(
-                        ConditionTerm::signed_add_overflows(var(63000 + index), var(64000 + index)),
+                        OldConditionTerm::signed_add_overflows(
+                            var(63000 + index),
+                            var(64000 + index),
+                        ),
                         true,
                     );
                 assert_eq!(
-                    facts.decide(&ConditionTerm::signed_add_overflows(
+                    facts.decide(&OldConditionTerm::signed_add_overflows(
                         var(62000 + index),
                         var(61001)
                     )),
@@ -104,7 +107,7 @@ fn pointer_disequality_projection_ignores_unrelated_pointer_predicates() {
         let mut facts = PureFactContext::new();
         for i in 0..size {
             facts = facts.assume_condition(
-                ConditionTerm::address_equal(
+                OldConditionTerm::address_equal(
                     Address::symbolic(Variable(74000 + i)),
                     Address::symbolic(Variable(75000 + i)),
                 ),
@@ -115,23 +118,23 @@ fn pointer_disequality_projection_ignores_unrelated_pointer_predicates() {
             crate::instrumentation::measure_deterministic_work(|| {
                 let source = Address::symbolic(Variable(72999));
                 facts = facts.assume_condition(
-                    ConditionTerm::address_equal(
+                    OldConditionTerm::address_equal(
                         source.clone(),
                         coordinate_pointer("storage".into(), 73000),
                     ),
                     false,
                 );
                 facts = facts.assume_condition(
-                    ConditionTerm::address_equal(
+                    OldConditionTerm::address_equal(
                         source,
                         coordinate_pointer("storage".into(), 73001),
                     ),
                     true,
                 );
                 assert!(facts.contains_known(&Proposition::condition_is(
-                    ConditionTerm::address_offset_equal(
-                        AddressOffset::Variable(Variable(73000)),
-                        AddressOffset::Variable(Variable(73001))
+                    OldConditionTerm::address_offset_equal(
+                        OldAddressOffset::Variable(Variable(73000)),
+                        OldAddressOffset::Variable(Variable(73001))
                     ),
                     false
                 )));
@@ -152,7 +155,7 @@ fn pointer_comparison_evidence_work_ignores_unrelated_facts() {
         let mut facts = PureFactContext::new();
         for i in 0..size {
             facts = facts.assume_condition(
-                ConditionTerm::address_equal(
+                OldConditionTerm::address_equal(
                     coordinate_pointer(AddressBase::ExternalArgument, 79000 + i * 2),
                     coordinate_pointer(AddressBase::ExternalArgument, 79001 + i * 2),
                 ),
@@ -167,13 +170,13 @@ fn pointer_comparison_evidence_work_ignores_unrelated_facts() {
                 // Registering the query before the premise must not choose a
                 // canonical base that later loses the admitted comparison.
                 let goal = Proposition::condition_is(
-                    ConditionTerm::address_equal(left.clone(), alias.clone()),
+                    OldConditionTerm::address_equal(left.clone(), alias.clone()),
                     false,
                 );
                 assert!(!facts.contains_known(&goal));
                 facts = facts
-                    .assume_condition(ConditionTerm::address_equal(left, right.clone()), false)
-                    .assume_condition(ConditionTerm::address_equal(right, alias), true);
+                    .assume_condition(OldConditionTerm::address_equal(left, right.clone()), false)
+                    .assume_condition(OldConditionTerm::address_equal(right, alias), true);
                 assert!(facts.contains_known(&goal));
             })
         });
@@ -196,7 +199,7 @@ fn full_pointer_alias_queries_do_not_walk_unrelated_conditions() {
         }
         for index in 0..size {
             context = context.assume_condition(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     OldMachineTerm::Variable(Variable(9_000_000 + index)),
                     OldMachineTerm::constant(index as u32),
                 ),
@@ -225,7 +228,7 @@ fn cited_pointer_context_construction_scales_with_selected_conditions() {
         let (goal, mut selected) = selected_cursor_chain();
         for index in 0..size {
             selected.push(Proposition::condition_is(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     OldMachineTerm::Variable(Variable(9_100_000 + index)),
                     OldMachineTerm::constant(index as u32),
                 ),
@@ -298,11 +301,11 @@ fn later_pointer_read_definition_work(count: u32, unrelated: u64) -> usize {
     let _session = VerificationSession::enter();
     let cell = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let other = Address {
         base: AddressBase::Heap(986_001),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let mut memory = intern_memory(
         SymbolicMemory::new().store(other.clone(), ProgramValue::UInt32(0u32.into())),
@@ -363,7 +366,7 @@ fn complete_pointer_read_registration_scales_with_new_definitions() {
         let mut facts = PureFactContext::new();
         for i in 0..unrelated {
             facts = facts.assume_condition(
-                ConditionTerm::signed_less_than(
+                OldConditionTerm::signed_less_than(
                     OldMachineTerm::Variable(Variable(988_100 + i)),
                     1000u32.into(),
                 ),
@@ -386,7 +389,7 @@ fn complete_pointer_read_registration_scales_with_new_definitions() {
                     ProgramType::Int32Pointer,
                 );
                 assert!(facts.equality_graph.knows_condition(
-                    &ConditionTerm::PointerEqual(Box::new(next.clone()), Box::new(value)),
+                    &OldConditionTerm::PointerEqual(Box::new(next.clone()), Box::new(value)),
                     true
                 ));
                 value = next;
@@ -415,7 +418,7 @@ fn pointer_domain_queries_scale_with_selected_read_definitions() {
         let slot = Address::symbolic(Variable(989_110));
         let target = Address {
             base: AddressBase::Heap(989_111),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let mut previous = target.clone();
         let mut memory = SymbolicMemory::new();

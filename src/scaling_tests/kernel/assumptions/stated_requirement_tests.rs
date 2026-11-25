@@ -12,7 +12,7 @@ fn stated_query_work_is_independent_of_unrelated_facts() {
         Variable(300),
         Sort::Bitvector32,
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::Variable(Variable(300))),
@@ -26,7 +26,7 @@ fn stated_query_work_is_independent_of_unrelated_facts() {
     for index in 0..128 {
         large = large.assume_proposition(distinct_requirement(10_000 + index, "unrelated"));
         large = large.assume_proposition(Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::Variable(Variable(20_000 + index))),
@@ -122,7 +122,7 @@ fn stated_index_keys_each_fact_once_and_only_when_asked() {
 #[test]
 fn a_32_bit_equality_is_one_fact_at_either_signedness() {
     let x = OldMachineTerm::Variable(Variable(31_000));
-    let equality = |format, right: u32| ConditionTerm::Compare {
+    let equality = |format, right: u32| OldConditionTerm::Compare {
         format,
         relation: CompareRelation::Equal,
         left: Box::new(x.clone()),
@@ -137,7 +137,7 @@ fn a_32_bit_equality_is_one_fact_at_either_signedness() {
             let mut context = PureFactContext::new();
             for index in 0..size {
                 context = context.assume_condition(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::UInt32,
                         relation: CompareRelation::Equal,
                         left: Box::new(OldMachineTerm::Variable(Variable(
@@ -198,14 +198,14 @@ fn arithmetic_evaluation_domains_do_not_force_unrelated_stated_facts() {
             if mode == 1 {
                 context = context
                     .assume_condition(
-                        ConditionTerm::signed_less_equal(
+                        OldConditionTerm::signed_less_equal(
                             OldMachineTerm::constant(0),
                             index.clone(),
                         ),
                         true,
                     )
                     .assume_condition(
-                        ConditionTerm::signed_less_equal(
+                        OldConditionTerm::signed_less_equal(
                             index.clone(),
                             OldMachineTerm::constant(64),
                         ),

@@ -27,11 +27,11 @@ pub(super) fn symbolic_state() -> (ExecutionState, PureFactContext, ResourceFact
     let end = OldMachineTerm::Variable(Variable(8_940_001));
     let facts = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_less_equal(1u32.into(), end.clone()),
+            OldConditionTerm::signed_less_equal(1u32.into(), end.clone()),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_equal(end.clone(), 16u32.into()),
+            OldConditionTerm::signed_less_equal(end.clone(), 16u32.into()),
             true,
         );
     let owner =

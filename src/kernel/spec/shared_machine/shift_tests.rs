@@ -24,7 +24,7 @@ fn input(format: MachineIntegerType, value: &OldMachineTerm, shared: bool) -> Sp
 // Compare the guards as mathematical relations, folding polarity and native
 // machine comparisons while materializing operands only in this oracle.
 fn native_domain(value: &Proposition) -> Proposition {
-    use ConditionTerm as C;
+    use OldConditionTerm as C;
     match value {
         Proposition::And(a, b) => {
             Proposition::And(Box::new(native_domain(a)), Box::new(native_domain(b)))

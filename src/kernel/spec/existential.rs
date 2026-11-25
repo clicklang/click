@@ -139,7 +139,7 @@ mod tests {
 
     fn equality(variable: Variable, value: u32) -> Proposition {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::Variable(variable)),

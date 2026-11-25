@@ -843,8 +843,8 @@ impl PointerOffsetCongruenceEvidence {
 
     pub(in crate::kernel) fn checks(
         &self,
-        left: &AddressOffset,
-        right: &AddressOffset,
+        left: &OldAddressOffset,
+        right: &OldAddressOffset,
         assumptions: &PureFactContext,
     ) -> bool {
         match self {
@@ -875,8 +875,10 @@ impl PointerOffsetCongruenceEvidence {
                 second,
                 swapped,
             } => {
-                let (AddressOffset::Add(left_a, left_b), AddressOffset::Add(right_a, right_b)) =
-                    (left, right)
+                let (
+                    OldAddressOffset::Add(left_a, left_b),
+                    OldAddressOffset::Add(right_a, right_b),
+                ) = (left, right)
                 else {
                     return false;
                 };
@@ -890,11 +892,11 @@ impl PointerOffsetCongruenceEvidence {
             }
             Self::Int32Scaled { byte_width, path } => {
                 let (
-                    AddressOffset::Int32Scaled {
+                    OldAddressOffset::Int32Scaled {
                         value: left,
                         byte_width: left_width,
                     },
-                    AddressOffset::Int32Scaled {
+                    OldAddressOffset::Int32Scaled {
                         value: right,
                         byte_width: right_width,
                     },
@@ -915,11 +917,11 @@ impl PointerOffsetCongruenceEvidence {
                 equality,
             } => {
                 let (
-                    AddressOffset::Int32Scaled {
+                    OldAddressOffset::Int32Scaled {
                         value: left,
                         byte_width: left_width,
                     },
-                    AddressOffset::Int32Scaled {
+                    OldAddressOffset::Int32Scaled {
                         value: right,
                         byte_width: right_width,
                     },
@@ -937,12 +939,12 @@ impl PointerOffsetCongruenceEvidence {
                 path,
             } => {
                 let (
-                    AddressOffset::Int64Scaled {
+                    OldAddressOffset::Int64Scaled {
                         value: left,
                         byte_width: left_width,
                         unsigned: left_unsigned,
                     },
-                    AddressOffset::Int64Scaled {
+                    OldAddressOffset::Int64Scaled {
                         value: right,
                         byte_width: right_width,
                         unsigned: right_unsigned,
@@ -1243,14 +1245,14 @@ impl LoadAddressCongruenceEvidence {
         assumptions: &PureFactContext,
     ) -> bool {
         let Some((
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
             },
             true,
-        )) = proposition.condition_native()
+        )) = proposition.old_condition()
         else {
             return false;
         };

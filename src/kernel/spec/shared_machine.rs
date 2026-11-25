@@ -141,7 +141,7 @@ pub(super) fn apply_values(
 pub(in crate::kernel) fn bitwise_tag_equation(
     value: &KernelTerm,
     assumptions: &PureFactContext,
-) -> Option<ConditionTerm> {
+) -> Option<OldConditionTerm> {
     bitwise::tag_equation(value, assumptions)
 }
 
@@ -330,7 +330,9 @@ pub(super) fn apply(
         if op == MachineBinaryOp::ShiftLeft && format.format().is_signed() {
             require_false(compare(left_view, CompareRelation::LessThan, 0));
             domain.push(Proposition::condition_is(
-                ConditionTerm::signed_shift_result_fits_views(format, left_view, right_view, false),
+                OldConditionTerm::signed_shift_result_fits_views(
+                    format, left_view, right_view, false,
+                ),
                 true,
             ));
         }
@@ -749,12 +751,12 @@ mod tests {
                     assert_eq!(av, bv);
                     match (a.old_form(), b.old_form()) {
                         (
-                            ConditionTerm::IntegerLessEqual(a, b),
-                            ConditionTerm::IntegerLessEqual(c, d),
+                            OldConditionTerm::IntegerLessEqual(a, b),
+                            OldConditionTerm::IntegerLessEqual(c, d),
                         )
                         | (
-                            ConditionTerm::IntegerGreaterEqual(a, b),
-                            ConditionTerm::IntegerGreaterEqual(c, d),
+                            OldConditionTerm::IntegerGreaterEqual(a, b),
+                            OldConditionTerm::IntegerGreaterEqual(c, d),
                         ) => {
                             same_integer(a, c);
                             same_integer(b, d);
@@ -768,7 +770,7 @@ mod tests {
         for format in [MachineIntegerType::Int32, MachineIntegerType::Int64] {
             let opaque = OldMachineTerm::BoolCast {
                 to: format,
-                value: Box::new(ConditionTerm::signed_less_than(
+                value: Box::new(OldConditionTerm::signed_less_than(
                     OldMachineTerm::Variable(Variable(990020)),
                     OldMachineTerm::constant(0),
                 )),

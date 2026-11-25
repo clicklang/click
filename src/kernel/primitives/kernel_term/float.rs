@@ -256,7 +256,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
             let native = OldMachineTerm::If {
-                condition: Box::new(ConditionTerm::Constant(true)),
+                condition: Box::new(OldConditionTerm::Constant(true)),
                 then_term: Box::new(OldMachineTerm::Variable(Variable(999937))),
                 else_term: Box::new(OldMachineTerm::Variable(Variable(999938))),
             };

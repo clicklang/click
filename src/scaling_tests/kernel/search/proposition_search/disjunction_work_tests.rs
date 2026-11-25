@@ -10,7 +10,7 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 #[test]
 fn false_disjunct_does_not_scan_unrelated_context_before_available_bound() {
     let bound = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
             left: Box::new(OldMachineTerm::Variable(Variable(950_000))),
@@ -20,7 +20,7 @@ fn false_disjunct_does_not_scan_unrelated_context_before_available_bound() {
     );
     let goal = Proposition::Or(
         Box::new(Proposition::condition_is(
-            ConditionTerm::Constant(false),
+            OldConditionTerm::Constant(false),
             true,
         )),
         Box::new(bound.clone()),
@@ -30,7 +30,7 @@ fn false_disjunct_does_not_scan_unrelated_context_before_available_bound() {
         let mut context = PureFactContext::new().assume_proposition(bound.clone());
         for index in 0..size {
             context = context.assume_condition(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
                     left: Box::new(OldMachineTerm::Variable(Variable(960_000 + index))),

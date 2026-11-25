@@ -4,7 +4,7 @@
 //! holds of every observation with no premise.
 
 use crate::kernel::{
-    ConditionTerm, IntegerTerm, MachineIntegerConstant, MachineIntegerType, OldMachineTerm,
+    IntegerTerm, MachineIntegerConstant, MachineIntegerType, OldConditionTerm, OldMachineTerm,
     Proposition, SharedMachineIntegerTerm,
 };
 use num_bigint::BigInt;
@@ -24,9 +24,9 @@ pub(crate) fn range_fact(value: &SharedMachineIntegerTerm, upper: bool) -> Propo
     let (min, max) = observation_range(value);
     let observed = IntegerTerm::Machine(value.clone());
     let condition = if upper {
-        ConditionTerm::integer_less_equal(observed, IntegerTerm::constant(max))
+        OldConditionTerm::integer_less_equal(observed, IntegerTerm::constant(max))
     } else {
-        ConditionTerm::integer_less_equal(IntegerTerm::constant(min), observed)
+        OldConditionTerm::integer_less_equal(IntegerTerm::constant(min), observed)
     };
     Proposition::condition_is(condition, true)
 }

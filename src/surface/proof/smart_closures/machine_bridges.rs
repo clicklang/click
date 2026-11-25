@@ -47,19 +47,20 @@ fn integer_parts(
     match proposition {
         condition_source_0 @ Proposition::ConditionIs(_, true)
             if let Some((
-                ConditionTerm::IntegerLessEqual(a, b)
-                | ConditionTerm::IntegerLessThan(a, b)
-                | ConditionTerm::IntegerEqual(a, b),
+                OldConditionTerm::IntegerLessEqual(a, b)
+                | OldConditionTerm::IntegerLessThan(a, b)
+                | OldConditionTerm::IntegerEqual(a, b),
                 _,
-            )) = condition_source_0.condition_native() =>
+            )) = condition_source_0.old_condition() =>
         {
             Some((a, b))
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
             if let Some((
-                ConditionTerm::IntegerGreaterEqual(a, b) | ConditionTerm::IntegerGreaterThan(a, b),
+                OldConditionTerm::IntegerGreaterEqual(a, b)
+                | OldConditionTerm::IntegerGreaterThan(a, b),
                 _,
-            )) = condition_source_0.condition_native() =>
+            )) = condition_source_0.old_condition() =>
         {
             Some((b, a))
         }
@@ -184,12 +185,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         use crate::kernel::IntegerTerm;
         use crate::kernel::machine_integer::range::observation_range;
 
-        let Some((condition, true)) = input.goal().and_then(Proposition::condition_native) else {
+        let Some((condition, true)) = input.goal().and_then(Proposition::old_condition) else {
             return Ok(None);
         };
         let (left, right) = match condition {
-            ConditionTerm::IntegerLessEqual(left, right) => (left.as_ref(), right.as_ref()),
-            ConditionTerm::IntegerGreaterEqual(left, right) => (right.as_ref(), left.as_ref()),
+            OldConditionTerm::IntegerLessEqual(left, right) => (left.as_ref(), right.as_ref()),
+            OldConditionTerm::IntegerGreaterEqual(left, right) => (right.as_ref(), left.as_ref()),
             _ => return Ok(None),
         };
         let (upper, a, b, target) = match (left, right) {
@@ -392,14 +393,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let Some((
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left,
                 right,
             },
             true,
-        )) = goal.condition_native()
+        )) = goal.old_condition()
         else {
             return Ok(None);
         };
@@ -409,7 +410,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             _ => return Ok(None),
         };
         let upper = Proposition::condition_is(
-            ConditionTerm::uint64_less_equal(
+            OldConditionTerm::uint64_less_equal(
                 value.as_ref().clone(),
                 OldMachineTerm::uint64_constant(0),
             ),
@@ -921,7 +922,7 @@ pub(super) fn non_numeric_conditional_goal(goal: &Proposition) -> bool {
         _ => goal,
     };
     matches!(&goal, condition_source @ Proposition::ConditionIs(_, _)
-        if matches!(condition_source.condition_native(), Some((ConditionTerm::BoolEqual(..) | ConditionTerm::BoolIf { .. } | ConditionTerm::AlgebraicEqual(..), _))))
+        if matches!(condition_source.old_condition(), Some((OldConditionTerm::BoolEqual(..) | OldConditionTerm::BoolIf { .. } | OldConditionTerm::AlgebraicEqual(..), _))))
         || matches!(
             goal,
             Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_))
@@ -1017,12 +1018,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             known_bridge_leaf, order_claim_forms,
                         };
                         if matches!(
-                            lowered.condition_native(),
+                            lowered.old_condition(),
                             Some((
-                                ConditionTerm::IntegerLessThan(..)
-                                    | ConditionTerm::IntegerLessEqual(..)
-                                    | ConditionTerm::IntegerGreaterThan(..)
-                                    | ConditionTerm::IntegerGreaterEqual(..),
+                                OldConditionTerm::IntegerLessThan(..)
+                                    | OldConditionTerm::IntegerLessEqual(..)
+                                    | OldConditionTerm::IntegerGreaterThan(..)
+                                    | OldConditionTerm::IntegerGreaterEqual(..),
                                 _
                             ))
                         ) && order_claim_forms(&lowered)

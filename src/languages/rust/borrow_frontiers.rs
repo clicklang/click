@@ -1198,7 +1198,7 @@ mod tests {
             super::super::lowering::lower_with_identity(export, Some(identity)).unwrap();
         let pointer = Address {
             base: "executed-child".into(),
-            offset: crate::kernel::AddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0),
         };
         let memory = SymbolicMemory::new()
             .with_block(pointer.base.clone(), if owned { 4 } else { 0 })
@@ -1281,7 +1281,7 @@ mod tests {
                 binding.address(),
                 &crate::kernel::Address {
                     base: "executed-child".into(),
-                    offset: crate::kernel::AddressOffset::Constant(0)
+                    offset: crate::kernel::OldAddressOffset::Constant(0)
                 }
             );
             assert!(std::ptr::eq(binding.execution(), &execution));

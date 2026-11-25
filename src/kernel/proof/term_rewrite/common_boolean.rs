@@ -86,7 +86,7 @@ pub(in crate::kernel) fn substitute_pointer_boolean_value(
         if rewrite.refusal().is_some() { return Err(()); }
         Ok(KernelTermImport::default().condition(&result))
     }, |original, children| {
-        let boolean = |value| KernelTermImport::default().condition(&ConditionTerm::Constant(value));
+        let boolean = |value| KernelTermImport::default().condition(&OldConditionTerm::Constant(value));
         match original.node() {
             KernelTermNode::BoolEqual { .. } => Ok(
                 if B::Shared(&children[0]).syntax_equal(B::Shared(&children[1])) {
@@ -173,7 +173,7 @@ impl TermRewrite<'_> {
             // boundary. The original shared displacement is handled above.
             let atom = self.pointer(&Address {
                 base: block.clone(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             });
             A::new(SharedAddressBase::import(&atom.base), offset)
         };
@@ -226,7 +226,7 @@ impl TermRewrite<'_> {
         let p = source.node();
         let base = A::import(&Address {
             base: p.address.node().base.native_atom().clone(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         });
         let selected = |address: &A| matches!(address.node().base.native_atom(),AddressBase::Symbolic(v)|AddressBase::FunctionSymbolic(v) if *v == from);
         let replacement = (selected(&p.address) && p.provenance.syntax_equal(&base))
@@ -275,7 +275,7 @@ impl TermRewrite<'_> {
                         O::Int32Scaled { value, byte_width } => {
                             let index = S::exact_index(&value);
                             if let Some(written) = index.retained_written_operand() {
-                                return Ok(O::import(&AddressOffset::scale_int32(
+                                return Ok(O::import(&OldAddressOffset::scale_int32(
                                     crate::kernel::eval::canonical_term(written),
                                     byte_width,
                                 )));
@@ -289,7 +289,7 @@ impl TermRewrite<'_> {
                         } => {
                             let index = S::exact_index(&value);
                             if let Some(written) = index.retained_written_operand() {
-                                return Ok(O::import(&AddressOffset::scale_int64(
+                                return Ok(O::import(&OldAddressOffset::scale_int64(
                                     crate::kernel::eval::canonical_term(written),
                                     byte_width,
                                     unsigned,

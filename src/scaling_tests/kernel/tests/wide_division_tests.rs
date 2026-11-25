@@ -14,7 +14,7 @@ fn promoted_divisor_guard_queries_ignore_unrelated_ambient_facts() {
             let mut context = PureFactContext::new().defer_non_exact_condition_reasoning();
             for index in 0..size {
                 context = context
-                    .assume_condition(ConditionTerm::Variable(Variable(157_000 + index)), true);
+                    .assume_condition(OldConditionTerm::Variable(Variable(157_000 + index)), true);
             }
             context = context
                 .assume_condition(native_divisor_equal(ty, 0), false)
@@ -54,7 +54,7 @@ fn wide_division_guard_queries_do_not_scan_unrelated_ambient_facts() {
                 let mut context = PureFactContext::new();
                 for i in 0..size {
                     context = context
-                        .assume_condition(ConditionTerm::Variable(Variable(156_000 + i)), true);
+                        .assume_condition(OldConditionTerm::Variable(Variable(156_000 + i)), true);
                 }
                 context = if inequalities {
                     context

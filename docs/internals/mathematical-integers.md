@@ -678,9 +678,9 @@ the kernel's matches on a 32-bit constant's bits read either format
 A 32-bit equality is one fact at either signedness (rule K6, restated as a
 lookup-level equivalence by step 4b). An equality of `uint32` values is a
 `Compare { UInt32, Equal }` term over its `uint32` operands
-(`ConditionTerm::uint32_equal`), and prints in its own type
+(`OldConditionTerm::uint32_equal`), and prints in its own type
 (`old(u[0]) == 4294967295u32`, not `== -1`); no rewrite re-files it at
-`int32`. `ConditionTerm` and `BitvectorComparisonOp` compare, hash and
+`int32`. `OldConditionTerm` and `BitvectorComparisonOp` compare, hash and
 order it as the `int32` equality of the same bits: `comparison_identity`
 reads each side through one σ and a constant of either format as its
 bits, one match per side with no clone, and `condition_match_key` and the
@@ -882,7 +882,7 @@ This representation foundation used schema 38 without admitting new source opera
 ## Integer conditional
 
 `IntegerTerm::If { condition, then_term, else_term }` is the Integer
-counterpart of the machine `OldMachineTerm::If`: a `ConditionTerm` and two
+counterpart of the machine `OldMachineTerm::If`: a `OldConditionTerm` and two
 shared (`SharedIntegerTerm`) arms. `IntegerTerm::if_then_else` builds it and
 leaves one arm for a constant condition or equal arms, so neither stands.
 `SpecIntegerExpression::If` holds the written proposition and Integer

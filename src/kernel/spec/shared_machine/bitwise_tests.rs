@@ -201,15 +201,15 @@ fn retained_tag_side_facts_use_exact_bounds_without_changing_the_word() {
     let bounded = empty
         .clone()
         .assume_condition(
-            ConditionTerm::signed_less_equal(OldMachineTerm::constant(0), tag.clone()),
+            OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), tag.clone()),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_equal(tag.clone(), OldMachineTerm::constant(1)),
+            OldConditionTerm::signed_less_equal(tag.clone(), OldMachineTerm::constant(1)),
             true,
         );
     let clear = empty.clone().assume_condition(
-        ConditionTerm::uint64_equal(
+        OldConditionTerm::uint64_equal(
             OldMachineTerm::uint64_bitwise_and(word.clone(), OldMachineTerm::uint64_constant(1)),
             OldMachineTerm::uint64_constant(0),
         ),
@@ -265,17 +265,17 @@ fn retained_tag_addition_selects_only_a_true_exact_clear_guard() {
     );
     for (guard, truth, expected) in [
         (
-            ConditionTerm::uint64_equal(OldMachineTerm::uint64_constant(0), low.clone()),
+            OldConditionTerm::uint64_equal(OldMachineTerm::uint64_constant(0), low.clone()),
             true,
             1,
         ),
         (
-            ConditionTerm::uint64_equal(low.clone(), OldMachineTerm::uint64_constant(0)),
+            OldConditionTerm::uint64_equal(low.clone(), OldMachineTerm::uint64_constant(0)),
             false,
             0,
         ),
         (
-            ConditionTerm::uint64_equal(low, OldMachineTerm::uint64_constant(1)),
+            OldConditionTerm::uint64_equal(low, OldMachineTerm::uint64_constant(1)),
             true,
             0,
         ),

@@ -14,7 +14,7 @@ fn indexed_pointer_site() -> (ProgramValueBindings, ExecutionState) {
     let pointer = ProgramValue::typed_pointer(
         Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scaled_int32_node(
+            offset: OldAddressOffset::scaled_int32_node(
                 OldMachineTerm::Variable(Variable(100_000)),
                 4,
             ),
@@ -43,12 +43,12 @@ fn pointer_base(values: &ProgramValueBindings) -> Address {
 fn indexed_cell(values: &ProgramValueBindings) -> Address {
     Address {
         base: pointer_base(values).base,
-        offset: AddressOffset::Add(
-            Box::new(AddressOffset::scaled_int32_node(
+        offset: OldAddressOffset::Add(
+            Box::new(OldAddressOffset::scaled_int32_node(
                 OldMachineTerm::Variable(Variable(100_000)),
                 4,
             )),
-            Box::new(AddressOffset::scaled_int32_node(
+            Box::new(OldAddressOffset::scaled_int32_node(
                 OldMachineTerm::Variable(Variable(1)),
                 4,
             )),
@@ -122,7 +122,7 @@ fn a_program_expression_form_lists_the_premises_it_consulted() {
     let site = StatedSite::new(StatedForm::ProgramExpression(&expression), &state, &values);
     let assumptions = PureFactContext::new()
         .assume_proposition(Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left: Box::new(OldMachineTerm::constant(0)),
@@ -173,7 +173,7 @@ fn an_overflow_guard_names_its_operation_without_wrapping_parentheses() {
     let site = StatedSite::new(StatedForm::ProgramExpression(&expression), &state, &values);
     let message = refuse_unproved_conversion_bounds(
         &unproved(Proposition::condition_is(
-            ConditionTerm::Overflows {
+            OldConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Subtract,
                 left: Box::new(OldMachineTerm::Variable(Variable(1))),
@@ -200,7 +200,7 @@ fn established_conditions_are_named_beside_the_missing_one() {
     let expression = ProgramExpression::Variable(("index".to_string()).into());
     let site = StatedSite::new(StatedForm::ProgramExpression(&expression), &state, &values);
     let guard = Proposition::condition_is(
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Subtract,
             left: Box::new(OldMachineTerm::Variable(Variable(1))),
@@ -248,7 +248,7 @@ fn every_refusal_says_no_span_is_available() {
     let site = StatedSite::new(StatedForm::ProgramExpression(&expression), &state, &values);
     let message = refuse_unproved_conversion_bounds(
         &unproved(Proposition::condition_is(
-            ConditionTerm::Constant(false),
+            OldConditionTerm::Constant(false),
             true,
         )),
         &PureFactContext::new(),
@@ -385,7 +385,7 @@ fn a_conditional_fold_body_quotes_the_condition_it_carried_out() {
         &crate::kernel::DroppedFoldBody {
             body_paths: 1,
             unavailable_body_fact: Some(Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(OldMachineTerm::Variable(Variable(1 << 41))),
@@ -443,7 +443,7 @@ mod scaling_tests {
 #[test]
 fn quantified_reflexive_domain_guard_needs_no_search_or_ambient_fact() {
     let premise = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left: Box::new(OldMachineTerm::Variable(Variable(760_000))),
@@ -471,7 +471,7 @@ fn quantified_reflexive_domain_guard_needs_no_search_or_ambient_fact() {
         &PureFactContext::new(),
         &integer_guard
     ));
-    let falsehood = Proposition::condition_is(ConditionTerm::Constant(false), true);
+    let falsehood = Proposition::condition_is(OldConditionTerm::Constant(false), true);
     assert!(!established_condition(
         &PureFactContext::new(),
         &guard(falsehood.clone())

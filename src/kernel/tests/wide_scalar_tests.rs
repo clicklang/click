@@ -256,7 +256,7 @@ fn wide_scalar_truthiness_uses_all_bits_and_retains_symbolic_guards() {
             path.outcome,
             ExpressionOutcome::Value(ProgramValue::Int32(_))
         ));
-        assert!(path.facts.iter().any(|fact| matches!(&fact.proposition(), condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerEqual(_, _), _))))));
+        assert!(path.facts.iter().any(|fact| matches!(&fact.proposition(), condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::IntegerEqual(_, _), _))))));
     }
 }
 
@@ -490,9 +490,9 @@ fn wide_cast_specification_signed_narrowing_keeps_both_range_obligations() {
     assert_eq!(obligations.len(), 2);
     for kind in [true, false] {
         assert!(obligations.iter().any(|obligation| {
-            match obligation.proposition().condition_native() {
-                Some((ConditionTerm::IntegerGreaterEqual(_, _), true)) => kind,
-                Some((ConditionTerm::IntegerLessEqual(_, _), true)) => !kind,
+            match obligation.proposition().old_condition() {
+                Some((OldConditionTerm::IntegerGreaterEqual(_, _), true)) => kind,
+                Some((OldConditionTerm::IntegerLessEqual(_, _), true)) => !kind,
                 _ => false,
             }
         }));
@@ -618,7 +618,7 @@ fn wide_cast_hostile_metadata_and_word_payloads_are_rejected_locally() {
 fn wide_cast_canonicalization_keeps_source_load_width_and_memory_dependencies() {
     let pointer = Address {
         base: "wide-cast-source".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let memory = SymbolicMemory::new()
         .with_block("wide-cast-source", 4)
@@ -673,7 +673,7 @@ fn uint64_to_int64_specification_cast_requires_exact_representable_range() {
             )
         };
     let bound = Proposition::condition_is(
-        ConditionTerm::uint64_less_equal(
+        OldConditionTerm::uint64_less_equal(
             bits.clone(),
             OldMachineTerm::uint64_constant(i64::MAX as u64),
         ),
@@ -707,7 +707,7 @@ fn uint64_to_int64_specification_cast_requires_exact_representable_range() {
     );
     assert!(remaining.is_empty());
     let weaker = Proposition::condition_is(
-        ConditionTerm::uint64_less_equal(
+        OldConditionTerm::uint64_less_equal(
             bits.clone(),
             OldMachineTerm::uint64_constant((i64::MAX as u64) + 1),
         ),
@@ -762,7 +762,7 @@ fn wide_cached_load_canonicalization_preserves_kind_and_all_bits() {
     for signed in [false, true] {
         let pointer = Address {
             base: "wide-cached-read".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let bits = if signed {
             OldMachineTerm::int64_constant(0x1_0000_0001)

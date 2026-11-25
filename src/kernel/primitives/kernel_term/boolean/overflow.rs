@@ -22,8 +22,9 @@ impl KernelTerm {
     ) -> Self {
         let views = arguments.each_ref().map(MachineOperandView::Shared);
         if let [Some(a), Some(b)] = views.map(|view| view.literal()) {
-            return KernelTermImport::default()
-                .condition(&ConditionTerm::machine_overflows(format, operation, a, b));
+            return KernelTermImport::default().condition(&OldConditionTerm::machine_overflows(
+                format, operation, a, b,
+            ));
         }
         if format.format().bits() == 32 {
             for argument in &mut arguments {
@@ -92,7 +93,7 @@ mod tests {
                 let values = values(format);
                 for a in &values {
                     for b in &values {
-                        let native = ConditionTerm::Overflows {
+                        let native = OldConditionTerm::Overflows {
                             format,
                             op: operation,
                             left: Box::new(a.clone()),
@@ -109,7 +110,7 @@ mod tests {
                             KernelTermImport::default().machine(format, b),
                         ];
                         let actual = KernelTerm::boolean_overflow(format, operation, args);
-                        let expected = ConditionTerm::machine_overflows(
+                        let expected = OldConditionTerm::machine_overflows(
                             format,
                             operation,
                             a.clone(),
@@ -130,7 +131,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         for format in crate::kernel::machine_integer::FORMATS {
             for operation in operations() {
-                let source = ConditionTerm::Overflows {
+                let source = OldConditionTerm::Overflows {
                     format,
                     op: operation,
                     left: Box::new(OldMachineTerm::Variable(Variable(999201))),
@@ -140,9 +141,9 @@ mod tests {
                 };
                 for source in [
                     source.clone(),
-                    ConditionTerm::BoolEqual(
+                    OldConditionTerm::BoolEqual(
                         Box::new(source),
-                        Box::new(ConditionTerm::Constant(false)),
+                        Box::new(OldConditionTerm::Constant(false)),
                     ),
                 ] {
                     let root = KernelTermImport::default().condition(&source);
@@ -198,22 +199,24 @@ mod tests {
         let memories = [before, after].map(crate::kernel::intern_memory);
         for format in [MachineIntegerType::Int32, MachineIntegerType::Int64] {
             for op in operations() {
-                let sources = memories.each_ref().map(|memory| ConditionTerm::Overflows {
-                    format,
-                    op,
-                    left: Box::new(OldMachineTerm::read_named(
-                        ProgramPoint::at(memory),
-                        Box::new(crate::kernel::SymbolicMemory::global_pointer(
-                            "overflow-read",
+                let sources = memories
+                    .each_ref()
+                    .map(|memory| OldConditionTerm::Overflows {
+                        format,
+                        op,
+                        left: Box::new(OldMachineTerm::read_named(
+                            ProgramPoint::at(memory),
+                            Box::new(crate::kernel::SymbolicMemory::global_pointer(
+                                "overflow-read",
+                            )),
+                            if format == MachineIntegerType::Int32 {
+                                LoadKind::Int32
+                            } else {
+                                LoadKind::Bits64
+                            },
                         )),
-                        if format == MachineIntegerType::Int32 {
-                            LoadKind::Int32
-                        } else {
-                            LoadKind::Bits64
-                        },
-                    )),
-                    right: Box::new(OldMachineTerm::Variable(Variable(999203))),
-                });
+                        right: Box::new(OldMachineTerm::Variable(Variable(999203))),
+                    });
                 let roots = sources
                     .each_ref()
                     .map(|source| KernelTermImport::default().condition(source));
@@ -247,7 +250,7 @@ mod tests {
     #[test]
     fn overflow_conditions_pointer_rewrite_keeps_nested_literals_raw() {
         let _session = crate::kernel::VerificationSession::enter();
-        let source = ConditionTerm::Overflows {
+        let source = OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Add,
             left: Box::new(OldMachineTerm::IntegerAddress(
@@ -258,7 +261,10 @@ mod tests {
         };
         for source in [
             source.clone(),
-            ConditionTerm::BoolEqual(Box::new(source), Box::new(ConditionTerm::Constant(false))),
+            OldConditionTerm::BoolEqual(
+                Box::new(source),
+                Box::new(OldConditionTerm::Constant(false)),
+            ),
         ] {
             let root = KernelTermImport::default().condition(&source);
             let expected = crate::kernel::reasoning::substitute_pointer_variable_in_proposition(

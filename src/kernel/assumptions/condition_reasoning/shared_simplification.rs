@@ -274,7 +274,7 @@ mod tests {
             ),
             narrow,
             OldMachineTerm::if_then_else(
-                ConditionTerm::equal(x.clone(), OldMachineTerm::constant(5)),
+                OldConditionTerm::equal(x.clone(), OldMachineTerm::constant(5)),
                 OldMachineTerm::add(x.clone(), OldMachineTerm::constant(1)),
                 y.clone(),
             ),
@@ -283,28 +283,28 @@ mod tests {
         let exact = empty
             .clone()
             .assume_condition(
-                ConditionTerm::equal(x.clone(), OldMachineTerm::constant(5)),
+                OldConditionTerm::equal(x.clone(), OldMachineTerm::constant(5)),
                 true,
             )
             .assume_condition(
-                ConditionTerm::equal(y.clone(), OldMachineTerm::constant(3)),
+                OldConditionTerm::equal(y.clone(), OldMachineTerm::constant(3)),
                 true,
             );
         let bounded = empty
             .clone()
             .assume_condition(
-                ConditionTerm::signed_greater_equal(
+                OldConditionTerm::signed_greater_equal(
                     x.clone(),
                     OldMachineTerm::constant((-128i32) as u32),
                 ),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_equal(x, OldMachineTerm::constant(127)),
+                OldConditionTerm::signed_less_equal(x, OldMachineTerm::constant(127)),
                 true,
             );
         let compound = cases[1].clone();
-        let compound_fact = ConditionTerm::equal(compound, OldMachineTerm::constant(9));
+        let compound_fact = OldConditionTerm::equal(compound, OldMachineTerm::constant(9));
         let compound_context = empty.clone().assume_condition(compound_fact, true);
         for facts in [empty, exact, bounded, compound_context] {
             for term in &cases {

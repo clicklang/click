@@ -72,7 +72,7 @@ fn source_condition(
     state: &ExecutionState,
     spec: &ResourceSpec,
     assumptions: &PureFactContext,
-) -> Result<ConditionTerm, LoopResourceFailure> {
+) -> Result<OldConditionTerm, LoopResourceFailure> {
     let guard = spec
         .guard()
         .ok_or("conditional loop resource has no condition")?;
@@ -108,9 +108,9 @@ fn source_condition(
     Ok(if expected {
         condition
     } else {
-        ConditionTerm::BoolEqual(
+        OldConditionTerm::BoolEqual(
             Box::new(condition),
-            Box::new(ConditionTerm::Constant(false)),
+            Box::new(OldConditionTerm::Constant(false)),
         )
     })
 }

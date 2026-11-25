@@ -200,12 +200,12 @@ fn boolean_conversion_bridge_is_linear_in_explicit_conditions() {
             .map(|i| KernelTerm::variable(KernelType::Integer, Variable(962_000 + i)))
             .collect::<Vec<_>>();
         for size in [16, 64, 256] {
-            let mut condition = ConditionTerm::Variable(Variable(963_000));
+            let mut condition = OldConditionTerm::Variable(Variable(963_000));
             for _ in 0..size {
-                condition = ConditionTerm::BoolIf {
-                    condition: Box::new(ConditionTerm::Variable(Variable(963_001))),
+                condition = OldConditionTerm::BoolIf {
+                    condition: Box::new(OldConditionTerm::Variable(Variable(963_001))),
                     then_condition: Box::new(condition),
-                    else_condition: Box::new(ConditionTerm::Constant(false)),
+                    else_condition: Box::new(OldConditionTerm::Constant(false)),
                 };
             }
             let source =
@@ -237,7 +237,7 @@ fn integer_comparison_bridge_reconstructs_shared_operands_linearly() {
             for _ in 0..size {
                 value = IntegerTerm::Add(value.clone(), value).into();
             }
-            let source = ConditionTerm::IntegerGreaterEqual(value.clone(), value);
+            let source = OldConditionTerm::IntegerGreaterEqual(value.clone(), value);
             let ((term, restored), work) =
                 crate::instrumentation::measure_deterministic_work(|| {
                     let term = KernelTermImport::default().condition(&source);
@@ -449,11 +449,11 @@ fn retained_load_terms_grow_without_rewalking_states_or_prior_arithmetic() {
 fn retained_named_reads_do_not_rewalk_their_address_on_each_import() {
     let _session = crate::kernel::VerificationSession::enter();
     for size in [16, 64, 256] {
-        let mut offset = AddressOffset::Variable(Variable(993500));
+        let mut offset = OldAddressOffset::Variable(Variable(993500));
         for index in 0..size {
-            offset = AddressOffset::Add(
+            offset = OldAddressOffset::Add(
                 Box::new(offset),
-                Box::new(AddressOffset::Variable(Variable(993501 + index))),
+                Box::new(OldAddressOffset::Variable(Variable(993501 + index))),
             );
         }
         let raw = OldMachineTerm::read_named(
@@ -544,7 +544,7 @@ fn nested_read_address_import_is_linear_beside_unrelated_memory() {
                     ProgramPoint::at(&memory),
                     Box::new(Address {
                         base: AddressBase::Symbolic(Variable(996999)),
-                        offset: AddressOffset::scaled_int32_node(raw, 4),
+                        offset: OldAddressOffset::scaled_int32_node(raw, 4),
                     }),
                     LoadKind::Int32,
                 );
@@ -569,7 +569,7 @@ fn conditional_observation_retyping_matches_native_import_without_expanding_dags
     let signed = MachineIntegerType::Int32;
     let a = OldMachineTerm::Variable(Variable(995910));
     let b = OldMachineTerm::Variable(Variable(995911));
-    let guard = ConditionTerm::unsigned_less_equal(a.clone(), b.clone());
+    let guard = OldConditionTerm::unsigned_less_equal(a.clone(), b.clone());
     let native = OldMachineTerm::If {
         condition: Box::new(guard.clone()),
         then_term: Box::new(a.clone()),
@@ -672,7 +672,7 @@ fn repeated_scalar_read_imports_reuse_live_address_components() {
         }
         let pointer = Address {
             base: AddressBase::Concrete("shared-read-hot".into()),
-            offset: AddressOffset::Int32Scaled {
+            offset: OldAddressOffset::Int32Scaled {
                 value: SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, index)
                     .unwrap(),
                 byte_width: 4,
@@ -1087,7 +1087,7 @@ fn growing_common_boolean_comparisons_keep_operands_shared() {
             );
             let pointer = crate::kernel::Address {
                 base: block.into(),
-                offset: crate::kernel::AddressOffset::Constant(0),
+                offset: crate::kernel::OldAddressOffset::Constant(0),
             };
             KernelTermImport::default().machine(
                 format,
@@ -1151,7 +1151,7 @@ fn common_boolean_identity_visits_shared_connectives_once() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let atom = |format| {
-            KernelTermImport::default().condition(&ConditionTerm::Compare {
+            KernelTermImport::default().condition(&OldConditionTerm::Compare {
                 format,
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::Variable(Variable(964_099))),
@@ -1214,9 +1214,9 @@ fn boolean_substitution_retains_shared_connective_prefixes() {
         }
         // An Int32 word is not a typed Bool literal. Preserve the native
         // truth conversion, including its explicit UInt8 comparison.
-        let expected = KernelTermImport::default().condition(&ConditionTerm::truth_of_bool_word(
-            &OldMachineTerm::constant(1),
-        ));
+        let expected = KernelTermImport::default().condition(
+            &OldConditionTerm::truth_of_bool_word(&OldMachineTerm::constant(1)),
+        );
         assert_eq!(rewritten, expected);
     }
 }
@@ -1234,7 +1234,8 @@ fn boolean_substitution_reuses_overlapping_arithmetic_operands() {
             Variable(971_151),
         );
         let zero = KernelTermImport::default().machine(format, &OldMachineTerm::constant(0));
-        let mut condition = KernelTermImport::default().condition(&ConditionTerm::Constant(true));
+        let mut condition =
+            KernelTermImport::default().condition(&OldConditionTerm::Constant(true));
         for _ in 0..size {
             word = KernelTerm::machine_binary_shared(
                 format,

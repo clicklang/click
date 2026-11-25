@@ -132,20 +132,20 @@ fn exact_constant_of(
     term: &OldMachineTerm,
 ) -> Option<i64> {
     let Some((
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left,
             right,
         },
         true,
-    )) = fact.condition_native()
+    )) = fact.old_condition()
     else {
         return None;
     };

@@ -43,7 +43,7 @@ fn symbolic_ternary_lowering_ignores_unrelated_facts_and_retains_its_guard() {
             .with_local("y", crate::kernel::int32(y));
         let mut facts = (0..size).fold(PureFactContext::new(), |facts, index| {
             facts.assume_proposition(Proposition::condition_is(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     OldMachineTerm::Variable(Variable(1017300 + index)),
                     OldMachineTerm::constant(1),
                 ),
@@ -52,7 +52,7 @@ fn symbolic_ternary_lowering_ignores_unrelated_facts_and_retains_its_guard() {
         });
         if let Some(flag_is_zero) = flag_is_zero {
             facts = facts.assume_proposition(Proposition::condition_is(
-                ConditionTerm::equal(flag, OldMachineTerm::constant(0)),
+                OldConditionTerm::equal(flag, OldMachineTerm::constant(0)),
                 flag_is_zero,
             ));
         }

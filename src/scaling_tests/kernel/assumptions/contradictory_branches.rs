@@ -1,5 +1,5 @@
-fn equality() -> ConditionTerm {
-    ConditionTerm::equal(
+fn equality() -> OldConditionTerm {
+    OldConditionTerm::equal(
         OldMachineTerm::Variable(Variable(680_000)),
         OldMachineTerm::Variable(Variable(680_001)),
     )
@@ -13,8 +13,8 @@ fn opposite_assumption_closes_only_its_branch_and_survives_reconstruction() {
     };
     for condition in [
         equality(),
-        ConditionTerm::Variable(Variable(680_002)),
-        ConditionTerm::Constant(false),
+        OldConditionTerm::Variable(Variable(680_002)),
+        OldConditionTerm::Constant(false),
     ] {
         for first in [false, true] {
             let parent = PureFactContext::new().assume_condition(condition.clone(), first);
@@ -33,7 +33,7 @@ fn opposite_assumption_closes_only_its_branch_and_survives_reconstruction() {
                 .expect("explosion proof");
             assert!(proof.check(&child));
             assert_eq!(parent.condition_facts.get(&condition), Some(&first));
-            if !matches!(condition, ConditionTerm::Constant(_)) {
+            if !matches!(condition, OldConditionTerm::Constant(_)) {
                 assert!(!parent.is_inconsistent());
                 assert!(!parent.proves_without_prop_facts(&goal));
                 assert!(!proof.check(&parent));
@@ -59,7 +59,7 @@ fn contradictory_branch_creation_does_not_rebuild_ambient_indexes() {
         let mut parent = PureFactContext::new().assume_condition(equality(), true);
         for index in 0..size {
             parent = parent.assume_condition(
-                ConditionTerm::signed_less_than(
+                OldConditionTerm::signed_less_than(
                     OldMachineTerm::Variable(Variable(681_000 + index)),
                     OldMachineTerm::constant(1000),
                 ),

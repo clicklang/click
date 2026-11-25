@@ -37,12 +37,12 @@ pub(crate) enum IteratedStep {
 
 /// Decides one condition from the fact context: `Some(true)`, `Some(false)`,
 /// or `None` when neither is established.
-fn decide(assumptions: &PureFactContext, condition: ConditionTerm) -> Option<bool> {
+fn decide(assumptions: &PureFactContext, condition: OldConditionTerm) -> Option<bool> {
     crate::instrumentation::record_deterministic_work(1);
     assumptions.decide(&condition)
 }
 
-fn proves(assumptions: &PureFactContext, condition: ConditionTerm) -> bool {
+fn proves(assumptions: &PureFactContext, condition: OldConditionTerm) -> bool {
     decide(assumptions, condition) == Some(true)
 }
 
@@ -57,7 +57,7 @@ fn terms_equal(
         || crate::kernel::assumptions::affine_bitvector_difference_constant(left, right) == Some(0)
         || proves(
             assumptions,
-            ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left: Box::new(left.clone()), right: Box::new(right.clone()) },
+            OldConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left: Box::new(left.clone()), right: Box::new(right.clone()) },
         )
 }
 
@@ -69,7 +69,7 @@ fn terms_distinct(
     left != right
         && decide(
             assumptions,
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(left.clone()),
@@ -86,10 +86,10 @@ fn index_in_range(
 ) -> bool {
     proves(
         assumptions,
-        ConditionTerm::signed_less_equal(iterated.lower().clone(), index.clone()),
+        OldConditionTerm::signed_less_equal(iterated.lower().clone(), index.clone()),
     ) && proves(
         assumptions,
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left: Box::new(index.clone()),
@@ -106,7 +106,7 @@ fn index_out_of_range(
 ) -> bool {
     proves(
         assumptions,
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left: Box::new(index.clone()),
@@ -114,7 +114,7 @@ fn index_out_of_range(
         },
     ) || proves(
         assumptions,
-        ConditionTerm::signed_less_equal(iterated.upper().clone(), index.clone()),
+        OldConditionTerm::signed_less_equal(iterated.upper().clone(), index.clone()),
     )
 }
 
@@ -126,7 +126,7 @@ fn guard_holds_for(
 ) -> Option<bool> {
     let equal = decide(
         assumptions,
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(cell.clone()),
@@ -519,11 +519,11 @@ fn every_guard(
     let hypotheses = assumptions
         .clone()
         .assume_proposition(Proposition::condition_is(
-            ConditionTerm::signed_less_equal(iterated.lower().clone(), index.clone()),
+            OldConditionTerm::signed_less_equal(iterated.lower().clone(), index.clone()),
             true,
         ))
         .assume_proposition(Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(index.clone()),
@@ -537,11 +537,11 @@ fn every_guard(
     }
     let antecedent = Proposition::And(
         Box::new(Proposition::condition_is(
-            ConditionTerm::signed_less_equal(iterated.lower().clone(), index.clone()),
+            OldConditionTerm::signed_less_equal(iterated.lower().clone(), index.clone()),
             true,
         )),
         Box::new(Proposition::condition_is(
-            ConditionTerm::signed_less_than(index, iterated.upper().clone()),
+            OldConditionTerm::signed_less_than(index, iterated.upper().clone()),
             true,
         )),
     );
@@ -556,7 +556,7 @@ fn every_guard(
     if equal {
         Ok(guard_holds_for(&hypotheses, iterated, &value))
     } else {
-        Ok((hypotheses.decide(&ConditionTerm::equal(
+        Ok((hypotheses.decide(&OldConditionTerm::equal(
             value,
             iterated.guard().value().clone(),
         )) == Some(true))

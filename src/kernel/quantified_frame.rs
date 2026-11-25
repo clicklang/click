@@ -405,7 +405,7 @@ mod wide_condition_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Address {
             base: "wide-equality-frame".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let assumptions = PureFactContext::new();
         let before = SymbolicMemory::new().with_block("wide-equality-frame", 16);
@@ -420,7 +420,7 @@ mod wide_condition_tests {
                 kind,
             )
         };
-        let condition = |read, value| ConditionTerm::Compare {
+        let condition = |read, value| OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: Box::new(read),
@@ -429,7 +429,7 @@ mod wide_condition_tests {
         let stamp = OldMachineTerm::uint64_constant(0x1_0000_0001);
         let source = condition(load(&before, LoadKind::Bits64), stamp.clone());
         let target = condition(load(&after, LoadKind::Bits64), stamp.clone());
-        let carried = |target: &ConditionTerm| {
+        let carried = |target: &OldConditionTerm| {
             conditions_equal_with_load_atoms(&source, target, &|left, right| {
                 loads_unchanged(left, right, &assumptions)
             })
@@ -453,7 +453,7 @@ mod wide_condition_tests {
         )));
         assert!(!conditions_equal_with_load_atoms(
             &source,
-            &ConditionTerm::Compare {
+            &OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(load(&after, LoadKind::Bits64)),
@@ -479,7 +479,7 @@ mod conjunct_elimination_tests {
     fn a_conjunct_is_eliminated_only_when_the_other_is_carried() {
         let _session = crate::kernel::VerificationSession::enter();
         let leaf =
-            |name: u64| Proposition::condition_is(ConditionTerm::Variable(Variable(name)), true);
+            |name: u64| Proposition::condition_is(OldConditionTerm::Variable(Variable(name)), true);
         // The stand-in single-fact route carries leaf 1 to leaf 2 and nothing else.
         let carries = |from: &Proposition, to: &Proposition, _: &PureFactContext| {
             *from == leaf(1) && *to == leaf(2)

@@ -6,8 +6,8 @@ use crate::kernel::MachineBinaryOp;
 use crate::kernel::MachineIntegerType;
 use crate::kernel::machine_integer::representation;
 use crate::kernel::{
-    BitvectorUnaryOp as U, CarrierWidth as W, ConditionTerm as C, OldMachineTerm as T, ProgramType,
-    ProgramValue, PureFunctionArgument as A, SharedPureApplication,
+    BitvectorUnaryOp as U, CarrierWidth as W, OldConditionTerm as C, OldMachineTerm as T,
+    ProgramType, ProgramValue, PureFunctionArgument as A, SharedPureApplication,
 };
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{MachineCastSpelling, cast_op};
@@ -1966,7 +1966,7 @@ impl TermClasses {
         if application.integer_address_bits().is_some() {
             return;
         }
-        if origin.offset != AddressOffset::Constant(0) {
+        if origin.offset != OldAddressOffset::Constant(0) {
             return;
         }
         let key = Node::PointerFunctionIdentity(application.clone());

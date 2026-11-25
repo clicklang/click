@@ -52,7 +52,7 @@ pub(in crate::kernel) fn apply_spec_machine_arithmetic(
         if division == SpecDivision::CDefined {
             let zero = crate::kernel::machine_integer::range::constant_word(format, &0.into())?;
             domain.push(Proposition::condition_is(
-                ConditionTerm::machine_compare(
+                OldConditionTerm::machine_compare(
                     format,
                     crate::kernel::CompareRelation::Equal,
                     right.clone(),
@@ -188,14 +188,14 @@ fn apply_spec_shift_with_count_width(
         }
     };
     if !unsigned_count {
-        require_false(ConditionTerm::machine_compare(
+        require_false(OldConditionTerm::machine_compare(
             count_format,
             crate::kernel::CompareRelation::LessThan,
             count.clone(),
             constant(count_format, 0),
         ));
     }
-    require_false(ConditionTerm::machine_compare(
+    require_false(OldConditionTerm::machine_compare(
         count_format,
         crate::kernel::CompareRelation::GreaterEqual,
         count.clone(),
@@ -211,14 +211,14 @@ fn apply_spec_shift_with_count_width(
     };
     if op == MachineBinaryOp::ShiftLeft && matches!(width, ScalarWidth::Int32 | ScalarWidth::Int64)
     {
-        require_false(ConditionTerm::machine_compare(
+        require_false(OldConditionTerm::machine_compare(
             width.format(),
             crate::kernel::CompareRelation::LessThan,
             left.clone(),
             constant(width.format(), 0),
         ));
         domain.push(Proposition::condition_is(
-            ConditionTerm::signed_shift_result_fits(
+            OldConditionTerm::signed_shift_result_fits(
                 width.format(),
                 left.clone(),
                 count.clone(),
@@ -254,7 +254,7 @@ mod tests {
         let left = ProgramValue::Int8(OldMachineTerm::Variable(Variable(991_500)));
         let count = OldMachineTerm::Variable(Variable(991_501));
         let right = uint32(count.clone());
-        let bound = ConditionTerm::unsigned_less_than(count, OldMachineTerm::uint32_constant(8));
+        let bound = OldConditionTerm::unsigned_less_than(count, OldMachineTerm::uint32_constant(8));
         let empty = PureFactContext::new();
         let defined = empty.clone().assume_condition(bound.clone(), true);
         let invalid = empty.clone().assume_condition(bound, false);

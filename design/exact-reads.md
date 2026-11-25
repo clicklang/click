@@ -197,7 +197,7 @@ Each step is one PR, measured with the raise-lower audit and
    fall toward zero, with `unraised` limited to the no-program-point states.
 4. **No-program-point states**, if step 3 shows any remain.
 
-Separately, and first: `ConditionTerm::pointer_equal` should route a comparison
+Separately, and first: `OldConditionTerm::pointer_equal` should route a comparison
 with null to `address_equal`, as lowering of `p == 0` already does. This is
 independent of everything above and correct under either naming. It removes
 about 30 pointer `differs` (`0 == p` raised, `p == 0` lowered). Two

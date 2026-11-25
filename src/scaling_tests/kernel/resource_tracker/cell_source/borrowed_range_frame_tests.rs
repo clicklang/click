@@ -57,11 +57,11 @@ fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
         let context = PureFactContext::new()
             .assume_proposition(authority.clone())
             .assume_condition(
-                ConditionTerm::signed_less_equal(0u32.into(), count.clone()),
+                OldConditionTerm::signed_less_equal(0u32.into(), count.clone()),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_equal(count.clone(), 536870911u32.into()),
+                OldConditionTerm::signed_less_equal(count.clone(), 536870911u32.into()),
                 true,
             );
         let bare =
@@ -86,7 +86,7 @@ fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
             typed_range_disjoint_from_pointer_evidence(&wider_range, &field, 8, &context).is_none()
         );
         let overlapping = context.clone().assume_condition(
-            ConditionTerm::address_equal(backing.base().clone(), field.clone()),
+            OldConditionTerm::address_equal(backing.base().clone(), field.clone()),
             true,
         );
         assert!(!proof.checks(&backing, &field, 8, &overlapping));

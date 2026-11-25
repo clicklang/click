@@ -278,9 +278,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if !matches!(&goal, condition_source_0 @ Proposition::ConditionIs(
                 _,
                 true
-            ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::AddressEqual(..)
-                    | ConditionTerm::PointerEqual(..)
-                    | ConditionTerm::AddressOffsetEqual(..), _))))
+            ) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::AddressEqual(..)
+                    | OldConditionTerm::PointerEqual(..)
+                    | OldConditionTerm::AddressOffsetEqual(..), _))))
         {
             return Ok(None);
         }
@@ -330,9 +330,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if !matches!(&input.goal(), Some(condition_source_0 @ Proposition::ConditionIs(
                 _,
                 true
-            )) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::AddressEqual(..)
-                    | ConditionTerm::PointerEqual(..)
-                    | ConditionTerm::AddressOffsetEqual(..), _))))
+            )) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::AddressEqual(..)
+                    | OldConditionTerm::PointerEqual(..)
+                    | OldConditionTerm::AddressOffsetEqual(..), _))))
         {
             return Ok(None);
         }
@@ -357,7 +357,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         if let (Some((condition, true)), [a], [b]) = (
-            input.goal().and_then(Proposition::condition_native),
+            input.goal().and_then(Proposition::old_condition),
             left.indices.as_slice(),
             right.indices.as_slice(),
         ) && crate::kernel::proof::fact_reasoning::pointer_projection_source(condition).is_some()

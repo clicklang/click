@@ -117,7 +117,7 @@ fn view_misses_ignore_a_growing_exact_alias_star_in_one_block() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = |id| Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Variable(Variable(id)),
+            offset: OldAddressOffset::Variable(Variable(id)),
         };
         let base = pointer(830_000);
         let mut context = PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
@@ -128,7 +128,7 @@ fn view_misses_ignore_a_growing_exact_alias_star_in_one_block() {
         });
         for index in 0..size {
             context = context.assume_condition(
-                ConditionTerm::address_equal(base.clone(), pointer(830_001 + index)),
+                OldConditionTerm::address_equal(base.clone(), pointer(830_001 + index)),
                 true,
             );
         }
@@ -159,7 +159,7 @@ fn indexed_storage_source_handles_displaced_aliases_beside_other_views() {
         let _session = crate::kernel::VerificationSession::enter();
         let source = Address {
             base: "global:view-alias-source".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let mut query = source.clone();
         let memory = SymbolicMemory::new();
@@ -202,11 +202,11 @@ fn selected_alias_view_cannot_cross_distinct_allocations() {
     let _session = crate::kernel::VerificationSession::enter();
     let source = Address {
         base: AddressBase::Heap(860_000),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let other = Address {
         base: AddressBase::Heap(860_001),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let memory = SymbolicMemory::new();
     // Even an inconsistent graph edge cannot turn a different allocation
@@ -229,7 +229,7 @@ fn selected_views_follow_same_block_aliases_without_walking_the_star() {
             let _session = crate::kernel::VerificationSession::enter();
             let pointer = |id| Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Variable(Variable(id)),
+                offset: OldAddressOffset::Variable(Variable(id)),
             };
             let source = pointer(870_000);
             let memory = SymbolicMemory::new();
@@ -256,7 +256,7 @@ fn selected_views_follow_same_block_aliases_without_walking_the_star() {
                 });
             for index in 0..size {
                 context = context.assume_condition(
-                    ConditionTerm::address_equal(source.clone(), pointer(870_001 + index)),
+                    OldConditionTerm::address_equal(source.clone(), pointer(870_001 + index)),
                     true,
                 );
             }

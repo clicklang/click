@@ -45,7 +45,7 @@ impl StatementAssignSource {
             return None;
         }
         let mut fact = ExecutionPureFact::certified(Proposition::condition_is(
-            ConditionTerm::AddressEqual(
+            OldConditionTerm::AddressEqual(
                 Box::new(parent.address().clone()),
                 Box::new(child.address().clone()),
             ),
@@ -197,7 +197,7 @@ impl ReferenceObservationSource {
             ReferenceObservation::Read { source: _, pointer: expected, retained_state, at: expected_point, value_type: expected_type } => matches!(proposition,
                 Proposition::MemoryReadDefined { memory, pointer, value_type, at }
                 if expected_point == at && *retained_state == MemoryStateIdentity::of(memory) && expected == pointer && expected_type == value_type),
-            ReferenceObservation::Borrow(birth) => matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::AddressEqual(left, right), _)) if (left.as_ref() == &birth.pointer && right.as_ref() == &birth.pointer))),
+            ReferenceObservation::Borrow(birth) => matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::AddressEqual(left, right), _)) if (left.as_ref() == &birth.pointer && right.as_ref() == &birth.pointer))),
         })
     }
 }
@@ -312,7 +312,7 @@ mod tests {
     fn borrow_fact() -> ExecutionPureFact {
         let pointer = Address {
             base: "birth".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let before = ExecutionState::new().with_local(
             "parent",
@@ -345,7 +345,7 @@ mod tests {
         assert!(
             !fact
                 .with_proposition(Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(OldMachineTerm::constant(0)),
@@ -361,7 +361,7 @@ mod tests {
     fn source_reference_birth_requires_the_completed_parent_pointer_and_type() {
         let pointer = Address {
             base: "birth".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let before = ExecutionState::new().with_local(
             "parent",
@@ -411,7 +411,7 @@ mod tests {
     fn read_fact() -> ExecutionPureFact {
         let pointer = Address {
             base: "source-read".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let memory = SymbolicMemory::new()
             .with_block(pointer.base.clone(), 4)

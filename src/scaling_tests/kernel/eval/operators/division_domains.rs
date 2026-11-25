@@ -11,7 +11,7 @@ fn division_domain_checks_do_not_scan_unrelated_assumptions() {
             let mut facts = PureFactContext::new();
             for index in 0..size {
                 facts = facts.assume_condition(
-                    ConditionTerm::equal(
+                    OldConditionTerm::equal(
                         OldMachineTerm::Variable(Variable(971_000 + index)),
                         OldMachineTerm::constant(index as u32),
                     ),
@@ -56,7 +56,7 @@ fn literal_or_zero_check_ignores_related_and_unrelated_bounds() {
         word.clone(),
         OldMachineTerm::constant(1),
     );
-    let zero = ConditionTerm::equal(divisor.clone(), OldMachineTerm::constant(0));
+    let zero = OldConditionTerm::equal(divisor.clone(), OldMachineTerm::constant(0));
     for related in [false, true] {
         let samples = [4u32, 16, 64, 256].map(|size| {
             let facts = (0..size).fold(PureFactContext::new(), |facts, index| {
@@ -66,7 +66,7 @@ fn literal_or_zero_check_ignores_related_and_unrelated_bounds() {
                     OldMachineTerm::Variable(Variable(972_100 + u64::from(index)))
                 };
                 facts.assume_condition(
-                    ConditionTerm::signed_greater_equal(value, OldMachineTerm::constant(!index)),
+                    OldConditionTerm::signed_greater_equal(value, OldMachineTerm::constant(!index)),
                     true,
                 )
             });
@@ -98,22 +98,28 @@ fn computed_divisor_queries_use_indexed_operand_facts() {
         word.clone(),
         positive.clone(),
     );
-    let zero = ConditionTerm::equal(xor.clone(), OldMachineTerm::constant(0));
-    let or_zero = ConditionTerm::equal(or.clone(), OldMachineTerm::constant(0));
+    let zero = OldConditionTerm::equal(xor.clone(), OldMachineTerm::constant(0));
+    let or_zero = OldConditionTerm::equal(or.clone(), OldMachineTerm::constant(0));
     let path = ExecutionFacts::new();
     for related in [false, true] {
         let samples = [4, 16, 64].map(|size| {
             let mut facts = PureFactContext::new()
-                .assume_condition(ConditionTerm::equal(word.clone(), literal.clone()), false)
                 .assume_condition(
-                    ConditionTerm::signed_greater_than(
+                    OldConditionTerm::equal(word.clone(), literal.clone()),
+                    false,
+                )
+                .assume_condition(
+                    OldConditionTerm::signed_greater_than(
                         positive.clone(),
                         OldMachineTerm::constant(0),
                     ),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::signed_greater_equal(word.clone(), OldMachineTerm::constant(0)),
+                    OldConditionTerm::signed_greater_equal(
+                        word.clone(),
+                        OldMachineTerm::constant(0),
+                    ),
                     true,
                 );
             for index in 0..size {
@@ -123,7 +129,10 @@ fn computed_divisor_queries_use_indexed_operand_facts() {
                     OldMachineTerm::var(Variable(973_100 + u64::from(index)))
                 };
                 facts = facts.assume_condition(
-                    ConditionTerm::signed_less_equal(value, OldMachineTerm::constant(100 + index)),
+                    OldConditionTerm::signed_less_equal(
+                        value,
+                        OldMachineTerm::constant(100 + index),
+                    ),
                     true,
                 );
             }

@@ -26,11 +26,11 @@ fn int32_continuity(
 fn continuity_refuses_allocation_sizes_of_different_formats() {
     let base = Address {
         base: AddressBase::Heap(930_200),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let other = Address {
         base: AddressBase::Heap(930_201),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let count = OldMachineTerm::Variable(Variable(930_202));
     let wide = AllocationSize::new(
@@ -72,7 +72,7 @@ fn continuity_refuses_allocation_sizes_of_different_formats() {
     );
     assert!(matches!(
         allocation_continuity(&base, &wide, &base, &other_wide, &assumptions),
-        AllocationContinuity::Undecided(ConditionTerm::Compare {
+        AllocationContinuity::Undecided(OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::Equal,
             ..
@@ -115,7 +115,7 @@ fn preserved_fold_can_continue_an_allocation_loaded_from_another_block() {
     )]);
     let heap = |id| Address {
         base: AddressBase::Heap(id),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let consumed = heap(934_000);
     let slot = heap(934_001);
@@ -157,7 +157,7 @@ fn preserved_fold_can_continue_an_allocation_loaded_from_another_block() {
 fn contract_retirement_invalidates_creation_history_even_with_replacement() {
     let base = Address {
         base: AddressBase::Heap(930_100),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let bytes = OldMachineTerm::constant(16);
     let input = ResourceContext::new()
@@ -235,7 +235,7 @@ fn contract_retirement_invalidates_creation_history_even_with_replacement() {
 fn external_pointer(variable: u64) -> Address {
     Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(variable)), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(variable)), 4),
     }
 }
 
@@ -328,12 +328,12 @@ fn continuity_requires_both_the_allocation_base_and_size() {
         int32_continuity(
             &Address {
                 base: AddressBase::Heap(930_002),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             &OldMachineTerm::constant(4),
             &Address {
                 base: AddressBase::Heap(930_003),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             &OldMachineTerm::constant(4),
             &assumptions,
@@ -350,7 +350,7 @@ fn continuity_requires_both_the_allocation_base_and_size() {
             &OldMachineTerm::constant(4),
             &assumptions,
         ),
-        AllocationContinuity::Undecided(ConditionTerm::address_equal(input, other)),
+        AllocationContinuity::Undecided(OldConditionTerm::address_equal(input, other)),
     );
 }
 
@@ -360,7 +360,7 @@ fn allocation_size_continuity_uses_graph_with_state_scope() {
     let before = crate::kernel::intern_memory(SymbolicMemory::new().with_block("alloc-size", 8));
     let pointer = |index| Address {
         base: "alloc-size".into(),
-        offset: AddressOffset::scale_int32(index, 4),
+        offset: OldAddressOffset::scale_int32(index, 4),
     };
     let load = |memory: &SharedMemory, index| {
         OldMachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
@@ -384,7 +384,7 @@ fn allocation_size_continuity_uses_graph_with_state_scope() {
     let output_size = size(load(&before, b.clone()));
     let later_size = size(load(&after, b.clone()));
     let base = external_pointer(930_012);
-    let premise = ConditionTerm::equal(a, b);
+    let premise = OldConditionTerm::equal(a, b);
     let parent = PureFactContext::new();
     let branch = parent.clone().assume_condition(premise.clone(), true);
     let _scope = branch.enter_id_scope();
@@ -398,7 +398,7 @@ fn allocation_size_continuity_uses_graph_with_state_scope() {
     for (size, context) in [(&later_size, &branch), (&output_size, &parent)] {
         assert!(matches!(
             int32_continuity(&base, &input_size, &base, size, context),
-            AllocationContinuity::Undecided(ConditionTerm::Compare {
+            AllocationContinuity::Undecided(OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: _,
@@ -422,7 +422,7 @@ fn allocation_size_continuity_uses_graph_with_state_scope() {
 fn allocation_companion_call(unrelated: u64) -> (Address, ExecutionState, ExecutionState) {
     let base = Address {
         base: AddressBase::Heap(984_000),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let memory = SymbolicMemory::new()
         .with_heap_allocation_claim(base.clone(), AllocationSize::int32(4))
@@ -466,7 +466,7 @@ fn allocation_companion_returns_through_a_proven_alias_only() {
     let missing = PureFactContext::new();
     let proven = missing
         .clone()
-        .assume_condition(ConditionTerm::address_equal(alias, base.clone()), true);
+        .assume_condition(OldConditionTerm::address_equal(alias, base.clone()), true);
     let caller_events = caller.population_effects.creation.as_ref().unwrap();
     for (facts, accepted) in [(&missing, false), (&proven, true)] {
         let returned = transfer_population_call_facts(
@@ -504,7 +504,7 @@ fn a_return_alias_does_not_recreate_a_retired_cleanup_anchor() {
     let alias = Address::symbolic(Variable(984_002));
     let output = ResourceFact::own_allocation(alias.clone(), 4);
     let facts = PureFactContext::new()
-        .assume_condition(ConditionTerm::address_equal(alias, base.clone()), true);
+        .assume_condition(OldConditionTerm::address_equal(alias, base.clone()), true);
     let returned = transfer_population_call_facts(
         callee.clone(),
         &callee,
@@ -545,10 +545,10 @@ fn a_contract_uint64_allocation_size_needs_the_no_wrap_decision() {
         OldMachineTerm::uint64_multiply(count.clone(), OldMachineTerm::uint64_constant(4));
     let unbounded = PureFactContext::new();
     let bounded = [
-        ConditionTerm::uint64_greater_than(count.clone(), OldMachineTerm::uint64_constant(0)),
-        ConditionTerm::uint64_less_equal(count.clone(), OldMachineTerm::uint64_constant(1000)),
-        ConditionTerm::uint64_greater_than(other.clone(), OldMachineTerm::uint64_constant(0)),
-        ConditionTerm::uint64_less_equal(other.clone(), OldMachineTerm::uint64_constant(1000)),
+        OldConditionTerm::uint64_greater_than(count.clone(), OldMachineTerm::uint64_constant(0)),
+        OldConditionTerm::uint64_less_equal(count.clone(), OldMachineTerm::uint64_constant(1000)),
+        OldConditionTerm::uint64_greater_than(other.clone(), OldMachineTerm::uint64_constant(0)),
+        OldConditionTerm::uint64_less_equal(other.clone(), OldMachineTerm::uint64_constant(1000)),
     ]
     .into_iter()
     .fold(PureFactContext::new(), |context, condition| {

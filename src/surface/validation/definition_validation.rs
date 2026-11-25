@@ -3531,7 +3531,7 @@ mod read_authority_tests {
         let bound_value = OldMachineTerm::Variable(Variable(12_002));
         let assumptions = PureFactContext::new()
             .assume_proposition(Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
                     left: Box::new(OldMachineTerm::constant(0)),
@@ -3540,7 +3540,7 @@ mod read_authority_tests {
                 true,
             ))
             .assume_proposition(Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: Box::new(index_value.clone()),

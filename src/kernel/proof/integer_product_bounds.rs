@@ -3,15 +3,15 @@
 //! meaning and definedness of any machine operation they relate to this product.
 
 use super::arithmetic_special::ArithmeticRuleError as Error;
-use crate::kernel::{ConditionTerm, IntegerTerm, Proposition, SharedIntegerTerm};
+use crate::kernel::{IntegerTerm, OldConditionTerm, Proposition, SharedIntegerTerm};
 use num_bigint::BigInt;
 
 /// The two sides of an Integer `<=` fact.
 pub(super) fn order(proposition: &Proposition) -> Option<(&SharedIntegerTerm, &SharedIntegerTerm)> {
     match proposition {
         condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::IntegerLessEqual(left, right), _)) =
-                condition_source_0.condition_native() =>
+            if let Some((OldConditionTerm::IntegerLessEqual(left, right), _)) =
+                condition_source_0.old_condition() =>
         {
             Some((left, right))
         }
@@ -108,7 +108,7 @@ mod tests {
 
     fn le(left: IntegerTerm, right: IntegerTerm) -> Proposition {
         Proposition::condition_is(
-            ConditionTerm::IntegerLessEqual(left.into(), right.into()),
+            OldConditionTerm::IntegerLessEqual(left.into(), right.into()),
             true,
         )
     }

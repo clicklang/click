@@ -37,7 +37,7 @@ fn direct_local_write_builds_borrow_obligation_without_visiting_aliases() {
         let mut assumptions = PureFactContext::new();
         for i in 0..count {
             assumptions = assumptions.assume_condition(
-                ConditionTerm::address_equal(
+                OldConditionTerm::address_equal(
                     slot.clone(),
                     Address::symbolic(Variable(931_000 + i)),
                 ),
@@ -85,7 +85,7 @@ fn verified_loop_rule_selection_is_flat_in_unrelated_ambient_facts() {
         let mut assumptions = PureFactContext::new().assume_condition(guard.clone(), true);
         for index in 0..size as u32 {
             assumptions = assumptions.assume_condition(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     OldMachineTerm::Variable(Variable(u64::from(500_000 + index))),
                     OldMachineTerm::constant(index),
                 ),
@@ -263,7 +263,7 @@ fn statement_theorems_do_not_list_the_context_they_executed_under() {
         let mut assumptions = PureFactContext::new();
         for index in 0..size {
             assumptions = assumptions.assume_condition(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     OldMachineTerm::Variable(Variable(1_910_000 + u64::from(index))),
                     OldMachineTerm::constant(index),
                 ),

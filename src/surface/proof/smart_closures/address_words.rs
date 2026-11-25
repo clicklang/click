@@ -807,7 +807,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_recorded_allocation_alignment");
-        let Some((condition, _)) = input.goal().and_then(Proposition::condition_native) else {
+        let Some((condition, _)) = input.goal().and_then(Proposition::old_condition) else {
             return Ok(None);
         };
         let Some((pointer, _)) =
@@ -853,7 +853,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_address_words_using");
         if let Some(goal) = input.goal()
-            && goal.condition_native().is_some_and(|(condition, _)| {
+            && goal.old_condition().is_some_and(|(condition, _)| {
                 crate::kernel::proof::arithmetic_special::checked_pointer_alignment(condition)
                     .is_some()
             })

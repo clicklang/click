@@ -158,7 +158,12 @@ fn cast_variable_guards_keep_native_spelling_without_exporting_arithmetic() {
             assert_eq!(KernelTermExport::machine_export_count(), exports);
             assert_eq!(
                 actual,
-                ConditionTerm::machine_compare(destination, relation, zero.clone(), native.clone())
+                OldConditionTerm::machine_compare(
+                    destination,
+                    relation,
+                    zero.clone(),
+                    native.clone()
+                )
             );
         }
     }

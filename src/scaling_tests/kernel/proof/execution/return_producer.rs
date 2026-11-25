@@ -1,6 +1,6 @@
 use super::super::tests::bound_return_producer;
 use super::*;
-use crate::kernel::{ConditionTerm, OldMachineTerm, Variable};
+use crate::kernel::{OldConditionTerm, OldMachineTerm, Variable};
 
 #[test]
 fn return_producer_ignores_unrelated_history_and_facts() {
@@ -8,7 +8,7 @@ fn return_producer_ignores_unrelated_history_and_facts() {
         let (mut core, _, mut facts) = bound_return_producer();
         for index in 0..size {
             facts = facts.with_fact(Proposition::condition_is(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     OldMachineTerm::Variable(Variable(1000 + index)),
                     OldMachineTerm::constant(0),
                 ),
@@ -28,7 +28,7 @@ fn return_producer_ignores_unrelated_history_and_facts() {
         }
         let ancestor = core.clone();
         let delta = facts.with_fact(Proposition::condition_is(
-            ConditionTerm::Constant(false),
+            OldConditionTerm::Constant(false),
             false,
         ));
         let (((), work), indexed) = crate::persistent::measure_persistent_work(|| {

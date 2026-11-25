@@ -2344,7 +2344,7 @@ pub(in crate::surface::proof) fn source_have_error(
     let pointer_equality = matches!(&goal, Some(condition_source_0 @ Proposition::ConditionIs(
             _,
             true
-        )) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::AddressEqual(_, _), _))));
+        )) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::AddressEqual(_, _), _))));
     let detail = if pointer_equality {
         "missing pure fact: pointer equality is true".to_string()
     } else {

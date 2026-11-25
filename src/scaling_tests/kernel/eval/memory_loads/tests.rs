@@ -17,13 +17,13 @@ fn logical_cached_pointer_read_carries_its_current_cell_equation() {
     for size in [4u64, 16, 64, 256] {
         let mut memory = base.clone();
         let mut context = empty.clone().assume_condition(
-            ConditionTerm::address_equal(address.clone(), alias.clone()),
+            OldConditionTerm::address_equal(address.clone(), alias.clone()),
             true,
         );
         for i in 0..size {
             memory = memory.store(Address::symbolic(Variable(956_000 + i)), int32(7));
             context = context.assume_condition(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     OldMachineTerm::Variable(Variable(958_000 + i)),
                     OldMachineTerm::constant(7),
                 ),
@@ -50,7 +50,7 @@ fn logical_cached_pointer_read_carries_its_current_cell_equation() {
         memory = memory
             .materialize_named_cell(address.clone(), ProgramValue::Pointer(cached_value.clone()));
         context = context.assume_condition(
-            ConditionTerm::pointer_equal(
+            OldConditionTerm::pointer_equal(
                 cached_value.clone(),
                 OldPointer::new(model.clone(), ProgramType::Int64Pointer),
             ),
@@ -112,7 +112,7 @@ fn logical_cached_pointer_read_carries_its_current_cell_equation() {
         assert!(!equal(&retained.restricted_to_facts(&[], &[])));
         assert!(!ResourceContext::new().permits_memory_read(&alias, 8, &retained));
         let missing_alias = empty.clone().assume_condition(
-            ConditionTerm::pointer_equal(
+            OldConditionTerm::pointer_equal(
                 cached_value.clone(),
                 OldPointer::new(model.clone(), ProgramType::Int64Pointer),
             ),
@@ -280,7 +280,7 @@ fn pointer_read_observations_check_frames_scope_and_scaling() {
     let base = SymbolicMemory::new();
     let empty = PureFactContext::new();
     let facts = empty.clone().assume_condition(
-        ConditionTerm::address_equal(address.clone(), alias.clone()),
+        OldConditionTerm::address_equal(address.clone(), alias.clone()),
         true,
     );
     let read = |memory: &SymbolicMemory, address: &Address, purpose| {
@@ -385,7 +385,7 @@ fn wide_observations_preserve_width_scope_and_selected_query_scaling() {
     let second_memory = intern_memory(base.memory().clone().store(
         Address {
             base: "observation:unrelated".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         },
         ProgramValue::UInt64(OldMachineTerm::uint64_constant(7)),
     ));
@@ -464,7 +464,7 @@ fn wide_observations_preserve_width_scope_and_selected_query_scaling() {
 fn logical_reads_of_a_returned_field_share_checked_alias_identity() {
     let field = Address {
         base: "local:parent-guard".into(),
-        offset: AddressOffset::Constant(8),
+        offset: OldAddressOffset::Constant(8),
     };
     let alias = Address::symbolic(Variable(944_019));
     let before = SymbolicMemory::new()
@@ -477,7 +477,7 @@ fn logical_reads_of_a_returned_field_share_checked_alias_identity() {
     let memory =
         before.with_call_memory_havoc(Variable(944_020), &[range], &PureFactContext::new(), None);
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::address_equal(alias.clone(), field.clone()),
+        OldConditionTerm::address_equal(alias.clone(), field.clone()),
         true,
     );
     let read = |pointer, assumptions: &PureFactContext| {
@@ -527,7 +527,7 @@ fn logical_reads_of_a_returned_field_share_checked_alias_identity() {
         let mut context = facts.clone();
         for index in 0..count {
             context = context.assume_condition(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     OldMachineTerm::Variable(Variable(960_000 + index)),
                     OldMachineTerm::constant(index as u32),
                 ),
@@ -549,7 +549,7 @@ fn logical_reads_of_a_returned_field_share_checked_alias_identity() {
     );
     let retained = facts
         .clone()
-        .assume_condition(ConditionTerm::equal(right.clone(), 42u32.into()), true);
+        .assume_condition(OldConditionTerm::equal(right.clone(), 42u32.into()), true);
     for value in [ProgramValue::Int32(7u32.into()), crate::kernel::uint8(7u32)] {
         let changed = memory.clone().store(field.clone(), value);
         let paths = evaluate_logical_memory_load_paths(
@@ -619,7 +619,7 @@ fn logical_read_alias_samples(sizes: &[u64]) -> Vec<(usize, usize)> {
     let _session = crate::kernel::VerificationSession::enter();
     let owner = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int64(OldMachineTerm::Variable(Variable(95_000)), 1, false),
+        offset: OldAddressOffset::scale_int64(OldMachineTerm::Variable(Variable(95_000)), 1, false),
     };
     let alias = Address::symbolic(Variable(95_001));
     let empty = PureFactContext::new();
@@ -635,7 +635,7 @@ fn logical_read_alias_samples(sizes: &[u64]) -> Vec<(usize, usize)> {
     let mut samples = Vec::new();
     for &size in sizes {
         let mut context = before.clone().assume_condition(
-            ConditionTerm::address_equal(owner.clone(), alias.clone()),
+            OldConditionTerm::address_equal(owner.clone(), alias.clone()),
             true,
         );
         for i in 0..size {
@@ -652,7 +652,7 @@ fn logical_read_alias_samples(sizes: &[u64]) -> Vec<(usize, usize)> {
             context = context
                 .assume_proposition(Proposition::ResourceComposition(frame))
                 .assume_condition(
-                    ConditionTerm::address_equal(
+                    OldConditionTerm::address_equal(
                         alias.clone(),
                         Address::symbolic(Variable(297_000 + i)),
                     ),
@@ -725,7 +725,7 @@ fn logical_read_alias_samples(sizes: &[u64]) -> Vec<(usize, usize)> {
             assert!(
                 context
                     .condition_facts
-                    .get(&ConditionTerm::equal(
+                    .get(&OldConditionTerm::equal(
                         read.clone(),
                         OldMachineTerm::constant(7)
                     ))
@@ -779,7 +779,7 @@ fn logical_scalar_read_meets_model_cell_through_later_external_alias() {
     let owner = Address::symbolic(Variable(95_300));
     let alias = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(95_301)), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(95_301)), 4),
     };
     let field = owner.offset_by_bytes(8);
     let queried = alias.offset_by_bytes(8);
@@ -831,12 +831,12 @@ fn logical_scalar_read_meets_model_cell_through_later_external_alias() {
     let mut samples = Vec::new();
     for size in [8u64, 64, 512] {
         let mut context = before.clone().assume_condition(
-            ConditionTerm::address_equal(owner.clone(), alias.clone()),
+            OldConditionTerm::address_equal(owner.clone(), alias.clone()),
             true,
         );
         for i in 0..size {
             context = context.assume_condition(
-                ConditionTerm::address_equal(
+                OldConditionTerm::address_equal(
                     owner.clone(),
                     Address::symbolic(Variable(98_000 + i)),
                 ),
@@ -916,7 +916,7 @@ fn pointer_read_premises_register_definitions_before_transitive_queries() {
     let retained_state = intern_memory_ref(&memory);
     let base = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(95_600)), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(95_600)), 4),
     };
     let parent = Address::symbolic(Variable(95_601));
     let successor = Address::symbolic(Variable(95_602));
@@ -929,14 +929,15 @@ fn pointer_read_premises_register_definitions_before_transitive_queries() {
     };
     let bare = PureFactContext::new();
     let read = logical_pointer_read(&memory, &parent.offset_by_bytes(16), &bare);
-    let base_equality = ConditionTerm::address_equal(parent.clone(), base);
-    let read_equality = ConditionTerm::address_equal(stored.address().clone(), successor.clone());
+    let base_equality = OldConditionTerm::address_equal(parent.clone(), base);
+    let read_equality =
+        OldConditionTerm::address_equal(stored.address().clone(), successor.clone());
     let mut samples = Vec::new();
     for size in [8u64, 32, 128, 512] {
         let mut ambient = bare.clone();
         for i in 0..size {
             ambient = ambient.assume_condition(
-                ConditionTerm::address_equal(
+                OldConditionTerm::address_equal(
                     Address::symbolic(Variable(96_600 + i)),
                     Address::symbolic(Variable(97_600 + i)),
                 ),
@@ -1007,7 +1008,7 @@ fn seeded_pointer_cells_retain_their_typed_load_definition() {
     let retained_state = intern_memory_ref(&memory);
     let base = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(95_400)), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(95_400)), 4),
     };
     let alias = Address::symbolic(Variable(95_401));
     let address = base.offset_by_bytes(16);
@@ -1033,7 +1034,7 @@ fn seeded_pointer_cells_retain_their_typed_load_definition() {
             crate::kernel::cell_run_value(ProgramType::Int64Pointer, load);
         }
         let context = bare.clone().assume_condition(
-            ConditionTerm::address_equal(base.clone(), alias.clone()),
+            OldConditionTerm::address_equal(base.clone(), alias.clone()),
             true,
         );
         let ((equal, work), map_work) = crate::persistent::measure_persistent_work(|| {
@@ -1083,12 +1084,12 @@ fn cached_pointer_value_keeps_its_defining_coordinates_and_scales() {
     let mut samples = Vec::new();
     for count in [4u64, 16, 64, 256] {
         let mut context = PureFactContext::new().assume_condition(
-            ConditionTerm::address_equal(owner.clone(), cursor.clone()),
+            OldConditionTerm::address_equal(owner.clone(), cursor.clone()),
             true,
         );
         for i in 0..count {
             context = context.assume_condition(
-                ConditionTerm::address_equal(
+                OldConditionTerm::address_equal(
                     Address::symbolic(Variable(196_000 + i)),
                     Address::symbolic(Variable(198_000 + i)),
                 ),
@@ -1166,7 +1167,7 @@ fn cached_pointer_reads_retain_their_current_cell_identity() {
     let alias = Address::symbolic(Variable(95_510));
     let address = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(95_511)), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(95_511)), 4),
     };
     let stored = Address::symbolic(Variable(95_512));
     let replacement = Address::symbolic(Variable(95_513));
@@ -1181,7 +1182,7 @@ fn cached_pointer_reads_retain_their_current_cell_identity() {
             .clone()
             .require_owned_expression_loads()
             .assume_condition(
-                ConditionTerm::address_equal(alias.clone(), address.clone()),
+                OldConditionTerm::address_equal(alias.clone(), address.clone()),
                 true,
             );
         let initial = intern_memory_ref(&memory);
@@ -1192,7 +1193,7 @@ fn cached_pointer_reads_retain_their_current_cell_identity() {
             let before = memory.clone();
             let write = Address {
                 base: AddressBase::Heap(96_000 + index),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             };
             memory = memory.store(write.clone(), int32(7));
             let (_, _, equality) = crate::kernel::tests::explicit_frame(
@@ -1210,7 +1211,7 @@ fn cached_pointer_reads_retain_their_current_cell_identity() {
             .expect("an explicit complete-pointer frame across this fresh heap store");
             context = context.assume_proposition(equality);
             context = context.assume_condition(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     OldMachineTerm::Variable(Variable(97_000 + index)),
                     OldMachineTerm::constant(7),
                 ),
@@ -1292,7 +1293,7 @@ fn logical_pointer_read_queries_do_not_scan_unrelated_definitions() {
     let b = Address::symbolic(Variable(92_221));
     let x = logical_pointer_read(&memory, &a, &context);
     let y = logical_pointer_read(&memory, &b, &context);
-    let branch = context.assume_condition(ConditionTerm::address_equal(a, b), true);
+    let branch = context.assume_condition(OldConditionTerm::address_equal(a, b), true);
     assert!(branch.pointers_known_equal(&x, &y));
     for size in [16u64, 64, 256, 1024] {
         for i in 0..size {
@@ -1409,7 +1410,7 @@ fn recorded_pointer_normalization_has_bounded_history_work() {
     let _session = crate::kernel::VerificationSession::enter();
     let address = Address {
         base: "bounded-pointer-normalization".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let stored = Address::symbolic(Variable(99_120));
     let assumptions = PureFactContext::new();
@@ -1528,11 +1529,11 @@ fn cached_raw_pointer_names_ignore_unrelated_read_definitions() {
         }
         let a = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(940_091)), 4),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(940_091)), 4),
         };
         let b = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(940_092)), 4),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(940_092)), 4),
         };
         let field_a = a.clone().offset_by_bytes(8);
         let field_b = b.clone().offset_by_bytes(8);
@@ -1540,17 +1541,17 @@ fn cached_raw_pointer_names_ignore_unrelated_read_definitions() {
         let second = base.symbolic_pointer_load(None, &field_b, ProgramType::Int32Pointer);
         let slot_a = Address {
             base: "local:raw-a".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let slot_b = Address {
             base: "local:raw-b".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let memory = base
             .store(slot_a.clone(), first)
             .store(slot_b.clone(), second);
         let context = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(
+            OldConditionTerm::pointer_equal(
                 OldPointer::new(a, ProgramType::Int32Pointer),
                 OldPointer::new(b, ProgramType::Int32Pointer),
             ),
@@ -1597,16 +1598,16 @@ fn cached_raw_pointer_names_ignore_unrelated_read_definitions() {
 fn opaque_word_call_frame(size: u32) -> (SymbolicMemory, PureFactContext, Address) {
     let input = |name| Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(name)), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(name)), 4),
     };
     let word = input(989_700);
     let context = PureFactContext::new()
         .allow_symbolic_contract_loads()
         .keep_spec_loads_symbolic()
         .prefer_symbolic_external_loads()
-        .assume_condition(ConditionTerm::pointer_aligned(word.clone(), 8), true)
+        .assume_condition(OldConditionTerm::pointer_aligned(word.clone(), 8), true)
         .assume_condition(
-            ConditionTerm::address_equal(word.clone(), Address::null()),
+            OldConditionTerm::address_equal(word.clone(), Address::null()),
             false,
         );
     let definition = CompositeResourceDefinition::new(
@@ -1693,7 +1694,7 @@ fn querying_an_opaque_word_pointer_does_not_search_unrelated_call_resources() {
             panic!("expected pointer")
         };
         assert!(!pointer.bounds_are_known());
-        let context = context.assume_condition(ConditionTerm::Variable(Variable(989_703)), true);
+        let context = context.assume_condition(OldConditionTerm::Variable(Variable(989_703)), true);
         let (normalized, work) =
             crate::instrumentation::measure_deterministic_work(|| context.pointer_domain(&pointer));
         assert_eq!(normalized, PointerDomain::Unknown);
@@ -1707,7 +1708,7 @@ fn querying_an_opaque_word_pointer_does_not_search_unrelated_call_resources() {
                 }),
             );
             let related = context.assume_condition(
-                ConditionTerm::pointer_equal(pointer.clone(), bounded.clone()),
+                OldConditionTerm::pointer_equal(pointer.clone(), bounded.clone()),
                 true,
             );
             assert_eq!(
@@ -1827,7 +1828,7 @@ fn complete_pointer_read_definitions_scale_with_selected_reads() {
         let mut context = PureFactContext::new();
         for i in 0..unrelated {
             context = context.assume_condition(
-                ConditionTerm::address_equal(
+                OldConditionTerm::address_equal(
                     Address::symbolic(Variable(982_000 + i * 2)),
                     Address::symbolic(Variable(982_001 + i * 2)),
                 ),
@@ -1851,7 +1852,7 @@ fn complete_pointer_read_definitions_scale_with_selected_reads() {
                 Address::version_read(&memory, &slot),
                 ProgramType::Int32Pointer,
             );
-            queries.push(ConditionTerm::PointerEqual(
+            queries.push(OldConditionTerm::PointerEqual(
                 Box::new(read),
                 Box::new(stored),
             ));
@@ -1952,16 +1953,16 @@ fn scalar_projection_congruence_scales_with_selected_versions() {
         let _session = crate::kernel::VerificationSession::enter();
         let field = Address {
             base: "local:projection-scale".into(),
-            offset: AddressOffset::Constant(8),
+            offset: OldAddressOffset::Constant(8),
         };
         let alias = Address::symbolic(Variable(946_010));
         let mut facts = PureFactContext::new().assume_condition(
-            ConditionTerm::address_equal(field.clone(), alias.clone()),
+            OldConditionTerm::address_equal(field.clone(), alias.clone()),
             true,
         );
         for i in 0..unrelated {
             facts = facts.assume_condition(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     OldMachineTerm::Variable(Variable(947_000 + i)),
                     (i as u32).into(),
                 ),
@@ -2040,7 +2041,10 @@ fn symbolic_logical_wide_reads_do_not_scan_ambient_cells_or_facts() {
         for i in 0..size {
             memory = memory.store(Address::symbolic(Variable(990_000 + i)), int32(7));
             context = context.assume_condition(
-                ConditionTerm::equal(OldMachineTerm::Variable(Variable(992_000 + i)), 7u32.into()),
+                OldConditionTerm::equal(
+                    OldMachineTerm::Variable(Variable(992_000 + i)),
+                    7u32.into(),
+                ),
                 true,
             );
         }
@@ -2048,7 +2052,8 @@ fn symbolic_logical_wide_reads_do_not_scan_ambient_cells_or_facts() {
             slot.clone(),
             ProgramValue::UInt64(OldMachineTerm::uint64_constant(7)),
         );
-        context = context.assume_condition(ConditionTerm::address_equal(slot, alias.clone()), true);
+        context =
+            context.assume_condition(OldConditionTerm::address_equal(slot, alias.clone()), true);
         // The first read catches up the reachable-cell index with the stores
         // constructed above. Charge that startup separately; the next read
         // uses a fresh pointer so a cached load cannot hide an ambient scan.
@@ -2205,7 +2210,7 @@ fn structural_index_read_chains_have_near_linear_producer_work() {
                 memory = memory.store(
                     Address {
                         base: AddressBase::Concrete(format!("unrelated{index}")),
-                        offset: AddressOffset::Constant(0),
+                        offset: OldAddressOffset::Constant(0),
                     },
                     ProgramValue::Int32(OldMachineTerm::constant(0)),
                 );
@@ -2221,7 +2226,7 @@ fn structural_index_read_chains_have_near_linear_producer_work() {
                     index = canonicalized_offset_index_term(index, &mut facts);
                     let address = Address {
                         base: AddressBase::Concrete("array".into()),
-                        offset: AddressOffset::scaled_int32_node(index, 4),
+                        offset: OldAddressOffset::scaled_int32_node(index, 4),
                     };
                     index = canonical_form_of_load(memory.clone(), address, LoadKind::Int32);
                 }
@@ -2244,11 +2249,11 @@ fn immediate_pointer_store_readability_does_not_walk_history() {
     let _session = crate::kernel::VerificationSession::enter();
     let cell = Address {
         base: "pointer-slot".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let target = Address {
         base: "local:pointee".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let mut samples = Vec::new();
     for size in [8, 32, 128, 512] {
@@ -2259,7 +2264,7 @@ fn immediate_pointer_store_readability_does_not_walk_history() {
             memory = memory.store(
                 Address {
                     base: format!("unrelated-{i}").into(),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 },
                 int32(i),
             );
@@ -2272,7 +2277,7 @@ fn immediate_pointer_store_readability_does_not_walk_history() {
         let later = crate::kernel::intern_memory(written.memory().clone().store(
             Address {
                 base: "other".into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             int32(0),
         ));
@@ -2406,7 +2411,7 @@ fn differently_typed_reads_of_one_pointer_cell_intern_one_load() {
         let point = entry.program_point();
         let cell = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let read = |ty: ProgramType| {
             let version = point
@@ -2521,6 +2526,6 @@ fn a_pointer_store_answers_loads_of_its_category_at_any_pointee_type() {
 fn slot_cell(offset: u32) -> Address {
     Address {
         base: "local:pointer-categories".into(),
-        offset: AddressOffset::Constant(i64::from(offset)),
+        offset: OldAddressOffset::Constant(i64::from(offset)),
     }
 }

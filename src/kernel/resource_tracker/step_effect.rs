@@ -397,7 +397,7 @@ fn cell_effect(
             if extended_dag_bridging_active()
                 && pointer.blocks_proven_distinct(&Address {
                     base: block.clone(),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 })
             {
                 hop(MemoryDagHopJustification::LocalLifetimeEndedOfOtherBlock)
@@ -420,7 +420,7 @@ fn cell_effect(
                 }) = typed_store_separated_ranges_evidence(
                     &Address {
                         base: block.clone(),
-                        offset: AddressOffset::Constant(0),
+                        offset: OldAddressOffset::Constant(0),
                     },
                     size,
                     pointer,
@@ -431,7 +431,7 @@ fn cell_effect(
                     owned_composition_store_separated_evidence(
                         &Address {
                             base: block.clone(),
-                            offset: AddressOffset::Constant(0),
+                            offset: OldAddressOffset::Constant(0),
                         },
                         size,
                         pointer,
@@ -737,12 +737,12 @@ fn store_cell_effect(
     {
         let condition = pointer_offsets_with_common_base_distinctness_condition(write, pointer)
             .expect("a successful common-base check has a cancellation condition");
-        let unequal_constants = condition == ConditionTerm::Constant(false);
+        let unequal_constants = condition == OldConditionTerm::Constant(false);
         if unequal_constants {
             hop(MemoryDagHopJustification::StoreCommonBaseUnequalConstants { condition })
         } else if assumptions.exact_condition_value(&condition) == Some(false) {
             hop(MemoryDagHopJustification::StoreCommonBaseExactInequality { condition })
-        } else if let ConditionTerm::Compare {
+        } else if let OldConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
@@ -759,7 +759,7 @@ fn store_cell_effect(
                 path,
                 reversed: false,
             })
-        } else if let ConditionTerm::Compare {
+        } else if let OldConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
@@ -860,7 +860,7 @@ pub(in crate::kernel) fn write_is_at_read_address(
                 assumptions,
             )
         || write.base == pointer.base
-            && assumptions.exact_condition_value(&ConditionTerm::address_offset_equal(
+            && assumptions.exact_condition_value(&OldConditionTerm::address_offset_equal(
                 write.offset.clone(),
                 pointer.offset.clone(),
             )) == Some(true)
@@ -1321,7 +1321,7 @@ fn footprint_effect(step: &MemoryDerivation, ranges: Option<&[MemoryRange]>) -> 
         MemoryDerivation::LocalLifetimeEnded { block, .. } => {
             let retired = Address {
                 base: block.clone(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             };
             if ranges
                 .iter()

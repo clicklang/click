@@ -1,5 +1,7 @@
 use super::*;
-use crate::kernel::{Address, AddressOffset, ConditionTerm, Resource, ResourceFact, Variable};
+use crate::kernel::{
+    Address, OldAddressOffset, OldConditionTerm, Resource, ResourceFact, Variable,
+};
 
 fn owned(name: &str) -> ResourceFact {
     ResourceFact::own(Resource::Token {
@@ -186,7 +188,7 @@ fn parameter_range(variable: u64, start: u32, end: u32, width: u32) -> MemoryRan
     MemoryRange::new_with_element_width(
         crate::kernel::Address {
             base: AddressBase::ExternalArgument,
-            offset: crate::kernel::AddressOffset::Variable(Variable(variable)),
+            offset: crate::kernel::OldAddressOffset::Variable(Variable(variable)),
         },
         OldMachineTerm::constant(start),
         OldMachineTerm::constant(end),
@@ -198,7 +200,7 @@ fn local_job_range() -> MemoryRange {
     MemoryRange::new_with_element_width(
         crate::kernel::Address {
             base: "local:job".into(),
-            offset: crate::kernel::AddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0),
         },
         OldMachineTerm::constant(0),
         OldMachineTerm::constant(4),
@@ -394,7 +396,7 @@ fn buffer_range(start: u32, end: u32, width: u32) -> MemoryRange {
     MemoryRange::new_with_element_width(
         crate::kernel::Address {
             base: "buffer".into(),
-            offset: crate::kernel::AddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0),
         },
         OldMachineTerm::constant(start),
         OldMachineTerm::constant(end),
@@ -958,7 +960,7 @@ fn mutex_owner(epoch: Option<u64>) -> ResourceFact {
     ResourceFact::own(Resource::MutexLive(crate::kernel::MutexIdentity {
         mutex: crate::kernel::Address {
             base: "mutex".into(),
-            offset: crate::kernel::AddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0),
         },
         epoch,
     }))
@@ -2851,7 +2853,7 @@ pub(super) fn memory(start: u32, end: u32, own: bool) -> ResourceFact {
     let range = crate::kernel::MemoryRange::new(
         crate::kernel::Address {
             base: "buffer".into(),
-            offset: crate::kernel::AddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0),
         },
         crate::kernel::OldMachineTerm::constant(start),
         crate::kernel::OldMachineTerm::constant(end),
@@ -3626,7 +3628,7 @@ fn symbolic_memory(start: OldMachineTerm, end: OldMachineTerm, own: bool) -> Res
     let range = crate::kernel::MemoryRange::new(
         crate::kernel::Address {
             base: "buffer".into(),
-            offset: crate::kernel::AddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0),
         },
         start,
         end,
@@ -3864,7 +3866,7 @@ fn joint_planner_proven_empty_owners_need_no_supplier_or_effect() {
     let range = symbolic_memory(0u32.into(), end.clone(), true);
     let empty = assumptions
         .clone()
-        .assume_condition(ConditionTerm::equal(end, 0u32.into()), true);
+        .assume_condition(OldConditionTerm::equal(end, 0u32.into()), true);
     for role in [ResourceTransferRole::Borrow, ResourceTransferRole::Consume] {
         let mut requirement = checked(range.clone());
         requirement.role = role;
@@ -4347,18 +4349,18 @@ fn nested_view_reborrow_accepts_checked_offset_alias_and_preserves_authority() {
     let assumptions = empty
         .clone()
         .assume_condition(
-            crate::kernel::ConditionTerm::address_equal(
+            crate::kernel::OldConditionTerm::address_equal(
                 alias.clone(),
                 base.offset_by_elements(offset.clone(), 1),
             ),
             true,
         )
         .assume_condition(
-            crate::kernel::ConditionTerm::signed_less_equal(0u32.into(), offset.clone()),
+            crate::kernel::OldConditionTerm::signed_less_equal(0u32.into(), offset.clone()),
             true,
         )
         .assume_condition(
-            crate::kernel::ConditionTerm::signed_less_equal(
+            crate::kernel::OldConditionTerm::signed_less_equal(
                 OldMachineTerm::add(offset, 4u32.into()),
                 16u32.into(),
             ),
@@ -4556,7 +4558,7 @@ fn contract_entry_overlap_does_not_walk_pointer_aliases() {
             if same_block {
                 Address {
                     base: AddressBase::ExternalArgument,
-                    offset: AddressOffset::Variable(Variable(id)),
+                    offset: OldAddressOffset::Variable(Variable(id)),
                 }
             } else {
                 Address::symbolic(Variable(id))
@@ -4574,13 +4576,13 @@ fn contract_entry_overlap_does_not_walk_pointer_aliases() {
         let mut work = Vec::new();
         for aliases in [4, 16, 64] {
             let mut facts = PureFactContext::new().assume_condition(
-                ConditionTerm::address_equal(viewed_base.clone(), owned_base.offset_by_bytes(8)),
+                OldConditionTerm::address_equal(viewed_base.clone(), owned_base.offset_by_bytes(8)),
                 true,
             );
             for i in 0..aliases {
                 for (base, id) in [(&owned_base, 11_000 + i), (&viewed_base, 12_000 + i)] {
                     facts = facts.assume_condition(
-                        ConditionTerm::address_equal(base.clone(), pointer(id)),
+                        OldConditionTerm::address_equal(base.clone(), pointer(id)),
                         true,
                     );
                 }
@@ -4622,7 +4624,7 @@ fn indexed_borrow_blocks_write_through_exact_pointer_alias() {
     let (ledger, owner, reader) = participants();
     let protected_base = Address {
         base: AddressBase::Symbolic(Variable(702)),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let protected = ResourceFact::own_memory(MemoryRange::new(
         protected_base.clone(),
@@ -4634,10 +4636,10 @@ fn indexed_borrow_blocks_write_through_exact_pointer_alias() {
 
     let query_base = Address {
         base: AddressBase::Symbolic(Variable(703)),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::address_equal(query_base.clone(), protected_base.clone()),
+        OldConditionTerm::address_equal(query_base.clone(), protected_base.clone()),
         true,
     );
     assert!(
@@ -4669,7 +4671,7 @@ fn symbolic_borrow_fallback_checks_equal_pointer_alias_buckets() {
     let (ledger, owner, reader) = participants();
     let protected_base = Address {
         base: AddressBase::Symbolic(Variable(704)),
-        offset: AddressOffset::Variable(Variable(700)),
+        offset: OldAddressOffset::Variable(Variable(700)),
     };
     let protected = MemoryRange::new_with_element_width(
         protected_base.clone(),
@@ -4682,10 +4684,10 @@ fn symbolic_borrow_fallback_checks_equal_pointer_alias_buckets() {
 
     let query_base = Address {
         base: AddressBase::Symbolic(Variable(705)),
-        offset: AddressOffset::Variable(Variable(701)),
+        offset: OldAddressOffset::Variable(Variable(701)),
     };
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::address_equal(query_base.clone(), protected_base.clone()),
+        OldConditionTerm::address_equal(query_base.clone(), protected_base.clone()),
         true,
     );
     assert!(
@@ -4860,10 +4862,10 @@ fn indexed_write_witness_keeps_the_least_borrow_across_buckets_and_aliases() {
     let original = memory(0, 32, false);
     let alias = Address {
         base: AddressBase::Symbolic(Variable(991_123)),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::address_equal(
+        OldConditionTerm::address_equal(
             alias.clone(),
             original.memory_range().unwrap().base().clone(),
         ),

@@ -210,7 +210,7 @@ fn input_pointer_identity(pointer: &crate::kernel::OldPointer) -> Option<Variabl
         return None;
     }
     match &pointer.address().offset {
-        AddressOffset::Int32Scaled { value, .. } => value.operand_view().variable().copied(),
+        OldAddressOffset::Int32Scaled { value, .. } => value.operand_view().variable().copied(),
         _ => None,
     }
 }
@@ -290,9 +290,9 @@ fn input_arguments(
             // A `Bool` parameter is a binder of the kernel sort (Stage 5).
             InterfaceType::Bool => {
                 arguments.push(ProgramExpression::Value(
-                    crate::kernel::ProgramValue::of_bool(crate::kernel::ConditionTerm::Variable(
-                        Variable(arguments.len() as u64),
-                    )),
+                    crate::kernel::ProgramValue::of_bool(
+                        crate::kernel::OldConditionTerm::Variable(Variable(arguments.len() as u64)),
+                    ),
                 ));
             }
             InterfaceType::VoidPointer
@@ -3319,8 +3319,8 @@ fn reject_impossible_range_guards(
 ) -> Result<(), ClickError> {
     if guards.iter().any(|guard| match guard {
         condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::Constant(false), _)) =
-                condition_source_0.condition_native() =>
+            if let Some((OldConditionTerm::Constant(false), _)) =
+                condition_source_0.old_condition() =>
         {
             true
         }
@@ -3413,7 +3413,7 @@ pub(in crate::surface) fn concrete_loadable_block(
             else {
                 return Ok(None);
             };
-            if segment.base.offset != AddressOffset::Constant(0)
+            if segment.base.offset != OldAddressOffset::Constant(0)
                 || segment.start != OldMachineTerm::constant(0)
             {
                 return Ok(None);
@@ -4416,7 +4416,7 @@ mod entry_cell_tests {
         let source = entry.program_point();
         let base = Address {
             base: crate::kernel::AddressBase::ExternalArgument,
-            offset: crate::kernel::AddressOffset::Constant(0),
+            offset: crate::kernel::OldAddressOffset::Constant(0),
         };
         for ty in [ProgramType::Float32, ProgramType::Float64] {
             let width = ty.byte_width();
@@ -4455,7 +4455,7 @@ mod entry_cell_tests {
         let source = entry.program_point();
         let address = |variable| Address {
             base: crate::kernel::AddressBase::ExternalArgument,
-            offset: crate::kernel::AddressOffset::Variable(crate::kernel::Variable(variable)),
+            offset: crate::kernel::OldAddressOffset::Variable(crate::kernel::Variable(variable)),
         };
         let integer_base = address(1_009_104);
         let generic_base = address(1_009_105);
@@ -4504,9 +4504,9 @@ mod entry_cell_tests {
             let installed = entry.clone().with_function_entry_memory(memory);
             let symbolic_element = Address {
                 base: integer_base.base.clone(),
-                offset: crate::kernel::AddressOffset::add(
+                offset: crate::kernel::OldAddressOffset::add(
                     integer_base.offset.clone(),
-                    crate::kernel::AddressOffset::scale_int32(
+                    crate::kernel::OldAddressOffset::scale_int32(
                         OldMachineTerm::Variable(crate::kernel::Variable(1_009_106)),
                         4,
                     ),

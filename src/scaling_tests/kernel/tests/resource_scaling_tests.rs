@@ -23,7 +23,7 @@ const TARGET_HEAP: u64 = 1_000_000;
 fn heap_base(identity: u64) -> Address {
     Address {
         base: AddressBase::Heap(identity),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     }
 }
 
@@ -70,14 +70,14 @@ fn frame_with_unrelated_allocations(unrelated: usize) -> ResourceContext {
         ])
 }
 
-fn address_equal(left: Address, right: Address) -> ConditionTerm {
-    ConditionTerm::AddressEqual(Box::new(left), Box::new(right))
+fn address_equal(left: Address, right: Address) -> OldConditionTerm {
+    OldConditionTerm::AddressEqual(Box::new(left), Box::new(right))
 }
 
 fn symbolic_base(identity: u64) -> Address {
     Address {
         base: AddressBase::Symbolic(Variable(identity)),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     }
 }
 
@@ -207,7 +207,7 @@ fn private_owner_projection_does_not_republish_discarded_pairings() {
         let mut assumptions = PureFactContext::new();
         for index in 0..size {
             assumptions = assumptions.assume_condition(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     OldMachineTerm::Variable(Variable(93_800 + index as u64)),
                     OldMachineTerm::constant(index as u32),
                 ),
@@ -825,13 +825,13 @@ fn a_kept_cell_is_placed_without_visiting_unrelated_ranges() {
     // symbolic base, as the arena's descriptors do.
     let object = |identity: u64| Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(identity)), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(identity)), 4),
     };
     let field = |identity: u64, bytes: i64| Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Add(
+        offset: OldAddressOffset::Add(
             Box::new(object(identity).offset),
-            Box::new(AddressOffset::Constant(bytes)),
+            Box::new(OldAddressOffset::Constant(bytes)),
         ),
     };
     let mut samples = Vec::new();
@@ -859,8 +859,8 @@ fn variable_range(base: Address, start: OldMachineTerm, end: OldMachineTerm) -> 
     ResourceFact::own_memory(MemoryRange::new(base, start, end))
 }
 
-fn int32_equal(left: u64, right: u64) -> ConditionTerm {
-    ConditionTerm::Compare {
+fn int32_equal(left: u64, right: u64) -> OldConditionTerm {
+    OldConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::Equal,
         left: Box::new(OldMachineTerm::Variable(Variable(left))),
@@ -997,7 +997,7 @@ fn retirement_stale_check_ignores_unrelated_kept_resources() {
 fn parameter_base(identity: u64) -> Address {
     Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(identity)), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(identity)), 4),
     }
 }
 
@@ -1163,14 +1163,14 @@ fn parameter_validity_still_refuses_related_overlaps() {
     // the two roots, and the endpoints then decide the overlap.
     let pinned = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::equal(
+            OldConditionTerm::equal(
                 OldMachineTerm::Variable(Variable(other)),
                 OldMachineTerm::constant(7),
             ),
             true,
         )
         .assume_condition(
-            ConditionTerm::equal(
+            OldConditionTerm::equal(
                 OldMachineTerm::Variable(Variable(target)),
                 OldMachineTerm::constant(7),
             ),
@@ -1181,7 +1181,7 @@ fn parameter_validity_still_refuses_related_overlaps() {
         "a parameter pinned to the address of an owned one"
     );
     let equal_pointer = PureFactContext::new().assume_condition(
-        ConditionTerm::address_equal(parameter_base(other), parameter_base(target)),
+        OldConditionTerm::address_equal(parameter_base(other), parameter_base(target)),
         true,
     );
     assert!(
@@ -1370,7 +1370,7 @@ fn normalizing_external_ranges_compares_only_related_bases() {
         for index in 0..size {
             let base = Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::scale_int32(
+                offset: OldAddressOffset::scale_int32(
                     OldMachineTerm::Variable(Variable(9 * TARGET_HEAP + index)),
                     4,
                 ),
@@ -1562,7 +1562,7 @@ fn a_recursive_footprint_is_constant_in_live_nodes() {
             memory.store(
                 Address {
                     base: AddressBase::Heap(TARGET_HEAP),
-                    offset: AddressOffset::Constant(4 * node as i64),
+                    offset: OldAddressOffset::Constant(4 * node as i64),
                 },
                 int32(node as u32),
             )
@@ -1639,7 +1639,7 @@ fn slot_definitions() -> Vec<CompositeResourceDefinition> {
 fn external_descriptor(identity: u64) -> Address {
     Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(identity)), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(identity)), 4),
     }
 }
 
@@ -1921,11 +1921,14 @@ fn shared_view_offset_alias_lookup_is_indexed_and_preserves_occurrences() {
     let facts = PureFactContext::new()
         .assume_condition(address_equal(alias.clone(), displaced), true)
         .assume_condition(
-            ConditionTerm::signed_less_equal(0u32.into(), index.clone()),
+            OldConditionTerm::signed_less_equal(0u32.into(), index.clone()),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_equal(OldMachineTerm::add(index, 4u32.into()), 16u32.into()),
+            OldConditionTerm::signed_less_equal(
+                OldMachineTerm::add(index, 4u32.into()),
+                16u32.into(),
+            ),
             true,
         );
     let view = |pointer, end| {
@@ -2271,7 +2274,10 @@ fn observable_projection_tracks_supported_views_caches_and_owner_retirement() {
 fn argument_base(variable: u64) -> Address {
     Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(variable)), 4),
+        offset: OldAddressOffset::scaled_int32_node(
+            OldMachineTerm::Variable(Variable(variable)),
+            4,
+        ),
     }
 }
 
@@ -2312,7 +2318,7 @@ fn footprint_composition_does_not_decide_every_alias_pair() {
                 997_000 + index - 1
             };
             facts.assume_condition(
-                ConditionTerm::signed_less_than(
+                OldConditionTerm::signed_less_than(
                     OldMachineTerm::Variable(Variable(below)),
                     OldMachineTerm::Variable(Variable(997_000 + index)),
                 ),
@@ -2744,7 +2750,7 @@ fn respelling_a_wide_struct_range_is_logarithmic_in_unrelated_and_same_block_ran
         MemoryRange::new_wide(
             Address {
                 base: AddressBase::Heap(TARGET_HEAP),
-                offset: AddressOffset::scaled_int64_node(
+                offset: OldAddressOffset::scaled_int64_node(
                     OldMachineTerm::Variable(Variable((1 << 41) + index)),
                     8,
                     true,
@@ -2758,14 +2764,14 @@ fn respelling_a_wide_struct_range_is_logarithmic_in_unrelated_and_same_block_ran
     let index = OldMachineTerm::Variable(Variable(1 << 42));
     let bounded = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::uint64_less_equal(
+            OldConditionTerm::uint64_less_equal(
                 count(TARGET_HEAP),
                 OldMachineTerm::uint64_constant(100),
             ),
             true,
         )
         .assume_condition(
-            ConditionTerm::uint64_less_than(index.clone(), count(TARGET_HEAP)),
+            OldConditionTerm::uint64_less_than(index.clone(), count(TARGET_HEAP)),
             true,
         );
     let unbounded = PureFactContext::new();
@@ -2784,13 +2790,13 @@ fn respelling_a_wide_struct_range_is_logarithmic_in_unrelated_and_same_block_ran
     };
     let field = Address {
         base: AddressBase::Heap(TARGET_HEAP),
-        offset: AddressOffset::Add(
-            Box::new(AddressOffset::scaled_int64_node(
+        offset: OldAddressOffset::Add(
+            Box::new(OldAddressOffset::scaled_int64_node(
                 OldMachineTerm::int64_multiply(index.clone(), OldMachineTerm::int64_constant(8)),
                 1,
                 false,
             )),
-            Box::new(AddressOffset::Constant(4)),
+            Box::new(OldAddressOffset::Constant(4)),
         ),
     };
     let mut take = Vec::new();

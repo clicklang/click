@@ -537,7 +537,7 @@ fn retained_comparison(
     operator: ComparisonOperator,
     left: &ExecutionValue,
     right: &ExecutionValue,
-) -> Option<ConditionTerm> {
+) -> Option<OldConditionTerm> {
     let (format, left) = left.machine()?;
     let (right_format, right) = right.machine()?;
     if format != right_format
@@ -1028,7 +1028,7 @@ mod tests {
                     pointer.address().base,
                     SymbolicMemory::global_pointer(binding).base
                 );
-                assert_eq!(pointer.address().offset, AddressOffset::Constant(offset));
+                assert_eq!(pointer.address().offset, OldAddressOffset::Constant(offset));
             }
         }
     }
@@ -1295,8 +1295,8 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let word = OldMachineTerm::Variable(Variable(998272));
         let tag = OldMachineTerm::Variable(Variable(998273));
-        let lower = ConditionTerm::signed_less_equal(0u32.into(), tag.clone());
-        let upper = ConditionTerm::signed_less_equal(tag.clone(), 1u32.into());
+        let lower = OldConditionTerm::signed_less_equal(0u32.into(), tag.clone());
+        let upper = OldConditionTerm::signed_less_equal(tag.clone(), 1u32.into());
         let empty = PureFactContext::new();
         let nonnegative = empty.clone().assume_condition(lower, true);
         let bounded = nonnegative.clone().assume_condition(upper.clone(), true);
@@ -1311,7 +1311,7 @@ mod tests {
             OldMachineTerm::uint64_constant(1),
         ));
         let clear = empty.clone().assume_condition(
-            ConditionTerm::uint64_equal(
+            OldConditionTerm::uint64_equal(
                 OldMachineTerm::uint64_bitwise_and(word, OldMachineTerm::uint64_constant(1)),
                 OldMachineTerm::uint64_constant(0),
             ),
@@ -1478,7 +1478,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let count = OldMachineTerm::Variable(Variable(998302));
         let bound =
-            ConditionTerm::unsigned_less_than(count.clone(), OldMachineTerm::uint32_constant(8));
+            OldConditionTerm::unsigned_less_than(count.clone(), OldMachineTerm::uint32_constant(8));
         let expression = ProgramExpression::RustShiftLeft(
             Box::new(ProgramExpression::Value(ProgramValue::Int8(
                 OldMachineTerm::Variable(Variable(998303)),
@@ -1808,7 +1808,8 @@ mod tests {
             MachineIntegerType::UInt32,
             MachineIntegerType::Int64,
         ] {
-            let term = OldMachineTerm::bool_cast(format, ConditionTerm::Variable(Variable(998325)));
+            let term =
+                OldMachineTerm::bool_cast(format, OldConditionTerm::Variable(Variable(998325)));
             let expected =
                 crate::kernel::program_bool_cast_range_facts(&format.value_from_term(term.clone()))
                     .unwrap();

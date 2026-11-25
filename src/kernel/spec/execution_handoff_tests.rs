@@ -227,7 +227,7 @@ fn specification_machine_expression_handoff_keeps_the_execution_root() {
 #[test]
 fn boolean_lowering_preserves_logical_roots_and_exact_c_carriers() {
     let _session = crate::kernel::VerificationSession::enter();
-    let condition = ConditionTerm::Variable(Variable(999991));
+    let condition = OldConditionTerm::Variable(Variable(999991));
     let cases = [
         (
             OldMachineTerm::Constant {
@@ -268,14 +268,14 @@ fn boolean_lowering_preserves_logical_roots_and_exact_c_carriers() {
         (
             OldMachineTerm::BoolCast {
                 to: MachineIntegerType::UInt8,
-                value: Box::new(ConditionTerm::Constant(true)),
+                value: Box::new(OldConditionTerm::Constant(true)),
             },
             false,
         ),
         (
             OldMachineTerm::BoolCast {
                 to: MachineIntegerType::UInt32,
-                value: Box::new(ConditionTerm::Variable(Variable(999993))),
+                value: Box::new(OldConditionTerm::Variable(Variable(999993))),
             },
             false,
         ),

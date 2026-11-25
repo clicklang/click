@@ -1,18 +1,18 @@
 //! One explicit equality transports one whole operand of an Integer relation.
 //! No nonlinear search, recursive substitution, or ambient fact lookup.
 use super::arithmetic_special::ArithmeticRuleError as Error;
-use crate::kernel::{ConditionTerm, Proposition, SharedIntegerTerm};
+use crate::kernel::{OldConditionTerm, Proposition, SharedIntegerTerm};
 fn relation(proposition: &Proposition) -> Option<(&SharedIntegerTerm, &SharedIntegerTerm, bool)> {
     match proposition {
         condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::IntegerLessEqual(a, b), _)) =
-                condition_source_0.condition_native() =>
+            if let Some((OldConditionTerm::IntegerLessEqual(a, b), _)) =
+                condition_source_0.old_condition() =>
         {
             Some((a, b, false))
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::IntegerEqual(a, b), _)) =
-                condition_source_0.condition_native() =>
+            if let Some((OldConditionTerm::IntegerEqual(a, b), _)) =
+                condition_source_0.old_condition() =>
         {
             Some((a, b, true))
         }
@@ -35,10 +35,10 @@ pub(super) fn check(
     if bounds.len() != 2 {
         return Err(invalid());
     }
-    let Some((ConditionTerm::IntegerEqual(a, b), true)) = (premises
+    let Some((OldConditionTerm::IntegerEqual(a, b), true)) = (premises
         .get(bounds[0])
         .ok_or(Error::InvalidPremise(bounds[0]))?)
-    .condition_native() else {
+    .old_condition() else {
         return Err(invalid());
     };
     let (lo, hi, equality) = relation(

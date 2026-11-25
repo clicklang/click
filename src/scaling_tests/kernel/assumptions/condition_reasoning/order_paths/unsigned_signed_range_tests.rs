@@ -9,7 +9,7 @@ fn signed_range_admission_ignores_unrelated_facts() {
         let mut parent = PureFactContext::new();
         for id in 0..size {
             parent = parent.assume_condition(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     OldMachineTerm::Variable(Variable(740_000 + id)),
                     OldMachineTerm::constant(7),
                 ),
@@ -17,9 +17,9 @@ fn signed_range_admission_ignores_unrelated_facts() {
             );
         }
         let x = OldMachineTerm::Variable(Variable(750_000));
-        let query = ConditionTerm::unsigned_less_equal(x.clone(), OldMachineTerm::constant(256));
+        let query = OldConditionTerm::unsigned_less_equal(x.clone(), OldMachineTerm::constant(256));
         let expected = Proposition::condition_is(
-            ConditionTerm::signed_less_equal(OldMachineTerm::constant(0), signed_uint32_term(x)),
+            OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), signed_uint32_term(x)),
             true,
         );
         let (child, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -53,7 +53,7 @@ fn signed_range_decision_retains_shared_operands_without_history_or_exports() {
                     [root.clone(), root],
                 );
                 facts = facts.assume_condition(
-                    ConditionTerm::equal(
+                    OldConditionTerm::equal(
                         OldMachineTerm::Variable(Variable(770_000 + id)),
                         OldMachineTerm::constant(7),
                     ),

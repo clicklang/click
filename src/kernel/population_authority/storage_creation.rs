@@ -6,7 +6,7 @@
 
 use super::{Anchor, AuthorityState, Holder, Refusal};
 use crate::kernel::{
-    AddressBase, AddressOffset, AlgebraicValue, CompositeResourceDefinition, ExecutionState,
+    AddressBase, AlgebraicValue, CompositeResourceDefinition, ExecutionState, OldAddressOffset,
     OldMachineTerm, ProgramValue, PureFactContext, Resource, ResourceDescription, ResourceFact,
     ResourceReference,
 };
@@ -30,7 +30,7 @@ fn same_quantity(
     left == right
         || crate::kernel::quantity_condition_holds(
             assumptions,
-            crate::kernel::ConditionTerm::Compare {
+            crate::kernel::OldConditionTerm::Compare {
                 format: crate::kernel::MachineIntegerType::Int32,
                 relation: crate::kernel::CompareRelation::Equal,
                 left: Box::new(left.clone()),
@@ -55,7 +55,7 @@ fn numerical_batch_quantity(
                 .map(|value| value as u32)
         })
         .or_else(|| {
-            (assumptions.exact_condition_value(&crate::kernel::ConditionTerm::equal(
+            (assumptions.exact_condition_value(&crate::kernel::OldConditionTerm::equal(
                 quantity.clone(),
                 OldMachineTerm::constant(held),
             )) == Some(true))
@@ -1817,7 +1817,7 @@ impl CreationEvents {
         else {
             return Err(CreationRefusal::InvalidMember);
         };
-        if pointer.address().offset != AddressOffset::Constant(0)
+        if pointer.address().offset != OldAddressOffset::Constant(0)
             || &pointer.address().base != block
             || self.governing_authority(description).is_none()
         {
@@ -2036,7 +2036,7 @@ impl CreationEvents {
             AlgebraicValue::Program(ProgramValue::Pointer(pointer)) => {
                 let mut address = pointer.address().clone();
                 if let Some(offset) = address.offset.as_const() {
-                    address.offset = AddressOffset::Constant(offset);
+                    address.offset = OldAddressOffset::Constant(offset);
                 }
                 AlgebraicValue::Program(ProgramValue::pointer(address))
             }
@@ -2239,7 +2239,7 @@ impl CreationEvents {
                     .ok_or(CreationRefusal::UnknownTotal)?;
                 let delta = i64::from(import.owned_members) - i64::from(import.entry_owned_members);
                 let zero_entry =
-                    assumptions.exact_condition_value(&crate::kernel::ConditionTerm::equal(
+                    assumptions.exact_condition_value(&crate::kernel::OldConditionTerm::equal(
                         entry.clone(),
                         OldMachineTerm::constant(0),
                     )) == Some(true);
@@ -2262,7 +2262,7 @@ impl CreationEvents {
                 };
                 if !bounded
                     && assumptions.exact_condition_value(
-                        &crate::kernel::ConditionTerm::signed_add_overflows(
+                        &crate::kernel::OldConditionTerm::signed_add_overflows(
                             current,
                             quantity.clone(),
                         ),
@@ -2284,7 +2284,7 @@ impl CreationEvents {
         }
         if !crate::kernel::quantity_condition_holds(
             assumptions,
-            crate::kernel::ConditionTerm::signed_greater_equal(
+            crate::kernel::OldConditionTerm::signed_greater_equal(
                 quantity.clone(),
                 OldMachineTerm::constant(0),
             ),
@@ -2324,7 +2324,10 @@ impl CreationEvents {
                 let maximum = OldMachineTerm::constant(i32::MAX as u32 - base);
                 if !crate::kernel::quantity_condition_holds(
                     assumptions,
-                    crate::kernel::ConditionTerm::signed_greater_equal(maximum, quantity.clone()),
+                    crate::kernel::OldConditionTerm::signed_greater_equal(
+                        maximum,
+                        quantity.clone(),
+                    ),
                 ) {
                     return Err(CreationRefusal::InvalidQuantity);
                 }
@@ -2413,7 +2416,10 @@ impl CreationEvents {
                     })
                     .ok_or(CreationRefusal::MissingAuthority)?;
                 if assumptions.exact_condition_value(
-                    &crate::kernel::ConditionTerm::signed_add_overflows(current, quantity.clone()),
+                    &crate::kernel::OldConditionTerm::signed_add_overflows(
+                        current,
+                        quantity.clone(),
+                    ),
                 ) != Some(false)
                 {
                     return Err(CreationRefusal::InvalidQuantity);
@@ -2562,7 +2568,7 @@ impl CreationEvents {
                     OldMachineTerm::constant(aggregate.delta.unsigned_abs()),
                 )
             };
-            let overflow = crate::kernel::ConditionTerm::signed_add_overflows(
+            let overflow = crate::kernel::OldConditionTerm::signed_add_overflows(
                 current,
                 OldMachineTerm::constant(1),
             );
@@ -2784,7 +2790,7 @@ impl CreationEvents {
                             OldMachineTerm::constant((-delta) as u32),
                         )
                     };
-                    let no_overflow = crate::kernel::ConditionTerm::signed_add_overflows(
+                    let no_overflow = crate::kernel::OldConditionTerm::signed_add_overflows(
                         total,
                         OldMachineTerm::constant(1),
                     );
@@ -2821,7 +2827,7 @@ impl CreationEvents {
                             ))
                         })
                         .ok_or(CreationRefusal::MissingAuthority)?;
-                    let condition = crate::kernel::ConditionTerm::signed_add_overflows(
+                    let condition = crate::kernel::OldConditionTerm::signed_add_overflows(
                         current.clone(),
                         OldMachineTerm::constant(amount),
                     );
@@ -3571,7 +3577,7 @@ impl CreationEvents {
             return Err(CreationRefusal::InvalidMember);
         };
         if &pointer.address().base != block
-            || pointer.address().offset != AddressOffset::Constant(0)
+            || pointer.address().offset != OldAddressOffset::Constant(0)
             || !description.resource_arguments().is_empty()
         {
             return Err(CreationRefusal::InvalidMember);

@@ -12,7 +12,7 @@ fn object_class_origin_lookup_is_independent_of_unrelated_facts() {
     let pointer = Address::symbolic(Variable(960010));
     let class = CAccessClass::Scalar(CScalarClass::Int);
     let word = OldMachineTerm::Variable(Variable(960011));
-    let premise = ConditionTerm::uint64_equal(
+    let premise = OldConditionTerm::uint64_equal(
         word.clone(),
         OldMachineTerm::object_pointer_address(pointer.clone(), Some(class.clone())),
     );
@@ -21,7 +21,7 @@ fn object_class_origin_lookup_is_independent_of_unrelated_facts() {
         let mut context = PureFactContext::new().assume_condition(premise.clone(), true);
         for index in 0..size {
             context = context.assume_condition(
-                ConditionTerm::uint64_equal(
+                OldConditionTerm::uint64_equal(
                     OldMachineTerm::Variable(Variable(970000 + index)),
                     OldMachineTerm::uint64_constant(index),
                 ),
@@ -64,7 +64,7 @@ fn compound_word_address_lookup_skips_unrelated_equalities() {
     ];
     for expression in expressions {
         let fact = Proposition::condition_is(
-            ConditionTerm::uint64_equal(
+            OldConditionTerm::uint64_equal(
                 expression.clone(),
                 OldMachineTerm::IntegerAddress(
                     Box::new(pointer.clone()),
@@ -78,7 +78,7 @@ fn compound_word_address_lookup_skips_unrelated_equalities() {
             let mut assumptions = PureFactContext::new().assume_proposition(fact.clone());
             for index in 0..size {
                 assumptions = assumptions.assume_condition(
-                    ConditionTerm::uint64_equal(
+                    OldConditionTerm::uint64_equal(
                         OldMachineTerm::Variable(Variable(970000 + index)),
                         OldMachineTerm::uint64_constant(index),
                     ),
@@ -124,17 +124,17 @@ fn bounded_symbolic_tag_lookup_ignores_unrelated_facts() {
         let pointer = Address::symbolic(Variable(980_022));
         let mut context = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_less_equal(0u32.into(), tag.clone()),
+                OldConditionTerm::signed_less_equal(0u32.into(), tag.clone()),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_equal(tag.clone(), 1u32.into()),
+                OldConditionTerm::signed_less_equal(tag.clone(), 1u32.into()),
                 true,
             )
-            .assume_condition(ConditionTerm::pointer_aligned(pointer.clone(), 8), true);
+            .assume_condition(OldConditionTerm::pointer_aligned(pointer.clone(), 8), true);
         for index in 0..size {
             context = context.assume_condition(
-                ConditionTerm::uint64_equal(
+                OldConditionTerm::uint64_equal(
                     OldMachineTerm::Variable(Variable(990_000 + index)),
                     OldMachineTerm::uint64_constant(index),
                 ),
@@ -182,7 +182,7 @@ fn shared_tag_bounds_reuse_growing_dags_across_contexts() {
             for index in 0..size {
                 context = context
                     .clone()
-                    .assume_condition(ConditionTerm::Variable(Variable(985400 + index)), true);
+                    .assume_condition(OldConditionTerm::Variable(Variable(985400 + index)), true);
                 root = KernelTerm::machine_binary_shared(
                     ty,
                     MachineBinaryOp::BitwiseOr,
@@ -313,7 +313,7 @@ fn retained_tag_forms_visit_shared_nodes_once_and_reuse_prefixes() {
         // Keep a pointer source present, but unrelated: a missing root must
         // traverse its DAG once, not once per occurrence of a shared child.
         let context = PureFactContext::new().assume_condition(
-            ConditionTerm::uint64_equal(
+            OldConditionTerm::uint64_equal(
                 OldMachineTerm::Variable(Variable(986021)),
                 OldMachineTerm::integer_address(Address::symbolic(Variable(986022))),
             ),

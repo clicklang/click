@@ -217,11 +217,11 @@ fn indexed_store_bounds(
     }
     Some([
         Proposition::condition_is(
-            ConditionTerm::signed_less_equal(range.start().clone(), index.clone()),
+            OldConditionTerm::signed_less_equal(range.start().clone(), index.clone()),
             true,
         ),
         Proposition::condition_is(
-            ConditionTerm::signed_less_than(index.clone(), range.end().clone()),
+            OldConditionTerm::signed_less_than(index.clone(), range.end().clone()),
             true,
         ),
     ])
@@ -964,7 +964,7 @@ fn write_program_lvalue_paths_for_initialization(
             let pointer = authorized_range
                 .as_ref()
                 .filter(|_| {
-                    !matches!(pointer.offset, AddressOffset::Add(_, _))
+                    !matches!(pointer.offset, OldAddressOffset::Add(_, _))
                         && !matches!(pointer.base, AddressBase::Load(_))
                 })
                 .and_then(|range| {
@@ -1351,7 +1351,7 @@ fn execute_program_aggregate_step_paths(
     let layout = &result_layout.layout;
     let pointer = Address {
         base: AddressBase::Temporary(budget.allocate_kernel_variable()?.0),
-        offset: AddressOffset::constant(0),
+        offset: OldAddressOffset::constant(0),
     };
     register_block_alignment(&pointer.base, layout.alignment_bytes());
     let mut allocated = state.clone();
@@ -2139,34 +2139,36 @@ impl RequestedAllocationSize {
     }
 
     /// `bytes <= self`, compared in the size's format and signedness.
-    fn at_least(&self, bytes: u32) -> ConditionTerm {
+    fn at_least(&self, bytes: u32) -> OldConditionTerm {
         match (self.kind, self.unsigned) {
             (AllocationSizeKind::UInt64, _) => uint64_size_at_least(&self.term, u64::from(bytes)),
-            (AllocationSizeKind::Int32, true) => ConditionTerm::unsigned_less_equal(
+            (AllocationSizeKind::Int32, true) => OldConditionTerm::unsigned_less_equal(
                 OldMachineTerm::constant(bytes),
                 self.term.clone(),
             ),
-            (AllocationSizeKind::Int32, false) => {
-                ConditionTerm::signed_less_equal(OldMachineTerm::constant(bytes), self.term.clone())
-            }
+            (AllocationSizeKind::Int32, false) => OldConditionTerm::signed_less_equal(
+                OldMachineTerm::constant(bytes),
+                self.term.clone(),
+            ),
         }
     }
 
     /// `self < bytes`, compared in the size's format and signedness.
-    fn less_than(&self, bytes: u32) -> ConditionTerm {
+    fn less_than(&self, bytes: u32) -> OldConditionTerm {
         match (self.kind, self.unsigned) {
             (AllocationSizeKind::UInt64, _) => {
                 let (count, bound) =
                     crate::kernel::reasoning::uint64_size_in_elements(&self.term, u64::from(bytes));
-                ConditionTerm::uint64_less_than(count.clone(), bound)
+                OldConditionTerm::uint64_less_than(count.clone(), bound)
             }
-            (AllocationSizeKind::Int32, true) => ConditionTerm::unsigned_less_than(
+            (AllocationSizeKind::Int32, true) => OldConditionTerm::unsigned_less_than(
                 self.term.clone(),
                 OldMachineTerm::constant(bytes),
             ),
-            (AllocationSizeKind::Int32, false) => {
-                ConditionTerm::signed_less_than(self.term.clone(), OldMachineTerm::constant(bytes))
-            }
+            (AllocationSizeKind::Int32, false) => OldConditionTerm::signed_less_than(
+                self.term.clone(),
+                OldMachineTerm::constant(bytes),
+            ),
         }
     }
 }
@@ -2175,9 +2177,9 @@ impl RequestedAllocationSize {
 /// with a constant `k` is exact ([`uint64_allocation_size_bytes_are_exact`]), so
 /// the comparison is `ceil(bytes / k) <= n` over its element count, which
 /// the facts about `n` decide where the wrapping product would not.
-fn uint64_size_at_least(size: &OldMachineTerm, bytes: u64) -> ConditionTerm {
+fn uint64_size_at_least(size: &OldMachineTerm, bytes: u64) -> OldConditionTerm {
     let (count, bound) = crate::kernel::reasoning::uint64_size_in_elements(size, bytes);
-    ConditionTerm::uint64_less_equal(bound, count.clone())
+    OldConditionTerm::uint64_less_equal(bound, count.clone())
 }
 
 /// The constant zeroed prefix of a reallocated block: the smaller of the old
@@ -2202,7 +2204,7 @@ fn realloc_zeroed_prefix(
         (None, Some(new)) => {
             let new = u32::try_from(new).ok()?;
             let shrinks = match old_prefix.kind() {
-                AllocationSizeKind::Int32 => ConditionTerm::unsigned_less_equal(
+                AllocationSizeKind::Int32 => OldConditionTerm::unsigned_less_equal(
                     OldMachineTerm::constant(new),
                     old_prefix.bytes().clone(),
                 ),
@@ -2410,9 +2412,9 @@ fn allocation_size_is_positive(
     assumptions: &PureFactContext,
 ) -> bool {
     let condition = if size.unsigned {
-        ConditionTerm::unsigned_greater_than(size.term.clone(), OldMachineTerm::constant(0))
+        OldConditionTerm::unsigned_greater_than(size.term.clone(), OldMachineTerm::constant(0))
     } else {
-        ConditionTerm::signed_greater_than(size.term.clone(), OldMachineTerm::constant(0))
+        OldConditionTerm::signed_greater_than(size.term.clone(), OldMachineTerm::constant(0))
     };
     assumptions.decide(&condition) == Some(true)
 }
@@ -2428,9 +2430,9 @@ fn allocation_size_fits_element_width(
 ) -> bool {
     let maximum = i32::MAX as u32 / element_width;
     let condition = if size.unsigned {
-        ConditionTerm::unsigned_less_equal(size.term.clone(), OldMachineTerm::constant(maximum))
+        OldConditionTerm::unsigned_less_equal(size.term.clone(), OldMachineTerm::constant(maximum))
     } else {
-        ConditionTerm::signed_less_equal(size.term.clone(), OldMachineTerm::constant(maximum))
+        OldConditionTerm::signed_less_equal(size.term.clone(), OldMachineTerm::constant(maximum))
     };
     assumptions.decide(&condition) == Some(true)
 }
@@ -2452,15 +2454,15 @@ fn uint64_allocation_size_is_exact(
     element_count: bool,
     assumptions: &PureFactContext,
 ) -> bool {
-    let holds = |condition: ConditionTerm| assumptions.decide(&condition) == Some(true);
+    let holds = |condition: OldConditionTerm| assumptions.decide(&condition) == Some(true);
     let at_most = |term: &OldMachineTerm, width: u64| {
-        holds(ConditionTerm::uint64_less_equal(
+        holds(OldConditionTerm::uint64_less_equal(
             term.clone(),
             OldMachineTerm::uint64_constant(i64::MAX as u64 / width),
         ))
     };
     let positive = |term: &OldMachineTerm| {
-        holds(ConditionTerm::uint64_greater_than(
+        holds(OldConditionTerm::uint64_greater_than(
             term.clone(),
             OldMachineTerm::uint64_constant(0),
         ))
@@ -2482,15 +2484,15 @@ pub(in crate::kernel) fn uint64_allocation_size_bytes_are_exact(
     bytes: &OldMachineTerm,
     assumptions: &PureFactContext,
 ) -> bool {
-    let holds = |condition: ConditionTerm| assumptions.decide(&condition) == Some(true);
+    let holds = |condition: OldConditionTerm| assumptions.decide(&condition) == Some(true);
     let at_most = |term: &OldMachineTerm, width: u64| {
-        holds(ConditionTerm::uint64_less_equal(
+        holds(OldConditionTerm::uint64_less_equal(
             term.clone(),
             OldMachineTerm::uint64_constant(i64::MAX as u64 / width),
         ))
     };
     let positive = |term: &OldMachineTerm| {
-        holds(ConditionTerm::uint64_greater_than(
+        holds(OldConditionTerm::uint64_greater_than(
             term.clone(),
             OldMachineTerm::uint64_constant(0),
         ))
@@ -2997,7 +2999,7 @@ fn execute_program_realloc_result_paths(
                         copied_cells: copied_cells
                             .into_iter()
                             .map(|(offset, value)| {
-                                (AddressOffset::Constant(i64::from(offset)), value)
+                                (OldAddressOffset::Constant(i64::from(offset)), value)
                             })
                             .collect(),
                         initialized_prefix,
@@ -3337,7 +3339,7 @@ fn execute_program_heap_free_paths(
             };
             if before != after {
                 facts.push(ExecutionPureFact::certified(Proposition::condition_is(
-                    ConditionTerm::pointer_equal(before, after),
+                    OldConditionTerm::pointer_equal(before, after),
                     true,
                 )));
             }
@@ -3638,7 +3640,7 @@ fn execute_program_return_expression_paths(
                         };
                         Address {
                             base: AddressBase::Heap(variable.0),
-                            offset: AddressOffset::Constant(0),
+                            offset: OldAddressOffset::Constant(0),
                         }
                     } else {
                         Address::null()
@@ -4924,7 +4926,7 @@ fn execute_execution_statement_leaf_paths(
             let value = OldMachineTerm::Variable(budget.allocate_kernel_variable()?);
             let equals = |constant| {
                 Box::new(Proposition::condition_is(
-                    ConditionTerm::equal(value.clone(), OldMachineTerm::constant(constant)),
+                    OldConditionTerm::equal(value.clone(), OldMachineTerm::constant(constant)),
                     true,
                 ))
             };
@@ -5635,9 +5637,9 @@ fn execute_program_switch_dispatch_paths(
     // A case label holds its 32-bit pattern after conversion to the promoted
     // selector type, including -1 becoming UINT_MAX for an unsigned selector.
     let condition = if selector_type == MachineIntegerType::UInt32 {
-        ConditionTerm::uint32_equal(selector.clone(), OldMachineTerm::uint32_constant(value))
+        OldConditionTerm::uint32_equal(selector.clone(), OldMachineTerm::uint32_constant(value))
     } else {
-        ConditionTerm::equal(selector.clone(), OldMachineTerm::constant(value))
+        OldConditionTerm::equal(selector.clone(), OldMachineTerm::constant(value))
     };
     let mut paths = Vec::new();
     for condition_path in
@@ -6660,7 +6662,7 @@ pub(in crate::kernel) fn refresh_scalar_local_after_memory_store(
 ) {
     let slot = Address {
         base: pointer.base.clone(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let Some(name) = state.locals.name_for_slot(&slot).cloned() else {
         return;
@@ -6817,10 +6819,10 @@ pub(in crate::kernel) fn rebase_resolved_allocation(
         .map_pointers(|address| {
             if address == base {
                 resolved.clone()
-            } else if address.base == base.base && base.offset == AddressOffset::Constant(0) {
+            } else if address.base == base.base && base.offset == OldAddressOffset::Constant(0) {
                 Address {
                     base: resolved.base.clone(),
-                    offset: AddressOffset::add(resolved.offset.clone(), address.offset.clone()),
+                    offset: OldAddressOffset::add(resolved.offset.clone(), address.offset.clone()),
                 }
             } else {
                 address.clone()

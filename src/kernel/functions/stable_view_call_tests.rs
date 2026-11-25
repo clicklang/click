@@ -5,7 +5,7 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 fn pointer() -> Address {
     Address {
         base: AddressBase::Concrete("local:candidate_view:data".to_string()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     }
 }
 
@@ -309,7 +309,7 @@ fn candidate_reader_escrows_owner_until_return() {
         &ResourceFact::view_memory(MemoryRange::new(
             Address {
                 base: AddressBase::Concrete("local:candidate_view:data".to_string()),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             OldMachineTerm::constant(0),
             OldMachineTerm::constant(1),
@@ -591,7 +591,7 @@ fn adapter_reader(
 fn adapter_caller(pointer: &Address) -> ExecutionState {
     let second = Address {
         base: pointer.base.clone(),
-        offset: AddressOffset::Constant(4),
+        offset: OldAddressOffset::Constant(4),
     };
     ExecutionState::new()
         .with_memory(
@@ -1212,7 +1212,7 @@ fn candidate_conditional_composite_with_an_undecided_guard_still_needs_its_entry
     let (function, environment) = conditional_owner("candidate_guarded_symbolic_free");
     let symbolic = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(910_101)), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(910_101)), 4),
     };
     let paths = execute_program_function_call_paths(
         &ExecutionState::new(),
@@ -1340,7 +1340,7 @@ fn candidate_unresolved_return_obligation_refuses_recovery() {
     .expect("candidate transfer should be accepted");
     let callee = callee_state_with_resource_transfer(callee, &transfer);
     let unresolved = ProofObligation::verification_condition(Proposition::condition_is(
-        ConditionTerm::Constant(false),
+        OldConditionTerm::Constant(false),
         true,
     ))
     .with_context("callee postcondition");
@@ -1799,7 +1799,7 @@ fn recover_with_a_carried_view_of_another_block(
     let pointer = pointer();
     let other = Address {
         base: AddressBase::Concrete("global:candidate_table#file-static:t.c".to_string()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let function = reader("candidate_carried_view", false);
     let owned_caller = caller_with_owned_end(&pointer, 3, 12);
@@ -1856,7 +1856,7 @@ fn candidate_accepts_a_carried_view_of_read_only_storage() {
     let carried = ResourceFact::view_memory(MemoryRange::new(
         Address {
             base: AddressBase::Concrete("global:candidate_table#file-static:t.c".to_string()),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         },
         OldMachineTerm::constant(0),
         OldMachineTerm::constant(2),
@@ -1873,7 +1873,7 @@ fn candidate_rejects_a_carried_view_of_mutable_storage() {
     let carried = ResourceFact::view_memory(MemoryRange::new(
         Address {
             base: AddressBase::Concrete("global:candidate_table#file-static:t.c".to_string()),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         },
         OldMachineTerm::constant(0),
         OldMachineTerm::constant(2),
@@ -1892,7 +1892,7 @@ fn symbolic_bounded_range(
     MemoryRange::new_with_element_width(
         Address {
             base: AddressBase::Concrete("candidate:separation".to_string()),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         },
         start,
         end,
@@ -2144,7 +2144,7 @@ fn lend_summary_test_range(
 fn candidate_rejects_symbolic_same_base_overlapping_effect() {
     let pointer = Address {
         base: AddressBase::Concrete("local:candidate_view:data".to_string()),
-        offset: AddressOffset::Variable(Variable(700)),
+        offset: OldAddressOffset::Variable(Variable(700)),
     };
     let function = reader_with_mutable_range("candidate_symbolic_overlap_effect", 0, 1);
     let paths = execute_program_function_call_paths(
@@ -2173,11 +2173,11 @@ fn candidate_rejects_symbolic_same_base_overlapping_effect() {
 fn candidate_rejects_unproved_mutable_effect_separation() {
     let viewed = Address {
         base: AddressBase::Concrete("local:candidate_view:data".to_string()),
-        offset: AddressOffset::Variable(Variable(700)),
+        offset: OldAddressOffset::Variable(Variable(700)),
     };
     let mutated = Address {
         base: AddressBase::Concrete("local:candidate_view:data".to_string()),
-        offset: AddressOffset::Variable(Variable(701)),
+        offset: OldAddressOffset::Variable(Variable(701)),
     };
     let input = MemorySegment::new(
         crate::kernel::program_expression::variable("p"),
@@ -2278,11 +2278,11 @@ fn viewer_and_writer(name: &str) -> ProgramFunction {
 fn candidate_allows_a_mutable_effect_reserved_from_another_owned_occurrence() {
     let viewed = Address {
         base: AddressBase::Concrete("local:candidate_view:data".to_string()),
-        offset: AddressOffset::Variable(Variable(700)),
+        offset: OldAddressOffset::Variable(Variable(700)),
     };
     let mutated = Address {
         base: AddressBase::Concrete("local:candidate_view:data".to_string()),
-        offset: AddressOffset::Variable(Variable(701)),
+        offset: OldAddressOffset::Variable(Variable(701)),
     };
     let owned_range = |pointer: &Address| {
         ResourceFact::own(Resource::Memory(MemoryRange::new(
@@ -2733,7 +2733,7 @@ fn token_population_reader(name: &str, population: &str) -> ProgramFunction {
 /// route looks at it; that check is unrelated to the planner gap.
 fn nonnegative_quantity(quantity: Variable) -> PureFactContext {
     PureFactContext::new().assume_condition(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
             left: Box::new(OldMachineTerm::Variable(quantity)),
@@ -2893,7 +2893,7 @@ fn composite_view_body_check_does_not_try_pointer_aliases() {
     let q = Address::symbolic(Variable(94_101));
     let r = Address::symbolic(Variable(94_102));
     let s = Address::symbolic(Variable(94_103));
-    let equality = |a: &Address, b: &Address| ConditionTerm::address_equal(a.clone(), b.clone());
+    let equality = |a: &Address, b: &Address| OldConditionTerm::address_equal(a.clone(), b.clone());
     let clause = |pointer: &Address| {
         Proposition::Implies(
             Box::new(Proposition::condition_is(equality(pointer, &r), true)),
@@ -2971,7 +2971,7 @@ fn refused_composite_assembly_retains_the_failed_source_clause() {
     assert_eq!(
         *fact,
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: crate::kernel::MachineIntegerType::Int32,
                 relation: crate::kernel::CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::constant(7)),
@@ -3014,7 +3014,7 @@ fn local_storage_classification_does_not_restore_partial_or_aliased_authority() 
         } else if case == "other_local" {
             Address {
                 base: "local:other".into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             }
         } else {
             local.clone()
@@ -3025,7 +3025,10 @@ fn local_storage_classification_does_not_restore_partial_or_aliased_authority() 
             "aliased_partial" | "aliased_whole" | "owner_with_alias_fact"
         ) {
             facts = facts.assume_condition(
-                ConditionTerm::address_equal(local.clone(), Address::symbolic(Variable(941_001))),
+                OldConditionTerm::address_equal(
+                    local.clone(),
+                    Address::symbolic(Variable(941_001)),
+                ),
                 true,
             );
         }
@@ -3091,7 +3094,7 @@ fn local_storage_absence_summary_tracks_persistent_resource_edits() {
     let unrelated = ResourceFact::own_memory(MemoryRange::new(
         Address {
             base: "local:other".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         },
         0u32.into(),
         1u32.into(),

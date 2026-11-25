@@ -384,21 +384,21 @@ fn bv(variable: u32) -> OldMachineTerm {
 fn parameter_base(variable: u32) -> Address {
     Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(bv(variable), 4),
+        offset: OldAddressOffset::scale_int32(bv(variable), 4),
     }
 }
 
 fn element(base: &Address, index: OldMachineTerm) -> Address {
     Address {
         base: base.base.clone(),
-        offset: AddressOffset::add(base.offset.clone(), AddressOffset::scale_int32(index, 4)),
+        offset: OldAddressOffset::add(base.offset.clone(), OldAddressOffset::scale_int32(index, 4)),
     }
 }
 
 fn byte_offset(pointer: &Address, bytes: i64) -> Address {
     Address {
         base: pointer.base.clone(),
-        offset: AddressOffset::add(pointer.offset.clone(), AddressOffset::Constant(bytes)),
+        offset: OldAddressOffset::add(pointer.offset.clone(), OldAddressOffset::Constant(bytes)),
     }
 }
 
@@ -429,12 +429,12 @@ fn application(
     )
 }
 
-fn fact(condition: ConditionTerm) -> Proposition {
+fn fact(condition: OldConditionTerm) -> Proposition {
     Proposition::condition_is(condition, true)
 }
 
 fn le(left: OldMachineTerm, right: OldMachineTerm) -> Proposition {
-    fact(ConditionTerm::Compare {
+    fact(OldConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::LessEqual,
         left: Box::new(left),
@@ -443,7 +443,7 @@ fn le(left: OldMachineTerm, right: OldMachineTerm) -> Proposition {
 }
 
 fn lt(left: OldMachineTerm, right: OldMachineTerm) -> Proposition {
-    fact(ConditionTerm::Compare {
+    fact(OldConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::LessThan,
         left: Box::new(left),
@@ -678,7 +678,7 @@ fn a_lifetime_end_of_the_array_is_never_crossed() {
     let block = AddressBase::from("local:f:buffer");
     let base = Address {
         base: block.clone(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let declared = SymbolicMemory::new().with_block(block.clone(), 16);
     let ended = declared.without_local_block(&block);
@@ -774,7 +774,7 @@ fn sibling_and_unrelated_histories_and_unsummarized_functions() {
     let right = base.clone().store(
         Address {
             base: AddressBase::from("local:f:other"),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         },
         one(),
     );
@@ -855,7 +855,7 @@ fn a_transport_rewrites_only_fold_application_states() {
         bv(HI),
     ));
     let equals = |term: &IntegerTerm, value: i64| {
-        fact(ConditionTerm::IntegerEqual(
+        fact(OldConditionTerm::IntegerEqual(
             term.clone().into(),
             IntegerTerm::constant_i64(value).into(),
         ))
@@ -875,11 +875,11 @@ fn a_transport_rewrites_only_fold_application_states() {
         Err(FoldFrameRefusal::NothingToFrame)
     );
     // The equality form: `old == old` carries to `old == new`.
-    let reflexive = fact(ConditionTerm::IntegerEqual(
+    let reflexive = fact(OldConditionTerm::IntegerEqual(
         old.clone().into(),
         old.clone().into(),
     ));
-    let bridged = fact(ConditionTerm::IntegerEqual(
+    let bridged = fact(OldConditionTerm::IntegerEqual(
         old.clone().into(),
         new.clone().into(),
     ));
@@ -997,7 +997,7 @@ fn byte_fold_framing_refuses_overlap_and_counts_byte_endpoints() {
     ));
     let base = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(bv(V), 1),
+        offset: OldAddressOffset::scale_int32(bv(V), 1),
     };
     let at = |memory: &SymbolicMemory, element_type| {
         SharedPureApplication::intern(
@@ -1151,7 +1151,7 @@ fn shared_fold_indices_require_exact_bounds_without_export() {
     let index = MachineOperandView::Shared(&root).retain(MachineIntegerType::Int32);
     let base = Address {
         base: "retained_fold_indices".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let pointer = base.offset_by_shared_elements(index, 4);
     let interval = FoldReadInterval {
@@ -1168,7 +1168,7 @@ fn shared_fold_indices_require_exact_bounds_without_export() {
         element_width: 4,
     };
     let bound = Proposition::condition_is(
-        ConditionTerm::signed_less_equal(OldMachineTerm::constant(4), native),
+        OldConditionTerm::signed_less_equal(OldMachineTerm::constant(4), native),
         true,
     );
     let empty = PureFactContext::new();

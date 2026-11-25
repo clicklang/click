@@ -1248,7 +1248,7 @@ mod condition_transition_tests {
             "p",
             ProgramValue::pointer(Address {
                 base: "havoc:condition-obligation".into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             }),
         );
         let condition = crate::kernel::program_expression::load(
@@ -1280,7 +1280,7 @@ mod condition_transition_tests {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let pointer = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let load = |pointer: Address| {
             OldMachineTerm::read_named(
@@ -1307,11 +1307,11 @@ mod condition_transition_tests {
         let conflicting = generated_load_bindings_from_facts(&[
             producer_fact(Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             }),
             producer_fact(Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Constant(4),
+                offset: OldAddressOffset::Constant(4),
             }),
         ]);
         assert!(matches!(
@@ -1326,7 +1326,7 @@ mod condition_transition_tests {
     fn real_scalar_load_transition_retains_its_read_without_a_binding() {
         let pointer = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let parsed = crate::languages::c::syntax::parse_functions_for_source(
             r#"
@@ -1412,7 +1412,7 @@ mod condition_transition_tests {
     fn parsed_compound_field_update_retains_its_structural_read() {
         let pointer = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let parsed = crate::languages::c::syntax::parse_functions_for_source(
             r#"
@@ -1469,7 +1469,7 @@ mod condition_transition_tests {
         };
         assert!(crate::kernel::proposition_mentions_scalar_read(
             &Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: crate::kernel::MachineIntegerType::UInt32,
                     relation: crate::kernel::CompareRelation::Equal,
                     left: Box::new(value),
@@ -1530,7 +1530,7 @@ mod condition_transition_tests {
         use std::collections::HashSet;
         let pointer = ProgramExpression::Value(ProgramValue::pointer(Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(8),
+            offset: OldAddressOffset::Constant(8),
         }));
         let source = |occurrence| {
             crate::kernel::ExpressionLoadSource::new(crate::kernel::LoadSourceId {

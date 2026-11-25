@@ -12,7 +12,7 @@ fn block(name: &str) -> AddressBase {
 fn at(block: AddressBase, offset: i64) -> Address {
     Address {
         base: block,
-        offset: AddressOffset::Constant(offset),
+        offset: OldAddressOffset::Constant(offset),
     }
 }
 
@@ -434,7 +434,7 @@ fn a_release_of_another_object_keeps_one_version() {
     let heap = AddressBase::Heap(1);
     let fresh = Address {
         base: heap.clone(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let live = entry_memory()
         .with_heap_allocation_claim(fresh.clone(), AllocationSize::int32(16))
@@ -470,7 +470,7 @@ fn a_release_of_another_object_keeps_one_version() {
 fn a_release_is_based_on_the_memory_it_started_from() {
     let fresh = Address {
         base: AddressBase::Heap(1),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let live = entry_memory()
         .with_heap_allocation_claim(fresh.clone(), AllocationSize::int32(16))
@@ -498,7 +498,7 @@ fn a_release_is_based_on_the_memory_it_started_from() {
 fn a_release_inside_the_argument_object_stops_a_block_fact() {
     let inside = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let live = entry_memory()
         .with_heap_allocation_claim(inside.clone(), AllocationSize::int32(16))
@@ -565,7 +565,7 @@ fn a_pending_allocation_records_nothing_a_block_can_observe() {
     let requested = entry.clone().with_pending_heap_allocation(
         Address {
             base: AddressBase::Symbolic(Variable(1_000)),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         },
         AllocationSize::int32(16),
         false,
@@ -694,7 +694,7 @@ fn a_version_mismatch_names_the_resource_and_both_points() {
     };
     let fact = |memory: &SymbolicMemory| {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(load(memory)),
@@ -721,7 +721,7 @@ fn a_version_mismatch_names_the_resource_and_both_points() {
     assert_eq!(version_mismatch(&fact(&entry), &fact(&entry)), None);
 
     let other = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(OldMachineTerm::constant(5)),
@@ -1070,7 +1070,7 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
     let index = OldMachineTerm::Variable(Variable(0));
     let written = Address {
         base: block("global:g"),
-        offset: AddressOffset::scaled_int32_node(index.clone(), 4),
+        offset: OldAddressOffset::scaled_int32_node(index.clone(), 4),
     };
     let three = ProgramValue::Int32(OldMachineTerm::constant(3));
     let no_facts = PureFactContext::new();
@@ -1086,7 +1086,7 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
     let after = intern_memory(after);
     let index_is_zero = |value| {
         PureFactContext::new().assume_proposition(Proposition::condition_is(
-            ConditionTerm::equal(index.clone(), OldMachineTerm::constant(0)),
+            OldConditionTerm::equal(index.clone(), OldMachineTerm::constant(0)),
             value,
         ))
     };
@@ -1121,11 +1121,11 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
     else {
         panic!("complete int32 observations");
     };
-    let source = Proposition::condition_is(ConditionTerm::equal(old, three.clone()), true);
+    let source = Proposition::condition_is(OldConditionTerm::equal(old, three.clone()), true);
     assert!(crate::kernel::eval::holds_by_read_over_write(&source));
     let premises = [source, equality];
     let facts = crate::kernel::proof::PureFactStore::from_ordered(&premises);
-    let condition = ConditionTerm::equal(new, three);
+    let condition = OldConditionTerm::equal(new, three);
     assert!(
         crate::kernel::proof::fact_reasoning::normalize_using_conditions(
             &Proposition::condition_is(condition.clone(), true),
@@ -1269,14 +1269,14 @@ fn branch_join_typed_agreement_checks_alias_premises_and_access_width() {
     let cell = at(block("global:g"), 0);
     let alias = Address {
         base: AddressBase::Symbolic(Variable(981021)),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let before = entry_memory();
     let left = intern_memory(before.clone().store(at(block("local:f:i"), 0), one()));
     let right = intern_memory(before.store(alias.clone(), one()));
     let bare = PureFactContext::new();
     let separated = bare.clone().assume_condition(
-        ConditionTerm::address_equal(alias, at(cell.base.clone(), 8)),
+        OldConditionTerm::address_equal(alias, at(cell.base.clone(), 8)),
         true,
     );
     let query = |facts: &PureFactContext, bytes| {
@@ -1496,7 +1496,7 @@ fn structural_read_dependencies_keep_the_observed_point_and_exact_width() {
         &origin,
         "selection should cross the unrelated store"
     );
-    let fact = Proposition::condition_is(ConditionTerm::equal(read.clone(), 0u32.into()), true);
+    let fact = Proposition::condition_is(OldConditionTerm::equal(read.clone(), 0u32.into()), true);
     let reads = reads_of_proposition(&fact);
     assert_eq!(reads.len(), 1);
     assert_eq!(
@@ -1564,8 +1564,8 @@ fn retained_boolean_dependencies_keep_read_order_and_opaque_calls() {
             LoadKind::Int32,
         )
     };
-    let source = ConditionTerm::BoolIf {
-        condition: Box::new(ConditionTerm::Compare {
+    let source = OldConditionTerm::BoolIf {
+        condition: Box::new(OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(OldMachineTerm::Binary {
@@ -1576,7 +1576,7 @@ fn retained_boolean_dependencies_keep_read_order_and_opaque_calls() {
             }),
             right: Box::new(OldMachineTerm::constant(0)),
         }),
-        then_condition: Box::new(ConditionTerm::BoolApplication(
+        then_condition: Box::new(OldConditionTerm::BoolApplication(
             SharedPureApplication::intern(
                 "opaque_dependency".into(),
                 vec![PureFunctionArgument::Value(ProgramValue::Int32(read(
@@ -1584,7 +1584,7 @@ fn retained_boolean_dependencies_keep_read_order_and_opaque_calls() {
                 )))],
             ),
         )),
-        else_condition: Box::new(ConditionTerm::Constant(false)),
+        else_condition: Box::new(OldConditionTerm::Constant(false)),
     };
     let root = KernelTermImport::default().condition(&source);
     let mut native = Vec::new();
@@ -1600,7 +1600,7 @@ fn shared_offset_condition_resource_reads_keep_native_right_first_order() {
     use crate::kernel::{BooleanOperandView, KernelTermImport};
     let memory = intern_memory(entry_memory());
     let offset = |name| {
-        AddressOffset::scaled_int32_node(
+        OldAddressOffset::scaled_int32_node(
             OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(at(block(name), 0)),
@@ -1609,8 +1609,8 @@ fn shared_offset_condition_resource_reads_keep_native_right_first_order() {
             4,
         )
     };
-    let source = ConditionTerm::AddressOffsetEqual(
-        Box::new(AddressOffset::Add(
+    let source = OldConditionTerm::AddressOffsetEqual(
+        Box::new(OldAddressOffset::Add(
             Box::new(offset("global:g")),
             Box::new(offset("global:h")),
         )),
@@ -1630,7 +1630,7 @@ fn raw_pointer_condition_reads_keep_block_and_displacement_order() {
     use crate::kernel::{BooleanOperandView, KernelTermImport};
     let memory = intern_memory(entry_memory());
     let offset = |name| {
-        AddressOffset::scaled_int32_node(
+        OldAddressOffset::scaled_int32_node(
             OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(at(block(name), 0)),
@@ -1640,10 +1640,10 @@ fn raw_pointer_condition_reads_keep_block_and_displacement_order() {
         )
     };
     let mut left = Address::loaded_value(&memory, &at(block("local:f:pointer_left"), 0));
-    left.offset = AddressOffset::Add(Box::new(offset("global:g")), Box::new(offset("global:h")));
+    left.offset = OldAddressOffset::Add(Box::new(offset("global:g")), Box::new(offset("global:h")));
     let mut right = Address::loaded_value(&memory, &at(block("local:f:pointer_right"), 0));
     right.offset = offset("local:f:i");
-    let source = ConditionTerm::AddressEqual(Box::new(left), Box::new(right));
+    let source = OldConditionTerm::AddressEqual(Box::new(left), Box::new(right));
     let root = KernelTermImport::default().condition(&source);
     let mut expected = Vec::new();
     let mut actual = Vec::new();
@@ -1658,7 +1658,7 @@ fn complete_pointer_conditions_keep_read_order() {
     use crate::kernel::{BooleanOperandView, KernelTermImport};
     let memory = intern_memory(entry_memory());
     let offset = |name| {
-        AddressOffset::scaled_int32_node(
+        OldAddressOffset::scaled_int32_node(
             OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(at(block(name), 0)),
@@ -1668,10 +1668,10 @@ fn complete_pointer_conditions_keep_read_order() {
         )
     };
     let mut left = Address::loaded_value(&memory, &at(block("local:f:pointer_left"), 0));
-    left.offset = AddressOffset::Add(Box::new(offset("global:g")), Box::new(offset("global:h")));
+    left.offset = OldAddressOffset::Add(Box::new(offset("global:g")), Box::new(offset("global:h")));
     let mut right = Address::loaded_value(&memory, &at(block("local:f:pointer_right"), 0));
     right.offset = offset("local:f:i");
-    let source = ConditionTerm::PointerEqual(
+    let source = OldConditionTerm::PointerEqual(
         Box::new(OldPointer::new(left, ProgramType::Int32Pointer)),
         Box::new(OldPointer::new(right, ProgramType::Int32Pointer)),
     );
@@ -1690,7 +1690,7 @@ fn boolean_reads_report_only_the_one_byte_cell() {
     let memory = intern_memory(entry_memory());
     let pointer = Address {
         base: AddressBase::Symbolic(Variable(999350)),
-        offset: AddressOffset::scaled_int32_node(
+        offset: OldAddressOffset::scaled_int32_node(
             OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(at(block("global:g"), 0)),
@@ -1700,8 +1700,10 @@ fn boolean_reads_report_only_the_one_byte_cell() {
         ),
     };
     crate::kernel::eval::record_load_access_width(memory.memory(), &pointer, 1);
-    let source =
-        ConditionTerm::boolean_cell_read(crate::kernel::ProgramPoint::at(&memory), pointer.clone());
+    let source = OldConditionTerm::boolean_cell_read(
+        crate::kernel::ProgramPoint::at(&memory),
+        pointer.clone(),
+    );
     let root = KernelTermImport::default().condition(&source);
     let mut native = Vec::new();
     let mut shared = Vec::new();
@@ -1848,16 +1850,16 @@ fn contract_offset_reads_keep_order_and_distinct_versions() {
         crate::kernel::eval::record_load_access_width(point.memory(), &pointer, 4);
     }
     let scaled = |point| {
-        AddressOffset::scaled_int32_node(
+        OldAddressOffset::scaled_int32_node(
             OldMachineTerm::read_named(point, Box::new(pointer.clone()), LoadKind::Int32),
             4,
         )
     };
     let first = scaled(before.clone());
     let second = scaled(after.clone());
-    let offset = AddressOffset::Add(
+    let offset = OldAddressOffset::Add(
         Box::new(first.clone()),
-        Box::new(AddressOffset::Add(Box::new(first), Box::new(second))),
+        Box::new(OldAddressOffset::Add(Box::new(first), Box::new(second))),
     );
     let stored = crate::kernel::StoredPointerOffset::from(offset);
     assert!(stored.root().is_some());

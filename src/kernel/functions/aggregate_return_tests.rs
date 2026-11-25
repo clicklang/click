@@ -822,7 +822,7 @@ fn aggregate_copy_result_preserves_unrelated_entry_byte_history() {
     };
     let equality = |memory: &SymbolicMemory| {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(read(memory)),
@@ -992,7 +992,7 @@ fn symbolic_construction_storage_respects_known_aliases() {
     let source = Address::symbolic(Variable(870_005));
     let alias = Address::symbolic(Variable(870_006));
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::address_equal(source.clone(), alias.clone()),
+        OldConditionTerm::address_equal(source.clone(), alias.clone()),
         true,
     );
     for forgotten in [false, true] {
@@ -1141,7 +1141,7 @@ fn construction_object_offsets_participate_in_fresh_variable_collection() {
     let raw = SymbolicMemory::new().with_uninitialized_block(source.base.clone(), 4);
     let destination = Address {
         base: "local:variable-container".into(),
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(offset_variable), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(offset_variable), 4),
     };
     let mapped = crate::kernel::reasoning::substitute_pointer_variable_in_memory(
         &raw,
@@ -1589,7 +1589,7 @@ fn aggregate_return_temporary_copy_requires_its_recorded_size() {
     ] {
         let pointer = Address {
             base: block.clone(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let source = OldPointer::new(pointer, ProgramType::UInt8Pointer);
         let state = ExecutionState::new().with_memory(SymbolicMemory::new().with_block(block, 16));

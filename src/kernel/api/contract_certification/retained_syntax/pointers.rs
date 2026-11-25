@@ -1,8 +1,8 @@
 //! Borrow exact pointer payloads and written addresses during certification.
 use super::*;
 use crate::kernel::{
-    Address, AddressBase, AddressOffset, KernelAddressOffset, OldPointer, RetainedPointerMetadata,
-    SharedAddress, SharedAddressOffset, SharedPointer,
+    Address, AddressBase, KernelAddressOffset, OldAddressOffset, OldPointer,
+    RetainedPointerMetadata, SharedAddress, SharedAddressOffset, SharedPointer,
 };
 use std::borrow::Cow;
 
@@ -25,7 +25,7 @@ impl<'a> BorrowedAddress<'a> {
 
 #[derive(Clone, Copy)]
 enum Offset<'a> {
-    Native(&'a AddressOffset),
+    Native(&'a OldAddressOffset),
     Shared(&'a SharedAddressOffset),
 }
 enum OffsetNode<'a> {
@@ -42,9 +42,9 @@ enum OffsetNode<'a> {
 }
 impl<'a> Offset<'a> {
     fn node(self) -> Option<OffsetNode<'a>> {
-        use AddressOffset as P;
         use KernelAddressOffset as K;
         use OffsetNode as V;
+        use OldAddressOffset as P;
         let shared_index = |value: &'a KernelTerm| {
             let KernelType::Program(ty) = value.ty() else {
                 return None;

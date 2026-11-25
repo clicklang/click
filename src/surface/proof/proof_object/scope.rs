@@ -114,7 +114,7 @@ impl<'a> ProofScope<'a> {
         // quantifier in the proposition. A quantifier in an unrelated
         // connective branch is not reachable by `intro` and must not be used
         // to bind a reported introduction.
-        let contradiction_goal = Proposition::condition_is(ConditionTerm::Constant(false), true);
+        let contradiction_goal = Proposition::condition_is(OldConditionTerm::Constant(false), true);
         let mut cursor = actual;
         let introductions = introductions
             .into_iter()

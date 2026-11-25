@@ -120,13 +120,13 @@ fn selected_call_expression(root: MachineOperandView<'_>) -> bool {
 
 #[derive(Clone, Debug, Default)]
 pub(in crate::kernel) struct CheckedScalarFacts {
-    literals: PersistentMap<ScalarOperandKey, PersistentSet<(ConditionTerm, bool)>>,
-    equalities: PersistentMap<OldMachineTerm, PersistentSet<ConditionTerm>>,
+    literals: PersistentMap<ScalarOperandKey, PersistentSet<(OldConditionTerm, bool)>>,
+    equalities: PersistentMap<OldMachineTerm, PersistentSet<OldConditionTerm>>,
     exclusions: PersistentMap<ScalarOperandKey, ExcludedIntegers>,
 }
 
 impl CheckedScalarFacts {
-    pub(super) fn adjust(&mut self, condition: &ConditionTerm, value: bool) {
+    pub(super) fn adjust(&mut self, condition: &OldConditionTerm, value: bool) {
         let Some(view) = comparison_view(condition, value) else {
             return;
         };
@@ -164,7 +164,7 @@ impl CheckedScalarFacts {
             if let MachineOperandView::Old(endpoint) = endpoint
                 && matches!(
                     condition,
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         relation: CompareRelation::Equal,
                         ..
                     }
@@ -201,7 +201,7 @@ impl CheckedScalarFacts {
     pub(super) fn literal_equality(
         &self,
         term: MachineOperandView<'_>,
-    ) -> Option<&(ConditionTerm, bool)> {
+    ) -> Option<&(OldConditionTerm, bool)> {
         let _checking =
             crate::instrumentation::CheckingWorkScope::new("select literal equality", 1);
         crate::instrumentation::record_deterministic_work(1);
@@ -209,7 +209,7 @@ impl CheckedScalarFacts {
         self.literals.get(&key)?.iter().next()
     }
 
-    pub(super) fn singleton_equality(&self, term: &OldMachineTerm) -> Option<&ConditionTerm> {
+    pub(super) fn singleton_equality(&self, term: &OldMachineTerm) -> Option<&OldConditionTerm> {
         let _checking =
             crate::instrumentation::CheckingWorkScope::new("select anchored equality", 1);
         crate::instrumentation::record_deterministic_work(1);

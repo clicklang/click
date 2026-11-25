@@ -179,7 +179,7 @@ format enums:
 
 ```rust
 pub enum ComparisonKind {
-    Machine(MachineIntegerType), // ConditionTerm::Compare at a format
+    Machine(MachineIntegerType), // OldConditionTerm::Compare at a format
     Integer,                     // IntegerLessThan .. IntegerNotEqual
     Pointer,                     // PointerEqual
     Address,                     // AddressEqual: address(p) == address(q)
@@ -211,7 +211,7 @@ to the same term, which Surface-to-Kernel's many-to-one direction allows.
 - **Lower** reads the kind: a `Machine` comparison or operation lowers its
   operands as machine words at that format, an `Integer` one as Integers. No
   operand inspection, no caller-dependent path.
-- **Raise** copies the kind from the kernel term: `ConditionTerm::Compare
+- **Raise** copies the kind from the kernel term: `OldConditionTerm::Compare
   { format, .. }` gives `Machine(format)`, `IntegerEqual` gives `Integer`,
   `OldMachineTerm::Binary { format, .. }` gives `Machine(format)`, an
   `IntegerTerm` operation gives `Integer`.

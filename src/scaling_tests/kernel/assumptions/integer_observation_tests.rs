@@ -3,13 +3,15 @@
 #[test]
 fn native_observation_queries_use_the_selected_fact_index() {
     let samples = [8u64, 32, 128, 512].map(|size| {
-        let condition =
-            ConditionTerm::IntegerEqual(observe(MachineIntegerType::Int32, 880_001), constant(0));
+        let condition = OldConditionTerm::IntegerEqual(
+            observe(MachineIntegerType::Int32, 880_001),
+            constant(0),
+        );
         let (native, truth) = native_comparison_of_integer_observation(&condition, false).unwrap();
         let mut context = PureFactContext::new().assume_condition(native, truth);
         for index in 0..size {
             context = context.assume_condition(
-                ConditionTerm::equal(word(890_000 + index), OldMachineTerm::constant(7)),
+                OldConditionTerm::equal(word(890_000 + index), OldMachineTerm::constant(7)),
                 true,
             );
         }
@@ -35,19 +37,20 @@ fn filing_an_integer_reading_through_an_operation_visits_only_its_own_bounds() {
         let mut context = PureFactContext::new();
         for index in 0..size {
             context = context.assume_condition(
-                ConditionTerm::IntegerLessEqual(
+                OldConditionTerm::IntegerLessEqual(
                     difference(900_000 + index, 900_001 + index),
                     constant(7),
                 ),
                 true,
             );
         }
-        let guard = ConditionTerm::IntegerLessEqual(
+        let guard = OldConditionTerm::IntegerLessEqual(
             observe(MachineIntegerType::UInt32, 1),
             uint32_difference_from(4_294_967_295, 2),
         );
-        let upper = ConditionTerm::IntegerLessEqual(difference(3, 4), constant(2_147_483_647));
-        let lower = ConditionTerm::IntegerGreaterEqual(difference(3, 4), constant(-2_147_483_648));
+        let upper = OldConditionTerm::IntegerLessEqual(difference(3, 4), constant(2_147_483_647));
+        let lower =
+            OldConditionTerm::IntegerGreaterEqual(difference(3, 4), constant(-2_147_483_648));
         let context = context.assume_condition(upper, true);
         let (context, work) = crate::persistent::measure_persistent_work(|| {
             context
@@ -56,7 +59,10 @@ fn filing_an_integer_reading_through_an_operation_visits_only_its_own_bounds() {
         });
         assert_eq!(context.decide(&uint32_guard(u32::MAX, 1, 2)), Some(true));
         assert_eq!(
-            context.decide(&ConditionTerm::signed_subtract_overflows(word(3), word(4))),
+            context.decide(&OldConditionTerm::signed_subtract_overflows(
+                word(3),
+                word(4)
+            )),
             Some(false)
         );
         work
@@ -77,7 +83,7 @@ fn filing_a_quantified_integer_antecedent_visits_only_its_own_bounds() {
         let mut context = PureFactContext::new();
         for index in 0..size {
             context = context.assume_condition(
-                ConditionTerm::IntegerLessEqual(
+                OldConditionTerm::IntegerLessEqual(
                     difference(900_000 + index, 900_001 + index),
                     constant(7),
                 ),
@@ -86,12 +92,14 @@ fn filing_a_quantified_integer_antecedent_visits_only_its_own_bounds() {
         }
         let sum: SharedIntegerTerm =
             IntegerTerm::Add(observe(MachineIntegerType::UInt64, 831), constant(1)).into();
-        let reading =
-            ConditionTerm::IntegerLessThan(observe(MachineIntegerType::UInt64, 830), sum.clone());
+        let reading = OldConditionTerm::IntegerLessThan(
+            observe(MachineIntegerType::UInt64, 830),
+            sum.clone(),
+        );
         let (native, truth, _) =
             native_comparison_through_integer_operations(&reading, true).unwrap();
         let context =
-            context.assume_condition(ConditionTerm::IntegerLessEqual(sum, uint64_max()), true);
+            context.assume_condition(OldConditionTerm::IntegerLessEqual(sum, uint64_max()), true);
         let (context, work) = crate::persistent::measure_persistent_work(|| {
             context.assume_proposition(quantified_over_k(Proposition::condition_is(reading, true)))
         });
@@ -130,7 +138,7 @@ fn admitting_modular_equalities_does_not_export_shared_operands() {
                     IntegerTerm::constant(1.into()).into(),
                 );
                 context = context.clone().assume_condition(
-                    ConditionTerm::IntegerEqual(
+                    OldConditionTerm::IntegerEqual(
                         exact.into(),
                         IntegerTerm::from_machine(
                             format,
@@ -241,9 +249,9 @@ fn ordinary_comparison_admission_retains_shared_operands(ty: MachineIntegerType)
             let observed = IntegerTerm::Machine(operand.clone()).into();
             let constant = IntegerTerm::constant(100.into()).into();
             let condition = if equality {
-                ConditionTerm::IntegerEqual(observed, constant)
+                OldConditionTerm::IntegerEqual(observed, constant)
             } else {
-                ConditionTerm::IntegerLessEqual(observed, constant)
+                OldConditionTerm::IntegerLessEqual(observed, constant)
             };
             let source = Proposition::condition_is(condition, true);
             let facts = PureFactContext::new().assume_proposition(source.clone());
@@ -306,7 +314,7 @@ fn observation_alias_source_lookup_does_not_scan_supports() {
                 let variable = if related { 991900 } else { 991900 + n };
                 let bound = IntegerTerm::Add(constant(n as i64), constant(100 - n as i64)).into();
                 index.adjust(
-                    &ConditionTerm::IntegerLessEqual(
+                    &OldConditionTerm::IntegerLessEqual(
                         observe(MachineIntegerType::UInt32, variable),
                         bound,
                     ),
@@ -314,9 +322,9 @@ fn observation_alias_source_lookup_does_not_scan_supports() {
                 );
             }
             let hit =
-                ConditionTerm::unsigned_less_equal(word(991900), OldMachineTerm::constant(100));
+                OldConditionTerm::unsigned_less_equal(word(991900), OldMachineTerm::constant(100));
             let miss =
-                ConditionTerm::unsigned_less_equal(word(991900), OldMachineTerm::constant(101));
+                OldConditionTerm::unsigned_less_equal(word(991900), OldMachineTerm::constant(101));
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 assert!(index.source(&hit, true).is_some());
                 assert!(index.source(&miss, true).is_none());
@@ -354,7 +362,7 @@ fn shared_contradiction_admission_updates_only_new_additive_structure() {
                 );
                 let operand = SharedMachineIntegerTerm::from_shared(ty, root.clone()).unwrap();
                 facts.adjust(
-                    &ConditionTerm::IntegerLessEqual(
+                    &OldConditionTerm::IntegerLessEqual(
                         IntegerTerm::Machine(operand.clone()).into(),
                         constant(100),
                     ),
@@ -391,7 +399,7 @@ fn repeated_shared_comparison_admission_is_near_linear() {
                 );
                 let operand = SharedMachineIntegerTerm::from_shared(ty, root.clone()).unwrap();
                 facts = facts.clone().assume_condition(
-                    ConditionTerm::IntegerLessEqual(
+                    OldConditionTerm::IntegerLessEqual(
                         IntegerTerm::Machine(operand.clone()).into(),
                         constant(100),
                     ),
@@ -428,7 +436,7 @@ fn operation_and_quantified_bridges_retain_shared_operands() {
         let operand = SharedMachineIntegerTerm::from_shared(ty, root).unwrap();
         let sum: SharedIntegerTerm =
             IntegerTerm::Add(IntegerTerm::Machine(operand.clone()).into(), constant(1)).into();
-        let source = ConditionTerm::IntegerLessThan(observe(ty, 830), sum.clone());
+        let source = OldConditionTerm::IntegerLessThan(observe(ty, 830), sum.clone());
         let (view, _) =
             crate::kernel::machine_integer::comparison::comparison_view_through_integer_operations(
                 &source, true,
@@ -436,7 +444,7 @@ fn operation_and_quantified_bridges_retain_shared_operands() {
             .unwrap();
         let reading = view.integer_condition();
         let bounded = PureFactContext::new()
-            .assume_condition(ConditionTerm::IntegerLessEqual(sum, uint64_max()), true);
+            .assume_condition(OldConditionTerm::IntegerLessEqual(sum, uint64_max()), true);
         let facts = bounded.clone().assume_condition(source.clone(), true);
         assert!(facts.contains_known(&Proposition::condition_is(reading.clone(), true)));
         let facts =
@@ -464,7 +472,7 @@ fn constant_bound_selection_rejects_shared_symbolic_candidates_without_export() 
                 );
             }
             let operand = SharedMachineIntegerTerm::from_shared(ty, root).unwrap();
-            let source = ConditionTerm::IntegerLessEqual(
+            let source = OldConditionTerm::IntegerLessEqual(
                 observe(ty, 994010),
                 IntegerTerm::Machine(operand.clone()).into(),
             );
@@ -493,7 +501,7 @@ fn shared_bound_source_selection_uses_existing_index_across_branches() {
         let term = OldMachineTerm::add(word(189141), word(189142));
         let zero = OldMachineTerm::constant(0);
         let source = Proposition::condition_is(
-            ConditionTerm::signed_less_equal(zero.clone(), term.clone()),
+            OldConditionTerm::signed_less_equal(zero.clone(), term.clone()),
             true,
         );
         let root = KernelTermImport::default()
@@ -510,7 +518,7 @@ fn shared_bound_source_selection_uses_existing_index_across_branches() {
         let mut child = PureFactContext::new();
         for n in 0..size {
             child = child.assume_condition(
-                ConditionTerm::signed_less_equal(zero.clone(), word(189150 + n)),
+                OldConditionTerm::signed_less_equal(zero.clone(), word(189150 + n)),
                 true,
             );
         }

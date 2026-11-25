@@ -61,7 +61,7 @@ impl ExecutionValue {
             Self::Native(value) => Some(value),
             Self::Shared(root) => root
                 .old_pointer_value()
-                .or_else(|| root.boolean_native())
+                .or_else(|| root.old_boolean_value())
                 .or_else(|| {
                     matches!(root.node(), KernelTermNode::Variable(_))
                         .then(|| root.algebraic_native_value())
@@ -196,7 +196,7 @@ impl ExecutionValue {
         match self {
             Self::Shared(root) if root.ty() == &KernelType::Bool => Some(root.clone()),
             Self::Native(ProgramValue::Bool(word)) => Some(
-                KernelTermImport::default().condition(&ConditionTerm::truth_of_bool_word(word)),
+                KernelTermImport::default().condition(&OldConditionTerm::truth_of_bool_word(word)),
             ),
             _ => None,
         }
@@ -268,7 +268,7 @@ impl ExecutionValue {
                 if let Some(value) = term.algebraic_native_term() {
                     return ProgramValue::Parameter(Box::new(value.clone()));
                 }
-                if let Some(value) = term.boolean_native() {
+                if let Some(value) = term.old_boolean_value() {
                     return value.clone();
                 }
                 if let Some(value) = term.old_pointer_value() {
@@ -698,12 +698,12 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let variable = KernelTerm::variable(KernelType::Bool, Variable(999500));
         let roots = [
-            KernelTermImport::default().condition(&ConditionTerm::Constant(false)),
+            KernelTermImport::default().condition(&OldConditionTerm::Constant(false)),
             variable.clone(),
             KernelTerm::boolean_if([
                 variable.clone(),
                 KernelTerm::variable(KernelType::Bool, Variable(999501)),
-                KernelTermImport::default().condition(&ConditionTerm::Constant(true)),
+                KernelTermImport::default().condition(&OldConditionTerm::Constant(true)),
             ]),
             KernelTermImport::default()
                 .boolean_call(&SharedPureApplication::intern("stored_bool".into(), vec![])),
@@ -753,8 +753,8 @@ mod tests {
             );
             assert_eq!(memory.known_value(&address), Some(native));
             assert!(std::ptr::eq(
-                root.boolean_native().unwrap(),
-                root.boolean_native().unwrap()
+                root.old_boolean_value().unwrap(),
+                root.old_boolean_value().unwrap()
             ));
         }
         let raw = ProgramValue::Bool(OldMachineTerm::Constant {

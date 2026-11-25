@@ -420,7 +420,7 @@ fn closed_order_lowering_ignores_unrelated_state_and_facts() {
             for index in 0..unrelated {
                 state = state.with_local(format!("unused{index}"), int32(index));
                 facts = facts.assume_proposition(Proposition::condition_is(
-                    ConditionTerm::signed_less_equal(
+                    OldConditionTerm::signed_less_equal(
                         OldMachineTerm::Variable(Variable(999800 + index as u64)),
                         OldMachineTerm::constant(100),
                     ),
@@ -453,7 +453,7 @@ fn closed_order_lowering_ignores_unrelated_state_and_facts() {
                 .unwrap()
             });
             assert!(
-                matches!(&lowered.0, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { .. }, _))))
+                matches!(&lowered.0, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Compare { .. }, _))))
             );
             assert!(work > 0);
             let expected = *baseline.get_or_insert(work);

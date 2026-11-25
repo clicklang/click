@@ -34,10 +34,10 @@ fn zero_ownership_graph_queries_scale_without_fact_index() {
         let mut context = PureFactContext::new();
         for index in 0..size {
             context =
-                context.assume_condition(ConditionTerm::equal(var(index), var(index + 1)), true);
+                context.assume_condition(OldConditionTerm::equal(var(index), var(index + 1)), true);
         }
         context = context.assume_condition(
-            ConditionTerm::equal(var(size), OldMachineTerm::constant(0)),
+            OldConditionTerm::equal(var(size), OldMachineTerm::constant(0)),
             true,
         );
         let empty = ResourceContext::new();

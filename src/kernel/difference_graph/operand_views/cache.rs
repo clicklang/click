@@ -125,11 +125,11 @@ mod tests {
     }
     fn range(graph: &mut DifferenceGraph, value: &OldMachineTerm, lo: u32, hi: u32) {
         graph.assume_condition(
-            &ConditionTerm::signed_less_equal(lo.into(), value.clone()),
+            &OldConditionTerm::signed_less_equal(lo.into(), value.clone()),
             true,
         );
         graph.assume_condition(
-            &ConditionTerm::signed_less_equal(value.clone(), hi.into()),
+            &OldConditionTerm::signed_less_equal(value.clone(), hi.into()),
             true,
         );
     }
@@ -156,7 +156,7 @@ mod tests {
         range(&mut child, &x, 0, 4);
         assert_eq!(interval(&child, &sum), (1, 5));
         assert_eq!(interval(&parent, &sum), (1, 11));
-        child.assume_condition(&ConditionTerm::equal(x, 2u32.into()), true);
+        child.assume_condition(&OldConditionTerm::equal(x, 2u32.into()), true);
         assert_eq!(interval(&child, &sum), (3, 3));
     }
     #[test]
@@ -170,11 +170,11 @@ mod tests {
         assert_eq!(interval(&parent, &difference), (-100, 100));
         let mut child = parent.clone();
         child.assume_condition(
-            &ConditionTerm::signed_less_equal(x.clone(), y.clone()),
+            &OldConditionTerm::signed_less_equal(x.clone(), y.clone()),
             true,
         );
         assert_eq!(interval(&child, &difference), (-100, 0));
-        child.assume_condition(&ConditionTerm::signed_less_than(x, y), true);
+        child.assume_condition(&OldConditionTerm::signed_less_than(x, y), true);
         assert_eq!(interval(&child, &difference), (-100, -1));
         assert_eq!(interval(&parent, &difference), (-100, 100));
     }
@@ -188,7 +188,7 @@ mod tests {
         range(&mut graph, &y, 0, 10);
         assert_eq!(interval(&graph, &product), (0, 100));
         graph.assume_condition(
-            &ConditionTerm::signed_less_equal(product.clone(), 7u32.into()),
+            &OldConditionTerm::signed_less_equal(product.clone(), 7u32.into()),
             true,
         );
         assert_eq!(interval(&graph, &product), (0, 7));
@@ -205,7 +205,7 @@ mod tests {
         for leaf in &leaves {
             range(&mut parent, leaf, 0, 100);
             parent.assume_condition(
-                &ConditionTerm::signed_less_equal(leaf.clone(), source.clone()),
+                &OldConditionTerm::signed_less_equal(leaf.clone(), source.clone()),
                 true,
             );
         }
@@ -234,17 +234,26 @@ mod tests {
         let mut parent = DifferenceGraph::new();
         assert_eq!(read(&parent), Domain::UInt64.range());
         parent.assume_condition(
-            &ConditionTerm::int64_signed_less_equal(OldMachineTerm::int64_constant(0), x.clone()),
+            &OldConditionTerm::int64_signed_less_equal(
+                OldMachineTerm::int64_constant(0),
+                x.clone(),
+            ),
             true,
         );
         parent.assume_condition(
-            &ConditionTerm::int64_signed_less_equal(x.clone(), OldMachineTerm::int64_constant(10)),
+            &OldConditionTerm::int64_signed_less_equal(
+                x.clone(),
+                OldMachineTerm::int64_constant(10),
+            ),
             true,
         );
         assert_eq!(read(&parent), (0, 10));
         let mut child = parent.clone();
         child.assume_condition(
-            &ConditionTerm::int64_signed_less_equal(x.clone(), OldMachineTerm::int64_constant(4)),
+            &OldConditionTerm::int64_signed_less_equal(
+                x.clone(),
+                OldMachineTerm::int64_constant(4),
+            ),
             true,
         );
         assert_eq!(read(&child), (0, 4));

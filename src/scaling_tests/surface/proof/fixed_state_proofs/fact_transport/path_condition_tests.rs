@@ -6,7 +6,7 @@ use super::*;
 
 #[test]
 fn compound_transport_target_work_scales_with_explicit_leaves() {
-    let source = Proposition::condition_is(ConditionTerm::Constant(true), true);
+    let source = Proposition::condition_is(OldConditionTerm::Constant(true), true);
     let facts = PureFactContext::new().assume_proposition(source.clone());
     let mut previous = 0;
     for size in [16, 64, 256, 1024] {

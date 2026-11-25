@@ -17,7 +17,7 @@ fn quantified_single_match_does_not_check_the_whole_alpha_bucket() {
                 Variable(2),
                 Sort::ProgramInt32,
                 Proposition::condition_is(
-                    ConditionTerm::equal(
+                    OldConditionTerm::equal(
                         OldMachineTerm::Variable(Variable(1)),
                         OldMachineTerm::Variable(Variable(2)),
                     ),
@@ -55,7 +55,7 @@ fn quantified_single_match_does_not_check_the_whole_alpha_bucket() {
 fn quantified_nested_matching_work_is_linear_and_context_indexed() {
     let nested = |depth: usize, base: u64| {
         let mut p = Proposition::condition_is(
-            ConditionTerm::equal(
+            OldConditionTerm::equal(
                 OldMachineTerm::Variable(Variable(base)),
                 OldMachineTerm::constant(0),
             ),
@@ -90,7 +90,7 @@ fn quantified_nested_matching_work_is_linear_and_context_indexed() {
                 Variable(9000),
                 Sort::ProgramInt32,
                 Proposition::condition_is(
-                    ConditionTerm::equal(
+                    OldConditionTerm::equal(
                         OldMachineTerm::Variable(Variable(9000)),
                         OldMachineTerm::constant(index as u32 + 1),
                     ),
@@ -137,7 +137,7 @@ fn machine_affine_equality_work_is_linear_in_the_sum() {
         let forward = sum(&mut (0..size));
         let backward = sum(&mut (0..size).rev());
         let goal = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: Box::new(forward),
@@ -169,7 +169,8 @@ fn integer_affine_equality_work_is_linear_in_the_sum() {
         };
         let forward: SharedIntegerTerm = sum(&mut (0..size)).into();
         let backward: SharedIntegerTerm = sum(&mut (0..size).rev()).into();
-        let goal = Proposition::condition_is(ConditionTerm::IntegerEqual(forward, backward), true);
+        let goal =
+            Proposition::condition_is(OldConditionTerm::IntegerEqual(forward, backward), true);
         let (proved, work) =
             crate::instrumentation::measure_deterministic_work(|| normalizes_context_free(&goal));
         assert!(proved);
@@ -197,7 +198,7 @@ fn integer_affine_comparison_work_is_linear_in_a_shared_term_dag() {
         let successor: SharedIntegerTerm =
             IntegerTerm::add(side.as_ref().clone(), IntegerTerm::constant_i64(1)).into();
         let goal =
-            Proposition::condition_is(ConditionTerm::IntegerGreaterThan(successor, side), true);
+            Proposition::condition_is(OldConditionTerm::IntegerGreaterThan(successor, side), true);
         let (proved, work) =
             crate::instrumentation::measure_deterministic_work(|| normalizes_context_free(&goal));
         assert!(proved);
@@ -225,7 +226,7 @@ fn integer_coefficient_normalization_work_scales_with_selected_terms() {
             );
         }
         let goal = Proposition::condition_is(
-            ConditionTerm::IntegerEqual(
+            OldConditionTerm::IntegerEqual(
                 IntegerTerm::multiply(IntegerTerm::constant_i64(7), sum).into(),
                 distributed.into(),
             ),
@@ -254,7 +255,7 @@ fn integer_coefficient_normalization_visits_shared_nodes_once() {
         let left = IntegerTerm::Multiply(IntegerTerm::constant_i64(3).into(), value.clone()).into();
         let right =
             IntegerTerm::Add(value.clone(), IntegerTerm::Add(value.clone(), value).into()).into();
-        let goal = Proposition::condition_is(ConditionTerm::IntegerEqual(left, right), true);
+        let goal = Proposition::condition_is(OldConditionTerm::IntegerEqual(left, right), true);
         let (proved, work) =
             crate::instrumentation::measure_deterministic_work(|| normalizes_context_free(&goal));
         assert!(proved);
@@ -289,7 +290,7 @@ fn check_footprint_normalization_scaling(sizes: [u64; 4]) {
         for i in 0..size {
             // Grow the selected address class and a related separation bucket.
             facts = facts.with_fact(Proposition::condition_is(
-                ConditionTerm::address_equal(pointer(96_140), pointer(97_000 + i)),
+                OldConditionTerm::address_equal(pointer(96_140), pointer(97_000 + i)),
                 true,
             ));
             let range = |p, bytes: u32| {
@@ -305,7 +306,7 @@ fn check_footprint_normalization_scaling(sizes: [u64; 4]) {
                 right: Box::new(range(pointer(96_142), 16 + i as u32)),
             });
             facts = facts.with_fact(Proposition::condition_is(
-                ConditionTerm::address_equal(pointer(99_000 + i * 2), pointer(99_001 + i * 2)),
+                OldConditionTerm::address_equal(pointer(99_000 + i * 2), pointer(99_001 + i * 2)),
                 true,
             ));
         }

@@ -1,7 +1,8 @@
 #[test]
 fn completion_skips_nonreflexive_connective_dags() {
     let _session = crate::kernel::VerificationSession::enter();
-    let leaf = KernelTermImport::default().condition(&ConditionTerm::Variable(Variable(100_298)));
+    let leaf =
+        KernelTermImport::default().condition(&OldConditionTerm::Variable(Variable(100_298)));
     for depth in [4, 8, 12, 16] {
         let mut root = leaf.clone();
         for _ in 0..depth {
@@ -27,7 +28,7 @@ fn completion_compares_shared_conditional_words_without_export() {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
         let guard =
-            KernelTermImport::default().condition(&ConditionTerm::Variable(Variable(100_299)));
+            KernelTermImport::default().condition(&OldConditionTerm::Variable(Variable(100_299)));
         let leaf = KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(100_300));
         let mut word = leaf.clone();
         for _ in 0..depth {

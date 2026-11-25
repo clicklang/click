@@ -13,7 +13,7 @@ fn memory_order_queries_scale_across_growing_prefixes_and_fact_contexts() {
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 0..size {
                 facts = facts.assume_condition(
-                    ConditionTerm::signed_less_equal(
+                    OldConditionTerm::signed_less_equal(
                         0u32.into(),
                         OldMachineTerm::Variable(Variable(994000 + index)),
                     ),
@@ -24,7 +24,7 @@ fn memory_order_queries_scale_across_growing_prefixes_and_fact_contexts() {
                     MachineBinaryOp::Multiply,
                     [root.clone(), root.clone()],
                 );
-                let query = ConditionTerm::integer_less_than(
+                let query = OldConditionTerm::integer_less_than(
                     IntegerTerm::Machine(
                         SharedMachineIntegerTerm::from_shared(format, root.clone()).unwrap(),
                     ),
@@ -108,7 +108,7 @@ fn aligned_shared_sums_check_selected_read_authority_in_linear_work() {
         let write_index = OldMachineTerm::Variable(Variable(996_001));
         let base = Address {
             base: "framed-sums".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let pointers: Vec<_> = (0..size)
             .map(|index| {
@@ -128,7 +128,7 @@ fn aligned_shared_sums_check_selected_read_authority_in_linear_work() {
         let weak = context.clone();
         for index in 0..size {
             context = context.assume_condition(
-                ConditionTerm::signed_less_than(
+                OldConditionTerm::signed_less_than(
                     OldMachineTerm::Variable(Variable(996_100 + index as u64)),
                     write_index.clone(),
                 ),

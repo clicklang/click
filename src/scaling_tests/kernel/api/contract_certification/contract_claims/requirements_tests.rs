@@ -6,7 +6,7 @@ fn claim_requirements_use_indexed_facts_and_scale_with_their_output() {
         let _session = crate::kernel::VerificationSession::enter();
         let variable = OldMachineTerm::Variable(Variable(992_000));
         let required = Proposition::condition_is(
-            ConditionTerm::equal(variable.clone(), OldMachineTerm::constant(7)),
+            OldConditionTerm::equal(variable.clone(), OldMachineTerm::constant(7)),
             true,
         );
         let mut facts = PureFactStore::from_ordered(std::slice::from_ref(&required));
@@ -16,7 +16,7 @@ fn claim_requirements_use_indexed_facts_and_scale_with_their_output() {
                 OldMachineTerm::Variable(Variable(993_000 + index)),
             ] {
                 facts = facts.with_kernel_checked_fact(Proposition::condition_is(
-                    ConditionTerm::signed_less_than(
+                    OldConditionTerm::signed_less_than(
                         left,
                         OldMachineTerm::constant(1000 + index as u32),
                     ),
@@ -61,12 +61,12 @@ fn claim_requirements_use_indexed_facts_and_scale_with_their_output() {
         let _session = crate::kernel::VerificationSession::enter();
         let goal = ContractClaimGoal {
             target: FunctionContractClaimTarget::EnsureProposition(0),
-            proposition: Proposition::condition_is(ConditionTerm::Constant(true), true),
+            proposition: Proposition::condition_is(OldConditionTerm::Constant(true), true),
             facts: vec![],
             obligations: (0..size)
                 .map(|index| {
                     ProofObligation::verification_condition(Proposition::condition_is(
-                        ConditionTerm::equal(
+                        OldConditionTerm::equal(
                             OldMachineTerm::Variable(Variable(994_000 + index)),
                             OldMachineTerm::constant(7),
                         ),

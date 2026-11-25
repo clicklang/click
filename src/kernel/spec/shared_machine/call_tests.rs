@@ -84,21 +84,21 @@ fn native_domain(value: &Proposition) -> Proposition {
         }
         Proposition::ConditionIs(c, t) => Proposition::condition_is(
             match c.old_form() {
-                ConditionTerm::IntegerEqual(a, b) => {
-                    ConditionTerm::integer_equal(native_integer(a), native_integer(b))
+                OldConditionTerm::IntegerEqual(a, b) => {
+                    OldConditionTerm::integer_equal(native_integer(a), native_integer(b))
                 }
-                ConditionTerm::IntegerLessEqual(a, b) => {
-                    ConditionTerm::integer_less_equal(native_integer(a), native_integer(b))
+                OldConditionTerm::IntegerLessEqual(a, b) => {
+                    OldConditionTerm::integer_less_equal(native_integer(a), native_integer(b))
                 }
-                ConditionTerm::IntegerGreaterEqual(a, b) => {
-                    ConditionTerm::integer_greater_equal(native_integer(a), native_integer(b))
+                OldConditionTerm::IntegerGreaterEqual(a, b) => {
+                    OldConditionTerm::integer_greater_equal(native_integer(a), native_integer(b))
                 }
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format,
                     relation,
                     left,
                     right,
-                } => ConditionTerm::Compare {
+                } => OldConditionTerm::Compare {
                     format: *format,
                     relation: *relation,
                     left: Box::new(native_term(left)),
@@ -705,15 +705,15 @@ fn boolean_call_handoffs_retain_nested_boolean_arguments() {
 #[test]
 fn boolean_composition_producers_preserve_casts_and_comparison_rules() {
     let _session = VerificationSession::enter();
-    let condition = ConditionTerm::Variable(Variable(999440));
+    let condition = OldConditionTerm::Variable(Variable(999440));
     let native = ProgramValue::Bool(OldMachineTerm::bool_cast(
         MachineIntegerType::UInt8,
         condition.clone(),
     ));
     let left = SpecValue::Shared(KernelTermImport::default().condition(&condition));
-    let right_condition = ConditionTerm::Variable(Variable(999441));
+    let right_condition = OldConditionTerm::Variable(Variable(999441));
     let right = SpecValue::Shared(KernelTermImport::default().condition(&right_condition));
-    let guard = Proposition::condition_is(ConditionTerm::Variable(Variable(999442)), false);
+    let guard = Proposition::condition_is(OldConditionTerm::Variable(Variable(999442)), false);
     let combined = SpecValue::conditional(&guard, &left, &right, true)
         .unwrap()
         .unwrap();
@@ -750,9 +750,9 @@ fn boolean_composition_producers_preserve_casts_and_comparison_rules() {
         SpecValue::Native(ProgramValue::Bool(OldMachineTerm::Variable(Variable(999443)))),
         SpecValue::Native(ProgramValue::Bool(OldMachineTerm::bool_cast(
             MachineIntegerType::UInt8,
-            ConditionTerm::Constant(true),
+            OldConditionTerm::Constant(true),
         ))),
-        SpecValue::Shared(KernelTermImport::default().condition(&ConditionTerm::Constant(false))),
+        SpecValue::Shared(KernelTermImport::default().condition(&OldConditionTerm::Constant(false))),
         SpecValue::Native(ProgramValue::Int32(OldMachineTerm::constant(1))),
     ] {
         for op in [
@@ -774,11 +774,11 @@ fn cold_native_array_argument_retains_the_entry_point_across_local_stores() {
     let _session = VerificationSession::enter();
     let local = Address {
         base: "local:unrelated".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let pointer = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let argument = SpecPureFunctionArgument::ArrayRef {
         point: SpecPoint::Current,
@@ -839,15 +839,15 @@ fn external_array_entry_crosses_checked_local_calls_with_bounded_cold_work() {
     let _session = VerificationSession::enter();
     let array = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let local = Address {
         base: "local:callee-write".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let other = Address {
         base: "local:other-callee-write".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let argument = ProgramValue::typed_pointer(array.clone(), ProgramType::Int32Pointer);
     let entry = ExecutionState::new().begin_function_entry_memory();
@@ -1245,11 +1245,11 @@ fn declared_predicate_array_names_its_entry_point_after_local_calls() {
     let _session = VerificationSession::enter();
     let array = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let local = Address {
         base: "local:callee-write".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let arguments = [SpecPredicateArgument::ArrayRef {
         point: SpecPoint::Current,

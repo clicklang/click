@@ -3,14 +3,14 @@ use super::*;
 fn scalar(id: u64) -> OldMachineTerm {
     OldMachineTerm::Variable(Variable(id))
 }
-fn offset(id: u64) -> AddressOffset {
-    AddressOffset::Variable(Variable(id))
+fn offset(id: u64) -> OldAddressOffset {
+    OldAddressOffset::Variable(Variable(id))
 }
-fn scaled(id: u64, width: i64) -> AddressOffset {
-    AddressOffset::scale_int32(scalar(id), width)
+fn scaled(id: u64, width: i64) -> OldAddressOffset {
+    OldAddressOffset::scale_int32(scalar(id), width)
 }
-fn nested(term: AddressOffset) -> AddressOffset {
-    AddressOffset::Add(Box::new(term), Box::new(offset(90)))
+fn nested(term: OldAddressOffset) -> OldAddressOffset {
+    OldAddressOffset::Add(Box::new(term), Box::new(offset(90)))
 }
 
 #[test]
@@ -34,7 +34,7 @@ fn scaled_int32_congruence_propagates_early_and_late_into_addition_aliases() {
         assert!(!sibling.are_offsets_equal(&offset(10), &offset(11)));
         assert!(!graph.are_offsets_equal(&scaled(1, 4), &scaled(3, 8)));
         for unsigned in [false, true] {
-            let wide = |id| AddressOffset::scaled_int64_node(scalar(id), 4, unsigned);
+            let wide = |id| OldAddressOffset::scaled_int64_node(scalar(id), 4, unsigned);
             assert!(!graph.are_offsets_equal(&scaled(1, 4), &wide(1)));
             assert!(!graph.are_offsets_equal(&wide(1), &wide(3)));
         }
@@ -57,21 +57,21 @@ fn scaled_int32_literals_join_folded_constants_without_overflow() {
             if !early {
                 graph.add_int32_equality(&literal, &scalar(1));
             }
-            let folded = AddressOffset::scale_int32(literal.clone(), 4);
+            let folded = OldAddressOffset::scale_int32(literal.clone(), 4);
             assert!(graph.are_offsets_equal(&offset(10), &nested(folded.clone())));
-            let explicit = AddressOffset::scaled_int32_node(literal, 4);
+            let explicit = OldAddressOffset::scaled_int32_node(literal, 4);
             assert!(graph.are_offsets_equal(&explicit, &folded));
         }
     }
     let mut graph = EqualityGraph::default();
     graph.add_int32_equality(&scalar(1), &OldMachineTerm::constant(2));
-    assert!(!graph.are_offsets_equal(&scaled(1, i64::MAX), &AddressOffset::Constant(-2)));
+    assert!(!graph.are_offsets_equal(&scaled(1, i64::MAX), &OldAddressOffset::Constant(-2)));
 }
 
 #[test]
 fn scaled_int32_restriction_removes_only_unsupported_consequences() {
-    let equality = ConditionTerm::equal(scalar(1), scalar(2));
-    let explicit = ConditionTerm::address_offset_equal(scaled(2, 4), offset(10));
+    let equality = OldConditionTerm::equal(scalar(1), scalar(2));
+    let explicit = OldConditionTerm::address_offset_equal(scaled(2, 4), offset(10));
     let context = PureFactContext::new()
         .assume_condition(equality.clone(), true)
         .assume_condition(explicit.clone(), true);
@@ -95,20 +95,20 @@ fn scaled_int32_restriction_removes_only_unsupported_consequences() {
 
 /// The byte offset of `x * 4` at stride one, the spelling `(char *)p + x * 4`
 /// keeps when it is formed.
-fn byte_product(id: u64, stride: u32, product_first: bool) -> AddressOffset {
+fn byte_product(id: u64, stride: u32, product_first: bool) -> OldAddressOffset {
     let (left, right) = if product_first {
         (scalar(id), OldMachineTerm::constant(stride))
     } else {
         (OldMachineTerm::constant(stride), scalar(id))
     };
-    AddressOffset::scale_int32(OldMachineTerm::multiply(left, right), 1)
+    OldAddressOffset::scale_int32(OldMachineTerm::multiply(left, right), 1)
 }
 
-fn no_overflow(id: u64, stride: u32, product_first: bool) -> ConditionTerm {
+fn no_overflow(id: u64, stride: u32, product_first: bool) -> OldConditionTerm {
     if product_first {
-        ConditionTerm::signed_multiply_overflows(scalar(id), OldMachineTerm::constant(stride))
+        OldConditionTerm::signed_multiply_overflows(scalar(id), OldMachineTerm::constant(stride))
     } else {
-        ConditionTerm::signed_multiply_overflows(OldMachineTerm::constant(stride), scalar(id))
+        OldConditionTerm::signed_multiply_overflows(OldMachineTerm::constant(stride), scalar(id))
     }
 }
 
@@ -151,7 +151,7 @@ fn a_byte_product_joins_its_element_offset_in_either_registration_order() {
 /// index, a stride of one, or two symbolic operands.
 #[test]
 fn a_byte_product_stays_apart_without_its_no_overflow_fact() {
-    let unrelated = |condition: Option<(ConditionTerm, bool)>| {
+    let unrelated = |condition: Option<(OldConditionTerm, bool)>| {
         let mut graph = EqualityGraph::default();
         if let Some((condition, value)) = condition {
             graph.add_condition(&condition, value);
@@ -171,7 +171,7 @@ fn a_byte_product_stays_apart_without_its_no_overflow_fact() {
     );
     assert!(
         crate::kernel::equality_graph::byte_product_offsets(
-            &ConditionTerm::signed_multiply_overflows(scalar(1), scalar(2))
+            &OldConditionTerm::signed_multiply_overflows(scalar(1), scalar(2))
         )
         .is_none()
     );

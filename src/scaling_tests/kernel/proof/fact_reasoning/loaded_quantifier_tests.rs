@@ -17,7 +17,7 @@ fn loaded_quantifier_matching_ignores_ambient_facts_and_retained_memory_size() {
                 memory = memory.with_block(block.clone(), 8).store(
                     Address {
                         base: block.into(),
-                        offset: AddressOffset::Constant(0),
+                        offset: OldAddressOffset::Constant(0),
                     },
                     ProgramValue::Int32(OldMachineTerm::constant(index as u32)),
                 );
@@ -28,7 +28,7 @@ fn loaded_quantifier_matching_ignores_ambient_facts_and_retained_memory_size() {
             let mut facts = PureFactStore::from_ordered(std::slice::from_ref(&native));
             for index in 0..size {
                 facts = facts.with_fact(Proposition::condition_is(
-                    ConditionTerm::equal(
+                    OldConditionTerm::equal(
                         OldMachineTerm::Variable(Variable(930_000 + index)),
                         OldMachineTerm::constant(3),
                     ),
@@ -42,7 +42,7 @@ fn loaded_quantifier_matching_ignores_ambient_facts_and_retained_memory_size() {
             let changed = intern_memory(memory.as_ref().clone().store(
                 Address {
                     base: "loaded-quantifier".into(),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 },
                 ProgramValue::Int32(OldMachineTerm::constant(7)),
             ));

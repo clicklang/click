@@ -93,7 +93,7 @@ fn prepared_pure_application_ignores_unrelated_facts() {
         let root = Proof::for_pure_goal(
             "argument guard scaling",
             &requires,
-            Proposition::condition_is(crate::kernel::ConditionTerm::Constant(false), true),
+            Proposition::condition_is(crate::kernel::OldConditionTerm::Constant(false), true),
             &context,
             definitions,
             &theorems,

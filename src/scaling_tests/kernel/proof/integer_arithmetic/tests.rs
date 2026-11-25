@@ -28,7 +28,7 @@ fn nonlinear_integer_atoms_do_not_traverse_their_operand_dags() {
         ] {
             let atom: crate::kernel::SharedIntegerTerm = atom.into();
             let id = atom.id();
-            let goal = proposition(ConditionTerm::IntegerLessEqual(
+            let goal = proposition(OldConditionTerm::IntegerLessEqual(
                 atom,
                 IntegerTerm::constant_i64(0).into(),
             ));
@@ -60,7 +60,7 @@ fn opaque_integer_atoms_scale_with_affine_wrappers_and_distinct_atoms() {
             );
             expression = IntegerTerm::add(expression, atom);
         }
-        let goal = proposition(ConditionTerm::integer_less_equal(
+        let goal = proposition(OldConditionTerm::integer_less_equal(
             expression,
             IntegerTerm::constant_i64(0),
         ));
@@ -91,7 +91,7 @@ fn integer_affine_dag_scaling_includes_distinct_variables_and_shared_paths() {
             (distinct, &mut distinct_work, false),
             (shared, &mut shared_work, true),
         ] {
-            let goal = proposition(ConditionTerm::integer_less_equal(
+            let goal = proposition(OldConditionTerm::integer_less_equal(
                 expression,
                 IntegerTerm::constant_i64(0),
             ));
@@ -141,7 +141,7 @@ fn repeated_fold_atoms_share_scoped_alpha_work() {
         }
         let fold = int32_fold(0, 8, accumulator.0, item.0, body);
         let expression = IntegerTerm::add(fold.clone(), fold);
-        let goal = proposition(ConditionTerm::IntegerEqual(
+        let goal = proposition(OldConditionTerm::IntegerEqual(
             expression.into(),
             IntegerTerm::constant_i64(0).into(),
         ));

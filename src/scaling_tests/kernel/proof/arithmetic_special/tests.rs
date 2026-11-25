@@ -128,7 +128,7 @@ fn shared_tagged_word_certificates_preserve_bounds_without_exports() {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::UInt64;
         let address = OldMachineTerm::IntegerAddress(
-            Box::new(pointer(AddressOffset::Constant(0))),
+            Box::new(pointer(OldAddressOffset::Constant(0))),
             crate::kernel::AddressObjectClass::NONE,
         );
         let mut root = KernelTerm::retained_machine_operand(format, View::Old(&address));
@@ -182,10 +182,10 @@ fn intrinsic_alignment_known_work_ignores_other_blocks_and_related_facts() {
             crate::kernel::primitives::register_block_alignment(&other, 16);
             for related in [block.clone(), other] {
                 context = context.assume_proposition(Proposition::condition_is(
-                    ConditionTerm::pointer_aligned(
+                    OldConditionTerm::pointer_aligned(
                         Address {
                             base: related,
-                            offset: AddressOffset::Constant(i * 8),
+                            offset: OldAddressOffset::Constant(i * 8),
                         },
                         8,
                     ),
@@ -196,10 +196,10 @@ fn intrinsic_alignment_known_work_ignores_other_blocks_and_related_facts() {
         let goals =
             [(0, 8, true), (4, 8, false), (0, 16, true)].map(|(offset, alignment, truth)| {
                 Proposition::condition_is(
-                    ConditionTerm::pointer_aligned(
+                    OldConditionTerm::pointer_aligned(
                         Address {
                             base: block.clone(),
-                            offset: AddressOffset::Constant(offset),
+                            offset: OldAddressOffset::Constant(offset),
                         },
                         alignment,
                     ),
@@ -229,16 +229,16 @@ fn symbolic_alignment_known_work_ignores_other_recorded_alignments() {
     let base: AddressBase = "symbolic-alignment-target".into();
     let at = |base, offset, alignment| {
         Proposition::condition_is(
-            ConditionTerm::pointer_aligned(Address { base, offset }, alignment),
+            OldConditionTerm::pointer_aligned(Address { base, offset }, alignment),
             true,
         )
     };
-    let premise = at(base.clone(), AddressOffset::Constant(0), 8);
+    let premise = at(base.clone(), OldAddressOffset::Constant(0), 8);
     let i = OldMachineTerm::Variable(crate::kernel::Variable(899_012));
     let goals = [8, 4].map(|width| {
         at(
             base.clone(),
-            AddressOffset::scaled_int32_node(i.clone(), width),
+            OldAddressOffset::scaled_int32_node(i.clone(), width),
             8,
         )
     });
@@ -249,7 +249,7 @@ fn symbolic_alignment_known_work_ignores_other_recorded_alignments() {
                 base.clone(),
                 format!("symbolic-alignment-other-{j}").as_str().into(),
             ] {
-                facts = facts.assume_proposition(at(block, AddressOffset::Constant(j * 8), 8));
+                facts = facts.assume_proposition(at(block, OldAddressOffset::Constant(j * 8), 8));
             }
         }
         let (results, work) = crate::instrumentation::measure_deterministic_work(|| {

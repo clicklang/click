@@ -13,7 +13,7 @@ impl KernelTermImport {
     pub(crate) fn algebraic(&mut self, source: &AlgebraicTerm) -> KernelTerm {
         enum Task<'a> {
             Term(&'a AlgebraicTerm),
-            If(&'a AlgebraicType, &'a ConditionTerm),
+            If(&'a AlgebraicType, &'a OldConditionTerm),
             Field(&'a AlgebraicValue),
             Argument(&'a PureFunctionArgument),
             Call(&'a AlgebraicType, &'a str, &'a [PureFunctionArgument]),

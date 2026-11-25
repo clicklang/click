@@ -234,7 +234,7 @@ fn literal_integer_conditionals_in_folds_keep_retained_arms() {
         let item = Variable(98_002);
         let value = KernelTerm::variable(KernelType::Integer, source);
         let zero = KernelTerm::integer_literal(0.into());
-        let guard = KernelTermImport::default().condition(&ConditionTerm::Constant(false));
+        let guard = KernelTermImport::default().condition(&OldConditionTerm::Constant(false));
         let mut body = value.clone();
         for _ in 0..depth {
             body = KernelTerm::integer_if_raw([guard.clone(), body.clone(), body]);
@@ -330,7 +330,7 @@ fn boolean_variable_guards_in_integer_folds_select_retained_arms() {
                 variable,
                 TypedProgramValueReplacement::Bitvector(OldMachineTerm::bool_cast(
                     MachineIntegerType::UInt8,
-                    ConditionTerm::Constant(truth),
+                    OldConditionTerm::Constant(truth),
                 )),
             )]);
             let integers = BTreeMap::new();
@@ -374,13 +374,13 @@ fn boolean_variable_guards_in_integer_folds_select_retained_arms() {
 #[test]
 fn literal_machine_guards_in_integer_folds_keep_retained_arms() {
     let guards = [
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left: Box::new(OldMachineTerm::constant(u32::MAX)),
             right: Box::new(OldMachineTerm::constant(0)),
         },
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
             left: Box::new(OldMachineTerm::constant(i32::MAX as u32)),

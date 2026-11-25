@@ -15,7 +15,7 @@
 
 #[cfg(test)]
 use crate::kernel::{CompareRelation, MachineIntegerType};
-use crate::kernel::{ConditionTerm, Proposition, Term};
+use crate::kernel::{OldConditionTerm, Proposition, Term};
 
 #[cfg(test)]
 thread_local! {
@@ -83,7 +83,7 @@ pub(super) fn kind(proposition: &Proposition) -> String {
     }
 }
 
-fn condition_kind(condition: &ConditionTerm) -> String {
+fn condition_kind(condition: &OldConditionTerm) -> String {
     // A machine comparison or overflow test names its format and relation.
     if let Some((op, _, _)) = condition.as_bitvector_comparison() {
         let kind = if op.is_overflow() {
@@ -1317,7 +1317,7 @@ theorem add3_adds_four() {
     #[test]
     fn a_censused_fact_is_classified_by_the_atom_it_concludes() {
         let atom = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::Variable(Variable(1))),

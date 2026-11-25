@@ -55,13 +55,13 @@ fn check_zero_prefixes(unresolved: bool, cancellation: bool) {
                     KernelTerm::machine_binary_shared(format, Op::Add, [root.clone(), zero.clone()])
                 };
                 context = context.assume_condition(
-                    ConditionTerm::equal(
+                    OldConditionTerm::equal(
                         OldMachineTerm::Variable(Variable(997640 + n as u64)),
                         (n as u32).into(),
                     ),
                     true,
                 );
-                let query = ConditionTerm::integer_less_than(
+                let query = OldConditionTerm::integer_less_than(
                     observed(root.clone()),
                     observed(right.clone()),
                 );

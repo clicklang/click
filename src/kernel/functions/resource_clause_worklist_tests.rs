@@ -4,7 +4,7 @@ use super::*;
 fn section_read_supply_preserves_zero_and_unknown_owned_quantities() {
     let base = Address {
         base: AddressBase::Heap(8_991_700),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let range = MemoryRange::new(base.clone(), 0u32.into(), 1u32.into());
     let facts = PureFactContext::new();
@@ -27,7 +27,7 @@ fn section_read_supply_preserves_zero_and_unknown_owned_quantities() {
 fn memory_waiter_requires_a_whole_range_supplier() {
     let base = Address {
         base: AddressBase::Concrete("resource-clause-adjacent".to_string()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let wide = ResourceFact::view_memory(MemoryRange::new(
         base.clone(),
@@ -104,7 +104,7 @@ fn memory_waiter_requires_a_whole_range_supplier() {
 fn same_block_disjoint_waiters_use_interval_candidates() {
     let base = Address {
         base: AddressBase::Concrete("resource-clause-disjoint".to_string()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let samples = [4_usize, 8, 16, 32]
             .into_iter()
@@ -156,11 +156,11 @@ fn comparable_constant_bases_share_interval_space() {
     let block = AddressBase::Concrete("resource-clause-base-aware".to_string());
     let dependency_base = Address {
         base: block.clone(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let supplied_base = Address {
         base: block,
-        offset: AddressOffset::Constant(8),
+        offset: OldAddressOffset::Constant(8),
     };
     let dependency = ResourceFact::view_memory(MemoryRange::new(
         dependency_base,
@@ -185,7 +185,7 @@ fn comparable_constant_bases_share_interval_space() {
 fn concrete_memory_waiters_share_physical_byte_space_across_widths() {
     let base = Address {
         base: AddressBase::Concrete("resource-clause-byte-space".to_string()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let dependency = ResourceFact::view_memory(MemoryRange::new_with_element_width(
         base.clone(),
@@ -212,7 +212,7 @@ fn concrete_memory_waiters_share_physical_byte_space_across_widths() {
 fn symbolic_memory_waiters_keep_conservative_block_fallback() {
     let base = Address {
         base: AddressBase::Concrete("resource-clause-symbolic".to_string()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let dependency = ResourceFact::view_memory(MemoryRange::new(
         base.clone(),
@@ -237,7 +237,7 @@ fn symbolic_memory_waiters_keep_conservative_block_fallback() {
 fn concrete_waiter_block_fallback_registers_and_unregisters_symmetrically() {
     let base = Address {
         base: AddressBase::Concrete("resource-clause-fallback-lifetime".to_string()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let dependency = ResourceFact::view_memory(MemoryRange::new(
         base.clone(),

@@ -6,7 +6,7 @@ fn rebased_wide_bounds_retain_cold_coordinate_dags() {
         let ty = MachineIntegerType::UInt64;
         let base = Address {
             base: "wide_bound_scaling".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let mut root =
             KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(1018502));
@@ -18,7 +18,7 @@ fn rebased_wide_bounds_retain_cold_coordinate_dags() {
         let range = MemoryRange::new_wide(
             Address {
                 base: base.base.clone(),
-                offset: AddressOffset::Int64Scaled {
+                offset: OldAddressOffset::Int64Scaled {
                     value: index.clone(),
                     byte_width: 8,
                     unsigned: true,
@@ -65,9 +65,9 @@ fn wide_normalization_candidates_keep_shared_endpoint_keys() {
         let index = MachineOperandView::Shared(&root).retain(MachineIntegerType::Int64);
         let base = Address {
             base: "normalization-shared-index".into(),
-            offset: AddressOffset::Add(
-                Box::new(AddressOffset::Constant(7)),
-                Box::new(AddressOffset::Int64Scaled {
+            offset: OldAddressOffset::Add(
+                Box::new(OldAddressOffset::Constant(7)),
+                Box::new(OldAddressOffset::Int64Scaled {
                     value: index.clone(),
                     byte_width: 8,
                     unsigned: true,

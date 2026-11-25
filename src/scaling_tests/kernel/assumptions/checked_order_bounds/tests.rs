@@ -22,7 +22,7 @@ fn signed_wide_shared_prefix_bounds_do_not_materialize_operands() {
                 .unwrap();
                 let observation =
                     SharedMachineIntegerTerm::from_shared(format, term.clone()).unwrap();
-                let condition = ConditionTerm::integer_less_equal(
+                let condition = OldConditionTerm::integer_less_equal(
                     IntegerTerm::Machine(observation.clone()),
                     IntegerTerm::constant(7.into()),
                 );
@@ -63,7 +63,7 @@ fn shared_word_prefix_bounds_do_not_materialize_operands() {
                     .unwrap();
                     let observation =
                         SharedMachineIntegerTerm::from_shared(format, term.clone()).unwrap();
-                    let condition = ConditionTerm::integer_less_equal(
+                    let condition = OldConditionTerm::integer_less_equal(
                         IntegerTerm::Machine(observation.clone()),
                         IntegerTerm::constant(7.into()),
                     );
@@ -119,7 +119,7 @@ fn native_order_premises_select_retained_promoted_call_bounds() {
             } else {
                 OldMachineTerm::constant(48)
             };
-            let fact = ConditionTerm::Compare {
+            let fact = OldConditionTerm::Compare {
                 format,
                 relation: CompareRelation::LessEqual,
                 left: Box::new(literal),

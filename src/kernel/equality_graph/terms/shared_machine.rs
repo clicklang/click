@@ -576,10 +576,10 @@ mod tests {
 
     #[test]
     fn common_boolean_cast_registration_matches_native_classes() {
-        use crate::kernel::{ConditionTerm, KernelTermExport};
+        use crate::kernel::{KernelTermExport, OldConditionTerm};
         let _session = crate::kernel::VerificationSession::enter();
         for format in crate::kernel::machine_integer::FORMATS {
-            let native = T::bool_cast(format, ConditionTerm::Variable(Variable(999461)));
+            let native = T::bool_cast(format, OldConditionTerm::Variable(Variable(999461)));
             let root = KernelTermImport::default()
                 .machine_arithmetic(format, &native)
                 .unwrap();
@@ -645,7 +645,7 @@ mod tests {
 
     #[test]
     fn comparison_nodes_match_legacy_across_formats_and_merges() {
-        use crate::kernel::{CompareRelation as R, ConditionTerm, MachineOperandView as V};
+        use crate::kernel::{CompareRelation as R, MachineOperandView as V, OldConditionTerm};
         for format in crate::kernel::machine_integer::FORMATS {
             for relation in [
                 R::Equal,
@@ -666,7 +666,7 @@ mod tests {
                 let mut import = KernelTermImport::default();
                 let shared_left = import.machine(format, &left);
                 let shared_right = import.machine(format, &other);
-                let condition = ConditionTerm::Compare {
+                let condition = OldConditionTerm::Compare {
                     format,
                     relation,
                     left: Box::new(left),

@@ -43,7 +43,7 @@ fn program_type_mismatch_expression_path(
 /// continues `defined` under the condition's negation, followed by the
 /// undefined path under the condition itself.
 fn split_on_undefined_behavior(
-    undefined: ConditionTerm,
+    undefined: OldConditionTerm,
     behavior: UndefinedBehavior,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
@@ -90,11 +90,11 @@ fn split_on_undefined_behavior(
 /// Keep the undecided overflow check on the value path of a conditional
 /// operand. A caller that evaluates a branch will prefix its requirement
 /// with the branch facts before merging the paths.
-fn conditional_signed_overflow_requirement(overflow: &ConditionTerm) -> Option<ProofObligation> {
+fn conditional_signed_overflow_requirement(overflow: &OldConditionTerm) -> Option<ProofObligation> {
     if !IN_CONDITIONAL_OPERAND.get() {
         return None;
     }
-    let ConditionTerm::Overflows {
+    let OldConditionTerm::Overflows {
         format,
         op,
         left,
@@ -120,13 +120,13 @@ fn conditional_signed_overflow_requirement(overflow: &ConditionTerm) -> Option<P
 fn add_arithmetic_branch_fact(
     facts: &mut ExecutionFacts,
     assumptions: &PureFactContext,
-    condition: ConditionTerm,
+    condition: OldConditionTerm,
     value: bool,
 ) -> Option<()> {
     if let Some(inner) = condition.bool_negation_operand() {
         return add_condition_path_fact(facts, assumptions, inner.clone(), !value);
     }
-    if let ConditionTerm::Overflows {
+    if let OldConditionTerm::Overflows {
         format,
         op,
         left,
@@ -145,7 +145,7 @@ fn add_arithmetic_branch_fact(
                 ))
             }
             OverflowOperation::ShiftLeft => Some(Proposition::condition_is(
-                ConditionTerm::signed_shift_result_fits(
+                OldConditionTerm::signed_shift_result_fits(
                     *format,
                     *left.clone(),
                     *right.clone(),
@@ -322,10 +322,10 @@ fn apply_program_float_comparison(
 ) -> Vec<ExpressionPath> {
     let condition = match (target_type, left, right) {
         (ProgramType::Float32, ProgramValue::Float32(left), ProgramValue::Float32(right)) => {
-            ConditionTerm::float32_compare(left, right, operator)
+            OldConditionTerm::float32_compare(left, right, operator)
         }
         (ProgramType::Float64, ProgramValue::Float64(left), ProgramValue::Float64(right)) => {
-            ConditionTerm::float64_compare(left, right, operator)
+            OldConditionTerm::float64_compare(left, right, operator)
         }
         _ => return vec![program_type_mismatch_expression_path(facts, obligations)],
     };
@@ -898,19 +898,19 @@ impl WideArithmetic {
         match width {
             ScalarWidth::Int64 => {
                 let (overflows, result): (
-                    fn(OldMachineTerm, OldMachineTerm) -> ConditionTerm,
+                    fn(OldMachineTerm, OldMachineTerm) -> OldConditionTerm,
                     WideTermOperation,
                 ) = match self {
                     WideArithmetic::Add => (
-                        ConditionTerm::int64_signed_add_overflows,
+                        OldConditionTerm::int64_signed_add_overflows,
                         OldMachineTerm::int64_add,
                     ),
                     WideArithmetic::Subtract => (
-                        ConditionTerm::int64_signed_subtract_overflows,
+                        OldConditionTerm::int64_signed_subtract_overflows,
                         OldMachineTerm::int64_subtract,
                     ),
                     WideArithmetic::Multiply => (
-                        ConditionTerm::int64_signed_multiply_overflows,
+                        OldConditionTerm::int64_signed_multiply_overflows,
                         OldMachineTerm::int64_multiply,
                     ),
                     WideArithmetic::Divide => {
@@ -996,41 +996,41 @@ fn apply_program_wide_comparison(
     };
     let condition = match (width, operator) {
         (ScalarWidth::Int64, ComparisonOperator::LessThan) => {
-            ConditionTerm::int64_signed_less_than(left, right)
+            OldConditionTerm::int64_signed_less_than(left, right)
         }
         (ScalarWidth::Int64, ComparisonOperator::LessEqual) => {
-            ConditionTerm::int64_signed_less_equal(left, right)
+            OldConditionTerm::int64_signed_less_equal(left, right)
         }
         (ScalarWidth::Int64, ComparisonOperator::GreaterThan) => {
-            ConditionTerm::int64_signed_greater_than(left, right)
+            OldConditionTerm::int64_signed_greater_than(left, right)
         }
         (ScalarWidth::Int64, ComparisonOperator::GreaterEqual) => {
-            ConditionTerm::int64_signed_greater_equal(left, right)
+            OldConditionTerm::int64_signed_greater_equal(left, right)
         }
         (ScalarWidth::UInt64, ComparisonOperator::LessThan) => {
-            ConditionTerm::uint64_less_than(left, right)
+            OldConditionTerm::uint64_less_than(left, right)
         }
         (ScalarWidth::UInt64, ComparisonOperator::LessEqual) => {
-            ConditionTerm::uint64_less_equal(left, right)
+            OldConditionTerm::uint64_less_equal(left, right)
         }
         (ScalarWidth::UInt64, ComparisonOperator::GreaterThan) => {
-            ConditionTerm::uint64_greater_than(left, right)
+            OldConditionTerm::uint64_greater_than(left, right)
         }
         (ScalarWidth::UInt64, ComparisonOperator::GreaterEqual) => {
-            ConditionTerm::uint64_greater_equal(left, right)
+            OldConditionTerm::uint64_greater_equal(left, right)
         }
         (ScalarWidth::Int64 | ScalarWidth::UInt64, ComparisonOperator::Equal) => {
             if matches!(width, ScalarWidth::Int64) {
-                ConditionTerm::int64_equal(left, right)
+                OldConditionTerm::int64_equal(left, right)
             } else {
-                ConditionTerm::uint64_equal(left, right)
+                OldConditionTerm::uint64_equal(left, right)
             }
         }
         (ScalarWidth::Int64 | ScalarWidth::UInt64, ComparisonOperator::NotEqual) => {
             let equal = if matches!(width, ScalarWidth::Int64) {
-                ConditionTerm::int64_equal(left, right)
+                OldConditionTerm::int64_equal(left, right)
             } else {
-                ConditionTerm::uint64_equal(left, right)
+                OldConditionTerm::uint64_equal(left, right)
             };
             return condition_as_program_int32_not_paths(equal, facts, obligations, assumptions);
         }
@@ -1151,15 +1151,18 @@ fn apply_program_int128_multiply(
     let mut paths = Vec::new();
     for (guard, equivalent) in [
         (
-            ConditionTerm::integer_greater_equal(
+            OldConditionTerm::integer_greater_equal(
                 product.clone(),
                 IntegerTerm::constant(min.clone()),
             ),
-            ConditionTerm::integer_less_equal(IntegerTerm::constant(min), product.clone()),
+            OldConditionTerm::integer_less_equal(IntegerTerm::constant(min), product.clone()),
         ),
         (
-            ConditionTerm::integer_less_equal(product.clone(), IntegerTerm::constant(max.clone())),
-            ConditionTerm::integer_greater_equal(IntegerTerm::constant(max), product.clone()),
+            OldConditionTerm::integer_less_equal(
+                product.clone(),
+                IntegerTerm::constant(max.clone()),
+            ),
+            OldConditionTerm::integer_greater_equal(IntegerTerm::constant(max), product.clone()),
         ),
     ] {
         // Product-bound certificates use <= for either endpoint. Consult the
@@ -1211,8 +1214,8 @@ fn apply_program_int128_multiply(
     // representable native product preserves the exact Integer product.
     // Keep this relation explicit, as for guarded quotient/remainder results.
     let observed = IntegerTerm::from_machine(destination, term.clone()).expect("typed wide result");
-    let definition = ConditionTerm::integer_equal(observed, product);
-    if definition != ConditionTerm::Constant(true) {
+    let definition = OldConditionTerm::integer_equal(observed, product);
+    if definition != OldConditionTerm::Constant(true) {
         facts.push(ExecutionPureFact::certified(Proposition::condition_is(
             definition, true,
         )));
@@ -1267,7 +1270,7 @@ pub(in crate::kernel) fn wide_integer_comparison_condition(
     operator: ComparisonOperator,
     left: &ProgramValue,
     right: &ProgramValue,
-) -> Option<ConditionTerm> {
+) -> Option<OldConditionTerm> {
     let (ty, left, right) = match (left, right) {
         (ProgramValue::Int128(a), ProgramValue::Int128(b)) => (MachineIntegerType::Int128, a, b),
         (ProgramValue::UInt128(a), ProgramValue::UInt128(b)) => (MachineIntegerType::UInt128, a, b),
@@ -1276,12 +1279,12 @@ pub(in crate::kernel) fn wide_integer_comparison_condition(
     let left = IntegerTerm::from_machine(ty, left.clone())?;
     let right = IntegerTerm::from_machine(ty, right.clone())?;
     Some(match operator {
-        ComparisonOperator::Equal => ConditionTerm::integer_equal(left, right),
-        ComparisonOperator::NotEqual => ConditionTerm::integer_not_equal(left, right),
-        ComparisonOperator::LessThan => ConditionTerm::integer_less_than(left, right),
-        ComparisonOperator::LessEqual => ConditionTerm::integer_less_equal(left, right),
-        ComparisonOperator::GreaterThan => ConditionTerm::integer_greater_than(left, right),
-        ComparisonOperator::GreaterEqual => ConditionTerm::integer_greater_equal(left, right),
+        ComparisonOperator::Equal => OldConditionTerm::integer_equal(left, right),
+        ComparisonOperator::NotEqual => OldConditionTerm::integer_not_equal(left, right),
+        ComparisonOperator::LessThan => OldConditionTerm::integer_less_than(left, right),
+        ComparisonOperator::LessEqual => OldConditionTerm::integer_less_equal(left, right),
+        ComparisonOperator::GreaterThan => OldConditionTerm::integer_greater_than(left, right),
+        ComparisonOperator::GreaterEqual => OldConditionTerm::integer_greater_equal(left, right),
     })
 }
 
@@ -1296,13 +1299,13 @@ fn decide_wide_integer_equality(
     decide_with_facts(
         assumptions,
         facts,
-        &ConditionTerm::integer_equal(left.clone(), right.clone()),
+        &OldConditionTerm::integer_equal(left.clone(), right.clone()),
     )
     .or_else(|| {
         decide_with_facts(
             assumptions,
             facts,
-            &ConditionTerm::integer_not_equal(left, right),
+            &OldConditionTerm::integer_not_equal(left, right),
         )
         .map(|value| !value)
     })
@@ -1330,7 +1333,7 @@ fn apply_program_int128_division_like(
         return vec![program_type_mismatch_expression_path(facts, obligations)];
     };
     let mut paths = Vec::new();
-    let zero = ConditionTerm::integer_equal(right.clone(), IntegerTerm::constant_i64(0));
+    let zero = OldConditionTerm::integer_equal(right.clone(), IntegerTerm::constant_i64(0));
     match decide_wide_integer_equality(
         assumptions,
         &facts,
@@ -1360,8 +1363,9 @@ fn apply_program_int128_division_like(
     }
     if destination == MachineIntegerType::Int128 {
         let min =
-            ConditionTerm::integer_equal(left.clone(), IntegerTerm::constant(i128::MIN.into()));
-        let minus_one = ConditionTerm::integer_equal(right.clone(), IntegerTerm::constant_i64(-1));
+            OldConditionTerm::integer_equal(left.clone(), IntegerTerm::constant(i128::MIN.into()));
+        let minus_one =
+            OldConditionTerm::integer_equal(right.clone(), IntegerTerm::constant_i64(-1));
         let a = decide_wide_integer_equality(
             assumptions,
             &facts,
@@ -1405,27 +1409,30 @@ fn apply_program_int128_division_like(
             // operand simplified the path guard to a single condition.
             let equality_safe = Proposition::Or(
                 Box::new(Proposition::condition_is(
-                    ConditionTerm::integer_equal(
+                    OldConditionTerm::integer_equal(
                         left.clone(),
                         IntegerTerm::constant(i128::MIN.into()),
                     ),
                     false,
                 )),
                 Box::new(Proposition::condition_is(
-                    ConditionTerm::integer_equal(right.clone(), IntegerTerm::constant_i64(-1)),
+                    OldConditionTerm::integer_equal(right.clone(), IntegerTerm::constant_i64(-1)),
                     false,
                 )),
             );
             let inequality_safe = Proposition::Or(
                 Box::new(Proposition::condition_is(
-                    ConditionTerm::integer_not_equal(
+                    OldConditionTerm::integer_not_equal(
                         left.clone(),
                         IntegerTerm::constant(i128::MIN.into()),
                     ),
                     true,
                 )),
                 Box::new(Proposition::condition_is(
-                    ConditionTerm::integer_not_equal(right.clone(), IntegerTerm::constant_i64(-1)),
+                    OldConditionTerm::integer_not_equal(
+                        right.clone(),
+                        IntegerTerm::constant_i64(-1),
+                    ),
                     true,
                 )),
             );
@@ -1493,8 +1500,8 @@ fn apply_program_int128_division_like(
         }
     };
     let observed = IntegerTerm::from_machine(destination, term.clone()).expect("typed wide result");
-    let definition = ConditionTerm::integer_equal(observed, result);
-    if definition != ConditionTerm::Constant(true) {
+    let definition = OldConditionTerm::integer_equal(observed, result);
+    if definition != OldConditionTerm::Constant(true) {
         facts.push(ExecutionPureFact::certified(Proposition::condition_is(
             definition, true,
         )));
@@ -1625,11 +1632,11 @@ pub(in crate::kernel) fn apply_program_remainder(
 }
 
 fn word_low_bits_clear(word: &OldMachineTerm, mask: u64, assumptions: &PureFactContext) -> bool {
-    let clear = ConditionTerm::uint64_equal(
+    let clear = OldConditionTerm::uint64_equal(
         OldMachineTerm::uint64_bitwise_and(word.clone(), OldMachineTerm::uint64_constant(mask)),
         OldMachineTerm::uint64_constant(0),
     );
-    clear == ConditionTerm::Constant(true)
+    clear == OldConditionTerm::Constant(true)
         || [clear.clone(), clear.flipped()].iter().any(|condition| {
             crate::instrumentation::record_deterministic_work(1);
             assumptions.condition_facts.get(condition) == Some(&true)
@@ -1641,7 +1648,7 @@ fn word_low_bits_clear(word: &OldMachineTerm, mask: u64, assumptions: &PureFactC
 fn bounded_uint64_tag_equation(
     value: &OldMachineTerm,
     assumptions: &PureFactContext,
-) -> Option<ConditionTerm> {
+) -> Option<OldConditionTerm> {
     if let OldMachineTerm::Binary {
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::BitwiseAnd,
@@ -1685,7 +1692,7 @@ fn bounded_uint64_tag_equation(
                     continue;
                 }
             }
-            return Some(ConditionTerm::uint64_equal(
+            return Some(OldConditionTerm::uint64_equal(
                 value.clone(),
                 OldMachineTerm::uint64_bitwise_and(
                     word.as_ref().clone(),
@@ -1948,17 +1955,17 @@ fn pointer_element_indices(
     let relative = match (&left.offset, &right.offset) {
         (left, right) if left == right => Some((zero.clone(), zero.clone())),
         (
-            AddressOffset::Add(left_base, left_addend),
-            AddressOffset::Add(right_base, right_addend),
+            OldAddressOffset::Add(left_base, left_addend),
+            OldAddressOffset::Add(right_base, right_addend),
         ) if left_base == right_base => Some((
             pointer_index_from_offset_term(left_addend, byte_width)?,
             pointer_index_from_offset_term(right_addend, byte_width)?,
         )),
-        (AddressOffset::Add(base, addend), right) if base.as_ref() == right => Some((
+        (OldAddressOffset::Add(base, addend), right) if base.as_ref() == right => Some((
             pointer_index_from_offset_term(addend, byte_width)?,
             zero.clone(),
         )),
-        (left, AddressOffset::Add(base, addend)) if base.as_ref() == left => Some((
+        (left, OldAddressOffset::Add(base, addend)) if base.as_ref() == left => Some((
             zero.clone(),
             pointer_index_from_offset_term(addend, byte_width)?,
         )),
@@ -1977,10 +1984,10 @@ fn pointer_element_indices(
 fn pointer_difference_offsets<'a>(
     left: &'a Address,
     right: &'a Address,
-) -> Option<(Vec<&'a AddressOffset>, Vec<&'a AddressOffset>)> {
-    fn offset_spine(mut offset: &AddressOffset) -> Vec<&AddressOffset> {
+) -> Option<(Vec<&'a OldAddressOffset>, Vec<&'a OldAddressOffset>)> {
+    fn offset_spine(mut offset: &OldAddressOffset) -> Vec<&OldAddressOffset> {
         let mut spine = Vec::new();
-        while let AddressOffset::Add(base, displacement) = offset {
+        while let OldAddressOffset::Add(base, displacement) = offset {
             spine.push(displacement.as_ref());
             offset = base;
         }
@@ -2029,13 +2036,13 @@ fn apply_pointer_difference(
     assumptions: &PureFactContext,
 ) -> Vec<ExpressionPath> {
     let mut guards = Vec::new();
-    let mut index = |offsets: Vec<&AddressOffset>| -> Option<SharedMachineIntegerTerm> {
+    let mut index = |offsets: Vec<&OldAddressOffset>| -> Option<SharedMachineIntegerTerm> {
         // Pointer formation folds consecutive constant advances. Check an
         // unsigned element index plus that advance in its original type:
         // n + k fits ptrdiff_t iff n <= PTRDIFF_MAX - k for k >= 0.
         if let [
-            AddressOffset::Constant(bytes),
-            AddressOffset::Int64Scaled {
+            OldAddressOffset::Constant(bytes),
+            OldAddressOffset::Int64Scaled {
                 value,
                 byte_width: stride,
                 unsigned: true,
@@ -2142,12 +2149,12 @@ pub(in crate::kernel) fn pointer_order_condition(
     left: OldMachineTerm,
     right: OldMachineTerm,
     operator: ComparisonOperator,
-) -> ConditionTerm {
+) -> OldConditionTerm {
     match operator {
-        ComparisonOperator::LessThan => ConditionTerm::signed_less_than(left, right),
-        ComparisonOperator::LessEqual => ConditionTerm::signed_less_equal(left, right),
-        ComparisonOperator::GreaterThan => ConditionTerm::signed_greater_than(left, right),
-        ComparisonOperator::GreaterEqual => ConditionTerm::signed_greater_equal(left, right),
+        ComparisonOperator::LessThan => OldConditionTerm::signed_less_than(left, right),
+        ComparisonOperator::LessEqual => OldConditionTerm::signed_less_equal(left, right),
+        ComparisonOperator::GreaterThan => OldConditionTerm::signed_greater_than(left, right),
+        ComparisonOperator::GreaterEqual => OldConditionTerm::signed_greater_equal(left, right),
         ComparisonOperator::Equal | ComparisonOperator::NotEqual => {
             unreachable!("pointer order condition received equality operator")
         }
@@ -2158,12 +2165,12 @@ fn uint32_order_condition(
     left: OldMachineTerm,
     right: OldMachineTerm,
     operator: ComparisonOperator,
-) -> ConditionTerm {
+) -> OldConditionTerm {
     match operator {
-        ComparisonOperator::LessThan => ConditionTerm::unsigned_less_than(left, right),
-        ComparisonOperator::LessEqual => ConditionTerm::unsigned_less_equal(left, right),
-        ComparisonOperator::GreaterThan => ConditionTerm::unsigned_greater_than(left, right),
-        ComparisonOperator::GreaterEqual => ConditionTerm::unsigned_greater_equal(left, right),
+        ComparisonOperator::LessThan => OldConditionTerm::unsigned_less_than(left, right),
+        ComparisonOperator::LessEqual => OldConditionTerm::unsigned_less_equal(left, right),
+        ComparisonOperator::GreaterThan => OldConditionTerm::unsigned_greater_than(left, right),
+        ComparisonOperator::GreaterEqual => OldConditionTerm::unsigned_greater_equal(left, right),
         ComparisonOperator::Equal | ComparisonOperator::NotEqual => {
             unreachable!("uint32 order condition received equality operator")
         }
@@ -2238,7 +2245,8 @@ fn apply_same_allocation_guard(
     if assumptions.knows_same_allocation(left, right) || facts.contains_proposition(&fact) {
         return apply(facts, obligations);
     }
-    let same = ConditionTerm::address_equal(left.provenance().clone(), right.provenance().clone());
+    let same =
+        OldConditionTerm::address_equal(left.provenance().clone(), right.provenance().clone());
     match decide_with_facts(assumptions, &facts, &same) {
         Some(true) => apply(facts, obligations),
         Some(false) => vec![ExpressionPath {
@@ -2263,7 +2271,7 @@ fn apply_same_allocation_guard(
 fn apply_pointer_object_nonnull_guard(
     state: &ExecutionState,
     pointer: &OldPointer,
-    is_null: ConditionTerm,
+    is_null: OldConditionTerm,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
@@ -2289,8 +2297,9 @@ fn pointer_has_object_provenance_evidence(
     assumptions: &PureFactContext,
     facts: &(impl ExecutionFactSource + ?Sized),
 ) -> bool {
-    let decide =
-        |condition: ConditionTerm| decide_with_facts(assumptions, facts, &condition) == Some(true);
+    let decide = |condition: OldConditionTerm| {
+        decide_with_facts(assumptions, facts, &condition) == Some(true)
+    };
     let establishes_object = |fact: &ResourceFact| {
         let Some(range) = fact.memory_range() else {
             return false;
@@ -2298,8 +2307,12 @@ fn pointer_has_object_provenance_evidence(
         (!fact.is_own() || fact.has_proven_positive_quantity(assumptions))
             && decide(pointer_object_identity_condition(pointer, range.base()))
             && decide(match range.wide_bounds() {
-                Some((start, end)) => ConditionTerm::uint64_less_than(start.clone(), end.clone()),
-                None => ConditionTerm::signed_less_than(range.start().clone(), range.end().clone()),
+                Some((start, end)) => {
+                    OldConditionTerm::uint64_less_than(start.clone(), end.clone())
+                }
+                None => {
+                    OldConditionTerm::signed_less_than(range.start().clone(), range.end().clone())
+                }
             })
     };
     state
@@ -2324,12 +2337,12 @@ fn pointer_has_object_provenance_evidence(
                 };
                 // A wide fact's count is an unsigned 64-bit term.
                 let positive = if *wide {
-                    ConditionTerm::uint64_less_than(
+                    OldConditionTerm::uint64_less_than(
                         OldMachineTerm::constant(0),
                         bytes.old_form().clone(),
                     )
                 } else {
-                    ConditionTerm::signed_greater_than(
+                    OldConditionTerm::signed_greater_than(
                         bytes.old_form().clone(),
                         OldMachineTerm::constant(0),
                     )
@@ -2349,7 +2362,7 @@ enum SameArray {
     Holds,
     Refuted,
     /// The same array exactly when every one of these conditions holds.
-    When(Vec<ConditionTerm>),
+    When(Vec<OldConditionTerm>),
 }
 
 /// Two pointers whose bounds are both known designate the same array exactly
@@ -2377,11 +2390,11 @@ fn pointer_subtraction_same_array(left: &OldPointer, right: &OldPointer) -> Same
                 // Symbolic widths that are not the same term: the bounds are
                 // the same subobject only if both parts agree.
                 return SameArray::When(vec![
-                    ConditionTerm::address_equal(left.start.clone(), right.start.clone()),
-                    ConditionTerm::equal(left.width.clone(), right.width.clone()),
+                    OldConditionTerm::address_equal(left.start.clone(), right.start.clone()),
+                    OldConditionTerm::equal(left.width.clone(), right.width.clone()),
                 ]);
             }
-            SameArray::When(vec![ConditionTerm::address_equal(
+            SameArray::When(vec![OldConditionTerm::address_equal(
                 left.start.clone(),
                 right.start.clone(),
             )])
@@ -2394,7 +2407,7 @@ fn pointer_subtraction_same_array(left: &OldPointer, right: &OldPointer) -> Same
 /// [`apply_pointer_provenance_guard`] for each condition in turn: the path
 /// continues where all hold, and each one's failure is undefined behavior.
 fn apply_pointer_provenance_guards(
-    mut conditions: Vec<ConditionTerm>,
+    mut conditions: Vec<OldConditionTerm>,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
@@ -2416,7 +2429,7 @@ fn apply_pointer_provenance_guards(
 }
 
 fn apply_pointer_provenance_guard(
-    condition: ConditionTerm,
+    condition: OldConditionTerm,
     expected: bool,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
@@ -2452,11 +2465,11 @@ fn apply_pointer_provenance_guard(
 pub(in crate::kernel) fn pointer_object_identity_condition(
     left: &Address,
     right: &Address,
-) -> ConditionTerm {
-    ConditionTerm::address_equal(left.object_identity(), right.object_identity())
+) -> OldConditionTerm {
+    OldConditionTerm::address_equal(left.object_identity(), right.object_identity())
 }
 
-pub(in crate::kernel) fn pointer_object_is_null_condition(pointer: &Address) -> ConditionTerm {
+pub(in crate::kernel) fn pointer_object_is_null_condition(pointer: &Address) -> OldConditionTerm {
     pointer_is_null_condition(pointer.object_base())
 }
 
@@ -2648,7 +2661,7 @@ pub(super) fn apply_program_comparison(
         }
         (ProgramValue::Float32(left), ProgramValue::Float32(right)) => {
             condition_as_program_int32_paths(
-                ConditionTerm::float32_compare(left, right, operator),
+                OldConditionTerm::float32_compare(left, right, operator),
                 facts,
                 obligations,
                 assumptions,
@@ -2656,7 +2669,7 @@ pub(super) fn apply_program_comparison(
         }
         (ProgramValue::Float64(left), ProgramValue::Float64(right)) => {
             condition_as_program_int32_paths(
-                ConditionTerm::float64_compare(left, right, operator),
+                OldConditionTerm::float64_compare(left, right, operator),
                 facts,
                 obligations,
                 assumptions,
@@ -2773,7 +2786,7 @@ pub(in crate::kernel) fn apply_program_subtract(
             // pointer formation and object-bound checks.
             let guard = if unsigned {
                 PointerFormationGuard {
-                    condition: ConditionTerm::uint64_less_equal(
+                    condition: OldConditionTerm::uint64_less_equal(
                         offset.clone(),
                         OldMachineTerm::uint64_constant(i64::MAX as u64),
                     ),
@@ -2781,7 +2794,7 @@ pub(in crate::kernel) fn apply_program_subtract(
                 }
             } else {
                 PointerFormationGuard {
-                    condition: ConditionTerm::int64_signed_subtract_overflows(
+                    condition: OldConditionTerm::int64_signed_subtract_overflows(
                         OldMachineTerm::int64_constant(0),
                         offset.clone(),
                     ),
@@ -2890,7 +2903,7 @@ pub(in crate::kernel) fn apply_program_subtract(
 
 #[derive(Clone)]
 struct PointerFormationGuard {
-    condition: ConditionTerm,
+    condition: OldConditionTerm,
     value: bool,
 }
 
@@ -2955,9 +2968,9 @@ fn pointer_offset_by_elements_paths(
     };
     let zero = Proposition::condition_is(
         if wide {
-            ConditionTerm::int64_equal(offset.clone(), zero_term)
+            OldConditionTerm::int64_equal(offset.clone(), zero_term)
         } else {
-            ConditionTerm::equal(offset.clone(), zero_term)
+            OldConditionTerm::equal(offset.clone(), zero_term)
         },
         true,
     );
@@ -3033,12 +3046,12 @@ fn pointer_offset_by_elements_paths(
     {
         guards.push(PointerFormationGuard {
             condition: if wide {
-                ConditionTerm::int64_signed_add_overflows(
+                OldConditionTerm::int64_signed_add_overflows(
                     OldMachineTerm::int64_from_32(index),
                     offset,
                 )
             } else {
-                ConditionTerm::signed_add_overflows(index, offset)
+                OldConditionTerm::signed_add_overflows(index, offset)
             },
             value: false,
         });
@@ -3152,7 +3165,7 @@ fn byte_product_no_overflow(
     wide: bool,
     facts: &(impl ExecutionFactSource + ?Sized),
     assumptions: &PureFactContext,
-) -> Option<ConditionTerm> {
+) -> Option<OldConditionTerm> {
     if byte_width != 1 || unsigned || wide {
         return None;
     }
@@ -3167,12 +3180,12 @@ fn byte_product_no_overflow(
         return None;
     }
     // Decided as the multiplication stated it, with exact loads normalized.
-    let decided = ConditionTerm::signed_multiply_overflows(
+    let decided = OldConditionTerm::signed_multiply_overflows(
         normalize_exact_memory_loads_in_bitvector(left, assumptions),
         normalize_exact_memory_loads_in_bitvector(right, assumptions),
     );
     (decide_with_facts(assumptions, facts, &decided) == Some(false)).then(|| {
-        ConditionTerm::signed_multiply_overflows(left.as_ref().clone(), right.as_ref().clone())
+        OldConditionTerm::signed_multiply_overflows(left.as_ref().clone(), right.as_ref().clone())
     })
 }
 
@@ -3245,7 +3258,7 @@ fn pointer_index_from_offset(pointer: &Address, byte_width: u32) -> Option<OldMa
 }
 
 fn pointer_index_from_offset_term(
-    offset: &AddressOffset,
+    offset: &OldAddressOffset,
     byte_width: u32,
 ) -> Option<OldMachineTerm> {
     if byte_width == 1 {
@@ -3265,13 +3278,13 @@ fn pointer_index_from_concrete_offset(offset: i64, byte_width: u32) -> Option<Ol
         .then_some(OldMachineTerm::constant((index as i32) as u32))
 }
 
-fn pointer_arithmetic_index(offset: &AddressOffset, byte_width: u32) -> Option<OldMachineTerm> {
-    let AddressOffset::Add(left, right) = offset else {
+fn pointer_arithmetic_index(offset: &OldAddressOffset, byte_width: u32) -> Option<OldMachineTerm> {
+    let OldAddressOffset::Add(left, right) = offset else {
         return None;
     };
     let right = pointer_index_from_offset_term(right, byte_width)?;
     let left = match left.as_ref() {
-        AddressOffset::Add(..) => pointer_arithmetic_index(left, byte_width)?,
+        OldAddressOffset::Add(..) => pointer_arithmetic_index(left, byte_width)?,
         // The first addend is the pointer's opaque base. It is not an
         // element displacement, even if its byte representation happens to
         // be aligned.
@@ -3280,16 +3293,16 @@ fn pointer_arithmetic_index(offset: &AddressOffset, byte_width: u32) -> Option<O
     Some(OldMachineTerm::add(left, right))
 }
 
-fn pointer_offset_contains_int64_scaled(offset: &AddressOffset) -> bool {
+fn pointer_offset_contains_int64_scaled(offset: &OldAddressOffset) -> bool {
     match offset {
-        AddressOffset::Int64Scaled { .. } => true,
-        AddressOffset::Add(left, right) => {
+        OldAddressOffset::Int64Scaled { .. } => true,
+        OldAddressOffset::Add(left, right) => {
             pointer_offset_contains_int64_scaled(left)
                 || pointer_offset_contains_int64_scaled(right)
         }
-        AddressOffset::Constant(_)
-        | AddressOffset::Variable(_)
-        | AddressOffset::Int32Scaled { .. } => false,
+        OldAddressOffset::Constant(_)
+        | OldAddressOffset::Variable(_)
+        | OldAddressOffset::Int32Scaled { .. } => false,
     }
 }
 
@@ -3387,14 +3400,14 @@ fn exact_offset_operation(
 }
 
 fn exact_pointer_offset_i64_with_guards(
-    offset: &AddressOffset,
+    offset: &OldAddressOffset,
     guards: &mut Vec<PointerFormationGuard>,
 ) -> Option<SharedMachineIntegerTerm> {
     exact_pointer_index_i64_with_guards(offset, None, guards)
 }
 
 fn exact_pointer_index_i64_with_guards(
-    offset: &AddressOffset,
+    offset: &OldAddressOffset,
     element_width: Option<u32>,
     guards: &mut Vec<PointerFormationGuard>,
 ) -> Option<SharedMachineIntegerTerm> {
@@ -3404,12 +3417,12 @@ fn exact_pointer_index_i64_with_guards(
     let width = i64::from(element_width.unwrap_or(1));
     let scale = |bytes: i64| (width > 0 && bytes % width == 0).then(|| bytes / width);
     match offset {
-        AddressOffset::Constant(value) => Some(SharedMachineIntegerTerm::intern(
+        OldAddressOffset::Constant(value) => Some(SharedMachineIntegerTerm::intern(
             T::Int64,
             OldMachineTerm::int64_constant(scale(*value)?),
         )),
-        AddressOffset::Variable(_) => None,
-        AddressOffset::Add(left, right) => {
+        OldAddressOffset::Variable(_) => None,
+        OldAddressOffset::Add(left, right) => {
             let left = exact_pointer_index_i64_with_guards(left, element_width, guards)?;
             let right = exact_pointer_index_i64_with_guards(right, element_width, guards)?;
             Some(exact_offset_operation(
@@ -3419,7 +3432,7 @@ fn exact_pointer_index_i64_with_guards(
                 guards,
             ))
         }
-        AddressOffset::Int32Scaled { value, byte_width } => {
+        OldAddressOffset::Int32Scaled { value, byte_width } => {
             let scale = scale(*byte_width)?;
             let left = value
                 .operand_view()
@@ -3435,11 +3448,10 @@ fn exact_pointer_index_i64_with_guards(
                 guards,
             ))
         }
-        AddressOffset::Int64Scaled { byte_width: 0, .. } => Some(SharedMachineIntegerTerm::intern(
-            T::Int64,
-            OldMachineTerm::int64_constant(0),
-        )),
-        AddressOffset::Int64Scaled {
+        OldAddressOffset::Int64Scaled { byte_width: 0, .. } => Some(
+            SharedMachineIntegerTerm::intern(T::Int64, OldMachineTerm::int64_constant(0)),
+        ),
+        OldAddressOffset::Int64Scaled {
             value,
             byte_width,
             unsigned,
@@ -3481,7 +3493,7 @@ fn formation_comparison(
     relation: CompareRelation,
     left: MachineOperandView<'_>,
     right: MachineOperandView<'_>,
-) -> ConditionTerm {
+) -> OldConditionTerm {
     crate::kernel::machine_integer::comparison::condition_for_operand_views(
         format,
         relation,
@@ -3514,7 +3526,7 @@ fn address_base_bounds(
     ) {
         if offset < 0 || offset > i64::from(size) {
             return Some(vec![PointerFormationGuard {
-                condition: ConditionTerm::signed_less_equal(
+                condition: OldConditionTerm::signed_less_equal(
                     OldMachineTerm::constant(1),
                     OldMachineTerm::constant(0),
                 ),
@@ -3540,7 +3552,7 @@ fn address_base_bounds(
         return Some(guards);
     }
 
-    if let AddressOffset::Int64Scaled {
+    if let OldAddressOffset::Int64Scaled {
         value,
         byte_width: scale,
         unsigned,
@@ -3699,7 +3711,7 @@ fn address_base_bounds(
 /// [`scaled_element_offset`]: crate::kernel::reasoning::scaled_element_offset
 /// [`wide_index_bound_conditions`]: crate::kernel::reasoning::wide_index_bound_conditions
 fn wide_element_block_bounds(
-    offset: &AddressOffset,
+    offset: &OldAddressOffset,
     size: &AllocationSize,
     assumptions: &PureFactContext,
 ) -> Option<Vec<PointerFormationGuard>> {
@@ -3707,15 +3719,15 @@ fn wide_element_block_bounds(
         condition,
         value: true,
     };
-    if let AddressOffset::Constant(bytes) = offset {
+    if let OldAddressOffset::Constant(bytes) = offset {
         let bytes = u64::try_from(*bytes).ok()?;
         let (count, bound) = crate::kernel::reasoning::uint64_size_in_elements(size.bytes(), bytes);
-        return Some(vec![guard(ConditionTerm::uint64_less_equal(
+        return Some(vec![guard(OldConditionTerm::uint64_less_equal(
             bound,
             count.clone(),
         ))]);
     }
-    if matches!(offset, AddressOffset::Int32Scaled { .. }) {
+    if matches!(offset, OldAddressOffset::Int32Scaled { .. }) {
         // A bare 32-bit index keeps its own rule.
         return None;
     }
@@ -3744,10 +3756,10 @@ fn wide_element_block_bounds(
 /// `0 <= offset <= bytes` over the exact 64-bit byte offset. An offset with
 /// no exact reading has no checked normal path.
 fn wide_block_bounds_of_32_bit_offset(
-    offset: &AddressOffset,
+    offset: &OldAddressOffset,
     size: &AllocationSize,
 ) -> Option<Vec<PointerFormationGuard>> {
-    if let AddressOffset::Int32Scaled {
+    if let OldAddressOffset::Int32Scaled {
         value,
         byte_width: scale,
     } = offset
@@ -3822,16 +3834,20 @@ fn wide_block_bounds_of_32_bit_offset(
 /// spelling `0 <= i * stride + field <= bytes` says the same thing in terms
 /// a linear order check cannot read.
 fn strided_block_bounds(
-    offset: &AddressOffset,
+    offset: &OldAddressOffset,
     block_size: &OldMachineTerm,
 ) -> Option<Vec<PointerFormationGuard>> {
     let (index, stride, field) = match offset {
-        AddressOffset::Int32Scaled { value, byte_width } => (value, *byte_width, 0),
-        AddressOffset::Add(left, right) => match (left.as_ref(), right.as_ref()) {
-            (AddressOffset::Int32Scaled { value, byte_width }, AddressOffset::Constant(field))
-            | (AddressOffset::Constant(field), AddressOffset::Int32Scaled { value, byte_width }) => {
-                (value, *byte_width, *field)
-            }
+        OldAddressOffset::Int32Scaled { value, byte_width } => (value, *byte_width, 0),
+        OldAddressOffset::Add(left, right) => match (left.as_ref(), right.as_ref()) {
+            (
+                OldAddressOffset::Int32Scaled { value, byte_width },
+                OldAddressOffset::Constant(field),
+            )
+            | (
+                OldAddressOffset::Constant(field),
+                OldAddressOffset::Int32Scaled { value, byte_width },
+            ) => (value, *byte_width, *field),
             _ => return None,
         },
         _ => return None,
@@ -4280,7 +4296,7 @@ pub(in crate::kernel) fn apply_program_int32_add(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<ExpressionPath> {
-    let overflow = ConditionTerm::signed_add_overflows(
+    let overflow = OldConditionTerm::signed_add_overflows(
         assumptions.simplify_bitvector_under_assumptions(&left),
         assumptions.simplify_bitvector_under_assumptions(&right),
     );
@@ -4344,7 +4360,7 @@ pub(in crate::kernel) fn apply_program_int32_subtract(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<ExpressionPath> {
-    let overflow = ConditionTerm::signed_subtract_overflows(left.clone(), right.clone());
+    let overflow = OldConditionTerm::signed_subtract_overflows(left.clone(), right.clone());
     split_on_undefined_behavior(
         overflow,
         UndefinedBehavior::SignedOverflow,
@@ -4368,7 +4384,7 @@ pub(in crate::kernel) fn apply_program_int32_multiply(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<ExpressionPath> {
-    let overflow = ConditionTerm::signed_multiply_overflows(
+    let overflow = OldConditionTerm::signed_multiply_overflows(
         normalize_exact_memory_loads_in_bitvector(&left, assumptions),
         normalize_exact_memory_loads_in_bitvector(&right, assumptions),
     );
@@ -4431,7 +4447,7 @@ fn apply_program_int32_division_like(
     result: fn(OldMachineTerm, OldMachineTerm) -> OldMachineTerm,
 ) -> Vec<ExpressionPath> {
     let zero = OldMachineTerm::constant(0);
-    let divides_by_zero = ConditionTerm::equal(right.clone(), zero);
+    let divides_by_zero = OldConditionTerm::equal(right.clone(), zero);
     match division_domains::decide_zero(&right, &divides_by_zero, assumptions, &facts) {
         Some(true) => {
             return vec![ExpressionPath {
@@ -4507,7 +4523,7 @@ fn apply_program_int64_overflowing(
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-    overflow: ConditionTerm,
+    overflow: OldConditionTerm,
     result: fn(OldMachineTerm, OldMachineTerm) -> OldMachineTerm,
 ) -> Vec<ExpressionPath> {
     split_on_undefined_behavior(
@@ -4534,7 +4550,7 @@ fn apply_program_int64_division_like(
     assumptions: &PureFactContext,
     result: fn(OldMachineTerm, OldMachineTerm) -> OldMachineTerm,
 ) -> Vec<ExpressionPath> {
-    let zero = ConditionTerm::int64_equal(right.clone(), OldMachineTerm::int64_constant(0));
+    let zero = OldConditionTerm::int64_equal(right.clone(), OldMachineTerm::int64_constant(0));
     match division_domains::decide_zero(&right, &zero, assumptions, &facts) {
         Some(true) => {
             return vec![ExpressionPath {
@@ -4607,7 +4623,7 @@ fn apply_program_unsigned_division_like(
         _ => unreachable!("unsigned division width"),
     };
     let equals = |left, right| {
-        ConditionTerm::machine_compare(width.format(), CompareRelation::Equal, left, right)
+        OldConditionTerm::machine_compare(width.format(), CompareRelation::Equal, left, right)
     };
     let zero_divisor = equals(right.clone(), zero.clone());
     let already_guarded = !facts.is_empty()
@@ -4941,9 +4957,9 @@ fn apply_program_int64_with_valid_shift_count(
         OldMachineTerm::int64_from_32(right)
     };
     let invalid_count = if unsigned_count {
-        ConditionTerm::uint64_greater_equal(count.clone(), OldMachineTerm::uint64_constant(64))
+        OldConditionTerm::uint64_greater_equal(count.clone(), OldMachineTerm::uint64_constant(64))
     } else {
-        ConditionTerm::int64_signed_less_than(count.clone(), OldMachineTerm::int64_constant(0))
+        OldConditionTerm::int64_signed_less_than(count.clone(), OldMachineTerm::int64_constant(0))
     };
     match decide_with_facts(assumptions, &facts, &invalid_count) {
         Some(true) => vec![ExpressionPath {
@@ -4952,7 +4968,7 @@ fn apply_program_int64_with_valid_shift_count(
             obligations,
         }],
         Some(false) if !unsigned_count => {
-            let too_large = ConditionTerm::int64_signed_greater_equal(
+            let too_large = OldConditionTerm::int64_signed_greater_equal(
                 count.clone(),
                 OldMachineTerm::int64_constant(64),
             );
@@ -4988,7 +5004,7 @@ fn apply_program_int64_with_valid_shift_count(
                 apply_program_int64_shift_count_upper_bound(
                     left,
                     count,
-                    ConditionTerm::Constant(false),
+                    OldConditionTerm::Constant(false),
                     valid_facts,
                     obligations.clone(),
                     assumptions,
@@ -4996,7 +5012,7 @@ fn apply_program_int64_with_valid_shift_count(
                     apply_valid_count,
                 )
             } else {
-                let too_large = ConditionTerm::int64_signed_greater_equal(
+                let too_large = OldConditionTerm::int64_signed_greater_equal(
                     count.clone(),
                     OldMachineTerm::int64_constant(64),
                 );
@@ -5024,7 +5040,7 @@ fn apply_program_int64_with_valid_shift_count(
 fn apply_program_int64_shift_count_upper_bound(
     left: OldMachineTerm,
     count: OldMachineTerm,
-    too_large: ConditionTerm,
+    too_large: OldConditionTerm,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
@@ -5052,7 +5068,7 @@ fn apply_program_int64_shift_left_valid_count(
     unsigned_count: bool,
 ) -> Vec<ExpressionPath> {
     let negative_left =
-        ConditionTerm::int64_signed_less_than(left.clone(), OldMachineTerm::int64_constant(0));
+        OldConditionTerm::int64_signed_less_than(left.clone(), OldMachineTerm::int64_constant(0));
     split_on_undefined_behavior(
         negative_left,
         UndefinedBehavior::InvalidShift,
@@ -5088,9 +5104,9 @@ fn apply_program_int64_shift_left_nonnegative(
         assumptions,
         &facts,
     ) {
-        ConditionTerm::Constant(true)
+        OldConditionTerm::Constant(true)
     } else {
-        ConditionTerm::signed_shift_result_fits(
+        OldConditionTerm::signed_shift_result_fits(
             MachineIntegerType::Int64,
             left.clone(),
             right.clone(),
@@ -5186,7 +5202,7 @@ fn apply_program_int32_with_valid_shift_count(
         );
     }
     let negative_count =
-        ConditionTerm::signed_less_than(right.clone(), OldMachineTerm::constant(0));
+        OldConditionTerm::signed_less_than(right.clone(), OldMachineTerm::constant(0));
     match decide_with_facts(assumptions, &facts, &negative_count) {
         Some(true) => {
             return vec![ExpressionPath {
@@ -5261,7 +5277,7 @@ fn apply_program_int32_with_valid_wide_shift_count(
     }
 
     let negative_count =
-        ConditionTerm::int64_signed_less_than(right.clone(), OldMachineTerm::int64_constant(0));
+        OldConditionTerm::int64_signed_less_than(right.clone(), OldMachineTerm::int64_constant(0));
     split_on_undefined_behavior(
         negative_count,
         UndefinedBehavior::InvalidShift,
@@ -5292,9 +5308,12 @@ fn apply_program_int32_with_nonnegative_wide_shift_count(
     apply_valid_count: ValidShiftCountEvaluator,
 ) -> Vec<ExpressionPath> {
     let too_large_count = if unsigned_count {
-        ConditionTerm::uint64_greater_equal(right.clone(), OldMachineTerm::uint64_constant(32))
+        OldConditionTerm::uint64_greater_equal(right.clone(), OldMachineTerm::uint64_constant(32))
     } else {
-        ConditionTerm::int64_signed_greater_equal(right.clone(), OldMachineTerm::int64_constant(32))
+        OldConditionTerm::int64_signed_greater_equal(
+            right.clone(),
+            OldMachineTerm::int64_constant(32),
+        )
     };
     split_on_undefined_behavior(
         too_large_count,
@@ -5325,9 +5344,9 @@ fn apply_program_int32_with_nonnegative_shift_count(
     apply_valid_count: ValidShiftCountEvaluator,
 ) -> Vec<ExpressionPath> {
     let too_large_count = if unsigned_count {
-        ConditionTerm::unsigned_greater_equal(right.clone(), OldMachineTerm::constant(32))
+        OldConditionTerm::unsigned_greater_equal(right.clone(), OldMachineTerm::constant(32))
     } else {
-        ConditionTerm::signed_greater_equal(right.clone(), OldMachineTerm::constant(32))
+        OldConditionTerm::signed_greater_equal(right.clone(), OldMachineTerm::constant(32))
     };
     split_on_undefined_behavior(
         too_large_count,
@@ -5349,7 +5368,8 @@ fn apply_program_int32_shift_left_valid_count(
     assumptions: &PureFactContext,
     unsigned_count: bool,
 ) -> Vec<ExpressionPath> {
-    let negative_left = ConditionTerm::signed_less_than(left.clone(), OldMachineTerm::constant(0));
+    let negative_left =
+        OldConditionTerm::signed_less_than(left.clone(), OldMachineTerm::constant(0));
     match decide_with_facts(assumptions, &facts, &negative_left) {
         Some(true) => {
             return vec![ExpressionPath {
@@ -5411,9 +5431,9 @@ fn apply_program_int32_shift_left_nonnegative(
         assumptions,
         &facts,
     ) {
-        ConditionTerm::Constant(true)
+        OldConditionTerm::Constant(true)
     } else {
-        ConditionTerm::signed_shift_result_fits(
+        OldConditionTerm::signed_shift_result_fits(
             MachineIntegerType::Int32,
             left.clone(),
             right.clone(),
@@ -5547,9 +5567,9 @@ fn bounded_shift_count(
 fn indexed_condition_value(
     assumptions: &PureFactContext,
     facts: &ExecutionFacts,
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
 ) -> Option<bool> {
-    if let ConditionTerm::Constant(value) = condition {
+    if let OldConditionTerm::Constant(value) = condition {
         return Some(*value);
     }
     assumptions.known_condition_value(condition).or_else(|| {
@@ -5563,7 +5583,7 @@ fn indexed_condition_value(
 /// After validating the count and operand sign, retain an undecided
 /// representability check as a requirement on the shift's value path.
 fn signed_shift_result_path(
-    fits: ConditionTerm,
+    fits: OldConditionTerm,
     facts: ExecutionFacts,
     mut obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
@@ -5670,7 +5690,7 @@ fn apply_program_equality(
             if left.algebraic_type == right.algebraic_type =>
         {
             return condition_as_program_int32_paths_valued(
-                ConditionTerm::AlgebraicEqual(left.clone(), right.clone()),
+                OldConditionTerm::AlgebraicEqual(left.clone(), right.clone()),
                 facts,
                 obligations,
                 assumptions,
@@ -5716,9 +5736,9 @@ fn apply_program_equality(
         && right_word.bool_cast_operand().is_some()
     {
         return condition_as_program_int32_paths_valued(
-            ConditionTerm::bool_equal(
-                ConditionTerm::truth_of_bool_word(left_word),
-                ConditionTerm::truth_of_bool_word(right_word),
+            OldConditionTerm::bool_equal(
+                OldConditionTerm::truth_of_bool_word(left_word),
+                OldConditionTerm::truth_of_bool_word(right_word),
             ),
             facts,
             obligations,
@@ -5733,9 +5753,9 @@ fn apply_program_equality(
             return Vec::new();
         };
         let condition = if matches!(width, ScalarWidth::Int64) {
-            ConditionTerm::int64_equal(left, right)
+            OldConditionTerm::int64_equal(left, right)
         } else {
-            ConditionTerm::uint64_equal(left, right)
+            OldConditionTerm::uint64_equal(left, right)
         };
         return condition_as_program_int32_paths_valued(
             condition,
@@ -5807,7 +5827,7 @@ fn apply_program_equality(
                 return Vec::new();
             };
             condition_as_program_int32_paths_valued(
-                ConditionTerm::uint32_equal(left, right),
+                OldConditionTerm::uint32_equal(left, right),
                 facts,
                 obligations,
                 assumptions,
@@ -5826,7 +5846,7 @@ fn apply_program_equality(
                 return Vec::new();
             };
             condition_as_program_int32_paths_valued(
-                ConditionTerm::equal(left, right),
+                OldConditionTerm::equal(left, right),
                 facts,
                 obligations,
                 assumptions,
@@ -5835,7 +5855,7 @@ fn apply_program_equality(
         }
         (ProgramValue::Float32(left), ProgramValue::Float32(right)) => {
             condition_as_program_int32_paths_valued(
-                ConditionTerm::float32_compare(left, right, operator),
+                OldConditionTerm::float32_compare(left, right, operator),
                 facts,
                 obligations,
                 assumptions,
@@ -5844,7 +5864,7 @@ fn apply_program_equality(
         }
         (ProgramValue::Float64(left), ProgramValue::Float64(right)) => {
             condition_as_program_int32_paths_valued(
-                ConditionTerm::float64_compare(left, right, operator),
+                OldConditionTerm::float64_compare(left, right, operator),
                 facts,
                 obligations,
                 assumptions,
@@ -5867,14 +5887,14 @@ pub(in crate::kernel) fn evaluate_program_not_paths(
             // A Rust `Bool` value (decision D5): `not c`, with no split.
             ExpressionOutcome::Value(value)
                 if super::ConditionValueScope::is_active()
-                    && ConditionTerm::nonzero_test(&value).is_some() =>
+                    && OldConditionTerm::nonzero_test(&value).is_some() =>
             {
-                let condition = ConditionTerm::nonzero_test(&value).expect("tested above");
+                let condition = OldConditionTerm::nonzero_test(&value).expect("tested above");
                 paths.push(ExpressionPath {
                     outcome: ExpressionOutcome::Value(ProgramValue::Int32(
                         OldMachineTerm::bool_cast(
                             MachineIntegerType::Int32,
-                            ConditionTerm::bool_not(condition),
+                            OldConditionTerm::bool_not(condition),
                         ),
                     )),
                     facts: path.facts,
@@ -5927,7 +5947,7 @@ fn connective_bool_value_paths(
     right: &ProgramExpression,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
-    combine: impl Fn(ConditionTerm, ConditionTerm) -> ConditionTerm,
+    combine: impl Fn(OldConditionTerm, OldConditionTerm) -> OldConditionTerm,
 ) -> ExecutionResult<Option<Vec<ExpressionPath>>> {
     let simple = |operand: &ProgramExpression| {
         matches!(
@@ -5949,8 +5969,8 @@ fn connective_bool_value_paths(
         return Ok(None);
     };
     let (Some(left_condition), Some(right_condition)) = (
-        ConditionTerm::nonzero_test(left_value),
-        ConditionTerm::nonzero_test(right_value),
+        OldConditionTerm::nonzero_test(left_value),
+        OldConditionTerm::nonzero_test(right_value),
     ) else {
         return Ok(None);
     };
@@ -5983,7 +6003,7 @@ pub(in crate::kernel) fn evaluate_program_logical_and_paths(
     if super::ConditionValueScope::is_active()
         && let Some(paths) =
             connective_bool_value_paths(state, left, right, assumptions, budget, |left, right| {
-                ConditionTerm::bool_if(left, right, ConditionTerm::Constant(false))
+                OldConditionTerm::bool_if(left, right, OldConditionTerm::Constant(false))
             })?
     {
         return Ok(paths);
@@ -6085,7 +6105,7 @@ pub(in crate::kernel) fn evaluate_program_logical_or_paths(
     if super::ConditionValueScope::is_active()
         && let Some(paths) =
             connective_bool_value_paths(state, left, right, assumptions, budget, |left, right| {
-                ConditionTerm::bool_if(left, ConditionTerm::Constant(true), right)
+                OldConditionTerm::bool_if(left, OldConditionTerm::Constant(true), right)
             })?
     {
         return Ok(paths);
@@ -6249,7 +6269,7 @@ fn apply_pointer_adjacency_guard(
 /// The pointer's displacement from its object's base: its offset for a block
 /// based at offset zero, and the summands after the parameter's opaque base
 /// for argument memory. `None` when the offset does not spell the base.
-fn pointer_object_displacement(pointer: &Address) -> Option<AddressOffset> {
+fn pointer_object_displacement(pointer: &Address) -> Option<OldAddressOffset> {
     pointer.offset_from_base(&pointer.object_base())
 }
 
@@ -6261,9 +6281,9 @@ fn pointer_object_displacement(pointer: &Address) -> Option<AddressOffset> {
 fn pointer_at_block_end_condition(
     state: &ExecutionState,
     pointer: &Address,
-) -> Option<ConditionTerm> {
+) -> Option<OldConditionTerm> {
     let Some(displacement) = pointer_object_displacement(pointer) else {
-        return Some(ConditionTerm::Constant(true));
+        return Some(OldConditionTerm::Constant(true));
     };
     if displacement.as_const() == Some(0) {
         return None;
@@ -6275,31 +6295,31 @@ fn pointer_at_block_end_condition(
         .and_then(AllocationSize::int32_bytes)
         .cloned()
     else {
-        return Some(ConditionTerm::Constant(true));
+        return Some(OldConditionTerm::Constant(true));
     };
     match (displacement.as_const(), size.as_const()) {
         (Some(offset), Some(size)) => {
-            (offset == i64::from(size)).then_some(ConditionTerm::Constant(true))
+            (offset == i64::from(size)).then_some(OldConditionTerm::Constant(true))
         }
         _ => match byte_offset_from_pointer_offset(&displacement) {
-            Some(offset) => Some(ConditionTerm::equal(offset, size)),
-            None => Some(ConditionTerm::Constant(true)),
+            Some(offset) => Some(OldConditionTerm::equal(offset, size)),
+            None => Some(OldConditionTerm::Constant(true)),
         },
     }
 }
 
 /// The condition under which `pointer` is the start of its object, or `None`
 /// when a constant displacement says it is not.
-fn pointer_at_object_start_condition(pointer: &Address) -> Option<ConditionTerm> {
+fn pointer_at_object_start_condition(pointer: &Address) -> Option<OldConditionTerm> {
     let Some(displacement) = pointer_object_displacement(pointer) else {
-        return Some(ConditionTerm::Constant(true));
+        return Some(OldConditionTerm::Constant(true));
     };
     match displacement.as_const() {
-        Some(0) => Some(ConditionTerm::Constant(true)),
+        Some(0) => Some(OldConditionTerm::Constant(true)),
         Some(_) => None,
         None => match byte_offset_from_pointer_offset(&displacement) {
-            Some(offset) => Some(ConditionTerm::equal(offset, OldMachineTerm::constant(0))),
-            None => Some(ConditionTerm::Constant(true)),
+            Some(offset) => Some(OldConditionTerm::equal(offset, OldMachineTerm::constant(0))),
+            None => Some(OldConditionTerm::Constant(true)),
         },
     }
 }
@@ -6307,8 +6327,8 @@ fn pointer_at_object_start_condition(pointer: &Address) -> Option<ConditionTerm>
 pub(in crate::kernel) fn pointer_equality_condition(
     left: Address,
     right: Address,
-) -> ConditionTerm {
-    ConditionTerm::address_equal(left, right)
+) -> OldConditionTerm {
+    OldConditionTerm::address_equal(left, right)
 }
 
 /// What a C `==` between two pointers establishes: their addresses are
@@ -6321,17 +6341,17 @@ pub(in crate::kernel) fn pointer_equality_condition(
 pub(in crate::kernel) fn program_pointer_comparison_condition(
     left: Address,
     right: Address,
-) -> ConditionTerm {
+) -> OldConditionTerm {
     if left == Address::null() || right == Address::null() {
         return pointer_equality_condition(left, right);
     }
-    ConditionTerm::uint64_equal(
+    OldConditionTerm::uint64_equal(
         OldMachineTerm::integer_address(left),
         OldMachineTerm::integer_address(right),
     )
 }
 
-pub(in crate::kernel) fn pointer_is_null_condition(pointer: Address) -> ConditionTerm {
+pub(in crate::kernel) fn pointer_is_null_condition(pointer: Address) -> OldConditionTerm {
     pointer_equality_condition(pointer, Address::null())
 }
 
@@ -6721,7 +6741,7 @@ mod word_tag_tests {
     fn checked_word_tag_addition_retains_the_carrier_and_numeric_addition() {
         let _session = crate::kernel::VerificationSession::enter();
         let (bits, value) = word();
-        let clear = ConditionTerm::uint64_equal(
+        let clear = OldConditionTerm::uint64_equal(
             OldMachineTerm::uint64_bitwise_and(bits.clone(), OldMachineTerm::uint64_constant(1)),
             OldMachineTerm::uint64_constant(0),
         );
@@ -6767,8 +6787,8 @@ mod word_tag_tests {
     fn tag_clearing_equations_require_bounds_and_no_carry() {
         let word = OldMachineTerm::Variable(Variable(997_090));
         let tag = OldMachineTerm::Variable(Variable(997_091));
-        let lower = ConditionTerm::signed_less_equal(0u32.into(), tag.clone());
-        let upper = ConditionTerm::signed_less_equal(tag.clone(), 1u32.into());
+        let lower = OldConditionTerm::signed_less_equal(0u32.into(), tag.clone());
+        let upper = OldConditionTerm::signed_less_equal(tag.clone(), 1u32.into());
         let empty = PureFactContext::new();
         let nonnegative = empty.clone().assume_condition(lower, true);
         let bounded = nonnegative.clone().assume_condition(upper.clone(), true);
@@ -6793,7 +6813,7 @@ mod word_tag_tests {
         let added = OldMachineTerm::uint64_add(word.clone(), OldMachineTerm::uint64_constant(1));
         assert!(bounded_uint64_tag_equation(&masked(added.clone(), !3), &empty).is_none());
         let clear = empty.assume_condition(
-            ConditionTerm::uint64_equal(masked(word, 1), OldMachineTerm::uint64_constant(0)),
+            OldConditionTerm::uint64_equal(masked(word, 1), OldMachineTerm::uint64_constant(0)),
             true,
         );
         assert!(bounded_uint64_tag_equation(&masked(added, !3), &clear).is_some());
@@ -6895,7 +6915,7 @@ mod pointer_domain_tests {
             width: 4u32.into(),
         }));
         let facts = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(value.clone(), selected.clone()),
+            OldConditionTerm::pointer_equal(value.clone(), selected.clone()),
             true,
         );
         let state = ExecutionState::new();

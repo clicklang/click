@@ -11502,7 +11502,7 @@ mod integer_source_quantifier_tests {
     #[test]
     fn captured_integer_freshness_ignores_unrelated_heap_state() {
         use crate::kernel::{
-            Address, AddressBase, AddressOffset, OldMachineTerm, ProgramType, ProgramValue,
+            Address, AddressBase, OldAddressOffset, OldMachineTerm, ProgramType, ProgramValue,
             SpecExpression, SpecPoint, SpecPureFunctionArgument, SymbolicMemory,
         };
 
@@ -11510,7 +11510,7 @@ mod integer_source_quantifier_tests {
         let unrelated_heap_variable = Variable(9_000_001);
         let heap_pointer = Address {
             base: AddressBase::Heap(77),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let memory = SymbolicMemory::new()
             .with_block(heap_pointer.base.clone(), 4)

@@ -35,16 +35,16 @@ fn plus(term: &OldMachineTerm, value: i32) -> OldMachineTerm {
     )
 }
 
-fn lt(a: &OldMachineTerm, b: &OldMachineTerm) -> ConditionTerm {
-    ConditionTerm::signed_less_than(a.clone(), b.clone())
+fn lt(a: &OldMachineTerm, b: &OldMachineTerm) -> OldConditionTerm {
+    OldConditionTerm::signed_less_than(a.clone(), b.clone())
 }
 
-fn le(a: &OldMachineTerm, b: &OldMachineTerm) -> ConditionTerm {
-    ConditionTerm::signed_less_equal(a.clone(), b.clone())
+fn le(a: &OldMachineTerm, b: &OldMachineTerm) -> OldConditionTerm {
+    OldConditionTerm::signed_less_equal(a.clone(), b.clone())
 }
 
-fn add_overflows(a: &OldMachineTerm, b: &OldMachineTerm) -> ConditionTerm {
-    ConditionTerm::Overflows {
+fn add_overflows(a: &OldMachineTerm, b: &OldMachineTerm) -> OldConditionTerm {
+    OldConditionTerm::Overflows {
         format: MachineIntegerType::Int32,
         op: OverflowOperation::Add,
         left: Box::new(a.clone()),
@@ -52,7 +52,7 @@ fn add_overflows(a: &OldMachineTerm, b: &OldMachineTerm) -> ConditionTerm {
     }
 }
 
-fn graph(facts: &[(ConditionTerm, bool)]) -> DifferenceGraph {
+fn graph(facts: &[(OldConditionTerm, bool)]) -> DifferenceGraph {
     let mut graph = DifferenceGraph::new();
     for (condition, value) in facts {
         graph.assume_condition(condition, *value);
@@ -130,14 +130,14 @@ fn unsigned_conversion_keeps_a_nonnegative_value() {
     let i = variable(0);
     let wide = OldMachineTerm::legacy_cast(MachineCastSpelling::UInt64From32, Box::new(i.clone()));
     let length = variable(1);
-    let below = ConditionTerm::Compare {
+    let below = OldConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessThan,
         left: Box::new(wide),
         right: Box::new(length.clone()),
     };
     let graph = graph(&[(le(&constant(0), &i), true), (below, true)]);
-    let length_positive = ConditionTerm::Compare {
+    let length_positive = OldConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessThan,
         left: Box::new(OldMachineTerm::uint64_constant(0)),
@@ -194,9 +194,9 @@ fn decisions_hold_in_every_model_and_are_complete() {
             _ => model[variables.iter().position(|v| v == term).unwrap()],
         }
     };
-    let holds = |condition: &ConditionTerm, model: &[i128]| -> bool {
+    let holds = |condition: &OldConditionTerm, model: &[i128]| -> bool {
         // The constructors fold a comparison of two constants.
-        if let ConditionTerm::Constant(value) = condition {
+        if let OldConditionTerm::Constant(value) = condition {
             return *value;
         }
         let [(_, ref lower, ref upper, strict)] = condition_orders(condition, true)[..] else {
@@ -420,67 +420,67 @@ fn check_arithmetic_decisions_in_every_model(cases: usize) {
         boxed(&constant(-3))
     ));
     let constants = [i32::MIN, -1, 0, 1, i32::MAX].map(constant);
-    let holds = |condition: &ConditionTerm, model: &[i32]| -> bool {
+    let holds = |condition: &OldConditionTerm, model: &[i32]| -> bool {
         let v = |term: &OldMachineTerm| value(term, &variables, model);
         match condition {
-            ConditionTerm::Constant(value) => *value,
-            ConditionTerm::Compare {
+            OldConditionTerm::Constant(value) => *value,
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: a,
                 right: b,
             } => v(a) < v(b),
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left: a,
                 right: b,
             } => v(a) <= v(b),
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: a,
                 right: b,
             } => v(a) == v(b),
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::UInt32,
                 relation: CompareRelation::LessThan,
                 left: a,
                 right: b,
             } => (v(a) as u32) < (v(b) as u32),
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::UInt32,
                 relation: CompareRelation::LessEqual,
                 left: a,
                 right: b,
             } => (v(a) as u32) <= (v(b) as u32),
-            ConditionTerm::Overflows {
+            OldConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Add,
                 left: a,
                 right: b,
             } => v(a).overflowing_add(v(b)).1,
-            ConditionTerm::Overflows {
+            OldConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Subtract,
                 left: a,
                 right: b,
             } => v(a).overflowing_sub(v(b)).1,
-            ConditionTerm::Overflows {
+            OldConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Divide,
                 left: a,
                 right: b,
             } => v(a) == i32::MIN && v(b) == -1,
-            ConditionTerm::Overflows {
+            OldConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Multiply,
                 left: a,
                 right: b,
             } => v(a).overflowing_mul(v(b)).1,
-            // As `ConditionTerm::signed_shift_left_overflows` folds
+            // As `OldConditionTerm::signed_shift_left_overflows` folds
             // constants; the graph answers only counts in `0..32`.
-            ConditionTerm::Overflows {
+            OldConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::ShiftLeft,
                 left: a,
@@ -496,44 +496,44 @@ fn check_arithmetic_decisions_in_every_model(cases: usize) {
     };
     // `holds` for a two-operand query whose operands have the values `a`
     // and `b`.
-    let holds_between = |condition: &ConditionTerm, a: i32, b: i32| -> bool {
+    let holds_between = |condition: &OldConditionTerm, a: i32, b: i32| -> bool {
         match condition {
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 ..
             } => a < b,
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 ..
             } => a == b,
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::UInt32,
                 relation: CompareRelation::LessThan,
                 ..
             } => (a as u32) < (b as u32),
-            ConditionTerm::Overflows {
+            OldConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Add,
                 ..
             } => a.overflowing_add(b).1,
-            ConditionTerm::Overflows {
+            OldConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Subtract,
                 ..
             } => a.overflowing_sub(b).1,
-            ConditionTerm::Overflows {
+            OldConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Divide,
                 ..
             } => a == i32::MIN && b == -1,
-            ConditionTerm::Overflows {
+            OldConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Multiply,
                 ..
             } => a.overflowing_mul(b).1,
-            ConditionTerm::Overflows {
+            OldConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::ShiftLeft,
                 ..
@@ -563,14 +563,18 @@ fn check_arithmetic_decisions_in_every_model(cases: usize) {
             let fact = match next(6) {
                 0 => lt(a, &constants[next(constants.len())]),
                 1 => le(&constants[next(constants.len())], a),
-                2 => ConditionTerm::equal(variables[next(3)].clone(), constants[next(5)].clone()),
+                2 => {
+                    OldConditionTerm::equal(variables[next(3)].clone(), constants[next(5)].clone())
+                }
                 // A `uint32` order between pool terms or against a constant.
-                3 => ConditionTerm::unsigned_less_than(a.clone(), pool[next(pool.len())].clone()),
-                4 => ConditionTerm::unsigned_less_equal(
+                3 => {
+                    OldConditionTerm::unsigned_less_than(a.clone(), pool[next(pool.len())].clone())
+                }
+                4 => OldConditionTerm::unsigned_less_equal(
                     constants[next(constants.len())].clone(),
                     a.clone(),
                 ),
-                _ => ConditionTerm::Overflows {
+                _ => OldConditionTerm::Overflows {
                     format: MachineIntegerType::Int32,
                     op: OverflowOperation::Add,
                     left: boxed(a),
@@ -612,49 +616,49 @@ fn check_arithmetic_decisions_in_every_model(cases: usize) {
             for (b_index, b) in operands.iter().enumerate() {
                 let (a, b) = (boxed(a), boxed(b));
                 for query in [
-                    ConditionTerm::Overflows {
+                    OldConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
                         left: a.clone(),
                         right: b.clone(),
                     },
-                    ConditionTerm::Overflows {
+                    OldConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Subtract,
                         left: a.clone(),
                         right: b.clone(),
                     },
-                    ConditionTerm::Overflows {
+                    OldConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Divide,
                         left: a.clone(),
                         right: b.clone(),
                     },
-                    ConditionTerm::Overflows {
+                    OldConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Multiply,
                         left: a.clone(),
                         right: b.clone(),
                     },
-                    ConditionTerm::Overflows {
+                    OldConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::ShiftLeft,
                         left: a.clone(),
                         right: b.clone(),
                     },
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: a.clone(),
                         right: b.clone(),
                     },
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
                         left: a.clone(),
                         right: b.clone(),
                     },
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::UInt32,
                         relation: CompareRelation::LessThan,
                         left: a.clone(),
@@ -687,39 +691,42 @@ fn check_arithmetic_decisions_in_every_model(cases: usize) {
 fn a_disequality_at_a_range_end_tightens_it() {
     let (x, y) = (variable(0), variable(1));
     let boxed = |term: &OldMachineTerm| Box::new(term.clone());
-    let divide = ConditionTerm::Overflows {
+    let divide = OldConditionTerm::Overflows {
         format: MachineIntegerType::Int32,
         op: OverflowOperation::Divide,
         left: boxed(&x),
         right: boxed(&y),
     };
-    let negate = ConditionTerm::Overflows {
+    let negate = OldConditionTerm::Overflows {
         format: MachineIntegerType::Int32,
         op: OverflowOperation::Subtract,
         left: boxed(&constant(0)),
         right: boxed(&x),
     };
     assert_eq!(graph(&[]).decide(&divide), None);
-    let not_min = graph(&[(ConditionTerm::equal(x.clone(), constant(i32::MIN)), false)]);
+    let not_min = graph(&[(
+        OldConditionTerm::equal(x.clone(), constant(i32::MIN)),
+        false,
+    )]);
     assert_eq!(not_min.decide(&negate), Some(false));
     assert_eq!(not_min.decide(&divide), Some(false));
-    let not_minus_one = graph(&[(ConditionTerm::equal(y.clone(), constant(-1)), false)]);
+    let not_minus_one = graph(&[(OldConditionTerm::equal(y.clone(), constant(-1)), false)]);
     assert_eq!(not_minus_one.decide(&divide), Some(false));
     assert_eq!(
-        not_minus_one.decide(&ConditionTerm::equal(y.clone(), constant(-1))),
+        not_minus_one.decide(&OldConditionTerm::equal(y.clone(), constant(-1))),
         Some(false)
     );
     // An exclusion recorded inside the interval takes effect once a bound
     // reaches it.
     let later = graph(&[
-        (ConditionTerm::equal(x.clone(), constant(3)), false),
+        (OldConditionTerm::equal(x.clone(), constant(3)), false),
         (le(&constant(3), &x), true),
     ]);
     assert_eq!(later.decide(&lt(&constant(3), &x)), Some(true));
     let pinned = graph(&[
         (le(&constant(3), &x), true),
         (le(&x, &constant(3)), true),
-        (ConditionTerm::equal(x.clone(), constant(3)), false),
+        (OldConditionTerm::equal(x.clone(), constant(3)), false),
     ]);
     assert!(pinned.is_contradictory());
     // A dead path answers only that an overflow is absent.
@@ -734,7 +741,7 @@ fn tightening_bounds_skips_exclusion_runs_in_each_fork() {
     for size in [4, 16, 64, 256] {
         let mut parent = DifferenceGraph::new();
         for value in -size..=size {
-            parent.assume_condition(&ConditionTerm::equal(x.clone(), constant(value)), false);
+            parent.assume_condition(&OldConditionTerm::equal(x.clone(), constant(value)), false);
         }
         let mut below = parent.clone();
         let (_, below_work) = graph_work(|| below.assume_condition(&lt(&x, &constant(0)), true));
@@ -774,7 +781,7 @@ fn a_named_compound_term_keeps_its_operands_bounds() {
         (le(&constant(0), &x), true),
     ]);
     assert_eq!(
-        graph.decide(&ConditionTerm::Overflows {
+        graph.decide(&OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Subtract,
             left: boxed(&difference),
@@ -792,7 +799,7 @@ fn overflow_facts_shifts_and_products_are_read() {
     let (x, y) = (variable(0), variable(1));
     let boxed = |term: &OldMachineTerm| Box::new(term.clone());
     let recorded = graph(&[(
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
             left: boxed(&x),
@@ -801,7 +808,7 @@ fn overflow_facts_shifts_and_products_are_read() {
         false,
     )]);
     assert_eq!(
-        recorded.decide(&ConditionTerm::Overflows {
+        recorded.decide(&OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
             left: boxed(&y),
@@ -812,7 +819,7 @@ fn overflow_facts_shifts_and_products_are_read() {
     let alias = variable(2);
     let renamed = graph(&[
         (
-            ConditionTerm::Overflows {
+            OldConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Add,
                 left: boxed(&x),
@@ -820,10 +827,10 @@ fn overflow_facts_shifts_and_products_are_read() {
             },
             false,
         ),
-        (ConditionTerm::equal(alias.clone(), x.clone()), true),
+        (OldConditionTerm::equal(alias.clone(), x.clone()), true),
     ]);
     assert_eq!(
-        renamed.decide(&ConditionTerm::Overflows {
+        renamed.decide(&OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
             left: boxed(&alias),
@@ -833,7 +840,7 @@ fn overflow_facts_shifts_and_products_are_read() {
     );
     let byte = graph(&[(le(&constant(0), &x), true), (le(&x, &constant(255)), true)]);
     assert_eq!(
-        byte.decide(&ConditionTerm::Overflows {
+        byte.decide(&OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::ShiftLeft,
             left: boxed(&x),
@@ -843,7 +850,7 @@ fn overflow_facts_shifts_and_products_are_read() {
     );
     let doubled = binary_node!(Int32, Multiply, boxed(&x), boxed(&constant(2)));
     assert_eq!(
-        byte.decide(&ConditionTerm::Overflows {
+        byte.decide(&OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Subtract,
             left: boxed(&doubled),
@@ -862,7 +869,7 @@ fn an_unsigned_order_bounds_both_readings() {
     let (a, b) = (variable(0), variable(1));
     let graph = graph(&[
         (
-            ConditionTerm::unsigned_less_than(a.clone(), b.clone()),
+            OldConditionTerm::unsigned_less_than(a.clone(), b.clone()),
             true,
         ),
         (le(&constant(0), &b), true),
@@ -874,14 +881,17 @@ fn an_unsigned_order_bounds_both_readings() {
     // A negative word is above every non-negative one as unsigned.
     let negative = graph_of_negative(&a);
     assert_eq!(
-        negative.decide(&ConditionTerm::unsigned_less_than(
+        negative.decide(&OldConditionTerm::unsigned_less_than(
             constant(i32::MAX),
             a.clone()
         )),
         Some(true)
     );
     assert_eq!(
-        negative.decide(&ConditionTerm::unsigned_less_equal(a.clone(), constant(7))),
+        negative.decide(&OldConditionTerm::unsigned_less_equal(
+            a.clone(),
+            constant(7)
+        )),
         Some(false)
     );
 }
@@ -898,9 +908,9 @@ fn a_remainder_by_a_constant_is_bounded() {
     let x = variable(0);
     let boxed = |term: &OldMachineTerm| Box::new(term.clone());
     let remainder = |k: i32| binary_node!(Int32, Remainder, boxed(&x), boxed(&constant(k)));
-    let zero = graph(&[(ConditionTerm::equal(x.clone(), constant(0)), true)]);
+    let zero = graph(&[(OldConditionTerm::equal(x.clone(), constant(0)), true)]);
     assert_eq!(
-        zero.decide(&ConditionTerm::equal(remainder(2), constant(0))),
+        zero.decide(&OldConditionTerm::equal(remainder(2), constant(0))),
         Some(true)
     );
     let nonnegative = graph(&[(le(&constant(0), &x), true)]);
@@ -930,34 +940,34 @@ fn an_int64_division_guard_needs_a_nonzero_divisor() {
     let (n, d) = (variable(0), variable(1));
     let int64 = OldMachineTerm::int64_constant;
     let nonnegative = graph(&[(
-        ConditionTerm::int64_signed_less_equal(int64(0), d.clone()),
+        OldConditionTerm::int64_signed_less_equal(int64(0), d.clone()),
         true,
     )]);
-    let divide = ConditionTerm::Overflows {
+    let divide = OldConditionTerm::Overflows {
         format: MachineIntegerType::Int64,
         op: OverflowOperation::Divide,
         left: Box::new(n.clone()),
         right: Box::new(d.clone()),
     };
     assert_eq!(nonnegative.decide(&divide), None);
-    let zero = graph(&[(ConditionTerm::int64_equal(d.clone(), int64(0)), true)]);
+    let zero = graph(&[(OldConditionTerm::int64_equal(d.clone(), int64(0)), true)]);
     assert_eq!(zero.decide(&divide), None);
     let positive = graph(&[(
-        ConditionTerm::int64_signed_less_than(int64(0), d.clone()),
+        OldConditionTerm::int64_signed_less_than(int64(0), d.clone()),
         true,
     )]);
     assert_eq!(positive.decide(&divide), Some(false));
     let nonzero = graph(&[
         (
-            ConditionTerm::int64_signed_less_equal(int64(0), d.clone()),
+            OldConditionTerm::int64_signed_less_equal(int64(0), d.clone()),
             true,
         ),
-        (ConditionTerm::int64_equal(d.clone(), int64(0)), false),
+        (OldConditionTerm::int64_equal(d.clone(), int64(0)), false),
     ]);
     assert_eq!(nonzero.decide(&divide), Some(false));
     let int32 = graph(&[(le(&constant(0), &d), true)]);
     assert_eq!(
-        int32.decide(&ConditionTerm::Overflows {
+        int32.decide(&OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Divide,
             left: Box::new(n),
@@ -975,7 +985,7 @@ fn an_int64_division_guard_needs_a_nonzero_divisor() {
 fn a_load_spelled_as_itself_reads_facts_about_its_load_variable() {
     let pointer = crate::kernel::Address {
         base: "difference-graph-cell".into(),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     };
     let memory = crate::kernel::SymbolicMemory::new().with_block("difference-graph-cell", 4);
     let load = OldMachineTerm::read_named(
@@ -1002,16 +1012,16 @@ fn a_load_spelled_as_itself_reads_facts_about_its_load_variable() {
 /// reaches is never equal.
 #[test]
 fn pointer_offsets_of_int32_elements_compare_as_indices() {
-    use crate::kernel::AddressOffset as O;
+    use crate::kernel::OldAddressOffset as O;
     let (i, j) = (variable(0), variable(1));
     let scaled = |value: &OldMachineTerm| O::scaled_int32_node(value.clone(), 4);
-    let offsets_equal = |a: O, b: O| ConditionTerm::AddressOffsetEqual(Box::new(a), Box::new(b));
+    let offsets_equal = |a: O, b: O| OldConditionTerm::AddressOffsetEqual(Box::new(a), Box::new(b));
     let ordered = graph(&[(lt(&i, &j), true)]);
     assert_eq!(
         ordered.decide(&offsets_equal(scaled(&i), scaled(&j))),
         Some(false)
     );
-    let pinned = graph(&[(ConditionTerm::equal(i.clone(), constant(3)), true)]);
+    let pinned = graph(&[(OldConditionTerm::equal(i.clone(), constant(3)), true)]);
     assert_eq!(
         pinned.decide(&offsets_equal(scaled(&i), O::Constant(12))),
         Some(true)
@@ -1053,7 +1063,7 @@ fn a_zero_extension_reads_its_operands_bounds() {
         left: boxed(a),
         right: boxed(b),
     };
-    let at_most = |a: &OldMachineTerm, k: i64| ConditionTerm::Compare {
+    let at_most = |a: &OldMachineTerm, k: i64| OldConditionTerm::Compare {
         format: MachineIntegerType::Int64,
         relation: CompareRelation::LessEqual,
         left: boxed(a),
@@ -1107,7 +1117,7 @@ fn an_unsigned_quotient_by_a_positive_divisor_is_bounded() {
         left: Box::new(T::uint64_constant(u64::MAX)),
         right: boxed(&y),
     };
-    let fits = ConditionTerm::Compare {
+    let fits = OldConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessEqual,
         left: boxed(&x),
@@ -1115,7 +1125,7 @@ fn an_unsigned_quotient_by_a_positive_divisor_is_bounded() {
     };
     let pinned = graph(&[
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: boxed(&x),
@@ -1124,7 +1134,7 @@ fn an_unsigned_quotient_by_a_positive_divisor_is_bounded() {
             true,
         ),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: boxed(&y),
@@ -1136,7 +1146,7 @@ fn an_unsigned_quotient_by_a_positive_divisor_is_bounded() {
     assert_eq!(pinned.decide(&fits), Some(true));
     let overflowing = graph(&[
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: boxed(&x),
@@ -1145,7 +1155,7 @@ fn an_unsigned_quotient_by_a_positive_divisor_is_bounded() {
             true,
         ),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: boxed(&y),
@@ -1173,14 +1183,14 @@ fn a_constant_mask_bounds_an_unsigned_value() {
         left: boxed(&x),
         right: Box::new(T::uint64_constant(65535)),
     };
-    let at_least = |k| ConditionTerm::Compare {
+    let at_least = |k| OldConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessEqual,
         left: Box::new(T::uint64_constant(k)),
         right: Box::new(low_half.clone()),
     };
     let one = graph(&[(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: boxed(&x),
@@ -1207,7 +1217,7 @@ fn signed_and_unsigned_readings_of_a_word_bound_each_other() {
     let x = variable(0);
     let boxed = |term: &OldMachineTerm| Box::new(term.clone());
     let all_ones = graph(&[(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: boxed(&x),
@@ -1215,7 +1225,7 @@ fn signed_and_unsigned_readings_of_a_word_bound_each_other() {
         },
         true,
     )]);
-    let increment_overflows = |value: &OldMachineTerm| ConditionTerm::Overflows {
+    let increment_overflows = |value: &OldMachineTerm| OldConditionTerm::Overflows {
         format: MachineIntegerType::Int64,
         op: OverflowOperation::Add,
         left: Box::new(value.clone()),
@@ -1232,7 +1242,7 @@ fn signed_and_unsigned_readings_of_a_word_bound_each_other() {
     // The largest signed value is its own unsigned reading, and its
     // increment overflows: nothing says otherwise.
     let largest = graph(&[(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: boxed(&x),
@@ -1254,7 +1264,7 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
     let boxed = |term: &OldMachineTerm| Box::new(term.clone());
     let pinned = graph(&[
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: boxed(&n),
@@ -1263,7 +1273,7 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
             true,
         ),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: boxed(&d),
@@ -1282,7 +1292,7 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
             right: Box::new(divisor.clone()),
         }),
     );
-    let positive = ConditionTerm::Compare {
+    let positive = OldConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::GreaterThan,
         left: Box::new(remainder.clone()),
@@ -1295,7 +1305,7 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
         else_term: Box::new(T::constant(0)),
     };
     assert_eq!(
-        pinned.decide(&ConditionTerm::Compare {
+        pinned.decide(&OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(correction),
@@ -1310,7 +1320,7 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
         right: Box::new(divisor),
     };
     assert_eq!(
-        pinned.decide(&ConditionTerm::Overflows {
+        pinned.decide(&OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Add,
             left: Box::new(quotient),
@@ -1331,7 +1341,7 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
         )),
     };
     assert_eq!(
-        unknown.decide(&ConditionTerm::Overflows {
+        unknown.decide(&OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Add,
             left: Box::new(any_quotient),
@@ -1345,7 +1355,7 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
         else_term: Box::new(T::constant(0)),
     };
     assert_eq!(
-        unknown.decide(&ConditionTerm::Compare {
+        unknown.decide(&OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(either.clone()),
@@ -1354,7 +1364,7 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
         None
     );
     assert_eq!(
-        unknown.decide(&ConditionTerm::Compare {
+        unknown.decide(&OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(either),
@@ -1385,7 +1395,7 @@ fn an_unsigned_value_rounded_down_to_a_multiple_stays_in_range() {
     };
     let unknown = graph(&[]);
     assert_eq!(
-        unknown.decide(&ConditionTerm::Compare {
+        unknown.decide(&OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::GreaterEqual,
             left: boxed(&x),
@@ -1401,14 +1411,14 @@ fn an_unsigned_value_rounded_down_to_a_multiple_stays_in_range() {
         left: boxed(&x),
         right: Box::new(variable(1)),
     };
-    let dividend_bound = ConditionTerm::Compare {
+    let dividend_bound = OldConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessEqual,
         left: Box::new(by_variable.clone()),
         right: boxed(&x),
     };
     assert_eq!(unknown.decide(&dividend_bound), None);
-    let by_zero = ConditionTerm::Compare {
+    let by_zero = OldConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessEqual,
         left: Box::new(T::Binary {
@@ -1421,7 +1431,7 @@ fn an_unsigned_value_rounded_down_to_a_multiple_stays_in_range() {
     };
     assert_eq!(unknown.decide(&by_zero), None);
     let positive = graph(&[(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessEqual,
             left: Box::new(T::uint64_constant(1)),
@@ -1430,7 +1440,7 @@ fn an_unsigned_value_rounded_down_to_a_multiple_stays_in_range() {
         true,
     )]);
     assert_eq!(positive.decide(&dividend_bound), Some(true));
-    let at_least_four = |rounded: &OldMachineTerm| ConditionTerm::Compare {
+    let at_least_four = |rounded: &OldMachineTerm| OldConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessEqual,
         left: Box::new(T::uint64_constant(4)),
@@ -1438,7 +1448,7 @@ fn an_unsigned_value_rounded_down_to_a_multiple_stays_in_range() {
     };
     assert_eq!(unknown.decide(&at_least_four(&rounded)), None);
     let large = graph(&[(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessEqual,
             left: Box::new(T::uint64_constant(4)),
@@ -1449,7 +1459,7 @@ fn an_unsigned_value_rounded_down_to_a_multiple_stays_in_range() {
     assert_eq!(large.decide(&at_least_four(&rounded)), Some(true));
     // One less than the bound is not enough: `x == 3` rounds to 0.
     let small = graph(&[(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessEqual,
             left: Box::new(T::uint64_constant(3)),
@@ -1473,7 +1483,7 @@ fn a_sign_flip_of_known_sign_is_bounded() {
         Box::new(T::constant(i32::MIN as u32)),
         Box::new(binary_node!(Int32, Subtract, boxed(&a), boxed(&b))),
     );
-    let below_zero = ConditionTerm::Compare {
+    let below_zero = OldConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::LessEqual,
         left: Box::new(flipped),
@@ -1481,7 +1491,7 @@ fn a_sign_flip_of_known_sign_is_bounded() {
     };
     let ordered = graph(&[
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left: boxed(&b),
@@ -1490,7 +1500,7 @@ fn a_sign_flip_of_known_sign_is_bounded() {
             true,
         ),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left: Box::new(T::constant(0)),
@@ -1519,7 +1529,7 @@ fn an_unsigned_quotient_of_words_is_bounded() {
             Box::new(term)
         )
     };
-    let fits = ConditionTerm::Compare {
+    let fits = OldConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::LessEqual,
         left: Box::new(flip(x.clone())),
@@ -1533,7 +1543,7 @@ fn an_unsigned_quotient_of_words_is_bounded() {
     let pinned = |y_value: u32| {
         graph(&[
             (
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: boxed(&x),
@@ -1542,7 +1552,7 @@ fn an_unsigned_quotient_of_words_is_bounded() {
                 true,
             ),
             (
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: boxed(&y),
@@ -1563,16 +1573,16 @@ fn an_unsigned_quotient_of_words_is_bounded() {
 /// `i < j` they do not.
 #[test]
 fn field_offsets_from_equal_bases_are_equal() {
-    use crate::kernel::AddressOffset as O;
+    use crate::kernel::OldAddressOffset as O;
     let field = |index| {
         O::Add(
             Box::new(O::scale_int32(variable(index), 4)),
             Box::new(O::Constant(8)),
         )
     };
-    let same_field = ConditionTerm::AddressOffsetEqual(Box::new(field(0)), Box::new(field(1)));
+    let same_field = OldConditionTerm::AddressOffsetEqual(Box::new(field(0)), Box::new(field(1)));
     let equal = graph(&[(
-        ConditionTerm::AddressOffsetEqual(
+        OldConditionTerm::AddressOffsetEqual(
             Box::new(O::scale_int32(variable(0), 4)),
             Box::new(O::scale_int32(variable(1), 4)),
         ),
@@ -1580,7 +1590,7 @@ fn field_offsets_from_equal_bases_are_equal() {
     )]);
     assert_eq!(equal.decide(&same_field), Some(true));
     let ordered = graph(&[(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left: Box::new(variable(0)),
@@ -1590,7 +1600,7 @@ fn field_offsets_from_equal_bases_are_equal() {
     )]);
     assert_eq!(ordered.decide(&same_field), Some(false));
     // Different fields of equal bases are not compared this way.
-    let other_field = ConditionTerm::AddressOffsetEqual(
+    let other_field = OldConditionTerm::AddressOffsetEqual(
         Box::new(field(0)),
         Box::new(O::Add(
             Box::new(O::scale_int32(variable(1), 4)),
@@ -1607,7 +1617,7 @@ fn field_offsets_from_equal_bases_are_equal() {
 /// leave it open or decide it unequal.
 #[test]
 fn field_offsets_from_pointers_stated_equal_are_equal() {
-    use crate::kernel::{Address, AddressOffset as O};
+    use crate::kernel::{Address, OldAddressOffset as O};
     let base = |index| O::scale_int32(variable(index), 4);
     let argument = |index| Address {
         base: crate::kernel::AddressBase::ExternalArgument,
@@ -1616,12 +1626,12 @@ fn field_offsets_from_pointers_stated_equal_are_equal() {
     let field = |index, bytes| O::Add(Box::new(base(index)), Box::new(O::Constant(bytes)));
     let pointers = |a, b, value| {
         (
-            ConditionTerm::AddressEqual(Box::new(argument(a)), Box::new(argument(b))),
+            OldConditionTerm::AddressEqual(Box::new(argument(a)), Box::new(argument(b))),
             value,
         )
     };
     let same_field =
-        ConditionTerm::AddressOffsetEqual(Box::new(field(0, 8)), Box::new(field(1, 8)));
+        OldConditionTerm::AddressOffsetEqual(Box::new(field(0, 8)), Box::new(field(1, 8)));
     assert_eq!(
         graph(&[pointers(0, 1, true)]).decide(&same_field),
         Some(true)
@@ -1633,7 +1643,7 @@ fn field_offsets_from_pointers_stated_equal_are_equal() {
     assert_eq!(graph(&[pointers(0, 2, true)]).decide(&same_field), None);
     // Different fields of equal pointers are not compared this way.
     let other_field =
-        ConditionTerm::AddressOffsetEqual(Box::new(field(0, 8)), Box::new(field(1, 12)));
+        OldConditionTerm::AddressOffsetEqual(Box::new(field(0, 8)), Box::new(field(1, 12)));
     assert_eq!(graph(&[pointers(0, 1, true)]).decide(&other_field), None);
 }
 
@@ -1643,7 +1653,7 @@ fn field_offsets_from_pointers_stated_equal_are_equal() {
 /// asks for `p == q` is answered too.
 #[test]
 fn pointer_equalities_and_disequalities_compose() {
-    use crate::kernel::{Address, AddressOffset as O};
+    use crate::kernel::{Address, OldAddressOffset as O};
     let argument = |index| Address {
         base: crate::kernel::AddressBase::ExternalArgument,
         offset: O::scaled_int32_node(variable(index), 4),
@@ -1653,10 +1663,10 @@ fn pointer_equalities_and_disequalities_compose() {
         offset: O::Constant(0),
     };
     let equal = |a: &Address, b: &Address| {
-        ConditionTerm::AddressEqual(Box::new(a.clone()), Box::new(b.clone()))
+        OldConditionTerm::AddressEqual(Box::new(a.clone()), Box::new(b.clone()))
     };
     let offsets = |a: &Address, b: &Address| {
-        ConditionTerm::AddressOffsetEqual(Box::new(a.offset.clone()), Box::new(b.offset.clone()))
+        OldConditionTerm::AddressOffsetEqual(Box::new(a.offset.clone()), Box::new(b.offset.clone()))
     };
     let (p, q, r) = (argument(0), argument(1), argument(2));
     let split = graph(&[(equal(&p, &null), true), (equal(&q, &null), false)]);
@@ -1718,7 +1728,7 @@ fn a_narrow_cast_with_a_known_value_names_its_operand() {
                 (le(&constant(low as i32), &v), true),
                 (le(&v, &constant(high as i32)), true),
                 (
-                    ConditionTerm::equal(cast.clone(), constant(known as i32)),
+                    OldConditionTerm::equal(cast.clone(), constant(known as i32)),
                     true,
                 ),
             ]);
@@ -1727,7 +1737,7 @@ fn a_narrow_cast_with_a_known_value_names_its_operand() {
                 .collect::<Vec<_>>();
             for x in [low, -56, 0, actual, 200, high] {
                 let Some(answer) =
-                    graph.decide(&ConditionTerm::equal(v.clone(), constant(x as i32)))
+                    graph.decide(&OldConditionTerm::equal(v.clone(), constant(x as i32)))
                 else {
                     continue;
                 };
@@ -1744,7 +1754,7 @@ fn a_narrow_cast_with_a_known_value_names_its_operand() {
         (le(&constant(0), &v), true),
         (le(&v, &constant(255)), true),
         (
-            ConditionTerm::equal(
+            OldConditionTerm::equal(
                 OldMachineTerm::Cast {
                     spelling: MachineCastSpelling::Generic,
                     value: Box::new(v.clone()),
@@ -1757,12 +1767,12 @@ fn a_narrow_cast_with_a_known_value_names_its_operand() {
         ),
     ]);
     assert_eq!(
-        unsigned.decide(&ConditionTerm::equal(v.clone(), constant(200))),
+        unsigned.decide(&OldConditionTerm::equal(v.clone(), constant(200))),
         Some(true)
     );
     // Without the operand's range, the cast says nothing about it.
     let unbounded = graph(&[(
-        ConditionTerm::equal(
+        OldConditionTerm::equal(
             OldMachineTerm::Cast {
                 spelling: MachineCastSpelling::Generic,
                 value: Box::new(v.clone()),
@@ -1774,7 +1784,7 @@ fn a_narrow_cast_with_a_known_value_names_its_operand() {
         true,
     )]);
     assert_eq!(
-        unbounded.decide(&ConditionTerm::equal(v.clone(), constant(200))),
+        unbounded.decide(&OldConditionTerm::equal(v.clone(), constant(200))),
         None
     );
 }
@@ -1793,20 +1803,20 @@ fn an_unsigned_difference_that_cannot_wrap_is_at_most_its_minuend() {
         left: boxed(&a),
         right: boxed(&b),
     };
-    let at_most = ConditionTerm::Compare {
+    let at_most = OldConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessEqual,
         left: boxed(&difference),
         right: boxed(&a),
     };
-    let below = ConditionTerm::Compare {
+    let below = OldConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessThan,
         left: boxed(&difference),
         right: boxed(&a),
     };
     let ordered = graph(&[(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessEqual,
             left: boxed(&b),
@@ -1818,7 +1828,7 @@ fn an_unsigned_difference_that_cannot_wrap_is_at_most_its_minuend() {
     assert_eq!(ordered.decide(&below), None);
     let positive = graph(&[
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::UInt64,
                 relation: CompareRelation::LessEqual,
                 left: boxed(&b),
@@ -1827,7 +1837,7 @@ fn an_unsigned_difference_that_cannot_wrap_is_at_most_its_minuend() {
             true,
         ),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::UInt64,
                 relation: CompareRelation::LessEqual,
                 left: Box::new(T::uint64_constant(1)),
@@ -1849,7 +1859,7 @@ fn an_unsigned_difference_that_cannot_wrap_is_at_most_its_minuend() {
 /// 8-aligned while one byte off does not.
 #[test]
 fn low_bits_from_alignment_survive_tagged_word_arithmetic() {
-    use crate::kernel::{Address, AddressOffset as O};
+    use crate::kernel::{Address, OldAddressOffset as O};
     use OldMachineTerm as T;
     let u = T::uint64_constant;
     let boxed = |term: &OldMachineTerm| Box::new(term.clone());
@@ -1873,7 +1883,7 @@ fn low_bits_from_alignment_survive_tagged_word_arithmetic() {
         left: boxed(a),
         right: boxed(b),
     };
-    let equal = |a: &OldMachineTerm, b: &OldMachineTerm| ConditionTerm::Compare {
+    let equal = |a: &OldMachineTerm, b: &OldMachineTerm| OldConditionTerm::Compare {
         format: MachineIntegerType::Int64,
         relation: CompareRelation::Equal,
         left: boxed(a),
@@ -1920,7 +1930,7 @@ fn a_no_overflow_fact_answers_its_operands_under_other_names() {
     let (l, r, v) = (variable(0), variable(1), variable(2));
     let boxed = |term: &OldMachineTerm| Box::new(term.clone());
     let one_more = |x: &OldMachineTerm| binary_node!(Int32, Add, boxed(&constant(1)), boxed(x));
-    let overflows = |x: &OldMachineTerm| ConditionTerm::Overflows {
+    let overflows = |x: &OldMachineTerm| OldConditionTerm::Overflows {
         format: MachineIntegerType::Int32,
         op: OverflowOperation::Add,
         left: Box::new(one_more(x)),
@@ -1928,7 +1938,7 @@ fn a_no_overflow_fact_answers_its_operands_under_other_names() {
     };
     let graph = graph(&[
         (overflows(&l), false),
-        (ConditionTerm::equal(v.clone(), l.clone()), true),
+        (OldConditionTerm::equal(v.clone(), l.clone()), true),
     ]);
     assert_eq!(graph.decide(&overflows(&v)), Some(false));
     let other = graph_of_other(&l, &r);
@@ -1938,7 +1948,7 @@ fn a_no_overflow_fact_answers_its_operands_under_other_names() {
         let boxed = |term: &OldMachineTerm| Box::new(term.clone());
         // `1 + l` with `l` unrelated to `v`.
         super::tests::graph(&[(
-            ConditionTerm::Overflows {
+            OldConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Add,
                 left: Box::new(binary_node!(Int32, Add, boxed(&constant(1)), boxed(l))),
@@ -1957,7 +1967,7 @@ mod scaling_tests {
 #[test]
 fn direct_order_fact_survives_a_high_degree_source() {
     let n = variable(0);
-    let less = |left: OldMachineTerm, right: OldMachineTerm| ConditionTerm::Compare {
+    let less = |left: OldMachineTerm, right: OldMachineTerm| OldConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessThan,
         left: Box::new(left),
@@ -1976,16 +1986,16 @@ fn direct_order_fact_survives_a_high_degree_source() {
 fn word_equality_uses_unsigned_strict_bounds_without_losing_signed_evidence() {
     let (value, divisor) = (variable(993), variable(994));
     let strict = graph(&[(
-        ConditionTerm::unsigned_less_than(value.clone(), divisor.clone()),
+        OldConditionTerm::unsigned_less_than(value.clone(), divisor.clone()),
         true,
     )]);
     let non_strict = graph(&[(
-        ConditionTerm::unsigned_less_equal(value.clone(), divisor.clone()),
+        OldConditionTerm::unsigned_less_equal(value.clone(), divisor.clone()),
         true,
     )]);
     let signed_zero = graph(&[
         (lt(&value, &divisor), true),
-        (ConditionTerm::equal(divisor.clone(), constant(0)), true),
+        (OldConditionTerm::equal(divisor.clone(), constant(0)), true),
     ]);
     let signed_negative = graph(&[
         (le(&constant(-1), &divisor), true),
@@ -1999,7 +2009,7 @@ fn word_equality_uses_unsigned_strict_bounds_without_losing_signed_evidence() {
                 } else {
                     (divisor.clone(), other)
                 };
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format,
                     relation: CompareRelation::Equal,
                     left: Box::new(left),
@@ -2021,15 +2031,15 @@ fn word_equality_uses_unsigned_strict_bounds_without_losing_signed_evidence() {
 
 #[test]
 fn wide_offset_equalities_retain_the_full_index_in_both_polarities() {
-    use crate::kernel::AddressOffset as O;
+    use crate::kernel::OldAddressOffset as O;
     let i = variable(989_980);
     for unsigned in [false, true] {
         let scaled = |value: OldMachineTerm| O::scaled_int64_node(value, 8, unsigned);
-        let equal = ConditionTerm::address_offset_equal(scaled(i.clone()), O::Constant(8));
+        let equal = OldConditionTerm::address_offset_equal(scaled(i.clone()), O::Constant(8));
         for polarity in [false, true] {
             let facts = graph(&[(equal.clone(), polarity)]);
             assert_eq!(
-                facts.decide(&ConditionTerm::int64_equal(
+                facts.decide(&OldConditionTerm::int64_equal(
                     i.clone(),
                     OldMachineTerm::uint64_constant(1)
                 )),
@@ -2037,10 +2047,10 @@ fn wide_offset_equalities_retain_the_full_index_in_both_polarities() {
             );
         }
         let high = OldMachineTerm::uint64_constant((1u64 << 32) + 1);
-        let facts = graph(&[(ConditionTerm::int64_equal(i.clone(), high), true)]);
+        let facts = graph(&[(OldConditionTerm::int64_equal(i.clone(), high), true)]);
         assert_eq!(facts.decide(&equal), Some(false));
         assert_eq!(
-            graph(&[(equal, true)]).decide(&ConditionTerm::address_offset_equal(
+            graph(&[(equal, true)]).decide(&OldConditionTerm::address_offset_equal(
                 scaled(i.clone()),
                 O::Constant(16)
             )),
@@ -2051,7 +2061,7 @@ fn wide_offset_equalities_retain_the_full_index_in_both_polarities() {
 
 #[test]
 fn excluding_one_masked_wide_table_slot_selects_the_other() {
-    use crate::kernel::AddressOffset as O;
+    use crate::kernel::OldAddressOffset as O;
     let index = OldMachineTerm::uint64_from_32(OldMachineTerm::Binary {
         format: MachineIntegerType::UInt32,
         op: MachineBinaryOp::BitwiseAnd,
@@ -2061,11 +2071,11 @@ fn excluding_one_masked_wide_table_slot_selects_the_other() {
     let offset = O::scaled_int64_node(index, 8, true);
     for first in [0, 8] {
         let facts = graph(&[(
-            ConditionTerm::address_offset_equal(offset.clone(), O::Constant(first)),
+            OldConditionTerm::address_offset_equal(offset.clone(), O::Constant(first)),
             false,
         )]);
         assert_eq!(
-            facts.decide(&ConditionTerm::address_offset_equal(
+            facts.decide(&OldConditionTerm::address_offset_equal(
                 offset.clone(),
                 O::Constant(8 - first)
             )),
@@ -2101,7 +2111,7 @@ fn cached_context_graph_tracks_shared_order_addition() {
             let source =
                 condition_for_operand_views(format, relation, [V::Shared(&a), V::Shared(&b)]);
             let view = comparison_view(&source, true).unwrap();
-            let native = ConditionTerm::machine_compare(
+            let native = OldConditionTerm::machine_compare(
                 format,
                 relation,
                 OldMachineTerm::Binary {
@@ -2291,9 +2301,13 @@ fn native_equality_after_shared_admission_keeps_existing_bounds() {
             right: Box::new(OldMachineTerm::Variable(Variable(993261))),
         };
         let y = variable(993262);
-        let native_alias =
-            ConditionTerm::machine_compare(format, CompareRelation::Equal, native_root, y.clone());
-        let target = ConditionTerm::machine_compare(format, CompareRelation::LessEqual, y, five);
+        let native_alias = OldConditionTerm::machine_compare(
+            format,
+            CompareRelation::Equal,
+            native_root,
+            y.clone(),
+        );
+        let target = OldConditionTerm::machine_compare(format, CompareRelation::LessEqual, y, five);
         let exports = KernelTermExport::machine_export_count();
         let mut facts = DifferenceGraph::new();
         facts.assume_condition(&bound, true);
@@ -2338,7 +2352,7 @@ fn shared_narrow_sources_widen_without_export_and_follow_context_changes() {
         ] {
             let query =
                 condition_for_operand_views(format, relation, [V::Shared(&root), V::Old(&seven)]);
-            let native_query = ConditionTerm::machine_compare(
+            let native_query = OldConditionTerm::machine_compare(
                 format,
                 relation,
                 native_root.clone(),
@@ -2419,7 +2433,7 @@ fn a_rounded_down_value_stays_below_the_bound_of_its_dividend() {
             right: Box::new(divisor),
         }),
     };
-    let at_most = |left: &T, right: &T| ConditionTerm::Compare {
+    let at_most = |left: &T, right: &T| OldConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessEqual,
         left: Box::new(left.clone()),
@@ -2458,7 +2472,7 @@ fn offset_sources_retain_shared_indices_and_full_width() {
     for wide in [false, true] {
         let offset = |term| {
             if wide {
-                AddressOffset::Int64Scaled {
+                OldAddressOffset::Int64Scaled {
                     value: S::index(
                         MachineIntegerType::Int64,
                         OldMachineTerm::int64_from_32(term),
@@ -2467,7 +2481,7 @@ fn offset_sources_retain_shared_indices_and_full_width() {
                     unsigned: false,
                 }
             } else {
-                AddressOffset::Int32Scaled {
+                OldAddressOffset::Int32Scaled {
                     value: S::index(MachineIntegerType::Int32, term),
                     byte_width: 4,
                 }
@@ -2476,7 +2490,7 @@ fn offset_sources_retain_shared_indices_and_full_width() {
         let a = offset(x.clone());
         let b = offset(y.clone());
         let exports = KernelTermExport::machine_export_count();
-        let equality = offset_equality(&ConditionTerm::address_offset_equal(a.clone(), b))
+        let equality = offset_equality(&OldConditionTerm::address_offset_equal(a.clone(), b))
             .expect("same stride");
         let view =
             crate::kernel::machine_integer::comparison::structural_comparison_view(&equality)
@@ -2490,9 +2504,9 @@ fn offset_sources_retain_shared_indices_and_full_width() {
             }
         );
         assert!(
-            offset_equality(&ConditionTerm::address_offset_equal(
+            offset_equality(&OldConditionTerm::address_offset_equal(
                 a,
-                AddressOffset::Constant(3)
+                OldAddressOffset::Constant(3)
             ))
             .is_none()
         );
@@ -2512,12 +2526,12 @@ fn nested_rounding_bounds_do_not_imply_a_strict_bound() {
     };
     let nested = round(round(length.clone()));
     let facts = graph(&[(
-        ConditionTerm::uint64_equal(length.clone(), OldMachineTerm::uint64_constant(8)),
+        OldConditionTerm::uint64_equal(length.clone(), OldMachineTerm::uint64_constant(8)),
         true,
     )]);
     // Both roundings of eight by four are eight, not strictly below eight.
     assert_ne!(
-        facts.decide(&ConditionTerm::uint64_less_than(
+        facts.decide(&OldConditionTerm::uint64_less_than(
             nested.clone(),
             length.clone()
         )),
@@ -2554,10 +2568,10 @@ fn shared_nested_rounding_preserves_unsigned_bounds() {
         divisor.clone(),
     );
     let positive = graph(&[(
-        ConditionTerm::uint64_less_than(OldMachineTerm::uint64_constant(0), divisor.clone()),
+        OldConditionTerm::uint64_less_than(OldMachineTerm::uint64_constant(0), divisor.clone()),
         true,
     )]);
-    let native = ConditionTerm::uint64_less_equal(nested.clone(), length.clone());
+    let native = OldConditionTerm::uint64_less_equal(nested.clone(), length.clone());
     assert_eq!(positive.decide(&native), Some(true));
     let root = KernelTermImport::default()
         .machine_arithmetic(MachineIntegerType::UInt64, &nested)
@@ -2571,7 +2585,7 @@ fn shared_nested_rounding_preserves_unsigned_bounds() {
     assert_eq!(positive.decide(&shared), Some(true));
     assert_eq!(graph(&[]).decide(&shared), None);
     let zero = graph(&[(
-        ConditionTerm::uint64_equal(divisor, OldMachineTerm::uint64_constant(0)),
+        OldConditionTerm::uint64_equal(divisor, OldMachineTerm::uint64_constant(0)),
         true,
     )]);
     assert_ne!(zero.decide(&shared), Some(true));

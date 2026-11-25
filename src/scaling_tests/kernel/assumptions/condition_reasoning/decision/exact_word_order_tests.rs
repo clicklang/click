@@ -18,7 +18,7 @@ fn adjacent_bound_queries_retain_shared_prefixes_in_changing_contexts() {
                     [root.clone(), root.clone()],
                 );
                 context = context.assume_condition(
-                    ConditionTerm::equal(
+                    OldConditionTerm::equal(
                         OldMachineTerm::Variable(Variable(189330 + n as u64)),
                         OldMachineTerm::constant(n as u32),
                     ),

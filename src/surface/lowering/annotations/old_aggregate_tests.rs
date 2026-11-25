@@ -4,7 +4,7 @@ fn entry_state() -> ExecutionState {
     use crate::kernel::*;
     let source = Address {
         base: "local:caller".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let function = program_function(
         ProgramType::Void,

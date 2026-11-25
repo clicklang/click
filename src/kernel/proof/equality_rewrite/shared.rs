@@ -541,7 +541,7 @@ fn canonical(root: &KernelTerm) -> Option<(HashMap<u64, KernelTerm>, HashMap<u64
                     arguments[0].clone()
                 } else {
                     KernelTermImport::default()
-                        .condition(&ConditionTerm::truth_of_bool_word(&rewritten))
+                        .condition(&OldConditionTerm::truth_of_bool_word(&rewritten))
                 };
                 KernelTerm::machine_if_shared(
                     format(term),
@@ -787,7 +787,7 @@ pub(super) fn rewrite(
                     arguments[0].clone()
                 } else {
                     KernelTermImport::default()
-                        .condition(&ConditionTerm::truth_of_bool_word(&rewritten))
+                        .condition(&OldConditionTerm::truth_of_bool_word(&rewritten))
                 };
                 KernelTerm::machine_if_shared(
                     ty,
@@ -941,7 +941,7 @@ mod tests {
         for ty in [T::Int32, T::UInt64] {
             let x = OldMachineTerm::Variable(Variable(1006400));
             let opaque = OldMachineTerm::If {
-                condition: ConditionTerm::Variable(Variable(1006401)).into(),
+                condition: OldConditionTerm::Variable(Variable(1006401)).into(),
                 then_term: x.clone().into(),
                 else_term: OldMachineTerm::Variable(Variable(1006402)).into(),
             };
@@ -979,7 +979,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let x = OldMachineTerm::Variable(Variable(1006410));
         let to = OldMachineTerm::If {
-            condition: ConditionTerm::Variable(Variable(1006411)).into(),
+            condition: OldConditionTerm::Variable(Variable(1006411)).into(),
             then_term: x.clone().into(),
             else_term: OldMachineTerm::Variable(Variable(1006412)).into(),
         };
@@ -1011,17 +1011,17 @@ mod tests {
                     body: body.clone(),
                 };
                 let goal = Proposition::condition_is(
-                    ConditionTerm::integer_equal(fold, IntegerTerm::constant_i64(0)),
+                    OldConditionTerm::integer_equal(fold, IntegerTerm::constant_i64(0)),
                     true,
                 );
                 let equality =
-                    Proposition::condition_is(ConditionTerm::equal(x.clone(), to.clone()), true);
+                    Proposition::condition_is(OldConditionTerm::equal(x.clone(), to.clone()), true);
                 let exports = KernelTermExport::machine_export_count();
                 let result =
                     super::super::rewrite_with_admitted_equality_as_written(&goal, &equality)
                         .unwrap();
                 assert_eq!(KernelTermExport::machine_export_count(), exports);
-                let Some((ConditionTerm::IntegerEqual(left, _), true)) = result.condition_native()
+                let Some((OldConditionTerm::IntegerEqual(left, _), true)) = result.old_condition()
                 else {
                     panic!("integer equality")
                 };
@@ -1049,7 +1049,7 @@ mod tests {
     fn opaque_compound_sources_match_without_export() {
         let _session = VerificationSession::enter();
         let opaque = OldMachineTerm::If {
-            condition: ConditionTerm::Variable(Variable(1006420)).into(),
+            condition: OldConditionTerm::Variable(Variable(1006420)).into(),
             then_term: OldMachineTerm::Variable(Variable(1006421)).into(),
             else_term: OldMachineTerm::Variable(Variable(1006422)).into(),
         };
@@ -1074,14 +1074,15 @@ mod tests {
             assert!(rewrite.refusal().is_none());
         }
         let goal = Proposition::condition_is(
-            ConditionTerm::integer_equal(input, IntegerTerm::constant_i64(0)),
+            OldConditionTerm::integer_equal(input, IntegerTerm::constant_i64(0)),
             true,
         );
-        let equality = Proposition::condition_is(ConditionTerm::equal(source, replacement), true);
+        let equality =
+            Proposition::condition_is(OldConditionTerm::equal(source, replacement), true);
         assert_eq!(
             super::super::rewrite_with_admitted_equality_as_written(&goal, &equality).unwrap(),
             Proposition::condition_is(
-                ConditionTerm::IntegerEqual(
+                OldConditionTerm::IntegerEqual(
                     IntegerTerm::constant_i64(7).into(),
                     IntegerTerm::constant_i64(0).into()
                 ),
@@ -1104,7 +1105,7 @@ mod tests {
             format: T::Int32,
             op: O::Add,
             left: OldMachineTerm::If {
-                condition: ConditionTerm::Variable(Variable(1006430)).into(),
+                condition: OldConditionTerm::Variable(Variable(1006430)).into(),
                 then_term: OldMachineTerm::read_named(
                     ProgramPoint::at(&memory),
                     pointer.clone(),

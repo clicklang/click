@@ -2024,7 +2024,7 @@ impl LocalViewBacking {
         let entire = MemoryRange::new_with_element_width(
             super::Address {
                 base: range.base().base.clone(),
-                offset: super::AddressOffset::Constant(0),
+                offset: super::OldAddressOffset::Constant(0),
             },
             0.into(),
             bytes,
@@ -2063,7 +2063,7 @@ impl LocalViewBacking {
         let data = &ledger.storage.data;
         let origin = Address {
             base: self.block.clone(),
-            offset: super::AddressOffset::Constant(0),
+            offset: super::OldAddressOffset::Constant(0),
         };
         let has_possible_symbolic_overlap =
             data.automatic_storage_borrows.contains_key(&self.block)
@@ -3517,10 +3517,12 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                     (Some((required_start, required_end)), Some((caller_start, caller_end))) => {
                         let same = |left: &OldMachineTerm, right: &OldMachineTerm| {
                             left == right
-                                || assumptions.decide(&crate::kernel::ConditionTerm::uint64_equal(
-                                    left.clone(),
-                                    right.clone(),
-                                )) == Some(true)
+                                || assumptions.decide(
+                                    &crate::kernel::OldConditionTerm::uint64_equal(
+                                        left.clone(),
+                                        right.clone(),
+                                    ),
+                                ) == Some(true)
                         };
                         required.element_width() == caller.element_width()
                             && same(required_start, caller_start)
@@ -6627,7 +6629,7 @@ impl BorrowLedger {
         let attempted = MemoryRange::new_with_element_width(
             Address {
                 base: block.clone(),
-                offset: super::AddressOffset::Constant(0),
+                offset: super::OldAddressOffset::Constant(0),
             },
             0u32.into(),
             size.clone(),

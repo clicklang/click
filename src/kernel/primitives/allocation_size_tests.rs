@@ -29,7 +29,7 @@ fn allocation_tokens_and_ranges_carry_the_allocation_size_kind() {
     let _session = crate::kernel::VerificationSession::enter();
     let base = Address {
         base: AddressBase::Heap(3),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     for (size, value_is_wide, range_kind) in [
         (AllocationSize::int32(16), false, RangeIndexKind::Int32),

@@ -45,7 +45,7 @@ fn conditional_state_keys_reuse_growing_shared_arms() {
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 0..size {
                 let guard =
-                    crate::kernel::KernelTermImport::default().condition(&ConditionTerm::equal(
+                    crate::kernel::KernelTermImport::default().condition(&OldConditionTerm::equal(
                         OldMachineTerm::Variable(Variable(998222 + index as u64)),
                         OldMachineTerm::constant(0),
                     ));

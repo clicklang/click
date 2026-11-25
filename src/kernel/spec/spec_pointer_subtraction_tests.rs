@@ -4,7 +4,10 @@ use super::*;
 fn specification_subtraction_widens_coordinates_and_retains_pointer_provenance() {
     let external = |variable| Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(variable)), 4),
+        offset: OldAddressOffset::scaled_int32_node(
+            OldMachineTerm::Variable(Variable(variable)),
+            4,
+        ),
     };
     let left = external(32_000);
     let right = external(32_001);

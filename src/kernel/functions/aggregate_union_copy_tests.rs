@@ -4,11 +4,11 @@ use super::*;
 fn copying_a_union_drops_destination_views_absent_from_source() {
     let source = Address {
         base: "union-copy-source".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let destination = Address {
         base: "union-copy-destination".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let layout = AggregateLayout::with_unions(
         4,
@@ -58,11 +58,11 @@ fn forgotten_local_packet(
 ) -> (SymbolicMemory, Address, Address, AggregateLayout) {
     let source = Address {
         base: "local:forgotten-packet-source".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let destination = Address {
         base: "local:forgotten-packet-destination".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let layout = AggregateLayout::with_unions(
         8,
@@ -96,7 +96,7 @@ fn forgotten_local_packet(
     // and view of the block may be the one it writes.
     let unplaced = Address {
         base: source.base.clone(),
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(925_001)), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(925_001)), 4),
     };
     let memory = memory.without_possible_aliasing_cells(&unplaced, 4, &PureFactContext::new());
     assert!(memory.known_value(&source).is_none());
@@ -137,7 +137,7 @@ fn aggregate_copy_array_keeps_its_caller_source_point_after_an_earlier_field() {
     let _session = crate::kernel::VerificationSession::enter();
     let source = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let target = SymbolicMemory::frame_local_pointer(1, "record_copy");
     let layout = AggregateLayout::new(
@@ -183,7 +183,7 @@ fn aggregate_copy_names_uncached_scalar_fields_at_the_caller_versions() {
     let _session = crate::kernel::VerificationSession::enter();
     let source = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let target = SymbolicMemory::frame_local_pointer(1, "scalar_record_copy");
     let layout = AggregateLayout::new(
@@ -237,7 +237,7 @@ fn aggregate_copy_keeps_the_entry_version_of_an_uncached_opaque_field() {
     let _session = crate::kernel::VerificationSession::enter();
     let source = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let target = SymbolicMemory::frame_local_pointer(1, "opaque_record_copy");
     let parameter = crate::kernel::TypeParameterName::intern("CopyField");
@@ -274,7 +274,7 @@ fn aggregate_copy_names_forgotten_integer_fields_by_their_typed_stores() {
     let _session = crate::kernel::VerificationSession::enter();
     let source = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let target = SymbolicMemory::frame_local_pointer(1, "forgotten_record_copy");
     for value in [
@@ -315,7 +315,7 @@ fn aggregate_copy_names_forgotten_pointer_fields_by_the_complete_typed_store() {
     let _session = crate::kernel::VerificationSession::enter();
     let source = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let field = source.offset_by_bytes(8);
     let target = SymbolicMemory::frame_local_pointer(1, "pointer_record_copy");
@@ -377,7 +377,7 @@ fn aggregate_copy_union_reads_keep_the_caller_versions() {
     let _session = crate::kernel::VerificationSession::enter();
     let source = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let source_member = source.offset_by_bytes(8);
     let target = SymbolicMemory::frame_local_pointer(1, "union_record_copy");
@@ -459,7 +459,7 @@ fn verified_aggregate_argument_keeps_caller_entry_read() {
     let caller = ExecutionState::new().begin_function_entry_memory();
     let source = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let layout = AggregateLayout::new(
         4,

@@ -17,17 +17,17 @@ fn native_order_sources_do_not_add_native_query_work() {
         };
         for id in 0..size {
             context = context.assume_condition(
-                ConditionTerm::signed_less_than(operand_at(id), bound.clone()),
+                OldConditionTerm::signed_less_than(operand_at(id), bound.clone()),
                 true,
             );
             index.adjust(
-                &ConditionTerm::signed_less_than(operand_at(id), bound.clone()),
+                &OldConditionTerm::signed_less_than(operand_at(id), bound.clone()),
                 true,
             );
         }
         let operand = operand_at(0);
-        let native = ConditionTerm::signed_less_than(operand.clone(), bound.clone());
-        let equality = ConditionTerm::equal(operand.clone(), bound.clone());
+        let native = OldConditionTerm::signed_less_than(operand.clone(), bound.clone());
+        let equality = OldConditionTerm::equal(operand.clone(), bound.clone());
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             // Native premises already have their own lookup. This bucket
@@ -99,14 +99,14 @@ fn observed_call_condition(
     relation: CompareRelation,
     root: &crate::kernel::KernelTerm,
     bound: &OldMachineTerm,
-) -> ConditionTerm {
+) -> OldConditionTerm {
     let left = IntegerTerm::Machine(
         crate::kernel::SharedMachineIntegerTerm::observe_shared(format, root.clone()).unwrap(),
     );
     let right = IntegerTerm::from_machine(format, bound.clone()).unwrap();
     match relation {
-        CompareRelation::Equal => ConditionTerm::integer_equal(left, right),
-        CompareRelation::LessThan => ConditionTerm::integer_less_than(left, right),
+        CompareRelation::Equal => OldConditionTerm::integer_equal(left, right),
+        CompareRelation::LessThan => OldConditionTerm::integer_less_than(left, right),
         _ => unreachable!(),
     }
 }
@@ -131,7 +131,7 @@ fn common_call_sources_preserve_identity_polarity_and_branch_authority() {
             crate::kernel::machine_integer::range::constant_word(format, &7.into()).unwrap();
         for relation in [CompareRelation::Equal, CompareRelation::LessThan] {
             let written =
-                ConditionTerm::machine_compare(format, relation, native.clone(), bound.clone());
+                OldConditionTerm::machine_compare(format, relation, native.clone(), bound.clone());
             let shared = observed_call_condition(format, relation, &root, &bound);
             for (source, query) in [(&written, &shared), (&shared, &written)] {
                 for truth in [false, true] {
@@ -167,11 +167,11 @@ fn common_call_fact_queries_do_not_scan_growing_source_buckets() {
         let mut context = PureFactContext::new();
         for n in 1..=size {
             context = context.assume_condition(
-                ConditionTerm::signed_less_than(native.clone(), OldMachineTerm::constant(n)),
+                OldConditionTerm::signed_less_than(native.clone(), OldMachineTerm::constant(n)),
                 true,
             );
             context = context.assume_condition(
-                ConditionTerm::signed_less_than(
+                OldConditionTerm::signed_less_than(
                     OldMachineTerm::Variable(Variable(995840 + n as u64)),
                     OldMachineTerm::constant(n),
                 ),
@@ -207,7 +207,7 @@ fn cancelled_compound_lookup_ignores_unrelated_facts_without_exports() {
             right: OldMachineTerm::constant(1).into(),
         };
         let leaf = |bound| {
-            let native = ConditionTerm::equal(sum.clone(), OldMachineTerm::constant(bound));
+            let native = OldConditionTerm::equal(sum.clone(), OldMachineTerm::constant(bound));
             Proposition::condition_is(
                 if shared {
                     retained_arithmetic_comparison(&native).unwrap()
@@ -264,9 +264,9 @@ fn compound_native_sum_cancellation_reads_selected_operands_once() {
             })
         };
         let source =
-            Proposition::condition_is(ConditionTerm::equal(sum(996_000), sum(996_001)), true);
+            Proposition::condition_is(OldConditionTerm::equal(sum(996_000), sum(996_001)), true);
         let reduced = Proposition::condition_is(
-            ConditionTerm::equal(
+            OldConditionTerm::equal(
                 OldMachineTerm::Variable(Variable(996_000)),
                 OldMachineTerm::Variable(Variable(996_001)),
             ),

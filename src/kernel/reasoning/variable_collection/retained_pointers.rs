@@ -243,7 +243,7 @@ mod tests {
         let cases = [
             Address {
                 base: AddressBase::Symbolic(Variable(1001001)),
-                offset: AddressOffset::scaled_int64_node(
+                offset: OldAddressOffset::scaled_int64_node(
                     OldMachineTerm::Variable(Variable(1001002)),
                     8,
                     true,
@@ -256,7 +256,7 @@ mod tests {
                         IntegerTerm::Variable(Variable(1001003)).into(),
                     )],
                 )),
-                offset: AddressOffset::Variable(Variable(1001004)),
+                offset: OldAddressOffset::Variable(Variable(1001004)),
             },
             Address::loaded_value(&memory, &Address::symbolic(Variable(1001005))),
         ];
@@ -295,7 +295,7 @@ mod tests {
                 "fold_pointer".into(),
                 vec![PureFunctionArgument::Integer(fold.clone())],
             )),
-            offset: AddressOffset::scaled_int32_node(
+            offset: OldAddressOffset::scaled_int32_node(
                 OldMachineTerm::IntegerToMachine {
                     value: fold,
                     destination: MachineIntegerType::Int32,
@@ -360,7 +360,7 @@ mod tests {
         );
         let source = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Variable(Variable(1001015)),
+            offset: OldAddressOffset::Variable(Variable(1001015)),
         };
         let shared = SharedAddress::import(&source);
         let before = COORDINATE_VARIABLES.with(|flag| flag.replace(true));

@@ -7,8 +7,8 @@
 
 use super::{Operation, comparison, range, representation};
 use crate::kernel::{
-    CompareRelation, ConditionTerm, IntegerTerm, KernelTerm, MachineIntegerType,
-    MachineOperandView, OldMachineTerm,
+    CompareRelation, IntegerTerm, KernelTerm, MachineIntegerType, MachineOperandView,
+    OldConditionTerm, OldMachineTerm,
 };
 use num_bigint::BigInt;
 
@@ -74,9 +74,9 @@ impl Residue {
 /// in the graph; explicit equality rewriting still uses `wrapped_equality_at`.
 #[cfg(test)]
 pub(crate) fn wrapped_equality_of_integer_equality(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     value: bool,
-) -> Option<ConditionTerm> {
+) -> Option<OldConditionTerm> {
     wrapped_equality_at(MachineIntegerType::UInt32, condition, value)
 }
 
@@ -89,11 +89,11 @@ pub(crate) fn wrapped_equality_of_integer_equality(
 /// width.
 pub(crate) fn wrapped_equality_at(
     modulus: MachineIntegerType,
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     value: bool,
-) -> Option<ConditionTerm> {
-    let ((ConditionTerm::IntegerEqual(left, right), true)
-    | (ConditionTerm::IntegerNotEqual(left, right), false)) = (condition, value)
+) -> Option<OldConditionTerm> {
+    let ((OldConditionTerm::IntegerEqual(left, right), true)
+    | (OldConditionTerm::IntegerNotEqual(left, right), false)) = (condition, value)
     else {
         return None;
     };
@@ -159,14 +159,14 @@ pub(crate) fn wrapped_equality_at(
         CompareRelation::Equal,
         [left.view(), right.view()],
     );
-    (observed && !matches!(wrapped, ConditionTerm::Constant(_))).then_some(wrapped)
+    (observed && !matches!(wrapped, OldConditionTerm::Constant(_))).then_some(wrapped)
 }
 
 /// Whether the bounded 32-bit residue projection applies. Admission records
 /// that consequence in the graph from the original Integer equality.
-pub(crate) fn has_word_equality_projection(condition: &ConditionTerm, value: bool) -> bool {
-    let ((ConditionTerm::IntegerEqual(left, right), true)
-    | (ConditionTerm::IntegerNotEqual(left, right), false)) = (condition, value)
+pub(crate) fn has_word_equality_projection(condition: &OldConditionTerm, value: bool) -> bool {
+    let ((OldConditionTerm::IntegerEqual(left, right), true)
+    | (OldConditionTerm::IntegerNotEqual(left, right), false)) = (condition, value)
     else {
         return false;
     };
@@ -209,7 +209,7 @@ mod tests {
         IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, root).unwrap())
     }
 
-    fn boxed(condition: ConditionTerm) -> ConditionTerm {
+    fn boxed(condition: OldConditionTerm) -> OldConditionTerm {
         comparison::native_comparison_of_integer_observation(&condition, true)
             .map(|v| v.0)
             .unwrap_or(condition)
@@ -238,7 +238,7 @@ mod tests {
                     IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                         ty,
                         OldMachineTerm::If {
-                            condition: ConditionTerm::Variable(Variable(1007101)).into(),
+                            condition: OldConditionTerm::Variable(Variable(1007101)).into(),
                             then_term: OldMachineTerm::Variable(Variable(1007102)).into(),
                             else_term: OldMachineTerm::Variable(Variable(1007103)).into(),
                         },
@@ -254,12 +254,12 @@ mod tests {
                             };
                             for truth in [false, true] {
                                 let condition = if truth {
-                                    ConditionTerm::IntegerEqual(
+                                    OldConditionTerm::IntegerEqual(
                                         left.clone().into(),
                                         right.clone().into(),
                                     )
                                 } else {
-                                    ConditionTerm::IntegerNotEqual(
+                                    OldConditionTerm::IntegerNotEqual(
                                         left.clone().into(),
                                         right.clone().into(),
                                     )
@@ -282,14 +282,16 @@ mod tests {
         let _session = VerificationSession::enter();
         use MachineIntegerType as T;
         let source = shared(T::Int32, 3);
-        let condition =
-            ConditionTerm::IntegerEqual(source.clone().into(), IntegerTerm::constant_i64(0).into());
+        let condition = OldConditionTerm::IntegerEqual(
+            source.clone().into(),
+            IntegerTerm::constant_i64(0).into(),
+        );
         let before = KernelTermExport::machine_export_count();
         assert!(wrapped_equality_at(T::UInt32, &condition, false).is_none());
         for ty in [T::UInt8, T::UInt16, T::UInt64, T::UInt128, T::Int128] {
             assert!(wrapped_equality_at(ty, &condition, true).is_none());
         }
-        let constants = ConditionTerm::IntegerEqual(
+        let constants = OldConditionTerm::IntegerEqual(
             IntegerTerm::constant_i64(1).into(),
             IntegerTerm::constant_i64(2).into(),
         );
@@ -299,10 +301,12 @@ mod tests {
         for _ in 0..62 {
             term = IntegerTerm::Negate(term.into());
         }
-        let at_limit =
-            ConditionTerm::IntegerEqual(term.clone().into(), IntegerTerm::constant_i64(0).into());
+        let at_limit = OldConditionTerm::IntegerEqual(
+            term.clone().into(),
+            IntegerTerm::constant_i64(0).into(),
+        );
         assert!(wrapped_equality_at(T::UInt32, &at_limit, true).is_some());
-        let over_limit = ConditionTerm::IntegerEqual(
+        let over_limit = OldConditionTerm::IntegerEqual(
             IntegerTerm::Negate(term.into()).into(),
             IntegerTerm::constant_i64(0).into(),
         );
@@ -316,11 +320,11 @@ mod tests {
     }
     fn native_reference(
         modulus: MachineIntegerType,
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
         value: bool,
-    ) -> Option<ConditionTerm> {
-        let ((ConditionTerm::IntegerEqual(left, right), true)
-        | (ConditionTerm::IntegerNotEqual(left, right), false)) = (condition, value)
+    ) -> Option<OldConditionTerm> {
+        let ((OldConditionTerm::IntegerEqual(left, right), true)
+        | (OldConditionTerm::IntegerNotEqual(left, right), false)) = (condition, value)
         else {
             return None;
         };
@@ -380,6 +384,6 @@ mod tests {
         let right = word(right, &mut nodes, &mut observed)?;
         let (wrapped, _) =
             representation::comparison(modulus, super::super::Relation::Equal, left, right)?;
-        (observed && !matches!(wrapped, ConditionTerm::Constant(_))).then_some(wrapped)
+        (observed && !matches!(wrapped, OldConditionTerm::Constant(_))).then_some(wrapped)
     }
 }

@@ -10,7 +10,7 @@ fn unsigned_switch_dispatch_does_not_scan_unrelated_or_alias_facts() {
                 let _session = crate::kernel::VerificationSession::enter();
                 let selector = OldMachineTerm::Variable(Variable(996_001));
                 let mut facts = PureFactContext::new().assume_condition(
-                    ConditionTerm::uint32_equal(
+                    OldConditionTerm::uint32_equal(
                         selector.clone(),
                         OldMachineTerm::uint32_constant(selected),
                     ),
@@ -18,7 +18,7 @@ fn unsigned_switch_dispatch_does_not_scan_unrelated_or_alias_facts() {
                 );
                 for index in 0..size {
                     facts = facts.assume_condition(
-                        ConditionTerm::uint32_equal(
+                        OldConditionTerm::uint32_equal(
                             OldMachineTerm::Variable(Variable(997_000 + index)),
                             if aliases {
                                 selector.clone()

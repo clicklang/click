@@ -15,7 +15,7 @@ impl IntegerFoldIndexResult {
         let [start, end] = &self.bounds;
         match self.kind {
             KernelFoldIndex::Integer => {
-                // ConditionTerm is still an explicit native proposition-output
+                // OldConditionTerm is still an explicit native proposition-output
                 // boundary (10q); the retained endpoints themselves stay common.
                 let mut output = KernelTermExport::default();
                 let start = output.integer(start).expect("Integer fold start");
@@ -25,14 +25,14 @@ impl IntegerFoldIndexResult {
                     Sort::Integer,
                     Proposition::And(
                         Box::new(Proposition::condition_is(
-                            ConditionTerm::integer_greater_equal(
+                            OldConditionTerm::integer_greater_equal(
                                 item.clone(),
                                 start.as_ref().clone(),
                             ),
                             true,
                         )),
                         Box::new(Proposition::condition_is(
-                            ConditionTerm::integer_less_than(item, end.as_ref().clone()),
+                            OldConditionTerm::integer_less_than(item, end.as_ref().clone()),
                             true,
                         )),
                     ),

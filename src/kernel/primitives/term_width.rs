@@ -138,7 +138,7 @@ fn note_variable(variable: Variable, width: CarrierWidth) -> Result<(), WidthMis
 /// the condition's widths disagree. A variable used at two widths within the
 /// one condition is such a place.
 pub(crate) fn condition_variable_widths(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
 ) -> Result<Vec<(Variable, CarrierWidth)>, WidthMismatch> {
     let previous = COLLECTED.with(|collected| collected.replace(Some(Vec::new())));
     let mismatch = condition_width_mismatch(condition);
@@ -527,9 +527,9 @@ fn value_site(value: &ProgramValue) -> &'static str {
 
 /// Where a condition's operands disagree with the width its comparison
 /// names, or with themselves.
-pub(crate) fn condition_width_mismatch(condition: &ConditionTerm) -> Option<WidthMismatch> {
+pub(crate) fn condition_width_mismatch(condition: &OldConditionTerm) -> Option<WidthMismatch> {
     use CarrierWidth::{Bits32, Bits64, Bits128};
-    use ConditionTerm as C;
+    use OldConditionTerm as C;
     // A load equation names what a load reads: a store fact `load == v` or a
     // load variable's defining fact `x == load`. It is written with the
     // 32-bit equality whatever the load's width, so its two sides need only

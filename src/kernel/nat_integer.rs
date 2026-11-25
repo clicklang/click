@@ -63,7 +63,7 @@ fn observe(term: AlgebraicTerm) -> IntegerTerm {
 
 fn nonnegative(term: IntegerTerm) -> Proposition {
     Proposition::condition_is(
-        ConditionTerm::integer_greater_equal(term, IntegerTerm::constant_i64(0)),
+        OldConditionTerm::integer_greater_equal(term, IntegerTerm::constant_i64(0)),
         true,
     )
 }
@@ -77,21 +77,21 @@ pub(crate) fn check_nat_integer_law(name: &str, proposition: &Proposition) -> Op
         goal => (None, goal),
     };
     let valid = match (name, goal) {
-        ("click::nat::to_integer_zero", condition_source_0 @ Proposition::ConditionIs(_, true)) if let Some((ConditionTerm::IntegerEqual(left, right), _)) = condition_source_0.condition_native() => {
+        ("click::nat::to_integer_zero", condition_source_0 @ Proposition::ConditionIs(_, true)) if let Some((OldConditionTerm::IntegerEqual(left, right), _)) = condition_source_0.old_condition() => {
             guard.is_none() && observed_nat(left).is_some_and(|n| {
                 matches!(&n.node, AlgebraicTermNode::Constructor { variant, fields } if variant == "Zero" && fields.is_empty())
             }) && right.as_ref() == &IntegerTerm::constant_i64(0)
         }
-        ("click::nat::to_integer_succ", condition_source_0 @ Proposition::ConditionIs(_, true)) if let Some((ConditionTerm::IntegerEqual(left, right), _)) = condition_source_0.condition_native() => {
+        ("click::nat::to_integer_succ", condition_source_0 @ Proposition::ConditionIs(_, true)) if let Some((OldConditionTerm::IntegerEqual(left, right), _)) = condition_source_0.old_condition() => {
             let n = observed_nat(left)?;
             let AlgebraicTermNode::Constructor { variant, fields } = &n.node else { return None };
             let [AlgebraicValue::Algebraic(previous)] = fields.as_slice() else { return None };
             guard.is_none() && variant == "Succ" && right.as_ref() == &IntegerTerm::add(observe(previous.clone()), IntegerTerm::constant_i64(1))
         }
-        ("click::nat::to_integer_nonnegative", condition_source_0 @ Proposition::ConditionIs(_, true)) if let Some((ConditionTerm::IntegerGreaterEqual(left, right), _)) = condition_source_0.condition_native() => {
+        ("click::nat::to_integer_nonnegative", condition_source_0 @ Proposition::ConditionIs(_, true)) if let Some((OldConditionTerm::IntegerGreaterEqual(left, right), _)) = condition_source_0.old_condition() => {
             guard.is_none() && observed_nat(left).is_some() && right.as_ref() == &IntegerTerm::constant_i64(0)
         }
-        ("click::nat::to_integer_to_nat", condition_source_0 @ Proposition::ConditionIs(_, true)) if let Some((ConditionTerm::IntegerEqual(left, right), _)) = condition_source_0.condition_native() => {
+        ("click::nat::to_integer_to_nat", condition_source_0 @ Proposition::ConditionIs(_, true)) if let Some((OldConditionTerm::IntegerEqual(left, right), _)) = condition_source_0.old_condition() => {
             let z = converted_integer(observed_nat(left)?)?;
             right.as_ref() == z && guard == Some(&nonnegative(z.clone()))
         }
@@ -170,7 +170,7 @@ mod tests {
         }
     }
     fn eq(a: IntegerTerm, b: IntegerTerm) -> Proposition {
-        Proposition::condition_is(ConditionTerm::IntegerEqual(a.into(), b.into()), true)
+        Proposition::condition_is(OldConditionTerm::IntegerEqual(a.into(), b.into()), true)
     }
     fn algebraic_eq(a: AlgebraicTerm, b: AlgebraicTerm) -> Proposition {
         Proposition::Equal(Term::Algebraic(a.into()), Term::Algebraic(b.into()))
@@ -215,20 +215,20 @@ mod tests {
         match p {
             Proposition::Implies(a, b) => !holds(a) || holds(b),
             condition_source_0 @ Proposition::ConditionIs(_, expected)
-                if let Some((ConditionTerm::Constant(value), _)) =
-                    condition_source_0.condition_native() =>
+                if let Some((OldConditionTerm::Constant(value), _)) =
+                    condition_source_0.old_condition() =>
             {
                 value == expected
             }
             condition_source_0 @ Proposition::ConditionIs(_, true)
-                if let Some((ConditionTerm::IntegerEqual(a, b), _)) =
-                    condition_source_0.condition_native() =>
+                if let Some((OldConditionTerm::IntegerEqual(a, b), _)) =
+                    condition_source_0.old_condition() =>
             {
                 eval_integer(a) == eval_integer(b)
             }
             condition_source_0 @ Proposition::ConditionIs(_, true)
-                if let Some((ConditionTerm::IntegerGreaterEqual(a, b), _)) =
-                    condition_source_0.condition_native() =>
+                if let Some((OldConditionTerm::IntegerGreaterEqual(a, b), _)) =
+                    condition_source_0.old_condition() =>
             {
                 eval_integer(a) >= eval_integer(b)
             }

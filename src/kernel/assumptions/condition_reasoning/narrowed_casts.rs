@@ -33,7 +33,7 @@ use crate::kernel::MachineIntegerType as Ty;
 /// unsigned value may be stated in either order.
 pub(in crate::kernel) struct NarrowedCastBound {
     pub(in crate::kernel) lower: bool,
-    pub(in crate::kernel) conditions: Vec<ConditionTerm>,
+    pub(in crate::kernel) conditions: Vec<OldConditionTerm>,
 }
 
 /// The bounds under which `cast(value)` from `source` to `destination`
@@ -81,71 +81,77 @@ pub(in crate::kernel) fn narrowed_cast_identity(
         || source.constant_from_term(value).is_some();
     let signed_ge = |v: &OldMachineTerm, b: i64| {
         if constant {
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
                 left: v.clone().into(),
                 right: word(b).into(),
             }
         } else {
-            ConditionTerm::signed_greater_equal(v.clone(), word(b))
+            OldConditionTerm::signed_greater_equal(v.clone(), word(b))
         }
     };
     let signed_le = |v: &OldMachineTerm, b: i64| {
         if constant {
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left: v.clone().into(),
                 right: word(b).into(),
             }
         } else {
-            ConditionTerm::signed_less_equal(v.clone(), word(b))
+            OldConditionTerm::signed_less_equal(v.clone(), word(b))
         }
     };
     let unsigned_le = |v: &OldMachineTerm, b: i64| match v.as_const() {
-        Some(c) => ConditionTerm::Compare {
+        Some(c) => OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessEqual,
             left: OldMachineTerm::uint64_constant(u64::from(c)).into(),
             right: OldMachineTerm::uint64_constant(b as u64).into(),
         },
-        None => ConditionTerm::unsigned_less_equal(v.clone(), word(b)),
+        None => OldConditionTerm::unsigned_less_equal(v.clone(), word(b)),
     };
     let int64_ge = |v: &OldMachineTerm, b: i64| {
         if constant {
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::GreaterEqual,
                 left: v.clone().into(),
                 right: OldMachineTerm::int64_constant(b).into(),
             }
         } else {
-            ConditionTerm::int64_signed_greater_equal(v.clone(), OldMachineTerm::int64_constant(b))
+            OldConditionTerm::int64_signed_greater_equal(
+                v.clone(),
+                OldMachineTerm::int64_constant(b),
+            )
         }
     };
     let int64_le = |v: &OldMachineTerm, b: i64| {
         if constant {
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::LessEqual,
                 left: v.clone().into(),
                 right: OldMachineTerm::int64_constant(b).into(),
             }
         } else {
-            ConditionTerm::int64_signed_less_equal(v.clone(), OldMachineTerm::int64_constant(b))
+            OldConditionTerm::int64_signed_less_equal(v.clone(), OldMachineTerm::int64_constant(b))
         }
     };
     let uint64_le = |v: &OldMachineTerm, b: i64| {
         if constant {
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::UInt64,
                 relation: CompareRelation::LessEqual,
                 left: v.clone().into(),
                 right: OldMachineTerm::uint64_constant(b as u64).into(),
             }
         } else {
-            ConditionTerm::uint64_less_equal(v.clone(), OldMachineTerm::uint64_constant(b as u64))
+            OldConditionTerm::uint64_less_equal(
+                v.clone(),
+                OldMachineTerm::uint64_constant(b as u64),
+            )
         }
     };
     // An 8- or 16-bit operand is native: its bounds and carrier read its
@@ -388,13 +394,13 @@ mod tests {
             Ty::Int32,
             OldMachineTerm::machine_integer_cast(Ty::Int32, Ty::UInt8, x.clone()),
         );
-        let is_x = ConditionTerm::equal(byte.clone(), x.clone());
+        let is_x = OldConditionTerm::equal(byte.clone(), x.clone());
         let at_least_zero =
-            ConditionTerm::signed_greater_equal(x.clone(), OldMachineTerm::constant(0));
+            OldConditionTerm::signed_greater_equal(x.clone(), OldMachineTerm::constant(0));
         let at_most_255 =
-            ConditionTerm::signed_less_equal(x.clone(), OldMachineTerm::constant(255));
+            OldConditionTerm::signed_less_equal(x.clone(), OldMachineTerm::constant(255));
         let at_most_256 =
-            ConditionTerm::signed_less_equal(x.clone(), OldMachineTerm::constant(256));
+            OldConditionTerm::signed_less_equal(x.clone(), OldMachineTerm::constant(256));
         let bounded = PureFactContext::new()
             .assume_condition(at_least_zero.clone(), true)
             .assume_condition(at_most_255, true);
@@ -408,18 +414,21 @@ mod tests {
         assert_ne!(past.decide(&is_x), Some(true));
         // A known value outside the range converts to its residue.
         let wrapped = PureFactContext::new().assume_condition(
-            ConditionTerm::equal(x.clone(), OldMachineTerm::constant(300)),
+            OldConditionTerm::equal(x.clone(), OldMachineTerm::constant(300)),
             true,
         );
         assert_eq!(
-            wrapped.decide(&ConditionTerm::equal(
+            wrapped.decide(&OldConditionTerm::equal(
                 byte.clone(),
                 OldMachineTerm::constant(44)
             )),
             Some(true)
         );
         assert_eq!(
-            wrapped.decide(&ConditionTerm::equal(byte, OldMachineTerm::constant(300))),
+            wrapped.decide(&OldConditionTerm::equal(
+                byte,
+                OldMachineTerm::constant(300)
+            )),
             Some(false)
         );
     }
@@ -441,27 +450,27 @@ mod tests {
         let bounded = |upper: u32| {
             PureFactContext::new()
                 .assume_condition(
-                    ConditionTerm::signed_less_equal(OldMachineTerm::constant(0), y.clone()),
+                    OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), y.clone()),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::signed_less_equal(y.clone(), OldMachineTerm::constant(upper)),
+                    OldConditionTerm::signed_less_equal(y.clone(), OldMachineTerm::constant(upper)),
                     true,
                 )
-                .assume_condition(ConditionTerm::equal(result.clone(), byte.clone()), true)
+                .assume_condition(OldConditionTerm::equal(result.clone(), byte.clone()), true)
         };
-        let same = ConditionTerm::equal(result.clone(), y.clone());
+        let same = OldConditionTerm::equal(result.clone(), y.clone());
         assert_eq!(bounded(255).decide(&same), Some(true));
         assert_ne!(bounded(300).decide(&same), Some(true));
         let known = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::equal(y.clone(), OldMachineTerm::constant(44)),
+                OldConditionTerm::equal(y.clone(), OldMachineTerm::constant(44)),
                 true,
             )
-            .assume_condition(ConditionTerm::equal(result.clone(), byte.clone()), true);
+            .assume_condition(OldConditionTerm::equal(result.clone(), byte.clone()), true);
         assert_eq!(known.decide(&same), Some(true));
         assert_eq!(
-            known.decide(&ConditionTerm::equal(
+            known.decide(&OldConditionTerm::equal(
                 result.clone(),
                 OldMachineTerm::constant(44)
             )),
@@ -469,10 +478,10 @@ mod tests {
         );
         let wrapped = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::equal(y.clone(), OldMachineTerm::constant(300)),
+                OldConditionTerm::equal(y.clone(), OldMachineTerm::constant(300)),
                 true,
             )
-            .assume_condition(ConditionTerm::equal(result.clone(), byte), true);
+            .assume_condition(OldConditionTerm::equal(result.clone(), byte), true);
         assert_ne!(wrapped.decide(&same), Some(true));
     }
 
@@ -484,14 +493,14 @@ mod tests {
         let within = |lower: i32, upper: i32| {
             PureFactContext::new()
                 .assume_condition(
-                    ConditionTerm::signed_greater_equal(
+                    OldConditionTerm::signed_greater_equal(
                         x.clone(),
                         OldMachineTerm::constant(lower as u32),
                     ),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::signed_less_equal(
+                    OldConditionTerm::signed_less_equal(
                         x.clone(),
                         OldMachineTerm::constant(upper as u32),
                     ),
@@ -516,22 +525,22 @@ mod tests {
             Ty::Int32,
             OldMachineTerm::machine_integer_cast(Ty::Int32, Ty::Int16, x.clone()),
         );
-        let goal = Proposition::condition_is(ConditionTerm::equal(short, x.clone()), true);
-        let lower = ConditionTerm::signed_greater_equal(
+        let goal = Proposition::condition_is(OldConditionTerm::equal(short, x.clone()), true);
+        let lower = OldConditionTerm::signed_greater_equal(
             x.clone(),
             OldMachineTerm::constant(-32768i32 as u32),
         );
-        let upper = ConditionTerm::signed_less_equal(x.clone(), OldMachineTerm::constant(32767));
+        let upper = OldConditionTerm::signed_less_equal(x.clone(), OldMachineTerm::constant(32767));
         let guards = crate::kernel::proof::term_rewrite::TermRewrite::conditional_guards(&goal);
         assert!(guards.contains(&lower) && guards.contains(&upper));
-        let rewrite = |conditions: &std::collections::HashMap<ConditionTerm, bool>| {
+        let rewrite = |conditions: &std::collections::HashMap<OldConditionTerm, bool>| {
             crate::kernel::proof::term_rewrite::TermRewrite::for_conditions(conditions)
                 .proposition(&goal)
         };
         let both = std::collections::HashMap::from([(lower.clone(), true), (upper.clone(), true)]);
         assert_eq!(
             rewrite(&both),
-            Proposition::condition_is(ConditionTerm::equal(x.clone(), x.clone()), true)
+            Proposition::condition_is(OldConditionTerm::equal(x.clone(), x.clone()), true)
         );
         let one = std::collections::HashMap::from([(lower, true)]);
         assert_eq!(rewrite(&one), goal);

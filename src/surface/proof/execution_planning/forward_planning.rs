@@ -1054,7 +1054,7 @@ fn loop_entry_branches(
         entries: &[crate::kernel::LoopPreservationContext],
         guards: &[BTreeSet<Proposition>],
         indices: Vec<usize>,
-        mut decided: BTreeSet<crate::kernel::ConditionTerm>,
+        mut decided: BTreeSet<crate::kernel::OldConditionTerm>,
         environment: &ExecutionProofEnvironment<'_>,
         loop_index: usize,
     ) -> Result<LoopEntryBranches, ClickError> {

@@ -172,7 +172,7 @@ change.
    length pair.
 3. Pointer equality conditions: `pointer_equal`
    (`kernel_term/boolean/complete_pointer.rs:139-200`) and
-   `ConditionTerm::pointer_equal` (`term_operations.rs:3852`) gain a
+   `OldConditionTerm::pointer_equal` (`term_operations.rs:3852`) gain a
    length conjunct, since Rust's `==` on raw slice pointers compares it.
 4. Substitution and variable collection (the choke points above;
    `reasoning/variable_collection.rs`, 12 sites).

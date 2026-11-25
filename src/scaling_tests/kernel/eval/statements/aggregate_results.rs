@@ -129,7 +129,7 @@ fn aggregate_copy_builds_one_borrow_obligation_without_visiting_aliases_or_borro
             if grow_aliases {
                 for i in 0..size {
                     assumptions = assumptions.assume_condition(
-                        ConditionTerm::address_equal(
+                        OldConditionTerm::address_equal(
                             target.clone(),
                             Address::symbolic(Variable(9_831_000 + i)),
                         ),

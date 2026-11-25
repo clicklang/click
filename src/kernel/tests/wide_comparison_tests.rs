@@ -27,16 +27,16 @@ fn compare(
     }
 }
 
-fn condition(operator: ComparisonOperator, ty: MachineIntegerType) -> ConditionTerm {
+fn condition(operator: ComparisonOperator, ty: MachineIntegerType) -> OldConditionTerm {
     let a = IntegerTerm::from_machine(ty, OldMachineTerm::Variable(LEFT)).unwrap();
     let b = IntegerTerm::from_machine(ty, OldMachineTerm::Variable(RIGHT)).unwrap();
     match operator {
-        ComparisonOperator::Equal => ConditionTerm::integer_equal(a, b),
-        ComparisonOperator::NotEqual => ConditionTerm::integer_not_equal(a, b),
-        ComparisonOperator::LessThan => ConditionTerm::integer_less_than(a, b),
-        ComparisonOperator::LessEqual => ConditionTerm::integer_less_equal(a, b),
-        ComparisonOperator::GreaterThan => ConditionTerm::integer_greater_than(a, b),
-        ComparisonOperator::GreaterEqual => ConditionTerm::integer_greater_equal(a, b),
+        ComparisonOperator::Equal => OldConditionTerm::integer_equal(a, b),
+        ComparisonOperator::NotEqual => OldConditionTerm::integer_not_equal(a, b),
+        ComparisonOperator::LessThan => OldConditionTerm::integer_less_than(a, b),
+        ComparisonOperator::LessEqual => OldConditionTerm::integer_less_equal(a, b),
+        ComparisonOperator::GreaterThan => OldConditionTerm::integer_greater_than(a, b),
+        ComparisonOperator::GreaterEqual => OldConditionTerm::integer_greater_equal(a, b),
     }
 }
 

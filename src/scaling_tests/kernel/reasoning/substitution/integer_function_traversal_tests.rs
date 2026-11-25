@@ -48,7 +48,7 @@ fn public_integer_substitution_keeps_array_ref_states_opaque() {
     let pointer = ProgramValue::Pointer(OldPointer::new(
         Address {
             base: AddressBase::Symbolic(Variable(841)),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         },
         ProgramType::VoidPointer,
     ));

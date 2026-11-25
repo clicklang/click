@@ -125,7 +125,7 @@ fn control_read_body_retains_its_held_frame_as_owners_and_aliases_grow() {
             let _session = crate::kernel::VerificationSession::enter();
             let pointer = Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Variable(Variable(7_993_000)),
+                offset: OldAddressOffset::Variable(Variable(7_993_000)),
             };
             let value = ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer);
             let member = ResourceSpec::composite(
@@ -192,7 +192,7 @@ fn control_read_body_retains_its_held_frame_as_owners_and_aliases_grow() {
                 let other = Address::symbolic(Variable(7_993_100 + index));
                 if aliases {
                     facts = facts.assume_condition(
-                        ConditionTerm::address_equal(pointer.clone(), other),
+                        OldConditionTerm::address_equal(pointer.clone(), other),
                         true,
                     );
                 } else {

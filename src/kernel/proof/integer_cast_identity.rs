@@ -8,13 +8,13 @@ use super::arithmetic_special::ArithmeticRuleError as Error;
 #[cfg(test)]
 use crate::kernel::binary_node;
 use crate::kernel::machine_integer::conversion::{cast, integer_conversion};
-use crate::kernel::{ConditionTerm, Proposition, SharedIntegerTerm};
+use crate::kernel::{OldConditionTerm, Proposition, SharedIntegerTerm};
 
 fn order(proposition: &Proposition) -> Option<(&SharedIntegerTerm, &SharedIntegerTerm)> {
     match proposition {
         condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::IntegerLessEqual(a, b), _)) =
-                condition_source_0.condition_native() =>
+            if let Some((OldConditionTerm::IntegerLessEqual(a, b), _)) =
+                condition_source_0.old_condition() =>
         {
             Some((a, b))
         }
@@ -51,7 +51,7 @@ fn check_as_written(
     if bounds.len() != 2 {
         return Err(invalid());
     }
-    let Some((ConditionTerm::IntegerEqual(a, b), true)) = result.condition_native() else {
+    let Some((OldConditionTerm::IntegerEqual(a, b), true)) = result.old_condition() else {
         return Err(invalid());
     };
     // Two observations with one value reading (rule W: a widening's value
@@ -146,7 +146,7 @@ mod tests {
     use num_bigint::BigInt;
 
     fn le(a: IntegerTerm, b: IntegerTerm) -> Proposition {
-        Proposition::condition_is(ConditionTerm::integer_less_equal(a, b), true)
+        Proposition::condition_is(OldConditionTerm::integer_less_equal(a, b), true)
     }
     fn inputs(source: Ty, destination: Ty) -> (Vec<Proposition>, Proposition) {
         let value = OldMachineTerm::Variable(Variable(168_001));
@@ -159,7 +159,7 @@ mod tests {
                 le(IntegerTerm::constant(lo), original.clone()),
                 le(original.clone(), IntegerTerm::constant(hi)),
             ],
-            Proposition::condition_is(ConditionTerm::integer_equal(observed, original), true),
+            Proposition::condition_is(OldConditionTerm::integer_equal(observed, original), true),
         )
     }
 
@@ -202,12 +202,12 @@ mod tests {
                     );
                     assert_eq!(expected == number, min <= number && number <= max);
                 }
-                let Some((ConditionTerm::IntegerEqual(a, b), true)) = goal.condition_native()
+                let Some((OldConditionTerm::IntegerEqual(a, b), true)) = goal.old_condition()
                 else {
                     unreachable!()
                 };
                 let reversed = Proposition::condition_is(
-                    ConditionTerm::integer_equal(b.as_ref().clone(), a.as_ref().clone()),
+                    OldConditionTerm::integer_equal(b.as_ref().clone(), a.as_ref().clone()),
                     true,
                 );
                 assert!(check_rule(vec![0, 1], &reversed, &premises).is_ok());
@@ -231,7 +231,7 @@ mod tests {
             let original = IntegerTerm::from_machine(intermediate, widened).unwrap();
             let observed = IntegerTerm::from_machine(destination, narrowed).unwrap();
             let goal = Proposition::condition_is(
-                ConditionTerm::integer_equal(observed.clone(), original.clone()),
+                OldConditionTerm::integer_equal(observed.clone(), original.clone()),
                 true,
             );
             let premises = vec![
@@ -254,8 +254,10 @@ mod tests {
             if underlying.value_read() == original.value_read() {
                 continue;
             }
-            let wrong_goal =
-                Proposition::condition_is(ConditionTerm::integer_equal(observed, underlying), true);
+            let wrong_goal = Proposition::condition_is(
+                OldConditionTerm::integer_equal(observed, underlying),
+                true,
+            );
             assert!(check_rule(vec![0, 1], &wrong_goal, &premises).is_err());
         }
 
@@ -267,7 +269,7 @@ mod tests {
         let original = IntegerTerm::from_machine(Ty::UInt32, variable).unwrap();
         let observed = IntegerTerm::from_machine(Ty::UInt16, widened).unwrap();
         let goal = Proposition::condition_is(
-            ConditionTerm::integer_equal(observed, original.clone()),
+            OldConditionTerm::integer_equal(observed, original.clone()),
             true,
         );
         let premises = vec![
@@ -292,7 +294,7 @@ mod tests {
                 );
                 let observed = IntegerTerm::from_machine(destination, narrowed).unwrap();
                 Proposition::condition_is(
-                    ConditionTerm::integer_equal(observed, original.clone()),
+                    OldConditionTerm::integer_equal(observed, original.clone()),
                     true,
                 )
             };
@@ -374,7 +376,10 @@ mod tests {
             ],
             vec![
                 Proposition::condition_is(
-                    ConditionTerm::integer_less_equal(IntegerTerm::constant(lo), original.clone()),
+                    OldConditionTerm::integer_less_equal(
+                        IntegerTerm::constant(lo),
+                        original.clone(),
+                    ),
                     false,
                 ),
                 premises[1].clone(),
@@ -433,7 +438,7 @@ mod tests {
                 },
             ));
             let goal = Proposition::condition_is(
-                ConditionTerm::integer_equal(cast, original.clone()),
+                OldConditionTerm::integer_equal(cast, original.clone()),
                 true,
             );
             assert!(check_rule(vec![0, 1], &goal, &premises).is_err());

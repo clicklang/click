@@ -9,8 +9,8 @@ fn integer(id: u64) -> IntegerTerm {
     IntegerTerm::var(Variable(id))
 }
 
-fn is_zero(id: u64) -> ConditionTerm {
-    ConditionTerm::Compare {
+fn is_zero(id: u64) -> OldConditionTerm {
+    OldConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::Equal,
         left: Box::new(OldMachineTerm::Variable(Variable(id))),
@@ -35,19 +35,19 @@ fn retained_fold_literal_machine_guards_match_native_rewrites() {
             ))
         };
         let guards = [
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format,
                 relation: CompareRelation::Equal,
                 left: literal(0),
                 right: literal(0),
             },
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format,
                 relation: CompareRelation::LessThan,
                 left: literal(1),
                 right: literal(0),
             },
-            ConditionTerm::Overflows {
+            OldConditionTerm::Overflows {
                 format,
                 op: OverflowOperation::Add,
                 left: literal(1),
@@ -85,11 +85,11 @@ fn retained_fold_literal_machine_guards_match_native_rewrites() {
 #[test]
 fn integer_conditional_is_built_only_when_undecided_with_distinct_arms() {
     assert_eq!(
-        IntegerTerm::if_then_else(ConditionTerm::Constant(true), integer(1), integer(2)),
+        IntegerTerm::if_then_else(OldConditionTerm::Constant(true), integer(1), integer(2)),
         integer(1)
     );
     assert_eq!(
-        IntegerTerm::if_then_else(ConditionTerm::Constant(false), integer(1), integer(2)),
+        IntegerTerm::if_then_else(OldConditionTerm::Constant(false), integer(1), integer(2)),
         integer(2)
     );
     assert_eq!(

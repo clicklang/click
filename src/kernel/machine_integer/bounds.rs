@@ -21,7 +21,7 @@ use super::representation::{self, Division};
 #[cfg(test)]
 use crate::kernel::binary_node;
 use crate::kernel::{
-    ConditionTerm, IntegerTerm, OldMachineTerm, Proposition, SharedMachineIntegerTerm,
+    IntegerTerm, OldConditionTerm, OldMachineTerm, Proposition, SharedMachineIntegerTerm,
 };
 use crate::kernel::{
     bits32_constant, constant_i64, constant_u32, constant_u64, int64_constant, uint64_constant,
@@ -104,22 +104,22 @@ pub(crate) fn operation_bound(
             let scaled =
                 IntegerTerm::Multiply(IntegerTerm::constant(divisor).into(), observed.into());
             match (upper, signed && division == Division::Quotient) {
-                (true, _) => ConditionTerm::integer_less_equal(
+                (true, _) => OldConditionTerm::integer_less_equal(
                     operand,
                     IntegerTerm::Add(scaled.into(), IntegerTerm::constant(slack).into()),
                 ),
-                (false, false) => ConditionTerm::integer_less_equal(scaled, operand),
-                (false, true) => ConditionTerm::integer_less_equal(
+                (false, false) => OldConditionTerm::integer_less_equal(scaled, operand),
+                (false, true) => OldConditionTerm::integer_less_equal(
                     IntegerTerm::Add(scaled.into(), IntegerTerm::constant(-slack).into()),
                     operand,
                 ),
             }
         }
         Division::Remainder if upper => {
-            ConditionTerm::integer_less_equal(observed, IntegerTerm::constant(slack))
+            OldConditionTerm::integer_less_equal(observed, IntegerTerm::constant(slack))
         }
         Division::Remainder if signed => {
-            ConditionTerm::integer_less_equal(IntegerTerm::constant(-slack), observed)
+            OldConditionTerm::integer_less_equal(IntegerTerm::constant(-slack), observed)
         }
         Division::Remainder => return None,
     };
@@ -137,7 +137,7 @@ mod tests {
     }
 
     fn less_equal(left: IntegerTerm, right: IntegerTerm) -> Proposition {
-        Proposition::condition_is(ConditionTerm::integer_less_equal(left, right), true)
+        Proposition::condition_is(OldConditionTerm::integer_less_equal(left, right), true)
     }
 
     fn scaled(divisor: i64, value: &SharedMachineIntegerTerm) -> IntegerTerm {

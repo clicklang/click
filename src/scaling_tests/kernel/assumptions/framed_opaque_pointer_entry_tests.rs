@@ -7,7 +7,7 @@ fn an_opaque_candidate_does_not_walk_its_unusable_memory_frame() {
         let _session = crate::kernel::VerificationSession::enter();
         let field = Address {
             base: "opaque-frame".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let base = SymbolicMemory::new();
         let raw = Address::symbolic(Variable(995_080));
@@ -22,7 +22,7 @@ fn an_opaque_candidate_does_not_walk_its_unusable_memory_frame() {
         );
         assert!(!alias.bounds_are_known());
         let context = PureFactContext::new()
-            .assume_condition(ConditionTerm::pointer_equal(previous, alias), true);
+            .assume_condition(OldConditionTerm::pointer_equal(previous, alias), true);
         let mut memory = base;
         for index in 0..size {
             memory = memory.store(
@@ -55,8 +55,10 @@ fn provenance_misses_do_not_enumerate_direct_alias_stars() {
         let value = |id| OldPointer::new(pointer(id), ProgramType::Int32Pointer);
         let mut facts = PureFactContext::new();
         for index in 1..=size {
-            facts =
-                facts.assume_condition(ConditionTerm::pointer_equal(value(0), value(index)), true);
+            facts = facts.assume_condition(
+                OldConditionTerm::pointer_equal(value(0), value(index)),
+                true,
+            );
         }
         assert!(facts.provenance_equal(&pointer(0), &pointer(size)));
         assert!(facts.bounds_owners_equal(&pointer(0), &pointer(size)));
@@ -97,8 +99,8 @@ fn framed_pointer_refusals_do_not_scan_same_address_sources() {
                 ProgramType::Int32Pointer,
             )
             .with_address(raw.clone());
-            facts =
-                facts.assume_condition(ConditionTerm::pointer_equal(source, alias.clone()), true);
+            facts = facts
+                .assume_condition(OldConditionTerm::pointer_equal(source, alias.clone()), true);
         }
         let current = OldPointer::new(
             Address::loaded_value(&intern_memory_ref(&SymbolicMemory::new()), &field),

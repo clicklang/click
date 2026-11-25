@@ -12,11 +12,11 @@ use crate::persistent::{PersistentMap, PersistentSet};
 type BoundKey = (Key, Key, bool, bool);
 
 pub(super) fn order_view(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     truth: bool,
 ) -> Option<NativeComparisonView<'_>> {
     let view = comparison_view(condition, truth)?;
-    let view = if !matches!(condition, ConditionTerm::Compare { .. }) {
+    let view = if !matches!(condition, OldConditionTerm::Compare { .. }) {
         view.widened().unwrap_or(view)
     } else {
         view

@@ -14,12 +14,12 @@ fn integer_truncation_guard_lookup_ignores_unrelated_facts() {
         for count in [16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
             let mut assumptions = PureFactContext::new().assume_condition(
-                ConditionTerm::integer_not_equal(right.clone(), IntegerTerm::constant_i64(0)),
+                OldConditionTerm::integer_not_equal(right.clone(), IntegerTerm::constant_i64(0)),
                 true,
             );
             for index in 0..count {
                 assumptions = assumptions.assume_condition(
-                    ConditionTerm::integer_not_equal(
+                    OldConditionTerm::integer_not_equal(
                         IntegerTerm::Variable(Variable(151_000 + index)),
                         IntegerTerm::constant_i64(0),
                     ),

@@ -110,7 +110,7 @@ fn local_borrow_admission_tracks_selected_backing_with_live_borrows_and_aliases(
                 let opening = lend_memory(&ledger, caller, callee, range);
                 ledger = ledger.apply(&opening.transition).unwrap();
                 assumptions = assumptions.assume_condition(
-                    crate::kernel::ConditionTerm::address_equal(
+                    crate::kernel::OldConditionTerm::address_equal(
                         unrelated,
                         Address::symbolic(Variable(99_000 + index)),
                     ),

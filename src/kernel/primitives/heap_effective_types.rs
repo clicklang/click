@@ -18,7 +18,7 @@
 //! or a single symbolic one. Every operation touches the entries of the one
 //! block it names, positioned in O(log n).
 
-use super::{Address, AddressBase, AddressOffset, HashedOrdMap, ProgramValue};
+use super::{Address, AddressBase, HashedOrdMap, OldAddressOffset, ProgramValue};
 use crate::kernel::effective_type::CAccessClass;
 
 /// The widest scalar a store writes, which bounds how far before a store an
@@ -43,7 +43,7 @@ struct HeapEffectiveType {
 fn constant_start(block: &AddressBase, offset: i64) -> Address {
     Address {
         base: block.clone(),
-        offset: AddressOffset::Constant(offset),
+        offset: OldAddressOffset::Constant(offset),
     }
 }
 
@@ -224,7 +224,7 @@ mod tests {
     fn symbolic(variable: u64) -> Address {
         Address {
             base: AddressBase::Heap(7),
-            offset: AddressOffset::scale_int32(
+            offset: OldAddressOffset::scale_int32(
                 super::super::OldMachineTerm::Variable(super::super::Variable(variable)),
                 4,
             ),

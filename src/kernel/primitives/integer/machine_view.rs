@@ -638,7 +638,7 @@ impl<'a> MachineOperandView<'a> {
     }
 
     /// Explicit native guard boundary for consumers not yet migrated.
-    pub(crate) fn conditional(self) -> Option<(std::borrow::Cow<'a, ConditionTerm>, [Self; 2])> {
+    pub(crate) fn conditional(self) -> Option<(std::borrow::Cow<'a, OldConditionTerm>, [Self; 2])> {
         self.conditional_view()
             .map(|(guard, arms)| (guard.native(), arms))
     }

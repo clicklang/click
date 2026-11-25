@@ -64,7 +64,7 @@ fn an_operand_of_the_wrong_width_is_reported_where_it_meets_its_operator() {
         })
     );
     let arms = OldMachineTerm::If {
-        condition: Box::new(ConditionTerm::Variable(Variable(3))),
+        condition: Box::new(OldConditionTerm::Variable(Variable(3))),
         then_term: boxed(OldMachineTerm::constant(0)),
         else_term: boxed(OldMachineTerm::uint64_constant(0)),
     };
@@ -97,7 +97,7 @@ fn a_value_tag_and_its_term_agree_on_the_carrier() {
 fn a_comparison_takes_operands_of_the_width_it_names() {
     let wide = OldMachineTerm::int64_constant(1);
     assert!(
-        condition_width_mismatch(&ConditionTerm::Compare {
+        condition_width_mismatch(&OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: boxed(wide.clone()),
@@ -106,7 +106,7 @@ fn a_comparison_takes_operands_of_the_width_it_names() {
         .is_none()
     );
     assert_eq!(
-        condition_width_mismatch(&ConditionTerm::Compare {
+        condition_width_mismatch(&OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: boxed(OldMachineTerm::constant(1)),
@@ -124,7 +124,7 @@ fn a_comparison_takes_operands_of_the_width_it_names() {
 fn a_condition_reports_each_variable_at_the_width_it_is_used() {
     let n = Variable(11);
     let i = Variable(12);
-    let below = ConditionTerm::Compare {
+    let below = OldConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessThan,
         left: boxed(OldMachineTerm::Variable(i)),
@@ -135,7 +135,7 @@ fn a_condition_reports_each_variable_at_the_width_it_is_used() {
         Ok(vec![(n, CarrierWidth::Bits64), (i, CarrierWidth::Bits64)])
     );
     // One variable at two widths within one condition.
-    let mixed = ConditionTerm::Compare {
+    let mixed = OldConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::Equal,
         left: boxed(OldMachineTerm::Variable(n)),
@@ -166,7 +166,7 @@ fn a_condition_reports_each_variable_at_the_width_it_is_used() {
 fn one_fact_context_keeps_a_variable_at_one_width() {
     let n = OldMachineTerm::Variable(Variable(13));
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
             left: boxed(n.clone()),
@@ -176,7 +176,7 @@ fn one_fact_context_keeps_a_variable_at_one_width() {
     );
     // The same variable in a 32-bit comparison of the same context.
     let _ = facts.assume_condition(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left: boxed(n),
@@ -190,7 +190,7 @@ fn one_fact_context_keeps_a_variable_at_one_width() {
 fn separate_fact_contexts_may_use_one_variable_number_at_different_widths() {
     let n = OldMachineTerm::Variable(Variable(14));
     let _wide = PureFactContext::new().assume_condition(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
             left: boxed(n.clone()),
@@ -199,7 +199,7 @@ fn separate_fact_contexts_may_use_one_variable_number_at_different_widths() {
         true,
     );
     let _narrow = PureFactContext::new().assume_condition(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left: boxed(n),
@@ -246,16 +246,16 @@ fn a_bool_constant_is_the_byte_zero_or_one() {
 /// `uint64`: a chain, a chain to a constant bound, and a chain with a gap.
 #[test]
 fn order_chains_decide_alike_at_every_width() {
-    type Less = fn(OldMachineTerm, OldMachineTerm) -> ConditionTerm;
+    type Less = fn(OldMachineTerm, OldMachineTerm) -> OldConditionTerm;
     let widths: [(Less, fn(u64) -> OldMachineTerm); 3] = [
-        (ConditionTerm::signed_less_than, |n| {
+        (OldConditionTerm::signed_less_than, |n| {
             OldMachineTerm::constant(n as u32)
         }),
-        (ConditionTerm::int64_signed_less_than, |n| {
+        (OldConditionTerm::int64_signed_less_than, |n| {
             OldMachineTerm::int64_constant(n as i64)
         }),
         (
-            ConditionTerm::uint64_less_than,
+            OldConditionTerm::uint64_less_than,
             OldMachineTerm::uint64_constant,
         ),
     ];
@@ -342,7 +342,7 @@ fn a_format_carrying_operator_at_a_format_without_such_nodes_is_refused() {
         }
         // The refusal reaches a condition that reads the node, so the
         // per-context audit of an assumed fact rejects it too.
-        let condition = ConditionTerm::Compare {
+        let condition = OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::LessThan,
             left: boxed(binary),

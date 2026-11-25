@@ -7,7 +7,7 @@ fn contract_refusal_sample_ignores_unprinted_facts() {
         let mut context = PureFactContext::new();
         for index in 0..size {
             context = context.assume_condition(
-                ConditionTerm::signed_less_than(
+                OldConditionTerm::signed_less_than(
                     OldMachineTerm::Variable(Variable(650_000 + index)),
                     OldMachineTerm::constant(1000),
                 ),

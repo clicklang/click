@@ -1,13 +1,13 @@
 //! Exact multiplication ordering from two selected premises; no ambient search.
 use super::arithmetic_special::ArithmeticRuleError as Error;
-use crate::kernel::{ConditionTerm, IntegerTerm, Proposition, SharedIntegerTerm};
+use crate::kernel::{IntegerTerm, OldConditionTerm, Proposition, SharedIntegerTerm};
 use num_traits::{One, Zero};
 
 fn order(p: &Proposition) -> Option<(&SharedIntegerTerm, &SharedIntegerTerm)> {
     match p {
         condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::IntegerLessEqual(a, b), _)) =
-                condition_source_0.condition_native() =>
+            if let Some((OldConditionTerm::IntegerLessEqual(a, b), _)) =
+                condition_source_0.old_condition() =>
         {
             Some((a, b))
         }

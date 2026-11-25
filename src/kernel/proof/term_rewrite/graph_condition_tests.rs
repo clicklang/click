@@ -2,12 +2,12 @@ use super::*;
 use crate::kernel::CompareRelation;
 use crate::kernel::equality_graph::EqualityGraph;
 
-fn offset(id: u64) -> AddressOffset {
-    AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(id)), 4)
+fn offset(id: u64) -> OldAddressOffset {
+    OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(id)), 4)
 }
 
-fn guard() -> ConditionTerm {
-    ConditionTerm::address_offset_equal(offset(51), offset(52))
+fn guard() -> OldConditionTerm {
+    OldConditionTerm::address_offset_equal(offset(51), offset(52))
 }
 
 fn choice() -> OldMachineTerm {
@@ -54,7 +54,7 @@ fn graph_condition_reduction_preserves_all_binder_bodies() {
 fn check_binder_bodies(scalar: bool) {
     let guard = || {
         if scalar {
-            ConditionTerm::equal(
+            OldConditionTerm::equal(
                 OldMachineTerm::Variable(Variable(51)),
                 OldMachineTerm::Variable(Variable(52)),
             )
@@ -162,23 +162,23 @@ fn int32_graph_conditions_do_not_cross_sorts_or_admit_disequality() {
     let b = OldMachineTerm::Variable(Variable(82));
     let c = OldMachineTerm::Variable(Variable(83));
     let context = PureFactContext::new()
-        .assume_condition(ConditionTerm::equal(a.clone(), b.clone()), true)
-        .assume_condition(ConditionTerm::equal(b.clone(), c.clone()), false);
+        .assume_condition(OldConditionTerm::equal(a.clone(), b.clone()), true)
+        .assume_condition(OldConditionTerm::equal(b.clone(), c.clone()), false);
     let empty = HashMap::new();
     let mut rewrite = TermRewrite::for_conditions_with_graph(&empty, &context.equality_graph);
     assert_eq!(
-        rewrite.condition(&ConditionTerm::equal(a.clone(), b.clone())),
-        ConditionTerm::Constant(true)
+        rewrite.condition(&OldConditionTerm::equal(a.clone(), b.clone())),
+        OldConditionTerm::Constant(true)
     );
     for condition in [
-        ConditionTerm::equal(b.clone(), c),
-        ConditionTerm::Compare {
+        OldConditionTerm::equal(b.clone(), c),
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: Box::new(a.clone()),
             right: Box::new(b.clone()),
         },
-        ConditionTerm::IntegerEqual(
+        OldConditionTerm::IntegerEqual(
             IntegerTerm::from_machine(MachineIntegerType::Int32, a)
                 .unwrap()
                 .into(),
@@ -198,9 +198,9 @@ mod scaling_tests {
 
 #[test]
 fn rewriting_a_bool_claim_keeps_the_lowerings_truth_polarity() {
-    let from = ConditionTerm::bool_application("before", vec![]);
-    let after = ConditionTerm::bool_application("after", vec![]);
-    let replacement = ConditionTerm::bool_not(after.clone());
+    let from = OldConditionTerm::bool_application("before", vec![]);
+    let after = OldConditionTerm::bool_application("after", vec![]);
+    let replacement = OldConditionTerm::bool_not(after.clone());
     for truth in [false, true] {
         let claim = Proposition::condition_is(from.clone(), truth);
         let rewritten = TermRewrite::for_condition_exact(&from, &replacement).proposition(&claim);

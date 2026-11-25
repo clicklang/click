@@ -10,7 +10,7 @@ fn split_formation_selects_the_owned_piece_beside_unrelated_owners() {
             let other = OldPointer::new(
                 Address {
                     base: AddressBase::ExternalArgument,
-                    offset: AddressOffset::scale_int32(
+                    offset: OldAddressOffset::scale_int32(
                         OldMachineTerm::Variable(Variable(932_000 + i)),
                         4,
                     ),
@@ -78,7 +78,7 @@ fn symbolic_offset_zero_query_does_not_build_unrelated_stated_keys() {
         let mut facts = PureFactContext::new();
         for index in 0..size {
             facts = facts.assume_condition(
-                ConditionTerm::signed_less_than(
+                OldConditionTerm::signed_less_than(
                     OldMachineTerm::Variable(Variable(934_000)),
                     OldMachineTerm::constant(10_000 + index as u32),
                 ),

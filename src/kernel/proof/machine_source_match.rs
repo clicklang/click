@@ -12,7 +12,7 @@ enum Shape {
     Atom(KernelTerm),
     Fold(Variable, Variable, [usize; 4]),
     Match(AlgebraicTerm, Vec<(String, Vec<AlgebraicValue>, usize)>),
-    If(ConditionTerm, [usize; 2]),
+    If(OldConditionTerm, [usize; 2]),
     Native(OldMachineTerm),
     Application(std::sync::Arc<PureApplicationIdentity>),
     Binary(MachineIntegerType, MachineBinaryOp, [usize; 2]),
@@ -236,7 +236,7 @@ mod tests {
         let values = [pointer.clone(), pointer].map(|pointer| {
             OldMachineTerm::bool_cast(
                 MachineIntegerType::Int32,
-                ConditionTerm::BoolApplication(SharedPureApplication::intern(
+                OldConditionTerm::BoolApplication(SharedPureApplication::intern(
                     "bool_source".into(),
                     vec![PureFunctionArgument::Value(ProgramValue::Pointer(pointer))],
                 )),
@@ -262,7 +262,7 @@ mod tests {
         let later = intern_memory(memory.memory().clone().with_block("later", 16));
         let pointer = SymbolicMemory::global_pointer("opaque-source");
         let opaque = |memory: SharedMemory, name| OldMachineTerm::If {
-            condition: ConditionTerm::Variable(Variable(name)).into(),
+            condition: OldConditionTerm::Variable(Variable(name)).into(),
             then_term: OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 pointer.clone(),

@@ -216,7 +216,7 @@ fn algebraic_match_normalization_substitutes_integer_fields() {
 
 #[test]
 fn algebraic_conditional_is_one_branch_once_its_condition_is_decided() {
-    let condition = ConditionTerm::Compare {
+    let condition = OldConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::Equal,
         left: Box::new(OldMachineTerm::Variable(Variable(7))),
@@ -224,7 +224,7 @@ fn algebraic_conditional_is_one_branch_once_its_condition_is_decided() {
     };
     // The smart constructor never builds a decided or branch-equal conditional.
     assert_eq!(
-        AlgebraicTerm::if_then_else(ConditionTerm::Constant(true), empty(), var(1)),
+        AlgebraicTerm::if_then_else(OldConditionTerm::Constant(true), empty(), var(1)),
         empty()
     );
     assert_eq!(

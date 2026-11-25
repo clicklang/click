@@ -15,7 +15,7 @@ mod pointer_comparison;
 #[derive(Clone, Copy)]
 pub(crate) enum BooleanOperandView<'a> {
     Shared(&'a KernelTerm),
-    Native(&'a ConditionTerm),
+    Native(&'a OldConditionTerm),
 }
 
 impl<'a> BooleanOperandView<'a> {
@@ -198,9 +198,9 @@ impl<'a> BooleanOperandView<'a> {
     /// Keep numeric call arguments as typed handles for semantic identity.
     /// Other leaves already have exact native payloads or shared Integer
     /// bridges; no enclosing Boolean connective reaches this boundary.
-    pub(crate) fn identity_leaf(self) -> std::borrow::Cow<'a, ConditionTerm> {
+    pub(crate) fn identity_leaf(self) -> std::borrow::Cow<'a, OldConditionTerm> {
         if let Self::Shared(root) = self
-            && let Some(call) = root.boolean_call_native()
+            && let Some(call) = root.old_boolean_call()
         {
             return std::borrow::Cow::Borrowed(call);
         }
@@ -213,7 +213,7 @@ impl<'a> BooleanOperandView<'a> {
         {
             return Some(arguments.clone());
         }
-        let ConditionTerm::AlgebraicEqual(a, b) = self.native_leaf()? else {
+        let OldConditionTerm::AlgebraicEqual(a, b) = self.native_leaf()? else {
             return None;
         };
         Some([
@@ -222,7 +222,7 @@ impl<'a> BooleanOperandView<'a> {
         ])
     }
 
-    pub(crate) fn native_leaf(self) -> Option<&'a ConditionTerm> {
+    pub(crate) fn native_leaf(self) -> Option<&'a OldConditionTerm> {
         match self {
             Self::Native(value) => Some(value),
             Self::Shared(_) => None,
@@ -231,7 +231,7 @@ impl<'a> BooleanOperandView<'a> {
 
     /// Explicit compatibility boundary for callers that still need a native
     /// condition. Borrow existing leaves; only common compound roots export.
-    pub(crate) fn native(self) -> std::borrow::Cow<'a, ConditionTerm> {
+    pub(crate) fn native(self) -> std::borrow::Cow<'a, OldConditionTerm> {
         if let Self::Shared(root) = self
             && let Some(value) = root.cached_condition_output()
         {
@@ -252,7 +252,7 @@ impl<'a> BooleanOperandView<'a> {
         {
             return Some(pair.arguments().clone());
         }
-        let ConditionTerm::PointerEqual(a, b) = self.native_leaf()? else {
+        let OldConditionTerm::PointerEqual(a, b) = self.native_leaf()? else {
             return None;
         };
         Some([SharedPointer::import(a), SharedPointer::import(b)])
@@ -264,7 +264,7 @@ impl<'a> BooleanOperandView<'a> {
         {
             return Some(arguments.clone());
         }
-        let ConditionTerm::AddressEqual(a, b) = self.native_leaf()? else {
+        let OldConditionTerm::AddressEqual(a, b) = self.native_leaf()? else {
             return None;
         };
         Some([SharedAddress::import(a), SharedAddress::import(b)])
@@ -276,7 +276,7 @@ impl<'a> BooleanOperandView<'a> {
         {
             return Some(arguments.clone());
         }
-        let ConditionTerm::AddressOffsetEqual(a, b) = self.native_leaf()? else {
+        let OldConditionTerm::AddressOffsetEqual(a, b) = self.native_leaf()? else {
             return None;
         };
         Some([
@@ -294,7 +294,7 @@ impl<'a> BooleanOperandView<'a> {
                 Some(*value)
             }
             _ => match self.native_leaf()? {
-                ConditionTerm::Constant(value) => Some(*value),
+                OldConditionTerm::Constant(value) => Some(*value),
                 _ => None,
             },
         }
@@ -308,7 +308,7 @@ impl<'a> BooleanOperandView<'a> {
                 }
                 _ => None,
             },
-            Self::Native(ConditionTerm::BoolIf {
+            Self::Native(OldConditionTerm::BoolIf {
                 condition,
                 then_condition,
                 else_condition,
@@ -329,7 +329,7 @@ impl<'a> BooleanOperandView<'a> {
                 }
                 _ => None,
             },
-            Self::Native(ConditionTerm::BoolEqual(left, right)) => {
+            Self::Native(OldConditionTerm::BoolEqual(left, right)) => {
                 Some([Self::Native(left), Self::Native(right)])
             }
             _ => None,
@@ -361,7 +361,7 @@ impl<'a> BooleanOperandView<'a> {
             }
             _ => self
                 .native_leaf()
-                .is_some_and(ConditionTerm::is_bool_value_form),
+                .is_some_and(OldConditionTerm::is_bool_value_form),
         }
     }
 
@@ -395,7 +395,7 @@ impl<'a> BooleanOperandView<'a> {
                 )),
                 _ => None,
             },
-            Self::Native(ConditionTerm::Overflows {
+            Self::Native(OldConditionTerm::Overflows {
                 format,
                 op,
                 left,
@@ -432,7 +432,7 @@ impl<'a> BooleanOperandView<'a> {
                 )),
                 _ => None,
             },
-            Self::Native(ConditionTerm::Compare {
+            Self::Native(OldConditionTerm::Compare {
                 format,
                 relation,
                 left,
@@ -557,9 +557,9 @@ impl KernelTerm {
 }
 
 impl KernelTermImport {
-    pub(crate) fn condition(&mut self, condition: &ConditionTerm) -> KernelTerm {
-        use ConditionTerm as Old;
+    pub(crate) fn condition(&mut self, condition: &OldConditionTerm) -> KernelTerm {
         use KernelTermNode as Node;
+        use OldConditionTerm as Old;
         crate::instrumentation::record_deterministic_work(1);
         let node = match condition {
             Old::Overflows {
@@ -646,9 +646,9 @@ impl KernelTermImport {
 }
 
 impl KernelTermExport {
-    pub(crate) fn condition(term: &KernelTerm) -> Result<ConditionTerm, &'static str> {
-        use ConditionTerm as Old;
+    pub(crate) fn condition(term: &KernelTerm) -> Result<OldConditionTerm, &'static str> {
         use KernelTermNode as Node;
+        use OldConditionTerm as Old;
         if term.ty() != &KernelType::Bool {
             return Err("expected Bool kernel term");
         }
@@ -751,8 +751,8 @@ mod tests {
     fn boolean_identity_matches_native_formats_and_composites() {
         let _session = crate::kernel::VerificationSession::enter();
         let mut cases = vec![
-            ConditionTerm::Constant(false),
-            ConditionTerm::Variable(Variable(964_095)),
+            OldConditionTerm::Constant(false),
+            OldConditionTerm::Variable(Variable(964_095)),
         ];
         for format in crate::kernel::machine_integer::FORMATS {
             for relation in [
@@ -760,7 +760,7 @@ mod tests {
                 CompareRelation::LessThan,
                 CompareRelation::GreaterEqual,
             ] {
-                cases.push(ConditionTerm::Compare {
+                cases.push(OldConditionTerm::Compare {
                     format,
                     relation,
                     left: Box::new(OldMachineTerm::Variable(Variable(964_096))),
@@ -771,7 +771,7 @@ mod tests {
             }
         }
         for source in cases.clone() {
-            cases.push(ConditionTerm::BoolEqual(
+            cases.push(OldConditionTerm::BoolEqual(
                 Box::new(source.clone()),
                 Box::new(source),
             ));
@@ -819,15 +819,15 @@ mod tests {
                 OldMachineTerm::Variable(accumulator),
             )),
         };
-        let source = ConditionTerm::BoolIf {
-            condition: Box::new(ConditionTerm::Variable(free)),
-            then_condition: Box::new(ConditionTerm::Compare {
+        let source = OldConditionTerm::BoolIf {
+            condition: Box::new(OldConditionTerm::Variable(free)),
+            then_condition: Box::new(OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(fold.clone()),
                 right: Box::new(OldMachineTerm::Variable(Variable(971_004))),
             }),
-            else_condition: Box::new(ConditionTerm::Constant(false)),
+            else_condition: Box::new(OldConditionTerm::Constant(false)),
         };
         let root = KernelTermImport::default().condition(&source);
         let replacement = OldMachineTerm::Variable(accumulator);
@@ -856,7 +856,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let from = Variable(971_020);
         let pointer = Address::null();
-        let atom = ConditionTerm::Compare {
+        let atom = OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: Box::new(OldMachineTerm::IntegerAddress(
@@ -866,16 +866,16 @@ mod tests {
             right: Box::new(OldMachineTerm::uint64_constant(0)),
         };
         let sources = [
-            ConditionTerm::BoolEqual(Box::new(atom.clone()), Box::new(atom.clone())),
-            ConditionTerm::BoolIf {
+            OldConditionTerm::BoolEqual(Box::new(atom.clone()), Box::new(atom.clone())),
+            OldConditionTerm::BoolIf {
                 condition: Box::new(atom),
-                then_condition: Box::new(ConditionTerm::Constant(true)),
-                else_condition: Box::new(ConditionTerm::Constant(false)),
+                then_condition: Box::new(OldConditionTerm::Constant(true)),
+                else_condition: Box::new(OldConditionTerm::Constant(false)),
             },
-            ConditionTerm::BoolIf {
-                condition: Box::new(ConditionTerm::Constant(true)),
-                then_condition: Box::new(ConditionTerm::Variable(Variable(971_021))),
-                else_condition: Box::new(ConditionTerm::Constant(false)),
+            OldConditionTerm::BoolIf {
+                condition: Box::new(OldConditionTerm::Constant(true)),
+                then_condition: Box::new(OldConditionTerm::Variable(Variable(971_021))),
+                else_condition: Box::new(OldConditionTerm::Constant(false)),
             },
         ];
         for source in sources {
@@ -897,12 +897,12 @@ mod tests {
     fn common_boolean_pointer_substitution_preserves_read_state() {
         let from = Variable(971_010);
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-        let source = ConditionTerm::BoolEqual(
-            Box::new(ConditionTerm::boolean_cell_read(
+        let source = OldConditionTerm::BoolEqual(
+            Box::new(OldConditionTerm::boolean_cell_read(
                 crate::kernel::ProgramPoint::at(&memory.clone()),
                 Address::symbolic(from),
             )),
-            Box::new(ConditionTerm::Constant(true)),
+            Box::new(OldConditionTerm::Constant(true)),
         );
         let root = KernelTermImport::default().condition(&source);
         let pointer = Address::symbolic(Variable(971_011));
@@ -913,29 +913,29 @@ mod tests {
         let restored = KernelTermExport::condition(&actual).unwrap();
         assert_eq!(
             restored,
-            ConditionTerm::BoolEqual(
-                Box::new(ConditionTerm::boolean_cell_read(
+            OldConditionTerm::BoolEqual(
+                Box::new(OldConditionTerm::boolean_cell_read(
                     crate::kernel::ProgramPoint::at(&memory),
                     pointer
                 )),
-                Box::new(ConditionTerm::Constant(true)),
+                Box::new(OldConditionTerm::Constant(true)),
             )
         );
     }
 
     #[test]
     fn boolean_views_keep_written_comparison_and_shared_children() {
-        let source = ConditionTerm::BoolIf {
-            condition: Box::new(ConditionTerm::Compare {
+        let source = OldConditionTerm::BoolIf {
+            condition: Box::new(OldConditionTerm::Compare {
                 format: MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::Variable(Variable(964_090))),
                 right: Box::new(OldMachineTerm::constant(1)),
             }),
-            then_condition: Box::new(ConditionTerm::Constant(true)),
-            else_condition: Box::new(ConditionTerm::BoolEqual(
-                Box::new(ConditionTerm::Constant(false)),
-                Box::new(ConditionTerm::Constant(true)),
+            then_condition: Box::new(OldConditionTerm::Constant(true)),
+            else_condition: Box::new(OldConditionTerm::BoolEqual(
+                Box::new(OldConditionTerm::Constant(false)),
+                Box::new(OldConditionTerm::Constant(true)),
             )),
         };
         let common = KernelTermImport::default().condition(&source);
@@ -964,14 +964,14 @@ mod tests {
     #[test]
     fn integer_comparisons_preserve_all_operators_and_order_after_source_drop() {
         use IntegerComparisonOperator as Op;
-        type Constructor = fn(SharedIntegerTerm, SharedIntegerTerm) -> ConditionTerm;
+        type Constructor = fn(SharedIntegerTerm, SharedIntegerTerm) -> OldConditionTerm;
         let constructors: [(Op, Constructor); 6] = [
-            (Op::LessThan, ConditionTerm::IntegerLessThan),
-            (Op::LessEqual, ConditionTerm::IntegerLessEqual),
-            (Op::GreaterThan, ConditionTerm::IntegerGreaterThan),
-            (Op::GreaterEqual, ConditionTerm::IntegerGreaterEqual),
-            (Op::Equal, ConditionTerm::IntegerEqual),
-            (Op::NotEqual, ConditionTerm::IntegerNotEqual),
+            (Op::LessThan, OldConditionTerm::IntegerLessThan),
+            (Op::LessEqual, OldConditionTerm::IntegerLessEqual),
+            (Op::GreaterThan, OldConditionTerm::IntegerGreaterThan),
+            (Op::GreaterEqual, OldConditionTerm::IntegerGreaterEqual),
+            (Op::Equal, OldConditionTerm::IntegerEqual),
+            (Op::NotEqual, OldConditionTerm::IntegerNotEqual),
         ];
         let mut distinct = std::collections::HashSet::new();
         for (operator, constructor) in constructors {
@@ -1013,7 +1013,7 @@ mod tests {
 
     #[test]
     fn boolean_bridge_preserves_structure_and_comparison_format() {
-        let comparison = |format| ConditionTerm::Compare {
+        let comparison = |format| OldConditionTerm::Compare {
             format,
             relation: CompareRelation::Equal,
             left: Box::new(OldMachineTerm::Variable(Variable(961_001))),
@@ -1030,24 +1030,24 @@ mod tests {
         for condition in [
             signed,
             unsigned,
-            ConditionTerm::Constant(false),
-            ConditionTerm::Variable(Variable(961_002)),
-            ConditionTerm::BoolEqual(
-                Box::new(ConditionTerm::Constant(true)),
-                Box::new(ConditionTerm::Constant(true)),
+            OldConditionTerm::Constant(false),
+            OldConditionTerm::Variable(Variable(961_002)),
+            OldConditionTerm::BoolEqual(
+                Box::new(OldConditionTerm::Constant(true)),
+                Box::new(OldConditionTerm::Constant(true)),
             ),
-            ConditionTerm::BoolIf {
-                condition: Box::new(ConditionTerm::Constant(false)),
-                then_condition: Box::new(ConditionTerm::Constant(true)),
-                else_condition: Box::new(ConditionTerm::Constant(false)),
+            OldConditionTerm::BoolIf {
+                condition: Box::new(OldConditionTerm::Constant(false)),
+                then_condition: Box::new(OldConditionTerm::Constant(true)),
+                else_condition: Box::new(OldConditionTerm::Constant(false)),
             },
-            ConditionTerm::BoolApplication(SharedPureApplication::intern(
+            OldConditionTerm::BoolApplication(SharedPureApplication::intern(
                 "predicate".into(),
                 vec![PureFunctionArgument::Value(ProgramValue::Int32(
                     OldMachineTerm::Variable(Variable(961_003)),
                 ))],
             )),
-            ConditionTerm::IntegerEqual(
+            OldConditionTerm::IntegerEqual(
                 IntegerTerm::constant_i64(1).into(),
                 IntegerTerm::constant_i64(2).into(),
             ),

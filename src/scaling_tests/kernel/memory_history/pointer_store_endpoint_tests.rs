@@ -11,12 +11,12 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
     let _session = crate::kernel::VerificationSession::enter();
     let base = |id| Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 4),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 4),
     };
     let written = base(160_001).offset_by_bytes(8);
     let address = base(160_002).offset_by_bytes(8);
     let alias = Proposition::condition_is(
-        ConditionTerm::address_equal(base(160_001), base(160_002)),
+        OldConditionTerm::address_equal(base(160_001), base(160_002)),
         true,
     );
     let endpoint = |memory: SymbolicMemory| MemoryDagCell::Unwritten {
@@ -30,7 +30,7 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
         let mut memory = SymbolicMemory::new();
         for index in 0..count {
             context = context.assume_condition(
-                ConditionTerm::address_equal(
+                OldConditionTerm::address_equal(
                     Address::symbolic(Variable(170_000 + index * 2)),
                     Address::symbolic(Variable(170_001 + index * 2)),
                 ),

@@ -418,7 +418,7 @@ fn concrete_view_carrier_recovery_ignores_unrelated_owners() {
                 crate::kernel::MemoryRange::new(
                     Address {
                         base: format!("unrelated-view-carrier-{extra}").into(),
-                        offset: AddressOffset::Constant(0),
+                        offset: OldAddressOffset::Constant(0),
                     },
                     0u32.into(),
                     4u32.into(),
@@ -456,7 +456,7 @@ fn partial_borrow_carrier_return_ignores_unrelated_owners() {
             let range = crate::kernel::MemoryRange::new(
                 Address {
                     base: format!("unrelated-carrier-{extra}").into(),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 },
                 0u32.into(),
                 4u32.into(),
@@ -802,7 +802,7 @@ fn overlapping_memory_view_clustering_handles_chains_and_equal_starts() {
         for index in 0..size {
             let base = crate::kernel::Address {
                 base: crate::kernel::AddressBase::Concrete(format!("overlap-{index}")),
-                offset: crate::kernel::AddressOffset::Constant(0),
+                offset: crate::kernel::OldAddressOffset::Constant(0),
             };
             let owner = ResourceFact::own_memory(MemoryRange::new(
                 base.clone(),
@@ -979,14 +979,14 @@ fn borrow_certificate_recheck_scales_with_explicit_transition_delta() {
 
 #[test]
 fn offset_alias_overlap_uses_exact_bytes_and_ignores_unrelated_facts() {
-    use crate::kernel::{Address, AddressOffset, ConditionTerm};
+    use crate::kernel::{Address, OldAddressOffset, OldConditionTerm};
     let p = Address {
         base: "overlap".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let q = Address {
         base: p.base.clone(),
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(600)), 1),
+        offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(600)), 1),
     };
     let protected = MemoryRange::new_with_element_width(
         p.clone(),
@@ -1000,7 +1000,7 @@ fn offset_alias_overlap_uses_exact_bytes_and_ignores_unrelated_facts() {
         let mut assumptions = PureFactContext::new();
         for index in 0..size {
             assumptions = assumptions.assume_condition(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     OldMachineTerm::Variable(Variable(1000 + index)),
                     OldMachineTerm::constant(0),
                 ),
@@ -1013,9 +1013,9 @@ fn offset_alias_overlap_uses_exact_bytes_and_ignores_unrelated_facts() {
             (-1, 2, true),
             (4_294_967_297, 8, false),
         ] {
-            let equality = ConditionTerm::address_offset_equal(
+            let equality = OldConditionTerm::address_offset_equal(
                 q.offset.clone(),
-                AddressOffset::Constant(offset),
+                OldAddressOffset::Constant(offset),
             );
             let context = assumptions.clone().assume_condition(equality.clone(), true);
             let query = MemoryRange::new_with_element_width(
@@ -1061,7 +1061,7 @@ fn offset_alias_overlap_uses_exact_bytes_and_ignores_unrelated_facts() {
 #[ignore = "nightly: 1.2s in the parallel gate"]
 fn joint_fragment_reservation_does_not_scan_ambient_memory_with_scalar_equalities() {
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::equal(
+        OldConditionTerm::equal(
             OldMachineTerm::Variable(Variable(944_023)),
             OldMachineTerm::constant(7),
         ),
@@ -1145,7 +1145,7 @@ fn mixed_width_view_backing_joins_only_its_own_pieces() {
         ResourceFact::own_memory(crate::kernel::MemoryRange::new_with_element_width(
             crate::kernel::Address {
                 base: "buffer".into(),
-                offset: crate::kernel::AddressOffset::Constant(0),
+                offset: crate::kernel::OldAddressOffset::Constant(0),
             },
             crate::kernel::OldMachineTerm::constant(start),
             crate::kernel::OldMachineTerm::constant(end),
@@ -1437,7 +1437,7 @@ fn writes_without_active_memory_borrows_do_not_walk_pointer_aliases() {
                 let mut facts = PureFactContext::new();
                 for index in 0..count {
                     facts = facts.assume_condition(
-                        ConditionTerm::address_equal(
+                        OldConditionTerm::address_equal(
                             base.clone(),
                             Address::symbolic(Variable(980_001 + index as u64)),
                         ),
@@ -1548,7 +1548,7 @@ fn returned_view_recovery_retains_the_constructed_frame_as_aliases_and_owners_gr
             for index in 0..count {
                 if aliases {
                     assumptions = assumptions.assume_condition(
-                        ConditionTerm::address_equal(
+                        OldConditionTerm::address_equal(
                             base.clone(),
                             Address::symbolic(Variable(8_799_000 + u64::from(index))),
                         ),

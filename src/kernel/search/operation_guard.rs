@@ -34,26 +34,26 @@ pub(crate) fn record_discovery(name: &'static str) {
 mod tests {
     use super::*;
     use crate::kernel::search::ProofSearch;
-    use crate::kernel::{ConditionTerm, Proposition, PureFactContext};
+    use crate::kernel::{OldConditionTerm, Proposition, PureFactContext};
 
     #[test]
     fn discovery_is_forbidden_even_for_true_and_restored_after_unwind() {
         let context = PureFactContext::new();
         assert!(ProofSearch::proves(
             &context,
-            &Proposition::condition_is(ConditionTerm::Constant(true), true)
+            &Proposition::condition_is(OldConditionTerm::Constant(true), true)
         ));
         let failure = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let _operation = FastOperationScope::enter("explicit theorem application");
             ProofSearch::proves(
                 &context,
-                &Proposition::condition_is(ConditionTerm::Constant(true), true),
+                &Proposition::condition_is(OldConditionTerm::Constant(true), true),
             )
         }));
         assert!(failure.is_err());
         assert!(ProofSearch::proves(
             &context,
-            &Proposition::condition_is(ConditionTerm::Constant(true), true)
+            &Proposition::condition_is(OldConditionTerm::Constant(true), true)
         ));
     }
 
@@ -75,7 +75,7 @@ fn condition_transport_cannot_hide_inside_statement_publication() {
     let _operation = FastOperationScope::enter("statement result publication");
     crate::kernel::memory_history::prove_program_condition_fact_direct_transport(
         &crate::kernel::Proposition::condition_is(
-            crate::kernel::ConditionTerm::Constant(true),
+            crate::kernel::OldConditionTerm::Constant(true),
             true,
         ),
         &crate::kernel::ProgramPoint::of_memory(&crate::kernel::SymbolicMemory::new()),

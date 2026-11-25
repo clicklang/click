@@ -290,7 +290,7 @@ mod cached_read_completion_tests {
     fn pointer(block: &str, offset: i32) -> Address {
         Address {
             base: block.into(),
-            offset: AddressOffset::Constant(i64::from(offset)),
+            offset: OldAddressOffset::Constant(i64::from(offset)),
         }
     }
 
@@ -314,7 +314,7 @@ mod cached_read_completion_tests {
         memory: SymbolicMemory,
         published: SymbolicMemory,
     ) -> Result<CheckedFunctionProposition, String> {
-        let proposition = Proposition::condition_is(ConditionTerm::Constant(true), true);
+        let proposition = Proposition::condition_is(OldConditionTerm::Constant(true), true);
         let state = ExecutionState::new().with_memory(published);
         let function = program_function(
             ProgramType::Int32,
@@ -396,7 +396,7 @@ mod cached_read_completion_tests {
             specification.state().clone(),
             specification.arguments().to_vec(),
             vec![Proposition::condition_is(
-                ConditionTerm::Constant(false),
+                OldConditionTerm::Constant(false),
                 true,
             )],
             specification.outcome().clone(),
@@ -889,7 +889,7 @@ mod range_list_equality_graph_tests {
             crate::kernel::intern_memory(SymbolicMemory::new().with_block("range-list", 8));
         let pointer = |index| Address {
             base: "range-list".into(),
-            offset: AddressOffset::scale_int32(index, 4),
+            offset: OldAddressOffset::scale_int32(index, 4),
         };
         let load = |memory: &SharedMemory, index| {
             OldMachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
@@ -911,7 +911,7 @@ mod range_list_equality_graph_tests {
         let left = range(sum(load(&before, a.clone())));
         let right = range(sum(load(&before, b.clone())));
         let later = range(sum(load(&after, b.clone())));
-        let premise = ConditionTerm::equal(a, b);
+        let premise = OldConditionTerm::equal(a, b);
         let parent = PureFactContext::new();
         let branch = parent.clone().assume_condition(premise.clone(), true);
         let matches = |context: &PureFactContext, right: &MemoryRange| {
@@ -1094,7 +1094,7 @@ fn materialized_load_is_unchanged(
         ProgramValue::Pointer(pointer_value) => match pointer_value.address() {
             Address {
                 base: AddressBase::FunctionSymbolic(variable),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             } if matches!(
                 pointer_value.program_type(),
                 ProgramType::FunctionPointer(_)
@@ -1103,7 +1103,7 @@ fn materialized_load_is_unchanged(
                 load_of(&OldMachineTerm::Variable(*variable))
             }
             Address {
-                offset: AddressOffset::Int32Scaled { value: bits, .. },
+                offset: OldAddressOffset::Int32Scaled { value: bits, .. },
                 ..
             } => bits
                 .operand_view()
@@ -2983,9 +2983,9 @@ fn reflexive_completion_condition(condition: BooleanOperandView<'_>) -> bool {
             _ => false,
         },
         BooleanOperandView::Native(condition) => match condition {
-            ConditionTerm::AddressEqual(left, right) => left == right,
-            ConditionTerm::PointerEqual(left, right) => left == right,
-            ConditionTerm::AddressOffsetEqual(left, right) => left == right,
+            OldConditionTerm::AddressEqual(left, right) => left == right,
+            OldConditionTerm::PointerEqual(left, right) => left == right,
+            OldConditionTerm::AddressOffsetEqual(left, right) => left == right,
             _ => false,
         },
     }
@@ -2998,7 +2998,7 @@ fn reflexive_completion_condition(condition: BooleanOperandView<'_>) -> bool {
 /// one form by exact structural rules: no fact is consulted.
 pub(crate) fn completion_key(proposition: &Proposition) -> Proposition {
     fn truth(value: bool) -> Proposition {
-        Proposition::condition_is(ConditionTerm::Constant(value), true)
+        Proposition::condition_is(OldConditionTerm::Constant(value), true)
     }
     match proposition {
         Proposition::ConditionIs(condition, value) => {
@@ -3295,7 +3295,7 @@ mod heap_free_effect_tests {
     fn a_free_effect_reinstates_a_64_bit_claim_in_its_format() {
         let base = Address {
             base: AddressBase::Heap(940_100),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let bytes = OldMachineTerm::uint64_multiply(
             OldMachineTerm::Variable(Variable(940_101)),
@@ -3325,7 +3325,7 @@ mod checked_proposition_index_tests {
 
     fn route(variable: u64, value: bool) -> Proposition {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::Variable(Variable(variable))),
@@ -3337,7 +3337,7 @@ mod checked_proposition_index_tests {
 
     fn lowering_candidate(marker: bool, facts: Vec<Proposition>) -> SpecPropositionPath {
         SpecPropositionPath {
-            proposition: Proposition::condition_is(ConditionTerm::Constant(marker), true),
+            proposition: Proposition::condition_is(OldConditionTerm::Constant(marker), true),
             facts: facts.into_iter().map(ExecutionPureFact::new).collect(),
             obligations: Vec::new(),
             introductions: LoweringIntroductions::new(),
@@ -3435,7 +3435,7 @@ mod checked_proposition_index_tests {
 
     #[test]
     fn completions_are_indexed_by_the_claim_they_closed() {
-        let truth = Proposition::condition_is(ConditionTerm::Constant(true), true);
+        let truth = Proposition::condition_is(OldConditionTerm::Constant(true), true);
         let checked = |claim: Option<FunctionContractClaimTarget>| {
             let function = ProgramFunction::new(
                 ProgramType::Void,
@@ -3486,7 +3486,7 @@ mod checked_proposition_index_tests {
         // must not make an entry-dependent resource term evaluable during
         // certification setup.
         let body_fact = Proposition::condition_is(
-            ConditionTerm::signed_less_than(
+            OldConditionTerm::signed_less_than(
                 OldMachineTerm::Variable(Variable(93_001)),
                 OldMachineTerm::constant(8),
             ),
@@ -3538,7 +3538,7 @@ mod heap_status_equality_tests {
     fn outcome_equality_distinguishes_heap_statuses() {
         let block = Address {
             base: AddressBase::Heap(424_242),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let mut base = SymbolicMemory::new().with_block(block.base.clone(), 4);
         std::sync::Arc::make_mut(&mut base.heap)
@@ -3590,7 +3590,7 @@ mod unproved_path_obligation_message_tests {
     #[test]
     fn names_the_obligation_by_its_context_without_a_term_dump() {
         let condition = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left: Box::new(OldMachineTerm::Variable(Variable(7))),
@@ -3660,7 +3660,7 @@ mod materialized_function_load_tests {
     fn canonical_function_pointer_cache_preserves_memory() {
         let address = Address {
             base: "callback-cache".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let memory = SymbolicMemory::new().with_block("callback-cache", 16);
         let value = callback_load(
@@ -3682,7 +3682,7 @@ mod materialized_function_load_tests {
     fn function_pointer_cache_requires_the_exact_cell_and_pointer_load() {
         let address = Address {
             base: "callback-cache-controls".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let memory = SymbolicMemory::new().with_block("callback-cache-controls", 16);
         let facts = PureFactContext::new();
@@ -3770,13 +3770,13 @@ mod claim_requirement_tests {
     #[test]
     fn claim_identity_requires_its_evaluation_obligations_in_this_context() {
         let domain = Proposition::condition_is(
-            ConditionTerm::equal(
+            OldConditionTerm::equal(
                 OldMachineTerm::Variable(Variable(991_001)),
                 OldMachineTerm::constant(1),
             ),
             true,
         );
-        let truth = Proposition::condition_is(ConditionTerm::Constant(true), true);
+        let truth = Proposition::condition_is(OldConditionTerm::Constant(true), true);
         let empty = PureFactStore::from_ordered(std::slice::from_ref(&truth));
         let established = empty.with_kernel_checked_fact(domain.clone());
         for (target, is_exceptional) in [
@@ -3942,7 +3942,7 @@ mod retained_contract_input_tests {
         let roots = vec![
             KernelTerm::variable(KernelType::Program(ProgramType::UInt64), Variable(996802)),
             KernelTerm::variable(KernelType::Program(ProgramType::Float64), Variable(996803)),
-            KernelTermImport::default().condition(&ConditionTerm::Variable(Variable(996804))),
+            KernelTermImport::default().condition(&OldConditionTerm::Variable(Variable(996804))),
             KernelTerm::variable(
                 KernelType::Algebraic(AlgebraicType::parameter("T".into())),
                 Variable(996805),
@@ -4003,14 +4003,14 @@ mod completion_operand_tests {
         let address = Address::symbolic(Variable(100_295));
         let variable = OldMachineTerm::Variable(Variable(100_296));
         let other_variable = OldMachineTerm::Variable(Variable(100_297));
-        let compare = |format, right| ConditionTerm::Compare {
+        let compare = |format, right| OldConditionTerm::Compare {
             format,
             relation: CompareRelation::Equal,
             left: Box::new(variable.clone()),
             right: Box::new(right),
         };
         let cases = [
-            (ConditionTerm::Constant(false), Some(false)),
+            (OldConditionTerm::Constant(false), Some(false)),
             (
                 compare(MachineIntegerType::Int32, variable.clone()),
                 Some(true),
@@ -4018,7 +4018,7 @@ mod completion_operand_tests {
             (compare(MachineIntegerType::UInt32, other_variable), None),
             (compare(MachineIntegerType::Int64, variable.clone()), None),
             (
-                ConditionTerm::AddressEqual(Box::new(address.clone()), Box::new(address)),
+                OldConditionTerm::AddressEqual(Box::new(address.clone()), Box::new(address)),
                 Some(true),
             ),
         ];

@@ -38,7 +38,10 @@ mod tests {
         let second = intern_memory(SymbolicMemory::new());
         let pointer = Address {
             base: AddressBase::Symbolic(Variable(999814)),
-            offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(999815)), 4),
+            offset: OldAddressOffset::scaled_int32_node(
+                OldMachineTerm::Variable(Variable(999815)),
+                4,
+            ),
         };
         let address = SharedAddress::import(&pointer);
         let mut identities = std::collections::HashSet::new();

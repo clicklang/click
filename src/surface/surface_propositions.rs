@@ -15,7 +15,7 @@ use super::{
     ClickError, ClickType, ProgramPointSelector, SurfaceBinder, SyntaxProposition, SyntaxTerm,
     clone_click_proposition_iteratively, proof,
 };
-use crate::kernel::{Address, ConditionTerm, OldMachineTerm, Proposition, Sort, Variable};
+use crate::kernel::{Address, OldConditionTerm, OldMachineTerm, Proposition, Sort, Variable};
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::collections::HashMap;
@@ -73,20 +73,20 @@ pub(in crate::surface) struct SurfacePropositionStorage {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct StoreReadKey {
     point: crate::kernel::ProgramPoint,
-    offset: crate::kernel::AddressOffset,
+    offset: crate::kernel::OldAddressOffset,
 }
 
 impl StoreReadKey {
     fn of(equation: &Proposition) -> Option<(Self, &Address)> {
         use crate::kernel::{AddressBase, LoadKind};
         let Some((
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 relation: CompareRelation::Equal,
                 left,
                 ..
             },
             true,
-        )) = equation.condition_native()
+        )) = equation.old_condition()
         else {
             return None;
         };
@@ -968,20 +968,20 @@ impl SurfacePropositionMap {
                 if qualified.iter().any(Option::is_some) {
                     let resolved = crate::kernel::resolve_load_variables_from_registry(kernel);
                     if let Some((
-                        ConditionTerm::Compare {
+                        OldConditionTerm::Compare {
                             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                             relation: CompareRelation::Equal,
                             left: a,
                             right: b,
                         }
-                        | ConditionTerm::Compare {
+                        | OldConditionTerm::Compare {
                             format: MachineIntegerType::Int64,
                             relation: CompareRelation::Equal,
                             left: a,
                             right: b,
                         },
                         _,
-                    )) = resolved.condition_native()
+                    )) = resolved.old_condition()
                     {
                         for (expression, term) in qualified.into_iter().zip([a, b]) {
                             if let Some(expression) = expression
@@ -1348,12 +1348,14 @@ mod store_source_tests {
 
     #[test]
     fn store_source_lookup_requires_the_exact_equation() {
-        use crate::kernel::{AddressBase, AddressOffset, LoadKind, ProgramPoint, SymbolicMemory};
+        use crate::kernel::{
+            AddressBase, LoadKind, OldAddressOffset, ProgramPoint, SymbolicMemory,
+        };
 
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let address = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Variable(Variable(1)),
+            offset: OldAddressOffset::Variable(Variable(1)),
         };
         let read = OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
@@ -1362,7 +1364,7 @@ mod store_source_tests {
         );
         let equation = |word| {
             Arc::new(Proposition::condition_is(
-                ConditionTerm::uint32_equal(read.clone(), OldMachineTerm::constant(word)),
+                OldConditionTerm::uint32_equal(read.clone(), OldMachineTerm::constant(word)),
                 true,
             ))
         };
@@ -1375,7 +1377,7 @@ mod store_source_tests {
         let mut map = SurfacePropositionMap::default();
         let other = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Variable(Variable(2)),
+            offset: OldAddressOffset::Variable(Variable(2)),
         };
         assert!(!map.record_store_source(&stored, &source, &other));
         assert!(map.record_store_source(&stored, &source, &address));
@@ -1387,14 +1389,14 @@ mod store_source_tests {
     #[test]
     fn store_sources_keep_distinct_points_with_equal_memory() {
         use crate::kernel::{
-            AddressBase, AddressOffset, ExecutionState, LoadKind, ProgramType, ProgramValue,
+            AddressBase, ExecutionState, LoadKind, OldAddressOffset, ProgramType, ProgramValue,
             VerificationSession,
         };
 
         let _session = VerificationSession::enter();
         let address = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let write = || {
             let state = ExecutionState::new().begin_function_entry_memory();
@@ -1418,7 +1420,7 @@ mod store_source_tests {
 
         let equation = |point| {
             Arc::new(Proposition::condition_is(
-                ConditionTerm::uint32_equal(
+                OldConditionTerm::uint32_equal(
                     OldMachineTerm::read_named(point, Box::new(address.clone()), LoadKind::UInt32),
                     OldMachineTerm::uint32_constant(7),
                 ),

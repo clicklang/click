@@ -88,7 +88,7 @@ pub(crate) fn same_up_to_binders(left: &Proposition, right: &Proposition) -> boo
 fn same_native_int32_fold_equality(left: &Proposition, right: &Proposition) -> bool {
     use crate::kernel::machine_integer::comparison::native_int32_fold_equality;
     let (Some((left_condition, left_truth)), Some((right_condition, right_truth))) =
-        (left.condition_native(), right.condition_native())
+        (left.old_condition(), right.old_condition())
     else {
         return false;
     };
@@ -103,8 +103,7 @@ fn same_native_int32_fold_equality(left: &Proposition, right: &Proposition) -> b
 // the identity of any loads.
 fn has_retained_machine_fold_comparison(proposition: &Proposition) -> bool {
     use crate::kernel::{IntegerTerm, integer_comparison_condition};
-    let Some((integer_comparison_condition!(left, right), _)) = proposition.condition_native()
-    else {
+    let Some((integer_comparison_condition!(left, right), _)) = proposition.old_condition() else {
         return false;
     };
     [left, right].into_iter().any(|operand| {
@@ -178,7 +177,7 @@ fn bounded(proposition: &Proposition) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{ConditionTerm, OldMachineTerm, Variable};
+    use crate::kernel::{OldConditionTerm, OldMachineTerm, Variable};
 
     #[test]
     fn a_proposition_lowered_without_consulting_facts_is_stable() {
@@ -240,9 +239,9 @@ int32 id(int32 x) {
 
     #[test]
     fn a_term_that_differs_from_its_fact_free_lowering_is_reported() {
-        let decided = Proposition::condition_is(ConditionTerm::Constant(true), true);
+        let decided = Proposition::condition_is(OldConditionTerm::Constant(true), true);
         let written = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::Variable(Variable(7))),

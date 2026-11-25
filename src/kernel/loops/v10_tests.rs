@@ -4,7 +4,7 @@ fn memory_range(base: u32, end: u32) -> MemoryRange {
     MemoryRange::new(
         Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         },
         OldMachineTerm::constant(base),
         OldMachineTerm::constant(end),

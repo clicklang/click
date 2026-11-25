@@ -63,7 +63,7 @@ struct Comparison {
     seen: HashSet<(u64, u64)>,
 }
 
-pub(super) fn conditions_equal(left: &ConditionTerm, right: &ConditionTerm) -> bool {
+pub(super) fn conditions_equal(left: &OldConditionTerm, right: &OldConditionTerm) -> bool {
     Comparison::default().condition(left, right)
 }
 
@@ -122,8 +122,8 @@ impl Comparison {
             _ => false,
         }
     }
-    fn condition(&mut self, left: &ConditionTerm, right: &ConditionTerm) -> bool {
-        use ConditionTerm as C;
+    fn condition(&mut self, left: &OldConditionTerm, right: &OldConditionTerm) -> bool {
+        use OldConditionTerm as C;
         crate::instrumentation::record_deterministic_work(1);
         match (left, right) {
             (
@@ -550,7 +550,7 @@ fn boolean_argument_word(root: &KernelTerm) -> Option<OldMachineTerm> {
     if let Some(value) = crate::kernel::BooleanOperandView::Shared(root).constant() {
         return Some(OldMachineTerm::bool_cast(
             MachineIntegerType::UInt8,
-            ConditionTerm::Constant(value),
+            OldConditionTerm::Constant(value),
         ));
     }
     if root.ty() == &KernelType::Program(ProgramType::Bool)
@@ -832,19 +832,19 @@ mod tests {
         let _session = VerificationSession::enter();
         let mut cases = Vec::new();
         for condition in [
-            ConditionTerm::Constant(false),
-            ConditionTerm::Constant(true),
-            ConditionTerm::Variable(Variable(999983)),
-            ConditionTerm::Compare {
+            OldConditionTerm::Constant(false),
+            OldConditionTerm::Constant(true),
+            OldConditionTerm::Variable(Variable(999983)),
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(OldMachineTerm::Variable(Variable(999983))),
                 right: Box::new(OldMachineTerm::constant(4)),
             },
-            ConditionTerm::BoolIf {
-                condition: Box::new(ConditionTerm::Variable(Variable(999983))),
-                then_condition: Box::new(ConditionTerm::Constant(true)),
-                else_condition: Box::new(ConditionTerm::Constant(false)),
+            OldConditionTerm::BoolIf {
+                condition: Box::new(OldConditionTerm::Variable(Variable(999983))),
+                then_condition: Box::new(OldConditionTerm::Constant(true)),
+                else_condition: Box::new(OldConditionTerm::Constant(false)),
             },
         ] {
             let root = crate::kernel::KernelTermImport::default().condition(&condition);
@@ -974,8 +974,8 @@ mod tests {
             },
         )
     }
-    fn condition(argument: KernelTerm) -> ConditionTerm {
-        ConditionTerm::Compare {
+    fn condition(argument: KernelTerm) -> OldConditionTerm {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt8,
             relation: CompareRelation::LessEqual,
             left: Box::new(OldMachineTerm::Constant {
@@ -1107,12 +1107,12 @@ mod tests {
         ));
         let left = condition(retained_leaf(7));
         let mut right = left.clone();
-        if let ConditionTerm::Compare { format, .. } = &mut right {
+        if let OldConditionTerm::Compare { format, .. } = &mut right {
             *format = MachineIntegerType::Int8;
         }
         assert!(!conditions_equal(&left, &right));
         let mut right = left.clone();
-        if let ConditionTerm::Compare { relation, .. } = &mut right {
+        if let OldConditionTerm::Compare { relation, .. } = &mut right {
             *relation = CompareRelation::LessThan;
         }
         assert!(!conditions_equal(&left, &right));
@@ -1214,7 +1214,7 @@ mod tests {
     #[test]
     fn retained_syntax_preserves_captured_and_pointer_index_states() {
         use crate::kernel::{
-            Address, AddressOffset, LoadKind, OldPointer, ProgramType, SymbolicMemory, Variable,
+            Address, LoadKind, OldAddressOffset, OldPointer, ProgramType, SymbolicMemory, Variable,
         };
         let _session = VerificationSession::enter();
         let memory = SymbolicMemory::new();
@@ -1226,7 +1226,7 @@ mod tests {
             OldPointer::new(
                 Address {
                     base: "indexed".into(),
-                    offset: AddressOffset::Int32Scaled {
+                    offset: OldAddressOffset::Int32Scaled {
                         value: SharedMachineIntegerTerm::index(
                             MachineIntegerType::Int32,
                             OldMachineTerm::read_named(

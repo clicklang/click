@@ -98,7 +98,7 @@ fn preparing_a_reserved_fold_leaves_unrelated_caller_heads_unmaterialized() {
     )]);
     let heap = |id| Address {
         base: AddressBase::Heap(id),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let cell =
         |id| ResourceFact::own_composite("cell".into(), vec![ProgramValue::pointer(heap(id))]);
@@ -444,7 +444,7 @@ fn returning_one_borrowed_owner_does_not_rebuild_its_memory_block() {
 fn call_borrow_restoration_ignores_ambient_aliases_and_frame() {
     let symbolic = |id| Address {
         base: AddressBase::Symbolic(Variable(id)),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let own = |base| ResourceFact::own_memory(MemoryRange::new(base, 0u32.into(), 4u32.into()));
     for axis in ["aliases", "frame"] {
@@ -456,7 +456,10 @@ fn call_borrow_restoration_ignores_ambient_aliases_and_frame() {
                 PureFactContext::new(),
                 |facts, index| {
                     facts.assume_condition(
-                        ConditionTerm::address_equal(selected.clone(), symbolic(882_000 + index)),
+                        OldConditionTerm::address_equal(
+                            selected.clone(),
+                            symbolic(882_000 + index),
+                        ),
                         true,
                     )
                 },
@@ -522,13 +525,13 @@ fn check_produced_call_return_lowering(axis: &str, overlap: bool) {
         let selected = symbolic(8_910_000);
         let neighbor = symbolic(8_920_000);
         let mut facts = PureFactContext::new().assume_condition(
-            ConditionTerm::address_equal(selected.clone(), neighbor.clone()),
+            OldConditionTerm::address_equal(selected.clone(), neighbor.clone()),
             true,
         );
         for index in 1..count {
             if axis != "owners" {
                 facts = facts.assume_condition(
-                    ConditionTerm::address_equal(
+                    OldConditionTerm::address_equal(
                         if axis == "aliases" {
                             selected.clone()
                         } else {

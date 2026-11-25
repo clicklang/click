@@ -217,7 +217,7 @@ mod certificate_tests {
     fn local_index_surface_candidates_reject_nested_loads() {
         let pointer = Address {
             base: "data".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let load = OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
@@ -251,7 +251,7 @@ mod certificate_tests {
             );
         }
         let proposition = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(term),

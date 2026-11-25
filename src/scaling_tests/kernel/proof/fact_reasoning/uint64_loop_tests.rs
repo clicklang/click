@@ -11,14 +11,16 @@ fn uint64_successor_certificates_require_the_strict_guard_and_ignore_unrelated_f
     let i = OldMachineTerm::Variable(Variable(980001));
     let n = OldMachineTerm::Variable(Variable(980002));
     let next = OldMachineTerm::uint64_add(i.clone(), OldMachineTerm::uint64_constant(1));
-    let guard =
-        Proposition::condition_is(ConditionTerm::uint64_less_than(i.clone(), n.clone()), true);
+    let guard = Proposition::condition_is(
+        OldConditionTerm::uint64_less_than(i.clone(), n.clone()),
+        true,
+    );
     let successor = Proposition::condition_is(
-        ConditionTerm::uint64_less_equal(next.clone(), n.clone()),
+        OldConditionTerm::uint64_less_equal(next.clone(), n.clone()),
         true,
     );
     let descent = Proposition::condition_is(
-        ConditionTerm::uint64_less_than(
+        OldConditionTerm::uint64_less_than(
             OldMachineTerm::uint64_subtract(n.clone(), next),
             OldMachineTerm::uint64_subtract(n.clone(), i.clone()),
         ),
@@ -29,7 +31,7 @@ fn uint64_successor_certificates_require_the_strict_guard_and_ignore_unrelated_f
         let mut premises = vec![guard.clone()];
         premises.extend((0..size).map(|k| {
             Proposition::condition_is(
-                ConditionTerm::uint64_less_than(
+                OldConditionTerm::uint64_less_than(
                     OldMachineTerm::Variable(Variable(990000 + k)),
                     OldMachineTerm::uint64_constant(17),
                 ),
@@ -53,8 +55,10 @@ fn uint64_successor_certificates_require_the_strict_guard_and_ignore_unrelated_f
         samples.iter().all(|work| *work <= samples[0]),
         "{samples:?}"
     );
-    let weak =
-        Proposition::condition_is(ConditionTerm::uint64_less_equal(i.clone(), n.clone()), true);
+    let weak = Proposition::condition_is(
+        OldConditionTerm::uint64_less_equal(i.clone(), n.clone()),
+        true,
+    );
     let facts = crate::kernel::proof::PureFactStore::from_ordered(std::slice::from_ref(&weak));
     assert!(normalize_using_conditions(&successor, std::slice::from_ref(&weak), &facts).is_err());
     assert!(normalize_using_conditions(&descent, std::slice::from_ref(&weak), &facts).is_err());
@@ -73,17 +77,19 @@ fn uint64_truncation_certificates_require_full_width_bounds() {
     let n = OldMachineTerm::Variable(Variable(981012));
     let low_i = OldMachineTerm::uint32_from_64(i.clone());
     let low_n = OldMachineTerm::uint32_from_64(n.clone());
-    let guard =
-        Proposition::condition_is(ConditionTerm::uint64_less_than(i.clone(), n.clone()), true);
+    let guard = Proposition::condition_is(
+        OldConditionTerm::uint64_less_than(i.clone(), n.clone()),
+        true,
+    );
     let bound = Proposition::condition_is(
-        ConditionTerm::uint64_less_equal(
+        OldConditionTerm::uint64_less_equal(
             n.clone(),
             OldMachineTerm::uint64_constant(i32::MAX as u64),
         ),
         true,
     );
     let goal = Proposition::condition_is(
-        ConditionTerm::signed_less_than(low_i.clone(), low_n.clone()),
+        OldConditionTerm::signed_less_than(low_i.clone(), low_n.clone()),
         true,
     );
     let mut samples = Vec::new();
@@ -91,7 +97,7 @@ fn uint64_truncation_certificates_require_full_width_bounds() {
         let mut available = vec![guard.clone(), bound.clone()];
         available.extend((0..size).map(|k| {
             Proposition::condition_is(
-                ConditionTerm::uint64_less_equal(
+                OldConditionTerm::uint64_less_equal(
                     OldMachineTerm::Variable(Variable(982000 + k)),
                     OldMachineTerm::uint64_constant(1000),
                 ),
@@ -119,30 +125,30 @@ fn uint64_truncation_certificates_require_full_width_bounds() {
         "{samples:?}"
     );
     let too_wide = Proposition::condition_is(
-        ConditionTerm::uint64_less_equal(n.clone(), OldMachineTerm::uint64_constant(1u64 << 32)),
+        OldConditionTerm::uint64_less_equal(n.clone(), OldMachineTerm::uint64_constant(1u64 << 32)),
         true,
     );
     let facts =
         crate::kernel::proof::PureFactStore::from_ordered(&[guard.clone(), too_wide.clone()]);
     assert!(normalize_using_conditions(&goal, &[guard, too_wide], &facts).is_err());
 
-    let full_equal = Proposition::condition_is(ConditionTerm::int64_equal(i.clone(), n), true);
-    let low_equal = Proposition::condition_is(ConditionTerm::equal(low_i.clone(), low_n), true);
+    let full_equal = Proposition::condition_is(OldConditionTerm::int64_equal(i.clone(), n), true);
+    let low_equal = Proposition::condition_is(OldConditionTerm::equal(low_i.clone(), low_n), true);
     let facts =
         crate::kernel::proof::PureFactStore::from_ordered(std::slice::from_ref(&full_equal));
     normalize_using_conditions(&low_equal, &[full_equal], &facts).unwrap();
     let bound = Proposition::condition_is(
-        ConditionTerm::uint64_less_equal(i.clone(), OldMachineTerm::uint64_constant(1000)),
+        OldConditionTerm::uint64_less_equal(i.clone(), OldMachineTerm::uint64_constant(1000)),
         true,
     );
     let facts = crate::kernel::proof::PureFactStore::from_ordered(std::slice::from_ref(&bound));
     for goal in [
-        ConditionTerm::signed_less_equal(OldMachineTerm::constant(0), low_i.clone()),
-        ConditionTerm::signed_less_equal(low_i, OldMachineTerm::constant(1000)),
+        OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), low_i.clone()),
+        OldConditionTerm::signed_less_equal(low_i, OldMachineTerm::constant(1000)),
     ] {
         // Lower-bound certificates need the explicit signed-range guard.
         let signed_bound = Proposition::condition_is(
-            ConditionTerm::uint64_less_equal(
+            OldConditionTerm::uint64_less_equal(
                 i.clone(),
                 OldMachineTerm::uint64_constant(i32::MAX as u64),
             ),
@@ -162,7 +168,7 @@ fn retained_conditional_sums_normalize_from_selected_conditions() {
     use crate::kernel::proof::PureFactStore;
     let selected_index = OldMachineTerm::Variable(Variable(994_001));
     let guard = Proposition::condition_is(
-        ConditionTerm::uint64_equal(selected_index.clone(), OldMachineTerm::uint64_constant(19)),
+        OldConditionTerm::uint64_equal(selected_index.clone(), OldMachineTerm::uint64_constant(19)),
         true,
     );
     let high = 10_000_000_000_000_000_000u64;
@@ -171,7 +177,7 @@ fn retained_conditional_sums_normalize_from_selected_conditions() {
         let mut sum = OldMachineTerm::uint64_constant(0);
         for i in 0..size {
             let term = OldMachineTerm::if_then_else(
-                ConditionTerm::uint64_equal(
+                OldConditionTerm::uint64_equal(
                     selected_index.clone(),
                     OldMachineTerm::uint64_constant(i),
                 ),
@@ -180,7 +186,7 @@ fn retained_conditional_sums_normalize_from_selected_conditions() {
             );
             sum = OldMachineTerm::uint64_add(sum, term);
         }
-        let native = ConditionTerm::uint64_equal(sum, OldMachineTerm::uint64_constant(high));
+        let native = OldConditionTerm::uint64_equal(sum, OldMachineTerm::uint64_constant(high));
         let retained = retained_arithmetic_comparison(&native).unwrap();
         let facts = PureFactStore::from_ordered(std::slice::from_ref(&guard));
         let goal = Proposition::condition_is(retained, true);
@@ -206,7 +212,7 @@ fn retained_conditional_sums_normalize_from_selected_conditions() {
             .is_err()
         );
         let wrong_guard = Proposition::condition_is(
-            ConditionTerm::uint64_equal(
+            OldConditionTerm::uint64_equal(
                 selected_index.clone(),
                 OldMachineTerm::uint64_constant(18),
             ),

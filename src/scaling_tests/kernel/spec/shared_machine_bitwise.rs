@@ -89,7 +89,7 @@ fn retained_tag_facts_use_constant_work_in_growing_contexts() {
         for n in 0..size {
             for variable in [Variable(995612 + n), Variable(995610)] {
                 context = context.assume_condition(
-                    ConditionTerm::unsigned_less_equal(
+                    OldConditionTerm::unsigned_less_equal(
                         OldMachineTerm::Variable(variable),
                         OldMachineTerm::uint32_constant(1000 + n as u32),
                     ),
@@ -99,11 +99,11 @@ fn retained_tag_facts_use_constant_work_in_growing_contexts() {
         }
         context = context
             .assume_condition(
-                ConditionTerm::signed_less_equal(OldMachineTerm::constant(0), tag.clone()),
+                OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), tag.clone()),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_equal(tag.clone(), OldMachineTerm::constant(1)),
+                OldConditionTerm::signed_less_equal(tag.clone(), OldMachineTerm::constant(1)),
                 true,
             );
         let inner = OldMachineTerm::uint64_bitwise_or(word, OldMachineTerm::uint64_from_int32(tag));

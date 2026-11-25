@@ -26,7 +26,7 @@ fn intrinsic_format_queries_retain_growing_shared_prefixes() {
                 )
                 .into();
                 let proposition = Proposition::condition_is(
-                    ConditionTerm::IntegerLessEqual(
+                    OldConditionTerm::IntegerLessEqual(
                         value,
                         IntegerTerm::constant_i64(i64::from(i32::MAX)).into(),
                     ),

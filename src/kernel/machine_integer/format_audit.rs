@@ -225,12 +225,12 @@ mod tests {
         );
         let signed = capture(|| {
             let _ = crate::kernel::int32(OldMachineTerm::add(a.clone(), b.clone()));
-            let _ = crate::kernel::ConditionTerm::equal(a.clone(), b.clone());
+            let _ = crate::kernel::OldConditionTerm::equal(a.clone(), b.clone());
         });
         assert!(signed.is_empty(), "{signed:?}");
         let lines = capture(|| {
             let _ = crate::kernel::uint32(OldMachineTerm::add(a.clone(), b.clone()));
-            let _ = crate::kernel::ConditionTerm::uint32_equal(a.clone(), b.clone());
+            let _ = crate::kernel::OldConditionTerm::uint32_equal(a.clone(), b.clone());
         });
         assert_eq!(kinds(&lines), vec!["uint32-operator-at-int32"], "{lines:?}");
     }

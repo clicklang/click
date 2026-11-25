@@ -136,7 +136,7 @@ fn pure_membership_visits_only_the_selected_sequence() {
             let goal = Proposition::Not(Box::new(proposition));
             let ambient = (0..size).fold(PureFactContext::new(), |facts, n| {
                 facts.assume_condition(
-                    ConditionTerm::equal(
+                    OldConditionTerm::equal(
                         OldMachineTerm::Variable(Variable(1000 + n as u64)),
                         OldMachineTerm::constant(0),
                     ),

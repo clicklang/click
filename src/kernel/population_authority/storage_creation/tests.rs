@@ -29,7 +29,7 @@ fn resolved_malloc(pending: &ExecutionState, success: bool) -> ExecutionState {
         panic!("pending allocation has a result pointer");
     };
     let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
-        ConditionTerm::address_equal(pointer.address().clone(), Address::null()),
+        OldConditionTerm::address_equal(pointer.address().clone(), Address::null()),
         !success,
     ));
     crate::kernel::resolve_pending_heap_allocations(pending, &assumptions)
@@ -388,7 +388,7 @@ fn member_description(block: AddressBase) -> ResourceDescription {
         vec![
             ProgramValue::pointer(Address {
                 base: block,
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             })
             .into(),
         ]
@@ -404,7 +404,7 @@ fn opaque_helper_import_has_no_count_and_checks_each_member_exchange() {
         vec![
             ProgramValue::pointer(Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Variable(Variable(940_110)),
+                offset: OldAddressOffset::Variable(Variable(940_110)),
             })
             .into(),
         ]
@@ -491,7 +491,7 @@ fn opaque_helper_import_has_no_count_and_checks_each_member_exchange() {
         vec![
             ProgramValue::pointer(Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Variable(Variable(940_111)),
+                offset: OldAddressOffset::Variable(Variable(940_111)),
             })
             .into(),
         ]
@@ -589,7 +589,7 @@ fn opaque_numeric_batch_composes_with_units_without_fabricating_custody() {
         .unwrap();
     let initial = entry.observe_symbolic(&description).unwrap();
     let empty = PureFactContext::new().assume_condition(
-        crate::kernel::ConditionTerm::equal(
+        crate::kernel::OldConditionTerm::equal(
             initial.entry_count.clone(),
             OldMachineTerm::constant(0),
         ),
@@ -664,7 +664,7 @@ fn field_quantity_moves_and_consumes_only_the_owned_numerical_batch() {
     let description = member_description(AddressBase::ExternalArgument);
     let quantity = OldMachineTerm::Variable(Variable(940_140));
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::equal(quantity.clone(), OldMachineTerm::constant(2)),
+        OldConditionTerm::equal(quantity.clone(), OldMachineTerm::constant(2)),
         true,
     );
     let entry = CreationEvents::new()
@@ -691,7 +691,7 @@ fn field_quantity_moves_and_consumes_only_the_owned_numerical_batch() {
         CreationRefusal::MissingMembers,
     );
     let wrong = PureFactContext::new().assume_condition(
-        ConditionTerm::equal(quantity.clone(), OldMachineTerm::constant(3)),
+        OldConditionTerm::equal(quantity.clone(), OldMachineTerm::constant(3)),
         true,
     );
     assert_eq!(
@@ -765,7 +765,7 @@ fn field_quantity_cannot_spend_a_global_count_without_member_custody() {
     let description = member_description(AddressBase::ExternalArgument);
     let quantity = OldMachineTerm::Variable(Variable(940_141));
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::equal(quantity.clone(), OldMachineTerm::constant(2)),
+        OldConditionTerm::equal(quantity.clone(), OldMachineTerm::constant(2)),
         true,
     );
     let authority_only = CreationEvents::new()
@@ -823,7 +823,7 @@ fn field_quantity_batch_work_ignores_quantity_and_unrelated_facts() {
         let mut facts = PureFactContext::new();
         for index in 0..unrelated {
             facts = facts.assume_condition(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     OldMachineTerm::Variable(Variable(950_000 + index)),
                     OldMachineTerm::constant(index as u32),
                 ),
@@ -831,7 +831,7 @@ fn field_quantity_batch_work_ignores_quantity_and_unrelated_facts() {
             );
         }
         facts = facts.assume_condition(
-            ConditionTerm::equal(quantity.clone(), OldMachineTerm::constant(amount)),
+            OldConditionTerm::equal(quantity.clone(), OldMachineTerm::constant(amount)),
             true,
         );
         let (returned, measured) = crate::instrumentation::measure_deterministic_work(|| {
@@ -871,7 +871,7 @@ fn opaque_symbolic_batch_has_one_checked_exchange_and_current_custody() {
     // compose with unit exchanges, covered by the separate numerical test.
     let quantity = OldMachineTerm::Variable(Variable(940_120));
     let assumptions = PureFactContext::new().assume_condition(
-        crate::kernel::ConditionTerm::signed_greater_equal(
+        crate::kernel::OldConditionTerm::signed_greater_equal(
             quantity.clone(),
             OldMachineTerm::constant(0),
         ),
@@ -942,7 +942,7 @@ fn opaque_symbolic_batch_call_custody_roundtrips_independently_of_authority() {
     let description = member_description(AddressBase::ExternalArgument);
     let quantity = OldMachineTerm::Variable(Variable(940_130));
     let assumptions = PureFactContext::new().assume_condition(
-        crate::kernel::ConditionTerm::signed_greater_equal(
+        crate::kernel::OldConditionTerm::signed_greater_equal(
             quantity.clone(),
             OldMachineTerm::constant(0),
         ),
@@ -1083,11 +1083,11 @@ fn opaque_symbolic_birth_returns_exact_batch_without_moving_framed_population() 
     let quantity = OldMachineTerm::Variable(Variable(940_133));
     let assumptions = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_greater_equal(quantity.clone(), OldMachineTerm::constant(0)),
+            OldConditionTerm::signed_greater_equal(quantity.clone(), OldMachineTerm::constant(0)),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_add_overflows(entry_count.clone(), quantity.clone()),
+            OldConditionTerm::signed_add_overflows(entry_count.clone(), quantity.clone()),
             false,
         );
     let entry = CreationEvents::new()
@@ -1233,7 +1233,7 @@ fn independent_opaque_symbolic_populations_keep_their_own_counts_and_members() {
 fn two_authority_control_import_checks_each_custody_and_scope() {
     let pointer = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Variable(Variable(940_112)),
+        offset: OldAddressOffset::Variable(Variable(940_112)),
     };
     let selected = ResourceFact::own(Resource::Composite {
         name: "control".into(),
@@ -1436,7 +1436,7 @@ fn two_authority_control_import_checks_each_custody_and_scope() {
     let mut wrong_args = member.arguments().to_vec();
     wrong_args[0] = ProgramValue::pointer(Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(912),
+        offset: OldAddressOffset::Constant(912),
     })
     .into();
     let wrong = ResourceFact::own(Resource::Composite {
@@ -1471,7 +1471,7 @@ fn two_authority_control_import_checks_each_custody_and_scope() {
 fn checked_control_import_observes_only_its_exact_entry_population() {
     let pointer = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Variable(Variable(940_112)),
+        offset: OldAddressOffset::Variable(Variable(940_112)),
     };
     let selected = ResourceFact::own(Resource::Composite {
         name: "control".into(),
@@ -1575,7 +1575,7 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
         .unwrap();
     let retirement_assumptions =
         PureFactContext::new().assume_proposition(Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(spent.observe_symbolic(&description).unwrap().entry_count),
@@ -1782,7 +1782,7 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
         vec![
             ProgramValue::pointer(Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Variable(Variable(940_113)),
+                offset: OldAddressOffset::Variable(Variable(940_113)),
             })
             .into(),
         ]
@@ -1938,7 +1938,7 @@ fn checked_member_exchange_requires_exact_field_free_anchor_and_holder() {
         vec![
             ProgramValue::pointer(Address {
                 base: block.clone(),
-                offset: AddressOffset::Constant(4),
+                offset: OldAddressOffset::Constant(4),
             })
             .into(),
         ]
@@ -2182,7 +2182,7 @@ fn checked_empty_retirement_survives_free_but_not_a_new_lifetime() {
         vec![
             ProgramValue::pointer(Address {
                 base: block.clone(),
-                offset: AddressOffset::Constant(4),
+                offset: OldAddressOffset::Constant(4),
             })
             .into(),
         ]
@@ -2218,7 +2218,7 @@ fn opaque_retirement_requires_global_count_proof_not_local_exhaustion() {
         CreationRefusal::UnknownTotal
     );
     let wrong_total = PureFactContext::new().assume_proposition(Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(entry_count.clone()),
@@ -2232,7 +2232,7 @@ fn opaque_retirement_requires_global_count_proof_not_local_exhaustion() {
             .is_err()
     );
     let right_total = PureFactContext::new().assume_proposition(Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(entry_count),
@@ -2288,7 +2288,7 @@ fn imported_symbolic_retirement_requires_spent_custody_and_global_zero() {
     let quantity = OldMachineTerm::Variable(Variable(980_210));
     let total = OldMachineTerm::Variable(Variable(980_211));
     let assumptions = PureFactContext::new().assume_condition(
-        crate::kernel::ConditionTerm::signed_greater_equal(
+        crate::kernel::OldConditionTerm::signed_greater_equal(
             quantity.clone(),
             OldMachineTerm::constant(0),
         ),
@@ -2304,7 +2304,7 @@ fn imported_symbolic_retirement_requires_spent_custody_and_global_zero() {
         )
         .unwrap();
     let total_zero = assumptions.clone().assume_condition(
-        crate::kernel::ConditionTerm::Compare {
+        crate::kernel::OldConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::Int32,
             relation: crate::kernel::CompareRelation::Equal,
             left: Box::new(total.clone()),
@@ -2331,7 +2331,7 @@ fn imported_symbolic_retirement_requires_spent_custody_and_global_zero() {
         Err(CreationRefusal::UnknownTotal)
     );
     let all_owned = assumptions.assume_condition(
-        crate::kernel::ConditionTerm::Compare {
+        crate::kernel::OldConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::Int32,
             relation: crate::kernel::CompareRelation::Equal,
             left: Box::new(total),
@@ -2537,7 +2537,10 @@ fn count_uses_its_written_anchor_not_a_proven_alias() {
     };
     let alias = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(9_850_100)), 4),
+        offset: OldAddressOffset::scaled_int32_node(
+            OldMachineTerm::Variable(Variable(9_850_100)),
+            4,
+        ),
     };
     let count_of = |pointer: OldPointer| SpecExpression::CountedResourceCount {
         name: "reference".into(),
@@ -2563,7 +2566,7 @@ fn count_uses_its_written_anchor_not_a_proven_alias() {
         );
     Arc::make_mut(&mut state.population_effects).creation = Some(events);
     let equal = PureFactContext::new().assume_condition(
-        ConditionTerm::PointerEqual(
+        OldConditionTerm::PointerEqual(
             Box::new(OldPointer::new(alias, ProgramType::Int32Pointer)),
             Box::new(anchor.clone()),
         ),
@@ -2686,7 +2689,7 @@ mod wildcard_scope_tests {
         let mut arguments = vec![
             ProgramValue::pointer(Address {
                 base: block.clone(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             })
             .into(),
         ];
@@ -2706,7 +2709,7 @@ mod wildcard_scope_tests {
     fn opaque_scope(index: u32) -> (ResourceDescription, ResourceDescription) {
         let anchor = ProgramValue::pointer(Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(i64::from(index) * 4),
+            offset: OldAddressOffset::Constant(i64::from(index) * 4),
         });
         let scope = ResourceDescription::new(
             "slot".into(),
@@ -2916,7 +2919,7 @@ mod wildcard_scope_tests {
             .unwrap();
         let count = entry.observe_symbolic(&scope).unwrap().entry_count;
         let bounds = PureFactContext::new().assume_condition(
-            ConditionTerm::signed_greater_equal(
+            OldConditionTerm::signed_greater_equal(
                 OldMachineTerm::constant(i32::MAX as u32 - 3),
                 count,
             ),
@@ -3014,7 +3017,7 @@ mod wildcard_scope_tests {
         assert_eq!(count.entry_owned_members, 0);
         assert!(!entry.owns_imported_population_member(&member));
         let bounded = PureFactContext::new().assume_condition(
-            crate::kernel::ConditionTerm::signed_add_overflows(
+            crate::kernel::OldConditionTerm::signed_add_overflows(
                 count.entry_count.clone(),
                 OldMachineTerm::constant(1),
             ),
@@ -3034,7 +3037,7 @@ mod wildcard_scope_tests {
         assert!(birth(&entry, &member, &PureFactContext::new()).is_err());
         let counter = OldMachineTerm::Variable(Variable(960_720));
         let counter_bound = PureFactContext::new().assume_condition(
-            ConditionTerm::signed_less_than(
+            OldConditionTerm::signed_less_than(
                 counter.clone(),
                 OldMachineTerm::constant(i32::MAX as u32),
             ),
@@ -3044,12 +3047,12 @@ mod wildcard_scope_tests {
         // equality transports its bound without scanning ambient premises.
         assert!(birth(&entry, &member, &counter_bound).is_err());
         let equal_counter = counter_bound.assume_condition(
-            ConditionTerm::equal(count.entry_count.clone(), counter),
+            OldConditionTerm::equal(count.entry_count.clone(), counter),
             true,
         );
         assert!(birth(&entry, &member, &equal_counter).is_ok());
         let at_max = PureFactContext::new().assume_condition(
-            ConditionTerm::equal(
+            OldConditionTerm::equal(
                 count.entry_count.clone(),
                 OldMachineTerm::constant(i32::MAX as u32),
             ),
@@ -3258,7 +3261,7 @@ mod wildcard_scope_tests {
         let mut arguments = description(&pool, &[0]).arguments().to_vec();
         let pointer = ProgramValue::pointer(Address {
             base: AddressBase::Heap(950_005),
-            offset: AddressOffset::Constant(4),
+            offset: OldAddressOffset::Constant(4),
         });
         arguments[1] = pointer.clone().into();
         let member = ResourceDescription::new(
@@ -3296,11 +3299,14 @@ mod wildcard_scope_tests {
         let quantity = OldMachineTerm::Variable(Variable::allocate_fresh().unwrap());
         let facts = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_greater_equal(quantity.clone(), OldMachineTerm::constant(0)),
+                OldConditionTerm::signed_greater_equal(
+                    quantity.clone(),
+                    OldMachineTerm::constant(0),
+                ),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_equal(
+                OldConditionTerm::signed_less_equal(
                     quantity.clone(),
                     OldMachineTerm::constant(i32::MAX as u32),
                 ),
@@ -3369,7 +3375,7 @@ fn retired_symbolic_batch_receipt_survives_helper_return_without_live_rights() {
     let description = member_description(AddressBase::ExternalArgument);
     let quantity = OldMachineTerm::Variable(Variable(980_220));
     let assumptions = PureFactContext::new().assume_condition(
-        crate::kernel::ConditionTerm::signed_greater_equal(
+        crate::kernel::OldConditionTerm::signed_greater_equal(
             quantity.clone(),
             OldMachineTerm::constant(0),
         ),
@@ -3519,7 +3525,7 @@ fn local_named_wildcard_members_count_occurrences_not_field_values() {
     let block = AddressBase::Heap(940_502);
     let anchor = ProgramValue::pointer(Address {
         base: block.clone(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     });
     let schema = ResourceFieldSchema::new(vec![(
         "serial".into(),
@@ -3669,7 +3675,7 @@ fn authority_contract_entry_retains_only_authenticated_member_bounds() {
             ProgramValue::typed_pointer(
                 Address {
                     base: block,
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 },
                 ProgramType::Int32Pointer,
             )
@@ -3755,13 +3761,13 @@ fn authority_contract_entry_retains_only_authenticated_member_bounds() {
         let lower_bound = Proposition::condition_is(
             // `states` is an exact lookup. Match the count evaluator's
             // canonical orientation, rather than asking it to prove `1 <= n`.
-            ConditionTerm::signed_greater_equal(count.clone(), OldMachineTerm::constant(1)),
+            OldConditionTerm::signed_greater_equal(count.clone(), OldMachineTerm::constant(1)),
             true,
         );
         assert_eq!(entry.states(&lower_bound), tracked_quantity == 1);
         assert!(
             !entry.states(&Proposition::condition_is(
-                ConditionTerm::equal(count.clone(), OldMachineTerm::constant(1)),
+                OldConditionTerm::equal(count.clone(), OldMachineTerm::constant(1)),
                 true
             )),
             "one locally owned member does not imply an exact global count"
@@ -3886,7 +3892,7 @@ fn check_named_authority_import(arity: Option<usize>) {
             AlgebraicValue::Program(ProgramValue::typed_pointer(
                 Address {
                     base: AddressBase::ExternalArgument,
-                    offset: AddressOffset::Constant(4),
+                    offset: OldAddressOffset::Constant(4),
                 },
                 ProgramType::Int32Pointer,
             ))
@@ -4045,11 +4051,11 @@ fn exact_symbolic_birth_does_not_infer_custody_from_bounds() {
         .unwrap();
     let bounds = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_greater_equal(quantity.clone(), OldMachineTerm::constant(0)),
+            OldConditionTerm::signed_greater_equal(quantity.clone(), OldMachineTerm::constant(0)),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_greater_equal(OldMachineTerm::constant(10), quantity.clone()),
+            OldConditionTerm::signed_greater_equal(OldMachineTerm::constant(10), quantity.clone()),
             true,
         );
     let first = entry
@@ -4072,7 +4078,7 @@ fn exact_symbolic_birth_does_not_infer_custody_from_bounds() {
         CreationRefusal::InvalidQuantity
     );
     let negative = PureFactContext::new().assume_condition(
-        ConditionTerm::equal(quantity.clone(), OldMachineTerm::constant(u32::MAX)),
+        OldConditionTerm::equal(quantity.clone(), OldMachineTerm::constant(u32::MAX)),
         true,
     );
     assert!(
@@ -4117,7 +4123,7 @@ fn numeric_member_birth_overflow_is_not_missing_custody() {
 fn imported_named_exact_counts_refuse_unresolved_neighbor_effects() {
     let anchor = ProgramValue::pointer(Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     });
     let schema = ResourceFieldSchema::new(vec![(
         "serial".into(),

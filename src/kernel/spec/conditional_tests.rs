@@ -13,7 +13,7 @@ fn variable(format: MachineIntegerType, id: u64) -> SpecValue {
         Variable(id),
     ))
 }
-fn join(condition: &ConditionTerm, left: &SpecValue, right: &SpecValue) -> SpecValue {
+fn join(condition: &OldConditionTerm, left: &SpecValue, right: &SpecValue) -> SpecValue {
     SpecValue::conditional(
         &Proposition::condition_is(condition.clone(), true),
         left,
@@ -47,7 +47,7 @@ fn conditional_arms_keep_shared_identity_and_native_observations() {
             .value,
         );
         let right = variable(format, 998101);
-        let guard = ConditionTerm::Variable(Variable(998102));
+        let guard = OldConditionTerm::Variable(Variable(998102));
         let native = conditional_spec_value(
             &Proposition::condition_is(guard.clone(), true),
             left.clone().into_native(),
@@ -81,7 +81,7 @@ fn opaque_guard_observations_keep_identity_without_exporting_arms() {
     let _session = VerificationSession::enter();
     let format = MachineIntegerType::UInt64;
     let guard = |id| {
-        ConditionTerm::address_equal(
+        OldConditionTerm::address_equal(
             Address::symbolic(Variable(id)),
             Address::symbolic(Variable(998110)),
         )
@@ -100,7 +100,7 @@ fn conditional_join_preserves_mixed_word_rules_and_bool_refusals() {
     let _session = VerificationSession::enter();
     let left = variable(MachineIntegerType::Int32, 998120);
     let right = variable(MachineIntegerType::UInt32, 998121);
-    let guard = ConditionTerm::Variable(Variable(998122));
+    let guard = OldConditionTerm::Variable(Variable(998122));
     let result = join(&guard, &left, &right);
     assert_eq!(result.program_type(), ProgramType::UInt32);
     let expected = conditional_spec_value(
@@ -163,7 +163,7 @@ fn conditional_evaluation_keeps_guarded_domains_and_ignores_ambient_truth() {
     assert_eq!(retained.value.observe(), native.value.observe());
     assert_eq!(retained.obligations, native.obligations);
     assert!(!retained.obligations.is_empty());
-    let condition = ConditionTerm::machine_compare(
+    let condition = OldConditionTerm::machine_compare(
         MachineIntegerType::Int32,
         CompareRelation::GreaterThan,
         OldMachineTerm::Variable(Variable(998130)),
@@ -189,7 +189,7 @@ mod scaling_tests {
 fn independent_opaque_call_guard_imports_have_the_same_observation() {
     let _session = VerificationSession::enter();
     let format = MachineIntegerType::Int32;
-    let guard = ConditionTerm::equal(
+    let guard = OldConditionTerm::equal(
         OldMachineTerm::ClickFunctionApplication {
             name: "flag".into(),
             arguments: vec![],
@@ -211,7 +211,7 @@ fn exact_rewrites_keep_opaque_conditional_observation_identity() {
     use crate::kernel::proof::term_rewrite::TermRewrite;
     let _session = VerificationSession::enter();
     let format = MachineIntegerType::Int32;
-    let guard = ConditionTerm::address_equal(
+    let guard = OldConditionTerm::address_equal(
         Address::symbolic(Variable(998205)),
         Address::symbolic(Variable(998206)),
     );
@@ -227,11 +227,11 @@ fn exact_rewrites_keep_opaque_conditional_observation_identity() {
         assert_eq!(current, source);
     }
     let goal = Proposition::condition_is(
-        ConditionTerm::integer_less_equal(IntegerTerm::constant(1.into()), source),
+        OldConditionTerm::integer_less_equal(IntegerTerm::constant(1.into()), source),
         true,
     );
     let unrelated = Proposition::condition_is(
-        ConditionTerm::equal(
+        OldConditionTerm::equal(
             OldMachineTerm::Variable(Variable(998207)),
             OldMachineTerm::constant(99),
         ),
@@ -261,7 +261,7 @@ fn pointer_conditional_handoffs_keep_selected_roots_metadata_and_refusals() {
             ),
         )),
     ));
-    let condition = Proposition::condition_is(ConditionTerm::Variable(Variable(1026101)), true);
+    let condition = Proposition::condition_is(OldConditionTerm::Variable(Variable(1026101)), true);
     for left in [native.clone(), shared.clone()] {
         for right in [
             other_payload.clone(),

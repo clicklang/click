@@ -6,7 +6,7 @@ use crate::kernel::proof::fact_reasoning::normalize_using_conditions;
 fn specialized_normalization_uses_only_selected_inputs_as_related_and_unrelated_facts_grow() {
     let v = |n| IntegerTerm::var(crate::kernel::Variable(n));
     let le = |a: IntegerTerm, b: IntegerTerm| {
-        Proposition::condition_is(ConditionTerm::IntegerLessEqual(a.into(), b.into()), true)
+        Proposition::condition_is(OldConditionTerm::IntegerLessEqual(a.into(), b.into()), true)
     };
     let (a, b, f) = (v(877001), v(877002), v(877003));
     let selected = vec![
@@ -47,12 +47,12 @@ fn shifted_one_uses_one_cited_bound_as_related_and_unrelated_bounds_grow() {
     let count = word(879001);
     let bound = |value, limit| {
         Proposition::condition_is(
-            ConditionTerm::unsigned_less_than(value, OldMachineTerm::constant(limit)),
+            OldConditionTerm::unsigned_less_than(value, OldMachineTerm::constant(limit)),
             true,
         )
     };
     let goal = Proposition::condition_is(
-        ConditionTerm::machine_compare(
+        OldConditionTerm::machine_compare(
             MachineIntegerType::UInt32,
             CompareRelation::Equal,
             OldMachineTerm::uint32_shift_left(OldMachineTerm::constant(1), count.clone()),
@@ -100,7 +100,7 @@ fn float_literal_operations_check_one_cited_bound_as_ambient_bounds_grow() {
     let x = OldMachineTerm::var(Variable(880001));
     let bound = |value, limit: f32| {
         Proposition::condition_is(
-            ConditionTerm::float32_compare(
+            OldConditionTerm::float32_compare(
                 value,
                 OldMachineTerm::constant(limit.to_bits()),
                 ComparisonOperator::GreaterEqual,
@@ -165,7 +165,7 @@ fn float_pair_checks_two_cited_bounds_as_ambient_bounds_grow() {
     let y = OldMachineTerm::var(Variable(880402));
     let bound = |value, endpoint: f32, operator| {
         Proposition::condition_is(
-            ConditionTerm::float32_compare(
+            OldConditionTerm::float32_compare(
                 value,
                 OldMachineTerm::constant(endpoint.to_bits()),
                 operator,
@@ -227,7 +227,7 @@ fn float_narrowing_checks_one_cited_bound_as_ambient_bounds_grow() {
     let x = OldMachineTerm::var(Variable(880501));
     let source = |value, endpoint: f64| {
         Proposition::condition_is(
-            ConditionTerm::float64_compare(
+            OldConditionTerm::float64_compare(
                 value,
                 OldMachineTerm::uint64_constant(endpoint.to_bits()),
                 ComparisonOperator::LessEqual,
@@ -236,7 +236,7 @@ fn float_narrowing_checks_one_cited_bound_as_ambient_bounds_grow() {
         )
     };
     let goal = Proposition::condition_is(
-        ConditionTerm::float32_compare(
+        OldConditionTerm::float32_compare(
             OldMachineTerm::opaque_conversion("c_float64_to_float32", x.clone()),
             OldMachineTerm::constant(1f32.to_bits()),
             ComparisonOperator::LessEqual,
@@ -293,14 +293,17 @@ fn negative_product_guard_checks_only_cited_signs_and_quotient() {
     let y = observe(y);
     let zero = IntegerTerm::constant_i64(0);
     let fact = |condition| Proposition::condition_is(condition, true);
-    let goal = fact(ConditionTerm::integer_less_equal(
+    let goal = fact(OldConditionTerm::integer_less_equal(
         IntegerTerm::multiply(x.clone(), y.clone()),
         observe(max),
     ));
     let selected = [
-        fact(ConditionTerm::integer_less_than(x.clone(), zero.clone())),
-        fact(ConditionTerm::integer_less_than(y, zero)),
-        Proposition::condition_is(ConditionTerm::integer_less_than(x.clone(), quotient), false),
+        fact(OldConditionTerm::integer_less_than(x.clone(), zero.clone())),
+        fact(OldConditionTerm::integer_less_than(y, zero)),
+        Proposition::condition_is(
+            OldConditionTerm::integer_less_than(x.clone(), quotient),
+            false,
+        ),
     ];
     for related in [false, true] {
         let samples = [4, 16, 64].map(|size| {
@@ -311,7 +314,7 @@ fn negative_product_guard_checks_only_cited_signs_and_quotient() {
                 } else {
                     observe(OldMachineTerm::var(crate::kernel::Variable(880610 + index)))
                 };
-                ambient.push(fact(ConditionTerm::integer_greater_equal(
+                ambient.push(fact(OldConditionTerm::integer_greater_equal(
                     value,
                     IntegerTerm::constant_i64(-100 - index as i64),
                 )));
@@ -344,7 +347,7 @@ fn float_quotient_range_checks_only_four_cited_endpoints() {
     let y = OldMachineTerm::var(Variable(880702));
     let bound = |word, endpoint: f32, relation| {
         Proposition::condition_is(
-            ConditionTerm::float32_compare(
+            OldConditionTerm::float32_compare(
                 word,
                 OldMachineTerm::constant(endpoint.to_bits()),
                 relation,
@@ -400,7 +403,7 @@ fn float_quotient_range_checks_only_four_cited_endpoints() {
 fn rounded_integer_float_bound_checks_only_the_cited_integer_endpoint() {
     let x = OldMachineTerm::var(crate::kernel::Variable(880801));
     let goal = Proposition::condition_is(
-        ConditionTerm::float32_compare(
+        OldConditionTerm::float32_compare(
             OldMachineTerm::opaque_conversion("c_int32_to_float32", x.clone()),
             OldMachineTerm::constant(0x4f000000),
             ComparisonOperator::LessThan,
@@ -409,7 +412,7 @@ fn rounded_integer_float_bound_checks_only_the_cited_integer_endpoint() {
     );
     let bound = |word, upper| {
         Proposition::condition_is(
-            ConditionTerm::signed_less_equal(word, OldMachineTerm::constant(upper)),
+            OldConditionTerm::signed_less_equal(word, OldMachineTerm::constant(upper)),
             true,
         )
     };
@@ -452,7 +455,7 @@ fn finite_float_checks_two_cited_endpoints_as_ambient_bounds_grow() {
     let x = OldMachineTerm::var(Variable(881001));
     let bound = |value, endpoint: f32, operator| {
         Proposition::condition_is(
-            ConditionTerm::float32_compare(
+            OldConditionTerm::float32_compare(
                 value,
                 OldMachineTerm::constant(endpoint.to_bits()),
                 operator,
@@ -461,7 +464,7 @@ fn finite_float_checks_two_cited_endpoints_as_ambient_bounds_grow() {
         )
     };
     let goal = Proposition::condition_is(
-        ConditionTerm::float32_classification(x.clone(), FloatClassification::Finite),
+        OldConditionTerm::float32_classification(x.clone(), FloatClassification::Finite),
         true,
     );
     let lower = bound(x.clone(), -1.0, ComparisonOperator::GreaterEqual);

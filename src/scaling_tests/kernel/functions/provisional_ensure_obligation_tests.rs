@@ -9,7 +9,7 @@ fn provisional_ensure_loadability_work_ignores_unrelated_facts() {
     let memory = SymbolicMemory::new();
     let data = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
         .with_local("data", ProgramValue::pointer(data.clone()))

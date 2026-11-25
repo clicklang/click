@@ -16,7 +16,7 @@ fn count(model: &AlgebraicTerm) -> I {
     I::add(I::constant_i64(1), cached(model))
 }
 fn eq(a: I, b: I) -> Proposition {
-    Proposition::condition_is(ConditionTerm::integer_equal(a, b), true)
+    Proposition::condition_is(OldConditionTerm::integer_equal(a, b), true)
 }
 fn alias(a: &AlgebraicTerm, b: &AlgebraicTerm) -> Proposition {
     Proposition::Equal(
@@ -76,7 +76,7 @@ fn integer_value_aliases_reach_operations_calls_and_input_checkpoints() {
     }
     let sibling = graph.clone();
     let mut checkpoint = graph.input_root();
-    graph.add_condition(&ConditionTerm::IntegerEqual(x.clone(), y.clone()), true);
+    graph.add_condition(&OldConditionTerm::IntegerEqual(x.clone(), y.clone()), true);
     assert!(checkpoint.append_inputs_from(&graph));
     let call = |value: I| {
         I::PureFunctionApplication(SharedPureApplication::intern(
@@ -99,11 +99,11 @@ fn integer_order_truth_follows_aliases_without_merging_unrelated_true_facts() {
     let x: SharedIntegerTerm = I::Variable(Variable(920_121)).into();
     let y: SharedIntegerTerm = I::Variable(Variable(920_122)).into();
     for make in [
-        ConditionTerm::IntegerLessThan,
-        ConditionTerm::IntegerLessEqual,
-        ConditionTerm::IntegerGreaterThan,
-        ConditionTerm::IntegerGreaterEqual,
-        ConditionTerm::IntegerNotEqual,
+        OldConditionTerm::IntegerLessThan,
+        OldConditionTerm::IntegerLessEqual,
+        OldConditionTerm::IntegerGreaterThan,
+        OldConditionTerm::IntegerGreaterEqual,
+        OldConditionTerm::IntegerNotEqual,
     ] {
         for value in [true, false] {
             let mut graph = EqualityGraph::default();
@@ -170,7 +170,7 @@ fn literal_integer_identities_join_classes_without_rewriting_terms() {
         I::Multiply(one, x.clone().into()),
     ] {
         let goal = Proposition::condition_is(
-            ConditionTerm::IntegerEqual(operation.clone().into(), y.clone().into()),
+            OldConditionTerm::IntegerEqual(operation.clone().into(), y.clone().into()),
             true,
         );
         assert!(context.contains_known(&goal));
@@ -182,7 +182,7 @@ fn literal_integer_identities_join_classes_without_rewriting_terms() {
         I::Multiply(zero.clone(), x.into()),
     ] {
         assert!(context.contains_known(&Proposition::condition_is(
-            ConditionTerm::IntegerEqual(operation.into(), zero.clone()),
+            OldConditionTerm::IntegerEqual(operation.into(), zero.clone()),
             true
         )));
     }
@@ -245,7 +245,8 @@ fn integer_residue_projection_matches_the_legacy_wrapped_consequences() {
         .push(Operation::Subtract.exact(Operation::Add.exact(x.clone(), y.clone()), x.clone()));
     for left in expressions {
         for right in [I::constant_i64(0), I::constant_i64(4294967296), z.clone()] {
-            let condition = ConditionTerm::IntegerEqual(left.clone().into(), right.clone().into());
+            let condition =
+                OldConditionTerm::IntegerEqual(left.clone().into(), right.clone().into());
             let Some(wrapped) = wrapped_equality_of_integer_equality(&condition, true) else {
                 continue;
             };
@@ -278,7 +279,7 @@ fn integer_residue_consequence_needs_its_source() {
         I::constant_i64(0),
     );
     let goal = Proposition::condition_is(
-        ConditionTerm::equal(OldMachineTerm::subtract(x, y), OldMachineTerm::constant(0)),
+        OldConditionTerm::equal(OldMachineTerm::subtract(x, y), OldMachineTerm::constant(0)),
         true,
     );
     let context = PureFactContext::new().assume_proposition(source.clone());
@@ -295,7 +296,7 @@ fn constant_residue_projection_preserves_the_operation_alias_route() {
     let _session = crate::kernel::VerificationSession::enter();
     let x = I::from_machine(M::Int32, OldMachineTerm::Variable(Variable(982709))).unwrap();
     let exact = I::Subtract(x.clone().into(), x.into());
-    let condition = ConditionTerm::IntegerEqual(exact.into(), I::constant_i64(0).into());
+    let condition = OldConditionTerm::IntegerEqual(exact.into(), I::constant_i64(0).into());
     assert!(wrapped_equality_of_integer_equality(&condition, true).is_none());
     let (native, truth, bounds) = native_comparison_through_integer_operations(&condition, true)
         .expect("the old operation alias route");
@@ -336,7 +337,7 @@ fn cited_mathematical_guards_share_native_and_retained_call_observations() {
         let endpoint = |shared| {
             if conditional {
                 OldMachineTerm::If {
-                    condition: Box::new(ConditionTerm::Variable(Variable(982798))),
+                    condition: Box::new(OldConditionTerm::Variable(Variable(982798))),
                     then_term: Box::new(difference(shared)),
                     else_term: Box::new(OldMachineTerm::uint64_constant(2)),
                 }
@@ -355,9 +356,9 @@ fn cited_mathematical_guards_share_native_and_retained_call_observations() {
         let left = I::from_machine(M::UInt64, OldMachineTerm::Variable(Variable(982799))).unwrap();
         for truth in [false, true] {
             let premise =
-                ConditionTerm::IntegerLessThan(left.clone().into(), native.clone().into());
+                OldConditionTerm::IntegerLessThan(left.clone().into(), native.clone().into());
             let query =
-                ConditionTerm::IntegerLessThan(left.clone().into(), retained.clone().into());
+                OldConditionTerm::IntegerLessThan(left.clone().into(), retained.clone().into());
             let mut graph = EqualityGraph::default();
             graph.add_condition(&premise, truth);
             assert!(graph.knows_condition(&query, truth));
@@ -393,7 +394,7 @@ fn narrow_call_bounds_preserve_retained_argument_observation_identity() {
     .expect("retained index");
     let observed = SharedMachineIntegerTerm::intern(M::UInt64, index);
     let bound = |index| {
-        ConditionTerm::narrow_compare(
+        OldConditionTerm::narrow_compare(
             M::UInt8,
             crate::kernel::CompareRelation::LessEqual,
             OldMachineTerm::Constant {
@@ -435,11 +436,11 @@ fn negated_integer_literals_keep_their_terms_and_share_known_facts() {
         let literal = I::constant_i64(-number);
         assert_ne!(raw, literal);
         let premise = Proposition::condition_is(
-            ConditionTerm::IntegerLessEqual(raw.clone().into(), x.clone().into()),
+            OldConditionTerm::IntegerLessEqual(raw.clone().into(), x.clone().into()),
             true,
         );
         let goal = Proposition::condition_is(
-            ConditionTerm::IntegerLessEqual(literal.clone().into(), x.clone().into()),
+            OldConditionTerm::IntegerLessEqual(literal.clone().into(), x.clone().into()),
             true,
         );
         for (premise, goal) in [(premise.clone(), goal.clone()), (goal, premise)] {

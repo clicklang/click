@@ -4,7 +4,7 @@ use std::cell::Cell;
 
 fn fact(variable: u64, value: i64) -> Proposition {
     Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(OldMachineTerm::Variable(Variable(variable))),

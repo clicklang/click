@@ -6,7 +6,7 @@ use super::*;
 /// that literal. A nonzero literal in an OR rules out zero directly.
 pub(super) fn decide_zero(
     divisor: &OldMachineTerm,
-    zero: &ConditionTerm,
+    zero: &OldConditionTerm,
     assumptions: &PureFactContext,
     facts: &ExecutionFacts,
 ) -> Option<bool> {
@@ -60,7 +60,7 @@ pub(super) fn apply_nonzero(
     result: fn(OldMachineTerm, OldMachineTerm) -> OldMachineTerm,
 ) -> Vec<ExpressionPath> {
     let [minimum, minus_one] =
-        ConditionTerm::signed_division_exception_tests(format, &left, &right);
+        OldConditionTerm::signed_division_exception_tests(format, &left, &right);
     let safe = Proposition::signed_division_exclusion(format, &left, &right);
     let exceptional = Proposition::And(
         Box::new(Proposition::condition_is(minimum.clone(), true)),
@@ -142,7 +142,7 @@ mod tests {
         let (left, right) = terms();
         let domain =
             Proposition::signed_division_exclusion(MachineIntegerType::Int32, &left, &right);
-        let [minimum, minus_one] = ConditionTerm::signed_division_exception_tests(
+        let [minimum, minus_one] = OldConditionTerm::signed_division_exception_tests(
             MachineIntegerType::Int32,
             &left,
             &right,

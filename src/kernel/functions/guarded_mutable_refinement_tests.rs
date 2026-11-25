@@ -41,7 +41,7 @@ fn entry_state() -> ExecutionState {
             "cells",
             ProgramValue::pointer(Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             }),
         )
 }
@@ -115,7 +115,7 @@ fn unrelated_concrete_guard_does_not_refine_named_guard() {
 
 fn active_is_zero(value: bool) -> PureFactContext {
     PureFactContext::new().assume_proposition(Proposition::condition_is(
-        ConditionTerm::equal(
+        OldConditionTerm::equal(
             OldMachineTerm::Variable(Variable(980_001)),
             OldMachineTerm::constant(0),
         ),

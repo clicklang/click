@@ -34,7 +34,7 @@ fn compound_read_queries_require_explicit_equations() {
     for format in [M::Int32, M::UInt64] {
         let slot = Address {
             base: "compound-slot".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let value = stored(format, number(format, 7));
         let memory = intern_memory(SymbolicMemory::new().store(slot.clone(), value.clone()));
@@ -81,7 +81,7 @@ fn compound_read_queries_require_explicit_equations() {
             &through_alias,
             &expected
         ));
-        let facts = facts.assume_condition(ConditionTerm::address_equal(slot, alias), true);
+        let facts = facts.assume_condition(OldConditionTerm::address_equal(slot, alias), true);
         assert!(equal(
             &facts.equality_graph,
             format,

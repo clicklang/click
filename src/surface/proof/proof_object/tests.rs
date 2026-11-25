@@ -146,7 +146,7 @@ fn implicit_tail_budget_errors_check_boundaries_without_exploring_paths() {
 
 fn indexed_fact(index: u32) -> Proposition {
     Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left: Box::new(OldMachineTerm::Variable(Variable(0))),
@@ -297,7 +297,7 @@ fn fixed_state_failure_names_kernel_values_held_in_live_locals() {
         .with_local("__rust_mir_94", ProgramValue::UInt64(size.clone()));
     let remainder = OldMachineTerm::uint64_remainder(len, size.clone());
     let goal = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: Box::new(remainder.clone()),
@@ -306,7 +306,7 @@ fn fixed_state_failure_names_kernel_values_held_in_live_locals() {
         true,
     );
     let facts = [Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: Box::new(size),
@@ -362,7 +362,7 @@ fn missing_known_side_uses_recorded_names_in_fixed_state_errors() {
     let entry = ExecutionState::new().with_local("remaining", ProgramValue::UInt64(before.clone()));
     let state = ExecutionState::new().with_local("remaining", ProgramValue::UInt64(after.clone()));
     let side = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
             left: Box::new(before.clone()),
@@ -438,7 +438,7 @@ fn return_publication_shares_effect_prefixes_and_suppresses_duplicates() {
                     writes: vec![(
                         crate::kernel::Address {
                             base: crate::kernel::AddressBase::ExternalArgument,
-                            offset: crate::kernel::AddressOffset::Constant(index as i64 * 4),
+                            offset: crate::kernel::OldAddressOffset::Constant(index as i64 * 4),
                         },
                         crate::kernel::AccessExtent::from(4),
                     )],
@@ -503,7 +503,7 @@ fn pure_identity_fixture() -> PureTheoremContext {
 fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
     let pointer = Address {
         base: "sum".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let loadable = crate::kernel::quantifiers::test_forall(
         Default::default(),
@@ -512,7 +512,7 @@ fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
         Proposition::Implies(
             Box::new(Proposition::And(
                 Box::new(Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
                         left: Box::new(OldMachineTerm::constant(0)),
@@ -521,7 +521,7 @@ fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
                     true,
                 )),
                 Box::new(Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
                         left: Box::new(OldMachineTerm::Variable(Variable(30))),
@@ -552,7 +552,7 @@ fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
         ),
     );
     let fold_equality = Proposition::condition_is(
-        ConditionTerm::IntegerEqual(
+        OldConditionTerm::IntegerEqual(
             SharedIntegerTerm::from(fold),
             SharedIntegerTerm::from(IntegerTerm::Variable(Variable(43))),
         ),
@@ -569,7 +569,7 @@ fn atomic_conjunct_extraction_returns_when_an_early_step_completes_the_goal() {
     let comparison = |left: OldMachineTerm, right: OldMachineTerm| {
         (
             Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
                     left: Box::new(left.clone()),
@@ -654,7 +654,7 @@ fn atomic_conjunct_extraction_requires_exact_selected_premise_on_small_stack() {
             let theorems = TheoremEnvironment::new(&[]);
             let pointer = Address {
                 base: "atomic-extract-cell".into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             };
             let old_memory = SymbolicMemory::new().with_block("atomic-extract-cell", 4).store(
                 pointer.clone(),
@@ -1061,7 +1061,7 @@ fn both_and_preserves_exact_binders_and_saved_states() {
     let context = pure_identity_fixture();
     let pointer = Address {
         base: "cell".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let memory = SymbolicMemory::new().with_block("cell", 4).store(
         pointer.clone(),
@@ -1073,7 +1073,7 @@ fn both_and_preserves_exact_binders_and_saved_states() {
             Variable(binder),
             Sort::ProgramInt32,
             Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
                     left: Box::new(OldMachineTerm::read_named(
@@ -1182,7 +1182,7 @@ fn both_preserves_written_body_across_an_inserted_guard_and_reverifies_cold() {
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
-    let guard = Proposition::condition_is(ConditionTerm::Constant(false), false);
+    let guard = Proposition::condition_is(OldConditionTerm::Constant(false), false);
     let body_surface = SyntaxProposition::Comparison {
         left: SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(1))),
         operator: ComparisonOperator::LessEqual,
@@ -1268,8 +1268,8 @@ fn both_rejects_an_unsupported_written_child_correspondence_boundedly() {
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
     let context = pure_identity_fixture();
-    let guard = Proposition::condition_is(ConditionTerm::Constant(false), false);
-    let body = Proposition::condition_is(ConditionTerm::Constant(true), true);
+    let guard = Proposition::condition_is(OldConditionTerm::Constant(false), false);
+    let body = Proposition::condition_is(OldConditionTerm::Constant(true), true);
     let unsupported = SyntaxProposition::Comparison {
         left: SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(1))),
         operator: ComparisonOperator::Equal,
@@ -1306,11 +1306,11 @@ fn both_rejects_unlowerable_child_without_exact_parent_metadata() {
     let context = pure_identity_fixture();
     let kernel = Proposition::And(
         Box::new(Proposition::condition_is(
-            ConditionTerm::Constant(true),
+            OldConditionTerm::Constant(true),
             true,
         )),
         Box::new(Proposition::condition_is(
-            ConditionTerm::Constant(false),
+            OldConditionTerm::Constant(false),
             false,
         )),
     );
@@ -1978,7 +1978,7 @@ fn have_scope_rejects_mismatched_reported_goal_transactionally() {
     let scope = root.driver().open_have(surface).expect("have should open");
     let before = scope.body().clone();
     let wrong = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(OldMachineTerm::constant(0)),
@@ -2058,7 +2058,7 @@ fn have_scope_matches_renamed_existential_display_name_and_binder() {
         Variable(8_765_432),
         Sort::ProgramInt32,
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::Variable(Variable(8_765_432))),
@@ -2551,7 +2551,7 @@ fn check_availability_probes_equivalent_condition_polarities_by_exact_index() {
     let left = OldMachineTerm::Variable(Variable(80_000));
     let right = OldMachineTerm::Variable(Variable(80_001));
     let available = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left: Box::new(left.clone()),
@@ -2562,7 +2562,7 @@ fn check_availability_probes_equivalent_condition_polarities_by_exact_index() {
     let facts = PureFactStore::from_ordered(&[available]);
     for required in [
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
                 left: Box::new(left.clone()),
@@ -2571,7 +2571,7 @@ fn check_availability_probes_equivalent_condition_polarities_by_exact_index() {
             false,
         ),
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left: Box::new(right.clone()),
@@ -2580,7 +2580,7 @@ fn check_availability_probes_equivalent_condition_polarities_by_exact_index() {
             false,
         ),
         Proposition::Not(Box::new(Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterThan,
                 left: Box::new(right.clone()),
@@ -2627,7 +2627,7 @@ fn outcome_fact_deltas_share_ambient_universal_facts() {
             Variable(index),
             Sort::ProgramInt32,
             Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(OldMachineTerm::Variable(Variable(index))),
@@ -3346,7 +3346,7 @@ fn fixed_state_witness_refines_existential_transactionally_with_constant_local_w
     let theorem_environment = TheoremEnvironment::new(&[]);
     let variable = Variable(9_000_000);
     let expected = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(OldMachineTerm::Variable(variable)),
@@ -3563,7 +3563,7 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
         source_variable,
         Sort::ProgramInt32,
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::Variable(source_variable)),
@@ -3578,7 +3578,7 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
         goal_variable,
         Sort::ProgramInt32,
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::Variable(goal_variable)),
@@ -4710,7 +4710,7 @@ fn smart_retry_retains_checked_have_and_exact_step_after_injected_refusal() {
         OldMachineTerm::constant(7),
     ))];
     let state = ExecutionState::new();
-    let true_fact = Proposition::condition_is(ConditionTerm::Constant(true), true);
+    let true_fact = Proposition::condition_is(OldConditionTerm::Constant(true), true);
     let requirement = Proposition::Or(Box::new(true_fact.clone()), Box::new(true_fact.clone()));
     let root = Proof::for_execution_frontier(
         "smart retry",
@@ -5192,7 +5192,7 @@ fn supported_source_refusal_on_branch_does_not_enter_planning() {
     ));
     let refusal = ClickError::new("injected supported branch refusal").with_unresolved_requirement(
         &ProofObligation::verification_condition(Proposition::condition_is(
-            ConditionTerm::Constant(true),
+            OldConditionTerm::Constant(true),
             true,
         ))
         .with_call_requirement_site(source),
@@ -5251,7 +5251,7 @@ fn assert_static_array_retry_uses_recorded_qualified_source(block: &str, name: &
     let base = ProgramValue::typed_pointer(
         Address {
             base: AddressBase::Concrete(block.into()),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         },
         ProgramType::Int32Pointer,
     );
@@ -6595,7 +6595,7 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
     let named = [selected_term.clone()];
     let named_values = named_int32_values(&named);
     let equality_fact = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(selected_term.clone()),
@@ -6604,7 +6604,7 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
         true,
     );
     let goal = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(binary_node!(
@@ -6637,7 +6637,7 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
         let mut facts = (0..size)
             .map(|index| {
                 Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(OldMachineTerm::Variable(Variable(
@@ -6712,7 +6712,7 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
     let zero = OldMachineTerm::constant(0);
     let equality = |term: &OldMachineTerm| {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(term.clone()),
@@ -6727,7 +6727,7 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
         right: SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
     };
     let goal = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(binary_node!(
@@ -6755,7 +6755,7 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
         let mut facts = (0..size)
             .map(|index| {
                 Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(OldMachineTerm::Variable(Variable(
@@ -7080,7 +7080,7 @@ fn fixed_state_arithmetic_rewrite_paths_ignore_unrelated_facts() {
     };
     let premises = surfaces.iter().map(lower).collect::<Vec<_>>();
     let goal = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(binary_node!(Int32, Add, Box::new(left), Box::new(right))),
@@ -11772,7 +11772,7 @@ fn cursor_execution_branch_join_retains_structural_reads_without_bindings() {
     let function = parsed_function.to_kernel_function();
     let pointer = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let state = ExecutionState::new().with_resource_context(
         ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
@@ -11871,7 +11871,7 @@ fn cursor_execution_branch_join_retains_structural_reads_without_bindings() {
     // cursor path that records metadata immediately before advancing the
     // selected successor.
     let selecting_fact = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left: Box::new(OldMachineTerm::Variable(Variable(60_001))),
@@ -11937,7 +11937,7 @@ fn generated_load_source_event_fixture(
 ) -> crate::kernel::GeneratedLoadSourceEvent {
     let pointer = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(pointer_offset.into()),
+        offset: OldAddressOffset::Constant(pointer_offset.into()),
     };
     crate::kernel::GeneratedLoadSourceEvent::new(
         crate::kernel::LoadSourceId {
@@ -14457,11 +14457,11 @@ fn checked_callback_statement_publishes_its_typed_read_evidence() {
         load_type(function.body()).expect("callback field is a typed load");
     let argument = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(210_520)), 4),
+        offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(210_520)), 4),
     };
     let table = Address {
         base: "global:callback-table".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let target = Address::function("callback");
     let memory = SymbolicMemory::new().store(
@@ -14500,7 +14500,7 @@ fn checked_callback_statement_publishes_its_typed_read_evidence() {
             PersistentSequence::default(),
         ),
         vec![Proposition::condition_is(
-            ConditionTerm::address_equal(argument, table),
+            OldConditionTerm::address_equal(argument, table),
             true,
         )],
         ExecutionProofConstants {
@@ -14547,7 +14547,7 @@ fn checked_callback_statement_publishes_its_typed_read_evidence() {
             .facts()
             .assumptions()
             .contains_known(&Proposition::condition_is(
-                ConditionTerm::address_equal(read.address().clone(), target),
+                OldConditionTerm::address_equal(read.address().clone(), target),
                 true
             )),
         "typed read did not reach proof facts: {:?}",
@@ -14570,7 +14570,7 @@ fn fixed_state_transport_retains_checked_spellings_for_rewrite() {
     let left = OldMachineTerm::Variable(Variable(9_104_000));
     let right = OldMachineTerm::Variable(Variable(9_104_001));
     let equality = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(left.clone()),
@@ -14579,7 +14579,7 @@ fn fixed_state_transport_retains_checked_spellings_for_rewrite() {
         true,
     );
     let goal = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(left.clone()),
@@ -14722,7 +14722,7 @@ fn fixed_state_instantiation_retains_checked_spellings_for_rewrite() {
     )
     .unwrap();
     let goal = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(left.clone()),
@@ -14841,7 +14841,7 @@ fn fixed_state_rewrite_keeps_authored_goal_names_after_lookup_substitution() {
         ProgramExpression::Value(ProgramValue::Int32(right.clone())),
     ];
     let facts = vec![Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(left.clone()),
@@ -14850,7 +14850,7 @@ fn fixed_state_rewrite_keeps_authored_goal_names_after_lookup_substitution() {
         true,
     )];
     let goal = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(left),
@@ -15072,7 +15072,7 @@ fn partition_known_uses_the_fixed_state_not_its_entry_partition() {
         Resource::Memory(MemoryRange::new(
             Address {
                 base: name.into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             OldMachineTerm::constant(0),
             OldMachineTerm::constant(1),
@@ -15261,7 +15261,7 @@ fn generated_pointer_requirement_retains_lexical_binder_without_capturing_a_shad
     locals.set_values(locals.values.with_inserted("identity", expression));
     let state = ExecutionState::new();
     let goal = Proposition::condition_is(
-        ConditionTerm::address_equal(pointer.address().clone(), Address::null()),
+        OldConditionTerm::address_equal(pointer.address().clone(), Address::null()),
         false,
     );
     let synthesize = || {

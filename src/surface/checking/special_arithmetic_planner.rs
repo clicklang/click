@@ -12,7 +12,7 @@ use crate::kernel::proof::arithmetic_special::{
     is_float_bound, signed_constant_bound_on_view, signed_definedness_query,
 };
 use crate::kernel::{CompareRelation, MachineIntegerType};
-use crate::kernel::{ConditionTerm, FloatClassification, FloatCondition, Proposition};
+use crate::kernel::{FloatClassification, FloatCondition, OldConditionTerm, Proposition};
 use crate::kernel::{
     bits32_constant, constant_i64, constant_u32, constant_u64, int64_constant, uint64_constant,
 };
@@ -332,7 +332,7 @@ fn cited_premises_only(
 fn cast_identity_bounds(goal: &Proposition, premises: &[Proposition]) -> Option<Vec<usize>> {
     use crate::kernel::IntegerTerm;
     use crate::kernel::machine_integer::conversion::{cast_operands, narrow_widening};
-    let Some((ConditionTerm::IntegerEqual(a, b), true)) = goal.condition_native() else {
+    let Some((OldConditionTerm::IntegerEqual(a, b), true)) = goal.old_condition() else {
         return None;
     };
     let (observed, original): (&IntegerTerm, &IntegerTerm) = [(a, b), (b, a)]
@@ -354,7 +354,7 @@ fn cast_identity_bounds(goal: &Proposition, premises: &[Proposition]) -> Option<
             let readings =
                 crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(premise);
             std::iter::once(premise).chain(&readings).any(|reading| {
-                let Some((ConditionTerm::IntegerLessEqual(left, right), true)) = reading.condition_native() else {
+                let Some((OldConditionTerm::IntegerLessEqual(left, right), true)) = reading.old_condition() else {
                     return false;
                 };
                 let (endpoint, operand) = if lower { (left, right) } else { (right, left) };
@@ -489,31 +489,34 @@ fn bounded_address_equal(left: &crate::kernel::Address, right: &crate::kernel::A
         }
         match (left, right) {
             (
-                crate::kernel::AddressOffset::Constant(a),
-                crate::kernel::AddressOffset::Constant(b),
+                crate::kernel::OldAddressOffset::Constant(a),
+                crate::kernel::OldAddressOffset::Constant(b),
             ) => {
                 if a != b {
                     return false;
                 }
             }
             (
-                crate::kernel::AddressOffset::Variable(a),
-                crate::kernel::AddressOffset::Variable(b),
+                crate::kernel::OldAddressOffset::Variable(a),
+                crate::kernel::OldAddressOffset::Variable(b),
             ) => {
                 if a != b {
                     return false;
                 }
             }
-            (crate::kernel::AddressOffset::Add(a, b), crate::kernel::AddressOffset::Add(c, d)) => {
+            (
+                crate::kernel::OldAddressOffset::Add(a, b),
+                crate::kernel::OldAddressOffset::Add(c, d),
+            ) => {
                 pending.push((a, c));
                 pending.push((b, d));
             }
             (
-                crate::kernel::AddressOffset::Int32Scaled {
+                crate::kernel::OldAddressOffset::Int32Scaled {
                     value: a,
                     byte_width: aw,
                 },
-                crate::kernel::AddressOffset::Int32Scaled {
+                crate::kernel::OldAddressOffset::Int32Scaled {
                     value: b,
                     byte_width: bw,
                 },
@@ -523,12 +526,12 @@ fn bounded_address_equal(left: &crate::kernel::Address, right: &crate::kernel::A
                 }
             }
             (
-                crate::kernel::AddressOffset::Int64Scaled {
+                crate::kernel::OldAddressOffset::Int64Scaled {
                     value: a,
                     byte_width: aw,
                     ..
                 },
-                crate::kernel::AddressOffset::Int64Scaled {
+                crate::kernel::OldAddressOffset::Int64Scaled {
                     value: b,
                     byte_width: bw,
                     ..
@@ -550,38 +553,38 @@ fn is_pointer_relation(p: &Proposition) -> bool {
     matches!(&p, condition_source_0 @ Proposition::ConditionIs(
             _,
             true
-        ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::PointerEqual(..)
-                | ConditionTerm::AddressEqual(_, _)
-                | ConditionTerm::AddressOffsetEqual(_, _), _))))
+        ) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::PointerEqual(..)
+                | OldConditionTerm::AddressEqual(_, _)
+                | OldConditionTerm::AddressOffsetEqual(_, _), _))))
 }
 fn is_signed_scalar_bound(p: &Proposition) -> bool {
     let Some((
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left: _,
             right: _,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
             left: _,
             right: _,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterThan,
             left: _,
             right: _,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
             left: _,
             right: _,
         },
         true,
-    )) = p.condition_native()
+    )) = p.old_condition()
     else {
         return false;
     };
@@ -596,22 +599,22 @@ fn is_unsigned64_bound(p: &Proposition) -> bool {
     matches!(&p, condition_source_0 @ Proposition::ConditionIs(
             _,
             true,
-        ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare {
+        ) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Compare {
                 format: MachineIntegerType::UInt64,
                 relation: CompareRelation::LessThan,
                 left: _,
                 right: _
-            } | ConditionTerm::Compare {
+            } | OldConditionTerm::Compare {
                 format: MachineIntegerType::UInt64,
                 relation: CompareRelation::LessEqual,
                 left: _,
                 right: _
-            } | ConditionTerm::Compare {
+            } | OldConditionTerm::Compare {
                 format: MachineIntegerType::UInt64,
                 relation: CompareRelation::GreaterThan,
                 left: _,
                 right: _
-            } | ConditionTerm::Compare {
+            } | OldConditionTerm::Compare {
                 format: MachineIntegerType::UInt64,
                 relation: CompareRelation::GreaterEqual,
                 left: _,
@@ -649,12 +652,12 @@ fn float_finite_premise(goal: &Proposition, premises: &[Proposition]) -> Option<
         return None;
     };
     let (width, expression) = match condition.old_form() {
-        ConditionTerm::Float32(FloatCondition::Comparison { left, right, .. })
+        OldConditionTerm::Float32(FloatCondition::Comparison { left, right, .. })
             if bounded_term_equal(left, right) =>
         {
             (32, left.as_ref())
         }
-        ConditionTerm::Float64(FloatCondition::Comparison { left, right, .. })
+        OldConditionTerm::Float64(FloatCondition::Comparison { left, right, .. })
             if bounded_term_equal(left, right) =>
         {
             (64, left.as_ref())
@@ -668,23 +671,23 @@ fn float_finite_premise(goal: &Proposition, premises: &[Proposition]) -> Option<
         match (width, p) {
             (32, condition_source @ Proposition::ConditionIs(_, true))
                 if let Some((
-                    ConditionTerm::Float32(FloatCondition::Classification {
+                    OldConditionTerm::Float32(FloatCondition::Classification {
                         classification: FloatClassification::Finite,
                         value,
                     }),
                     _,
-                )) = condition_source.condition_native() =>
+                )) = condition_source.old_condition() =>
             {
                 bounded_term_equal(value, expression)
             }
             (64, condition_source @ Proposition::ConditionIs(_, true))
                 if let Some((
-                    ConditionTerm::Float64(FloatCondition::Classification {
+                    OldConditionTerm::Float64(FloatCondition::Classification {
                         classification: FloatClassification::Finite,
                         value,
                     }),
                     _,
-                )) = condition_source.condition_native() =>
+                )) = condition_source.old_condition() =>
             {
                 bounded_term_equal(value, expression)
             }
@@ -701,49 +704,49 @@ fn charge_proposition(proposition: &Proposition) -> bool {
         return true;
     };
     match condition.old_form() {
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterThan,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
             left,
             right,
         } => bounded_term_work(left) && bounded_term_work(right),
-        ConditionTerm::AddressOffsetEqual(left, right) => {
+        OldConditionTerm::AddressOffsetEqual(left, right) => {
             bounded_offset_work(left) && bounded_offset_work(right)
         }
-        ConditionTerm::AddressEqual(left, right) => {
+        OldConditionTerm::AddressEqual(left, right) => {
             bounded_pointer_work(left) && bounded_pointer_work(right)
         }
-        ConditionTerm::Float32(float) | ConditionTerm::Float64(float) => match float {
+        OldConditionTerm::Float32(float) | OldConditionTerm::Float64(float) => match float {
             FloatCondition::Comparison { left, right, .. } => {
                 bounded_term_work(left) && bounded_term_work(right)
             }
@@ -753,7 +756,7 @@ fn charge_proposition(proposition: &Proposition) -> bool {
     }
 }
 
-fn bounded_offset_work(root: &crate::kernel::AddressOffset) -> bool {
+fn bounded_offset_work(root: &crate::kernel::OldAddressOffset) -> bool {
     let mut pending = vec![root];
     let mut count = 0usize;
     while let Some(offset) = pending.pop() {
@@ -762,12 +765,12 @@ fn bounded_offset_work(root: &crate::kernel::AddressOffset) -> bool {
             return false;
         }
         match offset {
-            crate::kernel::AddressOffset::Add(left, right) => {
+            crate::kernel::OldAddressOffset::Add(left, right) => {
                 pending.push(left);
                 pending.push(right);
             }
-            crate::kernel::AddressOffset::Int32Scaled { value, .. }
-            | crate::kernel::AddressOffset::Int64Scaled { value, .. }
+            crate::kernel::OldAddressOffset::Int32Scaled { value, .. }
+            | crate::kernel::OldAddressOffset::Int64Scaled { value, .. }
                 if !bounded_index_work(value) =>
             {
                 return false;
@@ -1025,7 +1028,7 @@ fn bounded_term_equal_count(
     true
 }
 
-fn alignment_shape(condition: &ConditionTerm) -> Option<(&crate::kernel::Address, u64)> {
+fn alignment_shape(condition: &OldConditionTerm) -> Option<(&crate::kernel::Address, u64)> {
     crate::kernel::proof::arithmetic_special::checked_pointer_alignment(condition)
 }
 
@@ -1097,7 +1100,7 @@ mod tests {
             );
         }
         let goal = Proposition::condition_is(
-            ConditionTerm::Float32(FloatCondition::Comparison {
+            OldConditionTerm::Float32(FloatCondition::Comparison {
                 operator: KernelComparisonOperator::Equal,
                 left: Box::new(term.clone()),
                 right: Box::new(term.clone()),
@@ -1105,7 +1108,7 @@ mod tests {
             true,
         );
         let finite = Proposition::condition_is(
-            ConditionTerm::Float32(FloatCondition::Classification {
+            OldConditionTerm::Float32(FloatCondition::Classification {
                 classification: FloatClassification::Finite,
                 value: Box::new(term),
             }),
@@ -1118,7 +1121,7 @@ mod tests {
     fn finite_candidate_scan_charges_unrelated_premises() {
         let value = OldMachineTerm::Variable(Variable(2));
         let goal = Proposition::condition_is(
-            ConditionTerm::Float32(FloatCondition::Comparison {
+            OldConditionTerm::Float32(FloatCondition::Comparison {
                 operator: KernelComparisonOperator::Equal,
                 left: Box::new(value.clone()),
                 right: Box::new(value.clone()),
@@ -1128,7 +1131,7 @@ mod tests {
         let mut premises = (0..64)
             .map(|i| {
                 Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(OldMachineTerm::Variable(Variable(100 + i))),
@@ -1139,7 +1142,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
         premises.push(Proposition::condition_is(
-            ConditionTerm::Float32(FloatCondition::Classification {
+            OldConditionTerm::Float32(FloatCondition::Classification {
                 classification: FloatClassification::Finite,
                 value: Box::new(value),
             }),

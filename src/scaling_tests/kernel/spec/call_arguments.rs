@@ -148,8 +148,8 @@ fn retained_constant_call_arguments_keep_existing_decision_identity() {
         expected.machine_identity(),
         "produced: {arguments:?}"
     );
-    let known = ConditionTerm::equal(native, OldMachineTerm::constant(0));
-    let required = ConditionTerm::equal(produced.clone(), OldMachineTerm::constant(0));
+    let known = OldConditionTerm::equal(native, OldMachineTerm::constant(0));
+    let required = OldConditionTerm::equal(produced.clone(), OldMachineTerm::constant(0));
     let proof_facts =
         crate::kernel::proof::PureFactStore::from_ordered(&[Proposition::condition_is(
             known.clone(),

@@ -65,18 +65,18 @@ fn scaled_offset_admission_and_queries_keep_cold_dags_shared() {
             };
             let value = V::Shared(&root).retain(container);
             let offset = if ty == MachineIntegerType::Int32 {
-                AddressOffset::Int32Scaled {
+                OldAddressOffset::Int32Scaled {
                     value,
                     byte_width: 4,
                 }
             } else {
-                AddressOffset::Int64Scaled {
+                OldAddressOffset::Int64Scaled {
                     value,
                     byte_width: 4,
                     unsigned: ty == MachineIntegerType::UInt64,
                 }
             };
-            let named = AddressOffset::Variable(Variable(991431));
+            let named = OldAddressOffset::Variable(Variable(991431));
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let mut graph = EqualityGraph::default();

@@ -28,14 +28,14 @@ fn range_coverage_ignores_related_separations() {
         };
         let mut facts = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::uint64_less_equal(
+                OldConditionTerm::uint64_less_equal(
                     n.clone(),
                     OldMachineTerm::uint64_constant(i64::MAX as u64),
                 ),
                 true,
             )
             .assume_condition(
-                ConditionTerm::uint64_less_equal(count.clone(), n.clone()),
+                OldConditionTerm::uint64_less_equal(count.clone(), n.clone()),
                 true,
             );
         for index in 0..size {

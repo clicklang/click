@@ -509,7 +509,7 @@ mod tests {
         for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
             let cast = OldMachineTerm::BoolCast {
                 to: format,
-                value: Box::new(ConditionTerm::Variable(Variable(991982))),
+                value: Box::new(OldConditionTerm::Variable(Variable(991982))),
             };
             for body in [
                 cast.clone(),

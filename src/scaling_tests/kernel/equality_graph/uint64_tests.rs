@@ -70,7 +70,7 @@ fn wide_congruence_queries_do_not_scan_unrelated_equalities() {
 
 #[test]
 fn range_values_and_constants_resolve_long_wide_equality_chains() {
-    use crate::kernel::{ConditionTerm, PureFactContext};
+    use crate::kernel::{OldConditionTerm, PureFactContext};
     for size in [16u64, 64, 256, 1024] {
         let _session = VerificationSession::enter();
         let var = |i| OldMachineTerm::Variable(Variable(950_000 + i));
@@ -79,10 +79,10 @@ fn range_values_and_constants_resolve_long_wide_equality_chains() {
             for i in 0..size {
                 facts = facts
                     .clone()
-                    .assume_condition(ConditionTerm::uint64_equal(var(i), var(i + 1)), true);
+                    .assume_condition(OldConditionTerm::uint64_equal(var(i), var(i + 1)), true);
             }
             facts = facts.clone().assume_condition(
-                ConditionTerm::uint64_equal(var(size), OldMachineTerm::uint64_constant(37)),
+                OldConditionTerm::uint64_equal(var(size), OldMachineTerm::uint64_constant(37)),
                 true,
             );
             assert_eq!(facts.wide_constant_from_equalities(&var(0)), Some(37));
@@ -103,7 +103,7 @@ fn an_aliased_read_uses_its_store_equation_without_scanning_unrelated_cells_or_a
         let mut memory = SymbolicMemory::new().with_block("cells", 8 * (size as u32 + 1));
         let cell = |i: u64| Address {
             base: "cells".into(),
-            offset: AddressOffset::Constant(8 * i as i64),
+            offset: OldAddressOffset::Constant(8 * i as i64),
         };
         for i in 0..=size {
             memory = memory.store(
@@ -150,7 +150,7 @@ fn an_aliased_read_query_does_not_walk_its_own_alias_class() {
         let _session = VerificationSession::enter();
         let stored_at = Address {
             base: "cells".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let memory = intern_memory(SymbolicMemory::new().with_block("cells", 8).store(
             stored_at.clone(),
@@ -200,7 +200,7 @@ fn a_late_alias_rechecks_only_the_reads_of_its_own_address_class() {
             memory = memory.store(
                 Address {
                     base: "other".into(),
-                    offset: AddressOffset::Constant(8 * i as i64),
+                    offset: OldAddressOffset::Constant(8 * i as i64),
                 },
                 ProgramValue::UInt64(OldMachineTerm::uint64_constant(i)),
             );
@@ -297,7 +297,7 @@ fn shared_wide_endpoint_queries_reuse_growing_prefixes() {
                     [root, one.clone()],
                 );
                 context = context.assume_condition(
-                    ConditionTerm::integer_equal(observe(root.clone()), observe(base.clone())),
+                    OldConditionTerm::integer_equal(observe(root.clone()), observe(base.clone())),
                     true,
                 );
                 let endpoints = context

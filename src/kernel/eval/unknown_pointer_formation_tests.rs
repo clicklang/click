@@ -58,12 +58,12 @@ fn formation_requires_the_original_domain_and_includes_one_past() {
     assert!(permits(&p, 0, &root, &ResourceContext::new()));
     assert!(!permits(&p, 4, &root, &ResourceContext::new()));
     let numeric = root.clone().assume_condition(
-        ConditionTerm::address_equal(p.address().clone(), q.address().clone()),
+        OldConditionTerm::address_equal(p.address().clone(), q.address().clone()),
         true,
     );
     assert!(!permits(&p, 4, &numeric, &resources));
     let equality = Proposition::condition_is(
-        ConditionTerm::PointerEqual(Box::new(p.clone()), Box::new(q.clone())),
+        OldConditionTerm::PointerEqual(Box::new(p.clone()), Box::new(q.clone())),
         true,
     );
     let full = numeric.clone().assume_proposition(equality.clone());
@@ -106,14 +106,14 @@ fn member_coverage_does_not_follow_numeric_aliases() {
         ))
         .unwrap();
     let aliased = PureFactContext::new().assume_condition(
-        ConditionTerm::address_equal(p.address().clone(), q.address().clone()),
+        OldConditionTerm::address_equal(p.address().clone(), q.address().clone()),
         true,
     );
     let numeric = aliased.clone().assume_proposition(coverage);
     let empty = ResourceContext::new();
     assert!(!permits(&p, 8, &numeric, &empty));
     let equality = Proposition::condition_is(
-        ConditionTerm::PointerEqual(Box::new(p.clone()), Box::new(q.clone())),
+        OldConditionTerm::PointerEqual(Box::new(p.clone()), Box::new(q.clone())),
         true,
     );
     let full = numeric.clone().assume_proposition(equality.clone());
@@ -293,7 +293,7 @@ fn split_formation_fixture() -> (
     let p = OldPointer::new(
         Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(930_999)), 4),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(930_999)), 4),
         },
         ProgramType::Int32Pointer,
     );
@@ -302,16 +302,19 @@ fn split_formation_fixture() -> (
     let i = OldMachineTerm::Variable(Variable(930_603));
     let facts = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_less_than(0u32.into(), from.clone()),
+            OldConditionTerm::signed_less_than(0u32.into(), from.clone()),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_equal(from.clone(), i.clone()),
+            OldConditionTerm::signed_less_equal(from.clone(), i.clone()),
             true,
         )
-        .assume_condition(ConditionTerm::signed_less_than(i.clone(), to.clone()), true)
         .assume_condition(
-            ConditionTerm::signed_less_equal(to.clone(), 8u32.into()),
+            OldConditionTerm::signed_less_than(i.clone(), to.clone()),
+            true,
+        )
+        .assume_condition(
+            OldConditionTerm::signed_less_equal(to.clone(), 8u32.into()),
             true,
         );
     let position = p.address().offset_by_elements(i, 4);
@@ -374,9 +377,9 @@ fn null_pointer_zero_offsets_use_scalar_evidence_and_preserve_refusals() {
         let equal = |a, b| {
             Proposition::condition_is(
                 if wide {
-                    ConditionTerm::int64_equal(a, b)
+                    OldConditionTerm::int64_equal(a, b)
                 } else {
-                    ConditionTerm::equal(a, b)
+                    OldConditionTerm::equal(a, b)
                 },
                 true,
             )
@@ -436,7 +439,7 @@ fn a_registered_zero_index_permits_null_pointer_formation() {
     let load =
         crate::kernel::eval::load_variable_for_exact_cell(&memory, &address, LoadKind::Int32, 4);
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::equal(OldMachineTerm::Variable(load), 0u32.into()),
+        OldConditionTerm::equal(OldMachineTerm::Variable(load), 0u32.into()),
         true,
     );
     let result = pointer_offset_by_elements_paths(

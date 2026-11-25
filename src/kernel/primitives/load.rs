@@ -13,7 +13,7 @@
 
 use std::sync::Arc;
 
-use super::{Address, AddressBase, AddressOffset, ProgramPoint};
+use super::{Address, AddressBase, OldAddressOffset, ProgramPoint};
 
 /// One load: a cell's bytes at a version point, interned by
 /// `(point.read_key(), cell)`. The term carries its point and cell, so
@@ -146,7 +146,7 @@ impl Load {
     pub(crate) fn address(&self) -> Address {
         Address {
             base: self.base(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         }
     }
 

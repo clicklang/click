@@ -1,5 +1,5 @@
 use super::*;
-use crate::kernel::{Address, AddressBase, AddressOffset, MemoryRange, OldMachineTerm};
+use crate::kernel::{Address, AddressBase, MemoryRange, OldAddressOffset, OldMachineTerm};
 
 // Reading the pre-update tree is test setup, independent of how the producer
 // implements its update or prepares the resulting footprint.
@@ -74,7 +74,7 @@ fn partial_borrow_footprints_prepare_only_changed_tree_paths() {
                 MemoryRange::new(
                     Address {
                         base: AddressBase::ExternalArgument,
-                        offset: AddressOffset::scaled_int32_node(
+                        offset: OldAddressOffset::scaled_int32_node(
                             OldMachineTerm::Variable(Variable(1_967_000 + index as u64)),
                             4,
                         ),

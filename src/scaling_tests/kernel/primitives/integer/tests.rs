@@ -60,12 +60,13 @@ fn truncating_integer_congruence_visits_shared_nodes_once() {
                 IntegerTerm::TruncatingRemainder(term.clone(), term).into()
             };
         }
-        let goal = Proposition::condition_is(ConditionTerm::IntegerEqual(term.clone(), term), true);
+        let goal =
+            Proposition::condition_is(OldConditionTerm::IntegerEqual(term.clone(), term), true);
         let (rewritten, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::substitute_integer_term_in_proposition(&goal, &from, &to).unwrap()
         });
         assert!(work <= 4 * depth + 8, "depth={depth}, work={work}");
-        let Some((ConditionTerm::IntegerEqual(left, right), true)) = rewritten.condition_native()
+        let Some((OldConditionTerm::IntegerEqual(left, right), true)) = rewritten.old_condition()
         else {
             unreachable!()
         };
@@ -147,7 +148,7 @@ fn widened_and_read_sums(n: u32) -> (SharedIntegerTerm, SharedIntegerTerm) {
 #[test]
 fn widening_value_reading_is_computed_once_per_node() {
     use std::hash::{Hash, Hasher};
-    let hash = |condition: &ConditionTerm| {
+    let hash = |condition: &OldConditionTerm| {
         let mut state = std::collections::hash_map::DefaultHasher::new();
         condition.hash(&mut state);
         state.finish()
@@ -162,7 +163,7 @@ fn widening_value_reading_is_computed_once_per_node() {
         assert_eq!(reading, read, "n={n}");
         assert_eq!(reading_work, 0, "n={n}: the reading is a lookup");
         let bound = |value: SharedIntegerTerm| {
-            ConditionTerm::IntegerLessEqual(value, IntegerTerm::constant_i64(7).into())
+            OldConditionTerm::IntegerLessEqual(value, IntegerTerm::constant_i64(7).into())
         };
         let (written, stated) = (bound(widened.clone()), bound(read.clone()));
         let (same, identity_work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -200,7 +201,8 @@ fn widened_observations_are_one_affine_atom_with_their_operands() {
     let mut costs = Vec::new();
     for n in [16u32, 64, 256, 1024] {
         let (widened, read) = widened_and_read_sums(n);
-        let equality = Proposition::condition_is(ConditionTerm::IntegerEqual(widened, read), true);
+        let equality =
+            Proposition::condition_is(OldConditionTerm::IntegerEqual(widened, read), true);
         let (claim, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::proof::integer_arithmetic::integer_affine_claim(&equality)
         });

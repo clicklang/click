@@ -6,7 +6,7 @@ fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
         let pointer = ProgramValue::typed_pointer(
             Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             },
             ProgramType::Int32Pointer,
         );
@@ -35,7 +35,7 @@ fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
                 vec![
                     ProgramValue::pointer(Address {
                         base: AddressBase::ExternalArgument,
-                        offset: AddressOffset::Variable(Variable(950_000 + index as u64)),
+                        offset: OldAddressOffset::Variable(Variable(950_000 + index as u64)),
                     })
                     .into(),
                 ]
@@ -119,14 +119,14 @@ fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
         let count = events.observe_symbolic(&description).unwrap().entry_count;
         let assumptions = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_greater_equal(
+                OldConditionTerm::signed_greater_equal(
                     count.clone(),
                     OldMachineTerm::constant(amount),
                 ),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_equal(
+                OldConditionTerm::signed_less_equal(
                     count,
                     OldMachineTerm::constant((i32::MAX - 1) as u32),
                 ),
@@ -203,7 +203,7 @@ fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
 fn contained_transfer_frontier_scales_with_selected_depth_and_indexed_definitions() {
     let pointer = Address {
         base: "payload".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let memory = SymbolicMemory::new().with_block("payload", 4);
     let assumptions = PureFactContext::new();

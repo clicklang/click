@@ -41,7 +41,7 @@ fn exact_rewrite_keeps_cold_and_growing_shared_goals() {
                             )
                         };
                         Proposition::condition_is(
-                            ConditionTerm::IntegerEqual(
+                            OldConditionTerm::IntegerEqual(
                                 value.into(),
                                 IntegerTerm::Variable(Variable(1006302)).into(),
                             ),
@@ -49,7 +49,7 @@ fn exact_rewrite_keeps_cold_and_growing_shared_goals() {
                         )
                     };
                     let equality = Proposition::condition_is(
-                        ConditionTerm::Compare {
+                        OldConditionTerm::Compare {
                             format: if ty == T::Int32 { T::Int32 } else { T::Int64 },
                             relation: CompareRelation::Equal,
                             left: Box::new(OldMachineTerm::Variable(x)),
@@ -104,7 +104,7 @@ fn opaque_replacement_rewrites_keep_cold_dags_shared() {
                 let _session = VerificationSession::enter();
                 let x = OldMachineTerm::Variable(Variable(1006500));
                 let to = OldMachineTerm::If {
-                    condition: ConditionTerm::Variable(Variable(1006501)).into(),
+                    condition: OldConditionTerm::Variable(Variable(1006501)).into(),
                     then_term: x.clone().into(),
                     else_term: OldMachineTerm::Variable(Variable(1006502)).into(),
                 };
@@ -161,7 +161,7 @@ fn opaque_sources_match_growing_sources_and_shared_goals_linearly() {
                 let _session = VerificationSession::enter();
                 let ty = T::Int32;
                 let leaf = OldMachineTerm::If {
-                    condition: ConditionTerm::Variable(Variable(1006700)).into(),
+                    condition: OldConditionTerm::Variable(Variable(1006700)).into(),
                     then_term: OldMachineTerm::Variable(Variable(1006701)).into(),
                     else_term: OldMachineTerm::Variable(Variable(1006702)).into(),
                 };

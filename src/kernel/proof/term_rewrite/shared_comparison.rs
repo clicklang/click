@@ -80,7 +80,7 @@ impl TermRewrite<'_> {
             .bitvector
             .map(|(from, _)| super::super::machine_source_match::MachineSourceMatcher::new(from));
         let mut replacements = HashMap::<MachineIntegerType, KernelTerm>::new();
-        let mut guards = HashMap::<u64, (ConditionTerm, KernelTerm, bool)>::new();
+        let mut guards = HashMap::<u64, (OldConditionTerm, KernelTerm, bool)>::new();
         let mut pending = vec![(root.clone(), false)];
         while let Some((term, finish)) = pending.pop() {
             self.visit();
@@ -206,7 +206,7 @@ impl TermRewrite<'_> {
             }
             let children: Vec<_> = match term.node() {
                 KernelTermNode::MachineIf { arguments } => match guards.get(&term.id()) {
-                    Some((ConditionTerm::Constant(value), _, false)) => {
+                    Some((OldConditionTerm::Constant(value), _, false)) => {
                         vec![arguments[if *value { 1 } else { 2 }].clone()]
                     }
                     _ => arguments[1..].to_vec(),
@@ -233,7 +233,7 @@ impl TermRewrite<'_> {
                 KernelTermNode::MachineIf { arguments } => {
                     let (condition, guard, preserve) =
                         guards.remove(&term.id()).expect("visited guard");
-                    if !preserve && let ConditionTerm::Constant(value) = condition {
+                    if !preserve && let OldConditionTerm::Constant(value) = condition {
                         get(&arguments[if value { 1 } else { 2 }])?
                     } else {
                         let left = get(&arguments[1])?;
@@ -388,14 +388,14 @@ impl TermRewrite<'_> {
 }
 
 impl TermRewrite<'_> {
-    fn shared_guard_holds(&self, guard: &ConditionTerm) -> bool {
+    fn shared_guard_holds(&self, guard: &OldConditionTerm) -> bool {
         crate::instrumentation::record_deterministic_work(1);
         self.conditions
             .is_some_and(|conditions| conditions.get(guard) == Some(&true))
             || self
                 .cited_comparison_context
                 .is_some_and(|context| context.selected_comparison_value(guard) == Some(true))
-            || folded_machine_condition(guard.clone()) == ConditionTerm::Constant(true)
+            || folded_machine_condition(guard.clone()) == OldConditionTerm::Constant(true)
     }
 
     fn widened_narrowed_shared_carrier(
@@ -474,7 +474,7 @@ fn shared_narrowed_cast_identity(
     value: &KernelTerm,
     source: MachineIntegerType,
     destination: MachineIntegerType,
-) -> Option<(Vec<Vec<ConditionTerm>>, KernelTerm)> {
+) -> Option<(Vec<Vec<OldConditionTerm>>, KernelTerm)> {
     use crate::kernel::machine_integer::comparison::condition_for_operand_views;
     use MachineIntegerType as T;
     use MachineOperandView as V;
@@ -540,7 +540,7 @@ fn shared_narrowed_cast_identity(
     Some((bounds, carrier))
 }
 
-fn shared_remainder_rewrite(value: &KernelTerm) -> Option<(Vec<ConditionTerm>, KernelTerm)> {
+fn shared_remainder_rewrite(value: &KernelTerm) -> Option<(Vec<OldConditionTerm>, KernelTerm)> {
     use crate::kernel::machine_integer::comparison::condition_for_operand_views;
     use MachineBinaryOp as O;
     use MachineIntegerType as T;
@@ -556,7 +556,7 @@ fn shared_remainder_rewrite(value: &KernelTerm) -> Option<(Vec<ConditionTerm>, K
     let compare = |ty, relation, a: &KernelTerm, b: &KernelTerm| {
         let condition = condition_for_operand_views(ty, relation, [V::Shared(a), V::Shared(b)]);
         crate::kernel::assumptions::observation_comparisons::constant_observation_value(&condition)
-            .map(ConditionTerm::Constant)
+            .map(OldConditionTerm::Constant)
             .unwrap_or(condition)
     };
     if *format == T::UInt64 {
@@ -864,7 +864,7 @@ fn comparison_read_fixture(value: OldMachineTerm) -> (Variable, Variable) {
     let index = OldMachineTerm::Variable(Variable(992201));
     let pointer = |value| Address {
         base: AddressBase::Concrete("opaque-comparison".into()),
-        offset: AddressOffset::scaled_int32_node(value, 4),
+        offset: OldAddressOffset::scaled_int32_node(value, 4),
     };
     let memory = crate::kernel::intern_memory(
         SymbolicMemory::new()
@@ -899,7 +899,7 @@ mod tests {
     fn check_conditional_parity(
         format: MachineIntegerType,
         native: OldMachineTerm,
-        guards: Vec<ConditionTerm>,
+        guards: Vec<OldConditionTerm>,
     ) {
         let root = imported(format, native.clone());
         for omitted in 0..=guards.len() {
@@ -1472,7 +1472,7 @@ mod tests {
             );
         }
         let proposition = Proposition::condition_is(
-            ConditionTerm::integer_less_than(
+            OldConditionTerm::integer_less_than(
                 IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, root).unwrap()),
                 IntegerTerm::constant_i64(0),
             ),
@@ -1504,7 +1504,7 @@ mod tests {
             assert_eq!(
                 {
                     let written = Proposition::condition_is(
-                        ConditionTerm::equal(left.clone(), right.clone()),
+                        OldConditionTerm::equal(left.clone(), right.clone()),
                         true,
                     );
                     let normalized =
@@ -1526,7 +1526,10 @@ mod tests {
         let (read, _) = comparison_read_fixture(7u32.into());
         let bound = OldMachineTerm::Variable(Variable(992203));
         let claim = |value| {
-            Proposition::condition_is(ConditionTerm::signed_less_than(value, bound.clone()), true)
+            Proposition::condition_is(
+                OldConditionTerm::signed_less_than(value, bound.clone()),
+                true,
+            )
         };
         assert!(
             crate::kernel::proof::fact_reasoning::condition_polarity_equivalent(
@@ -1573,14 +1576,14 @@ mod tests {
         assert_eq!(carriers.program_values, BTreeSet::from([a, c]));
         assert_eq!(carriers.integer, BTreeSet::from([a]));
         assert!(carriers.algebraic.is_empty());
-        let condition = ConditionTerm::integer_equal(
+        let condition = OldConditionTerm::integer_equal(
             IntegerTerm::Machine(observed(left.clone())),
             IntegerTerm::Machine(observed(right)),
         );
         let parent = PureFactContext::new();
         assert_eq!(parent.decide(&condition), None);
         let child = parent.clone().assume_condition(
-            ConditionTerm::integer_equal(IntegerTerm::Variable(a), IntegerTerm::Variable(b)),
+            OldConditionTerm::integer_equal(IntegerTerm::Variable(a), IntegerTerm::Variable(b)),
             true,
         );
         assert_eq!(child.decide(&condition), Some(true));

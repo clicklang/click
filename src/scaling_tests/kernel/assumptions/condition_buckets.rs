@@ -6,8 +6,8 @@ fn strict_upper_bound_queries_do_not_scan_condition_side_buckets() {
         let var = |id| OldMachineTerm::Variable(Variable(940_000 + id));
         let mut facts = PureFactContext::new();
         for index in 1..=size {
-            facts =
-                facts.assume_condition(ConditionTerm::signed_less_than(var(index), var(0)), true);
+            facts = facts
+                .assume_condition(OldConditionTerm::signed_less_than(var(index), var(0)), true);
         }
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..4 {
@@ -32,9 +32,9 @@ fn constant_interval_queries_do_not_scan_symbolic_side_bounds() {
             let var = |id| OldMachineTerm::Variable(Variable(950_000 + id));
             let order = |a, b| {
                 if unsigned {
-                    ConditionTerm::unsigned_less_equal(a, b)
+                    OldConditionTerm::unsigned_less_equal(a, b)
                 } else {
-                    ConditionTerm::signed_less_equal(a, b)
+                    OldConditionTerm::signed_less_equal(a, b)
                 }
             };
             let mut facts = PureFactContext::new();
@@ -68,15 +68,15 @@ fn constant_interval_queries_do_not_scan_symbolic_side_bounds() {
 fn direct_order_extrema_preserve_truth_formats_and_branch_isolation() {
     let _session = crate::kernel::VerificationSession::enter();
     let x = OldMachineTerm::Variable(Variable(951_000));
-    let upper = ConditionTerm::signed_greater_equal(x.clone(), 100u32.into());
-    let lower = ConditionTerm::signed_less_than(x.clone(), 10u32.into());
+    let upper = OldConditionTerm::signed_greater_equal(x.clone(), 100u32.into());
+    let lower = OldConditionTerm::signed_less_than(x.clone(), 10u32.into());
     let parent = PureFactContext::new()
         .assume_condition(upper.clone(), false)
         .assume_condition(lower, false);
     assert_eq!(parent.indexed_constant_interval(&x), Some((10, 99)));
     assert!(parent.has_exact_strict_upper_bound(&x));
     assert_eq!(parent.indexed_unsigned32_constant_interval(&x), None);
-    let tighter = ConditionTerm::signed_less_equal(x.clone(), 80u32.into());
+    let tighter = OldConditionTerm::signed_less_equal(x.clone(), 80u32.into());
     let child = parent.clone().assume_condition(tighter.clone(), true);
     assert_eq!(child.indexed_constant_interval(&x), Some((10, 80)));
     assert_eq!(parent.indexed_constant_interval(&x), Some((10, 99)));
@@ -91,7 +91,7 @@ fn growing_constant_bound_buckets_keep_extrema_and_update_cost_indexed() {
         let mut facts = PureFactContext::new();
         for bound in 1..=size {
             facts = facts.assume_condition(
-                ConditionTerm::signed_less_than(x.clone(), (bound + 100).into()),
+                OldConditionTerm::signed_less_than(x.clone(), (bound + 100).into()),
                 true,
             );
         }
@@ -106,7 +106,7 @@ fn growing_constant_bound_buckets_keep_extrema_and_update_cost_indexed() {
                 }
                 let mut index = facts.checked_order_bounds.clone();
                 index.adjust(
-                    &ConditionTerm::signed_less_than(x.clone(), 50u32.into()),
+                    &OldConditionTerm::signed_less_than(x.clone(), 50u32.into()),
                     true,
                 );
                 assert_eq!(index.interval(&x, false), Some((i64::from(i32::MIN), 49)));
@@ -130,8 +130,10 @@ fn equality_queries_do_not_scan_shared_endpoint_buckets() {
             let var = |id| OldMachineTerm::Variable(Variable(970_000 + id));
             let mut facts = PureFactContext::new();
             for index in 1..=size {
-                facts = facts
-                    .assume_condition(ConditionTerm::signed_less_equal(var(0), var(index)), true);
+                facts = facts.assume_condition(
+                    OldConditionTerm::signed_less_equal(var(0), var(index)),
+                    true,
+                );
             }
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for _ in 0..4 {
@@ -164,11 +166,13 @@ fn interval_queries_do_not_walk_symbolic_order_components() {
         for size in [8u64, 32, 128] {
             let _session = crate::kernel::VerificationSession::enter();
             let var = |id| OldMachineTerm::Variable(Variable(971_000 + id));
-            let mut facts = PureFactContext::new()
-                .assume_condition(ConditionTerm::signed_less_equal(0u32.into(), var(0)), true);
+            let mut facts = PureFactContext::new().assume_condition(
+                OldConditionTerm::signed_less_equal(0u32.into(), var(0)),
+                true,
+            );
             for index in 1..=size {
                 facts = facts.assume_condition(
-                    ConditionTerm::signed_less_equal(
+                    OldConditionTerm::signed_less_equal(
                         var(if branching { 0 } else { index - 1 }),
                         var(index),
                     ),
@@ -201,9 +205,9 @@ fn equality_class_hits_and_anchored_misses_stay_indexed() {
         let var = |id| OldMachineTerm::Variable(Variable(972_000 + id));
         let mut facts = PureFactContext::new();
         for index in 1..=size {
-            facts = facts.assume_condition(ConditionTerm::equal(var(0), var(index)), true);
+            facts = facts.assume_condition(OldConditionTerm::equal(var(0), var(index)), true);
         }
-        facts = facts.assume_condition(ConditionTerm::equal(var(size), 7u32.into()), true);
+        facts = facts.assume_condition(OldConditionTerm::equal(var(size), 7u32.into()), true);
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..4 {
                 assert_eq!(facts.signed_constant_known_equal(&var(0)), Some(7));
@@ -238,18 +242,19 @@ fn contiguous_exclusion_queries_skip_runs_and_preserve_branches() {
         let x = OldMachineTerm::Variable(Variable(973_000));
         let mut halves = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_less_equal(0u32.into(), x.clone()),
+                OldConditionTerm::signed_less_equal(0u32.into(), x.clone()),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_equal(x.clone(), size.into()),
+                OldConditionTerm::signed_less_equal(x.clone(), size.into()),
                 true,
             );
         // Insert the two halves in opposite orders, joining the runs at the end.
         for value in (0..size / 2).chain((size / 2 + 1..size).rev()) {
-            halves = halves.assume_condition(ConditionTerm::equal(x.clone(), value.into()), false);
+            halves =
+                halves.assume_condition(OldConditionTerm::equal(x.clone(), value.into()), false);
         }
-        let joining = ConditionTerm::equal(x.clone(), (size / 2).into());
+        let joining = OldConditionTerm::equal(x.clone(), (size / 2).into());
         let facts = halves.clone().assume_condition(joining, false);
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..4 {
@@ -276,8 +281,8 @@ fn contiguous_exclusion_queries_skip_runs_and_preserve_branches() {
 fn excluded_runs_keep_widths_separate() {
     let _session = crate::kernel::VerificationSession::enter();
     let x = OldMachineTerm::Variable(Variable(974_000));
-    let forward = ConditionTerm::equal(x.clone(), 0u32.into());
-    let reverse = ConditionTerm::equal(0u32.into(), x.clone());
+    let forward = OldConditionTerm::equal(x.clone(), 0u32.into());
+    let reverse = OldConditionTerm::equal(0u32.into(), x.clone());
     let mut index = checked_scalar_facts::CheckedScalarFacts::default();
     index.adjust(&forward, false);
     index.adjust(&reverse, false);
@@ -286,7 +291,7 @@ fn excluded_runs_keep_widths_separate() {
         (1, 3)
     );
     let mut index = checked_scalar_facts::CheckedScalarFacts::default();
-    let wide = ConditionTerm::Compare {
+    let wide = OldConditionTerm::Compare {
         format: MachineIntegerType::Int64,
         relation: CompareRelation::Equal,
         left: x.clone().into(),
@@ -307,8 +312,10 @@ fn constant_equality_evidence_does_not_enumerate_symbolic_bounds() {
         let var = |id| OldMachineTerm::Variable(Variable(975_000 + id));
         let mut facts = PureFactContext::new();
         for index in 1..=size {
-            facts =
-                facts.assume_condition(ConditionTerm::signed_less_equal(var(0), var(index)), true);
+            facts = facts.assume_condition(
+                OldConditionTerm::signed_less_equal(var(0), var(index)),
+                true,
+            );
         }
         let (_, miss_work) = crate::instrumentation::measure_deterministic_work(|| {
             assert!(
@@ -318,8 +325,14 @@ fn constant_equality_evidence_does_not_enumerate_symbolic_bounds() {
             );
         });
         let facts = facts
-            .assume_condition(ConditionTerm::signed_less_equal(7u32.into(), var(0)), true)
-            .assume_condition(ConditionTerm::signed_less_equal(var(0), 7u32.into()), true);
+            .assume_condition(
+                OldConditionTerm::signed_less_equal(7u32.into(), var(0)),
+                true,
+            )
+            .assume_condition(
+                OldConditionTerm::signed_less_equal(var(0), 7u32.into()),
+                true,
+            );
         let (_, hit_work) = crate::instrumentation::measure_deterministic_work(|| {
             assert_eq!(
                 facts

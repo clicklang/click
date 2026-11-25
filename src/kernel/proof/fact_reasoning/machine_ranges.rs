@@ -3,9 +3,9 @@
 //! proof context, and the walk refuses when it uses its local allowance.
 
 use crate::kernel::{
-    BooleanOperandView, CompareRelation, ConditionTerm, IntegerComparisonOperator, IntegerTerm,
-    KernelTerm, KernelTermNode, MachineBinaryOp, MachineIntegerConstant, MachineIntegerType,
-    MachineOperandView, OldMachineTerm,
+    BooleanOperandView, CompareRelation, IntegerComparisonOperator, IntegerTerm, KernelTerm,
+    KernelTermNode, MachineBinaryOp, MachineIntegerConstant, MachineIntegerType,
+    MachineOperandView, OldConditionTerm, OldMachineTerm,
 };
 use num_traits::ToPrimitive;
 
@@ -61,7 +61,7 @@ impl Range {
 const MAX_VISITS: usize = 512;
 const MAX_DEPTH: usize = 64;
 
-pub(super) fn comparison_value(condition: &ConditionTerm) -> Option<bool> {
+pub(super) fn comparison_value(condition: &OldConditionTerm) -> Option<bool> {
     Check { left: MAX_VISITS }.condition(condition, MAX_DEPTH)
 }
 
@@ -70,11 +70,11 @@ struct Check {
 }
 
 impl Check {
-    fn condition(&mut self, condition: &ConditionTerm, depth: usize) -> Option<bool> {
+    fn condition(&mut self, condition: &OldConditionTerm, depth: usize) -> Option<bool> {
         use CompareRelation::*;
         let (relation, left, right, negated) = match condition {
-            ConditionTerm::Constant(value) => return Some(*value),
-            ConditionTerm::Compare {
+            OldConditionTerm::Constant(value) => return Some(*value),
+            OldConditionTerm::Compare {
                 format,
                 relation,
                 left,
@@ -87,12 +87,14 @@ impl Check {
                     depth,
                 );
             }
-            ConditionTerm::IntegerEqual(left, right) => (Equal, left, right, false),
-            ConditionTerm::IntegerNotEqual(left, right) => (Equal, left, right, true),
-            ConditionTerm::IntegerLessThan(left, right) => (LessThan, left, right, false),
-            ConditionTerm::IntegerLessEqual(left, right) => (LessEqual, left, right, false),
-            ConditionTerm::IntegerGreaterThan(left, right) => (GreaterThan, left, right, false),
-            ConditionTerm::IntegerGreaterEqual(left, right) => (GreaterEqual, left, right, false),
+            OldConditionTerm::IntegerEqual(left, right) => (Equal, left, right, false),
+            OldConditionTerm::IntegerNotEqual(left, right) => (Equal, left, right, true),
+            OldConditionTerm::IntegerLessThan(left, right) => (LessThan, left, right, false),
+            OldConditionTerm::IntegerLessEqual(left, right) => (LessEqual, left, right, false),
+            OldConditionTerm::IntegerGreaterThan(left, right) => (GreaterThan, left, right, false),
+            OldConditionTerm::IntegerGreaterEqual(left, right) => {
+                (GreaterEqual, left, right, false)
+            }
             _ => return None,
         };
         let left = self.integer(left.as_ref(), depth)?;
@@ -279,7 +281,7 @@ mod tests {
             for _ in 0..size {
                 input = binary(Op::Add, input, literal(1));
             }
-            let equality = |mask, offset| ConditionTerm::Compare {
+            let equality = |mask, offset| OldConditionTerm::Compare {
                 format: ty,
                 relation: CompareRelation::Equal,
                 left: Box::new(binary(
@@ -317,7 +319,7 @@ mod tests {
                 signed(0),
             ),
         ] {
-            let condition = ConditionTerm::Compare {
+            let condition = OldConditionTerm::Compare {
                 format,
                 relation: CompareRelation::GreaterEqual,
                 left: Box::new(OldMachineTerm::Binary {

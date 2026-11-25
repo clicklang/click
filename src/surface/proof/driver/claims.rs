@@ -6740,7 +6740,7 @@ mod tests {
         let right = OldMachineTerm::Variable(Variable(2));
         let assumptions = PureFactContext::new()
             .assume_proposition(Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: Box::new(left.clone()),
@@ -6749,7 +6749,7 @@ mod tests {
                 true,
             ))
             .assume_proposition(Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: Box::new(right.clone()),
@@ -6762,7 +6762,7 @@ mod tests {
         // conflict, and the inconsistency guard is what stops that conflict
         // from being read as sibling-path evidence.
         let exactly_refuted = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(right_term.clone()),
@@ -6779,7 +6779,7 @@ mod tests {
         // reason since the general prover left the kernel: the exact routes
         // report no conflict at all rather than deriving one by explosion.
         let unrelated = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(OldMachineTerm::Variable(Variable(2))),
@@ -6795,7 +6795,7 @@ mod tests {
 
     #[test]
     fn consistent_exact_conflict_remains_sibling_path_evidence() {
-        let condition = ConditionTerm::Compare {
+        let condition = OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left: Box::new(OldMachineTerm::Variable(Variable(1))),

@@ -173,7 +173,7 @@ fn reflexive_variable_comparisons_do_not_walk_arithmetic_operands() {
                     [V::Shared(&variable), V::Shared(&variable)],
                 );
                 assert!(
-                    matches!(retained, ConditionTerm::Compare { relation: R::Equal, left, right, .. }
+                    matches!(retained, OldConditionTerm::Compare { relation: R::Equal, left, right, .. }
                     if matches!((left.as_ref(), right.as_ref()), (OldMachineTerm::Variable(a), OldMachineTerm::Variable(b)) if a == b))
                 );
                 let other = logical_condition_for_operand_views(
@@ -181,7 +181,7 @@ fn reflexive_variable_comparisons_do_not_walk_arithmetic_operands() {
                     R::Equal,
                     [V::Shared(&arithmetic), V::Shared(&arithmetic)],
                 );
-                assert!(!matches!(other, ConditionTerm::Compare { .. }));
+                assert!(!matches!(other, OldConditionTerm::Compare { .. }));
             });
             assert_eq!(KernelTermExport::machine_export_count(), exports);
             assert_eq!(

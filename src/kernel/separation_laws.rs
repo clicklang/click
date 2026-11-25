@@ -33,9 +33,9 @@ pub(crate) fn prove_separation_elements(
     Theorem::new(Proposition::Implies(
         Box::new(Proposition::condition_is(
             if wide {
-                ConditionTerm::int64_equal(i.clone(), j.clone())
+                OldConditionTerm::int64_equal(i.clone(), j.clone())
             } else {
-                ConditionTerm::equal(i.clone(), j.clone())
+                OldConditionTerm::equal(i.clone(), j.clone())
             },
             false,
         )),
@@ -77,14 +77,14 @@ pub(crate) fn prove_separation_distinct_elements(
     Theorem::new(Proposition::Implies(
         Box::new(Proposition::condition_is(
             if wide {
-                ConditionTerm::int64_equal(i.clone(), j.clone())
+                OldConditionTerm::int64_equal(i.clone(), j.clone())
             } else {
-                ConditionTerm::equal(i.clone(), j.clone())
+                OldConditionTerm::equal(i.clone(), j.clone())
             },
             false,
         )),
         Box::new(Proposition::condition_is(
-            ConditionTerm::address_equal(address(i), address(j)),
+            OldConditionTerm::address_equal(address(i), address(j)),
             false,
         )),
     ))
@@ -158,7 +158,7 @@ pub(crate) fn prove_separation_subrange(
             .fold(conclusion, |body, (left, right)| {
                 Proposition::Implies(
                     Box::new(Proposition::condition_is(
-                        ConditionTerm::machine_compare(
+                        OldConditionTerm::machine_compare(
                             format,
                             CompareRelation::LessEqual,
                             left,
@@ -217,7 +217,7 @@ pub(crate) fn prove_separation_adjacent_ranges(
             .fold(conclusion, |body, (left, right)| {
                 Proposition::Implies(
                     Box::new(Proposition::condition_is(
-                        ConditionTerm::machine_compare(
+                        OldConditionTerm::machine_compare(
                             format,
                             CompareRelation::LessEqual,
                             left,
@@ -277,13 +277,13 @@ pub(crate) fn prove_separation_rebase(
     };
     // Retain the declaration's exact observation premise even for unsigned
     // indices, where a native zero comparison would simplify to `true`.
-    let nonnegative = ConditionTerm::IntegerLessEqual(
+    let nonnegative = OldConditionTerm::IntegerLessEqual(
         IntegerTerm::constant_i64(0).into(),
         IntegerTerm::from_machine(format, lo.clone())
             .expect("rebase admits machine integer bounds")
             .into(),
     );
-    let ordered = ConditionTerm::machine_compare(format, CompareRelation::LessEqual, lo, hi);
+    let ordered = OldConditionTerm::machine_compare(format, CompareRelation::LessEqual, lo, hi);
     Theorem::new(
         [nonnegative, ordered]
             .into_iter()
@@ -342,7 +342,7 @@ pub(crate) fn prove_separation_contains_element(
         .fold(conclusion, |body, (relation, left, right)| {
             Proposition::Implies(
                 Box::new(Proposition::condition_is(
-                    ConditionTerm::machine_compare(format, relation, left, right),
+                    OldConditionTerm::machine_compare(format, relation, left, right),
                     true,
                 )),
                 Box::new(body),

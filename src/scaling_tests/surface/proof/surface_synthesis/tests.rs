@@ -11,7 +11,7 @@ fn read_origin_raising_ignores_other_points_with_equal_memory() {
     let point = source.program_point();
     let slot = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let indexed = point
         .ordinary_typed_version(&slot, ProgramType::Int32)
@@ -99,8 +99,8 @@ fn boolean_local_synthesis_round_trips_and_scales_with_local_population() {
             right: surface,
         };
         let lowered = relower_written_proposition(&equality, &state).unwrap();
-        let Some((condition @ ConditionTerm::BoolEqual(left, right), true)) =
-            lowered.condition_native()
+        let Some((condition @ OldConditionTerm::BoolEqual(left, right), true)) =
+            lowered.old_condition()
         else {
             panic!("expected the retained Boolean equality: {lowered:?}");
         };
@@ -117,11 +117,11 @@ fn pointer_spelling_skips_cyclic_offsets_and_tries_the_next_local() {
             for size in [1usize, 8, 32, 128] {
                 let pointer = Address {
                     base: crate::kernel::AddressBase::ExternalArgument,
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 };
                 let cyclic = Address {
                     base: pointer.base.clone(),
-                    offset: AddressOffset::scaled_int32_node(
+                    offset: OldAddressOffset::scaled_int32_node(
                         OldMachineTerm::integer_address(pointer.clone()),
                         4,
                     ),
@@ -308,7 +308,7 @@ fn allocation_result_names_use_one_index_as_recorded_history_grows() {
         for n in 0..count {
             last = Address {
                 base: AddressBase::Heap(990_000 + n as u64),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             };
             last_region = layout
                 .source_path_region(&[SourcePathStep::Statement(n + 1)], ProgramPointKind::Exit)
@@ -365,9 +365,9 @@ fn boolean_synthesis_tracks_expression_size_not_unrelated_names() {
             names.insert(Variable(9100 + i as u64), format!("unused_{i}").into());
         }
         names.insert(Variable(9000), "flag".into());
-        let flag = ConditionTerm::Variable(Variable(9000));
+        let flag = OldConditionTerm::Variable(Variable(9000));
         let fact = Proposition::condition_is(
-            ConditionTerm::bool_application(
+            OldConditionTerm::bool_application(
                 "choose",
                 vec![crate::kernel::PureFunctionArgument::Value(
                     ProgramValue::of_bool(flag),
@@ -391,11 +391,11 @@ fn boolean_synthesis_tracks_expression_size_not_unrelated_names() {
         "{costs:?}"
     );
     for size in [4usize, 8, 16, 32] {
-        let mut condition = ConditionTerm::Constant(false);
+        let mut condition = OldConditionTerm::Constant(false);
         for i in 0..size {
-            condition = ConditionTerm::bool_if(
-                ConditionTerm::bool_application(&format!("p{i}"), vec![]),
-                ConditionTerm::Constant(true),
+            condition = OldConditionTerm::bool_if(
+                OldConditionTerm::bool_application(&format!("p{i}"), vec![]),
+                OldConditionTerm::Constant(true),
                 condition,
             );
         }
@@ -442,14 +442,14 @@ fn leading_domain_recognition_retains_shared_arithmetic() {
                 IntegerTerm::Add(left, right)
             };
             let upper = Proposition::condition_is(
-                ConditionTerm::IntegerLessEqual(
+                OldConditionTerm::IntegerLessEqual(
                     exact.clone().into(),
                     IntegerTerm::constant(i32::MAX.into()).into(),
                 ),
                 true,
             );
             let lower = Proposition::condition_is(
-                ConditionTerm::IntegerGreaterEqual(
+                OldConditionTerm::IntegerGreaterEqual(
                     exact.into(),
                     IntegerTerm::constant(i32::MIN.into()).into(),
                 ),
@@ -690,7 +690,7 @@ fn array_argument_state_lookup_ignores_unrelated_recorded_history() {
     let pointer = ProgramValue::pointer(Address::symbolic(Variable(981_400)));
     let cell = Address {
         base: AddressBase::Concrete("selected-array-memory".into()),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let selected = ExecutionState::new()
         .with_local("p", pointer.clone())
@@ -864,7 +864,7 @@ fn shared_overflow_spelling_does_not_export_growing_operands() {
                 OldMachineTerm::constant(1),
             );
         }
-        let root = KernelTermImport::default().condition(&ConditionTerm::Overflows {
+        let root = KernelTermImport::default().condition(&OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
             left: Box::new(operand),
@@ -918,7 +918,7 @@ fn pointer_comparison_spelling_does_not_export_bounds_payloads() {
         let arguments = [ProgramExpression::Value(ProgramValue::Pointer(
             value.clone(),
         ))];
-        let root = KernelTermImport::default().condition(&ConditionTerm::PointerEqual(
+        let root = KernelTermImport::default().condition(&OldConditionTerm::PointerEqual(
             Box::new(value.clone()),
             Box::new(value),
         ));
@@ -955,7 +955,7 @@ fn narrow_literal_comparison_spelling_ignores_unrelated_locals() {
                 crate::kernel::machine_integer::range::constant_word(format, &n.into()).unwrap()
             };
             let proposition = Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format,
                     relation: R::LessEqual,
                     left: Box::new(word(9)),
@@ -987,7 +987,7 @@ fn narrow_comparison_spelling_scales_with_the_selected_proposition() {
             crate::kernel::machine_integer::range::constant_word(T::UInt8, &n.into()).unwrap()
         };
         let atom = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: T::UInt8,
                 relation: R::GreaterEqual,
                 left: Box::new(word(9)),

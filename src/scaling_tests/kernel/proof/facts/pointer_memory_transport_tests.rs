@@ -4,7 +4,7 @@ fn full_pointer_fact_transport_checks_provenance_and_the_whole_read() {
     let _session = VerificationSession::enter();
     let cell = Address {
         base: "pointer-retained_state-cell".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let before = intern_memory(SymbolicMemory::new().with_block(cell.base.clone(), 8));
     let after = intern_memory(before.memory().clone().with_block("other-local", 4));
@@ -22,7 +22,7 @@ fn full_pointer_fact_transport_checks_provenance_and_the_whole_read() {
     );
     let fact = |pointer| {
         Proposition::condition_is(
-            ConditionTerm::PointerEqual(Box::new(pointer), Box::new(rhs.clone())),
+            OldConditionTerm::PointerEqual(Box::new(pointer), Box::new(rhs.clone())),
             true,
         )
     };
@@ -44,7 +44,7 @@ fn full_pointer_fact_transport_checks_provenance_and_the_whole_read() {
         let mut facts = PureFactStore::from_ordered(std::slice::from_ref(&source));
         for index in 0..size {
             facts = facts.with_fact(Proposition::condition_is(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     OldMachineTerm::Variable(Variable(992_100 + index)),
                     OldMachineTerm::constant(7),
                 ),
@@ -57,7 +57,7 @@ fn full_pointer_fact_transport_checks_provenance_and_the_whole_read() {
                 width: OldMachineTerm::constant(u32::try_from(index + 1).unwrap()),
             }));
             facts = facts.with_fact(Proposition::condition_is(
-                ConditionTerm::PointerEqual(Box::new(selected.clone()), Box::new(selected)),
+                OldConditionTerm::PointerEqual(Box::new(selected.clone()), Box::new(selected)),
                 true,
             ));
         }

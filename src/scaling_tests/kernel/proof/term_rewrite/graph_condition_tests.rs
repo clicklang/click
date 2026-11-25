@@ -56,7 +56,7 @@ fn int32_guard_queries_ignore_unrelated_graph_equalities() {
             graph.add_int32_equality(&var(100 + 2 * i), &var(101 + 2 * i));
         }
         let choice = OldMachineTerm::If {
-            condition: Box::new(ConditionTerm::equal(var(1), var(2))),
+            condition: Box::new(OldConditionTerm::equal(var(1), var(2))),
             then_term: Box::new(OldMachineTerm::constant(7)),
             else_term: Box::new(OldMachineTerm::constant(0)),
         };

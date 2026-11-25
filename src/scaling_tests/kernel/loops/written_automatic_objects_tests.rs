@@ -7,7 +7,7 @@ use super::*;
 fn object_slot(name: &str) -> Address {
     Address {
         base: AddressBase::Concrete(format!("local:{name}")),
-        offset: crate::kernel::AddressOffset::Constant(0),
+        offset: crate::kernel::OldAddressOffset::Constant(0),
     }
 }
 

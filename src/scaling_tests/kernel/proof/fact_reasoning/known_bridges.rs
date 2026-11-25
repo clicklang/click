@@ -166,9 +166,11 @@ fn shift_definedness_bridges_read_only_the_exact_count_bounds() {
             constant_word(unsigned, &1.into()).unwrap(),
             count.clone(),
         );
-        let nonzero_goal =
-            ConditionTerm::IntegerNotEqual(shifted_one.into(), IntegerTerm::constant_i64(0).into())
-                .truth_claim(true);
+        let nonzero_goal = OldConditionTerm::IntegerNotEqual(
+            shifted_one.into(),
+            IntegerTerm::constant_i64(0).into(),
+        )
+        .truth_claim(true);
         let bound = |d, endpoint: u32| {
             let endpoint = constant_word(unsigned, &endpoint.into()).unwrap();
             condition_for_operand_views(
@@ -402,7 +404,7 @@ fn finite_float_reflexivity_uses_one_exact_classification() {
     let _session = VerificationSession::enter();
     let finite = |id| {
         Proposition::condition_is(
-            ConditionTerm::float32_classification(
+            OldConditionTerm::float32_classification(
                 OldMachineTerm::Variable(Variable(id)),
                 FloatClassification::Finite,
             ),
@@ -411,7 +413,7 @@ fn finite_float_reflexivity_uses_one_exact_classification() {
     };
     let operand = OldMachineTerm::Variable(Variable(996800));
     let goal = Proposition::condition_is(
-        ConditionTerm::float32_compare(operand.clone(), operand, ComparisonOperator::Equal),
+        OldConditionTerm::float32_compare(operand.clone(), operand, ComparisonOperator::Equal),
         true,
     );
     let mut costs = Vec::new();
@@ -442,11 +444,11 @@ fn finite_float_reflexivity_uses_one_exact_classification() {
 #[test]
 fn non_numeric_arm_equations_use_only_the_written_guard() {
     let _session = VerificationSession::enter();
-    let guard = ConditionTerm::Variable(Variable(998000));
-    let a = ConditionTerm::Variable(Variable(998001));
-    let b = ConditionTerm::Variable(Variable(998002));
+    let guard = OldConditionTerm::Variable(Variable(998000));
+    let a = OldConditionTerm::Variable(Variable(998001));
+    let b = OldConditionTerm::Variable(Variable(998002));
     let boolean = Proposition::condition_is(
-        ConditionTerm::bool_equal(ConditionTerm::bool_if(guard.clone(), a.clone(), b), a),
+        OldConditionTerm::bool_equal(OldConditionTerm::bool_if(guard.clone(), a.clone(), b), a),
         true,
     );
     let variants: std::sync::Arc<[AlgebraicVariantType]> = ["A", "B"]
@@ -487,7 +489,7 @@ fn non_numeric_arm_equations_use_only_the_written_guard() {
     let mut costs = Vec::new();
     for size in [8, 32, 128, 512] {
         let unrelated = (0..size)
-            .map(|index| ConditionTerm::Variable(Variable(998100 + index)).truth_claim(true))
+            .map(|index| OldConditionTerm::Variable(Variable(998100 + index)).truth_claim(true))
             .collect::<Vec<_>>();
         let contexts = [None, Some(false), Some(true)].map(|polarity| {
             let mut premises = unrelated.clone();
@@ -523,7 +525,7 @@ fn odd_wrapping_product_reads_only_the_operand_disequality() {
     let x = word(996901);
     let differs = |operand, literal| {
         Proposition::condition_is(
-            ConditionTerm::machine_compare(
+            OldConditionTerm::machine_compare(
                 format,
                 CompareRelation::Equal,
                 operand,

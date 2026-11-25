@@ -545,12 +545,12 @@ pub(super) fn pure_induction_hypothesis(
     }
     let smaller = Proposition::condition_is(
         if unsigned {
-            ConditionTerm::uint64_less_than(
+            OldConditionTerm::uint64_less_than(
                 value.clone(),
                 OldMachineTerm::Variable(*current_variable),
             )
         } else {
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(value.clone()),
@@ -562,7 +562,7 @@ pub(super) fn pure_induction_hypothesis(
     body = Proposition::Implies(Box::new(smaller), Box::new(body));
     if !unsigned {
         let nonnegative = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
                 left: Box::new(value),
@@ -910,7 +910,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 // carried as its cast to `uint8` (rule C1).
                 InterfaceType::Bool => ProgramValue::Bool(OldMachineTerm::bool_cast(
                     crate::kernel::MachineIntegerType::UInt8,
-                    crate::kernel::ConditionTerm::Variable(Variable(index as u64)),
+                    crate::kernel::OldConditionTerm::Variable(Variable(index as u64)),
                 )),
                 InterfaceType::VoidPointer
                 | InterfaceType::VoidPointerPointer
@@ -3189,7 +3189,7 @@ fn lower_pure_theorem_proposition_opaque(
 /// lowers to that orientation (`canonical_observation_form`), while a kernel
 /// axiom states the order its lemma writes; both name the same fact.
 fn oriented_order_comparisons(proposition: &Proposition) -> Proposition {
-    use crate::kernel::ConditionTerm as Condition;
+    use crate::kernel::OldConditionTerm as Condition;
     match proposition {
         Proposition::ConditionIs(condition, value) => {
             let oriented = match condition.old_form() {
@@ -3309,7 +3309,7 @@ mod tests {
 
     #[test]
     fn axiom_comparison_states_each_order_as_less_than_or_less_equal() {
-        use crate::kernel::ConditionTerm as Condition;
+        use crate::kernel::OldConditionTerm as Condition;
         let word = |index| Box::new(OldMachineTerm::Variable(crate::kernel::Variable(index)));
         let fact = |condition| Proposition::condition_is(condition, true);
         let greater = Proposition::Implies(
@@ -4659,7 +4659,7 @@ fn constant_integer(expression: &SyntaxTerm) -> Option<(i128, Option<ConstantTyp
             let crate::kernel::AddressBase::StringLiteral { bytes, .. } = &address.base else {
                 return None;
             };
-            let crate::kernel::AddressOffset::Constant(offset) = address.offset else {
+            let crate::kernel::OldAddressOffset::Constant(offset) = address.offset else {
                 return None;
             };
             let (index, _) = constant_integer(index)?;

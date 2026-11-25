@@ -76,7 +76,7 @@ fn algebraic_conditional_prefixes_import_and_export_linearly() {
             source = AlgebraicTerm {
                 algebraic_type: leaf.algebraic_type.clone(),
                 node: AlgebraicTermNode::If {
-                    condition: Box::new(ConditionTerm::integer_equal(
+                    condition: Box::new(OldConditionTerm::integer_equal(
                         IntegerTerm::var(Variable(999723)),
                         IntegerTerm::constant_i64(0),
                     )),
@@ -115,7 +115,7 @@ fn algebraic_read_construction_keeps_growing_shared_addresses_without_exports() 
         }
         let pointer = Address {
             base: AddressBase::Symbolic(Variable(999748)),
-            offset: AddressOffset::Int32Scaled {
+            offset: OldAddressOffset::Int32Scaled {
                 value: SharedMachineIntegerTerm::from_shared(format, index).unwrap(),
                 byte_width: 4,
             },

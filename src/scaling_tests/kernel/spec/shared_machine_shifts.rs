@@ -110,7 +110,7 @@ fn retained_int64_order_uses_root_width_bounds_without_walking_prefixes() {
                 ],
             )
         });
-        assert_eq!(condition, ConditionTerm::Constant(true));
+        assert_eq!(condition, OldConditionTerm::Constant(true));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         if let Some(before) = previous {
             assert!(work <= before + 8, "{size}: {work} vs {before}");

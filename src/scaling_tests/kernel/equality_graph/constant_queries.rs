@@ -11,7 +11,7 @@ fn shared_wide_constant_capture_scales_with_dag_and_selected_sources() {
                 |id| KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(id));
             let mut root = variable(998771);
             let source = Proposition::condition_is(
-                ConditionTerm::integer_equal(
+                OldConditionTerm::integer_equal(
                     IntegerTerm::Machine(
                         SharedMachineIntegerTerm::from_shared(ty, root.clone()).unwrap(),
                     ),
@@ -22,7 +22,7 @@ fn shared_wide_constant_capture_scales_with_dag_and_selected_sources() {
             let mut parent = PureFactContext::new();
             for i in 0..unrelated {
                 parent = parent.assume_condition(
-                    ConditionTerm::int64_equal(
+                    OldConditionTerm::int64_equal(
                         OldMachineTerm::Variable(Variable(998800 + i)),
                         OldMachineTerm::int64_constant(3),
                     ),

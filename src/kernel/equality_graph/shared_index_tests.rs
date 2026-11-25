@@ -90,12 +90,12 @@ fn scaled_offset_keys_and_congruence_retain_shared_operands() {
                 .unwrap();
             let value = SharedMachineIntegerTerm::from_shared(container, root).unwrap();
             if ty == MachineIntegerType::Int32 {
-                AddressOffset::Int32Scaled {
+                OldAddressOffset::Int32Scaled {
                     value,
                     byte_width: stride,
                 }
             } else {
-                AddressOffset::Int64Scaled {
+                OldAddressOffset::Int64Scaled {
                     value,
                     byte_width: stride,
                     unsigned: ty == MachineIntegerType::UInt64,

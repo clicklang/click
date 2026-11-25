@@ -374,7 +374,7 @@ fn checked_pair(
         return None;
     }
     if a.base() != b.base()
-        && facts.decide(&ConditionTerm::address_equal(
+        && facts.decide(&OldConditionTerm::address_equal(
             a.base().clone(),
             b.base().clone(),
         )) != Some(true)
@@ -398,7 +398,7 @@ fn checked_pair(
         return None;
     }
     let lt = |a: &OldMachineTerm, b: &OldMachineTerm| {
-        if facts.exact_condition_value(&ConditionTerm::signed_less_than(a.clone(), b.clone()))
+        if facts.exact_condition_value(&OldConditionTerm::signed_less_than(a.clone(), b.clone()))
             == Some(true)
         {
             return true;

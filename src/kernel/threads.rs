@@ -22,9 +22,9 @@ use crate::persistent::PersistentMap;
 use super::borrows::{BorrowBinding, BorrowBindings, BorrowLedger, StableViewTransferPlan};
 use super::functions::suspend_verified_worker;
 use super::{
-    Address, AddressBase, ConditionTerm, ExecutionBudget, ExecutionEnvironment, ExecutionPureFact,
-    ExecutionResult, ExecutionState, MemoryRange, OldMachineTerm, ProgramValue, Proposition,
-    PureFactContext, ResourceContext, ResourceFact, RuntimeError, SymbolicMemory,
+    Address, AddressBase, ExecutionBudget, ExecutionEnvironment, ExecutionPureFact,
+    ExecutionResult, ExecutionState, MemoryRange, OldConditionTerm, OldMachineTerm, ProgramValue,
+    Proposition, PureFactContext, ResourceContext, ResourceFact, RuntimeError, SymbolicMemory,
     VerifiedFunctionRule, VerifiedFunctionTerminationRule,
 };
 
@@ -342,7 +342,7 @@ impl PendingThreadCreate {
         visible: &ExecutionState,
         assumptions: &PureFactContext,
     ) -> Option<ExecutionState> {
-        let zero = ConditionTerm::Compare {
+        let zero = OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(self.storage.status.clone()),
@@ -735,7 +735,8 @@ mod handle_tests {
     #[test]
     fn handle_is_a_shared_opaque_word_without_numeric_or_join_authority() {
         use super::super::{
-            ConditionTerm, KernelTermExport, KernelTermImport, KernelTermNode, MachineIntegerType,
+            KernelTermExport, KernelTermImport, KernelTermNode, MachineIntegerType,
+            OldConditionTerm,
         };
         let _session = super::super::VerificationSession::enter();
         let id = ThreadHandle(42);
@@ -752,7 +753,7 @@ mod handle_tests {
         assert_eq!(KernelTermExport::machine(&shared).unwrap(), native);
         assert_eq!(native.as_machine_constant(), None);
         for number in [0, 42, 43] {
-            let equality = ConditionTerm::uint64_equal(
+            let equality = OldConditionTerm::uint64_equal(
                 native.clone(),
                 OldMachineTerm::uint64_constant(number),
             );
@@ -776,13 +777,13 @@ mod handle_tests {
 
     #[test]
     fn forwarded_handle_resolution_uses_equality_and_preserves_forks() {
-        use super::super::{ConditionTerm, Variable};
+        use super::super::{OldConditionTerm, Variable};
         let _session = super::super::VerificationSession::enter();
         let alias = OldMachineTerm::Variable(Variable(1008891));
         let value = ProgramValue::UInt64(alias.clone());
         let equality = |handle| {
             Proposition::condition_is(
-                ConditionTerm::uint64_equal(alias.clone(), OldMachineTerm::ThreadHandle(handle)),
+                OldConditionTerm::uint64_equal(alias.clone(), OldMachineTerm::ThreadHandle(handle)),
                 true,
             )
         };
@@ -1308,7 +1309,7 @@ impl ThreadContext {
 #[cfg(test)]
 mod ownership_partition_tests {
     use super::*;
-    use crate::kernel::AddressOffset;
+    use crate::kernel::OldAddressOffset;
 
     #[test]
     fn worker_partition_receipt_survives_private_slots_but_not_public_ownership_or_registry_changes()
@@ -1320,7 +1321,7 @@ mod ownership_partition_tests {
             ResourceFact::own_memory(super::super::MemoryRange::new(
                 Address {
                     base: block,
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 },
                 0u32.into(),
                 4u32.into(),

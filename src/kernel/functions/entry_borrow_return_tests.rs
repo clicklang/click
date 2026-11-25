@@ -5,7 +5,7 @@ fn returned_borrows_keep_checked_entry_arguments_when_clauses_are_reordered() {
     let field = |name: &str| {
         let address = Address {
             base: format!("parent:{name}").into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         ProgramExpression::TypedLoad {
             pointer: Box::new(ProgramExpression::Value(ProgramValue::pointer(address))),
@@ -37,7 +37,7 @@ fn returned_borrows_keep_checked_entry_arguments_when_clauses_are_reordered() {
             "child_ref".into(),
             vec![ProgramValue::pointer(Address {
                 base: name.into(),
-                offset: AddressOffset::Constant(0),
+                offset: OldAddressOffset::Constant(0),
             })],
         )
     });

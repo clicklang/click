@@ -10,8 +10,8 @@ pub(in crate::kernel) struct InputData {
         super::wide_sources::NumericAddressConnectivity,
     /// Value-level pointer origins. C address comparisons never enter this graph.
     pub(in crate::kernel) pointer_address_sources: crate::persistent::PersistentMap<
-        ConditionTerm,
-        crate::persistent::PersistentSet<ConditionTerm>,
+        OldConditionTerm,
+        crate::persistent::PersistentSet<OldConditionTerm>,
     >,
     pub(in crate::kernel) provenance_graph:
         crate::kernel::pointer_provenance::ValueClasses<Address>,
@@ -29,43 +29,45 @@ pub(in crate::kernel) struct InputData {
     /// These record syntax, not equality classes or permission authority.
     pub(in crate::kernel) scalar_dependencies: crate::persistent::PersistentSet<Variable>,
     /// Canonical edge receipts retain admission-time spellings.
-    pub(in crate::kernel) uint64_input_edges:
-        crate::persistent::PersistentMap<ConditionTerm, (super::MachineAtom, super::MachineAtom)>,
+    pub(in crate::kernel) uint64_input_edges: crate::persistent::PersistentMap<
+        OldConditionTerm,
+        (super::MachineAtom, super::MachineAtom),
+    >,
     /// Full-width load premises by exact address and interpretation. MemoryState
     /// transport checks only this bucket; it never scans ambient conditions.
     pub(in crate::kernel) wide_load_sources: crate::persistent::PersistentMap<
         (Address, LoadKind),
-        crate::persistent::PersistentSet<ConditionTerm>,
+        crate::persistent::PersistentSet<OldConditionTerm>,
     >,
     /// True 64-bit equalities as an undirected adjacency map, derived
     /// incrementally from `condition_facts`. Unchanged branches share it;
     /// inserting an equality updates only its two endpoints.
     pub(in crate::kernel) bitvector64_equality_facts: crate::persistent::PersistentMap<
         crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey,
-        crate::persistent::PersistentMap<OldMachineTerm, ConditionTerm>,
+        crate::persistent::PersistentMap<OldMachineTerm, OldConditionTerm>,
     >,
     /// Exact literal-pinning source premises, in deterministic source order.
     pub(in crate::kernel) exact_constant_equalities: crate::persistent::PersistentMap<
         crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey,
-        crate::persistent::PersistentMap<ConditionTerm, i64>,
+        crate::persistent::PersistentMap<OldConditionTerm, i64>,
     >,
     /// Exact alignment premises, including their numeric address annotations.
     pub(in crate::kernel) pointer_alignment_facts: crate::persistent::PersistentMap<
         (Address, u64),
-        crate::persistent::PersistentSet<ConditionTerm>,
+        crate::persistent::PersistentSet<OldConditionTerm>,
     >,
     /// Exact equalities between two pointers of *different* blocks, indexed
     /// under each side and carrying the fact that states them. An equality
     /// inside one block is an `AddressOffsetEqual` that never reaches this
-    /// index (`ConditionTerm::address_equal`), so an entry here always says
+    /// index (`OldConditionTerm::address_equal`), so an entry here always says
     /// that two block spellings name one address. Derived incrementally from
     /// `condition_facts`, like every other index above, so asking what one
     /// pointer is proved equal to is a keyed lookup rather than a scan of
     /// every pointer comparison the path happens to hold.
-    pub(in crate::kernel) local_pointer_aliases: crate::persistent::PersistentSet<ConditionTerm>,
+    pub(in crate::kernel) local_pointer_aliases: crate::persistent::PersistentSet<OldConditionTerm>,
     pub(in crate::kernel) address_base_aliases: crate::persistent::PersistentMap<
         Address,
-        crate::persistent::PersistentMap<Address, ConditionTerm>,
+        crate::persistent::PersistentMap<Address, OldConditionTerm>,
     >,
     /// Cross-block alias endpoints grouped by object. External arguments
     /// use their offset stem, since all parameters share one block; other
@@ -84,7 +86,7 @@ pub(in crate::kernel) struct InputData {
         (),
     >,
     pub(in crate::kernel) congruence_conditions:
-        crate::persistent::PersistentMap<ConditionTerm, bool>,
+        crate::persistent::PersistentMap<OldConditionTerm, bool>,
     /// Exact defining equations for pointer-typed reads issued on this path,
     /// indexed by their load variable. Producer metadata certifies the C
     /// value's type; the equation supplies its state and address. Both
@@ -111,18 +113,18 @@ pub(in crate::kernel) struct InputData {
     >,
     /// Normalized same-block pointer equalities, indexed under each offset.
     pub(in crate::kernel) pointer_offset_aliases: crate::persistent::PersistentMap<
-        AddressOffset,
-        crate::persistent::PersistentSet<AddressOffset>,
+        OldAddressOffset,
+        crate::persistent::PersistentSet<OldAddressOffset>,
     >,
     /// `pointer_offset_aliases` again, keyed by the alias offset's root atom
     /// (`resource_algebra::offset_root_atom`).
     pub(in crate::kernel) pointer_offset_aliases_by_root: crate::persistent::PersistentMap<
-        Option<AddressOffset>,
-        crate::persistent::PersistentSet<(AddressOffset, AddressOffset)>,
+        Option<OldAddressOffset>,
+        crate::persistent::PersistentSet<(OldAddressOffset, OldAddressOffset)>,
     >,
     /// Admission-time keys of the admitted scalar evidence inputs.
     pub(in crate::kernel) scalar_evidence_keys: crate::persistent::PersistentMap<
-        ConditionTerm,
+        OldConditionTerm,
         (SharedMachineIntegerTerm, SharedMachineIntegerTerm),
     >,
     /// Direct written scalar-to-literal equalities, independent of native vs
@@ -135,7 +137,7 @@ pub(in crate::kernel) struct InputData {
         SharedMachineIntegerTerm,
         crate::persistent::PersistentMap<
             SharedMachineIntegerTerm,
-            crate::persistent::PersistentMap<ConditionTerm, Proposition>,
+            crate::persistent::PersistentMap<OldConditionTerm, Proposition>,
         >,
     >,
     /// Exact equalities between two applications of one algebraic

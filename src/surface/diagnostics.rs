@@ -741,7 +741,7 @@ pub(super) fn concrete_named_contract_fact(fact: &Proposition) -> Option<(&str, 
     };
     let Address {
         base: AddressBase::Function(target),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     } = pointer.address()
     else {
         return None;
@@ -785,198 +785,202 @@ pub(in crate::surface) fn value_naming_tables(
 
 /// The kind of comparison or check a kernel condition makes, for a
 /// diagnostic that has no source spelling of its operands.
-pub(super) fn condition_kind(condition: &ConditionTerm) -> &'static str {
+pub(super) fn condition_kind(condition: &OldConditionTerm) -> &'static str {
     match condition {
-        ConditionTerm::PointerEqual(_, _) => "pointer value equality",
+        OldConditionTerm::PointerEqual(_, _) => "pointer value equality",
 
-        ConditionTerm::AlgebraicEqual(_, _) => "algebraic equality",
-        ConditionTerm::IntegerLessThan(_, _) => "Integer less-than",
-        ConditionTerm::IntegerLessEqual(_, _) => "Integer less-or-equal",
-        ConditionTerm::IntegerGreaterThan(_, _) => "Integer greater-than",
-        ConditionTerm::IntegerGreaterEqual(_, _) => "Integer greater-or-equal",
-        ConditionTerm::IntegerEqual(_, _) => "Integer equality",
-        ConditionTerm::IntegerNotEqual(_, _) => "Integer disequality",
-        ConditionTerm::Compare {
+        OldConditionTerm::AlgebraicEqual(_, _) => "algebraic equality",
+        OldConditionTerm::IntegerLessThan(_, _) => "Integer less-than",
+        OldConditionTerm::IntegerLessEqual(_, _) => "Integer less-or-equal",
+        OldConditionTerm::IntegerGreaterThan(_, _) => "Integer greater-than",
+        OldConditionTerm::IntegerGreaterEqual(_, _) => "Integer greater-or-equal",
+        OldConditionTerm::IntegerEqual(_, _) => "Integer equality",
+        OldConditionTerm::IntegerNotEqual(_, _) => "Integer disequality",
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left: _,
             right: _,
         } => "signed less-than",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
             left: _,
             right: _,
         } => "signed less-or-equal",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterThan,
             left: _,
             right: _,
         } => "signed greater-than",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
             left: _,
             right: _,
         } => "signed greater-or-equal",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left: _,
             right: _,
         } => "int32 equality",
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
             left: _,
             right: _,
         } => "addition overflow",
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Subtract,
             left: _,
             right: _,
         } => "subtraction overflow",
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Multiply,
             left: _,
             right: _,
         } => "multiplication overflow",
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Divide,
             left: _,
             right: _,
         } => "division overflow",
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::ShiftLeft,
             left: _,
             right: _,
         } => "left-shift overflow",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::LessThan,
             left: _,
             right: _,
         } => "int64 signed less-than",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::LessEqual,
             left: _,
             right: _,
         } => "int64 signed less-or-equal",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::GreaterThan,
             left: _,
             right: _,
         } => "int64 signed greater-than",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::GreaterEqual,
             left: _,
             right: _,
         } => "int64 signed greater-or-equal",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
             left: _,
             right: _,
         } => "uint64 less-than",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessEqual,
             left: _,
             right: _,
         } => "uint64 less-or-equal",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::GreaterThan,
             left: _,
             right: _,
         } => "uint64 greater-than",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::GreaterEqual,
             left: _,
             right: _,
         } => "uint64 greater-or-equal",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt32,
             relation: CompareRelation::LessThan,
             left: _,
             right: _,
         } => "uint32 less-than",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt32,
             relation: CompareRelation::LessEqual,
             left: _,
             right: _,
         } => "uint32 less-or-equal",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt32,
             relation: CompareRelation::GreaterThan,
             left: _,
             right: _,
         } => "uint32 greater-than",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt32,
             relation: CompareRelation::GreaterEqual,
             left: _,
             right: _,
         } => "uint32 greater-or-equal",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: _,
             right: _,
         } => "64-bit equality",
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Add,
             left: _,
             right: _,
         } => "int64 addition overflow",
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Subtract,
             left: _,
             right: _,
         } => "int64 subtraction overflow",
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Multiply,
             left: _,
             right: _,
         } => "int64 multiplication overflow",
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Divide,
             left: _,
             right: _,
         } => "int64 division overflow",
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::ShiftLeft,
             left: _,
             right: _,
         } => "int64 left-shift overflow",
-        ConditionTerm::Compare { .. } => "machine comparison",
-        ConditionTerm::Overflows { .. } => "machine overflow test",
-        ConditionTerm::Float32(FloatCondition::Comparison { .. }) => "float32 comparison",
-        ConditionTerm::Float32(FloatCondition::Classification { .. }) => "float32 classification",
-        ConditionTerm::Float64(FloatCondition::Comparison { .. }) => "float64 comparison",
-        ConditionTerm::Float64(FloatCondition::Classification { .. }) => "float64 classification",
-        ConditionTerm::AddressOffsetEqual(_, _) => "pointer-offset equality",
-        ConditionTerm::AddressEqual(_, _) => "pointer equality",
-        ConditionTerm::Constant(_) => "constant condition",
-        ConditionTerm::Variable(_) => "condition variable",
-        ConditionTerm::BoolApplication(_) => "Bool function application",
-        ConditionTerm::BoolIf { .. } => "Bool conditional",
-        ConditionTerm::BoolEqual(..) => "Bool equality",
+        OldConditionTerm::Compare { .. } => "machine comparison",
+        OldConditionTerm::Overflows { .. } => "machine overflow test",
+        OldConditionTerm::Float32(FloatCondition::Comparison { .. }) => "float32 comparison",
+        OldConditionTerm::Float32(FloatCondition::Classification { .. }) => {
+            "float32 classification"
+        }
+        OldConditionTerm::Float64(FloatCondition::Comparison { .. }) => "float64 comparison",
+        OldConditionTerm::Float64(FloatCondition::Classification { .. }) => {
+            "float64 classification"
+        }
+        OldConditionTerm::AddressOffsetEqual(_, _) => "pointer-offset equality",
+        OldConditionTerm::AddressEqual(_, _) => "pointer equality",
+        OldConditionTerm::Constant(_) => "constant condition",
+        OldConditionTerm::Variable(_) => "condition variable",
+        OldConditionTerm::BoolApplication(_) => "Bool function application",
+        OldConditionTerm::BoolIf { .. } => "Bool conditional",
+        OldConditionTerm::BoolEqual(..) => "Bool equality",
     }
 }
 
@@ -2658,23 +2662,23 @@ fn struct_byte_bounds(
 
 /// A pointer offset as a byte count: `i * 4 + 8` for `Int32Scaled(i, 4) +
 /// 8`. Display only; a 64-bit scaled index is not narrowed.
-fn pointer_offset_bytes(offset: &AddressOffset) -> Option<OldMachineTerm> {
+fn pointer_offset_bytes(offset: &OldAddressOffset) -> Option<OldMachineTerm> {
     match offset {
-        AddressOffset::Constant(bytes) => {
+        OldAddressOffset::Constant(bytes) => {
             Some(OldMachineTerm::constant(i32::try_from(*bytes).ok()? as u32))
         }
-        AddressOffset::Int32Scaled { value, byte_width } => Some(match byte_width {
+        OldAddressOffset::Int32Scaled { value, byte_width } => Some(match byte_width {
             1 => value.structural_value().clone(),
             width => super::lowering::bitvector32_multiply(
                 value.structural_value().clone(),
                 OldMachineTerm::constant(i32::try_from(*width).ok()? as u32),
             ),
         }),
-        AddressOffset::Add(left, right) => Some(bitvector32_add(
+        OldAddressOffset::Add(left, right) => Some(bitvector32_add(
             pointer_offset_bytes(left)?,
             pointer_offset_bytes(right)?,
         )),
-        AddressOffset::Int64Scaled { .. } | AddressOffset::Variable(_) => None,
+        OldAddressOffset::Int64Scaled { .. } | OldAddressOffset::Variable(_) => None,
     }
 }
 
@@ -2899,7 +2903,7 @@ pub(super) fn describe_memory_range(
     // A range over a named object starts at the object itself (`g[0..4]`),
     // not at a pointer to it.
     let base = match named_object_block(&range.base().base, parameter_binding) {
-        Some(name) if range.base().offset == AddressOffset::Constant(0) => name,
+        Some(name) if range.base().offset == OldAddressOffset::Constant(0) => name,
         _ => {
             let cell = describe_pointer(range.base(), parameter_binding);
             // One element at an address spelled as a member or a byte offset
@@ -2944,14 +2948,14 @@ fn describe_indexed_base_range(
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
     let width = i64::from(range.element_width());
-    let AddressOffset::Add(rest, last) = &range.base().offset else {
+    let OldAddressOffset::Add(rest, last) = &range.base().offset else {
         return None;
     };
     let index = match last.as_ref() {
-        AddressOffset::Int64Scaled {
+        OldAddressOffset::Int64Scaled {
             value, byte_width, ..
         }
-        | AddressOffset::Int32Scaled { value, byte_width }
+        | OldAddressOffset::Int32Scaled { value, byte_width }
             if *byte_width == width =>
         {
             value.structural_value()
@@ -4644,7 +4648,7 @@ pub(in crate::surface) fn diagnostic_source_load_cell(
 ) -> Option<String> {
     // A read of exactly one scalar field of a struct-typed global or local
     // is that field, `g.b`.
-    if let AddressOffset::Constant(offset) = &pointer.offset
+    if let OldAddressOffset::Constant(offset) = &pointer.offset
         && let Ok(offset) = u32::try_from(*offset)
         && let Some(field) =
             object_fields::object_field_surface(&pointer.base, offset, kind.byte_width())
@@ -5119,7 +5123,7 @@ fn describe_source_cell_of_width(
         return Some(best);
     }
     let declared = describe_memory_block(&pointer.base, parameter_binding)?;
-    if let (Some(width), AddressOffset::Constant(offset)) = (width, &pointer.offset)
+    if let (Some(width), OldAddressOffset::Constant(offset)) = (width, &pointer.offset)
         && let Ok(offset) = u32::try_from(*offset)
         && let Some(field) = object_fields::object_field_surface(&pointer.base, offset, width)
     {
@@ -5137,19 +5141,19 @@ fn describe_source_cell_of_width(
         // loses its index this way, which costs an index-inequality repair the
         // reader could not have used anyway -- the array is one object, so the
         // two spellings name the same storage either way.
-        AddressOffset::Constant(0) if pointer.base.is_local_block() => Some(SourceCell {
+        OldAddressOffset::Constant(0) if pointer.base.is_local_block() => Some(SourceCell {
             object: declared,
             index: CellIndex::Whole,
             element_bytes: None,
             index_term: None,
         }),
-        AddressOffset::Constant(0) => Some(SourceCell {
+        OldAddressOffset::Constant(0) => Some(SourceCell {
             object: declared,
             index: CellIndex::Named("0".to_string()),
             element_bytes: None,
             index_term: None,
         }),
-        AddressOffset::Constant(_) => Some(SourceCell {
+        OldAddressOffset::Constant(_) => Some(SourceCell {
             object: format!("{declared}+{}", describe_pointer_offset(&pointer.offset)),
             index: CellIndex::Whole,
             element_bytes: None,
@@ -5203,7 +5207,7 @@ fn describe_source_range(
             return Some(describe_memory_range(range, parameter_binding));
         }
     }
-    if range.base().offset != AddressOffset::Constant(0)
+    if range.base().offset != OldAddressOffset::Constant(0)
         || !bitvector_is_source_spelled(range.bound_terms().0, parameter_binding)
         || !bitvector_is_source_spelled(range.bound_terms().1, parameter_binding)
     {
@@ -5393,7 +5397,7 @@ pub(in crate::surface) fn describe_pointer(
             | AddressBase::ReferenceCarrier { .. }
             | AddressBase::StaticObject { .. }
     ) {
-        return if pointer.offset == AddressOffset::Constant(0) {
+        return if pointer.offset == OldAddressOffset::Constant(0) {
             pointer.base.to_string()
         } else {
             format!(
@@ -5404,7 +5408,7 @@ pub(in crate::surface) fn describe_pointer(
         };
     }
     if let AddressBase::StringLiteral { identity, .. } = &pointer.base {
-        return if pointer.offset == AddressOffset::Constant(0) {
+        return if pointer.offset == OldAddressOffset::Constant(0) {
             identity.to_string()
         } else {
             format!(
@@ -5414,7 +5418,7 @@ pub(in crate::surface) fn describe_pointer(
         };
     }
     if let Some((name, _)) = super::proof_diagnostics::render::c_library_pointer_name(pointer) {
-        return if pointer.offset == AddressOffset::Constant(0) {
+        return if pointer.offset == OldAddressOffset::Constant(0) {
             name
         } else {
             format!(
@@ -5430,7 +5434,7 @@ pub(in crate::surface) fn describe_pointer(
     // deterministic.
     // A pointer a load read is the place it was read from.
     if let Some(read) = pointer.as_loaded_value()
-        && read.displacement == AddressOffset::Constant(0)
+        && read.displacement == OldAddressOffset::Constant(0)
     {
         let place = describe_load_at(&read.defining_address, parameter_binding);
         if is_place_spelling(&place) {
@@ -5532,12 +5536,12 @@ pub(in crate::surface) fn describe_pointer(
         // parameter points into) is spelled by the name the source gave it,
         // never by the block's internal spelling (`local:frame:3:x@0`).
         AddressBase::Concrete(name)
-            if name == "null" && pointer.offset == AddressOffset::Constant(0) =>
+            if name == "null" && pointer.offset == OldAddressOffset::Constant(0) =>
         {
             "NULL".to_string()
         }
         block => match named_object_block(block, parameter_binding) {
-            Some(name) if pointer.offset == AddressOffset::Constant(0) => format!("&{name}"),
+            Some(name) if pointer.offset == OldAddressOffset::Constant(0) => format!("&{name}"),
             Some(name) => format!(
                 "(char *)&{name} + {}",
                 describe_pointer_offset_with_context(&pointer.offset, parameter_binding)
@@ -5564,12 +5568,12 @@ fn describe_parameter_struct_field_pointer(
         .or_else(|| parameter.struct_layout())?;
     // The value a load of the field read, or its storage-relative encoding.
     let (loaded_at, byte_width) = match pointer.as_loaded_value() {
-        Some(read) if read.displacement == AddressOffset::Constant(0) => {
+        Some(read) if read.displacement == OldAddressOffset::Constant(0) => {
             (read.defining_address, None)
         }
         Some(_) => return None,
         None => {
-            let AddressOffset::Int32Scaled { value, byte_width } = &pointer.offset else {
+            let OldAddressOffset::Int32Scaled { value, byte_width } = &pointer.offset else {
                 return None;
             };
             let loaded_at = match value.structural_value() {
@@ -5662,13 +5666,13 @@ fn describe_struct_member_from(
     let mut pending = vec![&rest];
     while let Some(term) = pending.pop() {
         match term {
-            AddressOffset::Add(left, right) => {
+            OldAddressOffset::Add(left, right) => {
                 pending.push(left);
                 pending.push(right);
             }
-            AddressOffset::Constant(bytes) => constant = constant.checked_add(*bytes)?,
-            AddressOffset::Int32Scaled { value, byte_width }
-            | AddressOffset::Int64Scaled {
+            OldAddressOffset::Constant(bytes) => constant = constant.checked_add(*bytes)?,
+            OldAddressOffset::Int32Scaled { value, byte_width }
+            | OldAddressOffset::Int64Scaled {
                 value, byte_width, ..
             } if *byte_width == size && element.is_none() => {
                 element = Some(value.structural_value())
@@ -5822,17 +5826,17 @@ fn scaled_index_signedness(pointer: &Address, base: &Address) -> Option<bool> {
     if pointer.base != base.base {
         return None;
     }
-    let extra = if base.offset == AddressOffset::Constant(0) {
+    let extra = if base.offset == OldAddressOffset::Constant(0) {
         &pointer.offset
     } else {
         match &pointer.offset {
-            AddressOffset::Add(left, right) if left.as_ref() == &base.offset => right.as_ref(),
-            AddressOffset::Add(left, right) if right.as_ref() == &base.offset => left.as_ref(),
+            OldAddressOffset::Add(left, right) if left.as_ref() == &base.offset => right.as_ref(),
+            OldAddressOffset::Add(left, right) if right.as_ref() == &base.offset => left.as_ref(),
             _ => return None,
         }
     };
     match extra {
-        AddressOffset::Int64Scaled { unsigned, .. } => Some(*unsigned),
+        OldAddressOffset::Int64Scaled { unsigned, .. } => Some(*unsigned),
         _ => None,
     }
 }
@@ -5884,15 +5888,15 @@ pub(super) fn diagnostic_pointer_element_index_from_base(
         return Some(OldMachineTerm::constant(0));
     }
 
-    if base.offset == AddressOffset::Constant(0) {
+    if base.offset == OldAddressOffset::Constant(0) {
         return diagnostic_element_index_from_pointer_offset(&pointer.offset, byte_width);
     }
 
     match &pointer.offset {
-        AddressOffset::Add(left, right) if left.as_ref() == &base.offset => {
+        OldAddressOffset::Add(left, right) if left.as_ref() == &base.offset => {
             diagnostic_element_index_from_pointer_offset(right, byte_width)
         }
-        AddressOffset::Add(left, right) if right.as_ref() == &base.offset => {
+        OldAddressOffset::Add(left, right) if right.as_ref() == &base.offset => {
             diagnostic_element_index_from_pointer_offset(left, byte_width)
         }
         _ => {
@@ -5917,24 +5921,24 @@ pub(super) fn diagnostic_pointer_element_index_from_base(
 }
 
 pub(super) fn diagnostic_element_index_from_pointer_offset(
-    offset: &AddressOffset,
+    offset: &OldAddressOffset,
     byte_width: i64,
 ) -> Option<OldMachineTerm> {
     match offset {
-        AddressOffset::Constant(offset) if offset % byte_width == 0 => {
+        OldAddressOffset::Constant(offset) if offset % byte_width == 0 => {
             let index = offset / byte_width;
             (i32::MIN as i64..=i32::MAX as i64)
                 .contains(&index)
                 .then_some(OldMachineTerm::constant((index as i32) as u32))
         }
-        AddressOffset::Int32Scaled {
+        OldAddressOffset::Int32Scaled {
             value,
             byte_width: actual_width,
         } if *actual_width == byte_width => Some(value.structural_value().clone()),
         // An index widened to 64 bits before scaling (a `uint32` index, or
         // an `int32` one on a wide address) is still the index the source
         // wrote. The widening decides the address, not the element's name.
-        AddressOffset::Int64Scaled {
+        OldAddressOffset::Int64Scaled {
             value,
             byte_width: actual_width,
             ..
@@ -5946,13 +5950,13 @@ pub(super) fn diagnostic_element_index_from_pointer_offset(
             | cast_term!(Int64FromUInt32, narrow) => narrow.as_ref().clone(),
             wide => wide.clone(),
         }),
-        AddressOffset::Add(left, right) if left.as_ref() == &AddressOffset::Constant(0) => {
+        OldAddressOffset::Add(left, right) if left.as_ref() == &OldAddressOffset::Constant(0) => {
             diagnostic_element_index_from_pointer_offset(right, byte_width)
         }
-        AddressOffset::Add(left, right) if right.as_ref() == &AddressOffset::Constant(0) => {
+        OldAddressOffset::Add(left, right) if right.as_ref() == &OldAddressOffset::Constant(0) => {
             diagnostic_element_index_from_pointer_offset(left, byte_width)
         }
-        AddressOffset::Add(left, right) => Some(bitvector32_add(
+        OldAddressOffset::Add(left, right) => Some(bitvector32_add(
             diagnostic_element_index_from_pointer_offset(left, byte_width)?,
             diagnostic_element_index_from_pointer_offset(right, byte_width)?,
         )),
@@ -6751,7 +6755,7 @@ pub(in crate::surface) fn diagnostic_loaded_field_load_cell(
     let base = describe_pointer(
         &Address {
             base: pointer.base.clone(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         },
         parameter_binding,
     );
@@ -6921,15 +6925,15 @@ fn loaded_pointer_split(address: &Address) -> Option<(Address, OldMachineTerm)> 
     let mut pending = vec![&address.offset];
     while let Some(offset) = pending.pop() {
         match offset {
-            AddressOffset::Add(left, right) => {
+            OldAddressOffset::Add(left, right) => {
                 pending.push(right);
                 pending.push(left);
             }
             summand => summands.push(summand),
         }
     }
-    let loaded = |summand: &AddressOffset| match summand {
-        AddressOffset::Int32Scaled { value, .. } => match value.structural_value() {
+    let loaded = |summand: &OldAddressOffset| match summand {
+        OldAddressOffset::Int32Scaled { value, .. } => match value.structural_value() {
             OldMachineTerm::Variable(variable)
                 if crate::kernel::is_load_variable(variable)
                     && crate::kernel::registered_load_for_variable(variable).is_some() =>
@@ -7020,7 +7024,7 @@ fn describe_loaded_pointer_range(
     range.int32_bounds()?;
     // One element at a wide index past a loaded pointer: `s->data[s->len]`.
     if let Some(read) = range.base().as_loaded_value()
-        && let AddressOffset::Int64Scaled {
+        && let OldAddressOffset::Int64Scaled {
             value, byte_width, ..
         } = &read.displacement
         && *byte_width == i64::from(range.element_width())
@@ -8724,20 +8728,20 @@ pub(super) fn describe_binary_bitvector_with_context(
 /// [`describe_pointer_offset`] with each scaled index spelled in the
 /// caller's names where it has them (`j * 4` rather than `… * 4`).
 fn describe_pointer_offset_with_context(
-    offset: &AddressOffset,
+    offset: &OldAddressOffset,
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
     match offset {
-        AddressOffset::Add(left, right) => format!(
+        OldAddressOffset::Add(left, right) => format!(
             "({} + {})",
             describe_pointer_offset_with_context(left, parameter_binding),
             describe_pointer_offset_with_context(right, parameter_binding)
         ),
-        AddressOffset::Int32Scaled { value, byte_width } => format!(
+        OldAddressOffset::Int32Scaled { value, byte_width } => format!(
             "{} * {byte_width}",
             describe_bitvector_with_context(value.structural_value(), parameter_binding)
         ),
-        AddressOffset::Int64Scaled {
+        OldAddressOffset::Int64Scaled {
             value,
             byte_width,
             unsigned,
@@ -8748,7 +8752,9 @@ fn describe_pointer_offset_with_context(
                 describe_bitvector_with_context(value.structural_value(), parameter_binding)
             )
         }
-        AddressOffset::Constant(_) | AddressOffset::Variable(_) => describe_pointer_offset(offset),
+        OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => {
+            describe_pointer_offset(offset)
+        }
     }
 }
 
@@ -8779,7 +8785,7 @@ fn describe_storage_write_outside_footprint(
         crate::kernel::StorageWriteOutsideFootprint::Write { pointer, bytes } => {
             // A store that fills exactly one scalar field of a struct-typed
             // global names that field (`shared.first`), not its address.
-            if let AddressOffset::Constant(offset) = &pointer.offset
+            if let OldAddressOffset::Constant(offset) = &pointer.offset
                 && let Ok(offset) = u32::try_from(*offset)
                 && let Some(field) =
                     object_fields::object_field_surface(&pointer.base, offset, *bytes)
@@ -8798,22 +8804,22 @@ fn describe_storage_write_outside_footprint(
     }
 }
 
-pub(super) fn describe_pointer_offset(offset: &AddressOffset) -> String {
+pub(super) fn describe_pointer_offset(offset: &OldAddressOffset) -> String {
     match offset {
-        AddressOffset::Constant(value) => value.to_string(),
-        AddressOffset::Variable(variable) => lowering_only_variable("off", variable.0),
-        AddressOffset::Add(left, right) => format!(
+        OldAddressOffset::Constant(value) => value.to_string(),
+        OldAddressOffset::Variable(variable) => lowering_only_variable("off", variable.0),
+        OldAddressOffset::Add(left, right) => format!(
             "({} + {})",
             describe_pointer_offset(left),
             describe_pointer_offset(right)
         ),
-        AddressOffset::Int32Scaled { value, byte_width } => {
+        OldAddressOffset::Int32Scaled { value, byte_width } => {
             format!(
                 "{} * {byte_width}",
                 describe_bitvector(value.structural_value())
             )
         }
-        AddressOffset::Int64Scaled {
+        OldAddressOffset::Int64Scaled {
             value,
             byte_width,
             unsigned,
@@ -8844,7 +8850,7 @@ fn describe_integer_term(term: &crate::kernel::IntegerTerm) -> String {
     crate::surface::proof_diagnostics::render::render_integer_term(term)
 }
 
-pub(super) fn describe_condition(condition: &ConditionTerm) -> String {
+pub(super) fn describe_condition(condition: &OldConditionTerm) -> String {
     if let Some(unsigned) = describe_unsigned_comparison(condition, ParameterBinding::default()) {
         return unsigned;
     }
@@ -8861,55 +8867,57 @@ pub(super) fn describe_condition(condition: &ConditionTerm) -> String {
         };
     }
     match condition {
-        ConditionTerm::PointerEqual(left, right) => format!(
+        OldConditionTerm::PointerEqual(left, right) => format!(
             "{} == {}",
             describe_pointer(left.address(), ParameterBinding::default()),
             describe_pointer(right.address(), ParameterBinding::default())
         ),
 
-        ConditionTerm::AlgebraicEqual(_, _) => "algebraic equality".to_string(),
-        ConditionTerm::IntegerLessThan(left, right) => {
+        OldConditionTerm::AlgebraicEqual(_, _) => "algebraic equality".to_string(),
+        OldConditionTerm::IntegerLessThan(left, right) => {
             describe_integer_comparison(left, "<", right)
         }
-        ConditionTerm::IntegerLessEqual(left, right) => {
+        OldConditionTerm::IntegerLessEqual(left, right) => {
             describe_integer_comparison(left, "<=", right)
         }
-        ConditionTerm::IntegerGreaterThan(left, right) => {
+        OldConditionTerm::IntegerGreaterThan(left, right) => {
             describe_integer_comparison(left, ">", right)
         }
-        ConditionTerm::IntegerGreaterEqual(left, right) => {
+        OldConditionTerm::IntegerGreaterEqual(left, right) => {
             describe_integer_comparison(left, ">=", right)
         }
-        ConditionTerm::IntegerEqual(left, right) => describe_integer_comparison(left, "==", right),
-        ConditionTerm::IntegerNotEqual(left, right) => {
+        OldConditionTerm::IntegerEqual(left, right) => {
+            describe_integer_comparison(left, "==", right)
+        }
+        OldConditionTerm::IntegerNotEqual(left, right) => {
             describe_integer_comparison(left, "!=", right)
         }
-        ConditionTerm::Constant(value) => value.to_string(),
-        ConditionTerm::Variable(variable) => lowering_only_variable("cond", variable.0),
-        ConditionTerm::Float32(float_condition) => describe_float_condition(float_condition),
-        ConditionTerm::Float64(float_condition) => describe_float_condition(float_condition),
-        ConditionTerm::AddressOffsetEqual(left, right) => format!(
+        OldConditionTerm::Constant(value) => value.to_string(),
+        OldConditionTerm::Variable(variable) => lowering_only_variable("cond", variable.0),
+        OldConditionTerm::Float32(float_condition) => describe_float_condition(float_condition),
+        OldConditionTerm::Float64(float_condition) => describe_float_condition(float_condition),
+        OldConditionTerm::AddressOffsetEqual(left, right) => format!(
             "{} == {}",
             describe_pointer_offset(left),
             describe_pointer_offset(right)
         ),
-        ConditionTerm::AddressEqual(left, right) => {
+        OldConditionTerm::AddressEqual(left, right) => {
             format!(
                 "{} == {}",
                 describe_pointer(left, ParameterBinding::default()),
                 describe_pointer(right, ParameterBinding::default())
             )
         }
-        crate::kernel::ConditionTerm::Compare { .. }
-        | crate::kernel::ConditionTerm::Overflows { .. } => {
+        crate::kernel::OldConditionTerm::Compare { .. }
+        | crate::kernel::OldConditionTerm::Overflows { .. } => {
             unreachable!("bitvector comparisons are described above")
         }
         // The Surface spellings of the `Bool` value forms, as the
         // word-valued application and load are described.
-        ConditionTerm::BoolApplication(application) => {
+        OldConditionTerm::BoolApplication(application) => {
             format!("{}(<typed Click arguments>)", application.name())
         }
-        ConditionTerm::BoolIf {
+        OldConditionTerm::BoolIf {
             condition,
             then_condition,
             else_condition,
@@ -8919,7 +8927,7 @@ pub(super) fn describe_condition(condition: &ConditionTerm) -> String {
             describe_condition(then_condition),
             describe_condition(else_condition)
         ),
-        ConditionTerm::BoolEqual(left, right) => format!(
+        OldConditionTerm::BoolEqual(left, right) => format!(
             "({}) == ({})",
             describe_condition(left),
             describe_condition(right)
@@ -8950,7 +8958,7 @@ pub(super) fn describe_stated_fact(
 /// parameter names; shapes with no parameter-named operands fall back to
 /// the context-free rendering.
 pub(super) fn describe_condition_with_context(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
     let binary = |left: &OldMachineTerm, operator: &str, right: &OldMachineTerm| {
@@ -8964,91 +8972,91 @@ pub(super) fn describe_condition_with_context(
         return unsigned;
     }
     match condition {
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left,
             right,
         } => binary(left, "==", right),
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::LessThan,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
             left,
             right,
         } => binary(left, "<", right),
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::LessEqual,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessEqual,
             left,
             right,
         } => binary(left, "<=", right),
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterThan,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::GreaterThan,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::GreaterThan,
             left,
             right,
         } => binary(left, ">", right),
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::GreaterEqual,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::GreaterEqual,
             left,
             right,
         } => binary(left, ">=", right),
-        ConditionTerm::AddressEqual(left, right) => format!(
+        OldConditionTerm::AddressEqual(left, right) => format!(
             "{} == {}",
             describe_pointer(left, parameter_binding),
             describe_pointer(right, parameter_binding)
@@ -9061,10 +9069,10 @@ pub(super) fn describe_condition_with_context(
 /// marked `(unsigned)`, so it never reads as the signed comparison of the
 /// same operands.
 fn describe_unsigned_comparison(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
-    let ConditionTerm::Compare {
+    let OldConditionTerm::Compare {
         format: MachineIntegerType::UInt32,
         relation:
             relation @ (crate::kernel::CompareRelation::LessThan
@@ -9180,7 +9188,7 @@ mod assembly_fact_tests {
                 vec![pointer.clone()],
             )),
             fact: Box::new(Proposition::condition_is(
-                ConditionTerm::Constant(false),
+                OldConditionTerm::Constant(false),
                 true,
             )),
             source: Some(Box::new(crate::kernel::ResourceBodyFactSource {

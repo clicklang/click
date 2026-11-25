@@ -1336,7 +1336,7 @@ fn execute_program_indirect_call_paths(
         } = target_path;
         let target_names = match outcome {
             ExpressionOutcome::Value(ProgramValue::Pointer(pointer))
-                if pointer.offset == AddressOffset::Constant(0) =>
+                if pointer.offset == OldAddressOffset::Constant(0) =>
             {
                 match &pointer.base {
                     AddressBase::Function(name)
@@ -1672,7 +1672,7 @@ pub(crate) fn loop_binder_state_components_match_at_back_edge(
 fn check_loop_guard_custody(
     state: &ExecutionState,
     mutex: &Address,
-    held: &ConditionTerm,
+    held: &OldConditionTerm,
     assumptions: &PureFactContext,
 ) -> Result<(), String> {
     let ledger = state
@@ -1795,7 +1795,7 @@ fn condition_path_is_ruled_out(
 /// condition, not a logical proof search over unrelated ambient facts.
 pub(super) fn condition_is_decided(
     assumptions: &PureFactContext,
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
 ) -> Option<bool> {
     assumptions
         .exact_condition_value(condition)
@@ -1803,13 +1803,13 @@ pub(super) fn condition_is_decided(
         .or_else(|| assumptions.difference_decision(condition, &[]))
 }
 
-fn condition_is_decided_true(assumptions: &PureFactContext, condition: &ConditionTerm) -> bool {
+fn condition_is_decided_true(assumptions: &PureFactContext, condition: &OldConditionTerm) -> bool {
     condition_is_decided(assumptions, condition) == Some(true)
 }
 
 fn condition_value_is_proven(
     assumptions: &PureFactContext,
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     value: bool,
 ) -> bool {
     condition_is_decided(assumptions, condition) == Some(value)
@@ -1818,41 +1818,41 @@ fn condition_value_is_proven(
                 .is_some_and(|complement| condition_is_decided_true(assumptions, &complement)))
 }
 
-fn condition_complement(condition: &ConditionTerm) -> Option<ConditionTerm> {
+fn condition_complement(condition: &OldConditionTerm) -> Option<OldConditionTerm> {
     match condition {
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left,
             right,
-        } => Some(ConditionTerm::signed_greater_equal(
+        } => Some(OldConditionTerm::signed_greater_equal(
             left.as_ref().clone(),
             right.as_ref().clone(),
         )),
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
             left,
             right,
-        } => Some(ConditionTerm::signed_greater_than(
+        } => Some(OldConditionTerm::signed_greater_than(
             left.as_ref().clone(),
             right.as_ref().clone(),
         )),
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterThan,
             left,
             right,
-        } => Some(ConditionTerm::signed_less_equal(
+        } => Some(OldConditionTerm::signed_less_equal(
             left.as_ref().clone(),
             right.as_ref().clone(),
         )),
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
             left,
             right,
-        } => Some(ConditionTerm::signed_less_than(
+        } => Some(OldConditionTerm::signed_less_than(
             left.as_ref().clone(),
             right.as_ref().clone(),
         )),
@@ -2132,7 +2132,7 @@ pub(super) fn guard_path_disjunction(own_facts: &[Vec<Proposition>]) -> Option<P
     // the negation of this fact" is one lookup. Asking every earlier fact of
     // every earlier path instead compared each pair of paths, fact by fact:
     // a hundred exits of a long loop body spent most of the join here.
-    let mut earlier: std::collections::HashSet<(&ConditionTerm, bool)> =
+    let mut earlier: std::collections::HashSet<(&OldConditionTerm, bool)> =
         std::collections::HashSet::new();
     for own in &ordered {
         crate::instrumentation::record_deterministic_work(own.len());
@@ -2294,7 +2294,7 @@ fn join_loop_exit_paths(
                         // Dropping this conjunct weakens the path disjunction
                         // and keeps its pure successor facts spellable.
                         && !matches!(proposition, Proposition::ResourceComposition(_))
-                        && !matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(_, expected) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(actual), _)) if (actual == expected)))
+                        && !matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(_, expected) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Constant(actual), _)) if (actual == expected)))
                 })
                 .cloned()
                 .collect::<Vec<_>>()
@@ -2928,7 +2928,7 @@ fn indexed_loop_exit_load_equality(
         return Some(answer == expected);
     }
     match condition.old_form() {
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
@@ -2945,7 +2945,7 @@ fn indexed_loop_exit_load_equality(
                         .keys()
                         .find_map(|condition| {
                             crate::instrumentation::record_deterministic_work(1);
-                            let ConditionTerm::Compare {
+                            let OldConditionTerm::Compare {
                                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                                 relation: CompareRelation::Equal,
                                 left: a,
@@ -2966,7 +2966,7 @@ fn indexed_loop_exit_load_equality(
             };
             Some(constant(left)? == constant(right)?)
         }
-        ConditionTerm::AddressEqual(left, right) if expected => {
+        OldConditionTerm::AddressEqual(left, right) if expected => {
             context.pointers_known_equal(left, right).then_some(true)
         }
         _ => None,
@@ -8531,8 +8531,8 @@ pub(super) fn push_false_loop_effect_obligation(
 
 pub(super) fn false_equals_true_proposition() -> Proposition {
     Proposition::Equal(
-        Term::Condition(ConditionTerm::Constant(false).into()),
-        Term::Condition(ConditionTerm::Constant(true).into()),
+        Term::Condition(OldConditionTerm::Constant(false).into()),
+        Term::Condition(OldConditionTerm::Constant(true).into()),
     )
 }
 
@@ -8601,7 +8601,7 @@ fn assume_invariant_checks_explained(
     let _iterations = crate::kernel::spec::LoopIterationsScope::enter(iterations.clone());
     let mut head_facts = prefix_facts.persistent_facts();
     head_facts.push(ExecutionPureFact::new(Proposition::condition_is(
-        ConditionTerm::IntegerLessEqual(
+        OldConditionTerm::IntegerLessEqual(
             IntegerTerm::constant(0.into()).into(),
             iterations.clone().into(),
         ),
@@ -9955,7 +9955,7 @@ fn range_bounds_refusal(
         return refusal();
     };
     let element_width = i64::from(element_width);
-    let proves = |condition: ConditionTerm| assumptions.decide(&condition) == Some(true);
+    let proves = |condition: OldConditionTerm| assumptions.decide(&condition) == Some(true);
     let offset = offset.checking_cast_operand(MachineIntegerType::Int64);
     let compare = |left: MachineOperandView<'_>, right: MachineOperandView<'_>| {
         crate::kernel::machine_integer::comparison::condition_for_operand_views(
@@ -9968,7 +9968,7 @@ fn range_bounds_refusal(
         RangeIndexKind::Int32 => {
             let start = OldMachineTerm::int64_from_32(start.clone());
             let end = OldMachineTerm::int64_from_32(end.clone());
-            if proves(ConditionTerm::int64_signed_less_equal(
+            if proves(OldConditionTerm::int64_signed_less_equal(
                 end.clone(),
                 start.clone(),
             )) {
@@ -10007,7 +10007,7 @@ fn range_bounds_refusal(
         RangeIndexKind::UInt64 => {
             let offset = offset.operand_view().int64_constant()?.max(0);
             let room = u64::try_from((width - offset) / element_width.max(1)).ok()?;
-            let inside = proves(ConditionTerm::uint64_less_equal(
+            let inside = proves(OldConditionTerm::uint64_less_equal(
                 end.clone(),
                 OldMachineTerm::uint64_constant(room),
             ));
@@ -10042,8 +10042,10 @@ mod pointer_domain_clause_tests {
             start: base.address().clone(),
             width: 4u32.into(),
         }));
-        let context = PureFactContext::new()
-            .assume_condition(ConditionTerm::pointer_equal(base.clone(), selected), true);
+        let context = PureFactContext::new().assume_condition(
+            OldConditionTerm::pointer_equal(base.clone(), selected),
+            true,
+        );
         for (end, refused) in [(0, false), (1, false), (2, true)] {
             for wide in [false, true] {
                 let (start, end, kind) = if wide {

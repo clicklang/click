@@ -10,14 +10,14 @@ fn rejecting_comparison_bound_ignores_unrelated_getter_payload() {
         let mut baseline = None;
         for size in [4, 16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
-            let fact = ConditionTerm::signed_less_equal(
+            let fact = OldConditionTerm::signed_less_equal(
                 getter(size),
                 OldMachineTerm::constant(2147483646),
             );
             let goal = if mirrored {
-                ConditionTerm::signed_greater_equal(y.clone(), x.clone())
+                OldConditionTerm::signed_greater_equal(y.clone(), x.clone())
             } else {
-                ConditionTerm::signed_less_equal(x.clone(), y.clone())
+                OldConditionTerm::signed_less_equal(x.clone(), y.clone())
             };
             let context = PureFactContext::new().assume_condition(fact.clone(), true);
             let (matched, work) = crate::instrumentation::measure_deterministic_work(|| {

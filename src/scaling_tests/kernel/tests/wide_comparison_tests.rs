@@ -16,7 +16,7 @@ fn wide_comparison_queries_ignore_unrelated_ambient_facts() {
                 let mut context = PureFactContext::new();
                 for i in 0..size {
                     context = context
-                        .assume_condition(ConditionTerm::Variable(Variable(167_000 + i)), true);
+                        .assume_condition(OldConditionTerm::Variable(Variable(167_000 + i)), true);
                 }
                 context = context.assume_condition(guard.clone(), false);
                 let (output, work) = crate::instrumentation::measure_deterministic_work(|| {

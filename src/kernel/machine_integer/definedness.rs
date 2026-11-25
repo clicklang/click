@@ -8,7 +8,7 @@
 use super::{FORMATS, Operation, comparison::ComparisonOperand, range, representation};
 #[cfg(test)]
 use crate::kernel::OldMachineTerm;
-use crate::kernel::{ConditionTerm, IntegerTerm, MachineIntegerType, Proposition};
+use crate::kernel::{IntegerTerm, MachineIntegerType, OldConditionTerm, Proposition};
 
 /// The formats whose definedness facts the kernel files, narrowest first:
 /// those where C arithmetic's overflow is undefined behavior
@@ -48,11 +48,11 @@ pub(crate) fn ordinary_bounds(format: MachineIntegerType, exact: IntegerTerm) ->
     let (minimum, maximum) = range::range(format);
     [
         Proposition::condition_is(
-            ConditionTerm::integer_less_equal(exact.clone(), IntegerTerm::constant(maximum)),
+            OldConditionTerm::integer_less_equal(exact.clone(), IntegerTerm::constant(maximum)),
             true,
         ),
         Proposition::condition_is(
-            ConditionTerm::integer_greater_equal(exact, IntegerTerm::constant(minimum)),
+            OldConditionTerm::integer_greater_equal(exact, IntegerTerm::constant(minimum)),
             true,
         ),
     ]
@@ -124,7 +124,7 @@ impl OverflowQueryView {
         ordinary_bounds(self.format, self.exact.clone())
     }
 
-    fn boxed_condition(&self) -> Option<ConditionTerm> {
+    fn boxed_condition(&self) -> Option<OldConditionTerm> {
         representation::overflow_condition(
             self.format,
             self.operation,
@@ -139,10 +139,10 @@ pub(crate) fn overflow_query_of_integer_bound(
     formats: impl Iterator<Item = MachineIntegerType>,
 ) -> Option<OverflowQueryView> {
     let Some((
-        ConditionTerm::IntegerLessEqual(first, second)
-        | ConditionTerm::IntegerGreaterEqual(first, second),
+        OldConditionTerm::IntegerLessEqual(first, second)
+        | OldConditionTerm::IntegerGreaterEqual(first, second),
         true,
-    )) = bound.condition_native()
+    )) = bound.old_condition()
     else {
         return None;
     };
@@ -199,16 +199,16 @@ fn same_integer_bound(left: &Proposition, right: &Proposition) -> bool {
     left == right
         || matches!(&(left, right),
         (left_source @ Proposition::ConditionIs(_, true), right_source @ Proposition::ConditionIs(_, true))
-        if matches!(left_source.condition_native(), Some((ConditionTerm::IntegerLessEqual(a, b), _)) if matches!(right_source.condition_native(), Some((ConditionTerm::IntegerGreaterEqual(c, d), _)) if (a == d) && (b == c))))
+        if matches!(left_source.old_condition(), Some((OldConditionTerm::IntegerLessEqual(a, b), _)) if matches!(right_source.old_condition(), Some((OldConditionTerm::IntegerGreaterEqual(c, d), _)) if (a == d) && (b == c))))
         || matches!(&(left, right),
             (left_source @ Proposition::ConditionIs(_, true), right_source @ Proposition::ConditionIs(_, true))
-            if matches!(left_source.condition_native(), Some((ConditionTerm::IntegerGreaterEqual(a, b), _)) if matches!(right_source.condition_native(), Some((ConditionTerm::IntegerLessEqual(c, d), _)) if (a == d) && (b == c))))
+            if matches!(left_source.old_condition(), Some((OldConditionTerm::IntegerGreaterEqual(a, b), _)) if matches!(right_source.old_condition(), Some((OldConditionTerm::IntegerLessEqual(c, d), _)) if (a == d) && (b == c))))
 }
 
 /// Read one explicitly supplied ordinary range conjunction as an arithmetic
 /// query. This is a structural adapter for existing interval certificates;
 /// it neither adds an overflow fact nor searches the context for bounds.
-pub(crate) fn ordinary_arithmetic_guard(proposition: &Proposition) -> Option<ConditionTerm> {
+pub(crate) fn ordinary_arithmetic_guard(proposition: &Proposition) -> Option<OldConditionTerm> {
     ordinary_arithmetic_guard_view(proposition)?.boxed_condition()
 }
 
@@ -274,10 +274,10 @@ mod shared_query_tests {
         formats: impl Iterator<Item = MachineIntegerType>,
     ) -> Option<Proposition> {
         let Some((
-            ConditionTerm::IntegerLessEqual(first, second)
-            | ConditionTerm::IntegerGreaterEqual(first, second),
+            OldConditionTerm::IntegerLessEqual(first, second)
+            | OldConditionTerm::IntegerGreaterEqual(first, second),
             true,
-        )) = bound.condition_native()
+        )) = bound.old_condition()
         else {
             return None;
         };
@@ -369,14 +369,14 @@ mod shared_query_tests {
                         let (min, max) = range::range(bounds_format);
                         for bound in [
                             Proposition::condition_is(
-                                ConditionTerm::integer_less_equal(
+                                OldConditionTerm::integer_less_equal(
                                     exact.clone(),
                                     IntegerTerm::constant(max),
                                 ),
                                 true,
                             ),
                             Proposition::condition_is(
-                                ConditionTerm::integer_greater_equal(
+                                OldConditionTerm::integer_greater_equal(
                                     exact.clone(),
                                     IntegerTerm::constant(min),
                                 ),

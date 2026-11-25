@@ -22,11 +22,11 @@ fn model_start_membership_ignores_unrelated_order_bounds() {
             let noise = OldMachineTerm::Variable(Variable(9_949_000 + extra));
             context = context
                 .assume_condition(
-                    ConditionTerm::signed_less_equal(range.start().clone(), noise.clone()),
+                    OldConditionTerm::signed_less_equal(range.start().clone(), noise.clone()),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::signed_less_than(noise, range.end().clone()),
+                    OldConditionTerm::signed_less_than(noise, range.end().clone()),
                     true,
                 );
         }

@@ -8,7 +8,7 @@ fn shared_pointer_transport_walks_offset_dags_once_beside_unrelated_state() {
         let mut context = PureFactContext::new();
         for i in 0..unrelated {
             context = context.assume_condition(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     OldMachineTerm::Variable(Variable(1008000 + i)),
                     OldMachineTerm::constant(1),
                 ),

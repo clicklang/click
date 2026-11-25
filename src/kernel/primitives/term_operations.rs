@@ -431,8 +431,8 @@ impl OldMachineTerm {
                 then_term,
                 else_term,
             } => match condition.as_ref() {
-                ConditionTerm::Constant(true) => then_term.as_const(),
-                ConditionTerm::Constant(false) => else_term.as_const(),
+                OldConditionTerm::Constant(true) => then_term.as_const(),
+                OldConditionTerm::Constant(false) => else_term.as_const(),
                 _ => None,
             },
             Self::RangeFold { .. } => None,
@@ -960,10 +960,10 @@ impl OldMachineTerm {
         }
     }
 
-    pub fn if_then_else(condition: ConditionTerm, then_term: Self, else_term: Self) -> Self {
+    pub fn if_then_else(condition: OldConditionTerm, then_term: Self, else_term: Self) -> Self {
         match condition {
-            ConditionTerm::Constant(true) => then_term,
-            ConditionTerm::Constant(false) => else_term,
+            OldConditionTerm::Constant(true) => then_term,
+            OldConditionTerm::Constant(false) => else_term,
             _ if then_term == else_term => then_term,
             condition => Self::If {
                 condition: Box::new(condition),
@@ -1092,8 +1092,8 @@ fn int64_constant(term: &OldMachineTerm) -> Option<i64> {
             then_term,
             else_term,
         } => match condition.as_ref() {
-            ConditionTerm::Constant(true) => int64_constant(then_term),
-            ConditionTerm::Constant(false) => int64_constant(else_term),
+            OldConditionTerm::Constant(true) => int64_constant(then_term),
+            OldConditionTerm::Constant(false) => int64_constant(else_term),
             _ => None,
         },
         _ => uint64_constant(term).map(|bits| bits as i64),
@@ -1163,8 +1163,8 @@ fn uint64_constant(term: &OldMachineTerm) -> Option<u64> {
             then_term,
             else_term,
         } => match condition.as_ref() {
-            ConditionTerm::Constant(true) => uint64_constant(then_term),
-            ConditionTerm::Constant(false) => uint64_constant(else_term),
+            OldConditionTerm::Constant(true) => uint64_constant(then_term),
+            OldConditionTerm::Constant(false) => uint64_constant(else_term),
             _ => None,
         },
         _ => None,
@@ -1206,8 +1206,8 @@ fn float32_bits_as_const(term: &OldMachineTerm) -> Option<u32> {
             then_term,
             else_term,
         } => match condition.as_ref() {
-            ConditionTerm::Constant(true) => float32_bits_as_const(then_term),
-            ConditionTerm::Constant(false) => float32_bits_as_const(else_term),
+            OldConditionTerm::Constant(true) => float32_bits_as_const(then_term),
+            OldConditionTerm::Constant(false) => float32_bits_as_const(else_term),
             _ => None,
         },
         _ => None,
@@ -1236,8 +1236,8 @@ fn float64_bits_as_const(term: &OldMachineTerm) -> Option<u64> {
             then_term,
             else_term,
         } => match condition.as_ref() {
-            ConditionTerm::Constant(true) => float64_bits_as_const(then_term),
-            ConditionTerm::Constant(false) => float64_bits_as_const(else_term),
+            OldConditionTerm::Constant(true) => float64_bits_as_const(then_term),
+            OldConditionTerm::Constant(false) => float64_bits_as_const(else_term),
             _ => None,
         },
         _ => None,
@@ -2483,7 +2483,7 @@ impl OldMachineTerm {
     }
 }
 
-impl AddressOffset {
+impl OldAddressOffset {
     pub fn constant(value: i64) -> Self {
         Self::Constant(value)
     }
@@ -2629,7 +2629,7 @@ impl AddressOffset {
     }
 }
 
-impl ConditionTerm {
+impl OldConditionTerm {
     /// The value this condition has because its two operands are the same
     /// term, when it is a comparison of that kind.
     ///
@@ -3073,15 +3073,15 @@ impl ConditionTerm {
     /// exact, so its byte offset is the index times the stride with no
     /// wrap of its own. A shared pointer base may precede them; other
     /// nested sums are refused.
-    pub(crate) fn pointer_offset_uint64_association_guard(&self) -> Option<ConditionTerm> {
-        fn scalar(offset: &AddressOffset, width: i64) -> Option<SharedMachineIntegerTerm> {
+    pub(crate) fn pointer_offset_uint64_association_guard(&self) -> Option<OldConditionTerm> {
+        fn scalar(offset: &OldAddressOffset, width: i64) -> Option<SharedMachineIntegerTerm> {
             match offset {
-                AddressOffset::Int64Scaled {
+                OldAddressOffset::Int64Scaled {
                     value,
                     byte_width,
                     unsigned: true,
                 } if *byte_width == width => Some(value.clone()),
-                AddressOffset::Constant(value) if *value >= 0 && value % width == 0 => {
+                OldAddressOffset::Constant(value) if *value >= 0 && value % width == 0 => {
                     Some(SharedMachineIntegerTerm::index(
                         MachineIntegerType::Int64,
                         OldMachineTerm::uint64_constant((value / width) as u64),
@@ -3092,18 +3092,18 @@ impl ConditionTerm {
         }
         let (left, right) = self.pointer_offset_sides()?;
         for (expanded, indexed) in [(left, right), (right, left)] {
-            let AddressOffset::Add(left, right) = expanded else {
+            let OldAddressOffset::Add(left, right) = expanded else {
                 continue;
             };
             let (left, indexed) = match (left.as_ref(), indexed) {
-                (AddressOffset::Add(base, index), AddressOffset::Add(other_base, sum))
+                (OldAddressOffset::Add(base, index), OldAddressOffset::Add(other_base, sum))
                     if base == other_base =>
                 {
                     (index.as_ref(), sum.as_ref())
                 }
                 _ => (left.as_ref(), indexed),
             };
-            let AddressOffset::Int64Scaled {
+            let OldAddressOffset::Int64Scaled {
                 value,
                 byte_width,
                 unsigned: true,
@@ -3159,12 +3159,12 @@ impl ConditionTerm {
     /// scaled scalar or a representable constant. A shared pointer base may
     /// precede them; other nested sums and full-width indices are refused.
     pub(crate) fn pointer_offset_association_guard(&self) -> Option<[SharedMachineIntegerTerm; 2]> {
-        fn scalar(offset: &AddressOffset, width: i64) -> Option<SharedMachineIntegerTerm> {
+        fn scalar(offset: &OldAddressOffset, width: i64) -> Option<SharedMachineIntegerTerm> {
             match offset {
-                AddressOffset::Int32Scaled { value, byte_width } if *byte_width == width => {
+                OldAddressOffset::Int32Scaled { value, byte_width } if *byte_width == width => {
                     Some(value.clone())
                 }
-                AddressOffset::Constant(value) if value % width == 0 => {
+                OldAddressOffset::Constant(value) if value % width == 0 => {
                     i32::try_from(value / width).ok().map(|value| {
                         SharedMachineIntegerTerm::index(
                             MachineIntegerType::Int32,
@@ -3177,21 +3177,21 @@ impl ConditionTerm {
         }
         let (left, right) = self.pointer_offset_sides()?;
         for (expanded, indexed) in [(left, right), (right, left)] {
-            let AddressOffset::Add(left, right) = expanded else {
+            let OldAddressOffset::Add(left, right) = expanded else {
                 continue;
             };
             // Source pointers can carry a symbolic byte offset before the
             // selected index. Cancel only an identical leading base, without
             // consulting aliases or traversing unrelated offset addends.
             let (left, indexed) = match (left.as_ref(), indexed) {
-                (AddressOffset::Add(base, index), AddressOffset::Add(other_base, sum))
+                (OldAddressOffset::Add(base, index), OldAddressOffset::Add(other_base, sum))
                     if base == other_base =>
                 {
                     (index.as_ref(), sum.as_ref())
                 }
                 _ => (left.as_ref(), indexed),
             };
-            let AddressOffset::Int32Scaled { value, byte_width } = indexed else {
+            let OldAddressOffset::Int32Scaled { value, byte_width } = indexed else {
                 continue;
             };
             if !(*byte_width > 0 && *byte_width <= i64::from(u32::MAX)) {
@@ -3298,7 +3298,7 @@ impl ConditionTerm {
     /// pointer is null. Equal addresses do not make equal pointers (a pointer
     /// one past an object may have the next object's address), so this only
     /// decides the comparison and never replaces it as a fact
-    /// (`ConditionTerm::int64_equal`). Any other address-versus-integer
+    /// (`OldConditionTerm::int64_equal`). Any other address-versus-integer
     /// comparison stays undecided: an integer with no pointer origin never
     /// proves or refutes identity with an allocation.
     pub(crate) fn address_equality_as_pointer_equality(
@@ -3723,7 +3723,7 @@ impl ConditionTerm {
     /// The equality of two `uint32` values, a `uint32` term as written. It
     /// is the same fact as the `int32` equality of the same bits at the
     /// fact-identity and lookup-key level only (rule K6,
-    /// [`ConditionTerm::comparison_fact`]).
+    /// [`OldConditionTerm::comparison_fact`]).
     pub(crate) fn uint32_equal(left: OldMachineTerm, right: OldMachineTerm) -> Self {
         match Self::equal(left, right) {
             Self::Compare {
@@ -3840,8 +3840,8 @@ impl ConditionTerm {
     }
 
     pub(in crate::kernel) fn address_offset_equal(
-        left: AddressOffset,
-        right: AddressOffset,
+        left: OldAddressOffset,
+        right: OldAddressOffset,
     ) -> Self {
         match (left.as_const(), right.as_const()) {
             (Some(left), Some(right)) => Self::Constant(left == right),
@@ -3853,7 +3853,9 @@ impl ConditionTerm {
     /// The numeric consequence of an established true pointer equality.
     /// Unlike `pointer_offset_sides`, this does not describe an equivalent
     /// proposition: equal addresses alone cannot prove full-value equality.
-    pub(crate) fn true_pointer_offset_sides(&self) -> Option<(&AddressOffset, &AddressOffset)> {
+    pub(crate) fn true_pointer_offset_sides(
+        &self,
+    ) -> Option<(&OldAddressOffset, &OldAddressOffset)> {
         match self {
             Self::PointerEqual(a, b) if a.base == b.base => Some((&a.offset, &b.offset)),
             _ => self.pointer_offset_sides(),
@@ -3862,7 +3864,7 @@ impl ConditionTerm {
 
     /// A common-base comparison's offset view, retaining the original
     /// condition as the supporting premise in callers' indexes.
-    pub(crate) fn pointer_offset_sides(&self) -> Option<(&AddressOffset, &AddressOffset)> {
+    pub(crate) fn pointer_offset_sides(&self) -> Option<(&OldAddressOffset, &OldAddressOffset)> {
         match self {
             Self::AddressOffsetEqual(a, b) => Some((a, b)),
             Self::AddressEqual(a, b) if a.base == b.base => Some((&a.offset, &b.offset)),
@@ -3878,7 +3880,7 @@ impl ConditionTerm {
     /// folding to `true`, so the fact raises to `p == p` and lowers back
     /// (`docs/internals/raise-lower-principle.md`, "Lowering is structural").
     /// Producers whose result must match a lowered goal use it too; checking
-    /// decides the reflexive comparison (`ConditionTerm::reflexive_value`).
+    /// decides the reflexive comparison (`OldConditionTerm::reflexive_value`).
     pub(crate) fn logical_pointer_equal(left: OldPointer, right: OldPointer) -> Self {
         if left == right && !left.is_null() {
             let address = left.address().clone();
@@ -3965,7 +3967,7 @@ fn machine_constant_value(
     }
 }
 
-fn pointer_offsets_differ_by_residue(left: &AddressOffset, right: &AddressOffset) -> bool {
+fn pointer_offsets_differ_by_residue(left: &OldAddressOffset, right: &OldAddressOffset) -> bool {
     let (Some((left_scaled, left_constant)), Some((right_scaled, right_constant))) = (
         left.int32_scaled_linear_form(),
         right.int32_scaled_linear_form(),
@@ -4905,7 +4907,7 @@ impl OldPointer {
 
 impl Address {
     pub(in crate::kernel) fn integer_address_bits(&self) -> Option<&OldMachineTerm> {
-        if self.offset == AddressOffset::Constant(0)
+        if self.offset == OldAddressOffset::Constant(0)
             && let AddressBase::PureFunctionApplication(application) = &self.base
         {
             application.integer_address_bits()
@@ -4921,9 +4923,9 @@ impl Address {
     /// arithmetic appends displacement terms; remove those displacements when
     /// deciding whether the originating object base may be null.
     pub(in crate::kernel) fn object_base(&self) -> Self {
-        fn external_base(offset: &AddressOffset) -> &AddressOffset {
+        fn external_base(offset: &OldAddressOffset) -> &OldAddressOffset {
             match offset {
-                AddressOffset::Add(base, _) => external_base(base),
+                OldAddressOffset::Add(base, _) => external_base(base),
                 offset => offset,
             }
         }
@@ -4933,7 +4935,7 @@ impl Address {
             offset: if self.base == AddressBase::ExternalArgument {
                 external_base(&self.offset).clone()
             } else {
-                AddressOffset::Constant(0)
+                OldAddressOffset::Constant(0)
             },
         }
     }
@@ -4951,17 +4953,17 @@ impl Address {
         if self.base == AddressBase::ExternalArgument {
             let base = self.object_base();
             let variable = match &base.offset {
-                AddressOffset::Variable(variable) => Some(*variable),
-                AddressOffset::Int32Scaled { value, .. }
-                | AddressOffset::Int64Scaled { value, .. } => {
+                OldAddressOffset::Variable(variable) => Some(*variable),
+                OldAddressOffset::Int32Scaled { value, .. }
+                | OldAddressOffset::Int64Scaled { value, .. } => {
                     value.operand_view().variable().copied()
                 }
-                AddressOffset::Constant(_) | AddressOffset::Add(_, _) => None,
+                OldAddressOffset::Constant(_) | OldAddressOffset::Add(_, _) => None,
             };
             if let Some(variable) = variable {
                 return Self {
                     base: AddressBase::ExternalObject(variable),
-                    offset: AddressOffset::Constant(0),
+                    offset: OldAddressOffset::Constant(0),
                 };
             }
             return Self {
@@ -4972,14 +4974,14 @@ impl Address {
 
         Self {
             base: self.base.clone(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         }
     }
 
     pub(crate) fn null() -> Self {
         Self {
             base: "null".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         }
     }
 
@@ -5003,14 +5005,14 @@ impl Address {
                 "$integer-address".into(),
                 vec![PureFunctionArgument::Value(ProgramValue::UInt64(bits))],
             )),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         }
     }
 
     pub(crate) fn symbolic(variable: Variable) -> Self {
         Self {
             base: AddressBase::Symbolic(variable),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         }
     }
 
@@ -5021,7 +5023,7 @@ impl Address {
     pub(crate) fn verifier_temporary(identity: Variable) -> Self {
         Self {
             base: AddressBase::Temporary(identity.0),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         }
     }
 
@@ -5187,12 +5189,12 @@ impl Address {
             Some(ProgramValue::Pointer(stored))
                 if stored.address().as_loaded_value().is_some_and(|read| {
                     read.defining_address == *address
-                        && read.displacement == AddressOffset::Constant(0)
+                        && read.displacement == OldAddressOffset::Constant(0)
                 }) || matches!(
                     stored.address(),
                     Address {
                         base: AddressBase::Symbolic(variable),
-                        offset: AddressOffset::Constant(0),
+                        offset: OldAddressOffset::Constant(0),
                     } if crate::kernel::registered_load_for_variable(variable)
                         .is_some_and(|(_, registered)| registered == *address)
                 ) =>
@@ -5223,14 +5225,14 @@ impl Address {
     pub(crate) fn symbolic_function(variable: Variable) -> Self {
         Self {
             base: AddressBase::FunctionSymbolic(variable),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         }
     }
 
     pub(crate) fn function(name: impl Into<String>) -> Self {
         Self {
             base: AddressBase::Function(name.into()),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         }
     }
     pub(in crate::kernel) fn has_symbolic_block(&self) -> bool {
@@ -5253,9 +5255,9 @@ impl Address {
     pub(crate) fn offset_by_bytes(&self, bytes: u32) -> Self {
         Self {
             base: self.base.clone(),
-            offset: AddressOffset::add(
+            offset: OldAddressOffset::add(
                 self.offset.clone(),
-                AddressOffset::Constant(i64::from(bytes)),
+                OldAddressOffset::Constant(i64::from(bytes)),
             ),
         }
     }
@@ -5267,9 +5269,9 @@ impl Address {
             super::LayoutOffset::Bytes(bytes) => self.offset_by_bytes(bytes),
             super::LayoutOffset::Field(..) => Self {
                 base: self.base.clone(),
-                offset: AddressOffset::add(
+                offset: OldAddressOffset::add(
                     self.offset.clone(),
-                    AddressOffset::scaled_int64_node(offset.term(), 1, true),
+                    OldAddressOffset::scaled_int64_node(offset.term(), 1, true),
                 ),
             },
         }
@@ -5281,15 +5283,17 @@ impl Address {
         byte_width: u32,
     ) -> Self {
         let displacement = match elements.operand_view().word32_constant() {
-            Some(value) => AddressOffset::Constant(i64::from(value as i32) * i64::from(byte_width)),
-            None => AddressOffset::Int32Scaled {
+            Some(value) => {
+                OldAddressOffset::Constant(i64::from(value as i32) * i64::from(byte_width))
+            }
+            None => OldAddressOffset::Int32Scaled {
                 value: elements,
                 byte_width: i64::from(byte_width),
             },
         };
         Self {
             base: self.base.clone(),
-            offset: AddressOffset::add(self.offset.clone(), displacement),
+            offset: OldAddressOffset::add(self.offset.clone(), displacement),
         }
     }
 
@@ -5300,9 +5304,9 @@ impl Address {
     ) -> Self {
         Self {
             base: self.base.clone(),
-            offset: AddressOffset::add(
+            offset: OldAddressOffset::add(
                 self.offset.clone(),
-                AddressOffset::scale_int32(elements, i64::from(byte_width)),
+                OldAddressOffset::scale_int32(elements, i64::from(byte_width)),
             ),
         }
     }
@@ -5316,12 +5320,12 @@ impl Address {
     ) -> Self {
         Self {
             base: self.base.clone(),
-            offset: AddressOffset::add(
+            offset: OldAddressOffset::add(
                 self.offset.clone(),
                 if wide {
-                    AddressOffset::scale_int64(elements, i64::from(byte_width), unsigned)
+                    OldAddressOffset::scale_int64(elements, i64::from(byte_width), unsigned)
                 } else {
-                    AddressOffset::scale_int32(elements, i64::from(byte_width))
+                    OldAddressOffset::scale_int32(elements, i64::from(byte_width))
                 },
             ),
         }
@@ -5330,7 +5334,7 @@ impl Address {
     /// This pointer's offset less `base`'s, exactly, when both name one block
     /// and every non-constant summand of `base` occurs in this offset; see
     /// [`offset_less_base`].
-    pub(crate) fn offset_from_base(&self, base: &Self) -> Option<AddressOffset> {
+    pub(crate) fn offset_from_base(&self, base: &Self) -> Option<OldAddressOffset> {
         if self.base != base.base {
             return None;
         }
@@ -5352,12 +5356,12 @@ impl Address {
     ) -> Option<SharedMachineIntegerTerm> {
         let width = i64::from(byte_width);
         match self.offset_from_base(base)? {
-            AddressOffset::Int64Scaled {
+            OldAddressOffset::Int64Scaled {
                 value,
                 byte_width,
                 unsigned: true,
             } if byte_width == width => Some(value),
-            AddressOffset::Constant(bytes) if bytes >= 0 && bytes % width == 0 => {
+            OldAddressOffset::Constant(bytes) if bytes >= 0 && bytes % width == 0 => {
                 let root = KernelTerm::retained_native_machine_operand(
                     MachineIntegerType::UInt64,
                     &OldMachineTerm::uint64_constant((bytes / width) as u64),
@@ -5381,15 +5385,15 @@ impl Address {
             return Some(OldMachineTerm::constant(0));
         }
 
-        if base.offset == AddressOffset::Constant(0) {
+        if base.offset == OldAddressOffset::Constant(0) {
             return crate::kernel::reasoning::element_index_from_offset(&self.offset, byte_width);
         }
 
         match &self.offset {
-            AddressOffset::Add(left, right) if left.as_ref() == &base.offset => {
+            OldAddressOffset::Add(left, right) if left.as_ref() == &base.offset => {
                 crate::kernel::reasoning::element_index_from_offset(right, byte_width)
             }
-            AddressOffset::Add(left, right) if right.as_ref() == &base.offset => {
+            OldAddressOffset::Add(left, right) if right.as_ref() == &base.offset => {
                 crate::kernel::reasoning::element_index_from_offset(left, byte_width)
             }
             _ => {
@@ -5426,7 +5430,7 @@ impl Address {
             );
         }
 
-        if base.offset == AddressOffset::Constant(0) {
+        if base.offset == OldAddressOffset::Constant(0) {
             return crate::kernel::reasoning::shared_element_index_from_offset(
                 &self.offset,
                 byte_width,
@@ -5434,10 +5438,10 @@ impl Address {
         }
 
         match &self.offset {
-            AddressOffset::Add(left, right) if left.as_ref() == &base.offset => {
+            OldAddressOffset::Add(left, right) if left.as_ref() == &base.offset => {
                 crate::kernel::reasoning::shared_element_index_from_offset(right, byte_width)
             }
-            AddressOffset::Add(left, right) if right.as_ref() == &base.offset => {
+            OldAddressOffset::Add(left, right) if right.as_ref() == &base.offset => {
                 crate::kernel::reasoning::shared_element_index_from_offset(left, byte_width)
             }
             _ => {
@@ -5492,14 +5496,14 @@ impl Address {
         if self.offset == base.offset {
             return Some(ExactElementDelta::zero());
         }
-        if base.offset == AddressOffset::Constant(0) {
+        if base.offset == OldAddressOffset::Constant(0) {
             return exact_element_delta_from_offset(&self.offset, byte_width);
         }
         match &self.offset {
-            AddressOffset::Add(left, right) if left.as_ref() == &base.offset => {
+            OldAddressOffset::Add(left, right) if left.as_ref() == &base.offset => {
                 exact_element_delta_from_offset(right, byte_width)
             }
-            AddressOffset::Add(left, right) if right.as_ref() == &base.offset => {
+            OldAddressOffset::Add(left, right) if right.as_ref() == &base.offset => {
                 exact_element_delta_from_offset(left, byte_width)
             }
             _ => {
@@ -5522,15 +5526,15 @@ impl Address {
 /// constant is `index - c`, the form [`OldMachineTerm::subtract`] gives
 /// `(b + i) - (b + c)`, rather than the residue `index + (2^32 - c)`.
 fn native_element_index_of_difference(
-    difference: &AddressOffset,
+    difference: &OldAddressOffset,
     byte_width: u32,
 ) -> Option<OldMachineTerm> {
-    if let AddressOffset::Add(symbolic, constant) = difference
-        && let AddressOffset::Constant(bytes) = constant.as_ref()
+    if let OldAddressOffset::Add(symbolic, constant) = difference
+        && let OldAddressOffset::Constant(bytes) = constant.as_ref()
         && *bytes < 0
     {
         let elements = crate::kernel::reasoning::element_index_from_offset(
-            &AddressOffset::Constant(-bytes),
+            &OldAddressOffset::Constant(-bytes),
             byte_width,
         )?;
         return Some(OldMachineTerm::subtract(
@@ -5542,15 +5546,15 @@ fn native_element_index_of_difference(
 }
 
 fn element_index_of_difference(
-    difference: &AddressOffset,
+    difference: &OldAddressOffset,
     byte_width: u32,
 ) -> Option<SharedMachineIntegerTerm> {
-    if let AddressOffset::Add(symbolic, constant) = difference
-        && let AddressOffset::Constant(bytes) = constant.as_ref()
+    if let OldAddressOffset::Add(symbolic, constant) = difference
+        && let OldAddressOffset::Constant(bytes) = constant.as_ref()
         && *bytes < 0
     {
         let elements = crate::kernel::reasoning::shared_element_index_from_offset(
-            &AddressOffset::Constant(-bytes),
+            &OldAddressOffset::Constant(-bytes),
             byte_width,
         )?;
         return Some(crate::kernel::assumptions::index_binary(
@@ -5573,8 +5577,11 @@ fn element_index_of_difference(
 /// syntactically among those of `offset`, each occurrence matched once, or
 /// there is no answer and the caller keeps its own. The walk is over the two
 /// terms and nothing else.
-fn offset_less_base(offset: &AddressOffset, base: &AddressOffset) -> Option<AddressOffset> {
-    fn summands(term: &AddressOffset) -> Option<(Vec<&AddressOffset>, i64)> {
+fn offset_less_base(
+    offset: &OldAddressOffset,
+    base: &OldAddressOffset,
+) -> Option<OldAddressOffset> {
+    fn summands(term: &OldAddressOffset) -> Option<(Vec<&OldAddressOffset>, i64)> {
         let mut symbolic = Vec::new();
         let mut constant = 0i64;
         let mut pending = vec![term];
@@ -5584,7 +5591,7 @@ fn offset_less_base(offset: &AddressOffset, base: &AddressOffset) -> Option<Addr
                 continue;
             }
             match current {
-                AddressOffset::Add(left, right) => {
+                OldAddressOffset::Add(left, right) => {
                     // Right first, so `left` is walked first and the
                     // summands keep their written order.
                     pending.push(right);
@@ -5605,11 +5612,11 @@ fn offset_less_base(offset: &AddressOffset, base: &AddressOffset) -> Option<Addr
     let difference = rest
         .into_iter()
         .cloned()
-        .reduce(AddressOffset::add)
-        .unwrap_or(AddressOffset::Constant(0));
-    Some(AddressOffset::add(
+        .reduce(OldAddressOffset::add)
+        .unwrap_or(OldAddressOffset::Constant(0));
+    Some(OldAddressOffset::add(
         difference,
-        AddressOffset::Constant(constant),
+        OldAddressOffset::Constant(constant),
     ))
 }
 
@@ -6027,8 +6034,8 @@ mod shift_overflow_refusal_tests {
             "the helper must refuse to decide an out-of-range count"
         );
         assert_eq!(
-            ConditionTerm::signed_shift_left_overflows(left.clone(), right.clone()),
-            ConditionTerm::Overflows {
+            OldConditionTerm::signed_shift_left_overflows(left.clone(), right.clone()),
+            OldConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::ShiftLeft,
                 left: Box::new(left),
@@ -6042,7 +6049,7 @@ mod shift_overflow_refusal_tests {
 /// Whether a proposition holds with no facts at all, by a constant structural
 /// check: a condition that is the ground constant it asserts, a closed native
 /// comparison, or a comparison of a term with itself whose value
-/// ([`ConditionTerm::reflexive_value`]) is the one asserted.
+/// ([`OldConditionTerm::reflexive_value`]) is the one asserted.
 ///
 /// Every `using` list consults this one rule, so a premise that states such a
 /// fact needs no fact behind it wherever it is listed, and the kernel's
@@ -6050,21 +6057,21 @@ mod shift_overflow_refusal_tests {
 pub(crate) fn proposition_holds_without_facts(proposition: &Proposition) -> bool {
     match proposition {
         condition_source_0 @ Proposition::ConditionIs(_, value)
-            if let Some((ConditionTerm::Constant(constant), _)) =
-                condition_source_0.condition_native() =>
+            if let Some((OldConditionTerm::Constant(constant), _)) =
+                condition_source_0.old_condition() =>
         {
             constant == value
         }
         condition_source_0 @ Proposition::ConditionIs(_, value)
             if let Some((
-                condition @ ConditionTerm::Compare {
+                condition @ OldConditionTerm::Compare {
                     format,
                     left,
                     right,
                     ..
                 },
                 _,
-            )) = condition_source_0.condition_native()
+            )) = condition_source_0.old_condition()
                 && (format.constant_from_term(left).is_some()
                     && format.constant_from_term(right).is_some()) =>
         {
@@ -6135,7 +6142,7 @@ pub(crate) fn holds_by_format_range(proposition: &Proposition) -> bool {
         }
     };
     let truth = match condition.old_form() {
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format,
             relation,
             left,
@@ -6154,14 +6161,14 @@ pub(crate) fn holds_by_format_range(proposition: &Proposition) -> bool {
                 _ => None,
             }
         }
-        ConditionTerm::IntegerLessThan(left, right)
-        | ConditionTerm::IntegerLessEqual(left, right)
-        | ConditionTerm::IntegerGreaterThan(left, right)
-        | ConditionTerm::IntegerGreaterEqual(left, right) => {
+        OldConditionTerm::IntegerLessThan(left, right)
+        | OldConditionTerm::IntegerLessEqual(left, right)
+        | OldConditionTerm::IntegerGreaterThan(left, right)
+        | OldConditionTerm::IntegerGreaterEqual(left, right) => {
             let relation = match condition.old_form() {
-                ConditionTerm::IntegerLessThan(..) => R::LessThan,
-                ConditionTerm::IntegerLessEqual(..) => R::LessEqual,
-                ConditionTerm::IntegerGreaterThan(..) => R::GreaterThan,
+                OldConditionTerm::IntegerLessThan(..) => R::LessThan,
+                OldConditionTerm::IntegerLessEqual(..) => R::LessEqual,
+                OldConditionTerm::IntegerGreaterThan(..) => R::GreaterThan,
                 _ => R::GreaterEqual,
             };
             let range = |term: &IntegerTerm| match term {
@@ -6202,45 +6209,45 @@ pub(crate) fn mirrored_equality(proposition: &Proposition) -> Option<Proposition
         return None;
     };
     let mirrored = match condition.old_form() {
-        ConditionTerm::IntegerEqual(left, right) => {
-            ConditionTerm::IntegerEqual(right.clone(), left.clone())
+        OldConditionTerm::IntegerEqual(left, right) => {
+            OldConditionTerm::IntegerEqual(right.clone(), left.clone())
         }
-        ConditionTerm::IntegerNotEqual(left, right) => {
-            ConditionTerm::IntegerNotEqual(right.clone(), left.clone())
+        OldConditionTerm::IntegerNotEqual(left, right) => {
+            OldConditionTerm::IntegerNotEqual(right.clone(), left.clone())
         }
-        ConditionTerm::AlgebraicEqual(left, right) => {
-            ConditionTerm::AlgebraicEqual(right.clone(), left.clone())
+        OldConditionTerm::AlgebraicEqual(left, right) => {
+            OldConditionTerm::AlgebraicEqual(right.clone(), left.clone())
         }
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
             relation: CompareRelation::Equal,
             left,
             right,
-        } => ConditionTerm::Compare {
+        } => OldConditionTerm::Compare {
             format: *format,
             relation: CompareRelation::Equal,
             left: right.clone(),
             right: left.clone(),
         },
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left,
             right,
-        } => ConditionTerm::Compare {
+        } => OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: right.clone(),
             right: left.clone(),
         },
-        ConditionTerm::AddressOffsetEqual(left, right) => {
-            ConditionTerm::AddressOffsetEqual(right.clone(), left.clone())
+        OldConditionTerm::AddressOffsetEqual(left, right) => {
+            OldConditionTerm::AddressOffsetEqual(right.clone(), left.clone())
         }
-        ConditionTerm::AddressEqual(left, right) => {
-            ConditionTerm::AddressEqual(right.clone(), left.clone())
+        OldConditionTerm::AddressEqual(left, right) => {
+            OldConditionTerm::AddressEqual(right.clone(), left.clone())
         }
-        ConditionTerm::PointerEqual(left, right) => {
-            ConditionTerm::PointerEqual(right.clone(), left.clone())
+        OldConditionTerm::PointerEqual(left, right) => {
+            OldConditionTerm::PointerEqual(right.clone(), left.clone())
         }
         _ => return None,
     };
@@ -6301,7 +6308,7 @@ mod integer_equality_citation_tests {
             MachineIntegerType::Int64,
             MachineIntegerType::UInt64,
         ] {
-            let condition = ConditionTerm::Compare {
+            let condition = OldConditionTerm::Compare {
                 format,
                 relation: CompareRelation::LessThan,
                 left: Box::new(
@@ -6328,7 +6335,7 @@ mod integer_equality_citation_tests {
     fn listed_integer_constant_arithmetic_is_available_without_facts() {
         let zero: SharedIntegerTerm = IntegerTerm::constant_i64(0).into();
         let sum: SharedIntegerTerm = IntegerTerm::Add(zero.clone(), zero.clone()).into();
-        let equality = ConditionTerm::IntegerEqual(zero.clone(), sum);
+        let equality = OldConditionTerm::IntegerEqual(zero.clone(), sum);
         assert!(listed_premise_holds(
             &Proposition::condition_is(equality.clone(), true),
             |_| false
@@ -6337,7 +6344,7 @@ mod integer_equality_citation_tests {
             &Proposition::condition_is(equality, false),
             |_| false
         ));
-        let symbolic = ConditionTerm::IntegerEqual(
+        let symbolic = OldConditionTerm::IntegerEqual(
             zero.clone(),
             IntegerTerm::Variable(Variable(931_001)).into(),
         );
@@ -6345,7 +6352,7 @@ mod integer_equality_citation_tests {
             &Proposition::condition_is(symbolic, true),
             |_| false
         ));
-        let undefined = ConditionTerm::IntegerEqual(
+        let undefined = OldConditionTerm::IntegerEqual(
             IntegerTerm::truncating_quotient(
                 IntegerTerm::constant_i64(1),
                 IntegerTerm::constant_i64(0),
@@ -6365,23 +6372,24 @@ mod integer_equality_citation_tests {
         let right: SharedIntegerTerm = IntegerTerm::Variable(Variable(931_012)).into();
         for polarity in [true, false] {
             let source = Proposition::condition_is(
-                ConditionTerm::IntegerEqual(left.clone(), right.clone()),
+                OldConditionTerm::IntegerEqual(left.clone(), right.clone()),
                 polarity,
             );
             let target = Proposition::condition_is(
-                ConditionTerm::IntegerEqual(right.clone(), left.clone()),
+                OldConditionTerm::IntegerEqual(right.clone(), left.clone()),
                 polarity,
             );
             assert_eq!(mirrored_equality(&source), Some(target.clone()));
             assert_eq!(mirrored_equality(&target), Some(source.clone()));
             assert!(listed_premise_holds(&target, |fact| fact == &source));
             let wrong_polarity = Proposition::condition_is(
-                ConditionTerm::IntegerEqual(right.clone(), left.clone()),
+                OldConditionTerm::IntegerEqual(right.clone(), left.clone()),
                 !polarity,
             );
             assert!(!listed_premise_holds(&wrong_polarity, |fact| fact == &source));
         }
-        let ordered = Proposition::condition_is(ConditionTerm::IntegerLessThan(left, right), true);
+        let ordered =
+            Proposition::condition_is(OldConditionTerm::IntegerLessThan(left, right), true);
         assert!(mirrored_equality(&ordered).is_none());
     }
 }
@@ -6396,7 +6404,7 @@ mod connective_walk_tests {
     fn a_decided_connective_does_not_ask_its_right_side() {
         let side = |name: u64| {
             Proposition::condition_is(
-                ConditionTerm::signed_less_than(
+                OldConditionTerm::signed_less_than(
                     OldMachineTerm::Variable(Variable(name)),
                     OldMachineTerm::constant(0),
                 ),
@@ -6557,7 +6565,7 @@ mod format_range_premise_tests {
 
     fn holds(relation: CompareRelation, left: OldMachineTerm, bound: i32) -> bool {
         holds_by_format_range(&Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation,
                 left: Box::new(left),
@@ -6589,7 +6597,7 @@ mod format_range_premise_tests {
                     .into();
             let at_least = |bound: i64| {
                 holds_by_format_range(&Proposition::condition_is(
-                    ConditionTerm::IntegerLessEqual(
+                    OldConditionTerm::IntegerLessEqual(
                         IntegerTerm::constant_i64(bound).into(),
                         observed.clone(),
                     ),
@@ -6664,16 +6672,16 @@ mod format_range_premise_tests {
                         };
                         let condition = match relation {
                             CompareRelation::LessThan => {
-                                ConditionTerm::IntegerLessThan(left, right)
+                                OldConditionTerm::IntegerLessThan(left, right)
                             }
                             CompareRelation::LessEqual => {
-                                ConditionTerm::IntegerLessEqual(left, right)
+                                OldConditionTerm::IntegerLessEqual(left, right)
                             }
                             CompareRelation::GreaterThan => {
-                                ConditionTerm::IntegerGreaterThan(left, right)
+                                OldConditionTerm::IntegerGreaterThan(left, right)
                             }
                             CompareRelation::GreaterEqual => {
-                                ConditionTerm::IntegerGreaterEqual(left, right)
+                                OldConditionTerm::IntegerGreaterEqual(left, right)
                             }
                             _ => unreachable!(),
                         };

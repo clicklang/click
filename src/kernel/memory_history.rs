@@ -222,7 +222,7 @@ pub(crate) fn resource_field_values_proven_equal(
                         Term::Algebraic(right.clone().into()),
                         Term::Algebraic(left.clone().into()),
                     ))
-                    || assumptions.decide(&ConditionTerm::AlgebraicEqual(
+                    || assumptions.decide(&OldConditionTerm::AlgebraicEqual(
                         Box::new(left.clone()),
                         Box::new(right.clone()),
                     )) == Some(true))
@@ -491,24 +491,24 @@ fn bitvectors_match_for_resource_check(
 }
 
 pub(in crate::kernel) fn pointer_offsets_match_from_memory_derivations(
-    left: &AddressOffset,
-    right: &AddressOffset,
+    left: &OldAddressOffset,
+    right: &OldAddressOffset,
     assumptions: &PureFactContext,
 ) -> bool {
     if left == right {
         return true;
     }
     match (left, right) {
-        (AddressOffset::Add(left_a, left_b), AddressOffset::Add(right_a, right_b)) => {
+        (OldAddressOffset::Add(left_a, left_b), OldAddressOffset::Add(right_a, right_b)) => {
             pointer_offsets_match_from_memory_derivations(left_a, right_a, assumptions)
                 && pointer_offsets_match_from_memory_derivations(left_b, right_b, assumptions)
         }
         (
-            AddressOffset::Int32Scaled {
+            OldAddressOffset::Int32Scaled {
                 value: left,
                 byte_width: left_width,
             },
-            AddressOffset::Int32Scaled {
+            OldAddressOffset::Int32Scaled {
                 value: right,
                 byte_width: right_width,
             },
@@ -529,8 +529,8 @@ pub(in crate::kernel) fn pointer_offsets_match_from_memory_derivations(
 }
 
 fn pointer_offsets_match_for_resource_check(
-    left: &AddressOffset,
-    right: &AddressOffset,
+    left: &OldAddressOffset,
+    right: &OldAddressOffset,
     assumptions: &PureFactContext,
 ) -> bool {
     if crate::instrumentation::measure_operation(
@@ -541,7 +541,7 @@ fn pointer_offsets_match_for_resource_check(
     ) {
         return true;
     }
-    let transported_matches = |offset: &AddressOffset, target: &AddressOffset| {
+    let transported_matches = |offset: &OldAddressOffset, target: &OldAddressOffset| {
         let mut memories = Vec::new();
         collect_pointer_offset_memories(target, &mut memories);
         memories.into_iter().any(|memory| {
@@ -682,7 +682,7 @@ fn canonical_memory_deep_uncached(memory: &SymbolicMemory) -> SymbolicMemory {
             // mapper above leaves those read values unchanged.
             // A canonical base plus a constant slot shift is canonical too:
             // slot_pointer and canonicalize_pointer_loads both use the same
-            // folding AddressOffset::add constructor. Source cells and
+            // folding OldAddressOffset::add constructor. Source cells and
             // derivation edges can vary across the run; neither is sampled.
             matches!(
                 run.value_mode(),
@@ -854,11 +854,11 @@ fn selected_pointer_alias_path(
     let equal = |first: &Address, second: &Address| {
         first == second
             || assumptions.proves_exact(&Proposition::condition_is(
-                ConditionTerm::address_equal(first.clone(), second.clone()),
+                OldConditionTerm::address_equal(first.clone(), second.clone()),
                 true,
             ))
             || assumptions.proves_exact(&Proposition::condition_is(
-                ConditionTerm::address_equal(second.clone(), first.clone()),
+                OldConditionTerm::address_equal(second.clone(), first.clone()),
                 true,
             ))
     };
@@ -1434,7 +1434,7 @@ impl CheckedLoadEquality {
             }
             CheckedLoadEqualityEvidence::MemoryDag(evidence) => evidence.checks(
                 &Proposition::condition_is(
-                    ConditionTerm::equal(self.left.clone(), self.right.clone()),
+                    OldConditionTerm::equal(self.left.clone(), self.right.clone()),
                     true,
                 ),
                 assumptions,
@@ -1460,7 +1460,7 @@ impl CheckedLoadEquality {
                     && right.matches_observed_term(&self.right)
                     && equality.checks(
                         &Proposition::condition_is(
-                            ConditionTerm::equal(left.as_term(), right.as_term()),
+                            OldConditionTerm::equal(left.as_term(), right.as_term()),
                             true,
                         ),
                         assumptions,
@@ -1508,7 +1508,7 @@ impl CheckedLoadEquality {
                     && origin_load_width(&self.right) == Some(4)
                     && (alias.as_ref()
                         == &Proposition::condition_is(
-                            ConditionTerm::address_equal(
+                            OldConditionTerm::address_equal(
                                 left.pointer.clone(),
                                 right.pointer.clone(),
                             ),
@@ -1516,7 +1516,7 @@ impl CheckedLoadEquality {
                         )
                         || alias.as_ref()
                             == &Proposition::condition_is(
-                                ConditionTerm::address_equal(
+                                OldConditionTerm::address_equal(
                                     right.pointer.clone(),
                                     left.pointer.clone(),
                                 ),
@@ -1530,13 +1530,13 @@ impl CheckedLoadEquality {
                                 && path.windows(2).all(|steps| steps[0].1 == steps[1].0)
                                 && path.iter().all(|step| {
                                     assumptions.proves_exact(&Proposition::condition_is(
-                                        ConditionTerm::address_equal(
+                                        OldConditionTerm::address_equal(
                                             step.0.clone(),
                                             step.1.clone(),
                                         ),
                                         true,
                                     )) || assumptions.proves_exact(&Proposition::condition_is(
-                                        ConditionTerm::address_equal(
+                                        OldConditionTerm::address_equal(
                                             step.1.clone(),
                                             step.0.clone(),
                                         ),
@@ -1853,7 +1853,7 @@ pub(crate) fn checked_origin_load_equality(
                 (&right_endpoint.pointer, &left_endpoint.pointer),
             ] {
                 let alias = Proposition::condition_is(
-                    ConditionTerm::address_equal(first.clone(), second.clone()),
+                    OldConditionTerm::address_equal(first.clone(), second.clone()),
                     true,
                 );
                 let alias_path = if assumptions.proves_exact(&alias) {
@@ -2051,15 +2051,15 @@ pub(crate) enum AddressOffsetEqualityEvidence {
 }
 
 pub(super) fn address_offset_equality_evidence(
-    left: &AddressOffset,
-    right: &AddressOffset,
+    left: &OldAddressOffset,
+    right: &OldAddressOffset,
     assumptions: &PureFactContext,
 ) -> Option<AddressOffsetEqualityEvidence> {
     if left == right {
         return Some(AddressOffsetEqualityEvidence::Exact);
     }
     match (left, right) {
-        (AddressOffset::Add(left_a, left_b), AddressOffset::Add(right_a, right_b)) => {
+        (OldAddressOffset::Add(left_a, left_b), OldAddressOffset::Add(right_a, right_b)) => {
             if let Some((first, second)) =
                 address_offset_equality_evidence(left_a, right_a, assumptions).zip(
                     address_offset_equality_evidence(left_b, right_b, assumptions),
@@ -2082,11 +2082,11 @@ pub(super) fn address_offset_equality_evidence(
             })
         }
         (
-            AddressOffset::Int32Scaled {
+            OldAddressOffset::Int32Scaled {
                 value: left,
                 byte_width: left_width,
             },
-            AddressOffset::Int32Scaled {
+            OldAddressOffset::Int32Scaled {
                 value: right,
                 byte_width: right_width,
             },
@@ -2108,8 +2108,8 @@ pub(super) fn address_offset_equality_evidence(
 impl AddressOffsetEqualityEvidence {
     pub(super) fn checks(
         &self,
-        left: &AddressOffset,
-        right: &AddressOffset,
+        left: &OldAddressOffset,
+        right: &OldAddressOffset,
         assumptions: &PureFactContext,
     ) -> bool {
         match self {
@@ -2119,8 +2119,10 @@ impl AddressOffsetEqualityEvidence {
                 second,
                 swapped,
             } => {
-                let (AddressOffset::Add(left_a, left_b), AddressOffset::Add(right_a, right_b)) =
-                    (left, right)
+                let (
+                    OldAddressOffset::Add(left_a, left_b),
+                    OldAddressOffset::Add(right_a, right_b),
+                ) = (left, right)
                 else {
                     return false;
                 };
@@ -2134,11 +2136,11 @@ impl AddressOffsetEqualityEvidence {
             }
             Self::Int32Scaled { byte_width, values } => {
                 let (
-                    AddressOffset::Int32Scaled {
+                    OldAddressOffset::Int32Scaled {
                         value: left,
                         byte_width: left_width,
                     },
-                    AddressOffset::Int32Scaled {
+                    OldAddressOffset::Int32Scaled {
                         value: right,
                         byte_width: right_width,
                     },
@@ -2157,7 +2159,7 @@ impl AddressOffsetEqualityEvidence {
                 };
                 values.checks(
                     &Proposition::condition_is(
-                        ConditionTerm::equal(left.into_owned(), right.into_owned()),
+                        OldConditionTerm::equal(left.into_owned(), right.into_owned()),
                         true,
                     ),
                     assumptions,
@@ -2201,20 +2203,20 @@ impl AtomicMemoryLoadEqualityEvidence {
         // construction and the checking side, not something the goal's
         // carrier decides.
         let Some((
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
             }
-            | ConditionTerm::Compare {
+            | OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left,
                 right,
             },
             true,
-        )) = proposition.condition_native()
+        )) = proposition.old_condition()
         else {
             return false;
         };
@@ -2392,7 +2394,7 @@ pub(in crate::kernel) fn forward_range_offset_from_pointer(
     if range.base.base != pointer.base {
         return None;
     }
-    let AddressOffset::Add(left, right) = &range.base.offset else {
+    let OldAddressOffset::Add(left, right) = &range.base.offset else {
         return None;
     };
     if pointer.offset == **left {
@@ -2990,14 +2992,14 @@ fn store_member_probe_bases(pointer: &Address, assumptions: &PureFactContext) ->
         bases.push(base.clone());
         bases.extend(assumptions.exact_pointer_aliases(&base).cloned());
         base.offset = match &base.offset {
-            AddressOffset::Add(left, _) => (**left).clone(),
-            AddressOffset::Constant(value) if *value != 0 => AddressOffset::Constant(0),
+            OldAddressOffset::Add(left, _) => (**left).clone(),
+            OldAddressOffset::Constant(value) if *value != 0 => OldAddressOffset::Constant(0),
             // A loaded pointer's displacement is all of its offset: the
             // read itself, at displacement zero, is the object's base.
-            AddressOffset::Int32Scaled { .. } | AddressOffset::Int64Scaled { .. }
+            OldAddressOffset::Int32Scaled { .. } | OldAddressOffset::Int64Scaled { .. }
                 if matches!(base.base, AddressBase::Load(_)) =>
             {
-                AddressOffset::Constant(0)
+                OldAddressOffset::Constant(0)
             }
             _ => break,
         };
@@ -3553,14 +3555,14 @@ fn pointer_value_at_stopping_store(
 /// Whether a pointer-valued load resolves through the recorded memory DAG to
 /// a stored pointer whose offset is `right`. This is the pointer counterpart
 /// of the integer load-equality transport: pointer offsets are represented as
-/// `AddressOffset`s, so they cannot use the int32 load-equality API even
+/// `OldAddressOffset`s, so they cannot use the int32 load-equality API even
 /// though the same checked store/call-frame walk supplies their value.
 pub(crate) fn pointer_load_offset_proven_equal(
-    left: &AddressOffset,
-    right: &AddressOffset,
+    left: &OldAddressOffset,
+    right: &OldAddressOffset,
     assumptions: &PureFactContext,
 ) -> bool {
-    let AddressOffset::Int32Scaled { value, .. } = left else {
+    let OldAddressOffset::Int32Scaled { value, .. } = left else {
         return false;
     };
     let Some(source) = value.operand_view().read_source() else {
@@ -4930,70 +4932,70 @@ pub(crate) fn rewrite_condition_through_certified_stores(
         )
     };
     let rewritten = match condition.old_form() {
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left,
             right,
         } => {
             let (left, right) = binary(left, right);
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left,
                 right,
             }
         }
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
             left,
             right,
         } => {
             let (left, right) = binary(left, right);
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left,
                 right,
             }
         }
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterThan,
             left,
             right,
         } => {
             let (left, right) = binary(left, right);
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterThan,
                 left,
                 right,
             }
         }
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
             left,
             right,
         } => {
             let (left, right) = binary(left, right);
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
                 left,
                 right,
             }
         }
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
             relation: CompareRelation::Equal,
             left,
             right,
         } => {
             let (left, right) = binary(left, right);
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: *format,
                 relation: CompareRelation::Equal,
                 left,
@@ -5070,8 +5072,8 @@ pub(crate) fn term_is_shallow_structural_cache_key(term: &OldMachineTerm) -> boo
     const MAX_RECURSIVE_KEY_DEPTH: usize = 256;
     enum Node<'a> {
         Term(&'a OldMachineTerm, usize),
-        Condition(&'a ConditionTerm, usize),
-        Offset(&'a AddressOffset, usize),
+        Condition(&'a OldConditionTerm, usize),
+        Offset(&'a OldAddressOffset, usize),
     }
     let mut pending = vec![Node::Term(term, 1)];
     while let Some(node) = pending.pop() {
@@ -5143,17 +5145,17 @@ pub(crate) fn term_is_shallow_structural_cache_key(term: &OldMachineTerm) -> boo
                 | OldMachineTerm::IntegerToMachine { .. } => {}
             },
             Node::Condition(condition, depth) => match condition {
-                ConditionTerm::PointerEqual(_, _) => return false,
+                OldConditionTerm::PointerEqual(_, _) => return false,
 
-                ConditionTerm::AlgebraicEqual(_, _) => return false,
-                ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => {}
+                OldConditionTerm::AlgebraicEqual(_, _) => return false,
+                OldConditionTerm::Constant(_) | OldConditionTerm::Variable(_) => {}
                 crate::kernel::integer_comparison_condition!(_, _) => return false,
                 crate::kernel::binary_bitvector_condition!(left, right) => {
                     pending.push(Node::Term(right, depth + 1));
                     pending.push(Node::Term(left, depth + 1));
                 }
-                ConditionTerm::Float32(float_condition)
-                | ConditionTerm::Float64(float_condition) => match float_condition {
+                OldConditionTerm::Float32(float_condition)
+                | OldConditionTerm::Float64(float_condition) => match float_condition {
                     FloatCondition::Comparison { left, right, .. } => {
                         pending.push(Node::Term(right, depth + 1));
                         pending.push(Node::Term(left, depth + 1));
@@ -5162,18 +5164,18 @@ pub(crate) fn term_is_shallow_structural_cache_key(term: &OldMachineTerm) -> boo
                         pending.push(Node::Term(value, depth + 1));
                     }
                 },
-                ConditionTerm::AddressOffsetEqual(left, right) => {
+                OldConditionTerm::AddressOffsetEqual(left, right) => {
                     pending.push(Node::Offset(right, depth + 1));
                     pending.push(Node::Offset(left, depth + 1));
                 }
-                ConditionTerm::AddressEqual(left, right) => {
+                OldConditionTerm::AddressEqual(left, right) => {
                     pending.push(Node::Offset(&right.offset, depth + 1));
                     pending.push(Node::Offset(&left.offset, depth + 1));
                 }
                 // As a word-valued Click application, whose arguments are
                 // keyed by the application's interned identity.
-                ConditionTerm::BoolApplication(_) => {}
-                ConditionTerm::BoolIf {
+                OldConditionTerm::BoolApplication(_) => {}
+                OldConditionTerm::BoolIf {
                     condition,
                     then_condition,
                     else_condition,
@@ -5182,20 +5184,20 @@ pub(crate) fn term_is_shallow_structural_cache_key(term: &OldMachineTerm) -> boo
                     pending.push(Node::Condition(then_condition, depth + 1));
                     pending.push(Node::Condition(condition, depth + 1));
                 }
-                ConditionTerm::BoolEqual(left, right) => {
+                OldConditionTerm::BoolEqual(left, right) => {
                     pending.push(Node::Condition(right, depth + 1));
                     pending.push(Node::Condition(left, depth + 1));
                 }
             },
             Node::Offset(offset, depth) => match offset {
-                AddressOffset::Constant(_) | AddressOffset::Variable(_) => {}
-                AddressOffset::Add(left, right) => {
+                OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => {}
+                OldAddressOffset::Add(left, right) => {
                     pending.push(Node::Offset(right, depth + 1));
                     pending.push(Node::Offset(left, depth + 1));
                 }
                 // Scaled indices hash by retained identity, including legacy
                 // operands; they add no recursive native-key depth.
-                AddressOffset::Int32Scaled { .. } | AddressOffset::Int64Scaled { .. } => {}
+                OldAddressOffset::Int32Scaled { .. } | OldAddressOffset::Int64Scaled { .. } => {}
             },
         }
     }
@@ -5204,8 +5206,8 @@ pub(crate) fn term_is_shallow_structural_cache_key(term: &OldMachineTerm) -> boo
 
 enum AtomicCanonicalizationTask<'a> {
     Visit(&'a OldMachineTerm),
-    VisitCondition(&'a ConditionTerm),
-    VisitOffset(&'a AddressOffset),
+    VisitCondition(&'a OldConditionTerm),
+    VisitOffset(&'a OldAddressOffset),
     RebuildBinary(BitvectorBinaryOp),
     RebuildUnary(BitvectorUnaryOp),
     RebuildConditionBinary(BitvectorComparisonOp),
@@ -5585,7 +5587,7 @@ pub(crate) fn narrow_read_has_recorded_value(
             (None, _) => (word, MachineIntegerType::Int32),
         };
         &word == other
-            || assumptions.decide(&ConditionTerm::Compare {
+            || assumptions.decide(&OldConditionTerm::Compare {
                 format,
                 relation: CompareRelation::Equal,
                 left: Box::new(word),
@@ -5803,20 +5805,20 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &OldMachineTerm) -> OldMachin
                 }
             }
             AtomicCanonicalizationTask::VisitCondition(condition) => match condition {
-                ConditionTerm::AlgebraicEqual(_, _) | ConditionTerm::PointerEqual(..) => {
+                OldConditionTerm::AlgebraicEqual(_, _) | OldConditionTerm::PointerEqual(..) => {
                     condition_results.push(condition.clone())
                 }
                 crate::kernel::integer_comparison_condition!(_, _) => {
                     condition_results.push(condition.clone())
                 }
-                ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => {
+                OldConditionTerm::Constant(_) | OldConditionTerm::Variable(_) => {
                     condition_results.push(condition.clone())
                 }
                 // `Bool` values are kept as built, as algebraic equalities are.
                 condition if condition.is_bool_value_form() => {
                     condition_results.push(condition.clone())
                 }
-                ConditionTerm::Float32(float_condition) => {
+                OldConditionTerm::Float32(float_condition) => {
                     let term_count = match float_condition {
                         FloatCondition::Comparison { .. } => 2,
                         FloatCondition::Classification { .. } => 1,
@@ -5836,7 +5838,7 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &OldMachineTerm) -> OldMachin
                         }
                     }
                 }
-                ConditionTerm::Float64(float_condition) => {
+                OldConditionTerm::Float64(float_condition) => {
                     let term_count = match float_condition {
                         FloatCondition::Comparison { .. } => 2,
                         FloatCondition::Classification { .. } => 1,
@@ -5856,12 +5858,12 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &OldMachineTerm) -> OldMachin
                         }
                     }
                 }
-                ConditionTerm::AddressOffsetEqual(left, right) => {
+                OldConditionTerm::AddressOffsetEqual(left, right) => {
                     tasks.push(AtomicCanonicalizationTask::RebuildAddressOffsetEqual);
                     tasks.push(AtomicCanonicalizationTask::VisitOffset(right));
                     tasks.push(AtomicCanonicalizationTask::VisitOffset(left));
                 }
-                ConditionTerm::AddressEqual(left, right) => {
+                OldConditionTerm::AddressEqual(left, right) => {
                     tasks.push(AtomicCanonicalizationTask::RebuildAddressEqual {
                         left_block: left.base.clone(),
                         right_block: right.base.clone(),
@@ -5879,23 +5881,23 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &OldMachineTerm) -> OldMachin
                 }
             },
             AtomicCanonicalizationTask::VisitOffset(offset) => match offset {
-                AddressOffset::Constant(_) | AddressOffset::Variable(_) => {
+                OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => {
                     offset_results.push(offset.clone())
                 }
-                AddressOffset::Add(left, right) => {
+                OldAddressOffset::Add(left, right) => {
                     tasks.push(AtomicCanonicalizationTask::RebuildOffsetAdd);
                     tasks.push(AtomicCanonicalizationTask::VisitOffset(right));
                     tasks.push(AtomicCanonicalizationTask::VisitOffset(left));
                 }
-                AddressOffset::Int32Scaled { value, .. }
-                | AddressOffset::Int64Scaled { value, .. }
+                OldAddressOffset::Int32Scaled { value, .. }
+                | OldAddressOffset::Int64Scaled { value, .. }
                     if value.shared_operand().is_some() =>
                 {
                     // A shared index retains its chosen read states. Its
                     // stored values are comparison evidence, not address syntax.
                     offset_results.push(offset.clone());
                 }
-                AddressOffset::Int32Scaled { value, byte_width } => {
+                OldAddressOffset::Int32Scaled { value, byte_width } => {
                     tasks.push(AtomicCanonicalizationTask::RebuildInt32Scaled(*byte_width));
                     tasks.push(AtomicCanonicalizationTask::Visit(
                         value
@@ -5903,7 +5905,7 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &OldMachineTerm) -> OldMachin
                             .expect("shared indices handled above"),
                     ));
                 }
-                AddressOffset::Int64Scaled {
+                OldAddressOffset::Int64Scaled {
                     value,
                     byte_width,
                     unsigned,
@@ -5966,15 +5968,15 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &OldMachineTerm) -> OldMachin
                 });
                 results.truncate(first);
                 condition_results.push(if is_float64 {
-                    ConditionTerm::Float64(rebuilt)
+                    OldConditionTerm::Float64(rebuilt)
                 } else {
-                    ConditionTerm::Float32(rebuilt)
+                    OldConditionTerm::Float32(rebuilt)
                 });
             }
             AtomicCanonicalizationTask::RebuildAddressOffsetEqual => {
                 let right = offset_results.pop().expect("visited right pointer offset");
                 let left = offset_results.pop().expect("visited left pointer offset");
-                condition_results.push(ConditionTerm::AddressOffsetEqual(
+                condition_results.push(OldConditionTerm::AddressOffsetEqual(
                     Box::new(left),
                     Box::new(right),
                 ));
@@ -5985,7 +5987,7 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &OldMachineTerm) -> OldMachin
             } => {
                 let right = offset_results.pop().expect("visited right pointer offset");
                 let left = offset_results.pop().expect("visited left pointer offset");
-                condition_results.push(ConditionTerm::AddressEqual(
+                condition_results.push(OldConditionTerm::AddressEqual(
                     Box::new(Address {
                         base: left_block,
                         offset: left,
@@ -5999,18 +6001,18 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &OldMachineTerm) -> OldMachin
             AtomicCanonicalizationTask::RebuildOffsetAdd => {
                 let right = offset_results.pop().expect("visited right pointer offset");
                 let left = offset_results.pop().expect("visited left pointer offset");
-                offset_results.push(AddressOffset::add(left, right));
+                offset_results.push(OldAddressOffset::add(left, right));
             }
             AtomicCanonicalizationTask::RebuildInt32Scaled(byte_width) => {
                 let value = results.pop().expect("visited scaled term");
-                offset_results.push(AddressOffset::scale_int32(value, byte_width));
+                offset_results.push(OldAddressOffset::scale_int32(value, byte_width));
             }
             AtomicCanonicalizationTask::RebuildInt64Scaled {
                 byte_width,
                 unsigned,
             } => {
                 let value = results.pop().expect("visited scaled term");
-                offset_results.push(AddressOffset::scale_int64(value, byte_width, unsigned));
+                offset_results.push(OldAddressOffset::scale_int64(value, byte_width, unsigned));
             }
             AtomicCanonicalizationTask::RebuildIf => {
                 let else_term = results.pop().expect("visited else term");
@@ -6055,7 +6057,7 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &OldMachineTerm) -> OldMachin
 /// Canonicalizes legacy offset operands while retaining shared index children.
 pub(super) fn canonicalize_pointer_loads(pointer: &Address) -> Address {
     enum OffsetTask<'a> {
-        Visit(&'a AddressOffset),
+        Visit(&'a OldAddressOffset),
         RebuildAdd,
     }
     let mut tasks = vec![OffsetTask::Visit(&pointer.offset)];
@@ -6063,24 +6065,24 @@ pub(super) fn canonicalize_pointer_loads(pointer: &Address) -> Address {
     while let Some(task) = tasks.pop() {
         match task {
             OffsetTask::Visit(offset) => match offset {
-                AddressOffset::Constant(_) | AddressOffset::Variable(_) => {
+                OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => {
                     results.push(offset.clone())
                 }
-                AddressOffset::Add(left, right) => {
+                OldAddressOffset::Add(left, right) => {
                     tasks.push(OffsetTask::RebuildAdd);
                     tasks.push(OffsetTask::Visit(right));
                     tasks.push(OffsetTask::Visit(left));
                 }
-                AddressOffset::Int32Scaled { value, .. }
-                | AddressOffset::Int64Scaled { value, .. }
+                OldAddressOffset::Int32Scaled { value, .. }
+                | OldAddressOffset::Int64Scaled { value, .. }
                     if value.shared_operand().is_some() =>
                 {
                     // A shared index retains its chosen read states. Its
                     // stored values are comparison evidence, not address syntax.
                     results.push(offset.clone());
                 }
-                AddressOffset::Int32Scaled { value, byte_width } => {
-                    results.push(AddressOffset::scale_int32(
+                OldAddressOffset::Int32Scaled { value, byte_width } => {
+                    results.push(OldAddressOffset::scale_int32(
                         canonicalize_atomic_loads_deep(
                             value
                                 .retained_written_operand()
@@ -6089,11 +6091,11 @@ pub(super) fn canonicalize_pointer_loads(pointer: &Address) -> Address {
                         *byte_width,
                     ));
                 }
-                AddressOffset::Int64Scaled {
+                OldAddressOffset::Int64Scaled {
                     value,
                     byte_width,
                     unsigned,
-                } => results.push(AddressOffset::scale_int64(
+                } => results.push(OldAddressOffset::scale_int64(
                     canonicalize_atomic_loads_deep(
                         value
                             .retained_written_operand()
@@ -6106,7 +6108,7 @@ pub(super) fn canonicalize_pointer_loads(pointer: &Address) -> Address {
             OffsetTask::RebuildAdd => {
                 let right = results.pop().expect("visited right offset");
                 let left = results.pop().expect("visited left offset");
-                results.push(AddressOffset::add(left, right));
+                results.push(OldAddressOffset::add(left, right));
             }
         }
     }
@@ -6134,13 +6136,13 @@ pub(crate) fn program_condition_facts_equivalent_for_memory_resolution(
     }
     let operands = match (left.old_form(), right.old_form()) {
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: a,
                 right: b,
             },
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: c,
@@ -6148,13 +6150,13 @@ pub(crate) fn program_condition_facts_equivalent_for_memory_resolution(
             },
         )
         | (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left: a,
                 right: b,
             },
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left: c,
@@ -6162,13 +6164,13 @@ pub(crate) fn program_condition_facts_equivalent_for_memory_resolution(
             },
         )
         | (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterThan,
                 left: a,
                 right: b,
             },
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterThan,
                 left: c,
@@ -6176,13 +6178,13 @@ pub(crate) fn program_condition_facts_equivalent_for_memory_resolution(
             },
         )
         | (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
                 left: a,
                 right: b,
             },
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
                 left: c,
@@ -6190,13 +6192,13 @@ pub(crate) fn program_condition_facts_equivalent_for_memory_resolution(
             },
         )
         | (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left: a,
                 right: b,
             },
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left: c,
@@ -6221,7 +6223,7 @@ mod condition_fact_graph_equivalence_tests {
     }
 
     fn less_than(left: OldMachineTerm, right: OldMachineTerm) -> Proposition {
-        Proposition::condition_is(ConditionTerm::signed_less_than(left, right), true)
+        Proposition::condition_is(OldConditionTerm::signed_less_than(left, right), true)
     }
 
     #[test]
@@ -6231,7 +6233,7 @@ mod condition_fact_graph_equivalence_tests {
             crate::kernel::intern_memory(SymbolicMemory::new().with_block("fact-graph", 8));
         let pointer = |index| Address {
             base: "fact-graph".into(),
-            offset: AddressOffset::scale_int32(index, 4),
+            offset: OldAddressOffset::scale_int32(index, 4),
         };
         let load = |memory: &SharedMemory, index| {
             OldMachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
@@ -6251,7 +6253,7 @@ mod condition_fact_graph_equivalence_tests {
         let source = less_than(sum(load(&before, a.clone())), var(93));
         let target = less_than(sum(load(&before, b.clone())), var(93));
         let later = less_than(sum(load(&after, b.clone())), var(93));
-        let premise = ConditionTerm::equal(a, b.clone());
+        let premise = OldConditionTerm::equal(a, b.clone());
         let parent = PureFactContext::new();
         let branch = parent.clone().assume_condition(premise.clone(), true);
         let _scope = branch.enter_id_scope();
@@ -6268,7 +6270,7 @@ mod condition_fact_graph_equivalence_tests {
             &source, &target, &parent,
         ));
         let false_target = Proposition::condition_is(
-            ConditionTerm::signed_less_than(sum(load(&before, b.clone())), var(93)),
+            OldConditionTerm::signed_less_than(sum(load(&before, b.clone())), var(93)),
             false,
         );
         assert!(!program_condition_facts_equivalent_for_memory_resolution(
@@ -6277,7 +6279,7 @@ mod condition_fact_graph_equivalence_tests {
             &branch,
         ));
         let equal_target = Proposition::condition_is(
-            ConditionTerm::equal(sum(load(&before, b.clone())), var(93)),
+            OldConditionTerm::equal(sum(load(&before, b.clone())), var(93)),
             true,
         );
         assert!(!program_condition_facts_equivalent_for_memory_resolution(
@@ -6285,7 +6287,7 @@ mod condition_fact_graph_equivalence_tests {
             &equal_target,
             &branch,
         ));
-        let right_premise = ConditionTerm::equal(var(93), var(94));
+        let right_premise = OldConditionTerm::equal(var(93), var(94));
         let both = branch.clone().assume_condition(right_premise, true);
         let target_right = less_than(sum(load(&before, b.clone())), var(94));
         assert!(program_condition_facts_equivalent_for_memory_resolution(
@@ -6294,11 +6296,13 @@ mod condition_fact_graph_equivalence_tests {
             &both,
         ));
         let equal_source = Proposition::condition_is(
-            ConditionTerm::equal(sum(load(&before, var(91))), var(93)),
+            OldConditionTerm::equal(sum(load(&before, var(91))), var(93)),
             true,
         );
-        let equal_target =
-            Proposition::condition_is(ConditionTerm::equal(sum(load(&before, b)), var(94)), true);
+        let equal_target = Proposition::condition_is(
+            OldConditionTerm::equal(sum(load(&before, b)), var(94)),
+            true,
+        );
         assert!(program_condition_facts_equivalent_for_memory_resolution(
             &equal_source,
             &equal_target,
@@ -6360,7 +6364,7 @@ pub(super) fn store_value_equation_at(
             value.program_type(),
         );
         return Some(Proposition::condition_is(
-            ConditionTerm::pointer_equal(read, value.clone()),
+            OldConditionTerm::pointer_equal(read, value.clone()),
             true,
         ));
     }
@@ -6419,7 +6423,7 @@ pub(super) fn store_value_equation_at(
     // Use the language comparison constructor as well as its width:
     // 64/128-bit equality has one sign-free, signed-format spelling.
     let condition =
-        ConditionTerm::machine_compare(format, CompareRelation::Equal, read, stored_bits);
+        OldConditionTerm::machine_compare(format, CompareRelation::Equal, read, stored_bits);
     Some(Proposition::condition_is(condition, true))
 }
 
@@ -6533,13 +6537,13 @@ fn collect_condition_operand_memories(
     });
 }
 
-fn collect_condition_memories(condition: &ConditionTerm, memories: &mut Vec<SharedMemory>) {
+fn collect_condition_memories(condition: &OldConditionTerm, memories: &mut Vec<SharedMemory>) {
     let mut collect_binary = |left: &OldMachineTerm, right: &OldMachineTerm| {
         collect_bitvector_memories(left, memories);
         collect_bitvector_memories(right, memories);
     };
     match condition {
-        ConditionTerm::PointerEqual(left, right) => {
+        OldConditionTerm::PointerEqual(left, right) => {
             for pointer in left.pointers().chain(right.pointers()) {
                 if let AddressBase::PureFunctionApplication(application) = &pointer.base
                     && let Some(bits) = application.integer_address_bits()
@@ -6550,7 +6554,7 @@ fn collect_condition_memories(condition: &ConditionTerm, memories: &mut Vec<Shar
             }
         }
 
-        ConditionTerm::AlgebraicEqual(left, right) => {
+        OldConditionTerm::AlgebraicEqual(left, right) => {
             let mut seen = BTreeSet::new();
             left.for_each_machine_operand(|view| {
                 collect_operand_memories(view, memories, &mut seen)
@@ -6560,15 +6564,15 @@ fn collect_condition_memories(condition: &ConditionTerm, memories: &mut Vec<Shar
             });
         }
         crate::kernel::binary_bitvector_condition!(left, right) => collect_binary(left, right),
-        ConditionTerm::Float32(float_condition) | ConditionTerm::Float64(float_condition) => {
+        OldConditionTerm::Float32(float_condition) | OldConditionTerm::Float64(float_condition) => {
             float_condition
                 .for_each_bitvector_term(|term| collect_bitvector_memories(term, memories));
         }
-        ConditionTerm::AddressOffsetEqual(left, right) => {
+        OldConditionTerm::AddressOffsetEqual(left, right) => {
             collect_pointer_offset_memories(left, memories);
             collect_pointer_offset_memories(right, memories);
         }
-        ConditionTerm::AddressEqual(left, right) => {
+        OldConditionTerm::AddressEqual(left, right) => {
             for pointer in [left, right] {
                 collect_equality_address_base_memories(&pointer.base, memories);
                 collect_pointer_offset_memories(&pointer.offset, memories);
@@ -6584,10 +6588,10 @@ fn collect_condition_memories(condition: &ConditionTerm, memories: &mut Vec<Shar
                 }
             }
         }
-        ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => {}
+        OldConditionTerm::Constant(_) | OldConditionTerm::Variable(_) => {}
         // As a word-valued Click application.
-        ConditionTerm::BoolApplication(_) => {}
-        ConditionTerm::BoolIf {
+        OldConditionTerm::BoolApplication(_) => {}
+        OldConditionTerm::BoolIf {
             condition,
             then_condition,
             else_condition,
@@ -6596,7 +6600,7 @@ fn collect_condition_memories(condition: &ConditionTerm, memories: &mut Vec<Shar
                 collect_condition_memories(condition, memories);
             }
         }
-        ConditionTerm::BoolEqual(left, right) => {
+        OldConditionTerm::BoolEqual(left, right) => {
             collect_condition_memories(left, memories);
             collect_condition_memories(right, memories);
         }
@@ -6618,7 +6622,7 @@ fn collect_equality_address_base_memories(block: &AddressBase, memories: &mut Ve
     }
 }
 
-fn collect_pointer_offset_memories(offset: &AddressOffset, memories: &mut Vec<SharedMemory>) {
+fn collect_pointer_offset_memories(offset: &OldAddressOffset, memories: &mut Vec<SharedMemory>) {
     let mut seen = BTreeSet::new();
     offset.for_each_scaled_operand(|value| {
         collect_operand_memories(value.operand_view(), memories, &mut seen)
@@ -6824,10 +6828,10 @@ pub(in crate::kernel) fn transport_framed_common_condition(
 }
 
 fn transport_framed_atomic_condition(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     after: &ProgramPoint,
     assumptions: Option<(&PureFactContext, bool)>,
-) -> Option<ConditionTerm> {
+) -> Option<OldConditionTerm> {
     if crate::kernel::assumptions::reasoning_interrupted() {
         return None;
     }
@@ -6846,7 +6850,7 @@ fn transport_framed_atomic_condition(
         let left = transport_framed_index(&left, after, assumptions)?;
         let right = transport_framed_index(&right, after, assumptions)?;
         return Some(if view.negated {
-            ConditionTerm::integer_not_equal(
+            OldConditionTerm::integer_not_equal(
                 IntegerTerm::Machine(left),
                 IntegerTerm::Machine(right),
             )
@@ -6860,7 +6864,7 @@ fn transport_framed_atomic_condition(
     }
     Some(match condition {
         // Do not claim a state bridge through an opaque algebraic value.
-        ConditionTerm::PointerEqual(left, right) => ConditionTerm::PointerEqual(
+        OldConditionTerm::PointerEqual(left, right) => OldConditionTerm::PointerEqual(
             Box::new(transport_framed_atomic_pointer_value(
                 left,
                 after,
@@ -6872,26 +6876,28 @@ fn transport_framed_atomic_condition(
                 assumptions,
             )?),
         ),
-        ConditionTerm::AlgebraicEqual(_, _) => return None,
-        ConditionTerm::Float32(float_condition) => {
-            ConditionTerm::Float32(float_condition.try_map_bitvector_terms(|term| {
+        OldConditionTerm::AlgebraicEqual(_, _) => return None,
+        OldConditionTerm::Float32(float_condition) => {
+            OldConditionTerm::Float32(float_condition.try_map_bitvector_terms(|term| {
                 transport_framed_atomic_bitvector(term, after, assumptions)
             })?)
         }
-        ConditionTerm::Float64(float_condition) => {
-            ConditionTerm::Float64(float_condition.try_map_bitvector_terms(|term| {
+        OldConditionTerm::Float64(float_condition) => {
+            OldConditionTerm::Float64(float_condition.try_map_bitvector_terms(|term| {
                 transport_framed_atomic_bitvector(term, after, assumptions)
             })?)
         }
-        ConditionTerm::AddressOffsetEqual(left, right) => ConditionTerm::address_offset_equal(
-            transport_framed_atomic_pointer_offset(left, after, assumptions)?,
-            transport_framed_atomic_pointer_offset(right, after, assumptions)?,
-        ),
-        ConditionTerm::AddressEqual(left, right) => ConditionTerm::address_equal(
+        OldConditionTerm::AddressOffsetEqual(left, right) => {
+            OldConditionTerm::address_offset_equal(
+                transport_framed_atomic_pointer_offset(left, after, assumptions)?,
+                transport_framed_atomic_pointer_offset(right, after, assumptions)?,
+            )
+        }
+        OldConditionTerm::AddressEqual(left, right) => OldConditionTerm::address_equal(
             transport_framed_atomic_pointer(left, after, assumptions)?,
             transport_framed_atomic_pointer(right, after, assumptions)?,
         ),
-        ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => return None,
+        OldConditionTerm::Constant(_) | OldConditionTerm::Variable(_) => return None,
         // Machine observations were handled above. Other mathematical integer
         // forms are outside this memory transport path.
         crate::kernel::integer_comparison_condition!(_, _) => return None,
@@ -6972,25 +6978,25 @@ fn transport_framed_atomic_pointer(
 }
 
 fn transport_framed_atomic_pointer_offset(
-    offset: &AddressOffset,
+    offset: &OldAddressOffset,
     after: &ProgramPoint,
     assumptions: Option<(&PureFactContext, bool)>,
-) -> Option<AddressOffset> {
+) -> Option<OldAddressOffset> {
     if crate::kernel::assumptions::reasoning_interrupted() {
         return None;
     }
     Some(match offset {
-        AddressOffset::Constant(_) | AddressOffset::Variable(_) => offset.clone(),
-        AddressOffset::Add(left, right) => AddressOffset::add(
+        OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => offset.clone(),
+        OldAddressOffset::Add(left, right) => OldAddressOffset::add(
             transport_framed_atomic_pointer_offset(left, after, assumptions)?,
             transport_framed_atomic_pointer_offset(right, after, assumptions)?,
         ),
-        AddressOffset::Int32Scaled { value, byte_width } => transported_scaled_index(
+        OldAddressOffset::Int32Scaled { value, byte_width } => transported_scaled_index(
             transport_framed_index(value, after, assumptions)?,
             *byte_width,
             None,
         ),
-        AddressOffset::Int64Scaled {
+        OldAddressOffset::Int64Scaled {
             value,
             byte_width,
             unsigned,
@@ -7191,8 +7197,8 @@ fn transport_framed_atomic_bitvector(
 }
 
 pub(crate) fn program_pointer_offsets_proven_equal_for_effect(
-    left: &AddressOffset,
-    right: &AddressOffset,
+    left: &OldAddressOffset,
+    right: &OldAddressOffset,
     assumptions: &PureFactContext,
 ) -> bool {
     if crate::kernel::assumptions::reasoning_interrupted() {
@@ -7210,11 +7216,11 @@ pub(crate) fn program_pointer_offsets_proven_equal_for_effect(
 }
 
 pub(super) fn normalize_exact_memory_loads_in_pointer_offset(
-    offset: &AddressOffset,
+    offset: &OldAddressOffset,
     assumptions: &PureFactContext,
-) -> AddressOffset {
+) -> OldAddressOffset {
     enum Task {
-        Visit(AddressOffset),
+        Visit(OldAddressOffset),
         RebuildAdd,
     }
 
@@ -7229,27 +7235,29 @@ pub(super) fn normalize_exact_memory_loads_in_pointer_offset(
                     continue;
                 }
                 match offset {
-                    AddressOffset::Constant(_) | AddressOffset::Variable(_) => results.push(offset),
-                    AddressOffset::Add(left, right) => {
+                    OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => {
+                        results.push(offset)
+                    }
+                    OldAddressOffset::Add(left, right) => {
                         tasks.push(Task::RebuildAdd);
                         tasks.push(Task::Visit(*right));
                         tasks.push(Task::Visit(*left));
                     }
-                    AddressOffset::Int32Scaled { value, byte_width } => {
+                    OldAddressOffset::Int32Scaled { value, byte_width } => {
                         let normalized = normalize_exact_index(&value, assumptions)
                             .unwrap_or_else(|| value.clone());
                         results.push(
                             if let Some(bits) = normalized.operand_view().word32_constant() {
-                                AddressOffset::Constant((bits as i32 as i64) * byte_width)
+                                OldAddressOffset::Constant((bits as i32 as i64) * byte_width)
                             } else {
-                                AddressOffset::Int32Scaled {
+                                OldAddressOffset::Int32Scaled {
                                     value: normalized,
                                     byte_width,
                                 }
                             },
                         );
                     }
-                    AddressOffset::Int64Scaled {
+                    OldAddressOffset::Int64Scaled {
                         value,
                         byte_width,
                         unsigned,
@@ -7265,7 +7273,7 @@ pub(super) fn normalize_exact_memory_loads_in_pointer_offset(
             Task::RebuildAdd => {
                 let right = results.pop().expect("visited right pointer offset");
                 let left = results.pop().expect("visited left pointer offset");
-                results.push(AddressOffset::add(left, right));
+                results.push(OldAddressOffset::add(left, right));
             }
         }
     }
@@ -7278,7 +7286,7 @@ enum ExactLoadNormalizationTask {
     Visit(OldMachineTerm),
     RebuildBinary(BitvectorBinaryOp),
     RebuildUnary(BitvectorUnaryOp),
-    RebuildIf(ConditionTerm),
+    RebuildIf(OldConditionTerm),
     RebuildPureFunction { name: String, argument_count: usize },
     LeaveLoad(OldMachineTerm),
 }
@@ -7521,7 +7529,7 @@ mod exact_load_normalization_tests {
     fn load_chain(length: usize, tail: u32) -> OldMachineTerm {
         let pointer = Address {
             base: "normalization-load-chain".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         (0..length).fold(OldMachineTerm::constant(tail), |value, _| {
             let memory = SymbolicMemory::new().store(pointer.clone(), ProgramValue::Int32(value));
@@ -7555,7 +7563,7 @@ mod exact_load_normalization_tests {
         use crate::kernel::LoadKind;
         let pointer = Address {
             base: "kind-checked-cell".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let load = |memory: &SymbolicMemory, kind| {
             crate::kernel::OldMachineTerm::read_named(
@@ -7634,12 +7642,14 @@ mod exact_load_normalization_tests {
         );
 
         let offset = (0..80).fold(
-            AddressOffset::scaled_int32_node(load_chain(80, 7), 4),
-            |offset, _| AddressOffset::Add(Box::new(AddressOffset::Constant(0)), Box::new(offset)),
+            OldAddressOffset::scaled_int32_node(load_chain(80, 7), 4),
+            |offset, _| {
+                OldAddressOffset::Add(Box::new(OldAddressOffset::Constant(0)), Box::new(offset))
+            },
         );
         assert_eq!(
             normalize_exact_memory_loads_in_pointer_offset(&offset, &PureFactContext::new()),
-            AddressOffset::Constant(28)
+            OldAddressOffset::Constant(28)
         );
     }
 }
@@ -7649,13 +7659,13 @@ mod exact_load_normalization_tests {
 fn effect_pointer_equality_retains_exact_loads_and_explicit_offset_facts() {
     let pointer = Address {
         base: "effect-offset".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let memory = SymbolicMemory::new().store(
         pointer.clone(),
         ProgramValue::Int32(OldMachineTerm::constant(7)),
     );
-    let loaded = AddressOffset::scaled_int32_node(
+    let loaded = OldAddressOffset::scaled_int32_node(
         crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::unplaced(&(intern_memory(memory))),
             pointer,
@@ -7665,19 +7675,19 @@ fn effect_pointer_equality_retains_exact_loads_and_explicit_offset_facts() {
     );
     assert!(program_pointer_offsets_proven_equal_for_effect(
         &loaded,
-        &AddressOffset::Constant(28),
+        &OldAddressOffset::Constant(28),
         &PureFactContext::new(),
     ));
     assert!(!program_pointer_offsets_proven_equal_for_effect(
         &loaded,
-        &AddressOffset::Constant(32),
+        &OldAddressOffset::Constant(32),
         &PureFactContext::new(),
     ));
 
-    let left = AddressOffset::Variable(Variable(901));
-    let right = AddressOffset::Variable(Variable(902));
+    let left = OldAddressOffset::Variable(Variable(901));
+    let right = OldAddressOffset::Variable(Variable(902));
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::address_offset_equal(left.clone(), right.clone()),
+        OldConditionTerm::address_offset_equal(left.clone(), right.clone()),
         true,
     );
     assert!(program_pointer_offsets_proven_equal_for_effect(
@@ -7690,7 +7700,7 @@ fn effect_pointer_equality_retains_exact_loads_and_explicit_offset_facts() {
     ));
     assert!(!program_pointer_offsets_proven_equal_for_effect(
         &left,
-        &AddressOffset::Variable(Variable(903)),
+        &OldAddressOffset::Variable(Variable(903)),
         &facts,
     ));
 }
@@ -7700,11 +7710,11 @@ fn effect_pointer_equality_retains_exact_loads_and_explicit_offset_facts() {
 fn effect_pointer_equality_does_not_use_general_context_inconsistency() {
     // Surface planning; only this test reaches it from inside the kernel.
 
-    let left = AddressOffset::Variable(Variable(911));
-    let right = AddressOffset::Variable(Variable(912));
-    let facts = PureFactContext::new().assume_condition(ConditionTerm::Constant(false), true);
+    let left = OldAddressOffset::Variable(Variable(911));
+    let right = OldAddressOffset::Variable(Variable(912));
+    let facts = PureFactContext::new().assume_condition(OldConditionTerm::Constant(false), true);
     let goal = Proposition::condition_is(
-        ConditionTerm::address_offset_equal(left.clone(), right.clone()),
+        OldConditionTerm::address_offset_equal(left.clone(), right.clone()),
         true,
     );
     assert!(
@@ -7719,7 +7729,7 @@ fn effect_pointer_equality_does_not_use_general_context_inconsistency() {
 #[cfg(test)]
 #[test]
 fn effect_pointer_equality_stops_at_the_verification_deadline() {
-    let offset = AddressOffset::Constant(0);
+    let offset = OldAddressOffset::Constant(0);
     crate::instrumentation::with_deadline(std::time::Duration::ZERO, || {
         assert!(!program_pointer_offsets_proven_equal_for_effect(
             &offset,
@@ -7738,7 +7748,7 @@ fn cell_lookup_guard_refuses_reentry_and_keeps_the_outer_lookup() {
     let memory = crate::kernel::intern_memory(SymbolicMemory::new());
     let pointer = Address {
         base: "cell".into(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let outer = CellLookupGuard::enter(&memory, &pointer).expect("the first lookup registers");
     assert!(!memory_dag_cell_lookup_depth_is_zero());
@@ -7757,8 +7767,8 @@ fn cell_lookup_guard_refuses_reentry_and_keeps_the_outer_lookup() {
 /// Canonicalizes the loads inside a binary condition so forms differing
 /// only in redundant cached cells compare and prove identically.
 pub(super) fn condition_with_canonicalized_loads(
-    condition: &ConditionTerm,
-) -> Option<ConditionTerm> {
+    condition: &OldConditionTerm,
+) -> Option<OldConditionTerm> {
     let binary = |left: &OldMachineTerm, right: &OldMachineTerm| {
         (
             Box::new(canonicalize_atomic_loads_deep(left)),
@@ -7766,70 +7776,70 @@ pub(super) fn condition_with_canonicalized_loads(
         )
     };
     Some(match condition {
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left,
             right,
         } => {
             let (left, right) = binary(left, right);
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left,
                 right,
             }
         }
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
             left,
             right,
         } => {
             let (left, right) = binary(left, right);
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left,
                 right,
             }
         }
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterThan,
             left,
             right,
         } => {
             let (left, right) = binary(left, right);
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterThan,
                 left,
                 right,
             }
         }
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
             left,
             right,
         } => {
             let (left, right) = binary(left, right);
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
                 left,
                 right,
             }
         }
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
             relation: CompareRelation::Equal,
             left,
             right,
         } => {
             let (left, right) = binary(left, right);
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: *format,
                 relation: CompareRelation::Equal,
                 left,
@@ -7909,7 +7919,7 @@ mod opaque_pointer_frame_tests {
         let before_value = observe(&entry);
         let after_value = observe(&exit);
         let result = Proposition::condition_is(
-            ConditionTerm::pointer_equal(after_value.clone(), before_value),
+            OldConditionTerm::pointer_equal(after_value.clone(), before_value),
             true,
         );
         let footprint = crate::kernel::RegionFootprint::transition(
@@ -7937,7 +7947,7 @@ mod opaque_pointer_frame_tests {
         let left = Address::loaded_value(&memory, &a);
         let right = Address::loaded_value(&memory, &d);
         let address_equality = |a: &Address, b: &Address| {
-            ConditionTerm::uint64_equal(
+            OldConditionTerm::uint64_equal(
                 OldMachineTerm::integer_address(a.clone()),
                 OldMachineTerm::integer_address(b.clone()),
             )
@@ -8024,7 +8034,7 @@ mod opaque_pointer_frame_tests {
         for value in [&a, &b] {
             let definition = value.as_loaded_value().expect("a typed pointer read");
             assert_eq!(definition.defining_address, field);
-            assert_eq!(definition.displacement, AddressOffset::Constant(0));
+            assert_eq!(definition.displacement, OldAddressOffset::Constant(0));
         }
         let context = PureFactContext::new();
         assert!(complete_pointer_reads_equal_across_frame(&a, &b, &context));
@@ -8183,15 +8193,15 @@ mod opaque_pointer_frame_tests {
     fn setup() -> (Address, Address, Address, Proposition, Proposition) {
         let field = Address {
             base: AddressBase::Concrete("local:opaque-frame".into()),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let write = Address::symbolic(Variable(9_880_001));
         let argument = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(128),
+            offset: OldAddressOffset::Constant(128),
         };
         let alias = Proposition::condition_is(
-            ConditionTerm::address_equal(write.clone(), argument.clone()),
+            OldConditionTerm::address_equal(write.clone(), argument.clone()),
             true,
         );
         let separation = Proposition::ResourceSeparate {
@@ -8242,11 +8252,11 @@ mod opaque_pointer_frame_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let field = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(128),
+            offset: OldAddressOffset::Constant(128),
         };
         let possible_write = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(9_880_201)), 4),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(9_880_201)), 4),
         };
         let stored = Address::symbolic(Variable(9_880_202));
         let memory = SymbolicMemory::new().store(
@@ -8314,7 +8324,7 @@ mod opaque_pointer_frame_tests {
             .0;
         let pointer = Address::symbolic(variable);
         let source = Proposition::condition_is(
-            ConditionTerm::address_equal(pointer.clone(), argument.clone()),
+            OldConditionTerm::address_equal(pointer.clone(), argument.clone()),
             true,
         );
         let assumptions = PureFactContext::new()
@@ -8362,7 +8372,7 @@ mod opaque_pointer_frame_tests {
         let left_pointer = Address::symbolic(Variable(9_880_610));
         let right_pointer = Address::symbolic(Variable(9_880_611));
         let alias = Proposition::condition_is(
-            ConditionTerm::address_equal(left_pointer.clone(), right_pointer.clone()),
+            OldConditionTerm::address_equal(left_pointer.clone(), right_pointer.clone()),
             true,
         );
         let context = PureFactContext::new().assume_proposition(alias);
@@ -8423,14 +8433,14 @@ mod opaque_pointer_frame_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let address = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(9_880_401)), 4),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(9_880_401)), 4),
         };
         let write = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(9_880_402)), 4),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(9_880_402)), 4),
         };
         let alias = Proposition::condition_is(
-            ConditionTerm::address_equal(write.clone(), address.clone()),
+            OldConditionTerm::address_equal(write.clone(), address.clone()),
             true,
         );
         let context = PureFactContext::new().assume_proposition(alias);
@@ -8441,7 +8451,7 @@ mod opaque_pointer_frame_tests {
                 .store(
                     Address {
                         base: AddressBase::Concrete("local:wide-unrelated".into()),
-                        offset: AddressOffset::Constant(0),
+                        offset: OldAddressOffset::Constant(0),
                     },
                     ProgramValue::Int32(OldMachineTerm::constant(1)),
                 )
@@ -8498,7 +8508,7 @@ mod opaque_pointer_frame_tests {
         }
         let unknown = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(9_880_403)), 4),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(9_880_403)), 4),
         };
         let forgotten = projected_read(source.memory().without_possible_aliasing_cells(
             &unknown,
@@ -8564,12 +8574,12 @@ mod opaque_pointer_frame_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let field = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::Constant(128),
+            offset: OldAddressOffset::Constant(128),
         };
         let parent = Address::symbolic(Variable(9_880_501));
         let alias = Address::symbolic(Variable(9_880_502));
         let equality = Proposition::condition_is(
-            ConditionTerm::address_equal(parent.clone(), alias.clone()),
+            OldConditionTerm::address_equal(parent.clone(), alias.clone()),
             true,
         );
         let context = PureFactContext::new().assume_proposition(equality);
@@ -8634,7 +8644,7 @@ mod canonical_numeric_run_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let index_cell = Address {
             base: "canonical-index".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let source = intern_memory(
             SymbolicMemory::new()
@@ -8646,7 +8656,7 @@ mod canonical_numeric_run_tests {
         );
         let base = Address {
             base: "canonical-run".into(),
-            offset: AddressOffset::scaled_int32_node(
+            offset: OldAddressOffset::scaled_int32_node(
                 crate::kernel::OldMachineTerm::read_named(
                     ProgramPoint::at(&source),
                     index_cell,
@@ -8734,7 +8744,7 @@ mod borrow_partition_tests {
         MemoryRange::new(
             Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::Variable(Variable(id)),
+                offset: OldAddressOffset::Variable(Variable(id)),
             },
             0u32.into(),
             1u32.into(),
@@ -8798,7 +8808,7 @@ mod borrow_partition_tests {
         assert!(!witness.checks(&step, read.base(), 4, &missing));
         assert!(!witness.checks(&step, read.base(), 8, &context));
         let overlapping = context.assume_condition(
-            ConditionTerm::address_equal(write.base().clone(), read.base().clone()),
+            OldConditionTerm::address_equal(write.base().clone(), read.base().clone()),
             true,
         );
         assert!(!witness.checks(&step, read.base(), 4, &overlapping));
@@ -8871,7 +8881,7 @@ mod reversed_history_queries {
     fn changed_history(size: usize) -> (SharedMemory, SharedMemory, Address) {
         let pointer = Address {
             base: format!("reversed-history-{size}").into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         let before = SymbolicMemory::new()
             .with_block(format!("reversed-history-{size}"), (size as u32 + 2) * 4)
@@ -8897,7 +8907,7 @@ mod reversed_history_queries {
         let _session = crate::kernel::VerificationSession::enter();
         let base = Address {
             base: "conditional-history".into(),
-            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(9_840_000)), 4),
+            offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(9_840_000)), 4),
         };
         let read_index = OldMachineTerm::Variable(Variable(9_840_001));
         let write_index = OldMachineTerm::Variable(Variable(9_840_002));
@@ -8906,7 +8916,7 @@ mod reversed_history_queries {
         let write = base.offset_by_elements(write_index.clone(), 4);
         let weak = PureFactContext::new();
         let strong = weak.clone().assume_condition(
-            ConditionTerm::signed_less_than(read_index, write_index),
+            OldConditionTerm::signed_less_than(read_index, write_index),
             true,
         );
         let before = SymbolicMemory::new().with_block("conditional-history", 64);
@@ -8969,7 +8979,7 @@ mod direct_unchanged_scaling_tests {
     fn cell(block: &str) -> Address {
         Address {
             base: AddressBase::from(block),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         }
     }
 
@@ -9170,7 +9180,7 @@ fn certified_scalar_store_equations_name_the_read_at_its_actual_width() {
         assert_eq!(
             equations,
             vec![Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: if format == MachineIntegerType::UInt64 {
                         MachineIntegerType::Int64
                     } else {
@@ -9204,7 +9214,7 @@ fn a_store_equation_admitted_before_a_typed_read_joins_reads_at_equal_indexes() 
     let variable = |id| OldMachineTerm::Variable(Variable(id));
     let cell = |index| Address {
         base: "array".into(),
-        offset: AddressOffset::scale_int32(variable(index), 4),
+        offset: OldAddressOffset::scale_int32(variable(index), 4),
     };
     let (stored, read, value) = (989_790, 989_791, 989_792);
     let before = SymbolicMemory::new().with_block("array", 4096);
@@ -9226,12 +9236,15 @@ fn a_store_equation_admitted_before_a_typed_read_joins_reads_at_equal_indexes() 
     let context = equations
         .into_iter()
         .fold(PureFactContext::new(), PureFactContext::assume_proposition)
-        .assume_condition(ConditionTerm::equal(variable(stored), variable(read)), true);
+        .assume_condition(
+            OldConditionTerm::equal(variable(stored), variable(read)),
+            true,
+        );
     let after = crate::kernel::intern_memory(after);
     crate::kernel::eval::record_load_access_width(after.memory(), &cell(stored), 4);
     crate::kernel::eval::record_load_access_width(after.memory(), &cell(read), 4);
     let goal = Proposition::condition_is(
-        ConditionTerm::equal(
+        OldConditionTerm::equal(
             crate::kernel::canonical_form_of_load(after, cell(read), LoadKind::Int32),
             variable(value),
         ),
@@ -9260,11 +9273,11 @@ mod retained_offset_evidence_tests {
         MachineOperandView, VerificationSession,
     };
 
-    fn offset(value: &OldMachineTerm, width: i64) -> AddressOffset {
+    fn offset(value: &OldMachineTerm, width: i64) -> OldAddressOffset {
         let root = KernelTermImport::default()
             .machine_arithmetic(MachineIntegerType::Int32, value)
             .unwrap();
-        AddressOffset::Int32Scaled {
+        OldAddressOffset::Int32Scaled {
             value: MachineOperandView::Shared(&root).retain(MachineIntegerType::Int32),
             byte_width: width,
         }
@@ -9289,7 +9302,7 @@ mod retained_offset_evidence_tests {
         ];
         let contexts = [
             PureFactContext::new(),
-            PureFactContext::new().assume_condition(ConditionTerm::equal(x, y), true),
+            PureFactContext::new().assume_condition(OldConditionTerm::equal(x, y), true),
         ];
         for context in contexts {
             let _scope = context.enter_id_scope();
@@ -9318,7 +9331,7 @@ mod retained_offset_evidence_tests {
         let _session = VerificationSession::enter();
         let read = Address {
             base: "retained-offset-source".into(),
-            offset: AddressOffset::Constant(0),
+            offset: OldAddressOffset::Constant(0),
         };
         crate::kernel::eval::declare_load_access_width(&read, 4);
         let base = SymbolicMemory::new().with_block("retained-offset-source", 16);
@@ -9391,14 +9404,14 @@ mod retained_boolean_dependency_tests {
                 LoadKind::Int32,
             )
         };
-        let source = ConditionTerm::BoolEqual(
-            Box::new(ConditionTerm::Compare {
+        let source = OldConditionTerm::BoolEqual(
+            Box::new(OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(read(ProgramPoint::at(&first))),
                 right: Box::new(read(ProgramPoint::at(&second))),
             }),
-            Box::new(ConditionTerm::BoolApplication(
+            Box::new(OldConditionTerm::BoolApplication(
                 SharedPureApplication::intern(
                     "opaque_memory_dependency".into(),
                     vec![PureFunctionArgument::Value(ProgramValue::Int32(read(
@@ -9435,7 +9448,7 @@ mod common_boolean_transport_tests {
             ProgramValue::Int32(OldMachineTerm::constant(1)),
         );
         for source in [
-            ConditionTerm::Overflows {
+            OldConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: crate::kernel::OverflowOperation::Add,
                 left: Box::new(crate::kernel::OldMachineTerm::read_named(
@@ -9445,11 +9458,11 @@ mod common_boolean_transport_tests {
                 )),
                 right: Box::new(OldMachineTerm::constant(1)),
             },
-            ConditionTerm::PointerEqual(
+            OldConditionTerm::PointerEqual(
                 Box::new(OldPointer::new(
                     Address {
                         base: AddressBase::Symbolic(Variable(972_003)),
-                        offset: AddressOffset::scaled_int32_node(
+                        offset: OldAddressOffset::scaled_int32_node(
                             crate::kernel::OldMachineTerm::read_named(
                                 ProgramPoint::at(&memory),
                                 address.clone(),
@@ -9462,10 +9475,10 @@ mod common_boolean_transport_tests {
                 )),
                 Box::new(OldPointer::new(Address::null(), ProgramType::Int32Pointer)),
             ),
-            ConditionTerm::AddressEqual(
+            OldConditionTerm::AddressEqual(
                 Box::new(Address {
                     base: AddressBase::Symbolic(Variable(972_003)),
-                    offset: AddressOffset::scaled_int32_node(
+                    offset: OldAddressOffset::scaled_int32_node(
                         crate::kernel::OldMachineTerm::read_named(
                             ProgramPoint::at(&memory),
                             address.clone(),
@@ -9476,10 +9489,10 @@ mod common_boolean_transport_tests {
                 }),
                 Box::new(Address::null()),
             ),
-            ConditionTerm::AddressOffsetEqual(
-                Box::new(AddressOffset::Add(
-                    Box::new(AddressOffset::Constant(0)),
-                    Box::new(AddressOffset::scaled_int32_node(
+            OldConditionTerm::AddressOffsetEqual(
+                Box::new(OldAddressOffset::Add(
+                    Box::new(OldAddressOffset::Constant(0)),
+                    Box::new(OldAddressOffset::scaled_int32_node(
                         crate::kernel::OldMachineTerm::read_named(
                             ProgramPoint::at(&memory),
                             address.clone(),
@@ -9488,13 +9501,13 @@ mod common_boolean_transport_tests {
                         4,
                     )),
                 )),
-                Box::new(AddressOffset::scaled_int64_node(
+                Box::new(OldAddressOffset::scaled_int64_node(
                     OldMachineTerm::Variable(Variable(972_002)),
                     8,
                     true,
                 )),
             ),
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(crate::kernel::OldMachineTerm::read_named(
@@ -9504,7 +9517,7 @@ mod common_boolean_transport_tests {
                 )),
                 right: Box::new(OldMachineTerm::constant(0)),
             },
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::UInt64,
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::Variable(Variable(972_001))),
@@ -9532,13 +9545,13 @@ mod common_boolean_transport_tests {
     fn common_boolean_transport_keeps_composite_and_load_refusals() {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         for source in [
-            ConditionTerm::Constant(true),
-            ConditionTerm::Variable(Variable(972_002)),
-            ConditionTerm::BoolEqual(
-                Box::new(ConditionTerm::Constant(true)),
-                Box::new(ConditionTerm::Constant(false)),
+            OldConditionTerm::Constant(true),
+            OldConditionTerm::Variable(Variable(972_002)),
+            OldConditionTerm::BoolEqual(
+                Box::new(OldConditionTerm::Constant(true)),
+                Box::new(OldConditionTerm::Constant(false)),
             ),
-            ConditionTerm::boolean_cell_read(
+            OldConditionTerm::boolean_cell_read(
                 crate::kernel::ProgramPoint::at(&memory),
                 Address::symbolic(Variable(972_003)),
             ),
@@ -9579,11 +9592,11 @@ mod common_boolean_read_tests {
         );
         let old = crate::kernel::intern_memory(before);
         let new = crate::kernel::intern_memory(after);
-        let source = ConditionTerm::boolean_cell_read(
+        let source = OldConditionTerm::boolean_cell_read(
             crate::kernel::ProgramPoint::at(&new.clone()),
             Address {
                 base: AddressBase::Symbolic(Variable(999370)),
-                offset: AddressOffset::scaled_int32_node(
+                offset: OldAddressOffset::scaled_int32_node(
                     crate::kernel::OldMachineTerm::read_named(
                         ProgramPoint::at(&old),
                         SymbolicMemory::global_pointer("bool-memory-index"),
@@ -9644,9 +9657,9 @@ fn the_equation_for_an_indexed_store_names_its_written_point() {
         value,
         None,
     );
-    let Some((ConditionTerm::Compare { left, .. }, true)) = fact
+    let Some((OldConditionTerm::Compare { left, .. }, true)) = fact
         .certified_store_equation()
-        .and_then(|fact| fact.condition_native())
+        .and_then(|fact| fact.old_condition())
     else {
         panic!("certified store equality");
     };

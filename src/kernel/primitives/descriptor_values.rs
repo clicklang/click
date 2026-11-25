@@ -308,11 +308,11 @@ enum StoredCondition {
     Shared(KernelTerm),
 }
 struct NativeConditionInput {
-    value: ConditionTerm,
+    value: OldConditionTerm,
     connective_key: std::sync::OnceLock<ConditionStorageKey>,
 }
-impl From<ConditionTerm> for StoredConditionTerm {
-    fn from(value: ConditionTerm) -> Self {
+impl From<OldConditionTerm> for StoredConditionTerm {
+    fn from(value: OldConditionTerm) -> Self {
         Self(StoredCondition::Input(Arc::new(NativeConditionInput {
             value,
             connective_key: std::sync::OnceLock::new(),
@@ -330,9 +330,9 @@ impl StoredConditionTerm {
         (root.ty() == &KernelType::Bool).then(|| Self(StoredCondition::Shared(root)))
     }
     /// Already-evaluated scalar conditions produced by the loop guard checker.
-    pub(crate) fn from_minted(value: ConditionTerm) -> Self {
+    pub(crate) fn from_minted(value: OldConditionTerm) -> Self {
         let root = KernelTermImport::for_exact_field_inputs().condition(&value);
-        root.retain_native_condition_output(value);
+        root.retain_old_condition_output(value);
         Self::from_root(root).expect("logical condition")
     }
     pub(crate) fn root(&self) -> Option<&KernelTerm> {
@@ -341,19 +341,19 @@ impl StoredConditionTerm {
             StoredCondition::Shared(root) => Some(root),
         }
     }
-    pub(crate) fn old_form(&self) -> &ConditionTerm {
+    pub(crate) fn old_form(&self) -> &OldConditionTerm {
         match &self.0 {
             StoredCondition::Input(input) => &input.value,
             StoredCondition::Shared(root) => {
                 if let KernelTermNode::BoolLiteral(value) = root.node() {
                     return if *value {
-                        &ConditionTerm::Constant(true)
+                        &OldConditionTerm::Constant(true)
                     } else {
-                        &ConditionTerm::Constant(false)
+                        &OldConditionTerm::Constant(false)
                     };
                 }
                 let ProgramValue::Bool(OldMachineTerm::BoolCast { value, .. }) =
-                    root.boolean_native().expect("logical Bool output")
+                    root.old_boolean_value().expect("logical Bool output")
                 else {
                     unreachable!("condition output");
                 };
@@ -374,15 +374,15 @@ struct PointerOffsetStorage {
 }
 
 enum PointerOffsetValue {
-    Native(AddressOffset),
+    Native(OldAddressOffset),
     Shared {
         root: SharedAddressOffset,
-        native: OnceLock<AddressOffset>,
+        native: OnceLock<OldAddressOffset>,
     },
 }
 
-impl From<AddressOffset> for StoredPointerOffset {
-    fn from(written: AddressOffset) -> Self {
+impl From<OldAddressOffset> for StoredPointerOffset {
+    fn from(written: OldAddressOffset) -> Self {
         Self::from_input(KernelAddressOffset::try_import(&written), || written)
     }
 }
@@ -404,13 +404,13 @@ impl StoredPointerOffset {
         matches!(&self.0.value, PointerOffsetValue::Shared { native, .. } if native.get().is_some())
     }
 
-    pub(in crate::kernel) fn from_written(written: &AddressOffset) -> Self {
+    pub(in crate::kernel) fn from_written(written: &OldAddressOffset) -> Self {
         Self::from_input(KernelAddressOffset::try_import(written), || written.clone())
     }
 
     fn from_input(
         root: Result<SharedAddressOffset, &'static str>,
-        native: impl FnOnce() -> AddressOffset,
+        native: impl FnOnce() -> OldAddressOffset,
     ) -> Self {
         match root {
             Ok(root) => Self::from_rewritten_root(root),
@@ -425,7 +425,7 @@ impl StoredPointerOffset {
         }
     }
 
-    pub(crate) fn old_form(&self) -> &AddressOffset {
+    pub(crate) fn old_form(&self) -> &OldAddressOffset {
         match &self.0.value {
             PointerOffsetValue::Native(written) => written,
             PointerOffsetValue::Shared { root, native } => {
@@ -565,7 +565,7 @@ impl StoredConditionTerm {
             StoredCondition::Input(input)
                 if matches!(
                     input.value,
-                    ConditionTerm::BoolIf { .. } | ConditionTerm::BoolEqual(..)
+                    OldConditionTerm::BoolIf { .. } | OldConditionTerm::BoolEqual(..)
                 ) =>
             {
                 Some(
@@ -598,7 +598,7 @@ impl Ord for StoredConditionTerm {
         }
         match (self.connective_key(), other.connective_key()) {
             (Some(left), Some(right)) => left.cmp(&right),
-            // BoolIf and BoolEqual follow all atomic conditions in ConditionTerm.
+            // BoolIf and BoolEqual follow all atomic conditions in OldConditionTerm.
             (Some(_), None) => Ordering::Greater,
             (None, Some(_)) => Ordering::Less,
             (None, None) => self.old_form().cmp(other.old_form()),
@@ -678,10 +678,14 @@ mod protocol_value_tests {
     #[test]
     fn retained_contract_offset_preserves_written_identity_after_input_drops() {
         let _session = crate::kernel::VerificationSession::enter();
-        let first = AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(998981)), 4);
-        let second =
-            AddressOffset::scaled_int64_node(OldMachineTerm::Variable(Variable(998982)), 8, true);
-        let input = AddressOffset::Add(Box::new(first), Box::new(second));
+        let first =
+            OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(998981)), 4);
+        let second = OldAddressOffset::scaled_int64_node(
+            OldMachineTerm::Variable(Variable(998982)),
+            8,
+            true,
+        );
+        let input = OldAddressOffset::Add(Box::new(first), Box::new(second));
         let expected_debug = format!("{input:?}");
         let stored = StoredPointerOffset::from(input);
         assert!(stored.root().is_some());
@@ -690,8 +694,8 @@ mod protocol_value_tests {
         assert_eq!(format!("{stored:?}"), expected_debug);
 
         let same = StoredPointerOffset::from(stored.old_form().clone());
-        let distinct = StoredPointerOffset::from(AddressOffset::Add(
-            Box::new(AddressOffset::Constant(0)),
+        let distinct = StoredPointerOffset::from(OldAddressOffset::Add(
+            Box::new(OldAddressOffset::Constant(0)),
             Box::new(stored.old_form().clone()),
         ));
         assert_eq!(stored, same);
@@ -713,7 +717,7 @@ mod protocol_value_tests {
                 arguments: vec![OldMachineTerm::Variable(Variable(998985))],
             },
         );
-        let source = AddressOffset::Int32Scaled {
+        let source = OldAddressOffset::Int32Scaled {
             value: index.clone(),
             byte_width: 4,
         };
@@ -725,7 +729,7 @@ mod protocol_value_tests {
             index.structural_value()
         ));
         assert_eq!(first, index);
-        let equal = StoredPointerOffset::from(AddressOffset::Int32Scaled {
+        let equal = StoredPointerOffset::from(OldAddressOffset::Int32Scaled {
             value: SharedMachineIntegerTerm::index(index.ty(), index.structural_value().clone()),
             byte_width: 4,
         });
@@ -760,23 +764,23 @@ mod protocol_value_tests {
             }
         }
         let conditions = [
-            ConditionTerm::Constant(false),
-            ConditionTerm::Constant(true),
-            ConditionTerm::Variable(Variable(10993642)),
-            ConditionTerm::Compare {
+            OldConditionTerm::Constant(false),
+            OldConditionTerm::Constant(true),
+            OldConditionTerm::Variable(Variable(10993642)),
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::Variable(Variable(10993643))),
                 right: Box::new(OldMachineTerm::constant(1)),
             },
-            ConditionTerm::BoolEqual(
-                Box::new(ConditionTerm::Compare {
+            OldConditionTerm::BoolEqual(
+                Box::new(OldConditionTerm::Compare {
                     format: MachineIntegerType::UInt32,
                     relation: CompareRelation::LessThan,
                     left: Box::new(OldMachineTerm::Variable(Variable(10993644))),
                     right: Box::new(OldMachineTerm::uint32_constant(1)),
                 }),
-                Box::new(ConditionTerm::Constant(false)),
+                Box::new(OldConditionTerm::Constant(false)),
             ),
         ];
         for value in &conditions {
@@ -859,10 +863,10 @@ mod protocol_value_tests {
     #[test]
     fn retained_condition_ordering_keeps_connectives_unboxed() {
         let _session = crate::kernel::VerificationSession::enter();
-        let input = |variable| ConditionTerm::BoolIf {
-            condition: Box::new(ConditionTerm::Variable(variable)),
-            then_condition: Box::new(ConditionTerm::Constant(true)),
-            else_condition: Box::new(ConditionTerm::Constant(false)),
+        let input = |variable| OldConditionTerm::BoolIf {
+            condition: Box::new(OldConditionTerm::Variable(variable)),
+            then_condition: Box::new(OldConditionTerm::Constant(true)),
+            else_condition: Box::new(OldConditionTerm::Constant(false)),
         };
         let values = [input(Variable(10993742)), input(Variable(10993743))];
         let roots = values
@@ -883,11 +887,11 @@ mod protocol_value_tests {
     fn minted_condition_native_views_reuse_the_produced_output_without_exports() {
         let _session = crate::kernel::VerificationSession::enter();
         let value = OldMachineTerm::if_then_else(
-            ConditionTerm::Variable(Variable(10993740)),
+            OldConditionTerm::Variable(Variable(10993740)),
             OldMachineTerm::Variable(Variable(10993741)),
             OldMachineTerm::constant(3),
         );
-        let native = ConditionTerm::Compare {
+        let native = OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
             left: Box::new(value),
@@ -908,10 +912,10 @@ mod protocol_value_tests {
     fn condition_proposition_storage_keeps_roots_and_native_fact_identity() {
         let _session = crate::kernel::VerificationSession::enter();
         for condition in [
-            ConditionTerm::Constant(false),
-            ConditionTerm::Constant(true),
-            ConditionTerm::Variable(Variable(10993711)),
-            ConditionTerm::Compare {
+            OldConditionTerm::Constant(false),
+            OldConditionTerm::Constant(true),
+            OldConditionTerm::Variable(Variable(10993711)),
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(OldMachineTerm::Variable(Variable(10993712))),
@@ -934,7 +938,7 @@ mod protocol_value_tests {
                 assert_eq!(shared.cmp(&native), std::cmp::Ordering::Equal);
                 assert_eq!(hash(&shared), hash(&native));
                 assert_eq!(format!("{shared:?}"), format!("{native:?}"));
-                assert_eq!(shared.condition_native(), native.condition_native());
+                assert_eq!(shared.old_condition(), native.old_condition());
             }
         }
     }
@@ -943,7 +947,7 @@ mod protocol_value_tests {
     fn condition_proposition_visitors_keep_shared_substitution_and_native_scope() {
         let _session = crate::kernel::VerificationSession::enter();
         let variable = Variable(10993713);
-        let condition = ConditionTerm::Compare {
+        let condition = OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(OldMachineTerm::Variable(variable)),
@@ -1297,11 +1301,11 @@ mod term_payload_contract_tests {
     #[test]
     fn consuming_program_storage_moves_an_owned_native_address_prefix() {
         for size in [16, 64, 256] {
-            let mut offset = AddressOffset::Constant(0);
+            let mut offset = OldAddressOffset::Constant(0);
             for index in 0..size {
-                offset = AddressOffset::Add(
+                offset = OldAddressOffset::Add(
                     Box::new(offset),
-                    Box::new(AddressOffset::Variable(Variable(991730 + index))),
+                    Box::new(OldAddressOffset::Variable(Variable(991730 + index))),
                 );
             }
             let value = ProgramValue::pointer(Address {
@@ -1311,7 +1315,7 @@ mod term_payload_contract_tests {
             let ProgramValue::Pointer(pointer) = &value else {
                 unreachable!()
             };
-            let AddressOffset::Add(left, right) = &pointer.address().offset else {
+            let OldAddressOffset::Add(left, right) = &pointer.address().offset else {
                 unreachable!()
             };
             let allocations = [
@@ -1323,7 +1327,7 @@ mod term_payload_contract_tests {
                 unreachable!()
             };
             let address = pointer.into_pointer();
-            let AddressOffset::Add(left, right) = &address.offset else {
+            let OldAddressOffset::Add(left, right) = &address.offset else {
                 unreachable!()
             };
             assert_eq!(

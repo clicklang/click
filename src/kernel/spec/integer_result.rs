@@ -29,14 +29,14 @@ impl IntegerResult {
         )
     }
     pub(super) fn conditional(
-        condition: ConditionTerm,
+        condition: OldConditionTerm,
         then_value: Self,
         else_value: Self,
     ) -> Self {
         crate::instrumentation::record_deterministic_work(1);
         match condition {
-            ConditionTerm::Constant(true) => return then_value,
-            ConditionTerm::Constant(false) => return else_value,
+            OldConditionTerm::Constant(true) => return then_value,
+            OldConditionTerm::Constant(false) => return else_value,
             _ => {}
         }
         if then_value.same_native_syntax(&else_value) {
@@ -285,9 +285,9 @@ mod conditional_contract_tests {
         ];
         let retained: Vec<_> = values.iter().cloned().map(IntegerResult::from).collect();
         for condition in [
-            ConditionTerm::Constant(true),
-            ConditionTerm::Constant(false),
-            ConditionTerm::Variable(Variable(1009892)),
+            OldConditionTerm::Constant(true),
+            OldConditionTerm::Constant(false),
+            OldConditionTerm::Variable(Variable(1009892)),
         ] {
             for (i, left) in values.iter().enumerate() {
                 for (j, right) in values.iter().enumerate() {
@@ -304,7 +304,7 @@ mod conditional_contract_tests {
                         retained[j].clone(),
                     );
                     assert_eq!(result.clone().into_native_compat(), expected, "{i}/{j}");
-                    if !matches!(condition, ConditionTerm::Constant(false)) && left == right {
+                    if !matches!(condition, OldConditionTerm::Constant(false)) && left == right {
                         assert_eq!(
                             result.0, retained[i].0,
                             "equal arms retain the left producer"

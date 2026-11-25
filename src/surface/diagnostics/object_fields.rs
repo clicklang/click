@@ -309,7 +309,7 @@ pub(super) fn object_field_surface(block: &AddressBase, offset: u32, width: u32)
 /// The declared object's name when a range covers exactly its complete ABI storage.
 pub(super) fn object_range_spelling(range: &MemoryRange) -> Option<String> {
     let block = &range.base().base;
-    let AddressOffset::Constant(offset) = &range.base().offset else {
+    let OldAddressOffset::Constant(offset) = &range.base().offset else {
         return None;
     };
     let offset = u64::try_from(*offset).ok()?;

@@ -1362,7 +1362,7 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
     };
     let local_i = Address {
         base: local_i_block.clone(),
-        offset: AddressOffset::Constant(0),
+        offset: OldAddressOffset::Constant(0),
     };
     let entry = verified
         .specification
