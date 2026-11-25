@@ -17,4 +17,19 @@ void FeeFrac::operator+=(const FeeFrac& other) {
     ensures this->size == old(this->size) + old(other.size);
     ensures other.fee == old(other.fee);
     ensures other.size == old(other.size);
+} by {
+    have separate(memory(this->fee), memory(other.size)) by close();
+    step();
+    have separate(region(0).footprint, at(region(0).entry, memory(other.size))) by {
+        normalize() using { at(region(0).entry, separate(memory(this->fee), memory(other.size))); };
+    }
+    have at(region(0).exit, other.size) == at(region(0).entry, other.size) by close();
+    have to_integer(this->size) + to_integer(other.size) <= 2147483647 by close() using {
+        this->size <= 1073741823; other.size <= 1073741823;
+    };
+    have to_integer(this->size) + to_integer(other.size) >= -2147483648 by close() using {
+        -1073741824 <= this->size; -1073741824 <= other.size;
+    };
+    step_until(function.exit);
+    close();
 }
