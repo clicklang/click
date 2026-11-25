@@ -289,30 +289,29 @@ the C parser.
 
 `scripts/check.sh` with no options is the single source of truth for "is this
 tree green". It checks formatting (including the Rust exporter), environment
-setup regressions, the mdBook render, and docs lint; builds the C++ and
-Rust exporters whose toolchains are installed; then runs the unit, API, documentation, and import tests in
-parallel, followed by the mdtest and example harnesses one at a time, since
+setup regressions, the mdBook render, and docs lint. It builds the C++ exporter
+when LLVM is available and uses an existing Rust exporter. It runs the unit,
+API, documentation, and import tests in parallel, followed by the mdtest and example harnesses one at a time, since
 each of those verifies a whole corpus on every core.
 Production builds, Clippy and command-line tests run in `--nightly`.
 
 ### Frontend toolchains
 
-C verification needs neither frontend toolchain. The C++ suites need LLVM and
-Clang 19.1.7 for the exporter, and the Rust import tests need Charon's pinned
-`rustc`. When `scripts/build-cpp-exporter.sh --check` or
-`scripts/build-charon.sh --check` reports its toolchain missing,
-`scripts/check.sh` skips the suites that need it and runs the rest. Without
-the C++ toolchain it leaves out `tests/cpp_import.rs`,
-`tests/bitcoin_core_money_range.rs`, `tests/libcxx_span.rs`,
-`tests/libcxx_functional.rs` and the C++ mdtest import freshness check; the C++
-mdtests and examples still run from their checked-in imports. Without Charon it leaves out
-`tests/rust_import.rs`. The gate names each skipped suite when it starts and
-again after its elapsed time, so a partial run cannot pass for a full one.
+C verification needs neither frontend. The local gate builds the C++ exporter
+when LLVM and Clang 19.1.7 are available. Otherwise it skips
+`tests/cpp_import.rs`, `tests/bitcoin_core_money_range.rs`,
+`tests/libcxx_span.rs`, `tests/libcxx_functional.rs` and the C++ mdtest import
+freshness check. The C++ mdtests and examples still run from checked-in imports.
 
-CI and the nightly workflow build both toolchains and run every suite. Install
-the toolchain before changing a frontend, or set `CLICK_REQUIRE_FRONTENDS=1`
-to make a missing toolchain fail the local gate. An installed toolchain whose
-build fails always fails the gate.
+The local gate uses `CLICK_CHARON` when it points to an existing Charon binary or
+bundle. It also recognizes the debug build under `target/charon/debug`.
+Without either, it skips `tests/rust_import.rs` and runs the remaining suites.
+Build Charon separately with `scripts/build-charon.sh` if you need those tests.
+The gate reports skipped suites at the start and end. Set
+`CLICK_REQUIRE_FRONTENDS=1` to make a missing frontend fail the local gate.
+
+CI and the nightly workflow build Charon for the full Rust import suite.
+`scripts/check.sh --charon-live` builds it for live extraction tests.
 
 ### The gate has a ten-minute budget
 

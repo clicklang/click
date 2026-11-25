@@ -149,14 +149,11 @@ pub(in crate::surface::proof) struct CheckedFixedStateFactTransport {
     pub(in crate::surface::proof) target: Proposition,
 }
 
-/// Audited semantic operation for one explicit mid-execution
-/// `transport(source, target) using { premises }`.
-///
-/// Both explicit source check and `Proof::apply_step` call this operation.
+/// Checks a fixed-state frame with selected premises for internal transport.
 /// It does not mutate surface bookkeeping or proof lineage; it returns the
 /// exact checked source and target for those owners to record atomically.
 #[allow(clippy::too_many_arguments)]
-pub(in crate::surface::proof) fn check_fixed_state_fact_transport_using_facts(
+pub(in crate::surface::proof) fn check_fixed_state_fact_transport(
     surface_source: &SurfaceProposition,
     surface_target: &SurfaceProposition,
     surface_premises: &[SurfaceProposition],
@@ -175,7 +172,7 @@ pub(in crate::surface::proof) fn check_fixed_state_fact_transport_using_facts(
     crate::kernel::with_transport_cell_walk_diagnostics(|| {
         crate::kernel::with_closure_failure_memo(|| {
             let mut checked_target = None;
-            let result = check_fixed_state_fact_transport_using_facts_inner(
+            let result = check_fixed_state_fact_transport_inner(
                 surface_source,
                 surface_target,
                 surface_premises,
@@ -214,7 +211,7 @@ pub(in crate::surface::proof) fn check_fixed_state_fact_transport_using_facts(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn check_fixed_state_fact_transport_using_facts_inner(
+fn check_fixed_state_fact_transport_inner(
     surface_source: &SurfaceProposition,
     surface_target: &SurfaceProposition,
     surface_premises: &[SurfaceProposition],
@@ -228,10 +225,8 @@ fn check_fixed_state_fact_transport_using_facts_inner(
     spec_definitions: SpecDefinitions<'_>,
     checked_target: &mut Option<Proposition>,
 ) -> Result<CheckedFixedStateFactTransport, ClickError> {
-    // Resource compositions keep separation compact. Materialize only a
-    // listed separation premise on the local checked state so explicit
-    // `transport using` retains its exact-premise contract without publishing
-    // every unrelated member pair.
+    // Materialize selected separation premises on the local checked state.
+    // This keeps resource compositions compact.
     let mut available = available.clone();
     let mut explicit_premises = Vec::new();
     for surface_premise in surface_premises {
@@ -249,7 +244,7 @@ fn check_fixed_state_fact_transport_using_facts_inner(
             )
             .map_err(|message| {
                 ClickError::new(format!(
-                    "`{claim_label}` tactic {tactic_index}: could not lower `transport using` premise: {message}"
+                    "`{claim_label}` tactic {tactic_index}: could not lower transport frame check premise: {message}"
                 ))
             })?
         };
@@ -272,12 +267,12 @@ fn check_fixed_state_fact_transport_using_facts_inner(
             && !available.assumptions().contains_known(&premise)
         {
             return Err(ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `transport using` requires an exact premise"
+                "`{claim_label}` tactic {tactic_index}: transport frame check requires an exact premise"
             ))
             .with_spelled_requirement(
                 premise,
                 surface_premise.clone(),
-                "`transport using` premise".into(),
+                "transport frame check premise".into(),
             ));
         }
         // Citing a stated range cites both of its halves; see
@@ -415,13 +410,12 @@ fn check_fixed_state_fact_transport_using_facts_inner(
         );
     // At a completed return outcome, the source is its own checked slot in
     // `transport(source, target)`: it may name an exact result-path fact
-    // without being duplicated in `using`. A quantified source names it up
+    // without being duplicated in the premises. A quantified source names it up
     // to its binder's name, as a listed premise does: a call's postcondition
     // is held with the binder its lowering chose. Both are indexed lookups.
-    // Mid-execution transport retains the stricter rule that `using` must
-    // establish its logical source. A selected outcome state that
-    // materializes to true likewise checks the equivalent symbolic source
-    // used for frame transport.
+    // At an execution frontier the selected facts must establish the source.
+    // A selected outcome state that materializes to true checks the equivalent
+    // symbolic source used for frame transport.
     let source_is_available =
         || available.contains(&source) || available.quantified_fact_available(&source);
     if !(fixed_state.result.is_some() && (concrete_source_is_true || source_is_available()))
@@ -439,18 +433,16 @@ fn check_fixed_state_fact_transport_using_facts_inner(
         )
         .is_none()
     {
-        // Mid-execution, an available source that `using` does not list is
-        // refused only for not being listed. Say so, naming it as written,
-        // rather than print it as missing beside the facts that hold it.
+        // Distinguish an available but unselected source from a missing source.
         if source_is_available() {
             return Err(ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `transport using` requires a source derivable from its explicit facts: its source `{}` is an available fact, but this check reads only the facts listed in `using`; list the source there",
+                "`{claim_label}` tactic {tactic_index}: transport frame check requires a source derivable from its explicit facts: its source `{}` is available but was not among the selected premises",
                 crate::surface::printing::source_click_proposition(surface_source),
             )));
         }
         let available = available.to_vec();
         return Err(ClickError::new(format!(
-            "`{claim_label}` tactic {tactic_index}: `transport using` requires a source derivable from its explicit facts: {}",
+            "`{claim_label}` tactic {tactic_index}: transport frame check requires a source derivable from its explicit facts: {}",
             describe_missing_pure_fact(
                 &source,
                 &available,
@@ -569,9 +561,8 @@ fn check_fixed_state_fact_transport_using_facts_inner(
         // write set, and exact order and separation facts of this context;
         // the answer is this query's derivation and is recorded nowhere else.
         //
-        // The rule is a checked simple step and answers the same for every
-        // caller: an explicit `transport ... using`, a planned transport, and
-        // `solve`'s state transport closure all ask it the same question.
+        // Planned transport and `solve`'s state transport closure ask the
+        // same kernel question.
         let fold_frame = crate::instrumentation::measure_operation(
             "surface",
             "fact transport",
@@ -768,7 +759,7 @@ fn check_fixed_state_fact_transport_using_facts_inner(
     Ok(CheckedFixedStateFactTransport { source, target })
 }
 
-/// The refusal of a checked `transport using` whose source and premises
+/// The refusal of a transport frame check whose source and premises
 /// lowered and held, but whose frame could not carry the source to the
 /// target. A bare `transport` reports it when its planner selects nothing
 /// better (`fact_transport_planning_failure`).
@@ -815,7 +806,7 @@ fn describe_unreachable_fact_transport(
     // Refusals must expose checked identities even outside --trace-proof.
     let _exact = render::TypedNotationScope::enter();
     let mut rendered = format!(
-        "`{claim_label}` tactic {tactic_index}: `transport using` {NO_FRAME_EVIDENCE}\
+        "`{claim_label}` tactic {tactic_index}: transport frame check {NO_FRAME_EVIDENCE}\
          \n  source (holds): {}\
          \n  target (wanted): {}",
         crate::surface::printing::source_click_proposition(surface_source),
@@ -918,7 +909,7 @@ fn surface_predicate_call_name(proposition: &SurfaceProposition) -> Option<&str>
 /// The refusal a bare `transport` reports when its premise planner fails.
 ///
 /// `source_refusal` is the refusal of the bare form's own first attempt,
-/// the checked `transport using` with its source as the only premise. When
+/// a frame check with its source as the only premise. When
 /// that check got as far as the frame, its refusal already names the leaf
 /// the frame could not carry, the cell walks that stopped it and the effects
 /// between the two states, so it is the answer: the planner's own failure

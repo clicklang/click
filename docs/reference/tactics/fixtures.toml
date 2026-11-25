@@ -203,11 +203,6 @@ path = "mdtests/known_value_transport_expansion.md"
 needle = "transport(at(statement(0).entry, *q) == 7, *q == 7);"
 
 [[form]]
-id = "transport-using"
-path = "src/surface/tests/tactic_tests/control_and_certificates.rs"
-needle = "transport(old(p[0]) == 0, p[0] == 0) using {"
-
-[[form]]
 id = "instantiate"
 path = "mdtests/instantiate_propagates_known_guards.md"
 needle = "}, k);"

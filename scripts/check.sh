@@ -219,13 +219,9 @@ if [[ -z "$ci_build" ]]; then
     fi
 fi
 
-# The C++ and Rust frontends need pinned toolchains that a C contributor may
-# not have: LLVM/Clang 19.1.7 for the repository-owned C++ exporter, and
-# Charon's pinned rustc for Rust import. When one is not installed, the gate
-# skips the suites that need it, says so at the start and the end, and runs
-# everything else. CI builds both and runs every suite; set
-# CLICK_REQUIRE_FRONTENDS=1 to make a missing toolchain an error here too.
-# An installed toolchain whose build fails is always an error.
+# Frontend tests use the pinned C++ exporter and Charon. CI and nightly can
+# build both. The ordinary local gate uses an existing Charon executable or
+# bundle. CLICK_REQUIRE_FRONTENDS=1 makes a missing frontend an error.
 if [[ -n "$ci_build" ]]; then
     CLICK_REQUIRE_FRONTENDS=1
 fi
@@ -233,12 +229,12 @@ skipped_frontends=()
 frontend_missing() {
     local name="$1" reason="$2" suites="$3"
     if [[ -n "${CLICK_REQUIRE_FRONTENDS:-}" ]]; then
-        echo "error: the $name toolchain is required (CLICK_REQUIRE_FRONTENDS is set):" >&2
+        echo "error: the $name frontend is required (CLICK_REQUIRE_FRONTENDS is set):" >&2
         echo "$reason" >&2
         exit 1
     fi
     skipped_frontends+=("$name ($suites): $reason")
-    echo "warning: skipping $suites; the $name toolchain is not installed:" >&2
+    echo "warning: skipping $suites; the $name frontend is unavailable:" >&2
     echo "$reason" >&2
 }
 # Removes each named `--test NAME` pair from `unit_targets`.
@@ -276,12 +272,22 @@ else
     drop_test_targets cpp_import bitcoin_core_money_range libcxx_span libcxx_functional
 fi
 
-if reason="$(scripts/build-charon.sh --check 2>&1)"; then
+if [[ -n "$ci_build" || -n "$nightly" ]]; then
+    if reason="$(scripts/build-charon.sh --check 2>&1)"; then
+        export CLICK_CHARON
+        CLICK_CHARON="$(scripts/build-charon.sh)"
+    else
+        frontend_missing "Rust (Charon)" "$reason" "tests/rust_import.rs"
+        drop_test_targets rust_import
+    fi
+elif [[ -n "${CLICK_CHARON:-}" ]]; then
     export CLICK_CHARON
-    CLICK_CHARON="$(scripts/build-charon.sh)"
+elif [[ -x "$PWD/target/charon/debug/charon" && -x "$PWD/target/charon/debug/charon-driver" ]]; then
+    export CLICK_CHARON="$PWD/target/charon/debug/charon"
 else
-    frontend_missing "Rust (Charon)" "$reason" "tests/rust_import.rs"
-    drop_test_targets rust_import
+    frontend_missing "Rust (Charon)" \
+        "Set CLICK_CHARON to an existing executable or bundle, or run scripts/build-charon.sh separately." \
+        "tests/rust_import.rs"
 fi
 
 # The gate needs nextest: `.config/nextest.toml` holds the per-test time

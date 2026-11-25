@@ -2364,7 +2364,7 @@ fn builtin_obligation_solver_proves_trivial_props() {
 /// A segment `p[x..y]` of four-byte elements lowers to the base `p + x * 4`
 /// and the span `(y - x) * 4`, so these helpers build exactly the shape the
 /// surface produces. Each test then asks `proves`, which is the same decision
-/// the implicit check and the explicit `transport ... using` step both reach.
+/// implicit reasoning and the transport frame check both reach.
 mod loadable_range_narrowing {
     use super::*;
 

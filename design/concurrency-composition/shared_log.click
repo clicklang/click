@@ -154,16 +154,7 @@ int32 vector_copy(
             intro() {
                 have 0 <= k;
                 have k < length;
-                transport(old(src[k]) == old(src[k]), src[k] == old(src[k])) using {
-                    0 <= length;
-                    0 <= k;
-                    k < length;
-                    length <= dst_capacity;
-                    length <= src_capacity;
-                    1 <= dst_capacity;
-                    1 <= src_capacity;
-                    separate(memory(dst[0..dst_capacity]), memory(src[0..src_capacity]));
-                };
+                transport(old(src[k]) == old(src[k]), src[k] == old(src[k]));
                 close();
             }
         }
@@ -224,9 +215,7 @@ int32 vector_grow(struct vector* owner) {
             apply(integer::int32_increment_lower_bound(owner->cap, 1, 2147483647));
             close();
         }
-        transport(1 <= (owner->cap + 1), 1 <= new_capacity) using {
-            1 <= (owner->cap + 1);
-        };
+        transport(1 <= (owner->cap + 1), 1 <= new_capacity);
         close();
     }
     have owner->len <= old_capacity by {
@@ -237,9 +226,7 @@ int32 vector_grow(struct vector* owner) {
             apply(integer::int32_increment_lower_bound(owner->cap, owner->len, 2147483647));
             close();
         }
-        transport(owner->len <= (owner->cap + 1), owner->len <= new_capacity) using {
-            owner->len <= (owner->cap + 1);
-        };
+        transport(owner->len <= (owner->cap + 1), owner->len <= new_capacity);
         close();
     }
     have new_capacity <= 536870911 by {
@@ -291,10 +278,7 @@ int32 vector_grow(struct vector* owner) {
                 intro() {
                     have 0 <= k;
                     have k < old(owner->len);
-                    transport(old(owner->data[k]) == old(owner->data[k]), owner->data[k] == old(owner->data[k])) using {
-                        0 <= k;
-                        k < old(owner->len);
-                    };
+                    transport(old(owner->data[k]) == old(owner->data[k]), owner->data[k] == old(owner->data[k]));
                     close();
                 }
             }
@@ -355,8 +339,7 @@ int32 vector_grow(struct vector* owner) {
             close();
         }
         have owner->len == old(owner->len) by {
-            transport(old(owner->len) == old(owner->len), owner->len == old(owner->len)) using {
-            };
+            transport(old(owner->len) == old(owner->len), owner->len == old(owner->len));
             close();
         }
         have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by close();
@@ -438,11 +421,7 @@ int32 vector_push(struct vector* owner, int32 value) {
             intro() {
                 have 0 <= k;
                 have k < old(owner->len);
-                transport(old(owner->data[k]) == old(owner->data[k]), owner->data[k] == old(owner->data[k])) using {
-                    at(region(5).entry, owner->len) <= at(region(5).entry, owner->cap);
-                    0 <= k;
-                    k < old(owner->len);
-                };
+                transport(old(owner->data[k]) == old(owner->data[k]), owner->data[k] == old(owner->data[k]));
                 close();
             }
         }
@@ -499,8 +478,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
             }
             have result == 0 implies owner->len == old(owner->len) by {
                 intro() {
-                    transport(old(owner->len) == old(owner->len), owner->len == old(owner->len)) using {
-                    };
+                    transport(old(owner->len) == old(owner->len), owner->len == old(owner->len));
                     close();
                 }
             }
@@ -674,11 +652,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                 close();
             }
             have old(owner->len) < owner->cap by {
-                transport(at(region(8).entry, owner->len) < at(region(8).entry, owner->cap), old(owner->len) < owner->cap) using {
-                    at(region(8).entry, owner->len) < at(region(8).entry, owner->cap);
-                    at(region(8).entry, owner->len) == old(owner->len);
-                    owner->cap == at(region(8).entry, owner->cap);
-                };
+                transport(at(region(8).entry, owner->len) < at(region(8).entry, owner->cap), old(owner->len) < owner->cap);
                 close();
             }
             have owner->data[old(owner->len)] == value by {
@@ -696,11 +670,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
                         have 0 <= k;
                         have k < old(owner->len);
                         instantiate(forall (j: int32) { 0 <= j and j < old(owner->len) implies at(region(4).entry, owner->data[j]) == old(owner->data[j]) }, k);
-                        transport(at(region(4).entry, owner->data[k]) == old(owner->data[k]), owner->data[k] == old(owner->data[k])) using {
-                            at(region(4).entry, owner->data[k]) == old(owner->data[k]);
-                            0 <= k;
-                            k < old(owner->len);
-                        };
+                        transport(at(region(4).entry, owner->data[k]) == old(owner->data[k]), owner->data[k] == old(owner->data[k]));
                         close();
                     }
                 }
@@ -787,9 +757,7 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
         }
         have at(region(0).entry, (owner->len + 1)) <= at(region(0).entry, owner->cap) by {
             have at(region(0).entry, owner->len) < at(region(0).entry, owner->cap) by {
-                transport(owner->len < owner->cap, at(region(0).entry, owner->len) < at(region(0).entry, owner->cap)) using {
-                    owner->len < owner->cap;
-                };
+                transport(owner->len < owner->cap, at(region(0).entry, owner->len) < at(region(0).entry, owner->cap));
                 close();
             }
             apply(integer::int32_increment_upper_bound(at(region(0).entry, owner->len), at(region(0).entry, owner->cap)));

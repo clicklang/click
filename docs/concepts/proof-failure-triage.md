@@ -222,10 +222,9 @@ not evidence that Click verifies the unchanged source form.
 Smart tactics are bounded, incomplete heuristics. A prompt and actionable
 failure from `close()`, the implicit tail that ends every script, or another
 smart search does not establish an engine bug. Split the task into smaller searches or use
-simple tactics with explicit premises. A refusal that says "this is a search
-miss" comes from an elided form, such as `apply(theorem(args))` or a bare
-`transport(P, Q)`, whose lookup found no fact for its argument: state the
-named fact with `have` first, or write the `using` form.
+simple tactics with explicit premises. If `transport(P, Q)` misses, use
+`have` to establish facts at named states, `preserve` to prove unchanged
+reads, and `rewrite` to carry the fact forward.
 
 When `close()` needs to reconstruct a premise at an earlier point, its
 automatic fallback probes at most 256 statement-entry points nearest the

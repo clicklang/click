@@ -1057,10 +1057,7 @@ uint32 ser_readdata32<FixtureReader>(struct FixtureReader& s) {
             close();
         }
         requires separate(memory(at(call(2).entry, call(2).parameter(dst)._M_ptr)[0..4]), memory(s.data[0..4])) by {
-            transport(at(function.entry, separate(memory(at(call(2).entry, call(2).parameter(dst)._M_ptr)[0..4]), memory(s.data[0..4]))), separate(memory(at(call(2).entry, call(2).parameter(dst)._M_ptr)[0..4]), memory(s.data[0..4]))) using {
-                at(function.entry, separate(memory(at(call(2).entry,
-                    call(2).parameter(dst)._M_ptr)[0..4]), memory(s.data[0..4])));
-            };
+            transport(at(function.entry, separate(memory(at(call(2).entry, call(2).parameter(dst)._M_ptr)[0..4]), memory(s.data[0..4]))), separate(memory(at(call(2).entry, call(2).parameter(dst)._M_ptr)[0..4]), memory(s.data[0..4])));
         }
         requires separate(memory(at(call(2).entry, load<uint8*>(region(4).result))[0..4]), memory(s.data[0..4])) by {
             close();

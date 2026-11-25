@@ -8183,7 +8183,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// mid-execution, such as loop-invariant initialization and preservation.
     /// The candidate space is the execution's
     /// recorded-state index, not the ambient fact set; every accepted source
-    /// and target is checked by `TransportUsing` on this immutable Proof.
+    /// and target is checked against this immutable proof.
     pub(in crate::surface::proof) fn try_state_transport_closure(
         search_input: &Proof<'a>,
         surface_goal: &SurfaceProposition,
@@ -13421,9 +13421,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .into_iter()
                 .try_fold(prepared, |proof, (proposition, steps)| {
                     let candidate = (|| {
-                        let mut scope = proof
-                            .driver()
-                            .open_have_with_goal_observations(proposition, true)?;
+                        let mut scope = proof.driver().open_have_as_written(proposition)?;
                         for step in steps {
                             scope = scope.driver().apply_step(step)?;
                         }

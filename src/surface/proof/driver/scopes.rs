@@ -395,7 +395,7 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
 
     /// Runs bare fact-transport search on the scope's current checked body.
     /// Failed candidate descendants are discarded by `Proof`; the enclosing
-    /// scope receives only the successful retained `TransportUsing` node.
+    /// scope receives only the successful retained proof.
     pub(in crate::surface::proof) fn try_fact_transport(
         &self,
         source: &SurfaceProposition,
@@ -846,35 +846,30 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         &self,
         proposition: SurfaceProposition,
     ) -> Result<ProofScope<'a>, ClickError> {
-        self.open_have_with_presentation(proposition, true, true)
+        self.open_have_with_presentation(proposition, true)
     }
 
     pub(in crate::surface::proof) fn open_source_have(
         &self,
         have: &ProofHave,
     ) -> Result<ProofScope<'a>, ClickError> {
-        let explicit_transport = matches!(&have.proof,
-            SourceProof::Script(tactics) if matches!(tactics.as_slice(), [ProofTactic::TransportUsing { .. }]));
-        self.open_have_with_goal_observations(have.proposition.clone(), !explicit_transport)
+        self.open_have_as_written(have.proposition.clone())
     }
 
-    pub(in crate::surface::proof) fn open_have_with_goal_observations(
+    pub(in crate::surface::proof) fn open_have_as_written(
         &self,
         proposition: SurfaceProposition,
-        observe_goal: bool,
     ) -> Result<ProofScope<'a>, ClickError> {
-        self.open_have_with_presentation(proposition, observe_goal, false)
+        self.open_have_with_presentation(proposition, false)
     }
 
     fn open_have_with_presentation(
         &self,
         proposition: SurfaceProposition,
-        observe_goal: bool,
         observed_spelling: bool,
     ) -> Result<ProofScope<'a>, ClickError> {
-        let operation = |proof: &Proof<'a>| {
-            proof.begin_have(proposition.clone(), observe_goal, observed_spelling)
-        };
+        let operation =
+            |proof: &Proof<'a>| proof.begin_have(proposition.clone(), observed_spelling);
         if super::execution_statements::implicit_solve_disabled() {
             return operation(self.proof);
         }

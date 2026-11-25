@@ -260,12 +260,6 @@ impl<'a> ProofScope<'a> {
         Ok(())
     }
 
-    /// Retain only the checked body when a written operation is rejected.
-    pub(in crate::surface::proof) fn record_certification_failure_trace(&self) {
-        self.body
-            .record_certification_failure_trace(self.body.claim_label(), 0);
-    }
-
     /// Opens the C branch at this scope body's frontier as an in-`Proof`
     /// sibling split. The returned proof advances by focusing each recorded
     /// arm; `join_execution_split` accepts the direct joined successor.

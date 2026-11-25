@@ -1279,18 +1279,6 @@ fn instantiate_proof_tactic(
             source: proposition(source)?,
             target: proposition(target)?,
         },
-        ProofTactic::TransportUsing {
-            source,
-            target,
-            premises,
-        } => ProofTactic::TransportUsing {
-            source: proposition(source)?,
-            target: proposition(target)?,
-            premises: premises
-                .iter()
-                .map(proposition)
-                .collect::<Result<Vec<_>, _>>()?,
-        },
         ProofTactic::CompatibilityFactTransport {
             source,
             target,

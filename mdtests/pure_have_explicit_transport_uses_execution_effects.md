@@ -1,9 +1,6 @@
-# Explicit transport inside `have` sees certified execution effects
+# An explicit preservation proof inside `have` sees certified execution effects
 
-An expanded pure proof may transport an exact store fact across a later,
-disjoint store. The simple `transport(...) using` step must receive the same
-certified execution effects as ordinary frontier transport; `rewrite` must not
-search those effects as a fallback.
+The proof carries a store fact across a later, disjoint store.
 
 ```c filename=pure_have_explicit_transport_uses_execution_effects.c
 int32 set_second_return_first(int32 p[2]) {
