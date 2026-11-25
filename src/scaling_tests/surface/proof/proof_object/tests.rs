@@ -410,10 +410,10 @@ fn loop_entry_solve_keeps_checked_unraisable_assumptions_and_scales() {
     // Loop producers may capture a value that the phase's source naming
     // tables do not spell. The producer's kernel judgment is authoritative;
     // its source proposition is a presentation, not a replacement judgment.
-    let surface = SurfaceProposition::Comparison {
-        left: SurfaceTerm::ProgramExpression(ProgramExpression::Variable("x".into())),
+    let surface = SyntaxProposition::Comparison {
+        left: SyntaxTerm::ProgramExpression(ProgramExpression::Variable("x".into())),
         operator: ComparisonOperator::Equal,
-        right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
+        right: SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
     };
     let goal = Proposition::condition_is(
         ConditionTerm::uint64_less_than(
@@ -640,8 +640,8 @@ fn explicit_loop_have_checks_complete_invariant_bundle() {
     let resources = ResourceEnvironment::new(file.resource_definitions());
     let environment = ExecutionEnvironment::new();
     let arguments = vec![ProgramExpression::Value(int32(7))];
-    let value = SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(7)));
-    let body_surface = SurfaceProposition::Comparison {
+    let value = SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(7)));
+    let body_surface = SyntaxProposition::Comparison {
         left: value.clone(),
         operator: ComparisonOperator::Equal,
         right: value,
@@ -664,10 +664,10 @@ fn explicit_loop_have_checks_complete_invariant_bundle() {
             None,
         ),
     ];
-    let legacy_surface = SurfaceProposition::Comparison {
-        left: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(7))),
+    let legacy_surface = SyntaxProposition::Comparison {
+        left: SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(7))),
         operator: ComparisonOperator::LessEqual,
-        right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(8))),
+        right: SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(8))),
     };
     let mut samples = Vec::new();
     for size in [16, 32, 64, 128] {
@@ -1025,10 +1025,10 @@ fn integer_equality_rewrite_builds_names_only_on_refusal_and_scales() {
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
-    let surface = SurfaceProposition::Comparison {
-        left: SurfaceTerm::Binding("x".into()),
+    let surface = SyntaxProposition::Comparison {
+        left: SyntaxTerm::Binding("x".into()),
         operator: ComparisonOperator::Equal,
-        right: SurfaceTerm::Binding("y".into()),
+        right: SyntaxTerm::Binding("y".into()),
     };
     let mut baseline = None;
     for size in [4usize, 16, 64, 256] {
@@ -1231,18 +1231,16 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
         true,
     );
     let expression =
-        |name: &str| SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name.into()));
-    let equality_surface = SurfaceProposition::Comparison {
+        |name: &str| SyntaxTerm::ProgramExpression(ProgramExpression::Variable(name.into()));
+    let equality_surface = SyntaxProposition::Comparison {
         left: expression("x"),
         operator: ComparisonOperator::Equal,
         right: expression("y"),
     };
-    let goal_surface = SurfaceProposition::Comparison {
+    let goal_surface = SyntaxProposition::Comparison {
         left: expression("x"),
         operator: ComparisonOperator::LessThan,
-        right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt64(
-            bound,
-        ))),
+        right: SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt64(bound))),
     };
     let mut costs = Vec::new();
     for ambient in [0, 16, 64, 256, 1024] {
@@ -1333,7 +1331,7 @@ fn loop_entry_wide_span_guard_retains_its_own_source_and_scales() {
         ))),
         Box::new(ProgramExpression::Variable("len".into())),
     );
-    let surface = SurfaceProposition::Loadable {
+    let surface = SyntaxProposition::Loadable {
         segment: ContractSegment {
             uninitialized: false,
             state: ContractSegmentState::Current,
@@ -1341,9 +1339,9 @@ fn loop_entry_wide_span_guard_retains_its_own_source_and_scales() {
             start: start.clone(),
             end: end.clone(),
             surface: ContractSegmentSurface::Range {
-                base: SurfaceTerm::ProgramExpression(base),
-                start: SurfaceTerm::ProgramExpression(start),
-                end: SurfaceTerm::ProgramExpression(end),
+                base: SyntaxTerm::ProgramExpression(base),
+                start: SyntaxTerm::ProgramExpression(start),
+                end: SyntaxTerm::ProgramExpression(end),
             },
         },
     };
@@ -1419,12 +1417,10 @@ fn completed_goal_retention_validates_current_source_after_stale_recording() {
     };
     let old_goal = bound(entry_len.clone());
     let current_goal = bound(current_len.clone());
-    let surface = SurfaceProposition::Comparison {
-        left: SurfaceTerm::ProgramExpression(ProgramExpression::Variable("len".into())),
+    let surface = SyntaxProposition::Comparison {
+        left: SyntaxTerm::ProgramExpression(ProgramExpression::Variable("len".into())),
         operator: ComparisonOperator::LessEqual,
-        right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt64(
-            limit,
-        ))),
+        right: SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt64(limit))),
     };
     let entry = ExecutionState::new().with_local("len", ProgramValue::UInt64(entry_len));
     let retained_states = RecordedStates::new();
@@ -2141,13 +2137,13 @@ fn check_impossible_offset_rewrite_search(already_intrinsic: bool, native: bool)
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
     let scalar = |index: usize| {
-        SurfaceTerm::ProgramExpression(ProgramExpression::Variable(format!("offset{index}").into()))
+        SyntaxTerm::ProgramExpression(ProgramExpression::Variable(format!("offset{index}").into()))
     };
-    let integer = |index| SurfaceTerm::Call {
+    let integer = |index| SyntaxTerm::Call {
         name: "to_integer".into(),
         arguments: vec![scalar(index)],
     };
-    let source_equal = |left, right| SurfaceProposition::Comparison {
+    let source_equal = |left, right| SyntaxProposition::Comparison {
         left,
         operator: ComparisonOperator::Equal,
         right,
@@ -2209,9 +2205,9 @@ fn check_impossible_offset_rewrite_search(already_intrinsic: bool, native: bool)
         );
         let surface_goal = source_equal(
             if native { scalar(0) } else { integer(0) },
-            SurfaceTerm::Add(
+            SyntaxTerm::Add(
                 Box::new(if native { scalar(base) } else { integer(base) }),
-                Box::new(SurfaceTerm::IntegerLiteral("1".into())),
+                Box::new(SyntaxTerm::IntegerLiteral("1".into())),
             ),
         );
         let context = PureTheoremContext {
@@ -2303,7 +2299,7 @@ fn deferred_terminal_tactics_share_ambient_bindings_without_map_work() {
         let bindings = (0..size).fold(PersistentBinderMap::default(), |bindings, i| {
             bindings.with_inserted(
                 format!("local_{i}"),
-                SurfaceTerm::IntegerLiteral(i.to_string()),
+                SyntaxTerm::IntegerLiteral(i.to_string()),
             )
         });
         let mut execution = ExecutionProofState::at_entry(
@@ -2354,10 +2350,10 @@ fn typed_intro_records_bound_spellings_without_scanning_ambient_facts() {
     let theorems = TheoremEnvironment::new(&[]);
     let context = pure_identity_fixture();
     let truth = Proposition::condition_is(ConditionTerm::Constant(true), true);
-    let surface_truth = SurfaceProposition::Comparison {
-        left: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
+    let surface_truth = SyntaxProposition::Comparison {
+        left: SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
         operator: ComparisonOperator::Equal,
-        right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
+        right: SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
     };
     let samples = [4, 16, 64, 256].map(|size| {
         let facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
@@ -2370,7 +2366,7 @@ fn typed_intro_records_bound_spellings_without_scanning_ambient_facts() {
                 Sort::machine_integer(MachineIntegerType::UInt8),
                 truth.clone(),
             ),
-            SurfaceProposition::ForAll {
+            SyntaxProposition::ForAll {
                 click_type: ClickType::Program(crate::languages::interface::InterfaceType::UInt8),
                 name: "byte".into(),
                 written_name: None,
@@ -2572,10 +2568,10 @@ fn exact_goal_solve_stops_at_known_as_related_and_unrelated_facts_grow() {
         )
     };
     let goal = bound(variable.clone(), 3);
-    let surface = SurfaceProposition::Comparison {
-        left: SurfaceTerm::ProgramExpression(ProgramExpression::Variable("x".into())),
+    let surface = SyntaxProposition::Comparison {
+        left: SyntaxTerm::ProgramExpression(ProgramExpression::Variable("x".into())),
         operator: ComparisonOperator::LessThan,
-        right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(3))),
+        right: SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(3))),
     };
     for related in [false, true] {
         let mut previous = None;
@@ -2655,17 +2651,17 @@ fn fixed_state_application_proves_premises_and_replays_explicitly() {
     let arguments = vec![ProgramExpression::Value(value)];
     let binding = ParameterBinding::new(parsed.parameters(), &arguments);
     let retained_states = RecordedStates::new();
-    let premise = SurfaceProposition::Comparison {
-        left: SurfaceTerm::Binding("x".into()),
+    let premise = SyntaxProposition::Comparison {
+        left: SyntaxTerm::Binding("x".into()),
         operator: ComparisonOperator::GreaterThan,
-        right: SurfaceTerm::IntegerLiteral("0".into()),
+        right: SyntaxTerm::IntegerLiteral("0".into()),
     };
-    let goal = SurfaceProposition::Comparison {
-        left: SurfaceTerm::Binding("x".into()),
+    let goal = SyntaxProposition::Comparison {
+        left: SyntaxTerm::Binding("x".into()),
         operator: ComparisonOperator::GreaterEqual,
-        right: SurfaceTerm::IntegerLiteral("0".into()),
+        right: SyntaxTerm::IntegerLiteral("0".into()),
     };
-    let lower = |p: &SurfaceProposition| {
+    let lower = |p: &SyntaxProposition| {
         lower_fixed_state_proposition_with_assumptions(
             p,
             &PureFactContext::new(),
@@ -2681,7 +2677,7 @@ fn fixed_state_application_proves_premises_and_replays_explicitly() {
     forms.record_lowering(&premise, &premise_kernel).unwrap();
     let application = TheoremApplication {
         name: "nonnegative".into(),
-        arguments: vec![SurfaceTerm::Binding("x".into())],
+        arguments: vec![SyntaxTerm::Binding("x".into())],
     };
     let mut baseline = None;
     for size in [4u32, 16, 64] {
@@ -2787,10 +2783,10 @@ fn cold_theorem_application_ignores_declaration_proof_length() {
         let arguments = vec![ProgramExpression::Value(value)];
         let binding = ParameterBinding::new(parsed.parameters(), &arguments);
         let retained_states = RecordedStates::new();
-        let premise = SurfaceProposition::Comparison {
-            left: SurfaceTerm::Binding("x".into()),
+        let premise = SyntaxProposition::Comparison {
+            left: SyntaxTerm::Binding("x".into()),
             operator: ComparisonOperator::Equal,
-            right: SurfaceTerm::Binding("x".into()),
+            right: SyntaxTerm::Binding("x".into()),
         };
         let goal = lower_fixed_state_proposition_with_assumptions(
             &premise,
@@ -2819,7 +2815,7 @@ fn cold_theorem_application_ignores_declaration_proof_length() {
         );
         let application = TheoremApplication {
             name: "identity".into(),
-            arguments: vec![SurfaceTerm::Binding("x".into())],
+            arguments: vec![SyntaxTerm::Binding("x".into())],
         };
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             root.apply_theorem_using(&application, std::slice::from_ref(&premise))
@@ -2944,7 +2940,7 @@ fn retained_conditional_premise_spelling_does_not_search_state_history() {
 #[test]
 fn proof_binding_name_production_and_queries_follow_only_changed_bindings() {
     let binding = |variable| {
-        SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::typed_pointer(
+        SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::typed_pointer(
             Address::symbolic(Variable(variable)),
             ProgramType::Int32Pointer,
         )))
@@ -3072,13 +3068,13 @@ fn check_local_predicate_unfold_scaling(quantified: bool, present: bool) {
     let snapshots = RecordedStates::new();
     let surfaces = SurfacePropositionMap::default();
     let definitions = SpecDefinitions::new(&predicates, &functions);
-    let application = |value| SurfaceProposition::PredicateCall {
+    let application = |value| SyntaxProposition::PredicateCall {
         name: "selected".into(),
-        arguments: vec![SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+        arguments: vec![SyntaxTerm::ProgramExpression(ProgramExpression::Value(
             int32(value),
         ))],
     };
-    let lower = |surface: &SurfaceProposition| {
+    let lower = |surface: &SyntaxProposition| {
         lower_fixed_state_proposition_with_assumptions(
             surface,
             &PureFactContext::new(),
@@ -3091,7 +3087,7 @@ fn check_local_predicate_unfold_scaling(quantified: bool, present: bool) {
     let target = |value| {
         let call = application(value);
         if quantified {
-            SurfaceProposition::ForAll {
+            SyntaxProposition::ForAll {
                 name: "q".into(),
                 click_type: ClickType::Program(InterfaceType::Int32),
                 written_name: None,

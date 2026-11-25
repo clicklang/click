@@ -16,6 +16,9 @@ quantified claim. The complete round trip also preserves the quantifier and
 its scope. The `KernelTerm` to `SurfaceTerm` round trip applies to those
 operands in their enclosing scopes and to standalone terms that expansion
 writes directly, such as witnesses or call arguments.
+Until the [typed Surface](../../design/typed-surface.md) migration
+introduces typed Surface types, raising produces today's
+`SyntaxProposition` and `SyntaxTerm` trees.
 
 Raising preserves types, bindings, value identity, and snapshot identity. It
 uses names and origins retained where values are introduced; it does not
@@ -180,9 +183,8 @@ state's fact or goal, needs no Surface form.
 
 ## Shared term migration
 
-`SurfaceTerm` is the source expression AST; `SurfaceTerm` remains a
-compatibility alias. `KernelTerm` is an immutable typed expression DAG whose
-arithmetic and call operands are themselves `KernelTerm`s. Its structural
+`SyntaxTerm` is the source expression AST. `KernelTerm` is an immutable typed
+expression DAG whose arithmetic and call operands are themselves `KernelTerm`s. Its structural
 identity is independent of equality-graph classes: constructing `1 + 1`
 does not construct `2`. Nodes retain their result type, and checked arithmetic
 constructors reject the wrong operand type or arity.
@@ -268,7 +270,7 @@ Signed and unsigned interpretations remain distinct. Raising retains the observa
 a local's name must not silently choose a different signedness. Narrow values retain their
 existing load/conversion Surface form: adding another narrowing or promotion cast
 changes the structural observation, particularly under quantified binders.
-Observation casts use `SurfaceTerm::CUnary` with the Surface operand retained;
+Observation casts use `SyntaxTerm::CUnary` with the Surface operand retained;
 projecting a resource field or scoped name into a C fragment loses its binding. The checker bridge reconstructs
 the exact `IntegerTerm::Machine` payload without folding arithmetic.
 Mathematical-Integer-to-machine conversions use an `IntegerToMachine` shared

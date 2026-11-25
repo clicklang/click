@@ -32,7 +32,7 @@ impl PartialEq for ProofCertificate {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CertificateConjunct {
-    proposition: SurfaceProposition,
+    proposition: SyntaxProposition,
     proof: ProofCertificate,
 }
 
@@ -46,14 +46,14 @@ pub struct CertificateConjunct {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ProofStep {
     Match {
-        scrutinee: SurfaceTerm,
+        scrutinee: SyntaxTerm,
         ensuring: Option<Vec<ProofAssertion>>,
         arms: Vec<CertificateInductionArm>,
     },
     CloseInvariantsBy(Box<ProofCertificate>),
     All(Vec<CertificateConjunct>),
     Both {
-        conjuncts: [Option<std::sync::Arc<SurfaceProposition>>; 2],
+        conjuncts: [Option<std::sync::Arc<SyntaxProposition>>; 2],
         left_proof: Box<ProofCertificate>,
         right_proof: Box<ProofCertificate>,
     },
@@ -70,7 +70,7 @@ pub enum ProofStep {
     StepCall(CallBinderTransport),
     /// One application of a user-defined tactic's verified contract.
     UserTactic(CallBinderTransport),
-    UnfoldProposition(SurfaceProposition),
+    UnfoldProposition(SyntaxProposition),
     UnfoldFunction(ClickFunctionApplication),
     UnfoldResource(ResourceClause),
     /// `let { witness: name, ... } = unfold(resource)` on a declared
@@ -88,23 +88,23 @@ pub enum ProofStep {
     },
     ApplyInduction {
         hypothesis: String,
-        arguments: Vec<SurfaceTerm>,
+        arguments: Vec<SyntaxTerm>,
     },
-    ApplyFact(SurfaceProposition),
+    ApplyFact(SyntaxProposition),
     ApplyFactUsing {
-        fact: SurfaceProposition,
-        premises: Vec<SurfaceProposition>,
+        fact: SyntaxProposition,
+        premises: Vec<SyntaxProposition>,
     },
     ApplyTheorem(TheoremApplication),
     ApplyTheoremUsing {
         application: TheoremApplication,
-        premises: Vec<SurfaceProposition>,
+        premises: Vec<SyntaxProposition>,
     },
     /// The planner must check its selected premises. A checked step can
     /// retain the bare application if the current facts also justify it.
     ApplyPlannedTheorem {
         application: TheoremApplication,
-        premises: Vec<SurfaceProposition>,
+        premises: Vec<SyntaxProposition>,
     },
     ObserveResource(ResourceClause),
     ObserveSubject(ResourceSubject),
@@ -121,10 +121,10 @@ pub enum ProofStep {
     CheckTerminationCallbacks,
     Known,
     Normalize,
-    NormalizeUsing(Vec<SurfaceProposition>),
+    NormalizeUsing(Vec<SyntaxProposition>),
     /// A compatibility check used in verification. It has no expansion spelling.
-    CompatibilityNormalize(Option<Vec<SurfaceProposition>>),
-    ArithmeticUsing(Vec<SurfaceProposition>),
+    CompatibilityNormalize(Option<Vec<SyntaxProposition>>),
+    ArithmeticUsing(Vec<SyntaxProposition>),
 
     Intro,
     IntroAs(String),
@@ -134,26 +134,26 @@ pub enum ProofStep {
         body: Box<ProofCertificate>,
     },
     Enumerate,
-    Contradiction(SurfaceProposition),
-    Rewrite(SurfaceProposition),
-    Preserve(SurfaceProposition),
+    Contradiction(SyntaxProposition),
+    Rewrite(SyntaxProposition),
+    Preserve(SyntaxProposition),
     TransportUsing {
-        source: SurfaceProposition,
-        target: SurfaceProposition,
-        premises: Vec<SurfaceProposition>,
+        source: SyntaxProposition,
+        target: SyntaxProposition,
+        premises: Vec<SyntaxProposition>,
     },
     CompatibilityFactTransport {
-        source: SurfaceProposition,
-        target: SurfaceProposition,
-        premises: Vec<SurfaceProposition>,
+        source: SyntaxProposition,
+        target: SyntaxProposition,
+        premises: Vec<SyntaxProposition>,
     },
     /// Substitute consecutive universal binders, preserving the residual body and guards.
     Instantiate {
-        quantified: SurfaceProposition,
-        arguments: Vec<SurfaceTerm>,
+        quantified: SyntaxProposition,
+        arguments: Vec<SyntaxTerm>,
     },
     Have {
-        proposition: SurfaceProposition,
+        proposition: SyntaxProposition,
         proof: Box<ProofCertificate>,
     },
     Open {
@@ -163,13 +163,13 @@ pub enum ProofStep {
         deferred_tail: Option<DeferredOpenTail>,
     },
     If {
-        condition: SurfaceProposition,
+        condition: SyntaxProposition,
         ensuring: Option<Vec<ProofAssertion>>,
         then_proof: Box<ProofCertificate>,
         else_proof: Box<ProofCertificate>,
     },
     Cases {
-        disjunction: SurfaceProposition,
+        disjunction: SyntaxProposition,
         left_proof: Box<ProofCertificate>,
         right_proof: Box<ProofCertificate>,
     },
@@ -201,7 +201,7 @@ pub struct CertificateStructuralClause {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct CertificateStructuralItem {
-    pub(super) claim: SurfaceProposition,
+    pub(super) claim: SyntaxProposition,
     pub(super) name: Option<String>,
 }
 

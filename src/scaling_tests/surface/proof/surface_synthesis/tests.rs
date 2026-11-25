@@ -18,8 +18,8 @@ fn read_origin_raising_ignores_other_points_with_equal_memory() {
         .expect("the read selects its function-entry point");
     let mark = ProgramPointSelector::Mark("original_read".into());
     let current = ExecutionState::new().begin_function_entry_memory();
-    let operand = SurfaceTerm::IntegerLiteral("7".into());
-    let named = SurfaceTerm::At {
+    let operand = SyntaxTerm::IntegerLiteral("7".into());
+    let named = SyntaxTerm::At {
         selector: mark.clone(),
         expression: Box::new(operand.clone()),
     };
@@ -87,13 +87,13 @@ fn boolean_local_synthesis_round_trips_and_scales_with_local_population() {
         let surface = surface.expect("a normalized Boolean local has its source spelling");
         assert_eq!(
             surface,
-            SurfaceTerm::ProgramExpression(ProgramExpression::Variable("z_bool".into()))
+            SyntaxTerm::ProgramExpression(ProgramExpression::Variable("z_bool".into()))
         );
         assert!(
             work >= size && work <= size + 64,
             "{size} locals: {work} work"
         );
-        let equality = SurfaceProposition::Comparison {
+        let equality = SyntaxProposition::Comparison {
             left: surface.clone(),
             operator: ComparisonOperator::Equal,
             right: surface,
@@ -225,7 +225,7 @@ fn integer_division_synthesis_work_tracks_the_selected_expression() {
                 .expect("the selected quotient/remainder chain is spellable");
         let mut cursor = &surface;
         for level in (0..size).rev() {
-            let SurfaceTerm::Call { name, arguments } = cursor else {
+            let SyntaxTerm::Call { name, arguments } = cursor else {
                 panic!("the selected division node lost its spelling");
             };
             assert_eq!(
@@ -237,10 +237,10 @@ fn integer_division_synthesis_work_tracks_the_selected_expression() {
                 }
             );
             assert_eq!(arguments.len(), 2);
-            assert_eq!(arguments[1], SurfaceTerm::IntegerLiteral("4".into()));
+            assert_eq!(arguments[1], SyntaxTerm::IntegerLiteral("4".into()));
             cursor = &arguments[0];
         }
-        assert_eq!(*cursor, SurfaceTerm::Binding("n".into()));
+        assert_eq!(*cursor, SyntaxTerm::Binding("n".into()));
         let work = SURFACE_SYNTHESIS_BUDGET.with(|slot| {
             let slot = slot.borrow();
             let budget = slot.as_ref().unwrap();
@@ -497,7 +497,7 @@ fn common_arithmetic_names_ignore_unrelated_locals_without_exports() {
         });
         assert_eq!(
             surface,
-            Some(SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+            Some(SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                 "current".into()
             )))
         );
@@ -752,11 +752,11 @@ fn array_argument_state_lookup_ignores_unrelated_recorded_history() {
                 .expect("the selected memory is recorded")
             })
         });
-        let SurfaceTerm::Call { arguments, .. } = call else {
+        let SyntaxTerm::Call { arguments, .. } = call else {
             panic!("call")
         };
         assert!(
-            matches!(&arguments[0], SurfaceTerm::At { selector: actual, .. } if *actual == selector)
+            matches!(&arguments[0], SyntaxTerm::At { selector: actual, .. } if *actual == selector)
         );
         assert_eq!(*baseline.get_or_insert(work), work);
         samples.push(map_work);
@@ -796,7 +796,7 @@ fn shared_constructor_spelling_visits_fields_without_exporting_the_tree() {
                 &BTreeMap::new(),
             )
         });
-        let Some(SurfaceTerm::AlgebraicConstructor { arguments, .. }) = surface else {
+        let Some(SyntaxTerm::AlgebraicConstructor { arguments, .. }) = surface else {
             panic!("constructor spelling")
         };
         assert_eq!(arguments.len(), size);

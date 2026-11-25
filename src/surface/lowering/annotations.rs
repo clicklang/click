@@ -89,18 +89,18 @@ fn exact_readable_type(value_type: ProgramType) -> bool {
     ) || value_type.is_pointer()
 }
 
-fn is_unsuffixed_integer_literal_expression(expression: &SurfaceTerm) -> bool {
+fn is_unsuffixed_integer_literal_expression(expression: &SyntaxTerm) -> bool {
     match expression {
-        SurfaceTerm::IntegerLiteral(_) => true,
+        SyntaxTerm::IntegerLiteral(_) => true,
         // A state of a literal is the literal.
-        SurfaceTerm::Negate(inner)
-        | SurfaceTerm::Old(inner)
-        | SurfaceTerm::At {
+        SyntaxTerm::Negate(inner)
+        | SyntaxTerm::Old(inner)
+        | SyntaxTerm::At {
             expression: inner, ..
         } => is_unsuffixed_integer_literal_expression(inner),
-        SurfaceTerm::Add(left, right)
-        | SurfaceTerm::Subtract(left, right)
-        | SurfaceTerm::Multiply(left, right) => {
+        SyntaxTerm::Add(left, right)
+        | SyntaxTerm::Subtract(left, right)
+        | SyntaxTerm::Multiply(left, right) => {
             is_unsuffixed_integer_literal_expression(left)
                 && is_unsuffixed_integer_literal_expression(right)
         }
@@ -144,81 +144,82 @@ impl FixedMeasureState {
 ///
 /// Work is linear in the component, which is the declared expression; nothing
 /// ambient is walked.
-fn fixed_measure_state(expression: &SurfaceTerm) -> Option<FixedMeasureState> {
-    let either = |left: &SurfaceTerm, right: &SurfaceTerm| {
+fn fixed_measure_state(expression: &SyntaxTerm) -> Option<FixedMeasureState> {
+    let either = |left: &SyntaxTerm, right: &SyntaxTerm| {
         fixed_measure_state(left).or_else(|| fixed_measure_state(right))
     };
     match expression {
-        SurfaceTerm::IntegerContext(value) => fixed_measure_state(value),
+        SyntaxTerm::IntegerContext(value) => fixed_measure_state(value),
 
-        SurfaceTerm::Proposition(_) => None,
-        SurfaceTerm::Resource(_) => None,
-        SurfaceTerm::RegionResult(_)
-        | SurfaceTerm::RegionAllocation(_)
-        | SurfaceTerm::RegionParameter { .. } => None,
-        SurfaceTerm::Lambda { body, .. } => fixed_measure_state(body),
-        SurfaceTerm::Apply {
+        SyntaxTerm::Proposition(_) => None,
+        SyntaxTerm::Resource(_) => None,
+        SyntaxTerm::RegionResult(_)
+        | SyntaxTerm::RegionAllocation(_)
+        | SyntaxTerm::RegionParameter { .. } => None,
+        SyntaxTerm::Lambda { body, .. } => fixed_measure_state(body),
+        SyntaxTerm::Apply {
             function,
             arguments,
         } => {
             fixed_measure_state(function).or_else(|| arguments.iter().find_map(fixed_measure_state))
         }
 
-        SurfaceTerm::Old(_) => Some(FixedMeasureState::Old),
-        SurfaceTerm::At { selector, .. } => Some(FixedMeasureState::At(selector.clone())),
-        SurfaceTerm::IntegerLiteral(_)
-        | SurfaceTerm::QualifiedC { .. }
-        | SurfaceTerm::ResourceField(_)
-        | SurfaceTerm::AlgebraicVariable { .. }
-        | SurfaceTerm::Binding(_)
-        | SurfaceTerm::ProgramBinding(_)
-        | SurfaceTerm::ProgramExpression(_)
-        | SurfaceTerm::CUnary { .. }
-        | SurfaceTerm::MemoryLoad { .. }
-        | SurfaceTerm::ResourceWildcard => None,
-        SurfaceTerm::AlgebraicConstructor { arguments, .. }
-        | SurfaceTerm::Call { arguments, .. } => arguments.iter().find_map(fixed_measure_state),
-        SurfaceTerm::MethodCall {
+        SyntaxTerm::Old(_) => Some(FixedMeasureState::Old),
+        SyntaxTerm::At { selector, .. } => Some(FixedMeasureState::At(selector.clone())),
+        SyntaxTerm::IntegerLiteral(_)
+        | SyntaxTerm::QualifiedC { .. }
+        | SyntaxTerm::ResourceField(_)
+        | SyntaxTerm::AlgebraicVariable { .. }
+        | SyntaxTerm::Binding(_)
+        | SyntaxTerm::ProgramBinding(_)
+        | SyntaxTerm::ProgramExpression(_)
+        | SyntaxTerm::CUnary { .. }
+        | SyntaxTerm::MemoryLoad { .. }
+        | SyntaxTerm::ResourceWildcard => None,
+        SyntaxTerm::AlgebraicConstructor { arguments, .. } | SyntaxTerm::Call { arguments, .. } => {
+            arguments.iter().find_map(fixed_measure_state)
+        }
+        SyntaxTerm::MethodCall {
             receiver,
             arguments,
             ..
         } => {
             fixed_measure_state(receiver).or_else(|| arguments.iter().find_map(fixed_measure_state))
         }
-        SurfaceTerm::SequenceLiteral(elements) => elements.iter().find_map(fixed_measure_state),
-        SurfaceTerm::ResourceCount(resource) => match resource.as_ref() {
+        SyntaxTerm::SequenceLiteral(elements) => elements.iter().find_map(fixed_measure_state),
+        SyntaxTerm::ResourceCount(resource) => match resource.as_ref() {
             ResourceClause::Declared { arguments, .. } => {
                 arguments.iter().find_map(fixed_measure_state)
             }
             _ => None,
         },
-        SurfaceTerm::AlgebraicMatch { scrutinee, arms } => fixed_measure_state(scrutinee)
+        SyntaxTerm::AlgebraicMatch { scrutinee, arms } => fixed_measure_state(scrutinee)
             .or_else(|| arms.iter().find_map(|arm| fixed_measure_state(&arm.body))),
-        SurfaceTerm::Field { base, .. }
-        | SurfaceTerm::Negate(base)
-        | SurfaceTerm::Exact(base)
-        | SurfaceTerm::BitwiseNot(base) => fixed_measure_state(base),
-        SurfaceTerm::ArrayIndex { base, .. } => fixed_measure_state(base),
-        SurfaceTerm::SequenceConcat(left, right)
-        | SurfaceTerm::Add(left, right)
-        | SurfaceTerm::Subtract(left, right)
-        | SurfaceTerm::Multiply(left, right)
-        | SurfaceTerm::Divide(left, right)
-        | SurfaceTerm::Remainder(left, right)
-        | SurfaceTerm::ShiftLeft(left, right)
-        | SurfaceTerm::RustShiftLeft(left, right)
-        | SurfaceTerm::ShiftRight(left, right)
-        | SurfaceTerm::RustShiftRight(left, right)
-        | SurfaceTerm::BitwiseAnd(left, right)
-        | SurfaceTerm::BitwiseOr(left, right)
-        | SurfaceTerm::BitwiseXor(left, right)
-        | SurfaceTerm::Index(left, right) => either(left, right),
-        SurfaceTerm::If {
+        SyntaxTerm::Field { base, .. }
+        | SyntaxTerm::Negate(base)
+        | SyntaxTerm::Exact(base)
+        | SyntaxTerm::BitwiseNot(base) => fixed_measure_state(base),
+        SyntaxTerm::ArrayIndex { base, .. } => fixed_measure_state(base),
+        SyntaxTerm::SequenceConcat(left, right)
+        | SyntaxTerm::Add(left, right)
+        | SyntaxTerm::Subtract(left, right)
+        | SyntaxTerm::Multiply(left, right)
+        | SyntaxTerm::Divide(left, right)
+        | SyntaxTerm::Remainder(left, right)
+        | SyntaxTerm::ShiftLeft(left, right)
+        | SyntaxTerm::RustShiftLeft(left, right)
+        | SyntaxTerm::ShiftRight(left, right)
+        | SyntaxTerm::RustShiftRight(left, right)
+        | SyntaxTerm::BitwiseAnd(left, right)
+        | SyntaxTerm::BitwiseOr(left, right)
+        | SyntaxTerm::BitwiseXor(left, right)
+        | SyntaxTerm::Index(left, right) => either(left, right),
+        SyntaxTerm::If {
             then_branch,
             else_branch,
             ..
         } => either(then_branch, else_branch),
-        SurfaceTerm::RangeFold {
+        SyntaxTerm::RangeFold {
             start,
             end,
             initial,
@@ -228,7 +229,7 @@ fn fixed_measure_state(expression: &SurfaceTerm) -> Option<FixedMeasureState> {
             .or_else(|| fixed_measure_state(end))
             .or_else(|| fixed_measure_state(initial))
             .or_else(|| fixed_measure_state(body)),
-        SurfaceTerm::Let { value, body, .. } => either(value, body),
+        SyntaxTerm::Let { value, body, .. } => either(value, body),
     }
 }
 
@@ -507,7 +508,7 @@ pub(in crate::surface) fn register_entry_model_fields(function: &FunctionBlock) 
             else {
                 continue;
             };
-            crate::surface::diagnostics::describe_contract_expression(&SurfaceTerm::Call {
+            crate::surface::diagnostics::describe_contract_expression(&SyntaxTerm::Call {
                 name: name.clone(),
                 arguments: arguments.clone(),
             })
@@ -537,11 +538,11 @@ pub(in crate::surface) fn register_entry_model_fields(function: &FunctionBlock) 
     }
 }
 
-fn contract_expression_is_sequence(expression: &SurfaceTerm) -> bool {
+fn contract_expression_is_sequence(expression: &SyntaxTerm) -> bool {
     match expression {
-        SurfaceTerm::SequenceLiteral(_) | SurfaceTerm::SequenceConcat(_, _) => true,
-        SurfaceTerm::Old(inner)
-        | SurfaceTerm::At {
+        SyntaxTerm::SequenceLiteral(_) | SyntaxTerm::SequenceConcat(_, _) => true,
+        SyntaxTerm::Old(inner)
+        | SyntaxTerm::At {
             expression: inner, ..
         } => contract_expression_is_sequence(inner),
         _ => false,
@@ -622,7 +623,7 @@ fn match_binding_variables(
 }
 
 fn contract_expression_is_algebraic(
-    expression: &SurfaceTerm,
+    expression: &SyntaxTerm,
     functions: &ClickFunctionEnvironment,
     environment: &SpecElaborationContext,
     lexical_bindings: &mut Vec<(SurfaceBinder, bool)>,
@@ -636,23 +637,23 @@ fn contract_expression_is_algebraic(
     }
 
     match expression {
-        SurfaceTerm::ResourceField(access) => {
+        SyntaxTerm::ResourceField(access) => {
             matches!(access.click_type, Some(ClickType::Algebraic(_)))
         }
-        SurfaceTerm::AlgebraicConstructor { .. } | SurfaceTerm::AlgebraicVariable { .. } => true,
-        SurfaceTerm::Binding(name)
-        | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+        SyntaxTerm::AlgebraicConstructor { .. } | SyntaxTerm::AlgebraicVariable { .. } => true,
+        SyntaxTerm::Binding(name)
+        | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) => lexical_bindings
             .iter()
             .rev()
             .find_map(|(binding, algebraic)| (binding == name).then_some(*algebraic))
             .unwrap_or_else(|| environment.algebraic_values.contains_key(name)),
-        SurfaceTerm::Old(inner)
-        | SurfaceTerm::At {
+        SyntaxTerm::Old(inner)
+        | SyntaxTerm::At {
             expression: inner, ..
         } => contract_expression_is_algebraic(inner, functions, environment, lexical_bindings),
-        SurfaceTerm::If {
+        SyntaxTerm::If {
             then_branch,
             else_branch,
             ..
@@ -665,10 +666,10 @@ fn contract_expression_is_algebraic(
                     lexical_bindings,
                 )
         }
-        SurfaceTerm::AlgebraicMatch { arms, .. } => arms.first().is_some_and(|arm| {
+        SyntaxTerm::AlgebraicMatch { arms, .. } => arms.first().is_some_and(|arm| {
             contract_expression_is_algebraic(&arm.body, functions, environment, lexical_bindings)
         }),
-        SurfaceTerm::Let {
+        SyntaxTerm::Let {
             name, value, body, ..
         } => {
             let value_is_algebraic =
@@ -679,8 +680,8 @@ fn contract_expression_is_algebraic(
             lexical_bindings.pop();
             result
         }
-        SurfaceTerm::Call { name, .. } if name == "to_nat" => true,
-        SurfaceTerm::Call { name, .. } => functions
+        SyntaxTerm::Call { name, .. } if name == "to_nat" => true,
+        SyntaxTerm::Call { name, .. } => functions
             .get(name)
             .is_some_and(|definition| matches!(definition.return_type(), ClickType::Algebraic(_))),
         _ => false,
@@ -2243,7 +2244,7 @@ fn annotate_function(
 /// concrete arm states and the abstract successor state.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface) fn lower_branch_interface_fact(
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     parsed_function: &crate::languages::interface::ImportedFunction,
     entry_state: &ExecutionState,
     current_state: &ExecutionState,
@@ -2407,7 +2408,7 @@ fn fixed_state_elaboration<'a>(
 /// same value instead of re-evaluating its source expression there.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface) fn elaborate_fixed_state_proposition_with_algebraic_and_integer_values(
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     array_element_types: BTreeMap<String, ProgramType>,
     bound_array_memories: BTreeMap<String, SpecPoint>,
     entry_state: &ExecutionState,
@@ -2503,7 +2504,7 @@ pub(in crate::surface) fn elaborate_fixed_state_proposition_with_algebraic_and_i
 /// algebraic theorem argument.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface) fn elaborate_fixed_state_algebraic_expression(
-    expression: &SurfaceTerm,
+    expression: &SyntaxTerm,
     array_element_types: BTreeMap<String, ProgramType>,
     entry_state: &ExecutionState,
     entry_values: ProgramValueBindings,
@@ -2539,7 +2540,7 @@ pub(in crate::surface) fn elaborate_fixed_state_algebraic_expression(
 /// Integer theorem argument.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface) fn elaborate_fixed_state_integer_expression(
-    expression: &SurfaceTerm,
+    expression: &SyntaxTerm,
     array_element_types: BTreeMap<String, ProgramType>,
     entry_state: &ExecutionState,
     entry_values: ProgramValueBindings,
@@ -2572,7 +2573,7 @@ pub(in crate::surface) fn elaborate_fixed_state_integer_expression(
 /// parameters and checked-proof locals while capturing a fold argument.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface) fn elaborate_fixed_state_integer_expression_with_integer_values(
-    expression: &SurfaceTerm,
+    expression: &SyntaxTerm,
     array_element_types: BTreeMap<String, ProgramType>,
     entry_state: &ExecutionState,
     entry_values: ProgramValueBindings,
@@ -2699,7 +2700,7 @@ fn max_spec_integer_expression_variable(
 /// kernel then evaluates the result at the proof's state.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface) fn elaborate_fixed_state_expression(
-    expression: &SurfaceTerm,
+    expression: &SyntaxTerm,
     array_element_types: BTreeMap<String, ProgramType>,
     entry_state: &ExecutionState,
     entry_values: ProgramValueBindings,
@@ -2727,7 +2728,7 @@ pub(in crate::surface) fn elaborate_fixed_state_expression(
 
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface) fn elaborate_fixed_state_expression_with_algebraic_values(
-    expression: &SurfaceTerm,
+    expression: &SyntaxTerm,
     array_element_types: BTreeMap<String, ProgramType>,
     entry_state: &ExecutionState,
     entry_values: ProgramValueBindings,
@@ -2757,7 +2758,7 @@ pub(in crate::surface) fn elaborate_fixed_state_expression_with_algebraic_values
 
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface) fn elaborate_fixed_state_expression_with_algebraic_and_integer_values(
-    expression: &SurfaceTerm,
+    expression: &SyntaxTerm,
     array_element_types: BTreeMap<String, ProgramType>,
     entry_state: &ExecutionState,
     entry_values: ProgramValueBindings,
@@ -2823,7 +2824,7 @@ pub(in crate::surface) fn elaborate_fixed_state_expression_with_algebraic_and_in
 pub(in crate::surface) fn elaborate_requirement_proposition(
     parameter_binding: ParameterBinding<'_>,
     entry_state: &ExecutionState,
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<SpecProposition, String> {
     // A requirement reads only the parameters it names: with the binding's
@@ -3001,7 +3002,7 @@ pub(in crate::surface) fn function_contract_summary(
         .keys()
         .cloned()
         .collect::<Vec<_>>();
-    let unfold_contract_predicates = |proposition: &SurfaceProposition| {
+    let unfold_contract_predicates = |proposition: &SyntaxProposition| {
         // Apply the predicate's character-byte adapter before substitution:
         // otherwise its uint8 reads inherit the caller parameter's signed
         // char type, unlike the predicate used by the entry proof.
@@ -3040,7 +3041,7 @@ pub(in crate::surface) fn function_contract_summary(
     for (source_index, requirement) in function_block.requires().iter().enumerate() {
         let proposition = match requirement {
             Requirement::Proposition(proposition) => proposition.clone(),
-            Requirement::LoadableSegment { segment } => SurfaceProposition::Loadable {
+            Requirement::LoadableSegment { segment } => SyntaxProposition::Loadable {
                 segment: segment.clone(),
             },
             Requirement::Resource(_) => continue,
@@ -3234,31 +3235,31 @@ pub(in crate::surface) fn function_contract_summary(
     ))
 }
 
-fn proposition_supported_in_opaque_contract(proposition: &SurfaceProposition) -> bool {
+fn proposition_supported_in_opaque_contract(proposition: &SyntaxProposition) -> bool {
     match proposition {
-        SurfaceProposition::Value(_) => true,
-        SurfaceProposition::Separate { .. }
-        | SurfaceProposition::ResourceViewable { .. }
-        | SurfaceProposition::Contains { .. }
-        | SurfaceProposition::Loadable { .. }
-        | SurfaceProposition::Defined { .. } => true,
+        SyntaxProposition::Value(_) => true,
+        SyntaxProposition::Separate { .. }
+        | SyntaxProposition::ResourceViewable { .. }
+        | SyntaxProposition::Contains { .. }
+        | SyntaxProposition::Loadable { .. }
+        | SyntaxProposition::Defined { .. } => true,
         // Type evidence comes from a checked proof, not an assumed interface.
-        SurfaceProposition::At { .. } | SurfaceProposition::IsA { .. } => false,
-        SurfaceProposition::And(left, right)
-        | SurfaceProposition::Or(left, right)
-        | SurfaceProposition::Implies(left, right) => {
+        SyntaxProposition::At { .. } | SyntaxProposition::IsA { .. } => false,
+        SyntaxProposition::And(left, right)
+        | SyntaxProposition::Or(left, right)
+        | SyntaxProposition::Implies(left, right) => {
             proposition_supported_in_opaque_contract(left)
                 && proposition_supported_in_opaque_contract(right)
         }
-        SurfaceProposition::Not(body)
-        | SurfaceProposition::ForAll { body, .. }
-        | SurfaceProposition::Exists { body, .. }
-        | SurfaceProposition::RangeAll { body, .. }
-        | SurfaceProposition::RangeAny { body, .. } => {
+        SyntaxProposition::Not(body)
+        | SyntaxProposition::ForAll { body, .. }
+        | SyntaxProposition::Exists { body, .. }
+        | SyntaxProposition::RangeAll { body, .. }
+        | SyntaxProposition::RangeAny { body, .. } => {
             proposition_supported_in_opaque_contract(body)
         }
-        SurfaceProposition::Comparison { .. } | SurfaceProposition::PredicateCall { .. } => true,
-        SurfaceProposition::FloatClassification { .. } => true,
+        SyntaxProposition::Comparison { .. } | SyntaxProposition::PredicateCall { .. } => true,
+        SyntaxProposition::FloatClassification { .. } => true,
     }
 }
 
@@ -3674,12 +3675,12 @@ pub(in crate::surface) fn click_parameter_pointer_element_widths_with_layouts(
 /// Lower explicit arithmetic evidence without constructing or cloning a C
 /// state. Its only environment is the already captured mathematical bindings.
 pub(in crate::surface) fn lower_integer_arithmetic_proposition(
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
 ) -> Result<Proposition, String> {
     check_integer_lowering_work(1)?;
     match proposition {
-        SurfaceProposition::Comparison {
+        SyntaxProposition::Comparison {
             left,
             operator,
             right,
@@ -3690,7 +3691,7 @@ pub(in crate::surface) fn lower_integer_arithmetic_proposition(
             let condition = crate::kernel::KernelTermExport::condition(&root)?;
             Ok(Proposition::condition_is(condition, true))
         }
-        SurfaceProposition::Not(body) => Ok(Proposition::Not(Box::new(
+        SyntaxProposition::Not(body) => Ok(Proposition::Not(Box::new(
             lower_integer_arithmetic_proposition(body, integer_values)?,
         ))),
         _ => Err("an Integer certificate requires a mathematical comparison".into()),
@@ -3698,11 +3699,11 @@ pub(in crate::surface) fn lower_integer_arithmetic_proposition(
 }
 
 /// The decimal spelling of an integer literal, negated or not.
-fn integer_literal_spelling(expression: &SurfaceTerm) -> Option<String> {
+fn integer_literal_spelling(expression: &SyntaxTerm) -> Option<String> {
     match expression {
-        SurfaceTerm::IntegerLiteral(text) => Some(text.clone()),
-        SurfaceTerm::Negate(inner) => match inner.as_ref() {
-            SurfaceTerm::IntegerLiteral(text) => Some(format!("-{text}")),
+        SyntaxTerm::IntegerLiteral(text) => Some(text.clone()),
+        SyntaxTerm::Negate(inner) => match inner.as_ref() {
+            SyntaxTerm::IntegerLiteral(text) => Some(format!("-{text}")),
             _ => None,
         },
         _ => None,
@@ -3713,14 +3714,14 @@ fn integer_literal_spelling(expression: &SurfaceTerm) -> Option<String> {
 /// `+`, `-`, `*`, as a decimal spelling: `3 - 1` is `2`. Such a constant has
 /// no type of its own, so a typed position takes it as a literal of that
 /// type. `None` for anything else, or past `i128`.
-fn integer_constant_spelling(expression: &SurfaceTerm) -> Option<String> {
-    fn value(expression: &SurfaceTerm) -> Option<i128> {
+fn integer_constant_spelling(expression: &SyntaxTerm) -> Option<String> {
+    fn value(expression: &SyntaxTerm) -> Option<i128> {
         match expression {
-            SurfaceTerm::IntegerLiteral(text) => text.parse().ok(),
-            SurfaceTerm::Negate(inner) => value(inner)?.checked_neg(),
-            SurfaceTerm::Add(left, right) => value(left)?.checked_add(value(right)?),
-            SurfaceTerm::Subtract(left, right) => value(left)?.checked_sub(value(right)?),
-            SurfaceTerm::Multiply(left, right) => value(left)?.checked_mul(value(right)?),
+            SyntaxTerm::IntegerLiteral(text) => text.parse().ok(),
+            SyntaxTerm::Negate(inner) => value(inner)?.checked_neg(),
+            SyntaxTerm::Add(left, right) => value(left)?.checked_add(value(right)?),
+            SyntaxTerm::Subtract(left, right) => value(left)?.checked_sub(value(right)?),
+            SyntaxTerm::Multiply(left, right) => value(left)?.checked_mul(value(right)?),
             _ => None,
         }
     }
@@ -3730,7 +3731,7 @@ fn integer_constant_spelling(expression: &SurfaceTerm) -> Option<String> {
 /// Explicit compatibility result for remaining theorem and deferred-expression
 /// consumers. Certificate comparisons use the common-root entry point below.
 pub(in crate::surface) fn lower_contract_integer_to_spec(
-    expression: &SurfaceTerm,
+    expression: &SyntaxTerm,
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
 ) -> Result<crate::kernel::SpecIntegerExpression, String> {
     let term = lower_surface_integer_term(expression, integer_values)?;
@@ -3742,9 +3743,9 @@ pub(in crate::surface) fn lower_contract_integer_to_spec(
 
 /// Lower one mathematical comparison directly from its typed common operands.
 pub(in crate::surface) fn lower_surface_integer_comparison(
-    left: &SurfaceTerm,
+    left: &SyntaxTerm,
     operator: ComparisonOperator,
-    right: &SurfaceTerm,
+    right: &SyntaxTerm,
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
 ) -> Result<crate::kernel::KernelTerm, String> {
     let left = lower_surface_integer_term(left, integer_values)?;
@@ -3770,11 +3771,11 @@ fn integer_kernel_root_work(term: &crate::kernel::KernelTerm) -> usize {
 /// Bindings are looked up by name; neither facts nor unrelated bindings are
 /// traversed. Native condition storage is an explicit final output adapter.
 pub(in crate::surface) fn lower_surface_integer_term(
-    expression: &SurfaceTerm,
+    expression: &SyntaxTerm,
     integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
 ) -> Result<crate::kernel::KernelTerm, String> {
     fn lower(
-        expression: &SurfaceTerm,
+        expression: &SyntaxTerm,
         integer_values: &PersistentBinderMap<crate::kernel::SpecIntegerExpression>,
         locals: &PersistentBinderMap<crate::kernel::KernelTerm>,
         importer: &mut crate::kernel::KernelTermImport,
@@ -3794,8 +3795,8 @@ pub(in crate::surface) fn lower_surface_integer_term(
             return Err(format!("`{id}` is not an Integer binding"));
         }
         match expression {
-            SurfaceTerm::IntegerContext(value) => lower(value, integer_values, locals, importer),
-            SurfaceTerm::IntegerLiteral(value) => {
+            SyntaxTerm::IntegerContext(value) => lower(value, integer_values, locals, importer),
+            SyntaxTerm::IntegerLiteral(value) => {
                 check_integer_lowering_work(
                     value.len().saturating_mul(value.len().saturating_add(4)),
                 )?;
@@ -3804,7 +3805,7 @@ pub(in crate::surface) fn lower_surface_integer_term(
                     .map_err(|_| format!("invalid Integer literal `{value}`"))?;
                 Ok(KernelTerm::integer_literal(value))
             }
-            SurfaceTerm::Binding(name) => {
+            SyntaxTerm::Binding(name) => {
                 if let Some(value) = locals.get(name) {
                     check_integer_lowering_work(integer_kernel_root_work(value))?;
                     return Ok(value.clone());
@@ -3820,10 +3821,10 @@ pub(in crate::surface) fn lower_surface_integer_term(
                 check_integer_lowering_work(integer_root_work(term))?;
                 Ok(importer.integer(&term.clone().into()))
             }
-            SurfaceTerm::Negate(inner) => {
+            SyntaxTerm::Negate(inner) => {
                 if let Some(literal) = integer_literal_spelling(expression) {
                     return lower(
-                        &SurfaceTerm::IntegerLiteral(literal),
+                        &SyntaxTerm::IntegerLiteral(literal),
                         integer_values,
                         locals,
                         importer,
@@ -3833,14 +3834,14 @@ pub(in crate::surface) fn lower_surface_integer_term(
                 check_integer_lowering_work(integer_kernel_root_work(&value))?;
                 KernelTerm::integer_operation(Op::Negate, vec![value]).map_err(Into::into)
             }
-            SurfaceTerm::Add(left, right)
-            | SurfaceTerm::Subtract(left, right)
-            | SurfaceTerm::Multiply(left, right) => {
+            SyntaxTerm::Add(left, right)
+            | SyntaxTerm::Subtract(left, right)
+            | SyntaxTerm::Multiply(left, right) => {
                 let left = lower(left, integer_values, locals, importer)?;
                 let right = lower(right, integer_values, locals, importer)?;
                 let operator = match expression {
-                    SurfaceTerm::Add(..) => Op::Add,
-                    SurfaceTerm::Subtract(..) => Op::Subtract,
+                    SyntaxTerm::Add(..) => Op::Add,
+                    SyntaxTerm::Subtract(..) => Op::Subtract,
                     _ => Op::Multiply,
                 };
                 let work = if operator == Op::Multiply {
@@ -3851,7 +3852,7 @@ pub(in crate::surface) fn lower_surface_integer_term(
                 check_integer_lowering_work(work)?;
                 KernelTerm::integer_operation(operator, vec![left, right]).map_err(Into::into)
             }
-            SurfaceTerm::Let {
+            SyntaxTerm::Let {
                 name,
                 click_type: Some(ClickType::Integer),
                 value,
@@ -4448,7 +4449,7 @@ impl AnnotationLowerer<'_> {
                         let (_, binding) = bindings.get(&name)?;
                         Some((
                             name,
-                            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                            SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                                 binding.clone(),
                             )),
                         ))
@@ -4521,7 +4522,7 @@ impl AnnotationLowerer<'_> {
                     ))
                     .with_proof_refusal(crate::surface::ProofRefusal::Contract));
                 }
-                let observed = SurfaceTerm::Call {
+                let observed = SyntaxTerm::Call {
                     name: "to_integer".to_string(),
                     arguments: vec![expression.clone()],
                 };
@@ -4605,7 +4606,7 @@ impl AnnotationLowerer<'_> {
     fn function_recursion_component(
         &mut self,
         function_block: &FunctionBlock,
-        expression: &SurfaceTerm,
+        expression: &SyntaxTerm,
         context: &SpecElaborationContext,
     ) -> Result<crate::kernel::RankingComponent, ClickError> {
         let name = function_block.signature().name();
@@ -4715,11 +4716,11 @@ impl AnnotationLowerer<'_> {
     #[inline(never)]
     fn click_proposition_to_spec_proposition(
         &mut self,
-        proposition: &SurfaceProposition,
+        proposition: &SyntaxProposition,
         environment: &SpecElaborationContext,
     ) -> Result<SpecProposition, String> {
         enum Frame<'a> {
-            Visit(&'a SurfaceProposition),
+            Visit(&'a SyntaxProposition),
             BuildAnd,
             BuildOr,
             BuildImplies,
@@ -4727,9 +4728,7 @@ impl AnnotationLowerer<'_> {
 
         if !matches!(
             proposition,
-            SurfaceProposition::And(..)
-                | SurfaceProposition::Or(..)
-                | SurfaceProposition::Implies(..)
+            SyntaxProposition::And(..) | SyntaxProposition::Or(..) | SyntaxProposition::Implies(..)
         ) {
             #[cfg(test)]
             tests::PROPOSITION_VISITS.with(|visits| visits.set(visits.get() + 1));
@@ -4744,17 +4743,17 @@ impl AnnotationLowerer<'_> {
                     #[cfg(test)]
                     tests::PROPOSITION_VISITS.with(|visits| visits.set(visits.get() + 1));
                     match proposition {
-                        SurfaceProposition::And(left, right) => {
+                        SyntaxProposition::And(left, right) => {
                             frames.push(Frame::BuildAnd);
                             frames.push(Frame::Visit(right));
                             frames.push(Frame::Visit(left));
                         }
-                        SurfaceProposition::Or(left, right) => {
+                        SyntaxProposition::Or(left, right) => {
                             frames.push(Frame::BuildOr);
                             frames.push(Frame::Visit(right));
                             frames.push(Frame::Visit(left));
                         }
-                        SurfaceProposition::Implies(left, right) => {
+                        SyntaxProposition::Implies(left, right) => {
                             frames.push(Frame::BuildImplies);
                             frames.push(Frame::Visit(right));
                             frames.push(Frame::Visit(left));
@@ -4798,54 +4797,54 @@ impl AnnotationLowerer<'_> {
     #[inline(never)]
     fn click_proposition_to_spec_proposition_one(
         &mut self,
-        proposition: &SurfaceProposition,
+        proposition: &SyntaxProposition,
         environment: &SpecElaborationContext,
     ) -> Result<SpecProposition, String> {
         match proposition {
-            SurfaceProposition::Value(expression) => {
+            SyntaxProposition::Value(expression) => {
                 self.lower_proposition_value(expression, environment)
             }
-            SurfaceProposition::At { .. } => {
+            SyntaxProposition::At { .. } => {
                 self.lower_at_proposition_to_spec(proposition, environment)
             }
-            SurfaceProposition::And(left, right) => Ok(SpecProposition::And(
+            SyntaxProposition::And(left, right) => Ok(SpecProposition::And(
                 Box::new(self.click_proposition_to_spec_proposition(left, environment)?),
                 Box::new(self.click_proposition_to_spec_proposition(right, environment)?),
             )),
-            SurfaceProposition::Or(left, right) => Ok(SpecProposition::Or(
+            SyntaxProposition::Or(left, right) => Ok(SpecProposition::Or(
                 Box::new(self.click_proposition_to_spec_proposition(left, environment)?),
                 Box::new(self.click_proposition_to_spec_proposition(right, environment)?),
             )),
-            SurfaceProposition::Not(body) => Ok(SpecProposition::Not(Box::new(
+            SyntaxProposition::Not(body) => Ok(SpecProposition::Not(Box::new(
                 self.click_proposition_to_spec_proposition(body, environment)?,
             ))),
-            SurfaceProposition::Implies(left, right) => Ok(SpecProposition::Implies(
+            SyntaxProposition::Implies(left, right) => Ok(SpecProposition::Implies(
                 Box::new(self.click_proposition_to_spec_proposition(left, environment)?),
                 Box::new(self.click_proposition_to_spec_proposition(right, environment)?),
             )),
-            SurfaceProposition::ForAll { .. } => {
+            SyntaxProposition::ForAll { .. } => {
                 self.lower_for_all_proposition_to_spec(proposition, environment)
             }
-            SurfaceProposition::Exists { .. } => {
+            SyntaxProposition::Exists { .. } => {
                 self.lower_exists_proposition_to_spec(proposition, environment)
             }
-            SurfaceProposition::RangeAll { .. } => {
+            SyntaxProposition::RangeAll { .. } => {
                 self.lower_range_all_proposition_to_spec(proposition, environment)
             }
-            SurfaceProposition::RangeAny { .. } => {
+            SyntaxProposition::RangeAny { .. } => {
                 self.lower_range_any_proposition_to_spec(proposition, environment)
             }
-            SurfaceProposition::PredicateCall { .. } => {
+            SyntaxProposition::PredicateCall { .. } => {
                 self.lower_predicate_call_proposition_to_spec(proposition, environment)
             }
-            SurfaceProposition::Comparison { .. }
-            | SurfaceProposition::FloatClassification { .. }
-            | SurfaceProposition::Separate { .. }
-            | SurfaceProposition::ResourceViewable { .. }
-            | SurfaceProposition::Contains { .. }
-            | SurfaceProposition::Loadable { .. }
-            | SurfaceProposition::Defined { .. }
-            | SurfaceProposition::IsA { .. } => {
+            SyntaxProposition::Comparison { .. }
+            | SyntaxProposition::FloatClassification { .. }
+            | SyntaxProposition::Separate { .. }
+            | SyntaxProposition::ResourceViewable { .. }
+            | SyntaxProposition::Contains { .. }
+            | SyntaxProposition::Loadable { .. }
+            | SyntaxProposition::Defined { .. }
+            | SyntaxProposition::IsA { .. } => {
                 self.lower_atomic_proposition_to_spec(proposition, environment)
             }
         }
@@ -4853,7 +4852,7 @@ impl AnnotationLowerer<'_> {
 
     fn lower_proposition_value(
         &mut self,
-        expression: &SurfaceTerm,
+        expression: &SyntaxTerm,
         environment: &SpecElaborationContext,
     ) -> Result<SpecProposition, String> {
         if let Some(reduced) = lambdas::reduce_head(expression)? {
@@ -4865,7 +4864,7 @@ impl AnnotationLowerer<'_> {
             return Ok(SpecProposition::Truth(value));
         }
         match expression {
-            SurfaceTerm::Call { name, arguments }
+            SyntaxTerm::Call { name, arguments }
                 if self
                     .spec_definitions
                     .functions
@@ -4887,20 +4886,20 @@ impl AnnotationLowerer<'_> {
                     .ok_or("a Prop function needs a concrete body")?;
                 self.lower_proposition_value(&body, environment)
             }
-            SurfaceTerm::Proposition(proposition) => {
+            SyntaxTerm::Proposition(proposition) => {
                 self.click_proposition_to_spec_proposition(proposition, environment)
             }
-            SurfaceTerm::At {
+            SyntaxTerm::At {
                 selector,
                 expression,
             } => self.lower_at_proposition_to_spec(
-                &SurfaceProposition::At {
+                &SyntaxProposition::At {
                     selector: selector.clone(),
-                    proposition: Box::new(SurfaceProposition::Value(expression.as_ref().clone())),
+                    proposition: Box::new(SyntaxProposition::Value(expression.as_ref().clone())),
                 },
                 environment,
             ),
-            SurfaceTerm::Let {
+            SyntaxTerm::Let {
                 name,
                 click_type,
                 value,
@@ -4965,11 +4964,11 @@ impl AnnotationLowerer<'_> {
     #[inline(never)]
     fn lower_at_proposition_to_spec(
         &mut self,
-        proposition: &SurfaceProposition,
+        proposition: &SyntaxProposition,
         environment: &SpecElaborationContext,
     ) -> Result<SpecProposition, String> {
         match proposition {
-            SurfaceProposition::At {
+            SyntaxProposition::At {
                 selector,
                 proposition,
             } => {
@@ -4996,11 +4995,11 @@ impl AnnotationLowerer<'_> {
     #[inline(never)]
     fn lower_for_all_proposition_to_spec(
         &mut self,
-        proposition: &SurfaceProposition,
+        proposition: &SyntaxProposition,
         environment: &SpecElaborationContext,
     ) -> Result<SpecProposition, String> {
         match proposition {
-            SurfaceProposition::ForAll {
+            SyntaxProposition::ForAll {
                 click_type,
                 name,
                 written_name,
@@ -5123,11 +5122,11 @@ impl AnnotationLowerer<'_> {
     #[inline(never)]
     fn lower_exists_proposition_to_spec(
         &mut self,
-        proposition: &SurfaceProposition,
+        proposition: &SyntaxProposition,
         environment: &SpecElaborationContext,
     ) -> Result<SpecProposition, String> {
         match proposition {
-            SurfaceProposition::Exists {
+            SyntaxProposition::Exists {
                 click_type,
                 name,
                 written_name,
@@ -5252,11 +5251,11 @@ impl AnnotationLowerer<'_> {
     #[inline(never)]
     fn lower_range_all_proposition_to_spec(
         &mut self,
-        proposition: &SurfaceProposition,
+        proposition: &SyntaxProposition,
         environment: &SpecElaborationContext,
     ) -> Result<SpecProposition, String> {
         match proposition {
-            SurfaceProposition::RangeAll {
+            SyntaxProposition::RangeAll {
                 start,
                 end,
                 item,
@@ -5318,11 +5317,11 @@ impl AnnotationLowerer<'_> {
     #[inline(never)]
     fn lower_range_any_proposition_to_spec(
         &mut self,
-        proposition: &SurfaceProposition,
+        proposition: &SyntaxProposition,
         environment: &SpecElaborationContext,
     ) -> Result<SpecProposition, String> {
         match proposition {
-            SurfaceProposition::RangeAny {
+            SyntaxProposition::RangeAny {
                 start,
                 end,
                 item,
@@ -5384,7 +5383,7 @@ impl AnnotationLowerer<'_> {
     fn lower_pure_parameter_argument_to_spec(
         &mut self,
         parameter: &FunctionParameter,
-        argument: &SurfaceTerm,
+        argument: &SyntaxTerm,
         environment: &SpecElaborationContext,
     ) -> Result<SpecExpression, String> {
         // Lower the borrowed argument once: wrapping its surface tree first
@@ -5402,11 +5401,11 @@ impl AnnotationLowerer<'_> {
     #[inline(never)]
     fn lower_predicate_call_proposition_to_spec(
         &mut self,
-        proposition: &SurfaceProposition,
+        proposition: &SyntaxProposition,
         environment: &SpecElaborationContext,
     ) -> Result<SpecProposition, String> {
         match proposition {
-            SurfaceProposition::PredicateCall { name, arguments } => {
+            SyntaxProposition::PredicateCall { name, arguments } => {
                 if let Some(definition) = self
                     .spec_definitions
                     .functions
@@ -5429,7 +5428,7 @@ impl AnnotationLowerer<'_> {
                         .ok_or("termination propositions are available only inside `termination by` proofs")?;
                     let function = match (kind, arguments.as_slice()) {
                         (crate::kernel::TerminationAtomKind::Callbacks, []) => "",
-                        (_, [SurfaceTerm::Binding(name)])
+                        (_, [SyntaxTerm::Binding(name)])
                             if kind != crate::kernel::TerminationAtomKind::Callbacks =>
                         {
                             name
@@ -5687,11 +5686,11 @@ impl AnnotationLowerer<'_> {
     #[inline(never)]
     fn lower_atomic_proposition_to_spec(
         &mut self,
-        proposition: &SurfaceProposition,
+        proposition: &SyntaxProposition,
         environment: &SpecElaborationContext,
     ) -> Result<SpecProposition, String> {
         match proposition {
-            SurfaceProposition::Comparison {
+            SyntaxProposition::Comparison {
                 left,
                 operator,
                 right,
@@ -5715,9 +5714,9 @@ impl AnnotationLowerer<'_> {
                 let left_is_integer = self.contract_expression_is_integer(left, environment);
                 let right_is_integer = self.contract_expression_is_integer(right, environment);
                 let left_is_integer = left_is_integer
-                    || (right_is_integer && matches!(left, SurfaceTerm::AlgebraicMatch { .. }));
+                    || (right_is_integer && matches!(left, SyntaxTerm::AlgebraicMatch { .. }));
                 let right_is_integer = right_is_integer
-                    || (left_is_integer && matches!(right, SurfaceTerm::AlgebraicMatch { .. }));
+                    || (left_is_integer && matches!(right, SyntaxTerm::AlgebraicMatch { .. }));
                 if left_is_integer || right_is_integer {
                     if left_is_integer != right_is_integer
                         && !(if left_is_integer {
@@ -5753,7 +5752,7 @@ impl AnnotationLowerer<'_> {
                     let mut fields = None;
                     for (left, right) in left_fields.into_iter().zip(right_fields) {
                         let field = self.lower_atomic_proposition_to_spec(
-                            &SurfaceProposition::Comparison {
+                            &SyntaxProposition::Comparison {
                                 left,
                                 operator: ComparisonOperator::Equal,
                                 right,
@@ -5828,7 +5827,7 @@ impl AnnotationLowerer<'_> {
                     })
                 }
             }
-            SurfaceProposition::FloatClassification {
+            SyntaxProposition::FloatClassification {
                 expression,
                 classification,
             } => Ok(SpecProposition::FloatClassification {
@@ -5841,23 +5840,23 @@ impl AnnotationLowerer<'_> {
                     syntax::CFloatClassification::Nan => FloatClassification::Nan,
                 },
             }),
-            SurfaceProposition::Separate { left, right } => Ok(SpecProposition::ResourceSeparate {
+            SyntaxProposition::Separate { left, right } => Ok(SpecProposition::ResourceSeparate {
                 left: self.lower_resource_subject_to_spec(left, environment)?,
                 right: self.lower_resource_subject_to_spec(right, environment)?,
             }),
-            SurfaceProposition::ResourceViewable { resource } => {
+            SyntaxProposition::ResourceViewable { resource } => {
                 Ok(SpecProposition::ResourceViewable {
                     point: environment.current_point.clone(),
                     resource: self.lower_resource_subject_to_spec(resource, environment)?,
                 })
             }
-            SurfaceProposition::Contains { parent, child } => {
+            SyntaxProposition::Contains { parent, child } => {
                 Ok(SpecProposition::ResourceContains {
                     parent: self.lower_resource_subject_to_spec(parent, environment)?,
                     child: self.lower_resource_subject_to_spec(child, environment)?,
                 })
             }
-            SurfaceProposition::Loadable { segment } => {
+            SyntaxProposition::Loadable { segment } => {
                 let segment_environment = self.spec_segment_environment(segment, environment)?;
                 Ok(SpecProposition::MemoryLoadable {
                     point: segment_environment.current_point.clone(),
@@ -5871,7 +5870,7 @@ impl AnnotationLowerer<'_> {
                         .contract_segment_element_width(segment, &segment_environment)?,
                 })
             }
-            SurfaceProposition::Defined { expression } => {
+            SyntaxProposition::Defined { expression } => {
                 let mut checked_environment = environment.clone();
                 checked_environment.checking_definedness = true;
                 Ok(SpecProposition::OperationDefined(
@@ -5880,7 +5879,7 @@ impl AnnotationLowerer<'_> {
             }
             // The type-evidence fact about the pointer, as a typed call's
             // domain records it.
-            SurfaceProposition::IsA { class, pointer } => Ok(SpecProposition::Predicate {
+            SyntaxProposition::IsA { class, pointer } => Ok(SpecProposition::Predicate {
                 name: crate::kernel::object_type_predicate_name(class),
                 arguments: vec![crate::kernel::SpecPredicateArgument::Value(
                     self.lower_contract_expression_to_spec(pointer, environment)?,
@@ -5951,19 +5950,19 @@ impl AnnotationLowerer<'_> {
 
     fn contract_expression_is_integer(
         &self,
-        expression: &SurfaceTerm,
+        expression: &SyntaxTerm,
         environment: &SpecElaborationContext,
     ) -> bool {
         let mut depth = 0;
         let mut current = expression;
-        while let SurfaceTerm::Add(left, right) = current {
-            if !matches!(right.as_ref(), SurfaceTerm::IntegerLiteral(_)) {
+        while let SyntaxTerm::Add(left, right) = current {
+            if !matches!(right.as_ref(), SyntaxTerm::IntegerLiteral(_)) {
                 break;
             }
             depth += 1;
             current = left;
         }
-        if depth > 128 && matches!(current, SurfaceTerm::IntegerLiteral(_)) {
+        if depth > 128 && matches!(current, SyntaxTerm::IntegerLiteral(_)) {
             return false;
         }
         self.contract_expression_click_type(expression, environment)
@@ -5978,7 +5977,7 @@ impl AnnotationLowerer<'_> {
     /// the other comparison operand is an untyped numeral.
     fn contract_expression_click_type(
         &self,
-        expression: &SurfaceTerm,
+        expression: &SyntaxTerm,
         environment: &SpecElaborationContext,
     ) -> Option<ClickType> {
         self.contract_expression_click_type_in_scope(expression, environment, &mut Vec::new())
@@ -5988,17 +5987,17 @@ impl AnnotationLowerer<'_> {
     /// is a `uint64`, as for a range fold.
     fn range_bounds_are_uint64(
         &self,
-        start: &SurfaceTerm,
-        end: &SurfaceTerm,
+        start: &SyntaxTerm,
+        end: &SyntaxTerm,
         environment: &SpecElaborationContext,
     ) -> bool {
         [start, end].into_iter().any(|bound| {
             matches!(
                 self.contract_expression_click_type(bound, environment),
                 Some(ClickType::Program(InterfaceType::UInt64(_)))
-            ) || matches!(bound, SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name))
+            ) || matches!(bound, SyntaxTerm::ProgramExpression(ProgramExpression::Variable(name))
                     if self.c_variable_type(name) == Some(ProgramType::UInt64))
-                || matches!(bound, SurfaceTerm::ProgramExpression(ProgramExpression::Value(value))
+                || matches!(bound, SyntaxTerm::ProgramExpression(ProgramExpression::Value(value))
                     if value.program_type() == ProgramType::UInt64)
                 // A written cast, `n as uint64`, has the type it names.
                 || matches!(
@@ -6038,7 +6037,7 @@ impl AnnotationLowerer<'_> {
 
     fn contract_expression_click_type_in_scope(
         &self,
-        expression: &SurfaceTerm,
+        expression: &SyntaxTerm,
         environment: &SpecElaborationContext,
         lexical_bindings: &mut Vec<(SurfaceBinder, Option<ClickType>)>,
     ) -> Option<ClickType> {
@@ -6065,21 +6064,21 @@ impl AnnotationLowerer<'_> {
         }
 
         match expression {
-            SurfaceTerm::IntegerContext(_) => Some(ClickType::Integer),
+            SyntaxTerm::IntegerContext(_) => Some(ClickType::Integer),
 
-            SurfaceTerm::Lambda {
+            SyntaxTerm::Lambda {
                 parameters, result, ..
             } => Some(lambdas::signature(parameters, result)),
-            SurfaceTerm::Apply { function, .. } => match self
+            SyntaxTerm::Apply { function, .. } => match self
                 .contract_expression_click_type_in_scope(function, environment, lexical_bindings)?
             {
                 ClickType::Function { result, .. } => Some(*result),
                 _ => None,
             },
 
-            SurfaceTerm::ResourceField(access) => access.click_type.clone(),
-            SurfaceTerm::IntegerLiteral(_) => None,
-            SurfaceTerm::Binding(name) => {
+            SyntaxTerm::ResourceField(access) => access.click_type.clone(),
+            SyntaxTerm::IntegerLiteral(_) => None,
+            SyntaxTerm::Binding(name) => {
                 if let Some((_, click_type)) = lexical_bindings
                     .iter()
                     .rev()
@@ -6099,19 +6098,19 @@ impl AnnotationLowerer<'_> {
                         .and_then(spec_expression_click_type)
                 }
             }
-            SurfaceTerm::AlgebraicVariable { algebraic_type, .. }
-            | SurfaceTerm::AlgebraicConstructor { algebraic_type, .. } => {
+            SyntaxTerm::AlgebraicVariable { algebraic_type, .. }
+            | SyntaxTerm::AlgebraicConstructor { algebraic_type, .. } => {
                 Some(ClickType::Algebraic(algebraic_type.clone()))
             }
-            SurfaceTerm::Negate(inner)
-            | SurfaceTerm::Old(inner)
-            | SurfaceTerm::Exact(inner)
-            | SurfaceTerm::At {
+            SyntaxTerm::Negate(inner)
+            | SyntaxTerm::Old(inner)
+            | SyntaxTerm::Exact(inner)
+            | SyntaxTerm::At {
                 expression: inner, ..
             } => self.contract_expression_click_type_in_scope(inner, environment, lexical_bindings),
-            SurfaceTerm::Add(left, right)
-            | SurfaceTerm::Subtract(left, right)
-            | SurfaceTerm::Multiply(left, right) => {
+            SyntaxTerm::Add(left, right)
+            | SyntaxTerm::Subtract(left, right)
+            | SyntaxTerm::Multiply(left, right) => {
                 let left = self.contract_expression_click_type_in_scope(
                     left,
                     environment,
@@ -6128,7 +6127,7 @@ impl AnnotationLowerer<'_> {
                     left.or(right)
                 }
             }
-            SurfaceTerm::RangeFold {
+            SyntaxTerm::RangeFold {
                 start,
                 end,
                 initial,
@@ -6183,7 +6182,7 @@ impl AnnotationLowerer<'_> {
                     initial_type.or(body_type)
                 }
             }
-            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+            SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) => {
                 if let Some((_, click_type)) = lexical_bindings
@@ -6205,7 +6204,7 @@ impl AnnotationLowerer<'_> {
                         .and_then(spec_expression_click_type)
                 }
             }
-            SurfaceTerm::ProgramBinding(name) => lexical_bindings
+            SyntaxTerm::ProgramBinding(name) => lexical_bindings
                 .iter()
                 .rev()
                 .find_map(|(binding, click_type)| (binding == name).then(|| click_type.clone()))
@@ -6216,7 +6215,7 @@ impl AnnotationLowerer<'_> {
                         .get(name)
                         .and_then(spec_expression_click_type)
                 }),
-            SurfaceTerm::Let {
+            SyntaxTerm::Let {
                 name,
                 click_type: Some(ClickType::Integer),
                 value: _,
@@ -6231,7 +6230,7 @@ impl AnnotationLowerer<'_> {
                 lexical_bindings.pop();
                 body_type
             }
-            SurfaceTerm::Let {
+            SyntaxTerm::Let {
                 name,
                 click_type: _,
                 value,
@@ -6251,7 +6250,7 @@ impl AnnotationLowerer<'_> {
                 lexical_bindings.pop();
                 body_type
             }
-            SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
+            SyntaxTerm::AlgebraicMatch { scrutinee, arms } => {
                 let Some(ClickType::Algebraic(application)) = self
                     .contract_expression_click_type_in_scope(
                         scrutinee,
@@ -6324,7 +6323,7 @@ impl AnnotationLowerer<'_> {
             // An Integer conditional: Integer branches, or one Integer branch
             // and an unsuffixed numeral, which takes its type. Any other
             // conditional keeps its C lowering, so it is not typed here.
-            SurfaceTerm::If {
+            SyntaxTerm::If {
                 then_branch,
                 else_branch,
                 ..
@@ -6349,12 +6348,12 @@ impl AnnotationLowerer<'_> {
                     && integer_or_numeral(&else_type, else_branch))
                 .then_some(ClickType::Integer)
             }
-            SurfaceTerm::Call { name, .. }
+            SyntaxTerm::Call { name, .. }
                 if name == "to_integer" || is_integer_truncation(name) =>
             {
                 Some(ClickType::Integer)
             }
-            SurfaceTerm::Call { name, .. } => self
+            SyntaxTerm::Call { name, .. } => self
                 .spec_definitions
                 .functions
                 .get(name)
@@ -6365,7 +6364,7 @@ impl AnnotationLowerer<'_> {
 
     fn lower_contract_integer_to_spec(
         &mut self,
-        expression: &SurfaceTerm,
+        expression: &SyntaxTerm,
         environment: &SpecElaborationContext,
     ) -> Result<crate::kernel::SpecIntegerExpression, String> {
         if let Some(id) = expression.generated_binder()
@@ -6380,15 +6379,15 @@ impl AnnotationLowerer<'_> {
         use crate::kernel::SpecIntegerExpression;
         check_integer_lowering_work(1)?;
         match expression {
-            SurfaceTerm::IntegerContext(value) => {
+            SyntaxTerm::IntegerContext(value) => {
                 return self.lower_contract_integer_to_spec(value, environment);
             }
-            SurfaceTerm::Old(inner) => {
+            SyntaxTerm::Old(inner) => {
                 let old_environment =
                     environment.old_state(&self.entry_values, &self.entry_state.program_point())?;
                 return self.lower_contract_integer_to_spec(inner, &old_environment);
             }
-            SurfaceTerm::At {
+            SyntaxTerm::At {
                 selector,
                 expression,
             } => {
@@ -6413,7 +6412,7 @@ impl AnnotationLowerer<'_> {
             }
             _ => {}
         }
-        if let SurfaceTerm::ResourceField(access) = expression {
+        if let SyntaxTerm::ResourceField(access) = expression {
             if access.click_type != Some(ClickType::Integer) {
                 return Err("expected an Integer resource field".into());
             }
@@ -6433,7 +6432,7 @@ impl AnnotationLowerer<'_> {
                 },
             ));
         }
-        if let SurfaceTerm::AlgebraicMatch { scrutinee, arms } = expression {
+        if let SyntaxTerm::AlgebraicMatch { scrutinee, arms } = expression {
             let scrutinee = self.lower_contract_algebraic_to_spec(scrutinee, environment)?;
             let mut lowered_arms = Vec::new();
             let mut seen = std::collections::BTreeSet::new();
@@ -6480,7 +6479,7 @@ impl AnnotationLowerer<'_> {
                 arms: lowered_arms,
             });
         }
-        if let SurfaceTerm::If {
+        if let SyntaxTerm::If {
             condition,
             then_branch,
             else_branch,
@@ -6502,7 +6501,7 @@ impl AnnotationLowerer<'_> {
         // until contextual typing identifies it as an Integer.  Resolve it
         // through the active scoped environment so fold accumulator and
         // captured Integer references retain their preallocated kernel terms.
-        if let SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+        if let SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) = expression
             && let Some(value) = environment.integer_values.get(name)
@@ -6510,7 +6509,7 @@ impl AnnotationLowerer<'_> {
             return Ok(value.clone());
         }
         match expression {
-            SurfaceTerm::Call { name, arguments } if is_integer_truncation(name) => {
+            SyntaxTerm::Call { name, arguments } if is_integer_truncation(name) => {
                 let (left, right) = integer_truncation_arguments(name, arguments)?;
                 let left = self.lower_contract_integer_to_spec(left, environment)?;
                 let right = self.lower_contract_integer_to_spec(right, environment)?;
@@ -6539,7 +6538,7 @@ impl AnnotationLowerer<'_> {
                     SpecIntegerExpression::TruncatingRemainder(Box::new(left), Box::new(right))
                 })
             }
-            SurfaceTerm::Call { name, arguments } if name != "to_integer" => {
+            SyntaxTerm::Call { name, arguments } if name != "to_integer" => {
                 let definition = self
                     .spec_definitions
                     .functions
@@ -6581,7 +6580,7 @@ impl AnnotationLowerer<'_> {
                     arguments,
                 })
             }
-            SurfaceTerm::Binding(name) => {
+            SyntaxTerm::Binding(name) => {
                 let value = environment
                     .integer_values
                     .get(name)
@@ -6591,7 +6590,7 @@ impl AnnotationLowerer<'_> {
                 }
                 Ok(value.clone())
             }
-            SurfaceTerm::Call { name, arguments } if name == "to_integer" => {
+            SyntaxTerm::Call { name, arguments } if name == "to_integer" => {
                 let argument = integer_conversion_argument(name, arguments)?;
                 // An Integer is its own exact value.
                 if self.contract_expression_is_integer(argument, environment) {
@@ -6627,10 +6626,10 @@ impl AnnotationLowerer<'_> {
                 }
                 Ok(SpecIntegerExpression::FromMachine(Box::new(argument)))
             }
-            SurfaceTerm::Negate(inner) => {
+            SyntaxTerm::Negate(inner) => {
                 if let Some(literal) = integer_literal_spelling(expression) {
                     return self.lower_contract_integer_to_spec(
-                        &SurfaceTerm::IntegerLiteral(literal),
+                        &SyntaxTerm::IntegerLiteral(literal),
                         environment,
                     );
                 }
@@ -6646,14 +6645,14 @@ impl AnnotationLowerer<'_> {
                     inner => Ok(SpecIntegerExpression::Negate(Box::new(inner))),
                 }
             }
-            SurfaceTerm::Add(left, right)
-            | SurfaceTerm::Subtract(left, right)
-            | SurfaceTerm::Multiply(left, right) => {
+            SyntaxTerm::Add(left, right)
+            | SyntaxTerm::Subtract(left, right)
+            | SyntaxTerm::Multiply(left, right) => {
                 let left = self.lower_contract_integer_to_spec(left, environment)?;
                 let right = self.lower_contract_integer_to_spec(right, environment)?;
                 let operation = match expression {
-                    SurfaceTerm::Add(..) => IntegerOperation::Add,
-                    SurfaceTerm::Subtract(..) => IntegerOperation::Subtract,
+                    SyntaxTerm::Add(..) => IntegerOperation::Add,
+                    SyntaxTerm::Subtract(..) => IntegerOperation::Subtract,
                     _ => IntegerOperation::Multiply,
                 };
                 match (&left, &right) {
@@ -6673,7 +6672,7 @@ impl AnnotationLowerer<'_> {
                     }),
                 }
             }
-            SurfaceTerm::RangeFold {
+            SyntaxTerm::RangeFold {
                 start,
                 end,
                 initial,
@@ -6693,7 +6692,7 @@ impl AnnotationLowerer<'_> {
                 // Bare numerals inherit the range's index carrier. Only an
                 // explicitly mathematical operand selects Integer indices.
                 fn integer_index_expression(
-                    expression: &SurfaceTerm,
+                    expression: &SyntaxTerm,
                     environment: &SpecElaborationContext,
                     functions: &ClickFunctionEnvironment,
                 ) -> bool {
@@ -6701,23 +6700,23 @@ impl AnnotationLowerer<'_> {
                         return environment.integer_values.contains_key(&id);
                     }
                     match expression {
-                        SurfaceTerm::IntegerContext(_) => true,
-                        SurfaceTerm::Binding(name)
-                        | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                        SyntaxTerm::IntegerContext(_) => true,
+                        SyntaxTerm::Binding(name)
+                        | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                             crate::kernel::BindingName::Named(name),
                         )) => environment.integer_values.contains_key(name),
-                        SurfaceTerm::ResourceField(access) => {
+                        SyntaxTerm::ResourceField(access) => {
                             access.click_type == Some(ClickType::Integer)
                         }
-                        SurfaceTerm::Call { name, .. } => {
+                        SyntaxTerm::Call { name, .. } => {
                             is_integer_truncation(name)
                                 || functions.get(name).is_some_and(|function| {
                                     function.return_type() == &ClickType::Integer
                                 })
                         }
-                        SurfaceTerm::Add(left, right)
-                        | SurfaceTerm::Subtract(left, right)
-                        | SurfaceTerm::Multiply(left, right) => {
+                        SyntaxTerm::Add(left, right)
+                        | SyntaxTerm::Subtract(left, right)
+                        | SyntaxTerm::Multiply(left, right) => {
                             integer_index_expression(left, environment, functions)
                                 || integer_index_expression(right, environment, functions)
                         }
@@ -6815,7 +6814,7 @@ impl AnnotationLowerer<'_> {
                     body: Box::new(body),
                 })
             }
-            SurfaceTerm::Let {
+            SyntaxTerm::Let {
                 name,
                 click_type: Some(ClickType::Integer),
                 value,
@@ -6832,7 +6831,7 @@ impl AnnotationLowerer<'_> {
             // A `let` of a C value around Integer arithmetic, as
             // specification arithmetic makes `entry + 1`: the body reads the
             // name as that C value.
-            SurfaceTerm::Let {
+            SyntaxTerm::Let {
                 name,
                 click_type: click_type @ (None | Some(ClickType::Program(_))),
                 value,
@@ -6859,7 +6858,7 @@ impl AnnotationLowerer<'_> {
     /// This is the meaning of `old(p->kid)->payload`.
     fn lower_program_point_field_to_spec(
         &mut self,
-        base: &SurfaceTerm,
+        base: &SyntaxTerm,
         lowered: &ProgramExpression,
         offset_bytes: crate::kernel::LayoutOffset,
         environment: &SpecElaborationContext,
@@ -6909,7 +6908,7 @@ impl AnnotationLowerer<'_> {
     /// only on the place and the state, never on facts.
     fn lower_exact_read_to_spec(
         &mut self,
-        place: &SurfaceTerm,
+        place: &SyntaxTerm,
         environment: &SpecElaborationContext,
     ) -> Result<SpecExpression, String> {
         let refuse = || {
@@ -6951,7 +6950,7 @@ impl AnnotationLowerer<'_> {
 
     fn lower_contract_expression_to_spec(
         &mut self,
-        expression: &SurfaceTerm,
+        expression: &SyntaxTerm,
         environment: &SpecElaborationContext,
     ) -> Result<SpecExpression, String> {
         if let Some(reduced) = lambdas::reduce_head(expression)? {
@@ -6960,8 +6959,8 @@ impl AnnotationLowerer<'_> {
         self.refuse_untyped_pointer_access(expression, environment)?;
         let mut operands = Vec::new();
         let mut current = expression;
-        while let SurfaceTerm::Add(left, right) = current {
-            if !matches!(right.as_ref(), SurfaceTerm::IntegerLiteral(_)) {
+        while let SyntaxTerm::Add(left, right) = current {
+            if !matches!(right.as_ref(), SyntaxTerm::IntegerLiteral(_)) {
                 return self.lower_contract_expression_to_spec_one(expression, environment);
             }
             operands.push(right.as_ref());
@@ -6991,7 +6990,7 @@ impl AnnotationLowerer<'_> {
 
     fn lower_contract_expression_to_spec_one(
         &mut self,
-        expression: &SurfaceTerm,
+        expression: &SyntaxTerm,
         environment: &SpecElaborationContext,
     ) -> Result<SpecExpression, String> {
         if let Some(id) = expression.generated_binder() {
@@ -7022,22 +7021,22 @@ impl AnnotationLowerer<'_> {
             return self.lower_region_parameter_read(region, name, &accesses, environment);
         }
         match expression {
-            SurfaceTerm::IntegerContext(_) => {
+            SyntaxTerm::IntegerContext(_) => {
                 Err("an Integer context is not a C-valued expression".into())
             }
 
-            SurfaceTerm::Proposition(_) => Err("a Prop is not a C scalar value".into()),
-            SurfaceTerm::Resource(_) => Err("a Resource descriptor is not a C value".into()),
-            SurfaceTerm::Lambda { .. } => {
+            SyntaxTerm::Proposition(_) => Err("a Prop is not a C scalar value".into()),
+            SyntaxTerm::Resource(_) => Err("a Resource descriptor is not a C value".into()),
+            SyntaxTerm::Lambda { .. } => {
                 Err("a specification lambda must be applied to produce a scalar".into())
             }
-            SurfaceTerm::Apply { .. } => {
+            SyntaxTerm::Apply { .. } => {
                 let reduced = lambdas::reduce_head(expression)?
                     .ok_or("application needs a concrete lambda")?;
                 self.lower_contract_expression_to_spec(&reduced, environment)
             }
 
-            SurfaceTerm::MemoryLoad {
+            SyntaxTerm::MemoryLoad {
                 pointer,
                 value_type,
                 ..
@@ -7047,7 +7046,7 @@ impl AnnotationLowerer<'_> {
                 value_type: *value_type,
                 exact: false,
             }),
-            SurfaceTerm::CUnary { operand, lowered } => {
+            SyntaxTerm::CUnary { operand, lowered } => {
                 let value = self.lower_contract_expression_to_spec(operand, environment)?;
                 match lowered {
                     ProgramExpression::Cast {
@@ -7131,7 +7130,7 @@ impl AnnotationLowerer<'_> {
                         let values = if environment.contract_result_in_scope {
                             BTreeMap::from([(
                                 "result".to_string(),
-                                SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                                SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                                     crate::kernel::CONTRACT_RESULT,
                                 )),
                             )])
@@ -7154,17 +7153,17 @@ impl AnnotationLowerer<'_> {
                 }
             }
 
-            SurfaceTerm::MethodCall { method, .. } => Err(format!(
+            SyntaxTerm::MethodCall { method, .. } => Err(format!(
                 "the method `{method}` was not resolved by its receiver's type"
             )),
             // A subslice's length, `end - start`, owes `start <= end <= len`
             // where it is evaluated, as Rust panics otherwise.
-            SurfaceTerm::Call { name, arguments }
+            SyntaxTerm::Call { name, arguments }
                 if name == crate::surface::RUST_SUBSLICE_LEN
                     && let [start, end, len] = arguments.as_slice() =>
             {
                 let at_most =
-                    |left: &SurfaceTerm, right: &SurfaceTerm| SurfaceProposition::Comparison {
+                    |left: &SyntaxTerm, right: &SyntaxTerm| SyntaxProposition::Comparison {
                         left: left.clone(),
                         operator: ComparisonOperator::LessEqual,
                         right: right.clone(),
@@ -7172,21 +7171,21 @@ impl AnnotationLowerer<'_> {
                 // A subslice from the start, `s[..b]`, has length `b` itself,
                 // so it is the slice `slice::from_raw_parts(s.as_ptr(), b)`
                 // is, and owes only `b <= len`.
-                let from_start = matches!(start, SurfaceTerm::IntegerLiteral(text) if text == "0")
+                let from_start = matches!(start, SyntaxTerm::IntegerLiteral(text) if text == "0")
                     || matches!(
                         start,
-                        SurfaceTerm::ProgramExpression(ProgramExpression::Value(_))
+                        SyntaxTerm::ProgramExpression(ProgramExpression::Value(_))
                     ) && crate::surface::diagnostics::describe_contract_expression(start)
                         == "0u64";
                 let (requirement, value) = if from_start {
                     (at_most(end, len), end.clone())
                 } else {
                     (
-                        SurfaceProposition::And(
+                        SyntaxProposition::And(
                             Box::new(at_most(start, end)),
                             Box::new(at_most(end, len)),
                         ),
-                        SurfaceTerm::Subtract(Box::new(end.clone()), Box::new(start.clone())),
+                        SyntaxTerm::Subtract(Box::new(end.clone()), Box::new(start.clone())),
                     )
                 };
                 Ok(SpecExpression::Requires {
@@ -7196,7 +7195,7 @@ impl AnnotationLowerer<'_> {
                     value: Box::new(self.lower_contract_expression_to_spec(&value, environment)?),
                 })
             }
-            SurfaceTerm::Call { name, arguments } if integer_conversion_target(name).is_some() => {
+            SyntaxTerm::Call { name, arguments } if integer_conversion_target(name).is_some() => {
                 let argument = integer_conversion_argument(name, arguments)?;
                 let destination = crate::kernel::MachineIntegerType::from_program_type(
                     integer_conversion_target(name).unwrap().to_kernel_type(),
@@ -7207,7 +7206,7 @@ impl AnnotationLowerer<'_> {
                     destination,
                 })
             }
-            SurfaceTerm::IntegerLiteral(value) => {
+            SyntaxTerm::IntegerLiteral(value) => {
                 let value = value.parse::<u64>().map_err(|_| {
                     "an arbitrary Integer literal requires Integer context".to_string()
                 })?;
@@ -7220,7 +7219,7 @@ impl AnnotationLowerer<'_> {
                 };
                 Ok(SpecExpression::Value(value))
             }
-            SurfaceTerm::ResourceField(access) => {
+            SyntaxTerm::ResourceField(access) => {
                 let Some(ClickType::Program(interface_type)) = &access.click_type else {
                     return Err("expected a scalar resource field".into());
                 };
@@ -7241,25 +7240,23 @@ impl AnnotationLowerer<'_> {
                     program_type: interface_type.to_kernel_type(),
                 })
             }
-            SurfaceTerm::SequenceLiteral(_) | SurfaceTerm::SequenceConcat(_, _) => {
+            SyntaxTerm::SequenceLiteral(_) | SyntaxTerm::SequenceConcat(_, _) => {
                 Err("a sequence value is only valid as an operand of `==` or `!=`".to_string())
             }
-            SurfaceTerm::AlgebraicConstructor { .. } | SurfaceTerm::AlgebraicVariable { .. } => {
-                Err(
-                    "an algebraic value is valid only as a comparison operand or match scrutinee"
-                        .to_string(),
-                )
-            }
-            SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
+            SyntaxTerm::AlgebraicConstructor { .. } | SyntaxTerm::AlgebraicVariable { .. } => Err(
+                "an algebraic value is valid only as a comparison operand or match scrutinee"
+                    .to_string(),
+            ),
+            SyntaxTerm::AlgebraicMatch { scrutinee, arms } => {
                 let scrutinee = self.lower_contract_algebraic_to_spec(scrutinee, environment)?;
                 if arms.iter().any(|arm| {
                     arm.body.generated_binder().is_none()
                         && !matches!(
                             &arm.body,
-                            SurfaceTerm::IntegerLiteral(_)
-                                | SurfaceTerm::Binding(_)
-                                | SurfaceTerm::ProgramBinding(_)
-                                | SurfaceTerm::ProgramExpression(
+                            SyntaxTerm::IntegerLiteral(_)
+                                | SyntaxTerm::Binding(_)
+                                | SyntaxTerm::ProgramBinding(_)
+                                | SyntaxTerm::ProgramExpression(
                                     ProgramExpression::Variable(_) | ProgramExpression::Value(_)
                                 )
                         )
@@ -7305,7 +7302,7 @@ impl AnnotationLowerer<'_> {
                     arms: lowered_arms,
                 })
             }
-            SurfaceTerm::Field {
+            SyntaxTerm::Field {
                 base,
                 lowered,
                 offset_bytes,
@@ -7313,7 +7310,7 @@ impl AnnotationLowerer<'_> {
             } if contract_expression_has_explicit_program_result_reference(base) => {
                 self.lower_program_point_field_to_spec(base, lowered, *offset_bytes, environment)
             }
-            SurfaceTerm::ArrayIndex {
+            SyntaxTerm::ArrayIndex {
                 base,
                 indexes,
                 dimensions,
@@ -7382,28 +7379,28 @@ impl AnnotationLowerer<'_> {
                     _ => Err("invalid array access lowering".to_string()),
                 }
             }
-            SurfaceTerm::QualifiedC {
+            SyntaxTerm::QualifiedC {
                 lowered: expression,
                 ..
             }
-            | SurfaceTerm::ProgramExpression(expression)
-            | SurfaceTerm::ArrayIndex {
+            | SyntaxTerm::ProgramExpression(expression)
+            | SyntaxTerm::ArrayIndex {
                 lowered: expression,
                 ..
             } => self.lower_program_expression_to_spec(expression, environment),
-            SurfaceTerm::Field {
+            SyntaxTerm::Field {
                 base,
                 lowered,
                 offset_bytes,
                 ..
             } if matches!(
                 base.as_ref(),
-                SurfaceTerm::Old(_) | SurfaceTerm::At { .. } | SurfaceTerm::Exact(_)
+                SyntaxTerm::Old(_) | SyntaxTerm::At { .. } | SyntaxTerm::Exact(_)
             ) =>
             {
                 self.lower_program_point_field_to_spec(base, lowered, *offset_bytes, environment)
             }
-            SurfaceTerm::Field {
+            SyntaxTerm::Field {
                 base,
                 field,
                 lowered,
@@ -7421,7 +7418,7 @@ impl AnnotationLowerer<'_> {
                 }
                 self.lower_program_expression_to_spec(lowered, environment)
             }
-            SurfaceTerm::Binding(name) => {
+            SyntaxTerm::Binding(name) => {
                 if environment.algebraic_values.contains_key(name) {
                     return Err(format!(
                         "algebraic binding `{name}` is not valid in a C-valued expression"
@@ -7432,10 +7429,10 @@ impl AnnotationLowerer<'_> {
                     environment,
                 )
             }
-            SurfaceTerm::ProgramBinding(name) => {
+            SyntaxTerm::ProgramBinding(name) => {
                 self.lower_program_binding_to_spec(name, environment)
             }
-            SurfaceTerm::ResourceCount(resource) => {
+            SyntaxTerm::ResourceCount(resource) => {
                 let ResourceClause::Declared {
                     name, arguments, ..
                 } = resource.as_ref()
@@ -7443,15 +7440,15 @@ impl AnnotationLowerer<'_> {
                     return Err("`count(...)` expects a declared resource".to_string());
                 };
                 if arguments.is_empty()
-                    || matches!(arguments[0], SurfaceTerm::ResourceWildcard)
+                    || matches!(arguments[0], SyntaxTerm::ResourceWildcard)
                     || (arguments
                         .iter()
                         .skip(1)
-                        .any(|argument| matches!(argument, SurfaceTerm::ResourceWildcard))
+                        .any(|argument| matches!(argument, SyntaxTerm::ResourceWildcard))
                         && arguments
                             .iter()
                             .skip(1)
-                            .any(|argument| !matches!(argument, SurfaceTerm::ResourceWildcard)))
+                            .any(|argument| !matches!(argument, SyntaxTerm::ResourceWildcard)))
                 {
                     return Err(
                         "count requires R(anchor), R(anchor, _, ...), or an exact member"
@@ -7461,7 +7458,7 @@ impl AnnotationLowerer<'_> {
                 let arguments = arguments
                     .iter()
                     .map(|argument| match argument {
-                        SurfaceTerm::ResourceWildcard => Ok(None),
+                        SyntaxTerm::ResourceWildcard => Ok(None),
                         argument => self
                             .lower_contract_expression_to_spec(argument, environment)
                             .map(Some),
@@ -7497,10 +7494,10 @@ impl AnnotationLowerer<'_> {
                     count
                 })
             }
-            SurfaceTerm::ResourceWildcard => {
+            SyntaxTerm::ResourceWildcard => {
                 Err("`_` is only valid inside a `count(...)` resource pattern".to_string())
             }
-            SurfaceTerm::RegionAllocation(region) => {
+            SyntaxTerm::RegionAllocation(region) => {
                 let retained_states = self
                     .retained_states
                     .ok_or("`.allocation` requires a function execution")?;
@@ -7508,7 +7505,7 @@ impl AnnotationLowerer<'_> {
                     retained_states.region_allocation(region)?,
                 ))
             }
-            SurfaceTerm::RegionResult(region) => {
+            SyntaxTerm::RegionResult(region) => {
                 let retained_states = self
                     .retained_states
                     .ok_or("`.result` names a region of a function body being executed")?;
@@ -7517,29 +7514,29 @@ impl AnnotationLowerer<'_> {
                         .region_result_value_at(region, environment.call_result_point.as_ref())?,
                 ))
             }
-            SurfaceTerm::RegionParameter { region, name } => Err(format!(
+            SyntaxTerm::RegionParameter { region, name } => Err(format!(
                 "`{}.parameter({name})` is the call's copy of an aggregate argument; read a field of it, as `{}.parameter({name}).field`",
                 diagnostics::describe_code_region_ref(region),
                 diagnostics::describe_code_region_ref(region),
             )),
 
-            SurfaceTerm::Old(expression) => {
+            SyntaxTerm::Old(expression) => {
                 let old_environment =
                     environment.old_state(&self.entry_values, &self.entry_state.program_point())?;
                 self.lower_contract_expression_to_spec(expression, &old_environment)
             }
-            SurfaceTerm::At {
+            SyntaxTerm::At {
                 selector,
                 expression,
             } => self.lower_at_expression_to_spec(selector, expression, environment),
-            SurfaceTerm::Exact(place) => self.lower_exact_read_to_spec(place, environment),
-            SurfaceTerm::Negate(expression) => {
+            SyntaxTerm::Exact(place) => self.lower_exact_read_to_spec(place, environment),
+            SyntaxTerm::Negate(expression) => {
                 if self.contract_expression_is_integer(expression, environment) {
                     return Err(
                         "an Integer expression must be lowered as a comparison operand".to_string(),
                     );
                 }
-                if let SurfaceTerm::IntegerLiteral(value) = expression.as_ref()
+                if let SyntaxTerm::IntegerLiteral(value) = expression.as_ref()
                     && let Ok(value) = value.parse::<u64>()
                     && value <= (i32::MAX as u64) + 1
                 {
@@ -7552,7 +7549,7 @@ impl AnnotationLowerer<'_> {
                 )))
             }
             // Arithmetic on a pointer offsets it by whole elements, as C does.
-            SurfaceTerm::Add(left, right) => {
+            SyntaxTerm::Add(left, right) => {
                 // A pointer-valued pure call steps by its result's pointee,
                 // `slice::as_ptr(s) + k`, on either side.
                 for (pointer, elements) in [(left, right), (right, left)] {
@@ -7617,7 +7614,7 @@ impl AnnotationLowerer<'_> {
                 }
                 Ok(SpecExpression::Add(lowered_left, lowered_right))
             }
-            SurfaceTerm::Subtract(left, right) => {
+            SyntaxTerm::Subtract(left, right) => {
                 if let Some(element_width) = self.contract_pointer_element_width(left, environment)
                     && self
                         .contract_pointer_element_width(right, environment)
@@ -7639,54 +7636,54 @@ impl AnnotationLowerer<'_> {
                     Box::new(self.lower_contract_expression_to_spec(right, environment)?),
                 ))
             }
-            SurfaceTerm::Multiply(left, right) => Ok(SpecExpression::Multiply(
+            SyntaxTerm::Multiply(left, right) => Ok(SpecExpression::Multiply(
                 Box::new(self.lower_contract_expression_to_spec(left, environment)?),
                 Box::new(self.lower_contract_expression_to_spec(right, environment)?),
             )),
-            SurfaceTerm::Divide(left, right) => Ok(SpecExpression::Divide(
+            SyntaxTerm::Divide(left, right) => Ok(SpecExpression::Divide(
                 Box::new(self.lower_contract_expression_to_spec(left, environment)?),
                 Box::new(self.lower_contract_expression_to_spec(right, environment)?),
             )),
-            SurfaceTerm::Remainder(left, right) => Ok(SpecExpression::Remainder(
+            SyntaxTerm::Remainder(left, right) => Ok(SpecExpression::Remainder(
                 Box::new(self.lower_contract_expression_to_spec(left, environment)?),
                 Box::new(self.lower_contract_expression_to_spec(right, environment)?),
             )),
-            SurfaceTerm::ShiftLeft(left, right) => Ok(SpecExpression::ShiftLeft(
+            SyntaxTerm::ShiftLeft(left, right) => Ok(SpecExpression::ShiftLeft(
                 Box::new(self.lower_contract_expression_to_spec(left, environment)?),
                 Box::new(self.lower_contract_expression_to_spec(right, environment)?),
             )),
-            SurfaceTerm::RustShiftLeft(left, right) => Ok(SpecExpression::RustShiftLeft(
+            SyntaxTerm::RustShiftLeft(left, right) => Ok(SpecExpression::RustShiftLeft(
                 Box::new(self.lower_contract_expression_to_spec(left, environment)?),
                 Box::new(self.lower_contract_expression_to_spec(right, environment)?),
             )),
-            SurfaceTerm::ShiftRight(left, right) => Ok(SpecExpression::ShiftRight(
+            SyntaxTerm::ShiftRight(left, right) => Ok(SpecExpression::ShiftRight(
                 Box::new(self.lower_contract_expression_to_spec(left, environment)?),
                 Box::new(self.lower_contract_expression_to_spec(right, environment)?),
             )),
-            SurfaceTerm::RustShiftRight(left, right) => Ok(SpecExpression::RustShiftRight(
+            SyntaxTerm::RustShiftRight(left, right) => Ok(SpecExpression::RustShiftRight(
                 Box::new(self.lower_contract_expression_to_spec(left, environment)?),
                 Box::new(self.lower_contract_expression_to_spec(right, environment)?),
             )),
-            SurfaceTerm::BitwiseAnd(left, right) => Ok(SpecExpression::BitwiseAnd(
+            SyntaxTerm::BitwiseAnd(left, right) => Ok(SpecExpression::BitwiseAnd(
                 Box::new(self.lower_contract_expression_to_spec(left, environment)?),
                 Box::new(self.lower_contract_expression_to_spec(right, environment)?),
             )),
-            SurfaceTerm::BitwiseOr(left, right) => Ok(SpecExpression::BitwiseOr(
+            SyntaxTerm::BitwiseOr(left, right) => Ok(SpecExpression::BitwiseOr(
                 Box::new(self.lower_contract_expression_to_spec(left, environment)?),
                 Box::new(self.lower_contract_expression_to_spec(right, environment)?),
             )),
-            SurfaceTerm::BitwiseXor(left, right) => Ok(SpecExpression::BitwiseXor(
+            SyntaxTerm::BitwiseXor(left, right) => Ok(SpecExpression::BitwiseXor(
                 Box::new(self.lower_contract_expression_to_spec(left, environment)?),
                 Box::new(self.lower_contract_expression_to_spec(right, environment)?),
             )),
-            SurfaceTerm::BitwiseNot(expression) => Ok(SpecExpression::BitwiseNot(Box::new(
+            SyntaxTerm::BitwiseNot(expression) => Ok(SpecExpression::BitwiseNot(Box::new(
                 self.lower_contract_expression_to_spec(expression, environment)?,
             ))),
-            SurfaceTerm::Index(base, index) => {
+            SyntaxTerm::Index(base, index) => {
                 let projection = match base.as_ref() {
-                    SurfaceTerm::Field { lowered, .. }
-                    | SurfaceTerm::ArrayIndex { lowered, .. }
-                    | SurfaceTerm::ProgramExpression(lowered) => aggregate_projection_root(lowered),
+                    SyntaxTerm::Field { lowered, .. }
+                    | SyntaxTerm::ArrayIndex { lowered, .. }
+                    | SyntaxTerm::ProgramExpression(lowered) => aggregate_projection_root(lowered),
                     _ => None,
                 }
                 .filter(|parameter| {
@@ -7734,7 +7731,7 @@ impl AnnotationLowerer<'_> {
                     })
                 }
             }
-            SurfaceTerm::If {
+            SyntaxTerm::If {
                 condition,
                 then_branch,
                 else_branch,
@@ -7749,7 +7746,7 @@ impl AnnotationLowerer<'_> {
                     self.lower_contract_expression_to_spec(else_branch, environment)?,
                 ),
             }),
-            SurfaceTerm::RangeFold {
+            SyntaxTerm::RangeFold {
                 start,
                 end,
                 initial,
@@ -7802,7 +7799,7 @@ impl AnnotationLowerer<'_> {
                     ),
                 })
             }
-            SurfaceTerm::Let {
+            SyntaxTerm::Let {
                 name,
                 click_type,
                 value,
@@ -7883,7 +7880,7 @@ impl AnnotationLowerer<'_> {
                     ),
                 })
             }
-            SurfaceTerm::Call { name, arguments } => {
+            SyntaxTerm::Call { name, arguments } => {
                 self.lower_click_function_call_to_spec(name, arguments, environment)
             }
         }
@@ -7957,16 +7954,16 @@ impl AnnotationLowerer<'_> {
     /// The enum or library value type named by a program binding or read.
     fn enum_program_value_type(
         &self,
-        expression: &SurfaceTerm,
+        expression: &SyntaxTerm,
         environment: &SpecElaborationContext,
     ) -> Option<crate::kernel::TypeParameterName> {
         match expression {
-            SurfaceTerm::Binding(name)
-            | SurfaceTerm::ProgramBinding(name)
-            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+            SyntaxTerm::Binding(name)
+            | SyntaxTerm::ProgramBinding(name)
+            | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) => self.enum_program_name_type(name, environment),
-            SurfaceTerm::ProgramExpression(ProgramExpression::Load(pointer)) => {
+            SyntaxTerm::ProgramExpression(ProgramExpression::Load(pointer)) => {
                 let value_type = match pointer.as_ref() {
                     ProgramExpression::Variable(name) => {
                         self.program_name_type(name, environment)?.pointee_type()?
@@ -7978,13 +7975,13 @@ impl AnnotationLowerer<'_> {
                     _ => None,
                 }
             }
-            SurfaceTerm::MemoryLoad {
+            SyntaxTerm::MemoryLoad {
                 value_type: ProgramType::Parameter(ty),
                 ..
             } if crate::surface::holds_spec_value(*ty) => Some(*ty),
-            SurfaceTerm::Old(inner) => self.enum_program_value_type(inner, environment),
+            SyntaxTerm::Old(inner) => self.enum_program_value_type(inner, environment),
             // The enum value a call returned.
-            SurfaceTerm::RegionResult(region) => {
+            SyntaxTerm::RegionResult(region) => {
                 match self
                     .retained_states?
                     .region_result_value_at(region, environment.call_result_point.as_ref())
@@ -8003,7 +8000,7 @@ impl AnnotationLowerer<'_> {
 
     fn lower_contract_algebraic_to_spec(
         &mut self,
-        expression: &SurfaceTerm,
+        expression: &SyntaxTerm,
         environment: &SpecElaborationContext,
     ) -> Result<SpecAlgebraicExpression, String> {
         if let Some(id) = expression.generated_binder()
@@ -8024,7 +8021,7 @@ impl AnnotationLowerer<'_> {
             });
         }
         match expression {
-            SurfaceTerm::ResourceField(access) => {
+            SyntaxTerm::ResourceField(access) => {
                 let Some(ClickType::Algebraic(ty)) = &access.click_type else {
                     return Err("expected an algebraic resource field".into());
                 };
@@ -8056,7 +8053,7 @@ impl AnnotationLowerer<'_> {
                     node,
                 })
             }
-            SurfaceTerm::AlgebraicVariable {
+            SyntaxTerm::AlgebraicVariable {
                 name,
                 algebraic_type,
                 binder_index,
@@ -8066,8 +8063,8 @@ impl AnnotationLowerer<'_> {
                 }
                 self.symbolic_algebraic_variable(name, algebraic_type, *binder_index)
             }
-            SurfaceTerm::Binding(name)
-            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+            SyntaxTerm::Binding(name)
+            | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) => environment
                 .algebraic_values
@@ -8077,7 +8074,7 @@ impl AnnotationLowerer<'_> {
             // A program's constructor of a `spec enum`, such as the
             // `List<VarArg>` a variadic C call passes, is that constructor
             // applied to its fields, each the program value it names.
-            SurfaceTerm::ProgramExpression(ProgramExpression::EnumConstruct {
+            SyntaxTerm::ProgramExpression(ProgramExpression::EnumConstruct {
                 enum_type,
                 variant,
                 fields,
@@ -8087,19 +8084,19 @@ impl AnnotationLowerer<'_> {
                 )
                 .ok_or("a program constructor of a type that is not a `spec enum`")?;
                 self.lower_contract_algebraic_to_spec(
-                    &SurfaceTerm::AlgebraicConstructor {
+                    &SyntaxTerm::AlgebraicConstructor {
                         algebraic_type,
                         variant: variant.clone(),
                         arguments: fields
                             .iter()
                             .cloned()
-                            .map(SurfaceTerm::ProgramExpression)
+                            .map(SyntaxTerm::ProgramExpression)
                             .collect(),
                     },
                     environment,
                 )
             }
-            SurfaceTerm::AlgebraicConstructor {
+            SyntaxTerm::AlgebraicConstructor {
                 algebraic_type,
                 variant,
                 arguments,
@@ -8147,7 +8144,7 @@ impl AnnotationLowerer<'_> {
                             if interface_type.is_pointer()
                                 && matches!(
                                     argument,
-                                    SurfaceTerm::IntegerLiteral(text) if text == "0"
+                                    SyntaxTerm::IntegerLiteral(text) if text == "0"
                                 ) =>
                         {
                             Ok(SpecAlgebraicValue::Program(SpecExpression::Value(
@@ -8224,7 +8221,7 @@ impl AnnotationLowerer<'_> {
                     },
                 })
             }
-            SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
+            SyntaxTerm::AlgebraicMatch { scrutinee, arms } => {
                 let scrutinee = self.lower_contract_algebraic_to_spec(scrutinee, environment)?;
                 let mut lowered_arms = Vec::new();
                 let mut result_type = None;
@@ -8272,7 +8269,7 @@ impl AnnotationLowerer<'_> {
                     },
                 })
             }
-            SurfaceTerm::If {
+            SyntaxTerm::If {
                 condition,
                 then_branch,
                 else_branch,
@@ -8295,12 +8292,12 @@ impl AnnotationLowerer<'_> {
                     },
                 })
             }
-            SurfaceTerm::Old(inner) => {
+            SyntaxTerm::Old(inner) => {
                 let old_environment =
                     environment.old_state(&self.entry_values, &self.entry_state.program_point())?;
                 self.lower_contract_algebraic_to_spec(inner, &old_environment)
             }
-            SurfaceTerm::At {
+            SyntaxTerm::At {
                 selector,
                 expression,
             } => {
@@ -8310,7 +8307,7 @@ impl AnnotationLowerer<'_> {
                 })?;
                 self.lower_contract_algebraic_to_spec(expression, &retained_state)
             }
-            SurfaceTerm::Let {
+            SyntaxTerm::Let {
                 name,
                 click_type,
                 value,
@@ -8348,7 +8345,7 @@ impl AnnotationLowerer<'_> {
                 }
                 self.lower_contract_algebraic_to_spec(body, &body_environment)
             }
-            SurfaceTerm::Call { name, arguments } => {
+            SyntaxTerm::Call { name, arguments } => {
                 if name == "to_nat" {
                     let argument = integer_conversion_argument(name, arguments)?;
                     let value = self.lower_contract_integer_to_spec(argument, environment)?;
@@ -8368,7 +8365,7 @@ impl AnnotationLowerer<'_> {
             }
             // A region result that is no enum value: say why, as a call the
             // function does not make.
-            SurfaceTerm::RegionResult(region) => {
+            SyntaxTerm::RegionResult(region) => {
                 let retained_states = self
                     .retained_states
                     .ok_or("`.result` names a region of a function body being executed")?;
@@ -8484,7 +8481,7 @@ impl AnnotationLowerer<'_> {
     fn lower_click_function_call_to_algebraic_spec(
         &mut self,
         name: &str,
-        arguments: &[SurfaceTerm],
+        arguments: &[SyntaxTerm],
         environment: &SpecElaborationContext,
     ) -> Result<SpecAlgebraicExpression, String> {
         let definition = self
@@ -8527,7 +8524,7 @@ impl AnnotationLowerer<'_> {
     fn lower_click_function_arguments_to_spec(
         &mut self,
         definition: &ClickFunctionDefinition,
-        arguments: &[SurfaceTerm],
+        arguments: &[SyntaxTerm],
         environment: &SpecElaborationContext,
     ) -> Result<Vec<crate::kernel::SpecPureFunctionArgument>, String> {
         let memory_independent = self
@@ -8670,10 +8667,10 @@ impl AnnotationLowerer<'_> {
     /// a `Vec<T>` of a theorem's rigid `T`.
     fn generic_call_returns_algebraic(
         &mut self,
-        expression: &SurfaceTerm,
+        expression: &SyntaxTerm,
         environment: &SpecElaborationContext,
     ) -> bool {
-        let SurfaceTerm::Call { name, arguments } = expression else {
+        let SyntaxTerm::Call { name, arguments } = expression else {
             return false;
         };
         let Some(definition) = self.spec_definitions.functions.get(name).cloned() else {
@@ -8688,7 +8685,7 @@ impl AnnotationLowerer<'_> {
 
     fn lower_opaque_contract_proposition(
         &mut self,
-        proposition: &SurfaceProposition,
+        proposition: &SyntaxProposition,
         environment: &SpecElaborationContext,
     ) -> Result<SpecProposition, ClickError> {
         self.type_inference_failure = None;
@@ -8710,7 +8707,7 @@ impl AnnotationLowerer<'_> {
     fn instantiate_click_function_for_call(
         &mut self,
         definition: &ClickFunctionDefinition,
-        arguments: &[SurfaceTerm],
+        arguments: &[SyntaxTerm],
         environment: &SpecElaborationContext,
     ) -> Result<ClickFunctionDefinition, String> {
         if definition.type_parameters().is_empty() {
@@ -8744,7 +8741,7 @@ impl AnnotationLowerer<'_> {
     fn instantiate_predicate_for_call(
         &mut self,
         definition: &PredicateDefinition,
-        arguments: &[SurfaceTerm],
+        arguments: &[SyntaxTerm],
         environment: &SpecElaborationContext,
     ) -> Result<PredicateDefinition, String> {
         if definition.type_parameters().is_empty() {
@@ -8778,7 +8775,7 @@ impl AnnotationLowerer<'_> {
     fn infer_call_argument_type(
         &mut self,
         expected: &ClickType,
-        argument: &SurfaceTerm,
+        argument: &SyntaxTerm,
         environment: &SpecElaborationContext,
     ) -> Result<Option<ClickType>, String> {
         match expected {
@@ -8806,27 +8803,27 @@ impl AnnotationLowerer<'_> {
 
     fn infer_unconstrained_call_argument_type(
         &mut self,
-        argument: &SurfaceTerm,
+        argument: &SyntaxTerm,
         environment: &SpecElaborationContext,
     ) -> Result<Option<ClickType>, String> {
         if let Some(cast_type) = generics::explicit_cast_click_type(argument) {
             return Ok(Some(cast_type));
         }
         match argument {
-            SurfaceTerm::IntegerLiteral(_) | SurfaceTerm::Negate(_) => {
+            SyntaxTerm::IntegerLiteral(_) | SyntaxTerm::Negate(_) => {
                 Ok(generics::default_numeral_click_type(argument))
             }
-            SurfaceTerm::Old(inner)
-            | SurfaceTerm::Exact(inner)
-            | SurfaceTerm::At {
+            SyntaxTerm::Old(inner)
+            | SyntaxTerm::Exact(inner)
+            | SyntaxTerm::At {
                 expression: inner, ..
             } => self.infer_unconstrained_call_argument_type(inner, environment),
-            SurfaceTerm::ResourceField(access) => Ok(access.click_type.clone()),
-            SurfaceTerm::AlgebraicVariable { algebraic_type, .. }
-            | SurfaceTerm::AlgebraicConstructor { algebraic_type, .. } => {
+            SyntaxTerm::ResourceField(access) => Ok(access.click_type.clone()),
+            SyntaxTerm::AlgebraicVariable { algebraic_type, .. }
+            | SyntaxTerm::AlgebraicConstructor { algebraic_type, .. } => {
                 Ok(Some(ClickType::Algebraic(algebraic_type.clone())))
             }
-            SurfaceTerm::Binding(name) => {
+            SyntaxTerm::Binding(name) => {
                 if let Some(value) = environment.algebraic_values.get(name) {
                     return Ok(Some(generics::click_type_from_algebraic_value_type(
                         &value.algebraic_type.value_type(),
@@ -8837,10 +8834,10 @@ impl AnnotationLowerer<'_> {
                     .get(name)
                     .and_then(spec_expression_click_type))
             }
-            SurfaceTerm::ProgramExpression(ProgramExpression::Value(value)) => {
+            SyntaxTerm::ProgramExpression(ProgramExpression::Value(value)) => {
                 Ok(Some(generics::click_type_from_program_value(value)))
             }
-            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+            SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) => {
                 if let Some(value) = environment.algebraic_values.get(name) {
@@ -8853,7 +8850,7 @@ impl AnnotationLowerer<'_> {
                     .get(name)
                     .and_then(spec_expression_click_type))
             }
-            SurfaceTerm::Call { name, arguments } => {
+            SyntaxTerm::Call { name, arguments } => {
                 let definition = self
                     .spec_definitions
                     .functions
@@ -8866,7 +8863,7 @@ impl AnnotationLowerer<'_> {
             }
             // Pointer arithmetic keeps its pointer's type: `bytes + k` is a
             // `*const u8` as `bytes` is.
-            SurfaceTerm::Add(left, right) | SurfaceTerm::Subtract(left, right) => {
+            SyntaxTerm::Add(left, right) | SyntaxTerm::Subtract(left, right) => {
                 let left = self.infer_unconstrained_call_argument_type(left, environment)?;
                 if left
                     .as_ref()
@@ -8874,7 +8871,7 @@ impl AnnotationLowerer<'_> {
                 {
                     return Ok(left);
                 }
-                if matches!(argument, SurfaceTerm::Add(..)) {
+                if matches!(argument, SyntaxTerm::Add(..)) {
                     let right = self.infer_unconstrained_call_argument_type(right, environment)?;
                     if right
                         .as_ref()
@@ -8891,26 +8888,26 @@ impl AnnotationLowerer<'_> {
 
     fn lower_contract_sequence_to_spec(
         &mut self,
-        expression: &SurfaceTerm,
+        expression: &SyntaxTerm,
         environment: &SpecElaborationContext,
     ) -> Result<SpecSequenceExpression, String> {
         match expression {
-            SurfaceTerm::SequenceLiteral(elements) => Ok(SpecSequenceExpression::Literal(
+            SyntaxTerm::SequenceLiteral(elements) => Ok(SpecSequenceExpression::Literal(
                 elements
                     .iter()
                     .map(|element| self.lower_contract_expression_to_spec(element, environment))
                     .collect::<Result<Vec<_>, _>>()?,
             )),
-            SurfaceTerm::SequenceConcat(left, right) => Ok(SpecSequenceExpression::Concat(
+            SyntaxTerm::SequenceConcat(left, right) => Ok(SpecSequenceExpression::Concat(
                 Box::new(self.lower_contract_sequence_to_spec(left, environment)?),
                 Box::new(self.lower_contract_sequence_to_spec(right, environment)?),
             )),
-            SurfaceTerm::Old(inner) => {
+            SyntaxTerm::Old(inner) => {
                 let old_environment =
                     environment.old_state(&self.entry_values, &self.entry_state.program_point())?;
                 self.lower_contract_sequence_to_spec(inner, &old_environment)
             }
-            SurfaceTerm::At {
+            SyntaxTerm::At {
                 selector,
                 expression,
             } => {
@@ -9396,7 +9393,7 @@ impl AnnotationLowerer<'_> {
             return Err("read an element of the aggregate result array field".into());
         }
         let pointer = retained_states.region_result_value(region)?;
-        let read = SurfaceTerm::ProgramExpression(ProgramExpression::TypedLoad {
+        let read = SyntaxTerm::ProgramExpression(ProgramExpression::TypedLoad {
             pointer: Box::new(crate::kernel::program_expression::pointer_offset_bytes(
                 ProgramExpression::Value(pointer),
                 offset,
@@ -9523,7 +9520,7 @@ impl AnnotationLowerer<'_> {
         if super::resource_lowering::array_field_elements(value_type).is_some() {
             return Err(format!("read an element of `{}.{field_name}`", spelled()));
         }
-        let read = SurfaceTerm::ProgramExpression(ProgramExpression::TypedLoad {
+        let read = SyntaxTerm::ProgramExpression(ProgramExpression::TypedLoad {
             pointer: Box::new(crate::kernel::program_expression::pointer_offset_bytes(
                 ProgramExpression::Variable(name.into()),
                 offset,
@@ -9544,7 +9541,7 @@ impl AnnotationLowerer<'_> {
     fn lower_at_expression_to_spec(
         &mut self,
         selector: &ProgramPointSelector,
-        expression: &SurfaceTerm,
+        expression: &SyntaxTerm,
         environment: &SpecElaborationContext,
     ) -> Result<SpecExpression, String> {
         if let Some(retained_state) = self.point_environment(selector, environment)? {
@@ -10299,7 +10296,7 @@ impl AnnotationLowerer<'_> {
                         expression,
                         &ContractSubstitutions::for_contract_result(&BTreeMap::from([(
                             "result".to_string(),
-                            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                            SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                                 crate::kernel::CONTRACT_RESULT,
                             )),
                         )])),
@@ -10315,7 +10312,7 @@ impl AnnotationLowerer<'_> {
     fn lower_click_function_call_to_spec(
         &mut self,
         name: &str,
-        arguments: &[SurfaceTerm],
+        arguments: &[SyntaxTerm],
         environment: &SpecElaborationContext,
     ) -> Result<SpecExpression, String> {
         let definition = self
@@ -10363,21 +10360,21 @@ impl AnnotationLowerer<'_> {
 
     fn lower_array_ref_to_spec(
         &mut self,
-        expression: &SurfaceTerm,
+        expression: &SyntaxTerm,
         environment: &SpecElaborationContext,
     ) -> Result<SpecArrayRef, String> {
         match expression {
-            SurfaceTerm::Old(expression) => {
+            SyntaxTerm::Old(expression) => {
                 let old_environment =
                     environment.old_state(&self.entry_values, &self.entry_state.program_point())?;
                 self.lower_array_ref_to_spec(expression, &old_environment)
             }
-            SurfaceTerm::At {
+            SyntaxTerm::At {
                 selector,
                 expression,
             } => self.lower_at_array_ref_to_spec(selector, expression, environment),
-            SurfaceTerm::Binding(name)
-            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+            SyntaxTerm::Binding(name)
+            | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) => {
                 if let Some(array_ref) = environment.array_refs.get(name) {
@@ -10400,7 +10397,7 @@ impl AnnotationLowerer<'_> {
                         .array_ref_element_type_for_name_in_environment(name, environment)?,
                 })
             }
-            SurfaceTerm::Add(left, right) => {
+            SyntaxTerm::Add(left, right) => {
                 if let Ok(array_ref) = self.lower_array_ref_to_spec(left, environment) {
                     let offset = self.lower_contract_expression_to_spec(right, environment)?;
                     let element_type = array_ref.element_type;
@@ -10433,7 +10430,7 @@ impl AnnotationLowerer<'_> {
                     element_type: self.contract_array_element_type(expression, environment)?,
                 })
             }
-            SurfaceTerm::Subtract(left, right) => {
+            SyntaxTerm::Subtract(left, right) => {
                 if let Ok(array_ref) = self.lower_array_ref_to_spec(left, environment) {
                     let offset = self.lower_contract_expression_to_spec(right, environment)?;
                     let negative_offset = SpecExpression::Subtract(
@@ -10462,7 +10459,7 @@ impl AnnotationLowerer<'_> {
             // A pointer-valued pure call steps by its result's pointee:
             // `slice::as_ptr::<uint8>(s)[1]` reads the byte at offset 1, not
             // the `int32` at offset 4.
-            SurfaceTerm::Call { .. } => {
+            SyntaxTerm::Call { .. } => {
                 let element_type = match self
                     .infer_unconstrained_call_argument_type(expression, environment)?
                     .and_then(|result| result.interface_type())
@@ -10489,7 +10486,7 @@ impl AnnotationLowerer<'_> {
     fn lower_at_array_ref_to_spec(
         &mut self,
         selector: &ProgramPointSelector,
-        expression: &SurfaceTerm,
+        expression: &SyntaxTerm,
         environment: &SpecElaborationContext,
     ) -> Result<SpecArrayRef, String> {
         if let Some(retained_state) = self.point_environment(selector, environment)? {
@@ -10536,7 +10533,7 @@ impl AnnotationLowerer<'_> {
         {
             return Ok(element_type);
         }
-        let binding = SurfaceTerm::Binding(name.to_string());
+        let binding = SyntaxTerm::Binding(name.to_string());
         if let Some(spelling) = self.pointee_less_operand(&binding, environment) {
             return Err(pointee_less_access_message(spelling));
         }
@@ -10579,7 +10576,7 @@ impl AnnotationLowerer<'_> {
 
     fn contract_array_element_type(
         &self,
-        expression: &SurfaceTerm,
+        expression: &SyntaxTerm,
         environment: &SpecElaborationContext,
     ) -> Result<ProgramType, String> {
         if let Some(element_type) = self.contract_array_element_type_opt(expression, environment) {
@@ -10593,11 +10590,11 @@ impl AnnotationLowerer<'_> {
 
     fn contract_array_element_type_opt(
         &self,
-        expression: &SurfaceTerm,
+        expression: &SyntaxTerm,
         environment: &SpecElaborationContext,
     ) -> Option<ProgramType> {
         match expression {
-            SurfaceTerm::Let {
+            SyntaxTerm::Let {
                 value,
                 body,
                 name,
@@ -10610,7 +10607,7 @@ impl AnnotationLowerer<'_> {
             // A call's result steps by its recorded pointer's pointee:
             // `statement(0).call(make, 0).result[1]` for a `uint8 *` result
             // reads the byte at offset 1.
-            SurfaceTerm::RegionResult(region) => {
+            SyntaxTerm::RegionResult(region) => {
                 match self
                     .retained_states?
                     .region_result_value_at(region, environment.call_result_point.as_ref())
@@ -10620,7 +10617,7 @@ impl AnnotationLowerer<'_> {
                     _ => None,
                 }
             }
-            SurfaceTerm::ProgramBinding(name) => self
+            SyntaxTerm::ProgramBinding(name) => self
                 .declared_pointer_element_type(name)
                 .or_else(|| self.entry_state.global_array_element_type(name))
                 // A global pointer, such as `uint8 *current`, steps by its
@@ -10638,16 +10635,16 @@ impl AnnotationLowerer<'_> {
                         _ => None,
                     })
                 }),
-            SurfaceTerm::MemoryLoad { value_type, .. } => value_type.pointee_type(),
-            SurfaceTerm::CUnary { operand, lowered } => match lowered {
+            SyntaxTerm::MemoryLoad { value_type, .. } => value_type.pointee_type(),
+            SyntaxTerm::CUnary { operand, lowered } => match lowered {
                 ProgramExpression::Cast { target_type, .. } => target_type.pointee_type(),
                 ProgramExpression::PointerOffsetBytes { .. } => {
                     self.contract_array_element_type_opt(operand, environment)
                 }
                 _ => self.program_expression_array_element_type(lowered, environment),
             },
-            SurfaceTerm::Binding(name)
-            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+            SyntaxTerm::Binding(name)
+            | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) => environment
                 .array_refs
@@ -10659,25 +10656,25 @@ impl AnnotationLowerer<'_> {
             // A held resource's arguments are substituted as C values. A
             // pointer value carries its own pointee type, which is the
             // element an index steps by; `uint8*` must not read as `int32*`.
-            SurfaceTerm::ProgramExpression(lowered)
-            | SurfaceTerm::QualifiedC { lowered, .. }
-            | SurfaceTerm::Field { lowered, .. } => {
+            SyntaxTerm::ProgramExpression(lowered)
+            | SyntaxTerm::QualifiedC { lowered, .. }
+            | SyntaxTerm::Field { lowered, .. } => {
                 self.program_expression_array_element_type(lowered, environment)
             }
-            SurfaceTerm::At { expression, .. }
-            | SurfaceTerm::Old(expression)
-            | SurfaceTerm::Exact(expression) => {
+            SyntaxTerm::At { expression, .. }
+            | SyntaxTerm::Old(expression)
+            | SyntaxTerm::Exact(expression) => {
                 self.contract_array_element_type_opt(expression, environment)
             }
-            SurfaceTerm::Add(left, right) => self
+            SyntaxTerm::Add(left, right) => self
                 .contract_array_element_type_opt(left, environment)
                 .or_else(|| self.contract_array_element_type_opt(right, environment)),
-            SurfaceTerm::Subtract(left, _) => {
+            SyntaxTerm::Subtract(left, _) => {
                 self.contract_array_element_type_opt(left, environment)
             }
             // `pp[0]` for an `int32 **` `pp` is an `int32 *`, which steps by
             // `int32`.
-            SurfaceTerm::Index(base, _) => self
+            SyntaxTerm::Index(base, _) => self
                 .contract_array_element_type_opt(base, environment)?
                 .pointee_type(),
             _ => None,
@@ -10689,13 +10686,13 @@ impl AnnotationLowerer<'_> {
     /// type arguments. `None` for any other expression or result.
     fn call_pointer_element_width(
         &mut self,
-        expression: &SurfaceTerm,
+        expression: &SyntaxTerm,
         environment: &SpecElaborationContext,
     ) -> Result<Option<u32>, String> {
         // A state changes the value read, not the call's declared type.
-        if let SurfaceTerm::Old(inner)
-        | SurfaceTerm::Exact(inner)
-        | SurfaceTerm::At {
+        if let SyntaxTerm::Old(inner)
+        | SyntaxTerm::Exact(inner)
+        | SyntaxTerm::At {
             expression: inner, ..
         } = expression
         {
@@ -10703,7 +10700,7 @@ impl AnnotationLowerer<'_> {
         }
         // Only a declared pure function with a pointer result: a built-in
         // conversion such as `to_int32` is not one.
-        let SurfaceTerm::Call { name, .. } = expression else {
+        let SyntaxTerm::Call { name, .. } = expression else {
             return Ok(None);
         };
         if !self
@@ -10731,11 +10728,11 @@ impl AnnotationLowerer<'_> {
     /// Physical element widths take precedence over scalar resource carriers.
     fn contract_pointer_element_width(
         &self,
-        expression: &SurfaceTerm,
+        expression: &SyntaxTerm,
         environment: &SpecElaborationContext,
     ) -> Option<u32> {
         match expression {
-            SurfaceTerm::RegionResult(region) => {
+            SyntaxTerm::RegionResult(region) => {
                 let ProgramValue::Pointer(pointer) = self
                     .retained_states?
                     .region_result_value_at(region, environment.call_result_point.as_ref())
@@ -10745,20 +10742,20 @@ impl AnnotationLowerer<'_> {
                 };
                 self.spec_definitions.pointer_element_width(&pointer).ok()
             }
-            SurfaceTerm::ProgramBinding(name) => self.program_expression_array_element_width(
+            SyntaxTerm::ProgramBinding(name) => self.program_expression_array_element_width(
                 &ProgramExpression::Variable((name.clone()).into()),
                 environment,
             ),
-            SurfaceTerm::CUnary { lowered, .. }
-            | SurfaceTerm::QualifiedC { lowered, .. }
-            | SurfaceTerm::ProgramExpression(lowered)
-            | SurfaceTerm::Field { lowered, .. } => {
+            SyntaxTerm::CUnary { lowered, .. }
+            | SyntaxTerm::QualifiedC { lowered, .. }
+            | SyntaxTerm::ProgramExpression(lowered)
+            | SyntaxTerm::Field { lowered, .. } => {
                 self.program_expression_array_element_width(lowered, environment)
             }
-            SurfaceTerm::Old(inner) | SurfaceTerm::Exact(inner) => {
+            SyntaxTerm::Old(inner) | SyntaxTerm::Exact(inner) => {
                 self.contract_pointer_element_width(inner, environment)
             }
-            SurfaceTerm::At {
+            SyntaxTerm::At {
                 selector,
                 expression,
             } => {
@@ -10766,12 +10763,10 @@ impl AnnotationLowerer<'_> {
                 context.call_result_point = Some(selector.clone());
                 self.contract_pointer_element_width(expression, &context)
             }
-            SurfaceTerm::Add(left, right) => self
+            SyntaxTerm::Add(left, right) => self
                 .contract_pointer_element_width(left, environment)
                 .or_else(|| self.contract_pointer_element_width(right, environment)),
-            SurfaceTerm::Subtract(left, _) => {
-                self.contract_pointer_element_width(left, environment)
-            }
+            SyntaxTerm::Subtract(left, _) => self.contract_pointer_element_width(left, environment),
             _ => self
                 .contract_pointer_element_type(expression, environment)
                 .map(ProgramType::byte_width),
@@ -10785,7 +10780,7 @@ impl AnnotationLowerer<'_> {
     /// for a C name, by its declared type.
     fn contract_operand_is_void_pointer(
         &self,
-        operand: &SurfaceTerm,
+        operand: &SyntaxTerm,
         environment: &SpecElaborationContext,
     ) -> bool {
         if matches!(
@@ -10795,17 +10790,17 @@ impl AnnotationLowerer<'_> {
             return true;
         }
         match operand {
-            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name)) => {
+            SyntaxTerm::ProgramExpression(ProgramExpression::Variable(name)) => {
                 self.c_variable_type(name.clone()) == Some(ProgramType::VoidPointer)
             }
-            SurfaceTerm::ProgramBinding(name) => matches!(
+            SyntaxTerm::ProgramBinding(name) => matches!(
                 environment.values.get(name),
                 Some(SpecExpression::Value(ProgramValue::Pointer(pointer)))
                     if pointer.program_type() == ProgramType::VoidPointer
             ),
-            SurfaceTerm::Old(expression)
-            | SurfaceTerm::Exact(expression)
-            | SurfaceTerm::At { expression, .. } => {
+            SyntaxTerm::Old(expression)
+            | SyntaxTerm::Exact(expression)
+            | SyntaxTerm::At { expression, .. } => {
                 self.contract_operand_is_void_pointer(expression, environment)
             }
             _ => false,
@@ -10818,27 +10813,27 @@ impl AnnotationLowerer<'_> {
     /// of that type.
     fn pointee_less_operand(
         &self,
-        operand: &SurfaceTerm,
+        operand: &SyntaxTerm,
         environment: &SpecElaborationContext,
     ) -> Option<&'static str> {
         let spelling = match operand {
-            SurfaceTerm::CUnary { operand, lowered } => self
+            SyntaxTerm::CUnary { operand, lowered } => self
                 .pointee_less_program_operand(lowered, environment)
                 .or_else(|| {
                     matches!(lowered, ProgramExpression::PointerOffsetBytes { .. })
                         .then(|| self.pointee_less_operand(operand, environment))
                         .flatten()
                 }),
-            SurfaceTerm::ProgramExpression(lowered) => {
+            SyntaxTerm::ProgramExpression(lowered) => {
                 self.pointee_less_program_operand(lowered, environment)
             }
-            SurfaceTerm::Old(inner)
-            | SurfaceTerm::Exact(inner)
-            | SurfaceTerm::At {
+            SyntaxTerm::Old(inner)
+            | SyntaxTerm::Exact(inner)
+            | SyntaxTerm::At {
                 expression: inner, ..
             } => self.pointee_less_operand(inner, environment),
             // A call's recorded `void *` result.
-            SurfaceTerm::RegionResult(region) => {
+            SyntaxTerm::RegionResult(region) => {
                 match self.retained_states.and_then(|states| {
                     states
                         .region_result_value_at(region, environment.call_result_point.as_ref())
@@ -10887,7 +10882,7 @@ impl AnnotationLowerer<'_> {
                 .or_else(|| self.pointee_less_program_operand(right, environment)),
             ProgramExpression::Variable(name @ crate::kernel::BindingName::Named(_)) => match self
                 .contract_expression_click_type(
-                    &SurfaceTerm::ProgramExpression(operand.clone()),
+                    &SyntaxTerm::ProgramExpression(operand.clone()),
                     environment,
                 ) {
                 Some(ClickType::Program(operand_type)) => {
@@ -10908,7 +10903,7 @@ impl AnnotationLowerer<'_> {
     /// read at or step by. A `void *` steps by one byte, as in C.
     fn refuse_untyped_pointer_access(
         &self,
-        expression: &SurfaceTerm,
+        expression: &SyntaxTerm,
         environment: &SpecElaborationContext,
     ) -> Result<(), String> {
         let refused_program = |lowered: &ProgramExpression| match lowered {
@@ -10925,7 +10920,7 @@ impl AnnotationLowerer<'_> {
             _ => None,
         };
         let refused = match expression {
-            SurfaceTerm::CUnary { operand, lowered } => refused_program(lowered).or_else(|| {
+            SyntaxTerm::CUnary { operand, lowered } => refused_program(lowered).or_else(|| {
                 matches!(
                     lowered,
                     ProgramExpression::Load(_) | ProgramExpression::Index(..)
@@ -10933,16 +10928,16 @@ impl AnnotationLowerer<'_> {
                 .then(|| self.pointee_less_operand(operand, environment))
                 .flatten()
             }),
-            SurfaceTerm::ProgramExpression(lowered) => refused_program(lowered),
-            SurfaceTerm::ArrayIndex { base, lowered, .. } => {
+            SyntaxTerm::ProgramExpression(lowered) => refused_program(lowered),
+            SyntaxTerm::ArrayIndex { base, lowered, .. } => {
                 refused_program(lowered).or_else(|| self.pointee_less_operand(base, environment))
             }
-            SurfaceTerm::Index(base, _) => self.pointee_less_operand(base, environment),
-            SurfaceTerm::Add(left, right) | SurfaceTerm::Subtract(left, right) => {
+            SyntaxTerm::Index(base, _) => self.pointee_less_operand(base, environment),
+            SyntaxTerm::Add(left, right) | SyntaxTerm::Subtract(left, right) => {
                 pointee_less_step_refusal(
                     self.pointee_less_operand(left, environment),
                     self.pointee_less_operand(right, environment),
-                    matches!(expression, SurfaceTerm::Subtract(..)),
+                    matches!(expression, SyntaxTerm::Subtract(..)),
                 )
             }
             _ => None,
@@ -10955,25 +10950,25 @@ impl AnnotationLowerer<'_> {
 
     fn contract_pointer_element_type(
         &self,
-        expression: &SurfaceTerm,
+        expression: &SyntaxTerm,
         environment: &SpecElaborationContext,
     ) -> Option<ProgramType> {
         match expression {
-            SurfaceTerm::MemoryLoad { value_type, .. } => value_type.pointee_type(),
-            SurfaceTerm::ResourceField(access) => access
+            SyntaxTerm::MemoryLoad { value_type, .. } => value_type.pointee_type(),
+            SyntaxTerm::ResourceField(access) => access
                 .click_type
                 .as_ref()?
                 .interface_type()?
                 .pointee_type()
                 .map(InterfaceType::to_kernel_type),
-            SurfaceTerm::CUnary { operand, lowered } => match lowered {
+            SyntaxTerm::CUnary { operand, lowered } => match lowered {
                 ProgramExpression::Cast { target_type, .. } => target_type.pointee_type(),
                 ProgramExpression::PointerOffsetBytes { .. } => {
                     self.contract_pointer_element_type(operand, environment)
                 }
                 _ => self.program_expression_array_element_type(lowered, environment),
             },
-            SurfaceTerm::ProgramBinding(name) => environment
+            SyntaxTerm::ProgramBinding(name) => environment
                 .array_refs
                 .get(name)
                 .map(|array_ref| array_ref.element_type)
@@ -10985,24 +10980,24 @@ impl AnnotationLowerer<'_> {
                         _ => None,
                     })
                 }),
-            SurfaceTerm::QualifiedC {
+            SyntaxTerm::QualifiedC {
                 lowered: expression,
                 ..
             }
-            | SurfaceTerm::ProgramExpression(expression)
-            | SurfaceTerm::Field {
+            | SyntaxTerm::ProgramExpression(expression)
+            | SyntaxTerm::Field {
                 lowered: expression,
                 ..
             } => self.program_expression_array_element_type(expression, environment),
-            SurfaceTerm::Old(expression)
-            | SurfaceTerm::Exact(expression)
-            | SurfaceTerm::At { expression, .. } => {
+            SyntaxTerm::Old(expression)
+            | SyntaxTerm::Exact(expression)
+            | SyntaxTerm::At { expression, .. } => {
                 self.contract_pointer_element_type(expression, environment)
             }
-            SurfaceTerm::Add(left, right) => self
+            SyntaxTerm::Add(left, right) => self
                 .contract_pointer_element_type(left, environment)
                 .or_else(|| self.contract_pointer_element_type(right, environment)),
-            SurfaceTerm::Subtract(left, _) => self.contract_pointer_element_type(left, environment),
+            SyntaxTerm::Subtract(left, _) => self.contract_pointer_element_type(left, environment),
             _ => None,
         }
     }
@@ -11620,14 +11615,14 @@ mod integer_source_quantifier_tests {
             for embedded in [false, true] {
                 let mut proposition = proposition.clone();
                 if embedded {
-                    let SurfaceProposition::ForAll { body, .. } = &mut proposition else {
+                    let SyntaxProposition::ForAll { body, .. } = &mut proposition else {
                         panic!("expected forall")
                     };
-                    let SurfaceProposition::Comparison { left, .. } = body.as_mut() else {
+                    let SyntaxProposition::Comparison { left, .. } = body.as_mut() else {
                         panic!("expected comparison")
                     };
                     *left =
-                        SurfaceTerm::ProgramExpression(ProgramExpression::Value(captured.clone()));
+                        SyntaxTerm::ProgramExpression(ProgramExpression::Value(captured.clone()));
                 }
                 let lowered = elaborate_fixed_state_proposition_with_algebraic_and_integer_values(
                     &proposition,
@@ -11794,22 +11789,22 @@ pub(in crate::surface) fn opaque_contract_refusal(function: &str, message: Strin
 #[derive(Clone, Copy, Debug)]
 pub(in crate::surface) enum RegionParameterAccess<'a> {
     Field(&'a str),
-    Index(&'a SurfaceTerm),
+    Index(&'a SyntaxTerm),
 }
 
 fn copied_parameter_pointer_width(
-    mut expression: &SurfaceTerm,
+    mut expression: &SyntaxTerm,
     lowered: &SpecExpression,
 ) -> Option<u32> {
     let SpecExpression::MemoryLoad { value_type, .. } = lowered else {
         return None;
     };
     let pointee = value_type.pointee_type()?;
-    while let SurfaceTerm::At {
+    while let SyntaxTerm::At {
         expression: inner, ..
     }
-    | SurfaceTerm::Old(inner)
-    | SurfaceTerm::Exact(inner) = expression
+    | SyntaxTerm::Old(inner)
+    | SyntaxTerm::Exact(inner) = expression
     {
         expression = inner;
     }
@@ -11820,11 +11815,11 @@ fn copied_parameter_pointer_width(
 /// The call region, parameter and accesses of `expression` when it reads
 /// through `R.parameter(v)`: a chain of fields and indexes rooted there.
 pub(in crate::surface) fn region_parameter_read(
-    expression: &SurfaceTerm,
+    expression: &SyntaxTerm,
 ) -> Option<(&CodeRegionRef, &str, Vec<RegionParameterAccess<'_>>)> {
     if !matches!(
         expression,
-        SurfaceTerm::Field { .. } | SurfaceTerm::Index(..) | SurfaceTerm::ArrayIndex { .. }
+        SyntaxTerm::Field { .. } | SyntaxTerm::Index(..) | SyntaxTerm::ArrayIndex { .. }
     ) {
         return None;
     }
@@ -11832,19 +11827,19 @@ pub(in crate::surface) fn region_parameter_read(
     let mut current = expression;
     loop {
         match current {
-            SurfaceTerm::Field { base, field, .. } => {
+            SyntaxTerm::Field { base, field, .. } => {
                 accesses.push(RegionParameterAccess::Field(field.as_str()));
                 current = base;
             }
-            SurfaceTerm::Index(base, index) => {
+            SyntaxTerm::Index(base, index) => {
                 accesses.push(RegionParameterAccess::Index(index));
                 current = base;
             }
-            SurfaceTerm::ArrayIndex { base, indexes, .. } => {
+            SyntaxTerm::ArrayIndex { base, indexes, .. } => {
                 accesses.extend(indexes.iter().rev().map(RegionParameterAccess::Index));
                 current = base;
             }
-            SurfaceTerm::RegionParameter { region, name } => {
+            SyntaxTerm::RegionParameter { region, name } => {
                 accesses.reverse();
                 return Some((region, name.as_str(), accesses));
             }
@@ -11854,21 +11849,21 @@ pub(in crate::surface) fn region_parameter_read(
 }
 
 fn region_result_read(
-    expression: &SurfaceTerm,
+    expression: &SyntaxTerm,
 ) -> Option<(&CodeRegionRef, Vec<RegionParameterAccess<'_>>)> {
     let mut accesses = Vec::new();
     let mut current = expression;
     loop {
         match current {
-            SurfaceTerm::Field { base, field, .. } => {
+            SyntaxTerm::Field { base, field, .. } => {
                 accesses.push(RegionParameterAccess::Field(field));
                 current = base;
             }
-            SurfaceTerm::Index(base, index) => {
+            SyntaxTerm::Index(base, index) => {
                 accesses.push(RegionParameterAccess::Index(index));
                 current = base;
             }
-            SurfaceTerm::RegionResult(region) if !accesses.is_empty() => {
+            SyntaxTerm::RegionResult(region) if !accesses.is_empty() => {
                 accesses.reverse();
                 return Some((region, accesses));
             }
@@ -11878,10 +11873,10 @@ fn region_result_read(
 }
 
 /// A literal element index, as written or as a C constant.
-fn literal_element_index(index: &SurfaceTerm) -> Option<u32> {
+fn literal_element_index(index: &SyntaxTerm) -> Option<u32> {
     match index {
-        SurfaceTerm::IntegerLiteral(value) => value.parse().ok(),
-        SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+        SyntaxTerm::IntegerLiteral(value) => value.parse().ok(),
+        SyntaxTerm::ProgramExpression(ProgramExpression::Value(
             ProgramValue::Int32(term)
             | ProgramValue::UInt32(term)
             | ProgramValue::Int64(term)
@@ -11910,36 +11905,36 @@ fn layout_offset_elements(bytes: crate::kernel::LayoutOffset) -> SpecExpression 
 /// A struct value's type and its fields' expressions, `pair::pair(a, b)` as
 /// `("pair", [a, b])`, seeing through `old`, `exact` and `at`, which read
 /// each field at their point.
-fn struct_constructor_fields(expression: &SurfaceTerm) -> Option<(String, Vec<SurfaceTerm>)> {
+fn struct_constructor_fields(expression: &SyntaxTerm) -> Option<(String, Vec<SyntaxTerm>)> {
     match expression {
-        SurfaceTerm::AlgebraicConstructor {
+        SyntaxTerm::AlgebraicConstructor {
             algebraic_type,
             variant,
             arguments,
         } if algebraic_type.name() == variant && algebraic_type.arguments().is_empty() => {
             Some((variant.clone(), arguments.clone()))
         }
-        SurfaceTerm::Old(inner) => {
+        SyntaxTerm::Old(inner) => {
             let (name, fields) = struct_constructor_fields(inner)?;
             Some((
                 name,
                 fields
                     .into_iter()
-                    .map(|field| SurfaceTerm::Old(Box::new(field)))
+                    .map(|field| SyntaxTerm::Old(Box::new(field)))
                     .collect(),
             ))
         }
-        SurfaceTerm::Exact(inner) => {
+        SyntaxTerm::Exact(inner) => {
             let (name, fields) = struct_constructor_fields(inner)?;
             Some((
                 name,
                 fields
                     .into_iter()
-                    .map(|field| SurfaceTerm::Exact(Box::new(field)))
+                    .map(|field| SyntaxTerm::Exact(Box::new(field)))
                     .collect(),
             ))
         }
-        SurfaceTerm::At {
+        SyntaxTerm::At {
             selector,
             expression,
         } => {
@@ -11948,7 +11943,7 @@ fn struct_constructor_fields(expression: &SurfaceTerm) -> Option<(String, Vec<Su
                 name,
                 fields
                     .into_iter()
-                    .map(|field| SurfaceTerm::At {
+                    .map(|field| SyntaxTerm::At {
                         selector: selector.clone(),
                         expression: Box::new(field),
                     })
@@ -11961,10 +11956,10 @@ fn struct_constructor_fields(expression: &SurfaceTerm) -> Option<(String, Vec<Su
 
 /// Whether `expression` is a reference to `binder`: a written name's
 /// `Binding`, or a generated one's program variable.
-fn contract_expression_names_binder(expression: &SurfaceTerm, binder: &SurfaceBinder) -> bool {
+fn contract_expression_names_binder(expression: &SyntaxTerm, binder: &SurfaceBinder) -> bool {
     match expression {
-        SurfaceTerm::Binding(name) => binder == name,
-        SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name)) => {
+        SyntaxTerm::Binding(name) => binder == name,
+        SyntaxTerm::ProgramExpression(ProgramExpression::Variable(name)) => {
             *name == binder.kernel_name()
         }
         _ => false,

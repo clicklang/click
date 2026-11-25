@@ -286,8 +286,8 @@ impl ParameterPlaceScope {
     }
 }
 
-fn input_struct_pointer_place(base: &SurfaceTerm) -> Option<String> {
-    let SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(pointer))) =
+fn input_struct_pointer_place(base: &SyntaxTerm) -> Option<String> {
+    let SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(pointer))) =
         base
     else {
         return None;
@@ -1549,28 +1549,26 @@ pub(super) fn local_naming_tables_with_declarations(
 /// The result of step `step`, as the statements as written name it: a call
 /// step's `<call>.result`, or `at(<assignment>.entry, x)` for the value an
 /// assignment step replaced in `x`.
-pub(in crate::surface) fn step_result_expression(step: u32) -> Option<SurfaceTerm> {
+pub(in crate::surface) fn step_result_expression(step: u32) -> Option<SyntaxTerm> {
     let layout =
         spelling_layout().or_else(|| STEP_RESULT_LAYOUT.with(|slot| slot.borrow().clone()))?;
     let region = layout.step_region(step)?;
     match layout.prior_step_local(step) {
         Some(local) => {
             let steps = layout.source_path_spelling(region, ProgramPointKind::Entry)?;
-            Some(SurfaceTerm::At {
+            Some(SyntaxTerm::At {
                 selector: crate::surface::ProgramPointSelector::ProgramPoint(
                     crate::surface::ProgramPointRef {
                         region: CodeRegionRef::Path(steps),
                         kind: ProgramPointKind::Entry,
                     },
                 ),
-                expression: Box::new(SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                expression: Box::new(SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                     crate::kernel::program_local_source_name(local),
                 ))),
             })
         }
-        None => Some(SurfaceTerm::RegionResult(
-            layout.result_code_region(region)?,
-        )),
+        None => Some(SyntaxTerm::RegionResult(layout.result_code_region(region)?)),
     }
 }
 
@@ -3693,7 +3691,7 @@ pub(super) fn describe_unseparated_write(
 /// entry state does: a repair is printed only where it works, and where
 /// `old(..)` would name nothing either the text says so instead.
 pub(super) fn describe_unheld_model_field_initializer(
-    initializer: &SurfaceTerm,
+    initializer: &SyntaxTerm,
     state: &ExecutionState,
     entry_state: &ExecutionState,
     parameter_binding: ParameterBinding<'_>,
@@ -3722,14 +3720,14 @@ pub(super) fn describe_unheld_model_field_initializer(
 /// this bounded walk does not enter contributes nothing, and then the caller
 /// falls back to the kernel's own sentence rather than guessing.
 fn unheld_model_field_access<'a>(
-    expression: &'a SurfaceTerm,
+    expression: &'a SyntaxTerm,
     state: &ExecutionState,
     through_old: bool,
 ) -> Option<&'a ResourceFieldAccess> {
     let mut pending = vec![expression];
     while let Some(expression) = pending.pop() {
         match expression {
-            SurfaceTerm::ResourceField(access) => {
+            SyntaxTerm::ResourceField(access) => {
                 if state
                     .resource_instance_at_path(access.identity, &access.children)
                     .and_then(|instance| instance.fields().get(access.field_index))
@@ -3741,32 +3739,32 @@ fn unheld_model_field_access<'a>(
             // A loop invariant reads `old(..)` at the loop's entry, which is
             // the state it is checked against, so there it is not a state
             // of its own.
-            SurfaceTerm::Old(inner) if through_old => pending.push(inner),
-            SurfaceTerm::Old(_) | SurfaceTerm::At { .. } => {}
-            SurfaceTerm::Negate(inner)
-            | SurfaceTerm::BitwiseNot(inner)
-            | SurfaceTerm::Field { base: inner, .. }
-            | SurfaceTerm::ArrayIndex { base: inner, .. } => pending.push(inner),
-            SurfaceTerm::Add(left, right)
-            | SurfaceTerm::Subtract(left, right)
-            | SurfaceTerm::Multiply(left, right)
-            | SurfaceTerm::Divide(left, right)
-            | SurfaceTerm::Remainder(left, right)
-            | SurfaceTerm::ShiftLeft(left, right)
-            | SurfaceTerm::RustShiftLeft(left, right)
-            | SurfaceTerm::ShiftRight(left, right)
-            | SurfaceTerm::RustShiftRight(left, right)
-            | SurfaceTerm::BitwiseAnd(left, right)
-            | SurfaceTerm::BitwiseOr(left, right)
-            | SurfaceTerm::BitwiseXor(left, right)
-            | SurfaceTerm::Index(left, right)
-            | SurfaceTerm::SequenceConcat(left, right) => {
+            SyntaxTerm::Old(inner) if through_old => pending.push(inner),
+            SyntaxTerm::Old(_) | SyntaxTerm::At { .. } => {}
+            SyntaxTerm::Negate(inner)
+            | SyntaxTerm::BitwiseNot(inner)
+            | SyntaxTerm::Field { base: inner, .. }
+            | SyntaxTerm::ArrayIndex { base: inner, .. } => pending.push(inner),
+            SyntaxTerm::Add(left, right)
+            | SyntaxTerm::Subtract(left, right)
+            | SyntaxTerm::Multiply(left, right)
+            | SyntaxTerm::Divide(left, right)
+            | SyntaxTerm::Remainder(left, right)
+            | SyntaxTerm::ShiftLeft(left, right)
+            | SyntaxTerm::RustShiftLeft(left, right)
+            | SyntaxTerm::ShiftRight(left, right)
+            | SyntaxTerm::RustShiftRight(left, right)
+            | SyntaxTerm::BitwiseAnd(left, right)
+            | SyntaxTerm::BitwiseOr(left, right)
+            | SyntaxTerm::BitwiseXor(left, right)
+            | SyntaxTerm::Index(left, right)
+            | SyntaxTerm::SequenceConcat(left, right) => {
                 pending.push(left);
                 pending.push(right);
             }
-            SurfaceTerm::AlgebraicConstructor { arguments, .. }
-            | SurfaceTerm::Call { arguments, .. } => pending.extend(arguments),
-            SurfaceTerm::SequenceLiteral(elements) => pending.extend(elements),
+            SyntaxTerm::AlgebraicConstructor { arguments, .. }
+            | SyntaxTerm::Call { arguments, .. } => pending.extend(arguments),
+            SyntaxTerm::SequenceLiteral(elements) => pending.extend(elements),
             // Every other shape either names no model field or reaches one
             // only through a form this bounded walk does not enter.
             _ => {}
@@ -3783,7 +3781,7 @@ fn unheld_model_field_access<'a>(
 /// `through_old` also reads fields under `old(..)`, for a loop invariant,
 /// whose `old(..)` names the loop's entry state rather than the function's.
 pub(in crate::surface) fn describe_consumed_instance_field_read(
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     state: &ExecutionState,
     through_old: bool,
 ) -> Option<String> {
@@ -3791,43 +3789,43 @@ pub(in crate::surface) fn describe_consumed_instance_field_read(
     let mut expressions = Vec::new();
     while let Some(proposition) = pending.pop() {
         match proposition {
-            SurfaceProposition::Value(expression) => expressions.push(expression),
-            SurfaceProposition::Comparison { left, right, .. } => {
+            SyntaxProposition::Value(expression) => expressions.push(expression),
+            SyntaxProposition::Comparison { left, right, .. } => {
                 expressions.push(left);
                 expressions.push(right);
             }
-            SurfaceProposition::FloatClassification { expression, .. }
-            | SurfaceProposition::Defined { expression }
-            | SurfaceProposition::IsA {
+            SyntaxProposition::FloatClassification { expression, .. }
+            | SyntaxProposition::Defined { expression }
+            | SyntaxProposition::IsA {
                 pointer: expression,
                 ..
             } => expressions.push(expression),
-            SurfaceProposition::Not(inner)
-            | SurfaceProposition::ForAll { body: inner, .. }
-            | SurfaceProposition::Exists { body: inner, .. } => pending.push(inner),
-            SurfaceProposition::And(left, right)
-            | SurfaceProposition::Or(left, right)
-            | SurfaceProposition::Implies(left, right) => {
+            SyntaxProposition::Not(inner)
+            | SyntaxProposition::ForAll { body: inner, .. }
+            | SyntaxProposition::Exists { body: inner, .. } => pending.push(inner),
+            SyntaxProposition::And(left, right)
+            | SyntaxProposition::Or(left, right)
+            | SyntaxProposition::Implies(left, right) => {
                 pending.push(left);
                 pending.push(right);
             }
-            SurfaceProposition::RangeAll {
+            SyntaxProposition::RangeAll {
                 start, end, body, ..
             }
-            | SurfaceProposition::RangeAny {
+            | SyntaxProposition::RangeAny {
                 start, end, body, ..
             } => {
                 expressions.push(start);
                 expressions.push(end);
                 pending.push(body);
             }
-            SurfaceProposition::PredicateCall { arguments, .. } => expressions.extend(arguments),
+            SyntaxProposition::PredicateCall { arguments, .. } => expressions.extend(arguments),
             // A state proposition reads its own state.
-            SurfaceProposition::At { .. }
-            | SurfaceProposition::Separate { .. }
-            | SurfaceProposition::ResourceViewable { .. }
-            | SurfaceProposition::Contains { .. }
-            | SurfaceProposition::Loadable { .. } => {}
+            SyntaxProposition::At { .. }
+            | SyntaxProposition::Separate { .. }
+            | SyntaxProposition::ResourceViewable { .. }
+            | SyntaxProposition::Contains { .. }
+            | SyntaxProposition::Loadable { .. } => {}
         }
     }
     let access = expressions
@@ -6144,9 +6142,9 @@ pub(super) fn describe_contract_segment(segment: &ContractSegment) -> String {
     let current = match &segment.surface {
         // A place written alone is recorded as one element at its address.
         ContractSegmentSurface::Range {
-            base: SurfaceTerm::ProgramExpression(ProgramExpression::AddressOf(place)),
-            start: SurfaceTerm::ProgramExpression(ProgramExpression::Value(start)),
-            end: SurfaceTerm::ProgramExpression(ProgramExpression::Value(end)),
+            base: SyntaxTerm::ProgramExpression(ProgramExpression::AddressOf(place)),
+            start: SyntaxTerm::ProgramExpression(ProgramExpression::Value(start)),
+            end: SyntaxTerm::ProgramExpression(ProgramExpression::Value(end)),
         } if *start == int32(0)
             && *end == int32(1)
             && !matches!(place.as_ref(), ProgramExpression::Variable(_)) =>
@@ -6155,19 +6153,19 @@ pub(super) fn describe_contract_segment(segment: &ContractSegment) -> String {
         }
         ContractSegmentSurface::Range {
             base:
-                SurfaceTerm::CUnary {
+                SyntaxTerm::CUnary {
                     operand,
                     lowered: ProgramExpression::AddressOf(_),
                 },
-            start: SurfaceTerm::ProgramExpression(ProgramExpression::Value(start)),
-            end: SurfaceTerm::ProgramExpression(ProgramExpression::Value(end)),
+            start: SyntaxTerm::ProgramExpression(ProgramExpression::Value(start)),
+            end: SyntaxTerm::ProgramExpression(ProgramExpression::Value(end)),
         } if *start == int32(0)
             && *end == int32(1)
             && !matches!(
                 operand.as_ref(),
-                SurfaceTerm::Binding(_)
-                    | SurfaceTerm::ProgramBinding(_)
-                    | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                SyntaxTerm::Binding(_)
+                    | SyntaxTerm::ProgramBinding(_)
+                    | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                         crate::kernel::BindingName::Named(_)
                     ))
             ) =>
@@ -7120,7 +7118,7 @@ pub(super) fn describe_pointee_place(base: &str) -> String {
 /// `(result as uint64) + at(function.entry, node->word & 1)`.
 fn describe_program_point_expression(
     selector: Option<&ProgramPointSelector>,
-    expression: &SurfaceTerm,
+    expression: &SyntaxTerm,
 ) -> String {
     // A read at a call's parameter point is a read through the call's copy
     // of its argument: `R.parameter(v).f[i]`.
@@ -7140,16 +7138,16 @@ fn describe_program_point_expression(
     describe_contract_state(expression, &wrap)
 }
 
-fn describe_contract_state(expression: &SurfaceTerm, wrap: &dyn Fn(String) -> String) -> String {
+fn describe_contract_state(expression: &SyntaxTerm, wrap: &dyn Fn(String) -> String) -> String {
     let mut names = BTreeSet::new();
     crate::surface::collect_current_contract_expression_variables(expression, &mut names);
     if !names.contains("result") {
         return wrap(describe_contract_expression(expression));
     }
     // A constant operand split off from `result` reads no state either.
-    let operand = |operand: &SurfaceTerm| match operand {
-        SurfaceTerm::IntegerLiteral(_)
-        | SurfaceTerm::ProgramExpression(ProgramExpression::Value(_)) => {
+    let operand = |operand: &SyntaxTerm| match operand {
+        SyntaxTerm::IntegerLiteral(_)
+        | SyntaxTerm::ProgramExpression(ProgramExpression::Value(_)) => {
             describe_contract_expression(operand)
         }
         operand => describe_contract_state(operand, wrap),
@@ -7157,11 +7155,11 @@ fn describe_contract_state(expression: &SurfaceTerm, wrap: &dyn Fn(String) -> St
     let binary =
         |left, operator, right| format!("({} {operator} {})", operand(left), operand(right));
     match expression {
-        SurfaceTerm::ProgramExpression(expression) => describe_c_state(expression, wrap),
+        SyntaxTerm::ProgramExpression(expression) => describe_c_state(expression, wrap),
         // `result` and a scalar cast of it read no state.
-        SurfaceTerm::Binding(_) => describe_contract_expression(expression),
-        SurfaceTerm::CUnary { operand, lowered }
-            if matches!(operand.as_ref(), SurfaceTerm::Binding(_))
+        SyntaxTerm::Binding(_) => describe_contract_expression(expression),
+        SyntaxTerm::CUnary { operand, lowered }
+            if matches!(operand.as_ref(), SyntaxTerm::Binding(_))
                 && matches!(
                     lowered,
                     ProgramExpression::Cast {
@@ -7172,12 +7170,12 @@ fn describe_contract_state(expression: &SurfaceTerm, wrap: &dyn Fn(String) -> St
         {
             describe_contract_expression(expression)
         }
-        SurfaceTerm::Add(left, right) => binary(left, "+", right),
-        SurfaceTerm::Subtract(left, right) => binary(left, "-", right),
-        SurfaceTerm::Multiply(left, right) => binary(left, "*", right),
-        SurfaceTerm::BitwiseAnd(left, right) => binary(left, "&", right),
-        SurfaceTerm::BitwiseOr(left, right) => binary(left, "|", right),
-        SurfaceTerm::BitwiseXor(left, right) => binary(left, "^", right),
+        SyntaxTerm::Add(left, right) => binary(left, "+", right),
+        SyntaxTerm::Subtract(left, right) => binary(left, "-", right),
+        SyntaxTerm::Multiply(left, right) => binary(left, "*", right),
+        SyntaxTerm::BitwiseAnd(left, right) => binary(left, "&", right),
+        SyntaxTerm::BitwiseOr(left, right) => binary(left, "|", right),
+        SyntaxTerm::BitwiseXor(left, right) => binary(left, "^", right),
         // Any other shape keeps its state whole; the parser then names
         // the state that cannot hold `result`.
         expression => wrap(describe_contract_expression(expression)),
@@ -7439,13 +7437,13 @@ fn describe_c_update_operator(operator: UpdateOperator) -> &'static str {
     }
 }
 
-fn describe_untyped_array_field_read(base: &SurfaceTerm, index: &SurfaceTerm) -> Option<String> {
+fn describe_untyped_array_field_read(base: &SyntaxTerm, index: &SyntaxTerm) -> Option<String> {
     // A registered library accessor already carries its element type and
     // is the source spelling used in both certificates and diagnostics.
     if describe_model_accessor(base).is_some() {
         return None;
     }
-    let SurfaceTerm::Field {
+    let SyntaxTerm::Field {
         base,
         lowered:
             ProgramExpression::TypedLoad {
@@ -7461,7 +7459,7 @@ fn describe_untyped_array_field_read(base: &SurfaceTerm, index: &SurfaceTerm) ->
     else {
         return None;
     };
-    let SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name)) = base.as_ref() else {
+    let SyntaxTerm::ProgramExpression(ProgramExpression::Variable(name)) = base.as_ref() else {
         return None;
     };
     // A generated call argument can carry only a scalar pointer type. Its
@@ -7518,9 +7516,9 @@ fn describe_untyped_array_field_read(base: &SurfaceTerm, index: &SurfaceTerm) ->
 
 // Preserve a parseable, shallow spelling for concrete lists that would
 // otherwise print one level of nested constructors per byte.
-fn describe_byte_list(mut expression: &SurfaceTerm) -> Option<String> {
+fn describe_byte_list(mut expression: &SyntaxTerm) -> Option<String> {
     let mut bytes = Vec::new();
-    while let SurfaceTerm::AlgebraicConstructor {
+    while let SyntaxTerm::AlgebraicConstructor {
         algebraic_type,
         variant,
         arguments,
@@ -7537,7 +7535,7 @@ fn describe_byte_list(mut expression: &SurfaceTerm) -> Option<String> {
                 return (!bytes.is_empty()).then(|| crate::source::click_byte_string(&bytes));
             }
             ("Cons", [head, tail]) if bytes.len() < crate::source::BYTE_STRING_MAX_BYTES => {
-                let SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt8(
+                let SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt8(
                     MachineTerm::Constant {
                         format: MachineIntegerType::UInt8,
                         bits,
@@ -7555,38 +7553,38 @@ fn describe_byte_list(mut expression: &SurfaceTerm) -> Option<String> {
     None
 }
 
-pub(super) fn describe_contract_expression(expression: &SurfaceTerm) -> String {
+pub(super) fn describe_contract_expression(expression: &SyntaxTerm) -> String {
     describe_contract_expression_grouping_casts(expression, true)
 }
 
 fn describe_contract_expression_grouping_casts(
-    expression: &SurfaceTerm,
+    expression: &SyntaxTerm,
     group_cast: bool,
 ) -> String {
-    if matches!(expression, SurfaceTerm::Add(_, _)) {
+    if matches!(expression, SyntaxTerm::Add(_, _)) {
         return describe_add_contract_expression(expression);
     }
     match expression {
-        SurfaceTerm::IntegerContext(value) => {
+        SyntaxTerm::IntegerContext(value) => {
             format!("({} : Integer)", describe_contract_expression(value))
         }
-        SurfaceTerm::Proposition(proposition) => {
+        SyntaxTerm::Proposition(proposition) => {
             format!(
                 "prop {{ {} }}",
                 printing::source_click_proposition(proposition)
             )
         }
-        SurfaceTerm::Resource(subject) => describe_resource_subject(subject),
-        SurfaceTerm::RegionAllocation(region) => {
+        SyntaxTerm::Resource(subject) => describe_resource_subject(subject),
+        SyntaxTerm::RegionAllocation(region) => {
             format!("{}.allocation", describe_code_region_ref(region))
         }
-        SurfaceTerm::RegionResult(region) => {
+        SyntaxTerm::RegionResult(region) => {
             format!("{}.result", describe_code_region_ref(region))
         }
-        SurfaceTerm::RegionParameter { region, name } => {
+        SyntaxTerm::RegionParameter { region, name } => {
             format!("{}.parameter({name})", describe_code_region_ref(region))
         }
-        SurfaceTerm::Lambda {
+        SyntaxTerm::Lambda {
             parameters,
             result,
             body,
@@ -7599,12 +7597,12 @@ fn describe_contract_expression_grouping_casts(
                 .join(", "),
             validation::describe_click_type(result),
             match body.as_ref() {
-                SurfaceTerm::Proposition(proposition) =>
+                SyntaxTerm::Proposition(proposition) =>
                     printing::source_click_proposition(proposition),
                 body => describe_contract_expression(body),
             }
         ),
-        SurfaceTerm::Apply {
+        SyntaxTerm::Apply {
             function,
             arguments,
         } => format!(
@@ -7617,8 +7615,8 @@ fn describe_contract_expression_grouping_casts(
                 .join(", ")
         ),
 
-        SurfaceTerm::IntegerLiteral(value) => value.clone(),
-        SurfaceTerm::ResourceField(access) => {
+        SyntaxTerm::IntegerLiteral(value) => value.clone(),
+        SyntaxTerm::ResourceField(access) => {
             // A body names its own fields bare.
             let mut parts = Vec::new();
             if access.identity != crate::kernel::InstanceRef::Body {
@@ -7628,7 +7626,7 @@ fn describe_contract_expression_grouping_casts(
             parts.push(access.field.as_str());
             parts.join(".")
         }
-        SurfaceTerm::AlgebraicConstructor {
+        SyntaxTerm::AlgebraicConstructor {
             algebraic_type,
             variant,
             arguments,
@@ -7671,7 +7669,7 @@ fn describe_contract_expression_grouping_casts(
                 // A subslice, built from its length's call.
                 if let [
                     _,
-                    SurfaceTerm::Call {
+                    SyntaxTerm::Call {
                         name,
                         arguments: parts,
                     },
@@ -7693,9 +7691,9 @@ fn describe_contract_expression_grouping_casts(
                 arguments.join(", ")
             )
         }
-        SurfaceTerm::AlgebraicVariable { name, .. } => name.to_string(),
-        SurfaceTerm::Binding(name) => name.clone(),
-        SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
+        SyntaxTerm::AlgebraicVariable { name, .. } => name.to_string(),
+        SyntaxTerm::Binding(name) => name.clone(),
+        SyntaxTerm::AlgebraicMatch { scrutinee, arms } => {
             let scrutinee = describe_contract_expression(scrutinee);
             let arms = arms
                 .iter()
@@ -7715,7 +7713,7 @@ fn describe_contract_expression_grouping_casts(
                 .collect::<Vec<_>>();
             format!("match {scrutinee} {{ {} }}", arms.join(", "))
         }
-        SurfaceTerm::SequenceLiteral(elements) => format!(
+        SyntaxTerm::SequenceLiteral(elements) => format!(
             "[{}]",
             elements
                 .iter()
@@ -7723,17 +7721,17 @@ fn describe_contract_expression_grouping_casts(
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
-        SurfaceTerm::SequenceConcat(left, right) => {
+        SyntaxTerm::SequenceConcat(left, right) => {
             let left = describe_contract_expression(left);
             let right_text = describe_contract_expression(right);
-            if matches!(right.as_ref(), SurfaceTerm::SequenceConcat(..)) {
+            if matches!(right.as_ref(), SyntaxTerm::SequenceConcat(..)) {
                 format!("{left} ++ ({right_text})")
             } else {
                 format!("{left} ++ {right_text}")
             }
         }
-        SurfaceTerm::QualifiedC { name, .. } => name.clone(),
-        SurfaceTerm::MemoryLoad {
+        SyntaxTerm::QualifiedC { name, .. } => name.clone(),
+        SyntaxTerm::MemoryLoad {
             pointer,
             value_type,
             volatile,
@@ -7743,7 +7741,7 @@ fn describe_contract_expression_grouping_casts(
             typed_load_type_argument(*value_type, *volatile, *pointee_constant),
             describe_contract_expression(pointer)
         ),
-        SurfaceTerm::CUnary { operand, lowered } => {
+        SyntaxTerm::CUnary { operand, lowered } => {
             let operand = describe_contract_expression(operand);
             match lowered {
                 ProgramExpression::Cast {
@@ -7813,24 +7811,24 @@ fn describe_contract_expression_grouping_casts(
         // A pointer address must retain its specification spelling: a scalar
         // cast is parsed as a C conversion and loses the address operand that
         // keeps tagged-word arithmetic native under Integer arithmetic.
-        SurfaceTerm::ProgramExpression(ProgramExpression::Cast {
+        SyntaxTerm::ProgramExpression(ProgramExpression::Cast {
             expression,
             target_type: ProgramType::UInt64,
             integer_mode: crate::kernel::IntegerCastMode::Standard,
             pointee_struct: None,
             ..
         }) => format!("address({})", describe_program_expression(expression)),
-        SurfaceTerm::ProgramExpression(expression) => describe_program_expression(expression),
-        SurfaceTerm::Field { .. } if let Some(accessor) = describe_model_accessor(expression) => {
+        SyntaxTerm::ProgramExpression(expression) => describe_program_expression(expression),
+        SyntaxTerm::Field { .. } if let Some(accessor) = describe_model_accessor(expression) => {
             accessor
         }
         // A call's aggregate argument copy or expression result is an object:
         // its fields are read with `.`, as Rust and C struct values write them.
-        SurfaceTerm::Field { base, field, .. }
+        SyntaxTerm::Field { base, field, .. }
             if matches!(
                 base.as_ref(),
-                SurfaceTerm::RegionParameter { .. } | SurfaceTerm::RegionResult(_)
-            ) || matches!(base.as_ref(), SurfaceTerm::At {
+                SyntaxTerm::RegionParameter { .. } | SyntaxTerm::RegionResult(_)
+            ) || matches!(base.as_ref(), SyntaxTerm::At {
                     selector: ProgramPointSelector::ProgramPoint(point),
                     ..
                 } if point.kind == ProgramPointKind::Parameters) =>
@@ -7843,10 +7841,10 @@ fn describe_contract_expression_grouping_casts(
                 .unwrap_or(field);
             format!("{}.{field}", describe_contract_expression(base))
         }
-        SurfaceTerm::Field { base, field, .. } => match base.as_ref() {
+        SyntaxTerm::Field { base, field, .. } => match base.as_ref() {
             // A static struct's declaration reference names the object, so
             // its fields are read with `.`, as `"file.c"::static(0).field`.
-            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(binding))
+            SyntaxTerm::ProgramExpression(ProgramExpression::Variable(binding))
                 if binding
                     .static_id()
                     .and_then(|id| id.metadata())
@@ -7859,7 +7857,7 @@ fn describe_contract_expression_grouping_casts(
             // A member of an embedded struct member is reached with `.`:
             // the inner member is an object, which lowers to its address
             // rather than to a load of a pointer.
-            SurfaceTerm::Field { lowered, .. }
+            SyntaxTerm::Field { lowered, .. }
                 if !matches!(lowered, ProgramExpression::TypedLoad { .. }) =>
             {
                 format!("{}.{field}", describe_contract_expression(base))
@@ -7870,9 +7868,9 @@ fn describe_contract_expression_grouping_casts(
                 field,
             ),
         },
-        SurfaceTerm::ProgramBinding(name) => format!("program::{name}"),
-        SurfaceTerm::ResourceWildcard => "_".to_string(),
-        SurfaceTerm::ResourceCount(resource) => {
+        SyntaxTerm::ProgramBinding(name) => format!("program::{name}"),
+        SyntaxTerm::ResourceWildcard => "_".to_string(),
+        SyntaxTerm::ResourceCount(resource) => {
             // Population patterns name the resource, not the permission of
             // the observation that supplied it. `count(view r(...))` is not
             // syntax, and count lowering ignores that access annotation.
@@ -7890,57 +7888,53 @@ fn describe_contract_expression_grouping_casts(
                 _ => format!("count({})", describe_resource_clause(resource)),
             }
         }
-        SurfaceTerm::Old(expression) => describe_program_point_expression(None, expression),
-        SurfaceTerm::At {
+        SyntaxTerm::Old(expression) => describe_program_point_expression(None, expression),
+        SyntaxTerm::At {
             selector,
             expression,
         } => describe_program_point_expression(Some(selector), expression),
-        SurfaceTerm::Exact(place) => {
+        SyntaxTerm::Exact(place) => {
             format!("exact({})", describe_contract_expression(place))
         }
-        SurfaceTerm::Negate(expression) => {
+        SyntaxTerm::Negate(expression) => {
             format!("-{}", describe_contract_expression(expression))
         }
-        SurfaceTerm::Add(_, _) => unreachable!("addition is rendered iteratively above"),
-        SurfaceTerm::Subtract(left, right) => format!(
+        SyntaxTerm::Add(_, _) => unreachable!("addition is rendered iteratively above"),
+        SyntaxTerm::Subtract(left, right) => format!(
             "({} - {})",
             describe_additive_operand(left),
             describe_additive_operand(right)
         ),
-        SurfaceTerm::Multiply(left, right) => describe_binary_contract_expression(left, "*", right),
-        SurfaceTerm::Divide(left, right) => describe_binary_contract_expression(left, "/", right),
-        SurfaceTerm::Remainder(left, right) => {
-            describe_binary_contract_expression(left, "%", right)
-        }
-        SurfaceTerm::ShiftLeft(left, right) => {
+        SyntaxTerm::Multiply(left, right) => describe_binary_contract_expression(left, "*", right),
+        SyntaxTerm::Divide(left, right) => describe_binary_contract_expression(left, "/", right),
+        SyntaxTerm::Remainder(left, right) => describe_binary_contract_expression(left, "%", right),
+        SyntaxTerm::ShiftLeft(left, right) => {
             describe_binary_contract_expression(left, "<<", right)
         }
-        SurfaceTerm::RustShiftLeft(left, right) => {
+        SyntaxTerm::RustShiftLeft(left, right) => {
             describe_binary_contract_expression(left, "<<", right)
         }
-        SurfaceTerm::ShiftRight(left, right) => {
+        SyntaxTerm::ShiftRight(left, right) => {
             describe_binary_contract_expression(left, ">>", right)
         }
-        SurfaceTerm::RustShiftRight(left, right) => {
+        SyntaxTerm::RustShiftRight(left, right) => {
             describe_binary_contract_expression(left, ">>", right)
         }
-        SurfaceTerm::BitwiseAnd(left, right) => {
+        SyntaxTerm::BitwiseAnd(left, right) => {
             describe_binary_contract_expression(left, "&", right)
         }
-        SurfaceTerm::BitwiseOr(left, right) => {
-            describe_binary_contract_expression(left, "|", right)
-        }
-        SurfaceTerm::BitwiseXor(left, right) => {
+        SyntaxTerm::BitwiseOr(left, right) => describe_binary_contract_expression(left, "|", right),
+        SyntaxTerm::BitwiseXor(left, right) => {
             describe_binary_contract_expression(left, "^", right)
         }
-        SurfaceTerm::BitwiseNot(expression) => {
+        SyntaxTerm::BitwiseNot(expression) => {
             format!("~{}", describe_contract_expression(expression))
         }
         // Qualified C array indices have already been flattened by the
         // parser. Offset the decayed pointer explicitly so reparsing does
         // not interpret this as an incomplete multidimensional subscript.
-        SurfaceTerm::Index(base, index)
-            if matches!(base.as_ref(), SurfaceTerm::QualifiedC { .. }) =>
+        SyntaxTerm::Index(base, index)
+            if matches!(base.as_ref(), SyntaxTerm::QualifiedC { .. }) =>
         {
             format!(
                 "({} + {})[0]",
@@ -7948,26 +7942,26 @@ fn describe_contract_expression_grouping_casts(
                 describe_contract_expression(index)
             )
         }
-        SurfaceTerm::Index(base, index)
+        SyntaxTerm::Index(base, index)
             if let Some(read) = describe_untyped_array_field_read(base, index) =>
         {
             read
         }
-        SurfaceTerm::Index(base, index) => {
+        SyntaxTerm::Index(base, index) => {
             let index = describe_contract_expression(index);
             if index == "0"
-                && let SurfaceTerm::ProgramExpression(ProgramExpression::CheckedObjectAddress(
+                && let SyntaxTerm::ProgramExpression(ProgramExpression::CheckedObjectAddress(
                     object,
                 )) = base.as_ref()
             {
                 return describe_program_expression(object);
             }
-            let explicit_local = matches!(base.as_ref(), SurfaceTerm::ProgramExpression(base)
+            let explicit_local = matches!(base.as_ref(), SyntaxTerm::ProgramExpression(base)
                 if indexed_local_address(base));
             let base = describe_contract_expression(base);
             describe_indexed_place(&base, &index, explicit_local)
         }
-        SurfaceTerm::ArrayIndex { base, indexes, .. } => format!(
+        SyntaxTerm::ArrayIndex { base, indexes, .. } => format!(
             "{}{}",
             describe_contract_expression(base),
             indexes
@@ -7975,7 +7969,7 @@ fn describe_contract_expression_grouping_casts(
                 .map(|index| format!("[{}]", describe_contract_expression(index)))
                 .collect::<String>()
         ),
-        SurfaceTerm::If {
+        SyntaxTerm::If {
             condition,
             then_branch,
             else_branch,
@@ -7989,7 +7983,7 @@ fn describe_contract_expression_grouping_casts(
             describe_contract_expression(then_branch),
             describe_contract_expression(else_branch)
         ),
-        SurfaceTerm::RangeFold {
+        SyntaxTerm::RangeFold {
             start,
             end,
             initial,
@@ -8001,7 +7995,7 @@ fn describe_contract_expression_grouping_casts(
             describe_contract_expression(initial),
             describe_contract_expression(step),
         ),
-        SurfaceTerm::RangeFold {
+        SyntaxTerm::RangeFold {
             start,
             end,
             initial,
@@ -8015,7 +8009,7 @@ fn describe_contract_expression_grouping_casts(
             describe_contract_expression(initial),
             describe_contract_expression(body)
         ),
-        SurfaceTerm::Let {
+        SyntaxTerm::Let {
             click_type: Some(ClickType::Integer),
             ..
         } => {
@@ -8023,7 +8017,7 @@ fn describe_contract_expression_grouping_casts(
             // chain of lexical aliases into one parenthesized expression.
             let mut output = String::from("(");
             let mut body = expression;
-            while let SurfaceTerm::Let {
+            while let SyntaxTerm::Let {
                 name,
                 click_type: Some(ClickType::Integer),
                 value,
@@ -8042,7 +8036,7 @@ fn describe_contract_expression_grouping_casts(
         }
         // A machine-typed `let` keeps its annotation: the type is the
         // expected type of its value's arithmetic.
-        SurfaceTerm::Let {
+        SyntaxTerm::Let {
             name,
             click_type: Some(click_type),
             value,
@@ -8053,14 +8047,14 @@ fn describe_contract_expression_grouping_casts(
             describe_let_value(value),
             describe_let_value(body)
         ),
-        SurfaceTerm::Let {
+        SyntaxTerm::Let {
             name, value, body, ..
         } => format!(
             "(let {name} = {}; {})",
             describe_let_value(value),
             describe_let_value(body)
         ),
-        SurfaceTerm::MethodCall {
+        SyntaxTerm::MethodCall {
             receiver,
             method,
             arguments,
@@ -8084,7 +8078,7 @@ fn describe_contract_expression_grouping_casts(
                 _ => format!("{receiver}.{method}({})", arguments.join(", ")),
             }
         }
-        SurfaceTerm::Call { name, arguments } => {
+        SyntaxTerm::Call { name, arguments } => {
             let arguments = slice_call_arguments(
                 name,
                 arguments.iter().map(describe_contract_expression).collect(),
@@ -8098,18 +8092,18 @@ fn describe_contract_expression_grouping_casts(
 /// A cast binds more tightly than addition and subtraction. Its own operand
 /// still needs grouping when it contains arithmetic, but grouping the cast
 /// itself adds another level at every step of an unfolded recurrence.
-fn describe_additive_operand(expression: &SurfaceTerm) -> String {
+fn describe_additive_operand(expression: &SyntaxTerm) -> String {
     describe_contract_expression_grouping_casts(expression, false)
 }
 
-fn describe_add_contract_expression(expression: &SurfaceTerm) -> String {
+fn describe_add_contract_expression(expression: &SyntaxTerm) -> String {
     // The parser already associates a flat sum to the left. Walk only that
     // spine: reassociating the right operand could change C overflow or
     // pointer arithmetic, even though it is harmless for mathematical Integers.
     // Append once rather than copying every growing prefix of a long sum.
     let mut left = expression;
     let mut rights = Vec::new();
-    while let SurfaceTerm::Add(first, second) = left {
+    while let SyntaxTerm::Add(first, second) = left {
         rights.push(second.as_ref());
         left = first;
     }
@@ -8146,13 +8140,13 @@ fn describe_let_type(click_type: &ClickType) -> String {
 
 /// Keep long left-associated sums shallow without changing their grouping.
 /// Right operands retain parentheses: explicit rewrites target exact terms.
-fn describe_let_value(value: &SurfaceTerm) -> String {
-    if !matches!(value, SurfaceTerm::Add(_, _)) {
+fn describe_let_value(value: &SyntaxTerm) -> String {
+    if !matches!(value, SyntaxTerm::Add(_, _)) {
         return describe_contract_expression(value);
     }
     let mut left = value;
     let mut rights = Vec::new();
-    while let SurfaceTerm::Add(first, second) = left {
+    while let SyntaxTerm::Add(first, second) = left {
         rights.push(second.as_ref());
         left = first;
     }
@@ -8165,9 +8159,9 @@ fn describe_let_value(value: &SurfaceTerm) -> String {
 }
 
 pub(super) fn describe_binary_contract_expression(
-    left: &SurfaceTerm,
+    left: &SyntaxTerm,
     operator: &str,
-    right: &SurfaceTerm,
+    right: &SyntaxTerm,
 ) -> String {
     format!(
         "({} {operator} {})",
@@ -8178,8 +8172,8 @@ pub(super) fn describe_binary_contract_expression(
 
 /// The `aligned(p, n)` sugar behind `address(p) & (n - 1) == 0`, so a
 /// generated or expanded alignment fact renders in its source spelling.
-pub(super) fn aligned_sugar(proposition: &SurfaceProposition) -> Option<(&ProgramExpression, u64)> {
-    let SurfaceProposition::Comparison {
+pub(super) fn aligned_sugar(proposition: &SyntaxProposition) -> Option<(&ProgramExpression, u64)> {
+    let SyntaxProposition::Comparison {
         left,
         operator: ComparisonOperator::Equal,
         right,
@@ -8198,10 +8192,10 @@ pub(super) fn aligned_sugar(proposition: &SurfaceProposition) -> Option<(&Progra
 /// so rendering the qualified sides expression by expression would emit an
 /// unparseable `p as uint64`.
 pub(super) fn program_point_aligned_sugar(
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
 ) -> Option<(&ProgramPointSelector, &ProgramExpression, u64)> {
-    let SurfaceProposition::Comparison {
-        left: SurfaceTerm::At {
+    let SyntaxProposition::Comparison {
+        left: SyntaxTerm::At {
             selector,
             expression: left,
         },
@@ -8212,11 +8206,11 @@ pub(super) fn program_point_aligned_sugar(
         return None;
     };
     let right = match right {
-        SurfaceTerm::At {
+        SyntaxTerm::At {
             selector: right_selector,
             expression,
         } if right_selector == selector => expression.as_ref(),
-        SurfaceTerm::At { .. } => return None,
+        SyntaxTerm::At { .. } => return None,
         right => right,
     };
     let (pointer, alignment) = aligned_comparison_sugar(left, right)?;
@@ -8224,21 +8218,20 @@ pub(super) fn program_point_aligned_sugar(
 }
 
 fn aligned_comparison_sugar<'a>(
-    left: &'a SurfaceTerm,
-    right: &SurfaceTerm,
+    left: &'a SyntaxTerm,
+    right: &SyntaxTerm,
 ) -> Option<(&'a ProgramExpression, u64)> {
-    let SurfaceTerm::BitwiseAnd(address, mask) = left else {
+    let SyntaxTerm::BitwiseAnd(address, mask) = left else {
         return None;
     };
-    let SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt64(zero))) =
-        right
+    let SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt64(zero))) = right
     else {
         return None;
     };
     if zero.uint64_as_const() != Some(0) {
         return None;
     }
-    let SurfaceTerm::ProgramExpression(ProgramExpression::Cast {
+    let SyntaxTerm::ProgramExpression(ProgramExpression::Cast {
         expression: pointer,
         target_type: ProgramType::UInt64,
         ..
@@ -8246,7 +8239,7 @@ fn aligned_comparison_sugar<'a>(
     else {
         return None;
     };
-    let SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt64(mask))) =
+    let SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt64(mask))) =
         mask.as_ref()
     else {
         return None;
@@ -8257,7 +8250,7 @@ fn aligned_comparison_sugar<'a>(
         .then_some((pointer.as_ref(), alignment))
 }
 
-pub(super) fn describe_click_proposition(proposition: &SurfaceProposition) -> String {
+pub(super) fn describe_click_proposition(proposition: &SyntaxProposition) -> String {
     printing::print_proposition(proposition, printing::PropositionSpelling::Diagnostic)
 }
 
@@ -9214,34 +9207,34 @@ mod assembly_fact_tests {
 
 /// `expression`, a read of a field or element of a call's parameter object
 /// at that call's parameter point, rooted at `R.parameter(v)` instead of `v`.
-fn parameter_point_read(region: &CodeRegionRef, expression: &SurfaceTerm) -> Option<SurfaceTerm> {
+fn parameter_point_read(region: &CodeRegionRef, expression: &SyntaxTerm) -> Option<SyntaxTerm> {
     Some(match expression {
-        SurfaceTerm::Binding(_)
-        | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+        SyntaxTerm::Binding(_)
+        | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(_),
         )) => parameter_point_root(region, expression)?,
-        SurfaceTerm::Field {
+        SyntaxTerm::Field {
             pointee_struct,
             base,
             field,
             lowered,
             offset_bytes,
-        } => SurfaceTerm::Field {
+        } => SyntaxTerm::Field {
             pointee_struct: pointee_struct.clone(),
             base: Box::new(parameter_point_root(region, base)?),
             field: field.clone(),
             lowered: lowered.clone(),
             offset_bytes: *offset_bytes,
         },
-        SurfaceTerm::Index(base, index) => {
-            SurfaceTerm::Index(Box::new(parameter_point_read(region, base)?), index.clone())
+        SyntaxTerm::Index(base, index) => {
+            SyntaxTerm::Index(Box::new(parameter_point_read(region, base)?), index.clone())
         }
-        SurfaceTerm::ArrayIndex {
+        SyntaxTerm::ArrayIndex {
             base,
             indexes,
             dimensions,
             lowered,
-        } => SurfaceTerm::ArrayIndex {
+        } => SyntaxTerm::ArrayIndex {
             base: Box::new(parameter_point_read(region, base)?),
             indexes: indexes.clone(),
             dimensions: dimensions.clone(),
@@ -9251,12 +9244,12 @@ fn parameter_point_read(region: &CodeRegionRef, expression: &SurfaceTerm) -> Opt
     })
 }
 
-fn parameter_point_root(region: &CodeRegionRef, base: &SurfaceTerm) -> Option<SurfaceTerm> {
+fn parameter_point_root(region: &CodeRegionRef, base: &SyntaxTerm) -> Option<SyntaxTerm> {
     match base {
-        SurfaceTerm::Binding(name)
-        | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+        SyntaxTerm::Binding(name)
+        | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
-        )) => Some(SurfaceTerm::RegionParameter {
+        )) => Some(SyntaxTerm::RegionParameter {
             region: region.clone(),
             name: crate::kernel::program_local_source_name(name).to_string(),
         }),

@@ -6,14 +6,14 @@ impl Proof<'_> {
     /// interpreting later propositions.
     pub(super) fn apply_local_predicate_unfold(
         &self,
-        target: &SurfaceProposition,
+        target: &SyntaxProposition,
     ) -> Result<CheckedFocusedTransition, ClickError> {
         let definitions = match self.context.as_ref() {
             ProofContext::Pure(context) => context.spec_definitions,
             ProofContext::FixedState(context) => context.spec_definitions,
             ProofContext::Execution(context) => context.spec_definitions,
         };
-        if let SurfaceProposition::PredicateCall { name, arguments } = target
+        if let SyntaxProposition::PredicateCall { name, arguments } = target
             && definitions.predicates.get(name).is_none()
             && definitions.functions.get(name).is_some()
         {
@@ -24,11 +24,11 @@ impl Proof<'_> {
         }
         // `unfold(at(p, f(args)))` of a pure function: its defining
         // equation at that program point.
-        if let SurfaceProposition::Value(SurfaceTerm::At {
+        if let SyntaxProposition::Value(SyntaxTerm::At {
             selector,
             expression,
         }) = target
-            && let SurfaceTerm::Call { name, arguments } = expression.as_ref()
+            && let SyntaxTerm::Call { name, arguments } = expression.as_ref()
             && definitions.predicates.get(name).is_none()
             && definitions.functions.get(name).is_some()
         {
@@ -42,12 +42,12 @@ impl Proof<'_> {
         }
         // A non-`Bool` application in proposition position is read as its
         // truth, `at(p, f(args) != 0)`; the unfolded application is the call.
-        if let SurfaceProposition::At {
+        if let SyntaxProposition::At {
             selector,
             proposition,
         } = target
-            && let SurfaceProposition::Comparison { left, .. } = proposition.as_ref()
-            && let SurfaceTerm::Call { name, arguments } = left
+            && let SyntaxProposition::Comparison { left, .. } = proposition.as_ref()
+            && let SyntaxTerm::Call { name, arguments } = left
             && definitions.predicates.get(name).is_none()
             && definitions.functions.get(name).is_some()
         {
@@ -59,11 +59,11 @@ impl Proof<'_> {
                 Some(selector),
             );
         }
-        if let SurfaceProposition::At {
+        if let SyntaxProposition::At {
             selector,
             proposition,
         } = target
-            && let SurfaceProposition::PredicateCall { name, arguments } = proposition.as_ref()
+            && let SyntaxProposition::PredicateCall { name, arguments } = proposition.as_ref()
             && definitions.predicates.get(name).is_none()
             && definitions.functions.get(name).is_some()
         {
@@ -89,7 +89,7 @@ impl Proof<'_> {
             self.goal()
                 .expect("a Surface goal has a kernel judgment")
                 .clone()
-        } else if matches!(target, SurfaceProposition::At { .. })
+        } else if matches!(target, SyntaxProposition::At { .. })
             && let Some(recorded) = self.execution().and_then(|execution| {
                 execution
                     .presentation
@@ -128,12 +128,12 @@ impl Proof<'_> {
             facts = facts.with_kernel_checked_fact(body.clone());
             added.push(body.clone());
         }
-        let equivalence_surface = SurfaceProposition::And(
-            Box::new(SurfaceProposition::Implies(
+        let equivalence_surface = SyntaxProposition::And(
+            Box::new(SyntaxProposition::Implies(
                 Box::new(target.clone()),
                 Box::new(body_surface.clone()),
             )),
-            Box::new(SurfaceProposition::Implies(
+            Box::new(SyntaxProposition::Implies(
                 Box::new(body_surface.clone()),
                 Box::new(target.clone()),
             )),
@@ -212,7 +212,7 @@ impl Proof<'_> {
 
     fn unfold_selected_surface_goal(
         &self,
-        proposition: &mut SurfaceProposition,
+        proposition: &mut SyntaxProposition,
         selected: &Proposition,
         predicates: &PredicateEnvironment,
         names: &[String],
@@ -224,7 +224,7 @@ impl Proof<'_> {
         // Only the root proposition or matching application leaves can be
         // selected. Never repeatedly lower or copy connective subtrees.
         let application = matches!(selected, Proposition::Predicate { .. })
-            && matches!(proposition, SurfaceProposition::PredicateCall { name, .. } if names.contains(name));
+            && matches!(proposition, SyntaxProposition::PredicateCall { name, .. } if names.contains(name));
         if root || application {
             let mut referenced = BTreeSet::new();
             if !bound.is_empty() {
@@ -236,7 +236,7 @@ impl Proof<'_> {
             if referenced.is_disjoint(bound) {
                 let mut scoped = proposition.clone();
                 for selector in scopes.iter().rev() {
-                    scoped = SurfaceProposition::At {
+                    scoped = SyntaxProposition::At {
                         selector: selector.clone(),
                         proposition: Box::new(scoped),
                     };
@@ -251,7 +251,7 @@ impl Proof<'_> {
                         .unfold_goal_surface(predicates, &scoped, names)
                         .map_err(|message| self.step_error(message))?;
                     for _ in scopes.iter() {
-                        let SurfaceProposition::At { proposition, .. } = body else {
+                        let SyntaxProposition::At { proposition, .. } = body else {
                             unreachable!("unfold retains explicit snapshots")
                         };
                         body = *proposition;
@@ -263,21 +263,21 @@ impl Proof<'_> {
             }
         }
         match proposition {
-            SurfaceProposition::Value(expression) => {
-                if !matches!(expression, SurfaceTerm::Proposition(_)) {
+            SyntaxProposition::Value(expression) => {
+                if !matches!(expression, SyntaxTerm::Proposition(_)) {
                     *expression = crate::surface::lambdas::reduce_head_fully(expression)
                         .map_err(|message| self.step_error(message))?
                         .into_owned();
                 }
-                if let SurfaceTerm::Proposition(body) = expression {
+                if let SyntaxTerm::Proposition(body) = expression {
                     self.unfold_selected_surface_goal(
                         body, selected, predicates, names, scopes, bound, changed, false,
                     )?;
                 }
             }
-            SurfaceProposition::And(left, right)
-            | SurfaceProposition::Or(left, right)
-            | SurfaceProposition::Implies(left, right) => {
+            SyntaxProposition::And(left, right)
+            | SyntaxProposition::Or(left, right)
+            | SyntaxProposition::Implies(left, right) => {
                 self.unfold_selected_surface_goal(
                     left, selected, predicates, names, scopes, bound, changed, false,
                 )?;
@@ -285,10 +285,10 @@ impl Proof<'_> {
                     right, selected, predicates, names, scopes, bound, changed, false,
                 )?;
             }
-            SurfaceProposition::Not(body) => self.unfold_selected_surface_goal(
+            SyntaxProposition::Not(body) => self.unfold_selected_surface_goal(
                 body, selected, predicates, names, scopes, bound, changed, false,
             )?,
-            SurfaceProposition::At {
+            SyntaxProposition::At {
                 selector,
                 proposition,
             } => {
@@ -305,8 +305,8 @@ impl Proof<'_> {
                 )?;
                 scopes.pop();
             }
-            SurfaceProposition::ForAll { name, body, .. }
-            | SurfaceProposition::Exists { name, body, .. } => {
+            SyntaxProposition::ForAll { name, body, .. }
+            | SyntaxProposition::Exists { name, body, .. } => {
                 let inserted = bound.insert(name.kernel_name());
                 self.unfold_selected_surface_goal(
                     body, selected, predicates, names, scopes, bound, changed, false,
@@ -315,8 +315,8 @@ impl Proof<'_> {
                     bound.remove(&name.kernel_name());
                 }
             }
-            SurfaceProposition::RangeAll { item, body, .. }
-            | SurfaceProposition::RangeAny { item, body, .. } => {
+            SyntaxProposition::RangeAll { item, body, .. }
+            | SyntaxProposition::RangeAny { item, body, .. } => {
                 let inserted = bound.insert(item.kernel_name());
                 self.unfold_selected_surface_goal(
                     body, selected, predicates, names, scopes, bound, changed, false,

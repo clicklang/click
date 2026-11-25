@@ -16,7 +16,7 @@ use crate::kernel::proof::arithmetic_special::{
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 impl<'a> Proof<'a> {
-    fn synthesize_machine_term_here(&self, term: &MachineTerm) -> Option<SurfaceTerm> {
+    fn synthesize_machine_term_here(&self, term: &MachineTerm) -> Option<SyntaxTerm> {
         match self.context.as_ref() {
             ProofContext::Pure(_) => None,
             ProofContext::FixedState(context) => synthesize_surface_machine_expression(
@@ -35,12 +35,12 @@ impl<'a> Proof<'a> {
         }
     }
 
-    fn signed_definedness_surface_operands(&self) -> Option<(&SurfaceTerm, &SurfaceTerm)> {
-        let SurfaceProposition::Defined { expression } = self.surface_goal()? else {
+    fn signed_definedness_surface_operands(&self) -> Option<(&SyntaxTerm, &SyntaxTerm)> {
+        let SyntaxProposition::Defined { expression } = self.surface_goal()? else {
             return None;
         };
         match expression {
-            SurfaceTerm::Add(left, right) | SurfaceTerm::Subtract(left, right) => {
+            SyntaxTerm::Add(left, right) | SyntaxTerm::Subtract(left, right) => {
                 Some((left.as_ref(), right.as_ref()))
             }
             _ => None,
@@ -54,8 +54,8 @@ fn spell_signed_bound(
     width: SignedDefinedWidth,
     fact: &Proposition,
     term: &MachineTerm,
-    surface: &SurfaceTerm,
-) -> Option<SurfaceProposition> {
+    surface: &SyntaxTerm,
+) -> Option<SyntaxProposition> {
     let Proposition::ConditionIs(condition, value) = fact else {
         return None;
     };
@@ -93,7 +93,7 @@ fn spell_signed_bound(
             number.map(|value| match width {
                 SignedDefinedWidth::Int32 => signed_literal(value),
                 SignedDefinedWidth::Int64 => {
-                    SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Int64(
+                    SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Int64(
                         MachineTerm::int64_constant(value),
                     )))
                 }
@@ -104,7 +104,7 @@ fn spell_signed_bound(
         .operands
         .each_ref()
         .map(|operand| operand.operand_view());
-    let comparison = SurfaceProposition::Comparison {
+    let comparison = SyntaxProposition::Comparison {
         left: side(left)?,
         operator,
         right: side(right)?,
@@ -112,14 +112,14 @@ fn spell_signed_bound(
     Some(if *value != view.negated {
         comparison
     } else {
-        SurfaceProposition::Not(Box::new(comparison))
+        SyntaxProposition::Not(Box::new(comparison))
     })
 }
 
-fn signed_literal(value: i64) -> SurfaceTerm {
-    let magnitude = SurfaceTerm::IntegerLiteral(value.unsigned_abs().to_string());
+fn signed_literal(value: i64) -> SyntaxTerm {
+    let magnitude = SyntaxTerm::IntegerLiteral(value.unsigned_abs().to_string());
     if value < 0 {
-        SurfaceTerm::Negate(Box::new(magnitude))
+        SyntaxTerm::Negate(Box::new(magnitude))
     } else {
         magnitude
     }

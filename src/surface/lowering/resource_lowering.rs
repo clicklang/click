@@ -1699,36 +1699,36 @@ pub(in crate::surface) fn requirement_propositions_sharing_lowering_state(
 /// asking a simple statement step to repeat arithmetic reasoning.
 pub(in crate::surface) fn requirement_definedness_surfaces(
     requires: &[Requirement],
-) -> Vec<SurfaceProposition> {
-    fn contains_partial_arithmetic(expression: &SurfaceTerm) -> bool {
+) -> Vec<SyntaxProposition> {
+    fn contains_partial_arithmetic(expression: &SyntaxTerm) -> bool {
         match expression {
-            SurfaceTerm::Add(_, _)
-            | SurfaceTerm::Subtract(_, _)
-            | SurfaceTerm::Multiply(_, _)
-            | SurfaceTerm::Divide(_, _)
-            | SurfaceTerm::Remainder(_, _)
-            | SurfaceTerm::ShiftLeft(_, _)
-            | SurfaceTerm::RustShiftLeft(_, _)
-            | SurfaceTerm::ShiftRight(_, _)
-            | SurfaceTerm::RustShiftRight(_, _) => true,
-            SurfaceTerm::BitwiseAnd(left, right)
-            | SurfaceTerm::BitwiseOr(left, right)
-            | SurfaceTerm::BitwiseXor(left, right) => {
+            SyntaxTerm::Add(_, _)
+            | SyntaxTerm::Subtract(_, _)
+            | SyntaxTerm::Multiply(_, _)
+            | SyntaxTerm::Divide(_, _)
+            | SyntaxTerm::Remainder(_, _)
+            | SyntaxTerm::ShiftLeft(_, _)
+            | SyntaxTerm::RustShiftLeft(_, _)
+            | SyntaxTerm::ShiftRight(_, _)
+            | SyntaxTerm::RustShiftRight(_, _) => true,
+            SyntaxTerm::BitwiseAnd(left, right)
+            | SyntaxTerm::BitwiseOr(left, right)
+            | SyntaxTerm::BitwiseXor(left, right) => {
                 contains_partial_arithmetic(left) || contains_partial_arithmetic(right)
             }
-            SurfaceTerm::BitwiseNot(body) => contains_partial_arithmetic(body),
+            SyntaxTerm::BitwiseNot(body) => contains_partial_arithmetic(body),
             _ => false,
         }
     }
 
-    fn collect<'a>(proposition: &'a SurfaceProposition, expressions: &mut Vec<&'a SurfaceTerm>) {
+    fn collect<'a>(proposition: &'a SyntaxProposition, expressions: &mut Vec<&'a SyntaxTerm>) {
         match proposition {
-            SurfaceProposition::Value(expression) => {
-                if let SurfaceTerm::Proposition(body) = expression {
+            SyntaxProposition::Value(expression) => {
+                if let SyntaxTerm::Proposition(body) = expression {
                     collect(body, expressions);
                 }
             }
-            SurfaceProposition::Comparison { left, right, .. } => {
+            SyntaxProposition::Comparison { left, right, .. } => {
                 if contains_partial_arithmetic(left) {
                     expressions.push(left);
                 }
@@ -1736,31 +1736,31 @@ pub(in crate::surface) fn requirement_definedness_surfaces(
                     expressions.push(right);
                 }
             }
-            SurfaceProposition::FloatClassification { expression, .. } => {
+            SyntaxProposition::FloatClassification { expression, .. } => {
                 if contains_partial_arithmetic(expression) {
                     expressions.push(expression);
                 }
             }
-            SurfaceProposition::And(left, right)
-            | SurfaceProposition::Or(left, right)
-            | SurfaceProposition::Implies(left, right) => {
+            SyntaxProposition::And(left, right)
+            | SyntaxProposition::Or(left, right)
+            | SyntaxProposition::Implies(left, right) => {
                 collect(left, expressions);
                 collect(right, expressions);
             }
-            SurfaceProposition::Not(body) => collect(body, expressions),
+            SyntaxProposition::Not(body) => collect(body, expressions),
             // Bound-variable definedness must remain under its quantifier.
-            SurfaceProposition::ForAll { .. }
-            | SurfaceProposition::Exists { .. }
-            | SurfaceProposition::RangeAll { .. }
-            | SurfaceProposition::RangeAny { .. }
-            | SurfaceProposition::Separate { .. }
-            | SurfaceProposition::ResourceViewable { .. }
-            | SurfaceProposition::Contains { .. }
-            | SurfaceProposition::Loadable { .. }
-            | SurfaceProposition::Defined { .. }
-            | SurfaceProposition::IsA { .. }
-            | SurfaceProposition::At { .. }
-            | SurfaceProposition::PredicateCall { .. } => {}
+            SyntaxProposition::ForAll { .. }
+            | SyntaxProposition::Exists { .. }
+            | SyntaxProposition::RangeAll { .. }
+            | SyntaxProposition::RangeAny { .. }
+            | SyntaxProposition::Separate { .. }
+            | SyntaxProposition::ResourceViewable { .. }
+            | SyntaxProposition::Contains { .. }
+            | SyntaxProposition::Loadable { .. }
+            | SyntaxProposition::Defined { .. }
+            | SyntaxProposition::IsA { .. }
+            | SyntaxProposition::At { .. }
+            | SyntaxProposition::PredicateCall { .. } => {}
         }
     }
 
@@ -1775,7 +1775,7 @@ pub(in crate::surface) fn requirement_definedness_surfaces(
             if contract_expression_to_program_expression(expression).is_none() {
                 continue;
             }
-            let surface = SurfaceProposition::Defined {
+            let surface = SyntaxProposition::Defined {
                 expression: expression.clone(),
             };
             if !result.contains(&surface) {
@@ -1791,7 +1791,7 @@ pub(in crate::surface) fn requirement_definedness_propositions(
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     spec_definitions: SpecDefinitions<'_>,
-) -> Result<Vec<(SurfaceProposition, Proposition)>, ClickError> {
+) -> Result<Vec<(SyntaxProposition, Proposition)>, ClickError> {
     let mut result = Vec::new();
     for surface in requirement_definedness_surfaces(requires) {
         let kernel =
@@ -1799,7 +1799,7 @@ pub(in crate::surface) fn requirement_definedness_propositions(
         if matches!(normalize_proposition(&kernel), NormalizedProposition::True)
             || result
                 .iter()
-                .any(|(_, fact): &(SurfaceProposition, Proposition)| fact == &kernel)
+                .any(|(_, fact): &(SyntaxProposition, Proposition)| fact == &kernel)
         {
             continue;
         }
@@ -2627,7 +2627,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
 }
 
 fn evaluate_resource_argument_with_state(
-    original: &SurfaceTerm,
+    original: &SyntaxTerm,
     lowered: &ProgramExpression,
     retained_state: crate::kernel::ResourceStateSource,
     assumptions: &PureFactContext,
@@ -2804,18 +2804,18 @@ fn lower_resource_clause_facts_with_values_mode_at_entry(
 /// `0` is already a contract expression, so this is the C null-pointer-constant
 /// typing rule rather than new syntax.
 pub(in crate::surface) fn argument_is_null_pointer_constant(
-    argument: &SurfaceTerm,
+    argument: &SyntaxTerm,
     parameter_type: InterfaceType,
 ) -> bool {
     parameter_type.is_pointer()
-        && matches!(argument, SurfaceTerm::IntegerLiteral(text) if text == "0")
+        && matches!(argument, SyntaxTerm::IntegerLiteral(text) if text == "0")
 }
 
 /// `resource_argument_to_program_expression` with the declared parameter type in
 /// hand, so the null pointer constant lowers to that pointer type's null
 /// value instead of an `int32` zero.
 pub(in crate::surface) fn resource_argument_to_typed_program_expression(
-    argument: &SurfaceTerm,
+    argument: &SyntaxTerm,
     parameter_type: InterfaceType,
 ) -> Result<ProgramExpression, ClickError> {
     if argument_is_null_pointer_constant(argument, parameter_type) {
@@ -2832,10 +2832,10 @@ pub(in crate::surface) fn resource_argument_to_typed_program_expression(
 /// (entry for requirements, post for produced resources); `old(...)` selects
 /// the entry state for only this argument.
 pub(in crate::surface) fn resource_argument_to_typed_program_expression_with_state(
-    argument: &SurfaceTerm,
+    argument: &SyntaxTerm,
     parameter_type: InterfaceType,
 ) -> Result<(ProgramExpression, crate::kernel::ResourceStateSource), ClickError> {
-    if let SurfaceTerm::Old(inner) = argument {
+    if let SyntaxTerm::Old(inner) = argument {
         return Ok((
             resource_argument_to_typed_program_expression(inner, parameter_type)?,
             crate::kernel::ResourceStateSource::Entry,
@@ -2848,28 +2848,28 @@ pub(in crate::surface) fn resource_argument_to_typed_program_expression_with_sta
 }
 
 pub(in crate::surface) fn resource_argument_to_program_expression(
-    argument: &SurfaceTerm,
+    argument: &SyntaxTerm,
 ) -> Result<ProgramExpression, ClickError> {
     match argument {
-        SurfaceTerm::MemoryLoad { .. } => {
+        SyntaxTerm::MemoryLoad { .. } => {
             super::contract_substitution::contract_expression_as_program_expression(argument)
                 .ok_or_else(|| {
                     ClickError::new("a state-dependent load is not a C resource argument")
                 })
         }
-        SurfaceTerm::IntegerContext(_) => Err(ClickError::new(
+        SyntaxTerm::IntegerContext(_) => Err(ClickError::new(
             "an Integer context is not a C resource argument",
         )),
 
-        SurfaceTerm::Proposition(_) => Err(ClickError::new("a Prop is not a C resource argument")),
-        SurfaceTerm::Resource(_) => {
+        SyntaxTerm::Proposition(_) => Err(ClickError::new("a Prop is not a C resource argument")),
+        SyntaxTerm::Resource(_) => {
             Err(ClickError::new("a Resource descriptor is not a C argument"))
         }
-        SurfaceTerm::Lambda { .. } | SurfaceTerm::Apply { .. } => Err(ClickError::new(
+        SyntaxTerm::Lambda { .. } | SyntaxTerm::Apply { .. } => Err(ClickError::new(
             "a specification lambda application is not a C resource argument",
         )),
 
-        SurfaceTerm::IntegerLiteral(text) => {
+        SyntaxTerm::IntegerLiteral(text) => {
             let value = text.parse::<u64>().map_err(|_| {
                 ClickError::new("an arbitrary Integer literal requires Integer context")
             })?;
@@ -2882,8 +2882,8 @@ pub(in crate::surface) fn resource_argument_to_program_expression(
             };
             Ok(ProgramExpression::Value(value))
         }
-        SurfaceTerm::Negate(expression) => {
-            if let SurfaceTerm::IntegerLiteral(text) = expression.as_ref()
+        SyntaxTerm::Negate(expression) => {
+            if let SyntaxTerm::IntegerLiteral(text) = expression.as_ref()
                 && let Ok(value) = text.parse::<u64>()
                 && value <= (i32::MAX as u64) + 1
             {
@@ -2895,108 +2895,108 @@ pub(in crate::surface) fn resource_argument_to_program_expression(
                 resource_argument_to_program_expression(expression)?,
             )))
         }
-        SurfaceTerm::ResourceField(_) => Err(ClickError::new(
+        SyntaxTerm::ResourceField(_) => Err(ClickError::new(
             "resource fields are symbolic Click values, not C arguments",
         )),
-        SurfaceTerm::AlgebraicVariable { .. }
-        | SurfaceTerm::AlgebraicConstructor { .. }
-        | SurfaceTerm::AlgebraicMatch { .. } => Err(ClickError::new(
+        SyntaxTerm::AlgebraicVariable { .. }
+        | SyntaxTerm::AlgebraicConstructor { .. }
+        | SyntaxTerm::AlgebraicMatch { .. } => Err(ClickError::new(
             "declared resource arguments do not yet accept algebraic values",
         )),
-        SurfaceTerm::SequenceLiteral(_) | SurfaceTerm::SequenceConcat(_, _) => Err(
-            ClickError::new("declared resource arguments do not yet accept sequence values"),
-        ),
-        SurfaceTerm::QualifiedC {
+        SyntaxTerm::SequenceLiteral(_) | SyntaxTerm::SequenceConcat(_, _) => Err(ClickError::new(
+            "declared resource arguments do not yet accept sequence values",
+        )),
+        SyntaxTerm::QualifiedC {
             lowered: expression,
             ..
         }
-        | SurfaceTerm::CUnary {
+        | SyntaxTerm::CUnary {
             lowered: expression,
             ..
         }
-        | SurfaceTerm::ProgramExpression(expression) => Ok(expression.clone()),
-        SurfaceTerm::Field { lowered, .. } => Ok(lowered.clone()),
-        SurfaceTerm::ArrayIndex { lowered, .. } => Ok(lowered.clone()),
+        | SyntaxTerm::ProgramExpression(expression) => Ok(expression.clone()),
+        SyntaxTerm::Field { lowered, .. } => Ok(lowered.clone()),
+        SyntaxTerm::ArrayIndex { lowered, .. } => Ok(lowered.clone()),
         // A loop's pass count is a Click Integer, never a C value; a program
         // variable of that name is `program::iterations`.
-        SurfaceTerm::Binding(name) if name == crate::surface::LOOP_ITERATIONS_NAME => Err(
+        SyntaxTerm::Binding(name) if name == crate::surface::LOOP_ITERATIONS_NAME => Err(
             ClickError::new("a loop's `iterations` is an Integer, not a C value"),
         ),
-        SurfaceTerm::Binding(name) | SurfaceTerm::ProgramBinding(name) => {
+        SyntaxTerm::Binding(name) | SyntaxTerm::ProgramBinding(name) => {
             Ok(ProgramExpression::Variable((name.clone()).into()))
         }
-        SurfaceTerm::Add(left, right) => Ok(ProgramExpression::Add(
+        SyntaxTerm::Add(left, right) => Ok(ProgramExpression::Add(
             Box::new(resource_argument_to_program_expression(left)?),
             Box::new(resource_argument_to_program_expression(right)?),
         )),
-        SurfaceTerm::Subtract(left, right) => Ok(ProgramExpression::Subtract(
+        SyntaxTerm::Subtract(left, right) => Ok(ProgramExpression::Subtract(
             Box::new(resource_argument_to_program_expression(left)?),
             Box::new(resource_argument_to_program_expression(right)?),
         )),
-        SurfaceTerm::Multiply(left, right) => Ok(ProgramExpression::Multiply(
+        SyntaxTerm::Multiply(left, right) => Ok(ProgramExpression::Multiply(
             Box::new(resource_argument_to_program_expression(left)?),
             Box::new(resource_argument_to_program_expression(right)?),
         )),
-        SurfaceTerm::Divide(left, right) => Ok(ProgramExpression::Divide(
+        SyntaxTerm::Divide(left, right) => Ok(ProgramExpression::Divide(
             Box::new(resource_argument_to_program_expression(left)?),
             Box::new(resource_argument_to_program_expression(right)?),
         )),
-        SurfaceTerm::Remainder(left, right) => Ok(ProgramExpression::Remainder(
+        SyntaxTerm::Remainder(left, right) => Ok(ProgramExpression::Remainder(
             Box::new(resource_argument_to_program_expression(left)?),
             Box::new(resource_argument_to_program_expression(right)?),
         )),
-        SurfaceTerm::ShiftLeft(left, right) => Ok(ProgramExpression::ShiftLeft(
+        SyntaxTerm::ShiftLeft(left, right) => Ok(ProgramExpression::ShiftLeft(
             Box::new(resource_argument_to_program_expression(left)?),
             Box::new(resource_argument_to_program_expression(right)?),
         )),
-        SurfaceTerm::RustShiftLeft(left, right) => Ok(ProgramExpression::RustShiftLeft(
+        SyntaxTerm::RustShiftLeft(left, right) => Ok(ProgramExpression::RustShiftLeft(
             Box::new(resource_argument_to_program_expression(left)?),
             Box::new(resource_argument_to_program_expression(right)?),
         )),
-        SurfaceTerm::ShiftRight(left, right) => Ok(ProgramExpression::ShiftRight(
+        SyntaxTerm::ShiftRight(left, right) => Ok(ProgramExpression::ShiftRight(
             Box::new(resource_argument_to_program_expression(left)?),
             Box::new(resource_argument_to_program_expression(right)?),
         )),
-        SurfaceTerm::RustShiftRight(left, right) => Ok(ProgramExpression::RustShiftRight(
+        SyntaxTerm::RustShiftRight(left, right) => Ok(ProgramExpression::RustShiftRight(
             Box::new(resource_argument_to_program_expression(left)?),
             Box::new(resource_argument_to_program_expression(right)?),
         )),
-        SurfaceTerm::BitwiseAnd(left, right) => Ok(ProgramExpression::BitwiseAnd(
+        SyntaxTerm::BitwiseAnd(left, right) => Ok(ProgramExpression::BitwiseAnd(
             Box::new(resource_argument_to_program_expression(left)?),
             Box::new(resource_argument_to_program_expression(right)?),
         )),
-        SurfaceTerm::BitwiseOr(left, right) => Ok(ProgramExpression::BitwiseOr(
+        SyntaxTerm::BitwiseOr(left, right) => Ok(ProgramExpression::BitwiseOr(
             Box::new(resource_argument_to_program_expression(left)?),
             Box::new(resource_argument_to_program_expression(right)?),
         )),
-        SurfaceTerm::BitwiseXor(left, right) => Ok(ProgramExpression::BitwiseXor(
+        SyntaxTerm::BitwiseXor(left, right) => Ok(ProgramExpression::BitwiseXor(
             Box::new(resource_argument_to_program_expression(left)?),
             Box::new(resource_argument_to_program_expression(right)?),
         )),
-        SurfaceTerm::BitwiseNot(expression) => Ok(ProgramExpression::BitwiseNot(Box::new(
+        SyntaxTerm::BitwiseNot(expression) => Ok(ProgramExpression::BitwiseNot(Box::new(
             resource_argument_to_program_expression(expression)?,
         ))),
-        SurfaceTerm::Index(base, index) => Ok(ProgramExpression::Index(
+        SyntaxTerm::Index(base, index) => Ok(ProgramExpression::Index(
             Box::new(resource_argument_to_program_expression(base)?),
             Box::new(resource_argument_to_program_expression(index)?),
         )),
-        SurfaceTerm::Old(_)
-        | SurfaceTerm::ResourceCount(_)
-        | SurfaceTerm::ResourceWildcard
-        | SurfaceTerm::RegionResult(_)
-        | SurfaceTerm::RegionAllocation(_)
-        | SurfaceTerm::RegionParameter { .. }
-        | SurfaceTerm::At { .. }
-        | SurfaceTerm::If { .. }
-        | SurfaceTerm::RangeFold { .. }
-        | SurfaceTerm::Call { .. }
-        | SurfaceTerm::MethodCall { .. } => Err(ClickError::new(
+        SyntaxTerm::Old(_)
+        | SyntaxTerm::ResourceCount(_)
+        | SyntaxTerm::ResourceWildcard
+        | SyntaxTerm::RegionResult(_)
+        | SyntaxTerm::RegionAllocation(_)
+        | SyntaxTerm::RegionParameter { .. }
+        | SyntaxTerm::At { .. }
+        | SyntaxTerm::If { .. }
+        | SyntaxTerm::RangeFold { .. }
+        | SyntaxTerm::Call { .. }
+        | SyntaxTerm::MethodCall { .. } => Err(ClickError::new(
             "declared resource arguments currently support current-state C expressions only",
         )),
-        SurfaceTerm::Exact(_) => Err(ClickError::new(
+        SyntaxTerm::Exact(_) => Err(ClickError::new(
             "a declared resource argument is a C expression and has no `exact` read; read the place as ordinary C",
         )),
-        SurfaceTerm::Let { body, .. } => {
+        SyntaxTerm::Let { body, .. } => {
             // `apply_contract_lets_to_expression` already substituted every
             // referenced value into the body; the wrapper only preserves
             // sharing for later passes. Unwrap to the substituted body.
@@ -3036,7 +3036,7 @@ fn lower_resource_segment_with_values(
         } => (Some(base), Some(start), Some(end)),
         _ => (None, None, None),
     };
-    let evaluate = |expression: &ProgramExpression, original: Option<&SurfaceTerm>| match original {
+    let evaluate = |expression: &ProgramExpression, original: Option<&SyntaxTerm>| match original {
         Some(original) => crate::surface::proof::evaluate_resource_argument_through_kernel(
             original,
             expression,
@@ -3726,7 +3726,7 @@ fn contract_segment_element_width_with_parameter<'a>(
     if matches!(&segment.base, ProgramExpression::Variable(name)
         if name == &crate::kernel::CONTRACT_RESULT
             || (name.is_named("result") && !matches!(&segment.surface,
-                ContractSegmentSurface::Range { base: SurfaceTerm::ProgramBinding(_), .. })))
+                ContractSegmentSurface::Range { base: SyntaxTerm::ProgramBinding(_), .. })))
         && let Some(element_width) = result_type
             .and_then(ProgramType::pointee_type)
             .map(ProgramType::byte_width)
@@ -3768,7 +3768,7 @@ pub(in crate::surface) fn contract_segment_element_width_with_pointer_types(
         || matches!(&segment.base, ProgramExpression::Variable(name)
             if name == &crate::kernel::CONTRACT_RESULT
                 || (name.is_named("result") && !matches!(&segment.surface,
-                    ContractSegmentSurface::Range { base: SurfaceTerm::ProgramBinding(_), .. })))
+                    ContractSegmentSurface::Range { base: SyntaxTerm::ProgramBinding(_), .. })))
     {
         return contract_segment_element_width_for_result_type(parameters, segment, result_type);
     }
@@ -4005,7 +4005,7 @@ fn contract_expression_element_width_with_parameter<'a>(
 pub(in crate::surface) fn requirement_proposition_prop(
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, ClickError> {
     requirement_proposition_prop_with_assumptions(
@@ -4020,7 +4020,7 @@ pub(in crate::surface) fn requirement_proposition_prop(
 pub(in crate::surface) fn requirement_proposition_prop_with_assumptions(
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     spec_definitions: SpecDefinitions<'_>,
     assumptions: &PureFactContext,
 ) -> Result<Proposition, ClickError> {
@@ -4068,7 +4068,7 @@ fn requirement_proposition_and_facts_with_assumptions(
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     lowering_state: &ExecutionState,
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     spec_definitions: SpecDefinitions<'_>,
     assumptions: &PureFactContext,
 ) -> Result<(Proposition, Vec<Proposition>), ClickError> {

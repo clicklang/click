@@ -765,7 +765,7 @@ fn contract_refinement_targets(file: &ClickFile, theorem_name: &str) -> BTreeSet
         return targets;
     };
     for ensure in theorem.ensures() {
-        let Ensure::Proposition(SurfaceProposition::PredicateCall { name, arguments }) =
+        let Ensure::Proposition(SyntaxProposition::PredicateCall { name, arguments }) =
             ensure.ensure()
         else {
             continue;
@@ -2632,10 +2632,10 @@ fn verify_program_in_context(
         let implicit_safety_clause = EnsureClause {
             proof_bindings: Vec::new(),
             name: None,
-            ensure: Ensure::Proposition(SurfaceProposition::Comparison {
-                left: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
+            ensure: Ensure::Proposition(SyntaxProposition::Comparison {
+                left: SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
                 operator: ComparisonOperator::Equal,
-                right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
+                right: SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
             }),
             proof: SourceProof::Tactic(SmartTactic::ImplicitTail),
             borrowed: false,
@@ -4264,8 +4264,8 @@ fn termination_refusal_report(
 /// the plan and the loop head render the same clause, so the two agree by
 /// construction. It exists so a diagnostic can print what the user wrote,
 /// since a lowered specification expression has no source spelling.
-pub(in crate::surface) fn termination_measure_source(expression: &SurfaceTerm) -> String {
-    let binary = |left: &SurfaceTerm, right: &SurfaceTerm, operator: &str| {
+pub(in crate::surface) fn termination_measure_source(expression: &SyntaxTerm) -> String {
+    let binary = |left: &SyntaxTerm, right: &SyntaxTerm, operator: &str| {
         format!(
             "{} {operator} {}",
             termination_measure_source(left),
@@ -4273,17 +4273,17 @@ pub(in crate::surface) fn termination_measure_source(expression: &SurfaceTerm) -
         )
     };
     match expression {
-        SurfaceTerm::IntegerLiteral(literal) => literal.clone(),
-        SurfaceTerm::Binding(name)
-        | SurfaceTerm::ProgramBinding(name)
-        | SurfaceTerm::QualifiedC { name, .. } => name.clone(),
-        SurfaceTerm::ProgramExpression(expression) => crate::kernel::ranking_measure_identity(
+        SyntaxTerm::IntegerLiteral(literal) => literal.clone(),
+        SyntaxTerm::Binding(name)
+        | SyntaxTerm::ProgramBinding(name)
+        | SyntaxTerm::QualifiedC { name, .. } => name.clone(),
+        SyntaxTerm::ProgramExpression(expression) => crate::kernel::ranking_measure_identity(
             &crate::kernel::RankingComponent::ProgramExpression(expression.clone()),
         ),
-        SurfaceTerm::Field { base, field, .. } => {
+        SyntaxTerm::Field { base, field, .. } => {
             format!("{}.{field}", termination_measure_source(base))
         }
-        SurfaceTerm::Call { name, arguments } => format!(
+        SyntaxTerm::Call { name, arguments } => format!(
             "{name}({})",
             crate::surface::diagnostics::slice_call_arguments(
                 name,
@@ -4291,11 +4291,11 @@ pub(in crate::surface) fn termination_measure_source(expression: &SurfaceTerm) -
             )
             .join(", ")
         ),
-        SurfaceTerm::ResourceField(access) => {
+        SyntaxTerm::ResourceField(access) => {
             format!("{}.{}", access.owner, access.field)
         }
-        SurfaceTerm::Old(inner) => format!("old({})", termination_measure_source(inner)),
-        SurfaceTerm::At {
+        SyntaxTerm::Old(inner) => format!("old({})", termination_measure_source(inner)),
+        SyntaxTerm::At {
             selector,
             expression,
         } => format!(
@@ -4303,13 +4303,13 @@ pub(in crate::surface) fn termination_measure_source(expression: &SurfaceTerm) -
             crate::surface::diagnostics::describe_program_point_selector(selector),
             termination_measure_source(expression)
         ),
-        SurfaceTerm::Negate(inner) => format!("-{}", termination_measure_source(inner)),
-        SurfaceTerm::Add(left, right) => binary(left, right, "+"),
-        SurfaceTerm::Subtract(left, right) => binary(left, right, "-"),
-        SurfaceTerm::Multiply(left, right) => binary(left, right, "*"),
-        SurfaceTerm::Divide(left, right) => binary(left, right, "/"),
-        SurfaceTerm::Remainder(left, right) => binary(left, right, "%"),
-        SurfaceTerm::Index(base, index) => format!(
+        SyntaxTerm::Negate(inner) => format!("-{}", termination_measure_source(inner)),
+        SyntaxTerm::Add(left, right) => binary(left, right, "+"),
+        SyntaxTerm::Subtract(left, right) => binary(left, right, "-"),
+        SyntaxTerm::Multiply(left, right) => binary(left, right, "*"),
+        SyntaxTerm::Divide(left, right) => binary(left, right, "/"),
+        SyntaxTerm::Remainder(left, right) => binary(left, right, "%"),
+        SyntaxTerm::Index(base, index) => format!(
             "{}[{}]",
             termination_measure_source(base),
             termination_measure_source(index)
@@ -4346,9 +4346,9 @@ fn termination_measure_binder_name(measure: &TerminationMeasure) -> Option<&str>
         return None;
     };
     match component {
-        SurfaceTerm::Binding(name)
-        | SurfaceTerm::ProgramBinding(name)
-        | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+        SyntaxTerm::Binding(name)
+        | SyntaxTerm::ProgramBinding(name)
+        | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) => Some(name),
         _ => None,
@@ -6167,7 +6167,7 @@ pub(super) fn function_resource_summary_with_entry_ranges(
         };
         let result_binding = BTreeMap::from([(
             "result".to_string(),
-            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+            SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::CONTRACT_RESULT,
             )),
         )]);
@@ -6306,7 +6306,7 @@ pub(in crate::surface) fn function_resource_constructors(
         .map(|resource| {
             let result_binding = BTreeMap::from([(
                 "result".to_string(),
-                SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                     crate::kernel::CONTRACT_RESULT,
                 )),
             )]);
@@ -6729,7 +6729,7 @@ fn resource_clause_to_resource_specs_with_metadata(
         retained_state,
         pointer_element_types,
     )?;
-    fn declared_arguments(resource: &ResourceClause) -> Option<&[SurfaceTerm]> {
+    fn declared_arguments(resource: &ResourceClause) -> Option<&[SyntaxTerm]> {
         match resource {
             ResourceClause::Named { resource, .. }
             | ResourceClause::Quantified { resource, .. } => declared_arguments(resource),
@@ -7315,7 +7315,7 @@ pub(in crate::surface) fn substitute_contract_segment(
             base, start, end, ..
         } = &surface
     {
-        let lower = |original: &ProgramExpression, source: &SurfaceTerm| {
+        let lower = |original: &ProgramExpression, source: &SyntaxTerm| {
             let rewritten = substitute_program_expression_in(original, substitutions)?;
             if rewritten == *original {
                 return Ok(original.clone());

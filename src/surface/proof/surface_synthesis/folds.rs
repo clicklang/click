@@ -54,8 +54,8 @@ pub(in crate::surface::proof) fn marker(_preferred: Option<&str>) -> SurfaceBind
 }
 
 pub(in crate::surface::proof) fn scope(
-    f: impl FnOnce() -> Option<SurfaceTerm>,
-) -> Option<SurfaceTerm> {
+    f: impl FnOnce() -> Option<SyntaxTerm>,
+) -> Option<SyntaxTerm> {
     let query = Query(FOLD_NAMES.with(|slot| {
         let mut names = slot.borrow_mut();
         let outermost = !names.active;
@@ -106,7 +106,7 @@ pub(in crate::surface::proof) fn raise_fold(
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
-) -> Option<SurfaceTerm> {
+) -> Option<SyntaxTerm> {
     raise_parts(
         fold.index,
         fold.result_type() == &KernelType::Integer,
@@ -122,7 +122,7 @@ pub(in crate::surface::proof) fn raise_machine_fold(
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
-) -> Option<SurfaceTerm> {
+) -> Option<SyntaxTerm> {
     let fold = KernelFold::import_machine(&mut crate::kernel::KernelTermImport::default(), term)?;
     raise_fold(&fold, parameter_binding, state, bound_variables)
 }
@@ -133,8 +133,8 @@ fn raise_parts<T>(
     accumulator_id: Variable,
     item_id: Variable,
     arguments: [&T; 4],
-    recurse: impl Fn(&T) -> Option<SurfaceTerm>,
-) -> Option<SurfaceTerm> {
+    recurse: impl Fn(&T) -> Option<SyntaxTerm>,
+) -> Option<SyntaxTerm> {
     scope(|| {
         let [start, end, initial, body] = arguments;
         let start = recurse(start)?;
@@ -183,7 +183,7 @@ fn raise_parts<T>(
         } else {
             (start, end, None)
         };
-        let expression = SurfaceTerm::RangeFold {
+        let expression = SyntaxTerm::RangeFold {
             start: Box::new(start),
             end: Box::new(end),
             initial: Box::new(initial),
@@ -192,11 +192,11 @@ fn raise_parts<T>(
             body: Box::new(body),
         };
         let expression = if let Some((start_name, start, end_name, end)) = bounds {
-            SurfaceTerm::Let {
+            SyntaxTerm::Let {
                 name: start_name,
                 click_type: Some(ClickType::Integer),
                 value: Box::new(start),
-                body: Box::new(SurfaceTerm::Let {
+                body: Box::new(SyntaxTerm::Let {
                     name: end_name,
                     click_type: Some(ClickType::Integer),
                     value: Box::new(end),

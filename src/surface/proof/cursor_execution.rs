@@ -1064,9 +1064,9 @@ pub(super) fn record_code_region_program_state(
 pub(super) const PROGRAM_POINT_ANNOTATION_DEPTH_LIMIT: usize = 32;
 
 pub(super) fn surface_at_program_point<K: RecordedStateKey + ?Sized>(
-    surface: &SurfaceProposition,
+    surface: &SyntaxProposition,
     key: &K,
-) -> Result<SurfaceProposition, ClickError> {
+) -> Result<SyntaxProposition, ClickError> {
     let selector = key.to_selector();
     annotate_surface_at_program_point(surface, &selector, ProgramPointAnnotation::Reread)
 }
@@ -1074,9 +1074,9 @@ pub(super) fn surface_at_program_point<K: RecordedStateKey + ?Sized>(
 /// Freeze a case selector at its checked frontier without retargeting explicit
 /// states or `old` expressions already carried by the selector.
 pub(super) fn surface_frozen_at_program_point<K: RecordedStateKey + ?Sized>(
-    surface: &SurfaceProposition,
+    surface: &SyntaxProposition,
     key: &K,
-) -> Result<SurfaceProposition, ClickError> {
+) -> Result<SyntaxProposition, ClickError> {
     annotate_surface_at_program_point(surface, &key.to_selector(), ProgramPointAnnotation::Freeze)
 }
 
@@ -1090,18 +1090,18 @@ enum ProgramPointAnnotation {
 }
 
 fn annotate_surface_at_program_point(
-    surface: &SurfaceProposition,
+    surface: &SyntaxProposition,
     selector: &ProgramPointSelector,
     annotation: ProgramPointAnnotation,
-) -> Result<SurfaceProposition, ClickError> {
+) -> Result<SyntaxProposition, ClickError> {
     if matches!(
         surface,
-        SurfaceProposition::Loadable { .. }
-            | SurfaceProposition::Separate { .. }
-            | SurfaceProposition::ResourceViewable { .. }
-            | SurfaceProposition::Contains { .. }
+        SyntaxProposition::Loadable { .. }
+            | SyntaxProposition::Separate { .. }
+            | SyntaxProposition::ResourceViewable { .. }
+            | SyntaxProposition::Contains { .. }
     ) {
-        return Ok(SurfaceProposition::At {
+        return Ok(SyntaxProposition::At {
             selector: selector.clone(),
             proposition: Box::new(surface.clone()),
         });
@@ -1111,23 +1111,23 @@ fn annotate_surface_at_program_point(
     // C constant, so `at(S, -9223372036854775808)` would negate a `uint64`
     // magnitude rather than denote the `int64` minimum it spelled. Every
     // other numeral reads the same either way and keeps its anchor.
-    let integer_literal = |expression: &SurfaceTerm| match expression {
-        SurfaceTerm::Negate(inner) => matches!(
+    let integer_literal = |expression: &SyntaxTerm| match expression {
+        SyntaxTerm::Negate(inner) => matches!(
             inner.as_ref(),
-            SurfaceTerm::IntegerLiteral(magnitude) if magnitude.parse::<i64>().is_err()
+            SyntaxTerm::IntegerLiteral(magnitude) if magnitude.parse::<i64>().is_err()
         ),
         _ => false,
     };
-    let expression_at_program_point = |expression: &SurfaceTerm| match (annotation, expression) {
-        (_, SurfaceTerm::Old(_)) | (ProgramPointAnnotation::Freeze, SurfaceTerm::At { .. }) => {
+    let expression_at_program_point = |expression: &SyntaxTerm| match (annotation, expression) {
+        (_, SyntaxTerm::Old(_)) | (ProgramPointAnnotation::Freeze, SyntaxTerm::At { .. }) => {
             expression.clone()
         }
         (_, literal) if integer_literal(literal) => literal.clone(),
-        (ProgramPointAnnotation::Reread, SurfaceTerm::At { expression, .. }) => SurfaceTerm::At {
+        (ProgramPointAnnotation::Reread, SyntaxTerm::At { expression, .. }) => SyntaxTerm::At {
             selector: selector.clone(),
             expression: expression.clone(),
         },
-        (_, expression) => SurfaceTerm::At {
+        (_, expression) => SyntaxTerm::At {
             selector: selector.clone(),
             expression: Box::new(expression.clone()),
         },
@@ -1137,102 +1137,102 @@ fn annotate_surface_at_program_point(
     // visit used tens of KiB per level inside an already nested proof planner.
     #[inline(never)]
     fn rebuild(
-        proposition: &SurfaceProposition,
-        expression_at_program_point: &impl Fn(&SurfaceTerm) -> SurfaceTerm,
+        proposition: &SyntaxProposition,
+        expression_at_program_point: &impl Fn(&SyntaxTerm) -> SyntaxTerm,
         selector: &ProgramPointSelector,
-        completed: &mut Vec<SurfaceProposition>,
-    ) -> SurfaceProposition {
+        completed: &mut Vec<SyntaxProposition>,
+    ) -> SyntaxProposition {
         let mut child = || Box::new(completed.pop().expect("visited state child"));
         match proposition {
-            SurfaceProposition::Value(expression) => {
-                SurfaceProposition::Value(expression_at_program_point(expression))
+            SyntaxProposition::Value(expression) => {
+                SyntaxProposition::Value(expression_at_program_point(expression))
             }
-            SurfaceProposition::Comparison {
+            SyntaxProposition::Comparison {
                 left,
                 operator,
                 right,
-            } => SurfaceProposition::Comparison {
+            } => SyntaxProposition::Comparison {
                 left: expression_at_program_point(left),
                 operator: *operator,
                 right: expression_at_program_point(right),
             },
-            SurfaceProposition::FloatClassification {
+            SyntaxProposition::FloatClassification {
                 expression,
                 classification,
-            } => SurfaceProposition::FloatClassification {
+            } => SyntaxProposition::FloatClassification {
                 expression: expression_at_program_point(expression),
                 classification: *classification,
             },
-            SurfaceProposition::IsA { class, pointer } => SurfaceProposition::IsA {
+            SyntaxProposition::IsA { class, pointer } => SyntaxProposition::IsA {
                 class: class.clone(),
                 pointer: expression_at_program_point(pointer),
             },
-            SurfaceProposition::Defined { .. } => SurfaceProposition::At {
+            SyntaxProposition::Defined { .. } => SyntaxProposition::At {
                 selector: selector.clone(),
                 proposition: Box::new(proposition.clone()),
             },
-            SurfaceProposition::At { .. } => proposition.clone(),
-            SurfaceProposition::And(_, _) => {
+            SyntaxProposition::At { .. } => proposition.clone(),
+            SyntaxProposition::And(_, _) => {
                 let right = child();
-                SurfaceProposition::And(child(), right)
+                SyntaxProposition::And(child(), right)
             }
-            SurfaceProposition::Or(_, _) => {
+            SyntaxProposition::Or(_, _) => {
                 let right = child();
-                SurfaceProposition::Or(child(), right)
+                SyntaxProposition::Or(child(), right)
             }
-            SurfaceProposition::Not(_) => SurfaceProposition::Not(child()),
-            SurfaceProposition::Implies(_, _) => {
+            SyntaxProposition::Not(_) => SyntaxProposition::Not(child()),
+            SyntaxProposition::Implies(_, _) => {
                 let right = child();
-                SurfaceProposition::Implies(child(), right)
+                SyntaxProposition::Implies(child(), right)
             }
-            SurfaceProposition::ForAll {
+            SyntaxProposition::ForAll {
                 click_type: interface_type,
                 name,
                 ..
-            } => SurfaceProposition::ForAll {
+            } => SyntaxProposition::ForAll {
                 click_type: interface_type.clone(),
                 name: name.clone(),
                 written_name: proposition.written_quantifier_name().map(str::to_string),
                 body: child(),
             },
-            SurfaceProposition::Exists {
+            SyntaxProposition::Exists {
                 click_type: interface_type,
                 name,
                 ..
-            } => SurfaceProposition::Exists {
+            } => SyntaxProposition::Exists {
                 click_type: interface_type.clone(),
                 name: name.clone(),
                 written_name: proposition.written_quantifier_name().map(str::to_string),
                 body: child(),
             },
-            SurfaceProposition::RangeAll {
+            SyntaxProposition::RangeAll {
                 start, end, item, ..
-            } => SurfaceProposition::RangeAll {
+            } => SyntaxProposition::RangeAll {
                 start: expression_at_program_point(start),
                 end: expression_at_program_point(end),
                 item: item.clone(),
                 written_item: proposition.written_quantifier_name().map(str::to_string),
                 body: child(),
             },
-            SurfaceProposition::RangeAny {
+            SyntaxProposition::RangeAny {
                 start, end, item, ..
-            } => SurfaceProposition::RangeAny {
+            } => SyntaxProposition::RangeAny {
                 start: expression_at_program_point(start),
                 end: expression_at_program_point(end),
                 item: item.clone(),
                 written_item: proposition.written_quantifier_name().map(str::to_string),
                 body: child(),
             },
-            SurfaceProposition::PredicateCall { name, arguments } => {
-                SurfaceProposition::PredicateCall {
+            SyntaxProposition::PredicateCall { name, arguments } => {
+                SyntaxProposition::PredicateCall {
                     name: name.clone(),
                     arguments: arguments.iter().map(expression_at_program_point).collect(),
                 }
             }
-            SurfaceProposition::Separate { .. }
-            | SurfaceProposition::ResourceViewable { .. }
-            | SurfaceProposition::Contains { .. }
-            | SurfaceProposition::Loadable { .. } => proposition.clone(),
+            SyntaxProposition::Separate { .. }
+            | SyntaxProposition::ResourceViewable { .. }
+            | SyntaxProposition::Contains { .. }
+            | SyntaxProposition::Loadable { .. } => proposition.clone(),
         }
     }
     // Postorder traversal stores references and completed output on the heap,
@@ -1259,17 +1259,17 @@ fn annotate_surface_at_program_point(
         }
         pending.push((proposition, depth, true));
         match proposition {
-            SurfaceProposition::And(left, right)
-            | SurfaceProposition::Or(left, right)
-            | SurfaceProposition::Implies(left, right) => {
+            SyntaxProposition::And(left, right)
+            | SyntaxProposition::Or(left, right)
+            | SyntaxProposition::Implies(left, right) => {
                 pending.push((right, depth + 1, false));
                 pending.push((left, depth + 1, false));
             }
-            SurfaceProposition::Not(body)
-            | SurfaceProposition::ForAll { body, .. }
-            | SurfaceProposition::Exists { body, .. }
-            | SurfaceProposition::RangeAll { body, .. }
-            | SurfaceProposition::RangeAny { body, .. } => {
+            SyntaxProposition::Not(body)
+            | SyntaxProposition::ForAll { body, .. }
+            | SyntaxProposition::Exists { body, .. }
+            | SyntaxProposition::RangeAll { body, .. }
+            | SyntaxProposition::RangeAny { body, .. } => {
                 pending.push((body, depth + 1, false));
             }
             _ => {}
@@ -1284,44 +1284,44 @@ fn annotate_surface_at_program_point(
 /// re-lower any newly anchored form and check that it denotes the exact
 /// retained kernel fact.
 pub(in crate::surface) fn surface_program_point_selector(
-    surface: &SurfaceProposition,
+    surface: &SyntaxProposition,
 ) -> Option<ProgramPointSelector> {
-    let expression_site = |expression: &SurfaceTerm| match expression {
-        SurfaceTerm::At { selector, .. } => Some(selector.clone()),
+    let expression_site = |expression: &SyntaxTerm| match expression {
+        SyntaxTerm::At { selector, .. } => Some(selector.clone()),
         _ => None,
     };
     match surface {
-        SurfaceProposition::Value(expression) => expression_site(expression),
-        SurfaceProposition::Comparison { left, right, .. } => {
+        SyntaxProposition::Value(expression) => expression_site(expression),
+        SyntaxProposition::Comparison { left, right, .. } => {
             expression_site(left).or_else(|| expression_site(right))
         }
-        SurfaceProposition::FloatClassification { expression, .. } => expression_site(expression),
-        SurfaceProposition::At { selector, .. } => Some(selector.clone()),
-        SurfaceProposition::And(left, right)
-        | SurfaceProposition::Or(left, right)
-        | SurfaceProposition::Implies(left, right) => {
+        SyntaxProposition::FloatClassification { expression, .. } => expression_site(expression),
+        SyntaxProposition::At { selector, .. } => Some(selector.clone()),
+        SyntaxProposition::And(left, right)
+        | SyntaxProposition::Or(left, right)
+        | SyntaxProposition::Implies(left, right) => {
             surface_program_point_selector(left).or_else(|| surface_program_point_selector(right))
         }
-        SurfaceProposition::Not(body)
-        | SurfaceProposition::ForAll { body, .. }
-        | SurfaceProposition::Exists { body, .. } => surface_program_point_selector(body),
-        SurfaceProposition::RangeAll {
+        SyntaxProposition::Not(body)
+        | SyntaxProposition::ForAll { body, .. }
+        | SyntaxProposition::Exists { body, .. } => surface_program_point_selector(body),
+        SyntaxProposition::RangeAll {
             start, end, body, ..
         }
-        | SurfaceProposition::RangeAny {
+        | SyntaxProposition::RangeAny {
             start, end, body, ..
         } => expression_site(start)
             .or_else(|| expression_site(end))
             .or_else(|| surface_program_point_selector(body)),
-        SurfaceProposition::PredicateCall { arguments, .. } => {
+        SyntaxProposition::PredicateCall { arguments, .. } => {
             arguments.iter().find_map(expression_site)
         }
-        SurfaceProposition::Separate { .. }
-        | SurfaceProposition::ResourceViewable { .. }
-        | SurfaceProposition::Contains { .. }
-        | SurfaceProposition::Loadable { .. }
-        | SurfaceProposition::Defined { .. } => None,
-        SurfaceProposition::IsA { pointer, .. } => expression_site(pointer),
+        SyntaxProposition::Separate { .. }
+        | SyntaxProposition::ResourceViewable { .. }
+        | SyntaxProposition::Contains { .. }
+        | SyntaxProposition::Loadable { .. }
+        | SyntaxProposition::Defined { .. } => None,
+        SyntaxProposition::IsA { pointer, .. } => expression_site(pointer),
     }
 }
 
@@ -3211,7 +3211,7 @@ fn execute_step_from_frontier_position_selecting_path(
         {
             continue;
         }
-        if let Some(SurfaceProposition::Comparison {
+        if let Some(SyntaxProposition::Comparison {
             left,
             operator,
             right,
@@ -3221,18 +3221,18 @@ fn execute_step_from_frontier_position_selecting_path(
                 region: CodeRegionRef::Region(statement_index),
                 kind: ProgramPointKind::Entry,
             };
-            let at = |point: &ProgramPointRef, expression: SurfaceTerm| SurfaceTerm::At {
+            let at = |point: &ProgramPointRef, expression: SyntaxTerm| SyntaxTerm::At {
                 selector: ProgramPointSelector::ProgramPoint(point.clone()),
                 expression: Box::new(expression),
             };
             // The neutral pointer addition makes the Index use the outer
             // exit state's memory while its base and index retain their
             // entry values.
-            let exit_load = if let SurfaceTerm::Index(base, index) = left {
-                SurfaceTerm::Index(
-                    Box::new(SurfaceTerm::Add(
+            let exit_load = if let SyntaxTerm::Index(base, index) = left {
+                SyntaxTerm::Index(
+                    Box::new(SyntaxTerm::Add(
                         Box::new(at(&store_entry_point, *base)),
-                        Box::new(SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+                        Box::new(SyntaxTerm::ProgramExpression(ProgramExpression::Value(
                             int32(0),
                         ))),
                     )),
@@ -3241,7 +3241,7 @@ fn execute_step_from_frontier_position_selecting_path(
             } else {
                 left
             };
-            let surface = SurfaceProposition::Comparison {
+            let surface = SyntaxProposition::Comparison {
                 left: at(&store_exit_point, exit_load),
                 operator,
                 right: at(&store_entry_point, right),
@@ -3974,7 +3974,7 @@ pub(super) fn condition_path_case_split_condition(
     available: &dyn Fn(&Proposition) -> bool,
     state: &ExecutionState,
     proof_context: &ExecutionProofContext<'_>,
-) -> Option<(ConditionTerm, SurfaceProposition)> {
+) -> Option<(ConditionTerm, SyntaxProposition)> {
     let cases = path_facts
         .iter()
         .map(|path_facts| PathCase { path_facts })
@@ -4003,7 +4003,7 @@ fn enum_switch_proof_match(
     };
     let (scrutinee, name, native) = match value.as_ref() {
         ProgramExpression::Variable(name) => (
-            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name.clone())),
+            SyntaxTerm::ProgramExpression(ProgramExpression::Variable(name.clone())),
             name.to_string(),
             state.locals().get_native(name)?,
         ),
@@ -4087,7 +4087,7 @@ fn path_case_split_condition(
     available: &dyn Fn(&Proposition) -> bool,
     state: &ExecutionState,
     proof_context: &ExecutionProofContext<'_>,
-) -> Option<(ConditionTerm, SurfaceProposition)> {
+) -> Option<(ConditionTerm, SyntaxProposition)> {
     let facts = cases.iter().map(|case| case.path_facts).collect::<Vec<_>>();
     let decides = |case: &PathCase<'_>, condition: &ConditionTerm, value: bool| {
         case.path_facts
@@ -4141,7 +4141,7 @@ fn path_case_split_condition(
 /// proof `if` on the condition a planner would split on first, which gives
 /// each side its own frontier.
 fn describe_path_case_split_guidance(
-    split_condition: Option<&SurfaceProposition>,
+    split_condition: Option<&SyntaxProposition>,
     case_count: usize,
 ) -> String {
     let split = match split_condition {
@@ -4472,17 +4472,17 @@ pub(super) fn describe_statement_head(statement: &ProgramStatement) -> String {
 mod cursor_sequence_tests {
     use super::*;
 
-    fn state_test_leaf(name: String) -> SurfaceProposition {
-        SurfaceProposition::Comparison {
-            left: SurfaceTerm::ProgramBinding(name),
+    fn state_test_leaf(name: String) -> SyntaxProposition {
+        SyntaxProposition::Comparison {
+            left: SyntaxTerm::ProgramBinding(name),
             operator: ComparisonOperator::Equal,
-            right: SurfaceTerm::Old(Box::new(SurfaceTerm::ProgramBinding("entry".into()))),
+            right: SyntaxTerm::Old(Box::new(SyntaxTerm::ProgramBinding("entry".into()))),
         }
     }
 
     fn annotate_on_small_stack(
-        surface: SurfaceProposition,
-    ) -> (Result<SurfaceProposition, ClickError>, usize) {
+        surface: SyntaxProposition,
+    ) -> (Result<SyntaxProposition, ClickError>, usize) {
         std::thread::Builder::new()
             .name("program-point-annotation-small-stack".into())
             .stack_size(256 * 1024)
@@ -4502,14 +4502,14 @@ mod cursor_sequence_tests {
 
     #[test]
     fn state_annotation_leaves_the_int64_minimum_unanchored() {
-        let observed = SurfaceTerm::Call {
+        let observed = SyntaxTerm::Call {
             name: "to_integer".into(),
-            arguments: vec![SurfaceTerm::ProgramBinding("q".into())],
+            arguments: vec![SyntaxTerm::ProgramBinding("q".into())],
         };
-        let minimum = SurfaceTerm::Negate(Box::new(SurfaceTerm::IntegerLiteral(
+        let minimum = SyntaxTerm::Negate(Box::new(SyntaxTerm::IntegerLiteral(
             "9223372036854775808".into(),
         )));
-        let surface = SurfaceProposition::Comparison {
+        let surface = SyntaxProposition::Comparison {
             left: minimum.clone(),
             operator: ComparisonOperator::LessEqual,
             right: observed.clone(),
@@ -4520,23 +4520,23 @@ mod cursor_sequence_tests {
                 .unwrap();
         assert_eq!(
             annotated,
-            SurfaceProposition::Comparison {
+            SyntaxProposition::Comparison {
                 left: minimum,
                 operator: ComparisonOperator::LessEqual,
-                right: SurfaceTerm::At {
+                right: SyntaxTerm::At {
                     selector: selector.clone(),
                     expression: Box::new(observed.clone()),
                 },
             }
         );
         // A numeral `at(..)` reads the same way keeps its anchor.
-        let zero = SurfaceTerm::IntegerLiteral("0".into());
-        let surface = SurfaceProposition::Comparison {
+        let zero = SyntaxTerm::IntegerLiteral("0".into());
+        let surface = SyntaxProposition::Comparison {
             left: zero.clone(),
             operator: ComparisonOperator::LessEqual,
             right: observed,
         };
-        let SurfaceProposition::Comparison { left, .. } =
+        let SyntaxProposition::Comparison { left, .. } =
             annotate_surface_at_program_point(&surface, &selector, ProgramPointAnnotation::Reread)
                 .unwrap()
         else {
@@ -4544,7 +4544,7 @@ mod cursor_sequence_tests {
         };
         assert_eq!(
             left,
-            SurfaceTerm::At {
+            SyntaxTerm::At {
                 selector,
                 expression: Box::new(zero),
             }
@@ -4556,33 +4556,33 @@ mod cursor_sequence_tests {
         for depth in [7, 15, 23, PROGRAM_POINT_ANNOTATION_DEPTH_LIMIT - 1] {
             let mut surface = state_test_leaf("current".into());
             for _ in 0..depth {
-                surface = SurfaceProposition::Not(Box::new(surface));
+                surface = SyntaxProposition::Not(Box::new(surface));
             }
             let (result, work) = annotate_on_small_stack(surface);
             let result = result.unwrap();
             assert_eq!(work, depth + 1);
             let mut leaf = &result;
             for _ in 0..depth {
-                let SurfaceProposition::Not(body) = leaf else {
+                let SyntaxProposition::Not(body) = leaf else {
                     panic!("annotation must preserve every connective");
                 };
                 leaf = body;
             }
-            let SurfaceProposition::Comparison { left, right, .. } = leaf else {
+            let SyntaxProposition::Comparison { left, right, .. } = leaf else {
                 panic!("annotation must preserve the leaf");
             };
             assert!(matches!(
                 left,
-                SurfaceTerm::At {
+                SyntaxTerm::At {
                     selector: ProgramPointSelector::Mark(_),
                     ..
                 }
             ));
-            assert!(matches!(right, SurfaceTerm::Old(_)));
+            assert!(matches!(right, SyntaxTerm::Old(_)));
         }
         let mut too_deep = state_test_leaf("current".into());
         for _ in 0..PROGRAM_POINT_ANNOTATION_DEPTH_LIMIT {
-            too_deep = SurfaceProposition::Not(Box::new(too_deep));
+            too_deep = SyntaxProposition::Not(Box::new(too_deep));
         }
         let (result, work) = annotate_on_small_stack(too_deep);
         assert!(
@@ -4605,7 +4605,7 @@ mod cursor_sequence_tests {
                 level = Vec::new();
                 while let Some(left) = children.next() {
                     let right = children.next().unwrap();
-                    level.push(SurfaceProposition::Implies(Box::new(left), Box::new(right)));
+                    level.push(SyntaxProposition::Implies(Box::new(left), Box::new(right)));
                 }
             }
             let (result, work) = annotate_on_small_stack(level.pop().unwrap());
@@ -4615,17 +4615,17 @@ mod cursor_sequence_tests {
             let mut index = 0;
             while let Some(node) = pending.pop() {
                 match node {
-                    SurfaceProposition::Implies(left, right) => {
+                    SyntaxProposition::Implies(left, right) => {
                         pending.push(right);
                         pending.push(left);
                     }
-                    SurfaceProposition::Comparison { left, .. } => {
-                        let SurfaceTerm::At { expression, .. } = left else {
+                    SyntaxProposition::Comparison { left, .. } => {
+                        let SyntaxTerm::At { expression, .. } = left else {
                             panic!("the comparison must read the selected state");
                         };
                         assert_eq!(
                             expression.as_ref(),
-                            &SurfaceTerm::ProgramBinding(index.to_string())
+                            &SyntaxTerm::ProgramBinding(index.to_string())
                         );
                         index += 1;
                     }
@@ -4677,7 +4677,7 @@ fn word_store_source(
     entry: &ExecutionState,
     outcome: &StatementOutcome,
     exit_point: &ProgramPointRef,
-) -> Option<SurfaceProposition> {
+) -> Option<SyntaxProposition> {
     use crate::kernel::{MachineTerm, ProgramType, ProgramValue};
 
     let (pointer, value) = match statement {
@@ -4715,20 +4715,20 @@ fn word_store_source(
         return None;
     }
     let index = match index {
-        None => SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
+        None => SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
         Some(ProgramExpression::Variable(index)) if stable(index, ProgramType::Int32) => {
-            SurfaceTerm::Binding(index.source_spelling()?.to_owned())
+            SyntaxTerm::Binding(index.source_spelling()?.to_owned())
         }
         Some(
             index @ ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Constant { .. })),
-        ) => SurfaceTerm::ProgramExpression(index.clone()),
+        ) => SyntaxTerm::ProgramExpression(index.clone()),
         _ => return None,
     };
     entry
         .locals()
         .nonvolatile_scalar(value, ProgramType::UInt32)?;
 
-    let at = |point: &ProgramPointRef, expression| SurfaceTerm::At {
+    let at = |point: &ProgramPointRef, expression| SyntaxTerm::At {
         selector: ProgramPointSelector::ProgramPoint(point.clone()),
         expression: Box::new(expression),
     };
@@ -4736,16 +4736,16 @@ fn word_store_source(
         region: exit_point.region.clone(),
         kind: ProgramPointKind::Entry,
     };
-    let read = SurfaceTerm::Index(
-        Box::new(SurfaceTerm::Binding(pointer.source_spelling()?.to_owned())),
+    let read = SyntaxTerm::Index(
+        Box::new(SyntaxTerm::Binding(pointer.source_spelling()?.to_owned())),
         Box::new(index),
     );
-    Some(SurfaceProposition::Comparison {
+    Some(SyntaxProposition::Comparison {
         left: at(exit_point, read),
         operator: crate::surface::ComparisonOperator::Equal,
         right: at(
             &entry_point,
-            SurfaceTerm::Binding(value.source_spelling()?.to_owned()),
+            SyntaxTerm::Binding(value.source_spelling()?.to_owned()),
         ),
     })
 }

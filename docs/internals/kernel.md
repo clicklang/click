@@ -2185,7 +2185,7 @@ store width only from pointer syntax; the operation type is what determines
 whether an access needs one byte or four bytes.
 
 When adding a new Click expression or proposition form, search all existing enum
-matches for `SurfaceTerm` and `SurfaceProposition`. Missing one context
+matches for `SyntaxTerm` and `SyntaxProposition`. Missing one context
 usually causes either a compiler error or an unsupported-feature diagnostic.
 
 ## Parser and validation

@@ -272,15 +272,15 @@ mod certificate_tests {
 
     #[test]
     fn state_annotation_rejects_deep_logic_without_using_the_native_stack() {
-        let mut surface = SurfaceProposition::Comparison {
-            left: SurfaceTerm::ProgramBinding("value".to_string()),
+        let mut surface = SyntaxProposition::Comparison {
+            left: SyntaxTerm::ProgramBinding("value".to_string()),
             operator: ComparisonOperator::Equal,
-            right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
+            right: SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
                 MachineTerm::constant(0),
             ))),
         };
         for _ in 0..=PROGRAM_POINT_ANNOTATION_DEPTH_LIMIT {
-            surface = SurfaceProposition::Not(Box::new(surface));
+            surface = SyntaxProposition::Not(Box::new(surface));
         }
         let point = ProgramPointRef {
             region: CodeRegionRef::Region(0),
@@ -437,10 +437,10 @@ mod certificate_tests {
     #[test]
     fn timing_classifies_a_have_with_only_simple_tactics_as_simple() {
         let have = ProofTactic::Have(ProofHave {
-            proposition: SurfaceProposition::Comparison {
-                left: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(1))),
+            proposition: SyntaxProposition::Comparison {
+                left: SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(1))),
                 operator: ComparisonOperator::Equal,
-                right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(1))),
+                right: SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(1))),
             },
             proof: SourceProof::Script(vec![ProofTactic::Known]),
         });
@@ -450,10 +450,10 @@ mod certificate_tests {
 
     #[test]
     fn timing_classifies_smart_and_structural_have_sites_separately() {
-        let proposition = SurfaceProposition::Comparison {
-            left: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(1))),
+        let proposition = SyntaxProposition::Comparison {
+            left: SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(1))),
             operator: ComparisonOperator::Equal,
-            right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(1))),
+            right: SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(1))),
         };
         let smart = ProofTactic::Have(ProofHave {
             proposition: proposition.clone(),
@@ -477,10 +477,10 @@ mod certificate_tests {
     #[test]
     fn post_execution_timing_charges_have_as_control() {
         let have = PostExecutionTactic::Have(ProofHave {
-            proposition: SurfaceProposition::Comparison {
-                left: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(1))),
+            proposition: SyntaxProposition::Comparison {
+                left: SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(1))),
                 operator: ComparisonOperator::Equal,
-                right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(1))),
+                right: SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(1))),
             },
             proof: SourceProof::Script(vec![ProofTactic::Known]),
         });
@@ -656,12 +656,12 @@ mod certificate_tests {
 
     #[test]
     fn path_aligned_certificates_preserve_branch_structure() {
-        let condition = SurfaceProposition::Comparison {
-            left: SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+        let condition = SyntaxProposition::Comparison {
+            left: SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                 ("x".to_string()).into(),
             )),
             operator: ComparisonOperator::Equal,
-            right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
+            right: SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
         };
         let known = ProofCertificate::from_proof_tactics(&[ProofTactic::Known])
             .expect("known is a certificate");
@@ -711,19 +711,19 @@ mod certificate_tests {
 
     #[test]
     fn path_aligned_certificates_reject_incompatible_frontiers() {
-        let condition = SurfaceProposition::Comparison {
-            left: SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+        let condition = SyntaxProposition::Comparison {
+            left: SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                 ("x".to_string()).into(),
             )),
             operator: ComparisonOperator::Equal,
-            right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
+            right: SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
         };
-        let other = SurfaceProposition::Comparison {
-            left: SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+        let other = SyntaxProposition::Comparison {
+            left: SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                 ("y".to_string()).into(),
             )),
             operator: ComparisonOperator::Equal,
-            right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
+            right: SyntaxTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
         };
         let known = ProofCertificate::from_proof_tactics(&[ProofTactic::Known])
             .expect("known is a certificate");
@@ -789,7 +789,7 @@ enum InternalProofNode {
     If {
         index: usize,
         source_index: usize,
-        condition: SurfaceProposition,
+        condition: SyntaxProposition,
         ensuring: Option<Vec<ProofAssertion>>,
         then_branch: Box<InternalProofNode>,
         else_branch: Box<InternalProofNode>,
@@ -802,7 +802,7 @@ enum InternalProofNode {
     Cases {
         index: usize,
         source_index: usize,
-        disjunction: SurfaceProposition,
+        disjunction: SyntaxProposition,
         then_branch: Box<InternalProofNode>,
         else_branch: Box<InternalProofNode>,
         continuation: Box<InternalProofNode>,
@@ -1769,9 +1769,9 @@ pub(super) fn initial_claim_context(
 
 /// The surface spelling `name as int32 == 0 or name as int32 == 1` of a
 /// `bool` parameter's range entry fact (rule C1).
-fn bool_range_surface(name: &str) -> SurfaceProposition {
-    let cast = SurfaceTerm::CUnary {
-        operand: Box::new(SurfaceTerm::ProgramBinding(name.to_string())),
+fn bool_range_surface(name: &str) -> SyntaxProposition {
+    let cast = SyntaxTerm::CUnary {
+        operand: Box::new(SyntaxTerm::ProgramBinding(name.to_string())),
         lowered: ProgramExpression::Cast {
             expression: Box::new(ProgramExpression::Variable(name.into())),
             target_type: crate::kernel::ProgramType::Int32,
@@ -1783,12 +1783,12 @@ fn bool_range_surface(name: &str) -> SurfaceProposition {
             explicit_qualification: false,
         },
     };
-    let equals = |constant: &str| SurfaceProposition::Comparison {
+    let equals = |constant: &str| SyntaxProposition::Comparison {
         left: cast.clone(),
         operator: ComparisonOperator::Equal,
-        right: SurfaceTerm::IntegerLiteral(constant.to_string()),
+        right: SyntaxTerm::IntegerLiteral(constant.to_string()),
     };
-    SurfaceProposition::Or(Box::new(equals("0")), Box::new(equals("1")))
+    SyntaxProposition::Or(Box::new(equals("0")), Box::new(equals("1")))
 }
 
 /// The hosted boundary supplies the one stream exported by the projected
@@ -2044,7 +2044,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         ) {
             let surface = match &function_block.requires()[lowered.source_ordinal] {
                 Requirement::Proposition(proposition) => Some(proposition.clone()),
-                Requirement::LoadableSegment { segment } => Some(SurfaceProposition::Loadable {
+                Requirement::LoadableSegment { segment } => Some(SyntaxProposition::Loadable {
                     segment: segment.clone(),
                 }),
                 Requirement::Resource(_) => None,
@@ -2559,34 +2559,34 @@ fn entry_pure_fact_without_unconditional_loadability(
 /// its checked read view can be supplied to the kernel entry evaluator without
 /// lowering or authorizing the surrounding logical proposition.
 fn collect_conjunctive_loadability_segments(
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     segments: &mut Vec<ContractSegment>,
 ) {
     match proposition {
-        SurfaceProposition::Value(_) => {}
-        SurfaceProposition::Loadable { segment } => segments.push(segment.clone()),
-        SurfaceProposition::And(left, right) => {
+        SyntaxProposition::Value(_) => {}
+        SyntaxProposition::Loadable { segment } => segments.push(segment.clone()),
+        SyntaxProposition::And(left, right) => {
             collect_conjunctive_loadability_segments(left, segments);
             collect_conjunctive_loadability_segments(right, segments);
         }
         // A loadability atom under a branch, negation, quantifier, state,
         // or range binder is not unconditional entry authority.
-        SurfaceProposition::Comparison { .. }
-        | SurfaceProposition::FloatClassification { .. }
-        | SurfaceProposition::Separate { .. }
-        | SurfaceProposition::ResourceViewable { .. }
-        | SurfaceProposition::Contains { .. }
-        | SurfaceProposition::Defined { .. }
-        | SurfaceProposition::IsA { .. }
-        | SurfaceProposition::At { .. }
-        | SurfaceProposition::Or(..)
-        | SurfaceProposition::Not(..)
-        | SurfaceProposition::Implies(..)
-        | SurfaceProposition::ForAll { .. }
-        | SurfaceProposition::Exists { .. }
-        | SurfaceProposition::RangeAll { .. }
-        | SurfaceProposition::RangeAny { .. }
-        | SurfaceProposition::PredicateCall { .. } => {}
+        SyntaxProposition::Comparison { .. }
+        | SyntaxProposition::FloatClassification { .. }
+        | SyntaxProposition::Separate { .. }
+        | SyntaxProposition::ResourceViewable { .. }
+        | SyntaxProposition::Contains { .. }
+        | SyntaxProposition::Defined { .. }
+        | SyntaxProposition::IsA { .. }
+        | SyntaxProposition::At { .. }
+        | SyntaxProposition::Or(..)
+        | SyntaxProposition::Not(..)
+        | SyntaxProposition::Implies(..)
+        | SyntaxProposition::ForAll { .. }
+        | SyntaxProposition::Exists { .. }
+        | SyntaxProposition::RangeAll { .. }
+        | SyntaxProposition::RangeAny { .. }
+        | SyntaxProposition::PredicateCall { .. } => {}
     }
 }
 
@@ -2630,7 +2630,7 @@ fn explicit_entry_loadability_facts(
                 collect_conjunctive_loadability_segments(proposition, &mut segments);
                 for segment in segments {
                     let loadable =
-                        Requirement::Proposition(SurfaceProposition::Loadable { segment });
+                        Requirement::Proposition(SyntaxProposition::Loadable { segment });
                     let lowered = lower_one(&loadable)?;
                     for fact in lowered {
                         if matches!(fact, Proposition::MemoryLoadable { .. })
@@ -2922,41 +2922,41 @@ fn evaluate_entry_resource_context(
     Ok((state, entry_quantity_facts))
 }
 
-fn click_proposition_mentions_defined(proposition: &SurfaceProposition) -> bool {
+fn click_proposition_mentions_defined(proposition: &SyntaxProposition) -> bool {
     match proposition {
-        SurfaceProposition::Value(expression) => {
+        SyntaxProposition::Value(expression) => {
             let mut found = false;
             fixed_state_proofs::conversion_conditions::walk_written_expressions(
                 expression,
                 &mut |term| {
-                    if let SurfaceTerm::Proposition(body) = term {
+                    if let SyntaxTerm::Proposition(body) = term {
                         found |= click_proposition_mentions_defined(body);
                     }
                 },
             );
             found
         }
-        SurfaceProposition::Defined { .. } => true,
-        SurfaceProposition::At { proposition, .. } | SurfaceProposition::Not(proposition) => {
+        SyntaxProposition::Defined { .. } => true,
+        SyntaxProposition::At { proposition, .. } | SyntaxProposition::Not(proposition) => {
             click_proposition_mentions_defined(proposition)
         }
-        SurfaceProposition::And(left, right)
-        | SurfaceProposition::Or(left, right)
-        | SurfaceProposition::Implies(left, right) => {
+        SyntaxProposition::And(left, right)
+        | SyntaxProposition::Or(left, right)
+        | SyntaxProposition::Implies(left, right) => {
             click_proposition_mentions_defined(left) || click_proposition_mentions_defined(right)
         }
-        SurfaceProposition::ForAll { body, .. }
-        | SurfaceProposition::Exists { body, .. }
-        | SurfaceProposition::RangeAll { body, .. }
-        | SurfaceProposition::RangeAny { body, .. } => click_proposition_mentions_defined(body),
-        SurfaceProposition::Comparison { .. }
-        | SurfaceProposition::FloatClassification { .. }
-        | SurfaceProposition::Separate { .. }
-        | SurfaceProposition::ResourceViewable { .. }
-        | SurfaceProposition::Contains { .. }
-        | SurfaceProposition::Loadable { .. }
-        | SurfaceProposition::IsA { .. }
-        | SurfaceProposition::PredicateCall { .. } => false,
+        SyntaxProposition::ForAll { body, .. }
+        | SyntaxProposition::Exists { body, .. }
+        | SyntaxProposition::RangeAll { body, .. }
+        | SyntaxProposition::RangeAny { body, .. } => click_proposition_mentions_defined(body),
+        SyntaxProposition::Comparison { .. }
+        | SyntaxProposition::FloatClassification { .. }
+        | SyntaxProposition::Separate { .. }
+        | SyntaxProposition::ResourceViewable { .. }
+        | SyntaxProposition::Contains { .. }
+        | SyntaxProposition::Loadable { .. }
+        | SyntaxProposition::IsA { .. }
+        | SyntaxProposition::PredicateCall { .. } => false,
     }
 }
 

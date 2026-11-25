@@ -632,7 +632,7 @@ pub(super) fn instantiate_function(
 
 pub(super) fn instantiate_function_for_surface_call_with_variables(
     definition: &ClickFunctionDefinition,
-    arguments: &[SurfaceTerm],
+    arguments: &[SyntaxTerm],
     variables: &BTreeMap<String, ClickType>,
 ) -> Result<ClickFunctionDefinition, String> {
     if definition.type_parameters().is_empty() {
@@ -672,9 +672,8 @@ pub(super) fn instantiate_function_for_surface_call_with_variables(
 /// An explicit cast fixes the argument's logical C type. Its destination
 /// spelling is not evidence that the original object has that class; the
 /// existing kernel argument/constructor check still consumes the value.
-pub(super) fn explicit_cast_click_type(expression: &SurfaceTerm) -> Option<ClickType> {
-    let (SurfaceTerm::ProgramExpression(lowered) | SurfaceTerm::CUnary { lowered, .. }) =
-        expression
+pub(super) fn explicit_cast_click_type(expression: &SyntaxTerm) -> Option<ClickType> {
+    let (SyntaxTerm::ProgramExpression(lowered) | SyntaxTerm::CUnary { lowered, .. }) = expression
     else {
         return None;
     };
@@ -706,7 +705,7 @@ pub(super) fn click_type_from_program_value(value: &ProgramValue) -> ClickType {
     ClickType::Program(interface_type)
 }
 
-pub(super) fn default_numeral_click_type(expression: &SurfaceTerm) -> Option<ClickType> {
+pub(super) fn default_numeral_click_type(expression: &SyntaxTerm) -> Option<ClickType> {
     let ProgramExpression::Value(value) = contract_expression_as_program_expression(expression)?
     else {
         return None;
@@ -715,49 +714,49 @@ pub(super) fn default_numeral_click_type(expression: &SurfaceTerm) -> Option<Cli
 }
 
 pub(super) fn syntactic_expression_type(
-    expression: &SurfaceTerm,
+    expression: &SyntaxTerm,
     variables: &BTreeMap<String, ClickType>,
 ) -> Option<ClickType> {
     if let Some(cast_type) = explicit_cast_click_type(expression) {
         return Some(cast_type);
     }
     match expression {
-        SurfaceTerm::IntegerContext(_) => Some(ClickType::Integer),
+        SyntaxTerm::IntegerContext(_) => Some(ClickType::Integer),
 
-        SurfaceTerm::Lambda {
+        SyntaxTerm::Lambda {
             parameters, result, ..
         } => Some(lambdas::signature(parameters, result)),
-        SurfaceTerm::Apply { function, .. } => {
+        SyntaxTerm::Apply { function, .. } => {
             match syntactic_expression_type(function, variables)? {
                 ClickType::Function { result, .. } => Some(*result),
                 _ => None,
             }
         }
 
-        SurfaceTerm::Resource(_) => Some(ClickType::Resource),
-        SurfaceTerm::IntegerLiteral(_) | SurfaceTerm::Negate(_) => {
+        SyntaxTerm::Resource(_) => Some(ClickType::Resource),
+        SyntaxTerm::IntegerLiteral(_) | SyntaxTerm::Negate(_) => {
             default_numeral_click_type(expression)
         }
-        SurfaceTerm::AlgebraicVariable { algebraic_type, .. }
-        | SurfaceTerm::AlgebraicConstructor { algebraic_type, .. } => {
+        SyntaxTerm::AlgebraicVariable { algebraic_type, .. }
+        | SyntaxTerm::AlgebraicConstructor { algebraic_type, .. } => {
             Some(ClickType::Algebraic(algebraic_type.clone()))
         }
-        SurfaceTerm::ProgramExpression(ProgramExpression::Value(value)) => {
+        SyntaxTerm::ProgramExpression(ProgramExpression::Value(value)) => {
             Some(click_type_from_program_value(value))
         }
-        SurfaceTerm::Binding(name)
-        | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+        SyntaxTerm::Binding(name)
+        | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) => variables.get(name).cloned(),
-        SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+        SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::SliceLength(_),
         )) => Some(ClickType::Program(InterfaceType::UInt64(LongRank::Long))),
-        SurfaceTerm::Old(inner)
-        | SurfaceTerm::Exact(inner)
-        | SurfaceTerm::At {
+        SyntaxTerm::Old(inner)
+        | SyntaxTerm::Exact(inner)
+        | SyntaxTerm::At {
             expression: inner, ..
         } => syntactic_expression_type(inner, variables),
-        SurfaceTerm::Let { body, .. } => syntactic_expression_type(body, variables),
+        SyntaxTerm::Let { body, .. } => syntactic_expression_type(body, variables),
         _ => None,
     }
 }
@@ -800,7 +799,7 @@ pub(super) fn instantiate_predicate(
 
 pub(super) fn instantiate_predicate_for_surface_call(
     definition: &PredicateDefinition,
-    arguments: &[SurfaceTerm],
+    arguments: &[SyntaxTerm],
     variables: &BTreeMap<String, ClickType>,
 ) -> Result<PredicateDefinition, String> {
     if definition.type_parameters().is_empty() {
@@ -897,7 +896,7 @@ fn instantiate_theorem_with_proof(
             };
             Some((
                 parameter.name().to_string(),
-                SurfaceTerm::AlgebraicVariable {
+                SyntaxTerm::AlgebraicVariable {
                     name: parameter.name().into(),
                     algebraic_type: algebraic_type.clone(),
                     binder_index,
@@ -947,7 +946,7 @@ fn instantiate_theorem_with_proof(
 fn instantiate_requirement(
     requirement: &Requirement,
     substitution: &TypeSubstitution,
-    algebraic_parameters: &BTreeMap<String, SurfaceTerm>,
+    algebraic_parameters: &BTreeMap<String, SyntaxTerm>,
 ) -> Result<Requirement, String> {
     Ok(match requirement {
         Requirement::Proposition(proposition) => {
@@ -963,7 +962,7 @@ fn instantiate_requirement(
 fn instantiate_ensure_clause(
     ensure: &EnsureClause,
     substitution: &TypeSubstitution,
-    algebraic_parameters: &BTreeMap<String, SurfaceTerm>,
+    algebraic_parameters: &BTreeMap<String, SyntaxTerm>,
     include_proof: bool,
 ) -> Result<EnsureClause, String> {
     let ensure_value = match ensure.ensure() {
@@ -1015,7 +1014,7 @@ fn instantiate_ensure_clause(
 fn instantiate_source_proof(
     proof: &SourceProof,
     substitution: &TypeSubstitution,
-    algebraic_parameters: &BTreeMap<String, SurfaceTerm>,
+    algebraic_parameters: &BTreeMap<String, SyntaxTerm>,
 ) -> Result<SourceProof, String> {
     Ok(match proof {
         SourceProof::Default => SourceProof::Default,
@@ -1032,7 +1031,7 @@ fn instantiate_source_proof(
 fn instantiate_theorem_application(
     application: &TheoremApplication,
     substitution: &TypeSubstitution,
-    algebraic_parameters: &BTreeMap<String, SurfaceTerm>,
+    algebraic_parameters: &BTreeMap<String, SyntaxTerm>,
 ) -> Result<TheoremApplication, String> {
     Ok(TheoremApplication {
         name: application.name.clone(),
@@ -1052,7 +1051,7 @@ fn instantiate_theorem_application(
 fn instantiate_function_application(
     application: &ClickFunctionApplication,
     substitution: &TypeSubstitution,
-    algebraic_parameters: &BTreeMap<String, SurfaceTerm>,
+    algebraic_parameters: &BTreeMap<String, SyntaxTerm>,
 ) -> Result<ClickFunctionApplication, String> {
     Ok(ClickFunctionApplication {
         name: application.name.clone(),
@@ -1072,7 +1071,7 @@ fn instantiate_function_application(
 fn instantiate_proof_tactics(
     tactics: &[ProofTactic],
     substitution: &TypeSubstitution,
-    algebraic_parameters: &BTreeMap<String, SurfaceTerm>,
+    algebraic_parameters: &BTreeMap<String, SyntaxTerm>,
 ) -> Result<Vec<ProofTactic>, String> {
     tactics
         .iter()
@@ -1083,16 +1082,16 @@ fn instantiate_proof_tactics(
 fn instantiate_proof_tactic(
     tactic: &ProofTactic,
     substitution: &TypeSubstitution,
-    algebraic_parameters: &BTreeMap<String, SurfaceTerm>,
+    algebraic_parameters: &BTreeMap<String, SyntaxTerm>,
 ) -> Result<ProofTactic, String> {
     crate::instrumentation::record_deterministic_work(1);
-    let expression = |value: &SurfaceTerm| {
+    let expression = |value: &SyntaxTerm| {
         substitute_contract_expression(
             &instantiate_expression(value, substitution)?,
             algebraic_parameters,
         )
     };
-    let proposition = |value: &SurfaceProposition| {
+    let proposition = |value: &SyntaxProposition| {
         substitute_click_proposition(
             &instantiate_proposition(value, substitution)?,
             algebraic_parameters,
@@ -1343,20 +1342,20 @@ fn instantiate_parameter(
 }
 
 fn instantiate_expression(
-    expression: &SurfaceTerm,
+    expression: &SyntaxTerm,
     substitution: &TypeSubstitution,
-) -> Result<SurfaceTerm, String> {
-    let recurse = |expression: &SurfaceTerm| instantiate_expression(expression, substitution);
+) -> Result<SyntaxTerm, String> {
+    let recurse = |expression: &SyntaxTerm| instantiate_expression(expression, substitution);
     Ok(match expression {
-        SurfaceTerm::Proposition(proposition) => SurfaceTerm::Proposition(Box::new(
+        SyntaxTerm::Proposition(proposition) => SyntaxTerm::Proposition(Box::new(
             instantiate_proposition(proposition, substitution)?,
         )),
 
-        SurfaceTerm::Lambda {
+        SyntaxTerm::Lambda {
             parameters,
             result,
             body,
-        } => SurfaceTerm::Lambda {
+        } => SyntaxTerm::Lambda {
             parameters: parameters
                 .iter()
                 .map(|(name, ty)| Ok((name.clone(), instantiate_click_type(ty, substitution)?)))
@@ -1364,19 +1363,19 @@ fn instantiate_expression(
             result: instantiate_click_type(result, substitution)?,
             body: Box::new(recurse(body)?),
         },
-        SurfaceTerm::Apply {
+        SyntaxTerm::Apply {
             function,
             arguments,
-        } => SurfaceTerm::Apply {
+        } => SyntaxTerm::Apply {
             function: Box::new(recurse(function)?),
             arguments: arguments.iter().map(recurse).collect::<Result<_, _>>()?,
         },
 
-        SurfaceTerm::AlgebraicConstructor {
+        SyntaxTerm::AlgebraicConstructor {
             algebraic_type,
             variant,
             arguments,
-        } => SurfaceTerm::AlgebraicConstructor {
+        } => SyntaxTerm::AlgebraicConstructor {
             algebraic_type: instantiate_algebraic_type(algebraic_type, substitution)?,
             variant: variant.clone(),
             arguments: arguments
@@ -1384,16 +1383,16 @@ fn instantiate_expression(
                 .map(recurse)
                 .collect::<Result<Vec<_>, _>>()?,
         },
-        SurfaceTerm::AlgebraicVariable {
+        SyntaxTerm::AlgebraicVariable {
             name,
             algebraic_type,
             binder_index,
-        } => SurfaceTerm::AlgebraicVariable {
+        } => SyntaxTerm::AlgebraicVariable {
             name: name.clone(),
             algebraic_type: instantiate_algebraic_type(algebraic_type, substitution)?,
             binder_index: *binder_index,
         },
-        SurfaceTerm::AlgebraicMatch { scrutinee, arms } => SurfaceTerm::AlgebraicMatch {
+        SyntaxTerm::AlgebraicMatch { scrutinee, arms } => SyntaxTerm::AlgebraicMatch {
             scrutinee: Box::new(recurse(scrutinee)?),
             arms: arms
                 .iter()
@@ -1407,78 +1406,78 @@ fn instantiate_expression(
                 })
                 .collect::<Result<Vec<_>, String>>()?,
         },
-        SurfaceTerm::SequenceLiteral(elements) => {
-            SurfaceTerm::SequenceLiteral(elements.iter().map(recurse).collect::<Result<_, _>>()?)
+        SyntaxTerm::SequenceLiteral(elements) => {
+            SyntaxTerm::SequenceLiteral(elements.iter().map(recurse).collect::<Result<_, _>>()?)
         }
-        SurfaceTerm::SequenceConcat(left, right) => {
-            SurfaceTerm::SequenceConcat(Box::new(recurse(left)?), Box::new(recurse(right)?))
+        SyntaxTerm::SequenceConcat(left, right) => {
+            SyntaxTerm::SequenceConcat(Box::new(recurse(left)?), Box::new(recurse(right)?))
         }
-        SurfaceTerm::Old(inner) => SurfaceTerm::Old(Box::new(recurse(inner)?)),
-        SurfaceTerm::Exact(inner) => SurfaceTerm::Exact(Box::new(recurse(inner)?)),
-        SurfaceTerm::At {
+        SyntaxTerm::Old(inner) => SyntaxTerm::Old(Box::new(recurse(inner)?)),
+        SyntaxTerm::Exact(inner) => SyntaxTerm::Exact(Box::new(recurse(inner)?)),
+        SyntaxTerm::At {
             selector,
             expression,
-        } => SurfaceTerm::At {
+        } => SyntaxTerm::At {
             selector: selector.clone(),
             expression: Box::new(recurse(expression)?),
         },
-        SurfaceTerm::Add(left, right) => {
-            SurfaceTerm::Add(Box::new(recurse(left)?), Box::new(recurse(right)?))
+        SyntaxTerm::Add(left, right) => {
+            SyntaxTerm::Add(Box::new(recurse(left)?), Box::new(recurse(right)?))
         }
-        SurfaceTerm::Subtract(left, right) => {
-            SurfaceTerm::Subtract(Box::new(recurse(left)?), Box::new(recurse(right)?))
+        SyntaxTerm::Subtract(left, right) => {
+            SyntaxTerm::Subtract(Box::new(recurse(left)?), Box::new(recurse(right)?))
         }
-        SurfaceTerm::Multiply(left, right) => {
-            SurfaceTerm::Multiply(Box::new(recurse(left)?), Box::new(recurse(right)?))
+        SyntaxTerm::Multiply(left, right) => {
+            SyntaxTerm::Multiply(Box::new(recurse(left)?), Box::new(recurse(right)?))
         }
-        SurfaceTerm::Divide(left, right) => {
-            SurfaceTerm::Divide(Box::new(recurse(left)?), Box::new(recurse(right)?))
+        SyntaxTerm::Divide(left, right) => {
+            SyntaxTerm::Divide(Box::new(recurse(left)?), Box::new(recurse(right)?))
         }
-        SurfaceTerm::Remainder(left, right) => {
-            SurfaceTerm::Remainder(Box::new(recurse(left)?), Box::new(recurse(right)?))
+        SyntaxTerm::Remainder(left, right) => {
+            SyntaxTerm::Remainder(Box::new(recurse(left)?), Box::new(recurse(right)?))
         }
-        SurfaceTerm::ShiftLeft(left, right) => {
-            SurfaceTerm::ShiftLeft(Box::new(recurse(left)?), Box::new(recurse(right)?))
+        SyntaxTerm::ShiftLeft(left, right) => {
+            SyntaxTerm::ShiftLeft(Box::new(recurse(left)?), Box::new(recurse(right)?))
         }
-        SurfaceTerm::RustShiftLeft(left, right) => {
-            SurfaceTerm::RustShiftLeft(Box::new(recurse(left)?), Box::new(recurse(right)?))
+        SyntaxTerm::RustShiftLeft(left, right) => {
+            SyntaxTerm::RustShiftLeft(Box::new(recurse(left)?), Box::new(recurse(right)?))
         }
-        SurfaceTerm::ShiftRight(left, right) => {
-            SurfaceTerm::ShiftRight(Box::new(recurse(left)?), Box::new(recurse(right)?))
+        SyntaxTerm::ShiftRight(left, right) => {
+            SyntaxTerm::ShiftRight(Box::new(recurse(left)?), Box::new(recurse(right)?))
         }
-        SurfaceTerm::RustShiftRight(left, right) => {
-            SurfaceTerm::RustShiftRight(Box::new(recurse(left)?), Box::new(recurse(right)?))
+        SyntaxTerm::RustShiftRight(left, right) => {
+            SyntaxTerm::RustShiftRight(Box::new(recurse(left)?), Box::new(recurse(right)?))
         }
-        SurfaceTerm::BitwiseAnd(left, right) => {
-            SurfaceTerm::BitwiseAnd(Box::new(recurse(left)?), Box::new(recurse(right)?))
+        SyntaxTerm::BitwiseAnd(left, right) => {
+            SyntaxTerm::BitwiseAnd(Box::new(recurse(left)?), Box::new(recurse(right)?))
         }
-        SurfaceTerm::BitwiseOr(left, right) => {
-            SurfaceTerm::BitwiseOr(Box::new(recurse(left)?), Box::new(recurse(right)?))
+        SyntaxTerm::BitwiseOr(left, right) => {
+            SyntaxTerm::BitwiseOr(Box::new(recurse(left)?), Box::new(recurse(right)?))
         }
-        SurfaceTerm::BitwiseXor(left, right) => {
-            SurfaceTerm::BitwiseXor(Box::new(recurse(left)?), Box::new(recurse(right)?))
+        SyntaxTerm::BitwiseXor(left, right) => {
+            SyntaxTerm::BitwiseXor(Box::new(recurse(left)?), Box::new(recurse(right)?))
         }
-        SurfaceTerm::Index(left, right) => {
-            SurfaceTerm::Index(Box::new(recurse(left)?), Box::new(recurse(right)?))
+        SyntaxTerm::Index(left, right) => {
+            SyntaxTerm::Index(Box::new(recurse(left)?), Box::new(recurse(right)?))
         }
-        SurfaceTerm::BitwiseNot(inner) => SurfaceTerm::BitwiseNot(Box::new(recurse(inner)?)),
-        SurfaceTerm::If {
+        SyntaxTerm::BitwiseNot(inner) => SyntaxTerm::BitwiseNot(Box::new(recurse(inner)?)),
+        SyntaxTerm::If {
             condition,
             then_branch,
             else_branch,
-        } => SurfaceTerm::If {
+        } => SyntaxTerm::If {
             condition: Box::new(instantiate_proposition(condition, substitution)?),
             then_branch: Box::new(recurse(then_branch)?),
             else_branch: Box::new(recurse(else_branch)?),
         },
-        SurfaceTerm::RangeFold {
+        SyntaxTerm::RangeFold {
             start,
             end,
             initial,
             accumulator,
             item,
             body,
-        } => SurfaceTerm::RangeFold {
+        } => SyntaxTerm::RangeFold {
             start: Box::new(recurse(start)?),
             end: Box::new(recurse(end)?),
             initial: Box::new(recurse(initial)?),
@@ -1486,12 +1485,12 @@ fn instantiate_expression(
             item: item.clone(),
             body: Box::new(recurse(body)?),
         },
-        SurfaceTerm::Let {
+        SyntaxTerm::Let {
             name,
             click_type,
             value,
             body,
-        } => SurfaceTerm::Let {
+        } => SyntaxTerm::Let {
             name: name.clone(),
             click_type: click_type
                 .as_ref()
@@ -1500,7 +1499,7 @@ fn instantiate_expression(
             value: Box::new(recurse(value)?),
             body: Box::new(recurse(body)?),
         },
-        SurfaceTerm::Call { name, arguments } => SurfaceTerm::Call {
+        SyntaxTerm::Call { name, arguments } => SyntaxTerm::Call {
             name: name.clone(),
             arguments: arguments
                 .iter()
@@ -1512,112 +1511,110 @@ fn instantiate_expression(
 }
 
 fn instantiate_proposition(
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     substitution: &TypeSubstitution,
-) -> Result<SurfaceProposition, String> {
-    let expression = |expression: &SurfaceTerm| instantiate_expression(expression, substitution);
+) -> Result<SyntaxProposition, String> {
+    let expression = |expression: &SyntaxTerm| instantiate_expression(expression, substitution);
     let recurse =
-        |proposition: &SurfaceProposition| instantiate_proposition(proposition, substitution);
+        |proposition: &SyntaxProposition| instantiate_proposition(proposition, substitution);
     Ok(match proposition {
-        SurfaceProposition::Value(value) => SurfaceProposition::Value(expression(value)?),
+        SyntaxProposition::Value(value) => SyntaxProposition::Value(expression(value)?),
 
-        SurfaceProposition::Comparison {
+        SyntaxProposition::Comparison {
             operator,
             left,
             right,
-        } => SurfaceProposition::Comparison {
+        } => SyntaxProposition::Comparison {
             operator: *operator,
             left: expression(left)?,
             right: expression(right)?,
         },
-        SurfaceProposition::FloatClassification {
+        SyntaxProposition::FloatClassification {
             classification,
             expression: value,
-        } => SurfaceProposition::FloatClassification {
+        } => SyntaxProposition::FloatClassification {
             classification: *classification,
             expression: expression(value)?,
         },
-        SurfaceProposition::Defined { expression: value } => SurfaceProposition::Defined {
+        SyntaxProposition::Defined { expression: value } => SyntaxProposition::Defined {
             expression: expression(value)?,
         },
-        SurfaceProposition::IsA { class, pointer } => SurfaceProposition::IsA {
+        SyntaxProposition::IsA { class, pointer } => SyntaxProposition::IsA {
             class: class.clone(),
             pointer: expression(pointer)?,
         },
-        SurfaceProposition::At {
+        SyntaxProposition::At {
             selector,
             proposition,
-        } => SurfaceProposition::At {
+        } => SyntaxProposition::At {
             selector: selector.clone(),
             proposition: Box::new(recurse(proposition)?),
         },
-        SurfaceProposition::And(left, right) => {
-            SurfaceProposition::And(Box::new(recurse(left)?), Box::new(recurse(right)?))
+        SyntaxProposition::And(left, right) => {
+            SyntaxProposition::And(Box::new(recurse(left)?), Box::new(recurse(right)?))
         }
-        SurfaceProposition::Or(left, right) => {
-            SurfaceProposition::Or(Box::new(recurse(left)?), Box::new(recurse(right)?))
+        SyntaxProposition::Or(left, right) => {
+            SyntaxProposition::Or(Box::new(recurse(left)?), Box::new(recurse(right)?))
         }
-        SurfaceProposition::Not(body) => SurfaceProposition::Not(Box::new(recurse(body)?)),
-        SurfaceProposition::Implies(left, right) => {
-            SurfaceProposition::Implies(Box::new(recurse(left)?), Box::new(recurse(right)?))
+        SyntaxProposition::Not(body) => SyntaxProposition::Not(Box::new(recurse(body)?)),
+        SyntaxProposition::Implies(left, right) => {
+            SyntaxProposition::Implies(Box::new(recurse(left)?), Box::new(recurse(right)?))
         }
-        SurfaceProposition::ForAll {
+        SyntaxProposition::ForAll {
             click_type: interface_type,
             name,
             written_name,
             body,
-        } => SurfaceProposition::ForAll {
+        } => SyntaxProposition::ForAll {
             click_type: instantiate_click_type(interface_type, substitution)?,
             name: name.clone(),
             written_name: written_name.clone(),
             body: Box::new(recurse(body)?),
         },
-        SurfaceProposition::Exists {
+        SyntaxProposition::Exists {
             click_type: interface_type,
             name,
             written_name,
             body,
-        } => SurfaceProposition::Exists {
+        } => SyntaxProposition::Exists {
             click_type: instantiate_click_type(interface_type, substitution)?,
             name: name.clone(),
             written_name: written_name.clone(),
             body: Box::new(recurse(body)?),
         },
-        SurfaceProposition::RangeAll {
+        SyntaxProposition::RangeAll {
             start,
             end,
             item,
             written_item,
             body,
-        } => SurfaceProposition::RangeAll {
+        } => SyntaxProposition::RangeAll {
             start: expression(start)?,
             end: expression(end)?,
             item: item.clone(),
             written_item: written_item.clone(),
             body: Box::new(recurse(body)?),
         },
-        SurfaceProposition::RangeAny {
+        SyntaxProposition::RangeAny {
             start,
             end,
             item,
             written_item,
             body,
-        } => SurfaceProposition::RangeAny {
+        } => SyntaxProposition::RangeAny {
             start: expression(start)?,
             end: expression(end)?,
             item: item.clone(),
             written_item: written_item.clone(),
             body: Box::new(recurse(body)?),
         },
-        SurfaceProposition::PredicateCall { name, arguments } => {
-            SurfaceProposition::PredicateCall {
-                name: name.clone(),
-                arguments: arguments
-                    .iter()
-                    .map(expression)
-                    .collect::<Result<Vec<_>, _>>()?,
-            }
-        }
+        SyntaxProposition::PredicateCall { name, arguments } => SyntaxProposition::PredicateCall {
+            name: name.clone(),
+            arguments: arguments
+                .iter()
+                .map(expression)
+                .collect::<Result<Vec<_>, _>>()?,
+        },
         proposition => proposition.clone(),
     })
 }

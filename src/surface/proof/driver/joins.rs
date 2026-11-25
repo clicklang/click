@@ -57,7 +57,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         &self,
         arm_enclosing: &[&ExecutionSplit<'a>],
         take_then: bool,
-        surface_condition: &SurfaceProposition,
+        surface_condition: &SyntaxProposition,
         steps: &[ProofStep],
     ) -> Result<Proof<'a>, ClickError> {
         let proof_object = self.proof;
@@ -86,7 +86,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     fn apply_execution_if_within(
         &self,
         enclosing: &[&ExecutionSplit<'a>],
-        condition: &SurfaceProposition,
+        condition: &SyntaxProposition,
         then_steps: &[ProofStep],
         else_steps: &[ProofStep],
         expanded: bool,
@@ -149,7 +149,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     fn apply_execution_branch_within(
         &self,
         enclosing: &[&ExecutionSplit<'a>],
-        condition: &SurfaceProposition,
+        condition: &SyntaxProposition,
         then_steps: &[ProofStep],
         else_steps: &[ProofStep],
         expanded: bool,
@@ -209,7 +209,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     /// join remain owned by this Proof lineage.
     pub(in crate::surface::proof) fn apply_expanded_execution_if(
         &self,
-        condition: &SurfaceProposition,
+        condition: &SyntaxProposition,
         then_steps: &[ProofStep],
         else_steps: &[ProofStep],
     ) -> Result<Proof<'a>, ClickError> {

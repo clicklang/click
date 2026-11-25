@@ -9,7 +9,7 @@ const MAX_EXISTENTIAL_PROJECTION_WORK: usize = 4096;
 
 /// A source-sized decision graph. Both arms point to the shared continuation;
 /// walking an arm never visits the syntax or outcomes of its sibling.
-type OutcomeBindings = PersistentBinderMap<SurfaceTerm>;
+type OutcomeBindings = PersistentBinderMap<SyntaxTerm>;
 
 // Nodes select their lexical match by source occurrence. Shared continuation
 // nodes keep their enclosing scope, so arm bindings cannot escape the arm.
@@ -19,7 +19,7 @@ struct OutcomeCase<'a> {
     lexical_bindings: Option<&'a OutcomeBindings>,
     occurrence: usize,
     fingerprint: u64,
-    condition: &'a SurfaceProposition,
+    condition: &'a SyntaxProposition,
     /// `condition` is a `cases` disjunction whose two sides the arms take,
     /// rather than an `if` condition and its negation.
     disjunction: bool,
@@ -146,13 +146,13 @@ fn partition_outcome_match(
     facts: &mut Vec<Proposition>,
     outcome_evidence: OutcomeEvidence,
     lower: &impl Fn(
-        &SurfaceProposition,
+        &SyntaxProposition,
         &[Proposition],
         Option<&OutcomeBindings>,
     ) -> Result<Proposition, ClickError>,
     match_cases: &OutcomeMatchPartition<'_>,
     prove: &impl Fn(
-        &SurfaceProposition,
+        &SyntaxProposition,
         Option<&DeferredPostExecutionTactic>,
         &PureFactStore,
         &OutcomeEvidence,
@@ -226,7 +226,7 @@ fn partition_outcome_match(
 /// on the path: an `if` arm records its condition's polarity, a `cases` arm
 /// that its own disjunct holds.
 struct OutcomeArmCase<'a> {
-    surface: &'a SurfaceProposition,
+    surface: &'a SyntaxProposition,
     lowered: &'a Proposition,
     value: bool,
 }
@@ -243,13 +243,13 @@ fn descend_outcome_case(
     outcome_evidence: OutcomeEvidence,
     fact: Option<Proposition>,
     lower: &impl Fn(
-        &SurfaceProposition,
+        &SyntaxProposition,
         &[Proposition],
         Option<&OutcomeBindings>,
     ) -> Result<Proposition, ClickError>,
     match_cases: &OutcomeMatchPartition<'_>,
     prove: &impl Fn(
-        &SurfaceProposition,
+        &SyntaxProposition,
         Option<&DeferredPostExecutionTactic>,
         &PureFactStore,
         &OutcomeEvidence,
@@ -295,13 +295,13 @@ fn partition_outcome_cases(
     facts: &mut Vec<Proposition>,
     outcome_evidence: OutcomeEvidence,
     lower: &impl Fn(
-        &SurfaceProposition,
+        &SyntaxProposition,
         &[Proposition],
         Option<&OutcomeBindings>,
     ) -> Result<Proposition, ClickError>,
     match_cases: &OutcomeMatchPartition<'_>,
     prove: &impl Fn(
-        &SurfaceProposition,
+        &SyntaxProposition,
         Option<&DeferredPostExecutionTactic>,
         &PureFactStore,
         &OutcomeEvidence,
@@ -406,7 +406,7 @@ fn partition_outcome_cases(
             .branch_decisions
             .value_for_key(node.condition, node.fingerprint)?,
         (None, Some([left, right])) => {
-            let holds = |surface: &SurfaceProposition| {
+            let holds = |surface: &SyntaxProposition| {
                 outcome_evidence
                     .branch_decisions
                     .value_for_key(surface, ExecutionBranchDecisions::key(surface))
@@ -449,7 +449,7 @@ fn partition_outcome_cases(
     let negated_surface;
     let (cases, case_surfaces) = match &arm_surfaces {
         None => {
-            negated_surface = SurfaceProposition::Not(Box::new(node.condition.clone()));
+            negated_surface = SyntaxProposition::Not(Box::new(node.condition.clone()));
             (
                 [
                     crate::kernel::canonical_condition_fact(&lowered),
@@ -607,19 +607,19 @@ pub(in crate::surface::proof) struct PreparedTheoremApplication {
 }
 
 fn range_witness_body(
-    start: SurfaceTerm,
-    end: SurfaceTerm,
-    value: SurfaceTerm,
-    body: SurfaceProposition,
-) -> SurfaceProposition {
-    SurfaceProposition::And(
-        Box::new(SurfaceProposition::And(
-            Box::new(SurfaceProposition::Comparison {
+    start: SyntaxTerm,
+    end: SyntaxTerm,
+    value: SyntaxTerm,
+    body: SyntaxProposition,
+) -> SyntaxProposition {
+    SyntaxProposition::And(
+        Box::new(SyntaxProposition::And(
+            Box::new(SyntaxProposition::Comparison {
                 left: start,
                 operator: ComparisonOperator::LessEqual,
                 right: value.clone(),
             }),
-            Box::new(SurfaceProposition::Comparison {
+            Box::new(SyntaxProposition::Comparison {
                 left: value,
                 operator: ComparisonOperator::LessThan,
                 right: end,
@@ -633,7 +633,7 @@ impl<'a> Proof<'a> {
     pub(super) fn apply_theorem_using(
         &self,
         application: &TheoremApplication,
-        surface_premises: &[SurfaceProposition],
+        surface_premises: &[SyntaxProposition],
     ) -> Result<CheckedFocusedTransition, ClickError> {
         #[cfg(test)]
         let _operation = crate::kernel::search::FastOperationScope::enter("apply_theorem_using");
@@ -774,7 +774,7 @@ impl<'a> Proof<'a> {
         &self,
         context: &PureProofContext<'_>,
         application: &TheoremApplication,
-        surface_premises: &[SurfaceProposition],
+        surface_premises: &[SyntaxProposition],
     ) -> Result<CheckedFocusedTransition, ClickError> {
         let lowered_premises = surface_premises
             .iter()
@@ -899,7 +899,7 @@ impl<'a> Proof<'a> {
         &self,
         view: &FixedStateOperationView<'_>,
         application: &TheoremApplication,
-        surface_premises: &[SurfaceProposition],
+        surface_premises: &[SyntaxProposition],
     ) -> Result<CheckedFocusedTransition, ClickError> {
         let algebraic_values = application
             .arguments
@@ -945,7 +945,7 @@ impl<'a> Proof<'a> {
         &self,
         context: &ExecutionProofContext<'a>,
         application: &TheoremApplication,
-        surface_premises: &[SurfaceProposition],
+        surface_premises: &[SyntaxProposition],
     ) -> Result<CheckedFocusedTransition, ClickError> {
         let execution = self
             .execution()
@@ -1156,7 +1156,7 @@ impl<'a> Proof<'a> {
         let mut locals = self.state().locals().clone();
         locals.set_values(locals.values.with_inserted(
             choice.name.clone(),
-            SurfaceTerm::ProgramExpression(ProgramExpression::Value(chosen.clone())),
+            SyntaxTerm::ProgramExpression(ProgramExpression::Value(chosen.clone())),
         ));
         locals.next_choice_variable = chosen_variable.0.saturating_add(1);
         let added_facts = if self.facts().contains_top_level(&chosen_fact) {
@@ -1252,7 +1252,7 @@ impl<'a> Proof<'a> {
                     locals.set_values(
                         locals.values.with_inserted(
                             name.clone(),
-                            SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+                            SyntaxTerm::ProgramExpression(ProgramExpression::Value(
                                 sort.machine_integer_type()
                                     .unwrap()
                                     .symbolic_value(variable),
@@ -1264,7 +1264,7 @@ impl<'a> Proof<'a> {
                     locals.set_values(
                         locals.values.with_inserted(
                             name.clone(),
-                            SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+                            SyntaxTerm::ProgramExpression(ProgramExpression::Value(
                                 sort.symbolic_pointer_value(variable)
                                     .expect("pointer choice sort"),
                             )),
@@ -1275,7 +1275,7 @@ impl<'a> Proof<'a> {
                     locals.set_values(
                         locals
                             .values
-                            .with_inserted(name.clone(), SurfaceTerm::Binding(name.clone())),
+                            .with_inserted(name.clone(), SyntaxTerm::Binding(name.clone())),
                     );
                     locals.set_algebraic_values(locals.algebraic_values.with_inserted(
                         name.clone(),
@@ -1303,23 +1303,23 @@ impl<'a> Proof<'a> {
         let mut range_body = None;
         for (output, click_type) in &binding.bindings {
             written_body = match written_body {
-                Some(SurfaceProposition::Exists { name, body, .. }) => {
+                Some(SyntaxProposition::Exists { name, body, .. }) => {
                     if name.written() == Some(output) {
                         substitutions.remove(name);
                     } else {
                         let replacement = match click_type {
                             Some(ClickType::Program(_) | ClickType::CObjectPointer { .. }) => {
-                                SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                                SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                                     output.clone().into(),
                                 ))
                             }
-                            _ => SurfaceTerm::Binding(output.clone()),
+                            _ => SyntaxTerm::Binding(output.clone()),
                         };
                         substitutions.insert(name.clone(), replacement);
                     }
                     Some(body.as_ref())
                 }
-                Some(SurfaceProposition::RangeAny {
+                Some(SyntaxProposition::RangeAny {
                     start,
                     end,
                     item,
@@ -1336,7 +1336,7 @@ impl<'a> Proof<'a> {
                     let start =
                         substitute_contract_expression(start, &substitutions).map_err(error)?;
                     let end = substitute_contract_expression(end, &substitutions).map_err(error)?;
-                    let value = SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                    let value = SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                         output.clone().into(),
                     ));
                     substitutions.insert(item.clone(), value.clone());
@@ -1397,7 +1397,7 @@ impl<'a> Proof<'a> {
             region: CodeRegionRef::Function,
             kind: ProgramPointKind::Entry,
         });
-        if !matches!(&binding.proposition, SurfaceProposition::At { selector, .. } if *selector == entry_selector)
+        if !matches!(&binding.proposition, SyntaxProposition::At { selector, .. } if *selector == entry_selector)
         {
             return Ok(None);
         }
@@ -1459,9 +1459,7 @@ impl<'a> Proof<'a> {
                         &surface,
                         &BTreeMap::from([(
                             name.clone(),
-                            SurfaceTerm::ProgramExpression(ProgramExpression::Value(
-                                chosen.clone(),
-                            )),
+                            SyntaxTerm::ProgramExpression(ProgramExpression::Value(chosen.clone())),
                         )]),
                     )
                     .map_err(|message| self.step_error(message))?;
@@ -1636,7 +1634,7 @@ impl<'a> Proof<'a> {
         let mut locals = self.state().locals().clone();
         locals.set_values(locals.values.with_inserted(
             choice.name.clone(),
-            SurfaceTerm::Binding(choice.name.clone()),
+            SyntaxTerm::Binding(choice.name.clone()),
         ));
         locals.set_algebraic_values(locals.algebraic_values.with_inserted(
             choice.name.clone(),
@@ -1757,7 +1755,7 @@ impl<'a> Proof<'a> {
                     body, **var, &value,
                 );
             let surface_goal = match self.surface_goal() {
-                Some(SurfaceProposition::Exists { name, body, .. }) => {
+                Some(SyntaxProposition::Exists { name, body, .. }) => {
                     let substitutions = BTreeMap::from([(name.clone(), witness.value().clone())]);
                     Some(
                         substitute_click_proposition(body, &substitutions).map_err(|message| {
@@ -1792,7 +1790,7 @@ impl<'a> Proof<'a> {
         )?;
         let goal = apply_witness_tactic(value, goal, view.claim_label, 0, view.tactic_index)?;
         let surface_goal = match self.surface_goal() {
-            Some(SurfaceProposition::Exists { name, body, .. }) => {
+            Some(SyntaxProposition::Exists { name, body, .. }) => {
                 let substitutions = BTreeMap::from([(name.clone(), witness.value().clone())]);
                 Some(
                     substitute_click_proposition(body, &substitutions).map_err(|message| {
@@ -1802,7 +1800,7 @@ impl<'a> Proof<'a> {
                     })?,
                 )
             }
-            Some(SurfaceProposition::RangeAny {
+            Some(SyntaxProposition::RangeAny {
                 start,
                 end,
                 item,
@@ -1861,14 +1859,14 @@ impl<'a> Proof<'a> {
             self.substitute_fixed_state_locals_in_expression(witness.value())?,
         );
         let non_machine_type = match checked_witness.value() {
-            SurfaceTerm::Binding(name)
+            SyntaxTerm::Binding(name)
                 if context.theorem_context.integer_values.get(name).is_some()
                     || self.local_integer_values().get(name).is_some() =>
             {
                 Some("Integer".to_owned())
             }
-            SurfaceTerm::AlgebraicVariable { algebraic_type, .. }
-            | SurfaceTerm::AlgebraicConstructor { algebraic_type, .. } => {
+            SyntaxTerm::AlgebraicVariable { algebraic_type, .. }
+            | SyntaxTerm::AlgebraicConstructor { algebraic_type, .. } => {
                 Some(crate::surface::validation::describe_click_type(
                     &ClickType::Algebraic(algebraic_type.clone()),
                 ))
@@ -1959,7 +1957,7 @@ impl<'a> Proof<'a> {
         )
         .map_err(|error| self.attach_step_diagnostic(error))?;
         let surface_goal = match self.surface_goal() {
-            Some(SurfaceProposition::Exists { name, body, .. }) => {
+            Some(SyntaxProposition::Exists { name, body, .. }) => {
                 let substitutions = BTreeMap::from([(name.clone(), witness.value().clone())]);
                 Some(
                     substitute_click_proposition(body, &substitutions).map_err(|message| {
@@ -2003,7 +2001,7 @@ impl<'a> Proof<'a> {
                     self.step_error(format!("could not apply Integer witness: {error}"))
                 })?;
         let surface_goal = match self.surface_goal() {
-            Some(SurfaceProposition::Exists { name, body, .. }) => {
+            Some(SyntaxProposition::Exists { name, body, .. }) => {
                 let substitutions = BTreeMap::from([(name.clone(), witness.value().clone())]);
                 Some(
                     substitute_click_proposition(body, &substitutions).map_err(|message| {
@@ -2050,7 +2048,7 @@ impl<'a> Proof<'a> {
             &body, *var, &value,
         );
         let surface_goal = match self.surface_goal() {
-            Some(SurfaceProposition::Exists { name, body, .. }) => {
+            Some(SyntaxProposition::Exists { name, body, .. }) => {
                 let substitutions = BTreeMap::from([(name.clone(), witness.value().clone())]);
                 Some(
                     substitute_click_proposition(body, &substitutions).map_err(|message| {
@@ -2073,7 +2071,7 @@ impl<'a> Proof<'a> {
 
     pub(super) fn capture_pure_algebraic_witness(
         &self,
-        expression: &SurfaceTerm,
+        expression: &SyntaxTerm,
     ) -> Result<crate::kernel::AlgebraicTerm, ClickError> {
         let ProofContext::Pure(context) = self.context.as_ref() else {
             unreachable!()
@@ -2133,7 +2131,7 @@ impl<'a> Proof<'a> {
 
     fn capture_pure_integer_witness(
         &self,
-        expression: &SurfaceTerm,
+        expression: &SyntaxTerm,
     ) -> Result<crate::kernel::IntegerTerm, ClickError> {
         let ProofContext::Pure(context) = self.context.as_ref() else {
             unreachable!()
@@ -2195,7 +2193,7 @@ impl<'a> Proof<'a> {
             None,
         );
         let spec = crate::surface::lowering::elaborate_fixed_state_proposition_with_algebraic_and_integer_values(
-            &SurfaceProposition::Comparison { left: promoted, operator: ComparisonOperator::Equal, right: SurfaceTerm::IntegerLiteral("0".into()) },
+            &SyntaxProposition::Comparison { left: promoted, operator: ComparisonOperator::Equal, right: SyntaxTerm::IntegerLiteral("0".into()) },
             states.element_types, BTreeMap::new(), &states.entry_state, &states.lowering_state, states.entry_values, states.current_values,
             algebraic, &integers, None, &RecordedStates::new(),
             context.spec_definitions, BTreeSet::new(),
@@ -2221,7 +2219,7 @@ impl<'a> Proof<'a> {
     /// a fixed-state proof or rebuilding an assumption context.
     fn capture_instantiate_argument(
         &self,
-        argument: &SurfaceTerm,
+        argument: &SyntaxTerm,
         binder: &Sort,
     ) -> Result<InstanceArgument, ClickError> {
         if *binder == Sort::Integer {
@@ -2256,7 +2254,7 @@ impl<'a> Proof<'a> {
     /// type, in exactly the environment used by explicit instantiation.
     pub(in crate::surface::proof) fn capture_native_argument(
         &self,
-        argument: &SurfaceTerm,
+        argument: &SyntaxTerm,
     ) -> Result<ProgramValue, ClickError> {
         let argument = self.substitute_fixed_state_locals_in_expression(argument)?;
         let value = if let ProofContext::Pure(context) = self.context.as_ref() {
@@ -2382,7 +2380,7 @@ impl<'a> Proof<'a> {
     /// bindings in a pure proof, the fixed-state environment otherwise.
     pub(in crate::surface::proof) fn capture_instantiate_integer_argument(
         &self,
-        argument: &SurfaceTerm,
+        argument: &SyntaxTerm,
     ) -> Result<crate::kernel::IntegerTerm, ClickError> {
         if matches!(self.context.as_ref(), ProofContext::Pure(_)) {
             return self.capture_pure_integer_witness(argument);
@@ -2426,8 +2424,8 @@ impl<'a> Proof<'a> {
 
     pub(super) fn apply_fixed_state_instantiate(
         &self,
-        source: &SurfaceProposition,
-        arguments: &[SurfaceTerm],
+        source: &SyntaxProposition,
+        arguments: &[SyntaxTerm],
     ) -> Result<KernelProofHandle, ClickError> {
         let Some((first, remaining)) = arguments.split_first() else {
             return Err(self.step_error("`instantiate` requires at least one value"));
@@ -2461,11 +2459,11 @@ impl<'a> Proof<'a> {
 
     fn instantiate_one(
         &self,
-        source: &SurfaceProposition,
+        source: &SyntaxProposition,
         quantified: Proposition,
-        surface: Option<&SurfaceProposition>,
-        argument: &SurfaceTerm,
-    ) -> Result<(KernelProofHandle, Proposition, Option<SurfaceProposition>), ClickError> {
+        surface: Option<&SyntaxProposition>,
+        argument: &SyntaxTerm,
+    ) -> Result<(KernelProofHandle, Proposition, Option<SyntaxProposition>), ClickError> {
         // The argument has the binder's type. A fact that is not a universal
         // is refused by the kernel below; it is read as `int32` here.
         let binder = match &quantified {
@@ -2479,7 +2477,7 @@ impl<'a> Proof<'a> {
         // lowering below is optional, and only C values have a fragment form.
         let surface_argument = match &argument {
             InstanceArgument::Machine(value) => {
-                Some(SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+                Some(SyntaxTerm::ProgramExpression(ProgramExpression::Value(
                     if binder == Sort::ProgramInteger(crate::kernel::MachineIntegerType::UInt64) {
                         ProgramValue::UInt64(value.clone())
                     } else {
@@ -2487,7 +2485,7 @@ impl<'a> Proof<'a> {
                     },
                 )))
             }
-            InstanceArgument::Pointer(pointer) => Some(SurfaceTerm::ProgramExpression(
+            InstanceArgument::Pointer(pointer) => Some(SyntaxTerm::ProgramExpression(
                 ProgramExpression::Value(ProgramValue::Pointer(pointer.clone())),
             )),
             InstanceArgument::Integer(_) => None,
@@ -2517,7 +2515,7 @@ impl<'a> Proof<'a> {
         let keeps_spelling = matches!(self.context.as_ref(), ProofContext::FixedState(_))
             || self.focused_outcome_data().is_some();
         let written = match (surface, surface_argument) {
-            (Some(SurfaceProposition::ForAll { name, body, .. }), Some(argument))
+            (Some(SyntaxProposition::ForAll { name, body, .. }), Some(argument))
                 if keeps_spelling =>
             {
                 substitute_click_proposition(body, &BTreeMap::from([(name.clone(), argument)])).ok()
@@ -2545,7 +2543,7 @@ impl<'a> Proof<'a> {
             // instance remains in checked facts; this optional rewrite cache
             // needs the exposed consequence when propagation has reached it.
             while let (
-                SurfaceProposition::Implies(_, next_surface),
+                SyntaxProposition::Implies(_, next_surface),
                 Proposition::Implies(_, next_kernel),
             ) = (surface, kernel)
             {
@@ -2565,7 +2563,7 @@ impl<'a> Proof<'a> {
 
     pub(super) fn apply_rewrite(
         &self,
-        surface_equality: &SurfaceProposition,
+        surface_equality: &SyntaxProposition,
     ) -> Result<CheckedFocusedTransition, ClickError> {
         match self.context.as_ref() {
             ProofContext::Pure(_) => self.apply_pure_rewrite(surface_equality),
@@ -2596,7 +2594,7 @@ impl<'a> Proof<'a> {
     #[inline(never)]
     pub(super) fn apply_pure_rewrite(
         &self,
-        surface_equality: &SurfaceProposition,
+        surface_equality: &SyntaxProposition,
     ) -> Result<CheckedFocusedTransition, ClickError> {
         let goal = Box::new(
             self.proposition_goal("`rewrite` requires a proposition goal")?
@@ -2682,12 +2680,12 @@ impl<'a> Proof<'a> {
     pub(super) fn apply_fixed_state_rewrite(
         &self,
         view: &FixedStateOperationView<'_>,
-        surface_equality: &SurfaceProposition,
+        surface_equality: &SyntaxProposition,
     ) -> Result<CheckedFocusedTransition, ClickError> {
         let goal = Box::new(Proposition::clone(
             self.proposition_goal("`rewrite` requires a proposition goal")?,
         ));
-        let lookup = |map: &SurfacePropositionMap, surface: &SurfaceProposition| {
+        let lookup = |map: &SurfacePropositionMap, surface: &SyntaxProposition| {
             map.available_kernel_matching(surface, |kernel| {
                 self.facts().materialization_available(kernel)
             })
@@ -2749,7 +2747,7 @@ impl<'a> Proof<'a> {
         &self,
         goal: Box<Proposition>,
         equality: Box<Proposition>,
-        surface_equality: &SurfaceProposition,
+        surface_equality: &SyntaxProposition,
         // Naming can scan unrelated locals. Construct these tables only
         // on refusal, preserving the selected fixed state's diagnostic names.
         naming_tables: impl FnOnce() -> (
@@ -2769,14 +2767,14 @@ impl<'a> Proof<'a> {
         // reading of the native fact, tried first, and the native form only
         // when it does not apply.
         let observed_reading = match surface_equality {
-            SurfaceProposition::Comparison {
+            SyntaxProposition::Comparison {
                 left,
                 operator: ComparisonOperator::Equal,
                 right,
             } if crate::surface::proof::smart_closures::observes_exact_value(left)
                 || crate::surface::proof::smart_closures::observes_exact_value(right) =>
             {
-                let order = SurfaceProposition::Comparison {
+                let order = SyntaxProposition::Comparison {
                     left: left.clone(),
                     operator: ComparisonOperator::LessEqual,
                     right: right.clone(),
@@ -2840,7 +2838,7 @@ impl<'a> Proof<'a> {
         let induction = self.uses_structural_induction();
         let checked_candidate =
             |rewritten: &mut crate::kernel::proof::equality_rewrite::CheckedEqualityRewrite,
-             candidate: SurfaceProposition| {
+             candidate: SyntaxProposition| {
                 let lowered = self
                     .lower_surface_proposition_direct(&candidate, "rewritten Surface goal")
                     .ok()?;
@@ -2897,7 +2895,7 @@ impl<'a> Proof<'a> {
 
     pub(super) fn apply_fact_from_scope(
         &self,
-        fact: &SurfaceProposition,
+        fact: &SyntaxProposition,
     ) -> Result<KernelProofHandle, ClickError> {
         let fact = self.lower_cited_surface_proposition(fact, "`apply` fact")?;
         self.state
@@ -2907,8 +2905,8 @@ impl<'a> Proof<'a> {
 
     pub(super) fn apply_fact_using(
         &self,
-        fact: &SurfaceProposition,
-        premises: &[SurfaceProposition],
+        fact: &SyntaxProposition,
+        premises: &[SyntaxProposition],
     ) -> Result<KernelProofHandle, ClickError> {
         let fact = self.lower_cited_surface_proposition(fact, "`apply` fact")?;
         let premises = premises
@@ -3021,7 +3019,7 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn checked_outcome_match_arm(
         &self,
         occurrence: usize,
-    ) -> Result<(usize, PersistentBinderMap<SurfaceTerm>), ClickError> {
+    ) -> Result<(usize, PersistentBinderMap<SyntaxTerm>), ClickError> {
         if !matches!(
             self.focused_obligation(),
             Some(Obligation::FunctionOutcome(_))
@@ -3045,7 +3043,7 @@ impl<'a> Proof<'a> {
     /// must establish exactly one of them on this `Proof` path.
     pub(in crate::surface::proof) fn checked_outcome_if_value(
         &self,
-        condition: &SurfaceProposition,
+        condition: &SyntaxProposition,
         execution_route: Option<usize>,
     ) -> Result<bool, ClickError> {
         if !matches!(
@@ -3083,9 +3081,9 @@ impl<'a> Proof<'a> {
     /// may refer to different bindings.
     pub(in crate::surface::proof) fn decide_outcome_if_from_facts(
         &self,
-        condition: &SurfaceProposition,
+        condition: &SyntaxProposition,
     ) -> Result<bool, ClickError> {
-        let negative_surface = SurfaceProposition::Not(Box::new(condition.clone()));
+        let negative_surface = SyntaxProposition::Not(Box::new(condition.clone()));
         let positive =
             self.lower_surface_proposition(condition, "post-execution `if` condition")?;
         let negative =
@@ -3122,7 +3120,7 @@ impl<'a> Proof<'a> {
     /// only selects source; the arm's tactics are checked on the path.
     pub(in crate::surface::proof) fn checked_outcome_cases_value(
         &self,
-        disjunction: &SurfaceProposition,
+        disjunction: &SyntaxProposition,
         execution_route: Option<usize>,
     ) -> Result<bool, ClickError> {
         if !matches!(
@@ -3170,7 +3168,7 @@ impl<'a> Proof<'a> {
 
     pub(in crate::surface::proof) fn post_execution_if_is_path_decided(
         &self,
-        condition: &SurfaceProposition,
+        condition: &SyntaxProposition,
         disjunction: bool,
     ) -> Result<bool, ClickError> {
         self.require_execution_frontier("post-execution `if`")?;
@@ -3198,7 +3196,7 @@ impl<'a> Proof<'a> {
             let outcome_evidence = execution.evidence_for_outcome(path_index);
             // A `cases` arm records that its own disjunct holds.
             if let Some((left, right)) = &sides {
-                let holds = |surface: &SurfaceProposition| {
+                let holds = |surface: &SyntaxProposition| {
                     outcome_evidence
                         .branch_decisions
                         .value_for_key(surface, ExecutionBranchDecisions::key(surface))
@@ -3268,9 +3266,9 @@ impl<'a> Proof<'a> {
 
     pub(super) fn apply_transport_using(
         &self,
-        source: &SurfaceProposition,
-        target: &SurfaceProposition,
-        premises: &[SurfaceProposition],
+        source: &SyntaxProposition,
+        target: &SyntaxProposition,
+        premises: &[SyntaxProposition],
     ) -> Result<CheckedFocusedTransition, ClickError> {
         match self.context.as_ref() {
             ProofContext::FixedState(context) => self.apply_fixed_state_transport_using(
@@ -3386,9 +3384,9 @@ impl<'a> Proof<'a> {
 
     pub(super) fn apply_fixed_state_transport_using(
         &self,
-        source: &SurfaceProposition,
-        target: &SurfaceProposition,
-        premises: &[SurfaceProposition],
+        source: &SyntaxProposition,
+        target: &SyntaxProposition,
+        premises: &[SyntaxProposition],
         view: &FixedStateOperationView<'_>,
     ) -> Result<CheckedFocusedTransition, ClickError> {
         let (source, target, premises) = if premises.is_empty() {
@@ -3497,9 +3495,9 @@ impl<'a> Proof<'a> {
 
     pub(super) fn apply_execution_transport_using(
         &self,
-        source: &SurfaceProposition,
-        target: &SurfaceProposition,
-        premises: &[SurfaceProposition],
+        source: &SyntaxProposition,
+        target: &SyntaxProposition,
+        premises: &[SyntaxProposition],
         context: &ExecutionProofContext<'a>,
     ) -> Result<CheckedFocusedTransition, ClickError> {
         // Resolve only the named operands, as other proposition operations
@@ -3578,11 +3576,11 @@ mod outcome_case_tests {
 
     #[test]
     fn repeated_execution_decisions_keep_exact_routes_with_logarithmic_lookup() {
-        let condition = SurfaceProposition::PredicateCall {
+        let condition = SyntaxProposition::PredicateCall {
             name: "repeated_guard".to_string(),
             arguments: Vec::new(),
         };
-        let wrong = SurfaceProposition::PredicateCall {
+        let wrong = SyntaxProposition::PredicateCall {
             name: "other_guard".to_string(),
             arguments: Vec::new(),
         };
@@ -3623,11 +3621,11 @@ mod outcome_case_tests {
 
     #[test]
     fn branch_decision_fingerprint_collisions_do_not_select_an_unrelated_case() {
-        let selected = SurfaceProposition::PredicateCall {
+        let selected = SyntaxProposition::PredicateCall {
             name: "selected".to_string(),
             arguments: Vec::new(),
         };
-        let unrelated = SurfaceProposition::PredicateCall {
+        let unrelated = SyntaxProposition::PredicateCall {
             name: "unrelated".to_string(),
             arguments: Vec::new(),
         };
@@ -3661,7 +3659,7 @@ mod outcome_case_tests {
     fn nested_case_partition_work_visits_only_reached_nodes() {
         for size in [4, 8, 16, 32] {
             let conditions = (0..size)
-                .map(|index| SurfaceProposition::PredicateCall {
+                .map(|index| SyntaxProposition::PredicateCall {
                     name: format!("case_{index}"),
                     arguments: Vec::new(),
                 })
@@ -3714,7 +3712,7 @@ mod outcome_case_tests {
                 },
                 &|condition, _, _| {
                     visits.set(visits.get() + 1);
-                    let SurfaceProposition::PredicateCall { name, .. } = condition else {
+                    let SyntaxProposition::PredicateCall { name, .. } = condition else {
                         unreachable!()
                     };
                     Ok(Proposition::Predicate {
@@ -3747,9 +3745,9 @@ mod outcome_case_tests {
 
 /// The written endpoints of a `loadable(base[start..end])` surface segment.
 fn loadable_surface_range_endpoints(
-    proposition: &SurfaceProposition,
-) -> Option<(SurfaceTerm, SurfaceTerm)> {
-    let SurfaceProposition::Loadable { segment } = proposition else {
+    proposition: &SyntaxProposition,
+) -> Option<(SyntaxTerm, SyntaxTerm)> {
+    let SyntaxProposition::Loadable { segment } = proposition else {
         return None;
     };
     segment

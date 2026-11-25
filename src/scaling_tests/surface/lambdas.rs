@@ -4,24 +4,24 @@ use super::*;
 fn beta_slots_are_stable_and_linear_through_unused_binders() {
     let mut measurements = Vec::new();
     for size in [16, 64, 256] {
-        let mut body = SurfaceTerm::Binding("x".into());
+        let mut body = SyntaxTerm::Binding("x".into());
         for number in (0..size).rev() {
-            body = SurfaceTerm::Let {
+            body = SyntaxTerm::Let {
                 name: SurfaceBinder::Generated(crate::kernel::GeneratedBinderId::from_spelling(
                     number,
                 )),
                 click_type: Some(ClickType::Integer),
-                value: Box::new(SurfaceTerm::IntegerLiteral("0".into())),
+                value: Box::new(SyntaxTerm::IntegerLiteral("0".into())),
                 body: Box::new(body),
             };
         }
-        let application = SurfaceTerm::Apply {
-            function: Box::new(SurfaceTerm::Lambda {
+        let application = SyntaxTerm::Apply {
+            function: Box::new(SyntaxTerm::Lambda {
                 parameters: vec![("x".into(), ClickType::Integer)],
                 result: ClickType::Integer,
                 body: Box::new(body),
             }),
-            arguments: vec![SurfaceTerm::IntegerLiteral("3".into())],
+            arguments: vec![SyntaxTerm::IntegerLiteral("3".into())],
         };
         let (first, work) = crate::instrumentation::measure_deterministic_work(|| {
             reduce_head(&application).unwrap().unwrap()

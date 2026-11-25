@@ -10,14 +10,14 @@ use super::*;
 pub(in crate::surface::proof) struct ProofCheckpoint<'a> {
     pub(super) context: Arc<ProofContext<'a>>,
     pub(super) node: Arc<ProofNode>,
-    pub(super) conjuncts: [Option<Arc<SurfaceProposition>>; 2],
+    pub(super) conjuncts: [Option<Arc<SyntaxProposition>>; 2],
     pub(super) unspelled_conjuncts: Option<Arc<Proof<'a>>>,
 }
 
 impl ProofCheckpoint<'_> {
     pub(in crate::surface::proof) fn with_conjunct_labels(
         mut self,
-        labels: [Option<Arc<SurfaceProposition>>; 2],
+        labels: [Option<Arc<SyntaxProposition>>; 2],
     ) -> Self {
         self.conjuncts = labels;
         self

@@ -9,7 +9,7 @@ pub(super) fn raise_match(
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
-) -> Option<SurfaceTerm> {
+) -> Option<SyntaxTerm> {
     folds::scope(|| {
         let KernelType::Algebraic(ty) = matched.arguments[0].ty() else {
             return None;
@@ -37,7 +37,7 @@ pub(super) fn raise_match(
             shared_declaration_variable,
             |body| raise_kernel_term(body, parameter_binding, state, bound_variables),
         )?;
-        Some(SurfaceTerm::AlgebraicMatch {
+        Some(SyntaxTerm::AlgebraicMatch {
             scrutinee: Box::new(scrutinee),
             arms,
         })
@@ -135,7 +135,7 @@ fn raise_arms<'a, T: 'a, D: 'a>(
     type_name: &str,
     inputs: impl ExactSizeIterator<Item = (&'a str, &'a crate::kernel::BindingNames, &'a [D], &'a T)>,
     declaration_variable: impl Fn(&D) -> Option<(BindingCarrier, Variable)>,
-    raise_body: impl Fn(&T) -> Option<SurfaceTerm>,
+    raise_body: impl Fn(&T) -> Option<SyntaxTerm>,
 ) -> Option<Vec<crate::surface::AlgebraicMatchArm>> {
     let mut arms = Vec::with_capacity(inputs.len());
     for (variant, binding_names, declarations, body) in inputs {
@@ -172,7 +172,7 @@ pub(super) fn raise_machine_match(
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
-) -> Option<SurfaceTerm> {
+) -> Option<SyntaxTerm> {
     let MachineTerm::AlgebraicMatch { scrutinee, arms } = term else {
         return None;
     };
@@ -192,7 +192,7 @@ pub(super) fn raise_machine_match(
             typed_declaration_variable,
             |body| synthesize_surface_bitvector(body, parameter_binding, state, bound_variables),
         )?;
-        Some(SurfaceTerm::AlgebraicMatch {
+        Some(SyntaxTerm::AlgebraicMatch {
             scrutinee: Box::new(expression),
             arms,
         })
@@ -343,10 +343,10 @@ mod tests {
                 &names,
             )
             .unwrap();
-            let SurfaceTerm::AlgebraicMatch { scrutinee, arms } = result else {
+            let SyntaxTerm::AlgebraicMatch { scrutinee, arms } = result else {
                 panic!()
             };
-            assert_eq!(*scrutinee, SurfaceTerm::Binding("payload".into()));
+            assert_eq!(*scrutinee, SyntaxTerm::Binding("payload".into()));
             assert!(matches!(
                 arms[0].bindings.as_slice(),
                 [SurfaceBinder::Generated(_)]
@@ -408,7 +408,7 @@ mod tests {
             &names,
         )
         .unwrap();
-        let SurfaceTerm::AlgebraicMatch { arms, .. } = &result else {
+        let SyntaxTerm::AlgebraicMatch { arms, .. } = &result else {
             panic!()
         };
         assert!(

@@ -68,12 +68,12 @@ fn surface_suffix_append_borrows_steps_on_a_small_stack() {
                     let mut existing = certificate(vec![ProofStep::Step]);
                     let mut suffix = certificate(vec![ProofStep::Normalize]);
                     for index in 0..depth {
-                        let condition = SurfaceProposition::Comparison {
-                            left: SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                        let condition = SyntaxProposition::Comparison {
+                            left: SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                                 format!("b{index}").into(),
                             )),
                             operator: ComparisonOperator::Equal,
-                            right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+                            right: SyntaxTerm::ProgramExpression(ProgramExpression::Value(
                                 crate::kernel::int32(1),
                             )),
                         };

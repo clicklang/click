@@ -2,37 +2,37 @@
 use super::*;
 use crate::kernel::{IntegerTerm as I, SharedIntegerTerm};
 
-fn c(n: &BigInt) -> SurfaceTerm {
+fn c(n: &BigInt) -> SyntaxTerm {
     surface_signed_integer_literal(n)
 }
-fn lit(n: i64) -> SurfaceTerm {
+fn lit(n: i64) -> SyntaxTerm {
     c(&BigInt::from(n))
 }
-fn neg(a: SurfaceTerm) -> SurfaceTerm {
-    SurfaceTerm::Negate(Box::new(a))
+fn neg(a: SyntaxTerm) -> SyntaxTerm {
+    SyntaxTerm::Negate(Box::new(a))
 }
-fn add(a: SurfaceTerm, b: SurfaceTerm) -> SurfaceTerm {
-    SurfaceTerm::Add(Box::new(a), Box::new(b))
+fn add(a: SyntaxTerm, b: SyntaxTerm) -> SyntaxTerm {
+    SyntaxTerm::Add(Box::new(a), Box::new(b))
 }
-fn sub(a: SurfaceTerm, b: SurfaceTerm) -> SurfaceTerm {
-    SurfaceTerm::Subtract(Box::new(a), Box::new(b))
+fn sub(a: SyntaxTerm, b: SyntaxTerm) -> SyntaxTerm {
+    SyntaxTerm::Subtract(Box::new(a), Box::new(b))
 }
-fn mul(a: SurfaceTerm, b: SurfaceTerm) -> SurfaceTerm {
-    SurfaceTerm::Multiply(Box::new(a), Box::new(b))
+fn mul(a: SyntaxTerm, b: SyntaxTerm) -> SyntaxTerm {
+    SyntaxTerm::Multiply(Box::new(a), Box::new(b))
 }
-fn compare(a: SurfaceTerm, operator: ComparisonOperator, b: SurfaceTerm) -> SurfaceProposition {
-    fn numerical(expression: &SurfaceTerm) -> bool {
+fn compare(a: SyntaxTerm, operator: ComparisonOperator, b: SyntaxTerm) -> SyntaxProposition {
+    fn numerical(expression: &SyntaxTerm) -> bool {
         match expression {
-            SurfaceTerm::IntegerLiteral(_) => true,
-            SurfaceTerm::Negate(a) => numerical(a),
-            SurfaceTerm::Add(a, b) | SurfaceTerm::Subtract(a, b) | SurfaceTerm::Multiply(a, b) => {
+            SyntaxTerm::IntegerLiteral(_) => true,
+            SyntaxTerm::Negate(a) => numerical(a),
+            SyntaxTerm::Add(a, b) | SyntaxTerm::Subtract(a, b) | SyntaxTerm::Multiply(a, b) => {
                 numerical(a) && numerical(b)
             }
             _ => false,
         }
     }
     let integer_context = numerical(&a) && numerical(&b);
-    SurfaceProposition::Comparison {
+    SyntaxProposition::Comparison {
         left: if integer_context {
             super::super::surface_synthesis::integer_typed_expression(a)
         } else {
@@ -42,17 +42,17 @@ fn compare(a: SurfaceTerm, operator: ComparisonOperator, b: SurfaceTerm) -> Surf
         right: b,
     }
 }
-fn le(a: SurfaceTerm, b: SurfaceTerm) -> SurfaceProposition {
+fn le(a: SyntaxTerm, b: SyntaxTerm) -> SyntaxProposition {
     compare(a, ComparisonOperator::LessEqual, b)
 }
-fn eq(a: SurfaceTerm, b: SurfaceTerm) -> SurfaceProposition {
+fn eq(a: SyntaxTerm, b: SyntaxTerm) -> SyntaxProposition {
     compare(a, ComparisonOperator::Equal, b)
 }
-fn ne(a: SurfaceTerm, b: SurfaceTerm) -> SurfaceProposition {
+fn ne(a: SyntaxTerm, b: SyntaxTerm) -> SyntaxProposition {
     compare(a, ComparisonOperator::NotEqual, b)
 }
-fn operation(n: SurfaceTerm, d: SurfaceTerm, rem: bool) -> SurfaceTerm {
-    SurfaceTerm::Call {
+fn operation(n: SyntaxTerm, d: SyntaxTerm, rem: bool) -> SyntaxTerm {
+    SyntaxTerm::Call {
         name: if rem {
             "truncating_remainder"
         } else {
@@ -62,14 +62,14 @@ fn operation(n: SurfaceTerm, d: SurfaceTerm, rem: bool) -> SurfaceTerm {
         arguments: vec![n, d],
     }
 }
-fn apply(name: &str, args: Vec<SurfaceTerm>, mut premises: Vec<SurfaceProposition>) -> ProofStep {
+fn apply(name: &str, args: Vec<SyntaxTerm>, mut premises: Vec<SyntaxProposition>) -> ProofStep {
     // Partial values used as theorem arguments retain their explicit domains.
     // These guards come from the written arguments, not an ambient fact scan.
     for argument in &args {
         super::super::fixed_state_proofs::conversion_conditions::walk_written_expressions(
             argument,
             &mut |expression| {
-                if let SurfaceTerm::Call { name, arguments } = expression
+                if let SyntaxTerm::Call { name, arguments } = expression
                     && matches!(
                         name.as_str(),
                         "truncating_quotient" | "truncating_remainder"
@@ -92,22 +92,22 @@ fn apply(name: &str, args: Vec<SurfaceTerm>, mut premises: Vec<SurfacePropositio
         premises,
     }
 }
-fn have(p: SurfaceProposition, steps: Vec<ProofStep>) -> ProofStep {
+fn have(p: SyntaxProposition, steps: Vec<ProofStep>) -> ProofStep {
     super::super::wide_arithmetic::have(p, steps)
 }
-fn known(steps: &mut Vec<ProofStep>, p: SurfaceProposition) {
+fn known(steps: &mut Vec<ProofStep>, p: SyntaxProposition) {
     steps.push(have(p, vec![ProofStep::Known]));
 }
 fn proved(
     steps: &mut Vec<ProofStep>,
-    p: SurfaceProposition,
+    p: SyntaxProposition,
     name: &str,
-    args: Vec<SurfaceTerm>,
-    ps: Vec<SurfaceProposition>,
+    args: Vec<SyntaxTerm>,
+    ps: Vec<SyntaxProposition>,
 ) {
     steps.push(have(p, vec![apply(name, args, ps)]));
 }
-fn trans(steps: &mut Vec<ProofStep>, a: SurfaceTerm, b: SurfaceTerm, c: SurfaceTerm) {
+fn trans(steps: &mut Vec<ProofStep>, a: SyntaxTerm, b: SyntaxTerm, c: SyntaxTerm) {
     proved(
         steps,
         le(a.clone(), c.clone()),
@@ -117,11 +117,11 @@ fn trans(steps: &mut Vec<ProofStep>, a: SurfaceTerm, b: SurfaceTerm, c: SurfaceT
     );
 }
 // Exact selected facts retain both their source proposition and operand name.
-type Endpoint = (BigInt, SurfaceProposition, SurfaceTerm);
+type Endpoint = (BigInt, SyntaxProposition, SyntaxTerm);
 
 fn positive_interval(
-    n: SurfaceTerm,
-    d: SurfaceTerm,
+    n: SyntaxTerm,
+    d: SyntaxTerm,
     ends: &[Endpoint; 4],
     target: &BigInt,
     lower: bool,
@@ -311,7 +311,7 @@ fn positive_interval(
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_division_bound_using(
         input: &Proof<'a>,
-        premises: &[SurfaceProposition],
+        premises: &[SyntaxProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_division_bound_using");
@@ -675,7 +675,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     // known step exactly where congruence, rather than the application, closes it.
     fn apply_division_have(
         input: &Proof<'a>,
-        proposition: SurfaceProposition,
+        proposition: SyntaxProposition,
         steps: Vec<ProofStep>,
     ) -> Result<Proof<'a>, ClickError> {
         #[cfg(test)]

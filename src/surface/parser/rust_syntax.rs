@@ -1125,16 +1125,16 @@ impl Parser {
     pub(super) fn take_rust_vec_method(
         &mut self,
         name: &str,
-    ) -> Result<Option<SurfaceTerm>, ClickError> {
+    ) -> Result<Option<SyntaxTerm>, ClickError> {
         let Some(&reference) = self.rust_vec_params.get(name) else {
             return Ok(None);
         };
         let vector = if reference {
-            SurfaceTerm::ProgramExpression(ProgramExpression::Load(Box::new(
+            SyntaxTerm::ProgramExpression(ProgramExpression::Load(Box::new(
                 ProgramExpression::Variable(name.into()),
             )))
         } else {
-            SurfaceTerm::ProgramExpression(ProgramExpression::Variable((name.to_string()).into()))
+            SyntaxTerm::ProgramExpression(ProgramExpression::Variable((name.to_string()).into()))
         };
         if self.peek() == Some(&Token::Dot)
             && self.peek_next() == Some(&Token::Ident("len".into()))
@@ -1142,7 +1142,7 @@ impl Parser {
             && self.tokens.get(self.position + 3) == Some(&Token::RParen)
         {
             self.position += 4;
-            return Ok(Some(SurfaceTerm::Call {
+            return Ok(Some(SyntaxTerm::Call {
                 name: "click::rust::vec::len".to_string(),
                 arguments: vec![vector],
             }));
@@ -1151,7 +1151,7 @@ impl Parser {
             self.position += 1;
             let index = self.parse_contract_expression()?;
             self.expect(Token::RBracket)?;
-            return Ok(Some(SurfaceTerm::Call {
+            return Ok(Some(SyntaxTerm::Call {
                 name: "click::rust::vec::get".to_string(),
                 arguments: vec![vector, index],
             }));
@@ -1170,7 +1170,7 @@ impl Parser {
         &mut self,
         name: &str,
         loop_index: Option<usize>,
-    ) -> Result<Option<SurfaceTerm>, ClickError> {
+    ) -> Result<Option<SyntaxTerm>, ClickError> {
         if !self.verifies_rust() || name != "iter" {
             return Ok(None);
         }
@@ -1229,7 +1229,7 @@ impl Parser {
                 ));
             };
             self.position += width;
-            return Ok(Some(SurfaceTerm::Binding(format!("iter.{accessor}"))));
+            return Ok(Some(SyntaxTerm::Binding(format!("iter.{accessor}"))));
         };
         let Some((accessor, width)) = accessor else {
             return Ok(None);
@@ -1710,8 +1710,8 @@ impl Parser {
     /// for the clause that owns it (for example `verifying "f.c" as f`).
     pub(super) fn parse_casts(
         &mut self,
-        mut operand: SurfaceTerm,
-    ) -> Result<SurfaceTerm, ClickError> {
+        mut operand: SyntaxTerm,
+    ) -> Result<SyntaxTerm, ClickError> {
         loop {
             if self.peek_ident() != Some("as") {
                 return Ok(operand);
@@ -1795,7 +1795,7 @@ impl Parser {
             };
             // Keep the same operand-bearing representation as a C-style
             // scalar cast, including its proof-expression identity.
-            operand = SurfaceTerm::CUnary {
+            operand = SyntaxTerm::CUnary {
                 operand: Box::new(operand),
                 lowered: ProgramExpression::Cast {
                     expression: Box::new(expression),

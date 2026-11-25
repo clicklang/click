@@ -4,19 +4,19 @@ use super::*;
 #[test]
 fn quantifier_capture_selection_visits_only_the_explicit_proposition() {
     for count in [16usize, 64, 256] {
-        let mut proposition = SurfaceProposition::Comparison {
-            left: SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt64(
+        let mut proposition = SyntaxProposition::Comparison {
+            left: SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt64(
                 crate::kernel::MachineTerm::Variable(Variable::produced(
                     crate::kernel::Producer::ProofQuantifier,
                     0,
                 )),
             ))),
             operator: ComparisonOperator::Equal,
-            right: SurfaceTerm::ProgramExpression(ProgramExpression::Variable("bound".into())),
+            right: SyntaxTerm::ProgramExpression(ProgramExpression::Variable("bound".into())),
         };
         let leaf = proposition.clone();
         for _ in 1..count {
-            proposition = SurfaceProposition::And(Box::new(proposition), Box::new(leaf.clone()));
+            proposition = SyntaxProposition::And(Box::new(proposition), Box::new(leaf.clone()));
         }
         let mut captures = BTreeSet::<QuantifierCapture>::new();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {

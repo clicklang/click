@@ -1191,13 +1191,13 @@ fn synthesizes_loaded_pointer_equality_as_pointer_comparison() {
     // (`design/loads.md`, "Raising"), never at a guessed `int32 *`.
     assert!(matches!(
         surface,
-        SurfaceProposition::Comparison {
-            left: SurfaceTerm::ProgramExpression(ProgramExpression::TypedLoad {
+        SyntaxProposition::Comparison {
+            left: SyntaxTerm::ProgramExpression(ProgramExpression::TypedLoad {
                 value_type: ProgramType::Pointer,
                 ..
             }),
             operator: ComparisonOperator::Equal,
-            right: SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name)),
+            right: SyntaxTerm::ProgramExpression(ProgramExpression::Variable(name)),
         } if name == ("data").into()
     ));
 }
@@ -1302,8 +1302,8 @@ fn synthesizes_dynamically_indexed_pointer_offset_equality() {
 
     assert!(matches!(
         surface,
-        SurfaceProposition::Comparison {
-            left: SurfaceTerm::ProgramExpression(ProgramExpression::Add(left, right)),
+        SyntaxProposition::Comparison {
+            left: SyntaxTerm::ProgramExpression(ProgramExpression::Add(left, right)),
             operator: ComparisonOperator::Equal,
             ..
         } if matches!(left.as_ref(), ProgramExpression::Variable(name) if name.is_named("data"))

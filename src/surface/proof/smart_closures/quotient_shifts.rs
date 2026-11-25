@@ -1,37 +1,37 @@
 //! Guarded quotient translations through the ordinary truncation library.
 use super::*;
-fn number(n: i64) -> SurfaceTerm {
+fn number(n: i64) -> SyntaxTerm {
     super::super::surface_synthesis::integer_typed_expression(surface_signed_integer_literal(
         &BigInt::from(n),
     ))
 }
-fn compare(a: SurfaceTerm, operator: ComparisonOperator, b: SurfaceTerm) -> SurfaceProposition {
-    SurfaceProposition::Comparison {
+fn compare(a: SyntaxTerm, operator: ComparisonOperator, b: SyntaxTerm) -> SyntaxProposition {
+    SyntaxProposition::Comparison {
         left: a,
         operator,
         right: b,
     }
 }
-fn le(a: SurfaceTerm, b: SurfaceTerm) -> SurfaceProposition {
+fn le(a: SyntaxTerm, b: SyntaxTerm) -> SyntaxProposition {
     compare(a, ComparisonOperator::LessEqual, b)
 }
-fn eq(a: SurfaceTerm, b: SurfaceTerm) -> SurfaceProposition {
+fn eq(a: SyntaxTerm, b: SyntaxTerm) -> SyntaxProposition {
     compare(a, ComparisonOperator::Equal, b)
 }
-fn add(a: SurfaceTerm, b: SurfaceTerm) -> SurfaceTerm {
-    SurfaceTerm::Add(Box::new(a), Box::new(b))
+fn add(a: SyntaxTerm, b: SyntaxTerm) -> SyntaxTerm {
+    SyntaxTerm::Add(Box::new(a), Box::new(b))
 }
-fn mul(a: SurfaceTerm, b: SurfaceTerm) -> SurfaceTerm {
-    SurfaceTerm::Multiply(Box::new(a), Box::new(b))
+fn mul(a: SyntaxTerm, b: SyntaxTerm) -> SyntaxTerm {
+    SyntaxTerm::Multiply(Box::new(a), Box::new(b))
 }
-fn quotient(n: SurfaceTerm, d: SurfaceTerm) -> SurfaceTerm {
-    SurfaceTerm::Call {
+fn quotient(n: SyntaxTerm, d: SyntaxTerm) -> SyntaxTerm {
+    SyntaxTerm::Call {
         name: "truncating_quotient".into(),
         arguments: vec![n, d],
     }
 }
-fn arguments(e: &SurfaceTerm) -> Option<(&SurfaceTerm, &SurfaceTerm)> {
-    let SurfaceTerm::Call { name, arguments } = e else {
+fn arguments(e: &SyntaxTerm) -> Option<(&SyntaxTerm, &SyntaxTerm)> {
+    let SyntaxTerm::Call { name, arguments } = e else {
         return None;
     };
     if name.rsplit("::").next() != Some("truncating_quotient") {
@@ -44,8 +44,8 @@ fn arguments(e: &SurfaceTerm) -> Option<(&SurfaceTerm, &SurfaceTerm)> {
 }
 // Plain solve proposes only the guards named by the goal's shift shape.
 // The selected emitter checks their availability and writes them explicitly.
-pub(super) fn guard_candidates(goal: &SurfaceProposition) -> Vec<Vec<SurfaceProposition>> {
-    let SurfaceProposition::Comparison {
+pub(super) fn guard_candidates(goal: &SyntaxProposition) -> Vec<Vec<SyntaxProposition>> {
+    let SyntaxProposition::Comparison {
         left,
         operator: ComparisonOperator::Equal,
         right,
@@ -58,7 +58,7 @@ pub(super) fn guard_candidates(goal: &SurfaceProposition) -> Vec<Vec<SurfaceProp
         if arguments(lhs).is_none() {
             continue;
         }
-        let SurfaceTerm::Add(a, b) = rhs else {
+        let SyntaxTerm::Add(a, b) = rhs else {
             continue;
         };
         for (q, k) in [(a.as_ref(), b.as_ref()), (b.as_ref(), a.as_ref())] {
@@ -72,7 +72,7 @@ pub(super) fn guard_candidates(goal: &SurfaceProposition) -> Vec<Vec<SurfaceProp
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_quotient_shift_using(
         input: &Proof<'a>,
-        premises: &[SurfaceProposition],
+        premises: &[SyntaxProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_quotient_shift_using");
@@ -83,7 +83,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(None);
         }
-        let Some(SurfaceProposition::Comparison {
+        let Some(SyntaxProposition::Comparison {
             left,
             operator: ComparisonOperator::Equal,
             right,
@@ -104,7 +104,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let Some((numerator, divisor)) = arguments(lhs) else {
                 continue;
             };
-            let SurfaceTerm::Add(a, b) = rhs else {
+            let SyntaxTerm::Add(a, b) = rhs else {
                 continue;
             };
             for (q, k) in [(a.as_ref(), b.as_ref()), (b.as_ref(), a.as_ref())] {

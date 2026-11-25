@@ -56,11 +56,11 @@ pub(in crate::surface) struct CallerRequirementKey {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface) struct CallerRequirementRecord {
     pub(in crate::surface) source_id: RequirementSourceId,
-    pub(in crate::surface) source_proposition: SurfaceProposition,
+    pub(in crate::surface) source_proposition: SyntaxProposition,
     pub(in crate::surface) key: CallerRequirementKey,
     pub(in crate::surface) principal_fact_index: usize,
     pub(in crate::surface) principal_fact: Proposition,
-    pub(in crate::surface) source_arguments: Vec<SurfaceTerm>,
+    pub(in crate::surface) source_arguments: Vec<SyntaxTerm>,
     pub(in crate::surface) entry_memory_state: crate::kernel::MemoryStateIdentity,
 }
 
@@ -69,8 +69,8 @@ pub(in crate::surface) struct CallerRequirementSelection {
     pub(in crate::surface) source_id: RequirementSourceId,
     pub(in crate::surface) principal_fact_index: usize,
     pub(in crate::surface) principal_fact: Proposition,
-    pub(in crate::surface) source_proposition: SurfaceProposition,
-    pub(in crate::surface) source_arguments: Vec<SurfaceTerm>,
+    pub(in crate::surface) source_proposition: SyntaxProposition,
+    pub(in crate::surface) source_arguments: Vec<SyntaxTerm>,
     pub(in crate::surface) entry_memory_state: crate::kernel::MemoryStateIdentity,
 }
 
@@ -206,7 +206,7 @@ impl CallerRequirementIndex {
             });
             let source_proposition = elaborated.as_ref().unwrap_or(source_proposition);
             let source_arguments = match source_proposition {
-                SurfaceProposition::PredicateCall { arguments, .. } => arguments.clone(),
+                SyntaxProposition::PredicateCall { arguments, .. } => arguments.clone(),
                 _ => Vec::new(),
             };
             let source_selection = CallerRequirementSelection {
@@ -221,7 +221,7 @@ impl CallerRequirementIndex {
                 .by_source
                 .insert(source_id.clone(), Some(source_selection.clone()));
 
-            let SurfaceProposition::PredicateCall { name, arguments } = source_proposition else {
+            let SyntaxProposition::PredicateCall { name, arguments } = source_proposition else {
                 continue;
             };
 
@@ -237,7 +237,7 @@ impl CallerRequirementIndex {
                 };
                 let record = CallerRequirementRecord {
                     source_id: source_id.clone(),
-                    source_proposition: SurfaceProposition::PredicateCall {
+                    source_proposition: SyntaxProposition::PredicateCall {
                         name: name.clone(),
                         arguments: arguments.clone(),
                     },
@@ -284,7 +284,7 @@ impl CallerRequirementIndex {
         predicate_name: &str,
         predicate_argument_slot: usize,
         caller_parameter_slot: usize,
-        source_arguments: &[SurfaceTerm],
+        source_arguments: &[SyntaxTerm],
         expected_entry_state: crate::kernel::MemoryStateIdentity,
     ) -> Option<CallerRequirementSelection> {
         let key = CallerRequirementKey {
@@ -358,9 +358,9 @@ impl CallerRequirementIndex {
     }
 }
 
-fn direct_parameter_name(expression: &SurfaceTerm) -> Option<&str> {
+fn direct_parameter_name(expression: &SyntaxTerm) -> Option<&str> {
     match expression {
-        SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name)) => name.named(),
+        SyntaxTerm::ProgramExpression(ProgramExpression::Variable(name)) => name.named(),
         // The elaborated C-string bridge names its parameter's storage.
         expression => crate::surface::lowering::character_byte_view_name(expression),
     }
@@ -370,7 +370,7 @@ fn direct_parameter_name(expression: &SurfaceTerm) -> Option<&str> {
 /// requirement.  The source ordinal is kept separately beside it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface) enum FunctionRequirementSource {
-    Proposition(SurfaceProposition),
+    Proposition(SyntaxProposition),
     LoadableSegment(ContractSegment),
 }
 
@@ -645,9 +645,9 @@ mod tests {
     }
 
     fn direct_predicate(name: &str, parameter: &str) -> Requirement {
-        Requirement::Proposition(SurfaceProposition::PredicateCall {
+        Requirement::Proposition(SyntaxProposition::PredicateCall {
             name: name.to_string(),
-            arguments: vec![SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+            arguments: vec![SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                 (parameter.to_string()).into(),
             ))],
         })
@@ -680,7 +680,7 @@ mod tests {
     }
 
     fn proposition(name: &str) -> Requirement {
-        Requirement::Proposition(SurfaceProposition::PredicateCall {
+        Requirement::Proposition(SyntaxProposition::PredicateCall {
             name: name.to_string(),
             arguments: Vec::new(),
         })
@@ -706,7 +706,7 @@ mod tests {
         assert_eq!(source.entries().len(), 3);
         assert!(matches!(
             source.get(0),
-            Some(FunctionRequirementSource::Proposition(SurfaceProposition::PredicateCall {
+            Some(FunctionRequirementSource::Proposition(SyntaxProposition::PredicateCall {
                 name,
                 ..
             })) if name == "p"
@@ -715,7 +715,7 @@ mod tests {
         assert!(source.get(3).is_none());
         assert!(matches!(
             source.get(2),
-            Some(FunctionRequirementSource::Proposition(SurfaceProposition::PredicateCall {
+            Some(FunctionRequirementSource::Proposition(SyntaxProposition::PredicateCall {
                 name,
                 ..
             })) if name == "q"
@@ -762,10 +762,10 @@ mod tests {
         let block = function_with_parameters(
             "caller",
             vec![
-                Requirement::Proposition(SurfaceProposition::Comparison {
-                    left: SurfaceTerm::IntegerLiteral("0".to_string()),
+                Requirement::Proposition(SyntaxProposition::Comparison {
+                    left: SyntaxTerm::IntegerLiteral("0".to_string()),
                     operator: ComparisonOperator::Equal,
-                    right: SurfaceTerm::IntegerLiteral("0".to_string()),
+                    right: SyntaxTerm::IntegerLiteral("0".to_string()),
                 }),
                 Requirement::Resource(ResourceClause::OwnMemory(ContractSegment {
                     uninitialized: false,
@@ -808,7 +808,7 @@ mod tests {
             &origins,
             recorded_value,
         );
-        let source_arguments = vec![SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+        let source_arguments = vec![SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
             ("p".to_string()).into(),
         ))];
         let selected = index
@@ -864,7 +864,7 @@ mod tests {
                 recorded_value,
             );
             assert_eq!(index.bucket_count(), count);
-            let source_arguments = vec![SurfaceTerm::ProgramExpression(
+            let source_arguments = vec![SyntaxTerm::ProgramExpression(
                 ProgramExpression::Variable(("p".to_string()).into()),
             )];
             let selected = index
@@ -897,7 +897,7 @@ mod tests {
     fn caller_index_rejects_duplicates_and_overfull_buckets() {
         let owner = owner();
         let recorded_value = retained_state();
-        let source_arguments = vec![SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+        let source_arguments = vec![SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
             ("p".to_string()).into(),
         ))];
         let duplicate_requires = vec![direct_predicate("readable", "p"); 2];
@@ -1010,14 +1010,14 @@ mod tests {
         let block = function_with_parameters(
             "caller",
             vec![
-                Requirement::Proposition(SurfaceProposition::And(
-                    Box::new(SurfaceProposition::PredicateCall {
+                Requirement::Proposition(SyntaxProposition::And(
+                    Box::new(SyntaxProposition::PredicateCall {
                         name: "nested".to_string(),
-                        arguments: vec![SurfaceTerm::ProgramExpression(
+                        arguments: vec![SyntaxTerm::ProgramExpression(
                             ProgramExpression::Variable(("p".to_string()).into()),
                         )],
                     }),
-                    Box::new(SurfaceProposition::PredicateCall {
+                    Box::new(SyntaxProposition::PredicateCall {
                         name: "other".to_string(),
                         arguments: vec![],
                     }),
@@ -1045,7 +1045,7 @@ mod tests {
             &entry_origins(&owner, 0..2),
             recorded_value,
         );
-        let source_arguments = vec![SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+        let source_arguments = vec![SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
             ("p".to_string()).into(),
         ))];
         assert!(

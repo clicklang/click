@@ -191,7 +191,7 @@ fn rust_shift_source_identity_survives_printing_and_resource_arguments() {
         let expression = parsed.click_function_definitions()[0].body().unwrap();
         assert!(matches!(
             (expression, left_shift),
-            (SurfaceTerm::RustShiftLeft(..), true) | (SurfaceTerm::RustShiftRight(..), false)
+            (SyntaxTerm::RustShiftLeft(..), true) | (SyntaxTerm::RustShiftRight(..), false)
         ));
         let argument =
             crate::surface::lowering::resource_argument_to_program_expression(expression)
@@ -219,7 +219,7 @@ fn rust_shift_source_identity_survives_printing_and_resource_arguments() {
                 c.click_function_definitions()[0].body().unwrap(),
                 left_shift
             ),
-            (SurfaceTerm::ShiftLeft(..), true) | (SurfaceTerm::ShiftRight(..), false)
+            (SyntaxTerm::ShiftLeft(..), true) | (SyntaxTerm::ShiftRight(..), false)
         ));
     }
 }

@@ -13,20 +13,20 @@ use crate::surface::proof_diagnostics::render;
 /// The ordinary proof route checks the selected frame evidence.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface::proof) fn plan_explicit_fact_transport(
-    surface_source: &SurfaceProposition,
+    surface_source: &SyntaxProposition,
     source: &Proposition,
     target: &Proposition,
     available_facts: &PureFactStore,
     effect_facts: &(impl ExecutionFactSource + ?Sized),
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
-) -> Result<Vec<SurfaceProposition>, ClickError> {
+) -> Result<Vec<SyntaxProposition>, ClickError> {
     let available = available_facts.to_vec();
     let mut selected = Vec::new();
     if exact_fact_is_available(source, &available) {
         selected.push((source.clone(), surface_source.clone()));
     }
-    let check_premises = |selected: &[(Proposition, SurfaceProposition)]| {
+    let check_premises = |selected: &[(Proposition, SyntaxProposition)]| {
         let explicit = selected
             .iter()
             .map(|(kernel, _)| kernel.clone())
@@ -106,7 +106,7 @@ pub(in crate::surface::proof) fn plan_explicit_fact_transport(
         )
     };
 
-    let checks = |selected: &[(Proposition, SurfaceProposition)]| {
+    let checks = |selected: &[(Proposition, SyntaxProposition)]| {
         crate::instrumentation::measure_operation(
             "surface",
             "fact transport",
@@ -157,9 +157,9 @@ pub(in crate::surface::proof) struct CheckedFixedStateFactTransport {
 /// exact checked source and target for those owners to record atomically.
 #[allow(clippy::too_many_arguments)]
 pub(in crate::surface::proof) fn check_fixed_state_fact_transport_using_facts(
-    surface_source: &SurfaceProposition,
-    surface_target: &SurfaceProposition,
-    surface_premises: &[SurfaceProposition],
+    surface_source: &SyntaxProposition,
+    surface_target: &SyntaxProposition,
+    surface_premises: &[SyntaxProposition],
     claim_label: &str,
     tactic_index: usize,
     available: &PureFactStore,
@@ -215,9 +215,9 @@ pub(in crate::surface::proof) fn check_fixed_state_fact_transport_using_facts(
 
 #[allow(clippy::too_many_arguments)]
 fn check_fixed_state_fact_transport_using_facts_inner(
-    surface_source: &SurfaceProposition,
-    surface_target: &SurfaceProposition,
-    surface_premises: &[SurfaceProposition],
+    surface_source: &SyntaxProposition,
+    surface_target: &SyntaxProposition,
+    surface_premises: &[SyntaxProposition],
     claim_label: &str,
     tactic_index: usize,
     available: &PureFactStore,
@@ -779,10 +779,10 @@ const NO_FRAME_EVIDENCE: &str =
 /// Include every frontier effect: a truncated list can hide the missing frame.
 /// The name a quantified proposition's source gives its binder: the written
 /// spelling when hygiene renamed it, through any `at(...)` around it.
-fn quantifier_binder_name(surface: &SurfaceProposition) -> Option<String> {
+fn quantifier_binder_name(surface: &SyntaxProposition) -> Option<String> {
     match surface {
-        SurfaceProposition::At { proposition, .. } => quantifier_binder_name(proposition),
-        SurfaceProposition::ForAll {
+        SyntaxProposition::At { proposition, .. } => quantifier_binder_name(proposition),
+        SyntaxProposition::ForAll {
             name, written_name, ..
         } => Some(
             written_name
@@ -790,7 +790,7 @@ fn quantifier_binder_name(surface: &SurfaceProposition) -> Option<String> {
                 .or_else(|| name.written().map(str::to_owned))
                 .unwrap_or_else(|| "value".into()),
         ),
-        SurfaceProposition::RangeAll {
+        SyntaxProposition::RangeAll {
             item, written_item, ..
         } => Some(
             written_item
@@ -805,8 +805,8 @@ fn quantifier_binder_name(surface: &SurfaceProposition) -> Option<String> {
 fn describe_unreachable_fact_transport(
     claim_label: &str,
     tactic_index: usize,
-    surface_source: &SurfaceProposition,
-    surface_target: &SurfaceProposition,
+    surface_source: &SyntaxProposition,
+    surface_target: &SyntaxProposition,
     source: &Proposition,
     target: &Proposition,
     transition_facts: &(impl ExecutionFactSource + ?Sized),
@@ -881,37 +881,37 @@ fn describe_unreachable_fact_transport(
     rendered
 }
 
-fn surface_predicate_call_name(proposition: &SurfaceProposition) -> Option<&str> {
+fn surface_predicate_call_name(proposition: &SyntaxProposition) -> Option<&str> {
     match proposition {
-        SurfaceProposition::Value(_) => None,
-        SurfaceProposition::PredicateCall { name, .. } => Some(name),
-        SurfaceProposition::At { proposition, .. }
-        | SurfaceProposition::Not(proposition)
-        | SurfaceProposition::ForAll {
+        SyntaxProposition::Value(_) => None,
+        SyntaxProposition::PredicateCall { name, .. } => Some(name),
+        SyntaxProposition::At { proposition, .. }
+        | SyntaxProposition::Not(proposition)
+        | SyntaxProposition::ForAll {
             body: proposition, ..
         }
-        | SurfaceProposition::Exists {
+        | SyntaxProposition::Exists {
             body: proposition, ..
         }
-        | SurfaceProposition::RangeAll {
+        | SyntaxProposition::RangeAll {
             body: proposition, ..
         }
-        | SurfaceProposition::RangeAny {
+        | SyntaxProposition::RangeAny {
             body: proposition, ..
         } => surface_predicate_call_name(proposition),
-        SurfaceProposition::And(left, right)
-        | SurfaceProposition::Or(left, right)
-        | SurfaceProposition::Implies(left, right) => {
+        SyntaxProposition::And(left, right)
+        | SyntaxProposition::Or(left, right)
+        | SyntaxProposition::Implies(left, right) => {
             surface_predicate_call_name(left).or_else(|| surface_predicate_call_name(right))
         }
-        SurfaceProposition::Comparison { .. }
-        | SurfaceProposition::FloatClassification { .. }
-        | SurfaceProposition::Separate { .. }
-        | SurfaceProposition::ResourceViewable { .. }
-        | SurfaceProposition::Contains { .. }
-        | SurfaceProposition::Loadable { .. }
-        | SurfaceProposition::Defined { .. }
-        | SurfaceProposition::IsA { .. } => None,
+        SyntaxProposition::Comparison { .. }
+        | SyntaxProposition::FloatClassification { .. }
+        | SyntaxProposition::Separate { .. }
+        | SyntaxProposition::ResourceViewable { .. }
+        | SyntaxProposition::Contains { .. }
+        | SyntaxProposition::Loadable { .. }
+        | SyntaxProposition::Defined { .. }
+        | SyntaxProposition::IsA { .. } => None,
     }
 }
 
@@ -924,8 +924,8 @@ fn surface_predicate_call_name(proposition: &SurfaceProposition) -> Option<&str>
 /// between the two states, so it is the answer: the planner's own failure
 /// says only that no premise selection helped.
 pub(in crate::surface::proof) fn fact_transport_planning_failure(
-    source: &SurfaceProposition,
-    target: &SurfaceProposition,
+    source: &SyntaxProposition,
+    target: &SyntaxProposition,
     error: &ClickError,
     source_refusal: Option<&ClickError>,
 ) -> String {

@@ -8,20 +8,20 @@ pub(in crate::surface::proof) struct BindingNames {
     names: PersistentMap<Variable, PersistentBinderMap<u8>>,
 }
 
-pub(in crate::surface::proof) fn variable(expression: &SurfaceTerm) -> Option<Variable> {
+pub(in crate::surface::proof) fn variable(expression: &SyntaxTerm) -> Option<Variable> {
     match expression {
-        SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(
-            pointer,
-        ))) => match (&pointer.address().base, &pointer.address().offset) {
-            (crate::kernel::AddressBase::Symbolic(variable), AddressOffset::Constant(0)) => {
-                Some(*variable)
+        SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Pointer(pointer))) => {
+            match (&pointer.address().base, &pointer.address().offset) {
+                (crate::kernel::AddressBase::Symbolic(variable), AddressOffset::Constant(0)) => {
+                    Some(*variable)
+                }
+                _ => None,
             }
-            _ => None,
-        },
-        SurfaceTerm::ProgramExpression(ProgramExpression::Value(value)) => {
+        }
+        SyntaxTerm::ProgramExpression(ProgramExpression::Value(value)) => {
             diagnostic_value_variable(value)
         }
-        SurfaceTerm::AlgebraicVariable { binder_index, .. } => {
+        SyntaxTerm::AlgebraicVariable { binder_index, .. } => {
             crate::surface::lowering::algebraic_binder_variable(*binder_index).ok()
         }
         _ => None,
@@ -31,8 +31,8 @@ pub(in crate::surface::proof) fn variable(expression: &SurfaceTerm) -> Option<Va
 impl BindingNames {
     pub(super) fn update_values(
         &mut self,
-        before: &PersistentBinderMap<SurfaceTerm>,
-        after: &PersistentBinderMap<SurfaceTerm>,
+        before: &PersistentBinderMap<SyntaxTerm>,
+        after: &PersistentBinderMap<SyntaxTerm>,
     ) {
         self.update(before, after, 1, variable);
     }

@@ -6,7 +6,7 @@ pub(in crate::surface) fn lower_outcome_proposition(
     post_state: &ExecutionState,
     result: &ProgramValue,
     available_pure_facts: &(impl PropositionSource + ?Sized),
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
     let recorded_states = RecordedStates::new();
@@ -29,7 +29,7 @@ pub(in crate::surface) fn lower_outcome_proposition_with_auxiliary_facts(
     post_state: &ExecutionState,
     result: &ProgramValue,
     assumptions: &PureFactContext,
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<(Proposition, Vec<Proposition>), String> {
     let values = parameter_values(parameter_binding).map_err(|error| error.message)?;
@@ -62,7 +62,7 @@ pub(in crate::surface) fn lower_outcome_proposition_with_assumptions(
     post_state: &ExecutionState,
     result: &ProgramValue,
     assumptions: &PureFactContext,
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
     let mut names = BTreeSet::new();
@@ -90,7 +90,7 @@ pub(in crate::surface) fn lower_outcome_proposition_with_recorded_states(
     post_state: &ExecutionState,
     result: &ProgramValue,
     available_pure_facts: &(impl PropositionSource + ?Sized),
-    proposition: &SurfaceProposition,
+    proposition: &SyntaxProposition,
     spec_definitions: SpecDefinitions<'_>,
     recorded_states: &RecordedStates,
 ) -> Result<Proposition, String> {
