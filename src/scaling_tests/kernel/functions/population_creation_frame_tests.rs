@@ -123,7 +123,7 @@ fn control_read_body_retains_its_held_frame_as_owners_and_aliases_grow() {
         let mut samples = Vec::new();
         for count in [4_u64, 16, 64] {
             let _session = crate::kernel::VerificationSession::enter();
-            let pointer = Address {
+            let pointer = OldAddress {
                 base: AddressBase::ExternalArgument,
                 offset: OldAddressOffset::Variable(Variable(7_993_000)),
             };
@@ -189,7 +189,7 @@ fn control_read_body_retains_its_held_frame_as_owners_and_aliases_grow() {
                 ResourceContext::new().unchecked_with_facts([head.clone(), authority.clone()]);
             let mut retained = Vec::new();
             for index in 0..count {
-                let other = Address::symbolic(Variable(7_993_100 + index));
+                let other = OldAddress::symbolic(Variable(7_993_100 + index));
                 if aliases {
                     facts = facts.assume_condition(
                         OldConditionTerm::address_equal(pointer.clone(), other),

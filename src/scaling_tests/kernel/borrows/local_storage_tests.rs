@@ -112,7 +112,7 @@ fn local_borrow_admission_tracks_selected_backing_with_live_borrows_and_aliases(
                 assumptions = assumptions.assume_condition(
                     crate::kernel::OldConditionTerm::address_equal(
                         unrelated,
-                        Address::symbolic(Variable(99_000 + index)),
+                        OldAddress::symbolic(Variable(99_000 + index)),
                     ),
                     true,
                 );

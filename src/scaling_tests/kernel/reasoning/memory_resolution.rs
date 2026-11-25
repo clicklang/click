@@ -39,11 +39,11 @@ fn memory_resolution_graph_offset_queries_scale_without_legacy_fact_index() {
 #[cfg(test)]
 #[test]
 fn stored_load_alias_lookup_ignores_unrelated_cells() {
-    let target = Address {
+    let target = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(8_991_001)), 4),
     };
-    let alias = Address {
+    let alias = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(8_991_002)), 4),
     };
@@ -56,7 +56,7 @@ fn stored_load_alias_lookup_ignores_unrelated_cells() {
         let mut memory = SymbolicMemory::new();
         for index in 0..count {
             memory = memory.store(
-                Address {
+                OldAddress {
                     base: AddressBase::ExternalArgument,
                     offset: OldAddressOffset::Constant(index * 4),
                 },
@@ -89,15 +89,15 @@ fn stored_load_alias_lookup_ignores_unrelated_cells() {
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn interior_base_alias_frames_only_distinct_objects_and_is_indexed() {
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::Heap(920_000),
         offset: OldAddressOffset::Constant(0),
     };
-    let alias = Address {
+    let alias = OldAddress {
         base: AddressBase::Symbolic(Variable(920_001)),
         offset: OldAddressOffset::Constant(0),
     };
-    let local = Address {
+    let local = OldAddress {
         base: "local:interior-alias-store".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -108,11 +108,11 @@ fn interior_base_alias_frames_only_distinct_objects_and_is_indexed() {
         for index in 0..size {
             facts = facts.assume_condition(
                 OldConditionTerm::address_equal(
-                    Address {
+                    OldAddress {
                         base: AddressBase::Symbolic(Variable(930_000 + index)),
                         offset: OldAddressOffset::Constant(0),
                     },
-                    Address {
+                    OldAddress {
                         base: AddressBase::Heap(940_000 + index),
                         offset: OldAddressOffset::Constant(0),
                     },
@@ -124,7 +124,7 @@ fn interior_base_alias_frames_only_distinct_objects_and_is_indexed() {
         facts = facts.assume_condition(equality.clone(), true);
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for offset in [-1i64, 0, 1, 2, 3, 16] {
-                let read = Address {
+                let read = OldAddress {
                     offset: OldAddressOffset::Constant(offset),
                     ..alias.clone()
                 };
@@ -139,7 +139,7 @@ fn interior_base_alias_frames_only_distinct_objects_and_is_indexed() {
             }
         });
         samples.push((size, work));
-        let interior = Address {
+        let interior = OldAddress {
             offset: OldAddressOffset::Constant(1),
             ..alias.clone()
         };
@@ -222,11 +222,11 @@ fn unresolved_load_projection_ignores_earlier_objects_and_hidden_slots() {
                 .map(Into::into)
                 .collect(),
         );
-        let slot = |index: usize| Address {
+        let slot = |index: usize| OldAddress {
             base: AddressBase::Concrete(format!("local:hidden{index}")),
             offset: OldAddressOffset::Constant(0),
         };
-        let object = |index: usize| Address::symbolic(Variable(98_700 + index as u64));
+        let object = |index: usize| OldAddress::symbolic(Variable(98_700 + index as u64));
         let value = |index: usize| ProgramValue::Int32((index as u32).into());
         let mut memory = SymbolicMemory::new();
         let mut last = 0;
@@ -320,7 +320,7 @@ fn run_access_retains_cold_shared_index_dags() {
                 );
             }
             let retained = MachineOperandView::Shared(&term).retain(ty);
-            let base = Address {
+            let base = OldAddress {
                 base: "retained_run".into(),
                 offset: OldAddressOffset::Constant(0),
             };
@@ -344,7 +344,7 @@ fn run_access_retains_cold_shared_index_dags() {
                     unsigned: true,
                 }
             };
-            let pointer = Address {
+            let pointer = OldAddress {
                 base: base.base,
                 offset,
             };

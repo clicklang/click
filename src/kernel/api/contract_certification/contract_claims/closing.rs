@@ -224,7 +224,7 @@ pub(crate) enum ContractClosingRefusal {
     UndefinedBehavior(crate::kernel::UndefinedBehavior),
     Claim(FunctionContractClaimKey),
     Runtime(RuntimeError),
-    Write(Address),
+    Write(OldAddress),
     Range(MemoryRange),
     Storage(Vec<crate::kernel::functions::StorageWriteOutsideFootprint>),
     #[cfg(test)]
@@ -861,7 +861,7 @@ pub(crate) fn check_empty_footprint(
 }
 
 fn preexisting_write(
-    pointer: &Address,
+    pointer: &OldAddress,
     caller: &ExecutionState,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -921,20 +921,20 @@ mod tests {
         let anchor = if local {
             SymbolicMemory::local_pointer("private-output")
         } else {
-            Address {
+            OldAddress {
                 base: "global:public-output".into(),
                 offset: OldAddressOffset::Constant(0),
             }
         };
         let mut memory = SymbolicMemory::new().with_block(anchor.base.clone(), 4);
-        let alias = Address::loaded_value(
+        let alias = OldAddress::loaded_value(
             &crate::kernel::intern_memory(memory.clone()),
-            &Address::symbolic(Variable(988_000)),
+            &OldAddress::symbolic(Variable(988_000)),
         );
         let mut assumptions = PureFactContext::new();
         let mut previous = alias.clone();
         for i in 0..size {
-            let next = Address::symbolic(Variable(988_001 + u64::from(i)));
+            let next = OldAddress::symbolic(Variable(988_001 + u64::from(i)));
             assumptions = assumptions.assume_condition(
                 OldConditionTerm::address_equal(previous, next.clone()),
                 true,

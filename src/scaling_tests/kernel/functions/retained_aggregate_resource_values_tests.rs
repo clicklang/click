@@ -6,11 +6,11 @@ use super::*;
 
 #[test]
 fn retained_resource_fields_preserve_lvalues_and_scale_with_expression() {
-    let slot = Address {
+    let slot = OldAddress {
         base: "local:frame:0:input".into(),
         offset: OldAddressOffset::Constant(0),
     };
-    let pointee = Address {
+    let pointee = OldAddress {
         base: "pointee".into(),
         offset: OldAddressOffset::Constant(0),
     };

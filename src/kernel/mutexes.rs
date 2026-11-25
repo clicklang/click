@@ -35,14 +35,16 @@ use super::borrows::MutexUseBorrow;
 use super::borrows::{BorrowHoldId, BorrowLedger, BorrowParticipantId, MutexUseBinding};
 use crate::persistent::PersistentMap;
 
-use super::{Address, ExecutionState, OldConditionTerm, PureFactContext, Resource, ResourceFact};
+use super::{
+    ExecutionState, OldAddress, OldConditionTerm, PureFactContext, Resource, ResourceFact,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum MutexTransitionError {
     NotInitialized,
-    MissingGuard(Address),
-    MissingLive(Address),
-    MissingUse(Address),
+    MissingGuard(OldAddress),
+    MissingLive(OldAddress),
+    MissingUse(OldAddress),
     MissingInvariant(ResourceFact),
     /// The selected state is owned but is not the protected type.
     MismatchedInvariant {
@@ -60,7 +62,7 @@ impl From<&'static str> for MutexTransitionError {
 }
 
 impl MutexTransitionError {
-    pub(super) fn into_runtime_error(self, mutex: &Address) -> super::RuntimeError {
+    pub(super) fn into_runtime_error(self, mutex: &OldAddress) -> super::RuntimeError {
         match self {
             Self::NotInitialized => super::RuntimeError::UninitializedMutex {
                 mutex: mutex.clone(),
@@ -145,7 +147,7 @@ impl MutexInitializationId {
         .map(Self)
         .map_err(|_| "mutex initialization identity space exhausted")
     }
-    pub(super) fn description(self, mutex: &Address) -> ResourceFact {
+    pub(super) fn description(self, mutex: &OldAddress) -> ResourceFact {
         ResourceFact::own(Resource::MutexLive(super::MutexIdentity {
             epoch: Some(self.0),
             mutex: mutex.clone(),
@@ -154,7 +156,7 @@ impl MutexInitializationId {
 }
 
 impl MutexInitialization {
-    fn resource_fact(self, mutex: &Address) -> ResourceFact {
+    fn resource_fact(self, mutex: &OldAddress) -> ResourceFact {
         self.0.description(mutex)
     }
 
@@ -243,46 +245,46 @@ impl ProvenanceKind {
 
 struct MutexLedgerStorage {
     identity: u64,
-    entries: PersistentMap<Address, MutexEntry>,
-    direct_loop_carriers: PersistentMap<Address, Arc<direct_loop_guard::DirectLoopGuard>>,
-    direct_loop_selection: Arc<Vec<Address>>,
-    by_block: PersistentMap<super::AddressBase, PersistentMap<Address, u32>>,
+    entries: PersistentMap<OldAddress, MutexEntry>,
+    direct_loop_carriers: PersistentMap<OldAddress, Arc<direct_loop_guard::DirectLoopGuard>>,
+    direct_loop_selection: Arc<Vec<OldAddress>>,
+    by_block: PersistentMap<super::AddressBase, PersistentMap<OldAddress, u32>>,
     reserved: MutexStorageIndex,
-    by_provenance: PersistentMap<ProvenanceKind, PersistentMap<Address, u32>>,
+    by_provenance: PersistentMap<ProvenanceKind, PersistentMap<OldAddress, u32>>,
     /// Initializations whose symbolic provenance may name any automatic object.
     /// Kept separately so a scope exit never scans unrelated concrete mutexes.
-    ambiguous_automatic_storage: PersistentMap<Address, ()>,
+    ambiguous_automatic_storage: PersistentMap<OldAddress, ()>,
     /// Initializations that consumed explicit ownership of their storage
     /// bytes. Until destruction returns it nobody owns that storage, so
     /// ownership alone keeps every write and transferred footprint off it.
-    consumed_storage: PersistentMap<Address, ()>,
+    consumed_storage: PersistentMap<OldAddress, ()>,
     locked_count: usize,
     return_obligation_count: usize,
     /// A loop join need only revisit mutexes changed since its head. Keeping
     /// this path avoids scanning unrelated mutexes on every back edge.
     predecessor: Option<Arc<MutexLedgerStorage>>,
-    changed_mutex: Option<Address>,
+    changed_mutex: Option<OldAddress>,
 }
 
 /// Dyadic byte intervals select overlapping storage without visiting unrelated
 /// mutexes in the same object. Symbolic bounds remain conservative candidates.
 #[derive(Clone, Default)]
 struct MutexStorageIndex {
-    intervals: PersistentMap<super::ResourceMemoryIntervalNode, PersistentMap<Address, u32>>,
-    subtrees: PersistentMap<super::ResourceMemoryIntervalNode, PersistentMap<Address, u32>>,
-    symbolic: PersistentMap<super::AddressBase, PersistentMap<Address, u32>>,
+    intervals: PersistentMap<super::ResourceMemoryIntervalNode, PersistentMap<OldAddress, u32>>,
+    subtrees: PersistentMap<super::ResourceMemoryIntervalNode, PersistentMap<OldAddress, u32>>,
+    symbolic: PersistentMap<super::AddressBase, PersistentMap<OldAddress, u32>>,
 }
 
-fn storage_range(mutex: &Address, bytes: u32) -> super::MemoryRange {
+fn storage_range(mutex: &OldAddress, bytes: u32) -> super::MemoryRange {
     super::MemoryRange::new_with_element_width(mutex.clone(), 0u32.into(), bytes.into(), 1)
 }
 
 impl MutexStorageIndex {
-    fn changed(&self, mutex: &Address, bytes: u32, insert: bool) -> Self {
+    fn changed(&self, mutex: &OldAddress, bytes: u32, insert: bool) -> Self {
         fn update<K: Ord + Clone>(
-            map: &mut PersistentMap<K, PersistentMap<Address, u32>>,
+            map: &mut PersistentMap<K, PersistentMap<OldAddress, u32>>,
             key: K,
-            mutex: &Address,
+            mutex: &OldAddress,
             bytes: u32,
             insert: bool,
         ) {
@@ -318,7 +320,7 @@ impl MutexStorageIndex {
     fn overlapping(
         &self,
         range: &super::MemoryRange,
-    ) -> Option<std::collections::BTreeMap<Address, u32>> {
+    ) -> Option<std::collections::BTreeMap<OldAddress, u32>> {
         let nodes = super::primitives::memory_interval_nodes(range)?;
         let mut candidates = std::collections::BTreeMap::new();
         for node in nodes {
@@ -393,7 +395,7 @@ pub(in crate::kernel) fn consumed_storage_refusal(
 /// The guard projection is computed at independent entry, not at each call.
 pub(super) fn abstract_guard_acquisition_refusal(
     state: &ExecutionState,
-    mutex: &Address,
+    mutex: &OldAddress,
     assumptions: &PureFactContext,
 ) -> Option<super::RuntimeError> {
     let inputs = state.mutex_input_reservations.as_ref()?;
@@ -492,8 +494,8 @@ pub(super) struct MutexInputReservations {
     unnamed: bool,
     guard_ledger: MutexLedger,
     guard_unnamed: bool,
-    guards: PersistentMap<Address, ResourceFact>,
-    lifetimes: PersistentMap<Address, ResourceFact>,
+    guards: PersistentMap<OldAddress, ResourceFact>,
+    lifetimes: PersistentMap<OldAddress, ResourceFact>,
     helper_return: Option<Arc<helper_contracts::HelperReturnPermission>>,
 }
 
@@ -604,7 +606,7 @@ impl MutexInputReservations {
 /// An acquisition identity. The private fields cannot be synthesized from a
 /// mutex address or an integer value copied by C.
 pub(super) struct MutexGuard {
-    mutex: Address,
+    mutex: OldAddress,
     initialization: MutexInitialization,
     epoch: u64,
 }
@@ -725,7 +727,7 @@ impl MutexGuard {
 /// not establish ownership; callers must check the ordinary resource context.
 pub(super) fn live_resource(
     state: &ExecutionState,
-    mutex: &Address,
+    mutex: &OldAddress,
     abstract_entry: bool,
 ) -> Option<ResourceFact> {
     if let Some(ledger) = &state.mutex_ledger {
@@ -751,7 +753,7 @@ pub(super) fn live_resource(
 }
 
 /// A description is not authority: only a rooted owned occurrence permits use.
-pub(super) fn use_resource(state: &ExecutionState, mutex: &Address) -> ResourceFact {
+pub(super) fn use_resource(state: &ExecutionState, mutex: &OldAddress) -> ResourceFact {
     state
         .resources
         .mutex_use_candidate_at(mutex)
@@ -770,7 +772,7 @@ pub(super) fn use_resource(state: &ExecutionState, mutex: &Address) -> ResourceF
 /// assumptions are inputs; execution still requires checked resource transfer.
 pub(super) fn guard_resource(
     state: &ExecutionState,
-    mutex: &Address,
+    mutex: &OldAddress,
     abstract_entry: bool,
 ) -> Option<ResourceFact> {
     if let Some(guard) = state
@@ -805,7 +807,7 @@ pub(super) fn guard_resource(
 /// entry guard or another outstanding local acquisition must be separate.
 pub(super) fn acquisition_availability_refusal(
     state: &ExecutionState,
-    mutex: &Address,
+    mutex: &OldAddress,
     assumptions: &PureFactContext,
 ) -> Option<MutexTransitionError> {
     if abstract_guard_acquisition_refusal(state, mutex, assumptions).is_some()
@@ -837,7 +839,7 @@ pub(super) fn storage_write_range(pointer: &super::OldPointer, bytes: u32) -> su
 /// objects require ordinary explicit memory ownership.
 pub(super) fn initialization_storage_refusal(
     state: &ExecutionState,
-    mutex: &Address,
+    mutex: &OldAddress,
     bytes: u32,
     alignment: u32,
     assumptions: &PureFactContext,
@@ -887,7 +889,7 @@ pub(super) fn initialization_storage_refusal(
 /// by its scope rather than by an explicit memory resource.
 pub(super) fn storage_is_automatic(
     state: &ExecutionState,
-    mutex: &Address,
+    mutex: &OldAddress,
     bytes: u32,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -1036,7 +1038,7 @@ impl MutexContext {
     /// the ledger's write reservation instead.
     pub(super) fn consume_initialized_storage(
         mut self,
-        mutex: &Address,
+        mutex: &OldAddress,
         bytes: u32,
         assumptions: &PureFactContext,
     ) -> Result<Self, &'static str> {
@@ -1060,7 +1062,7 @@ impl MutexContext {
     /// Initialize a mutex that transfers no Click resource at lock/unlock.
     pub(super) fn initialize_empty(
         &self,
-        mutex: Address,
+        mutex: OldAddress,
         storage_bytes: u32,
     ) -> Result<Self, &'static str> {
         if self.state.preserves_mutex_protocols {
@@ -1098,7 +1100,7 @@ impl MutexContext {
     /// actual folded ownership. A declaration alone cannot publish authority.
     pub(super) fn publish_declared(
         &self,
-        mutex: &Address,
+        mutex: &OldAddress,
         identity: super::InstanceId,
         definitions: &std::collections::BTreeMap<String, super::CompositeResourceDefinition>,
         assumptions: &PureFactContext,
@@ -1128,7 +1130,7 @@ impl MutexContext {
     #[cfg(test)]
     fn publish(
         &self,
-        mutex: Address,
+        mutex: OldAddress,
         invariant: ResourceFact,
         assumptions: &PureFactContext,
         storage_bytes: u32,
@@ -1138,7 +1140,7 @@ impl MutexContext {
 
     fn publish_with_interface(
         &self,
-        mutex: Address,
+        mutex: OldAddress,
         invariant: ResourceFact,
         assumptions: &PureFactContext,
         storage_bytes: u32,
@@ -1215,7 +1217,7 @@ impl MutexContext {
     #[cfg(test)]
     pub(super) fn lend_use(
         &self,
-        mutex: &Address,
+        mutex: &OldAddress,
         assumptions: &PureFactContext,
     ) -> Result<(Self, MutexUseBorrow), MutexTransitionError> {
         if self
@@ -1472,7 +1474,7 @@ impl MutexContext {
     /// can transport use occurrences and returned guard dependencies.
     pub(super) fn acquire_using(
         &self,
-        mutex: &Address,
+        mutex: &OldAddress,
         usage: MutexUseBinding,
         assumptions: &PureFactContext,
     ) -> Result<(Self, MutexGuard), MutexTransitionError> {
@@ -1481,7 +1483,7 @@ impl MutexContext {
 
     pub(super) fn acquire(
         &self,
-        mutex: &Address,
+        mutex: &OldAddress,
         assumptions: &PureFactContext,
     ) -> Result<(Self, MutexGuard), MutexTransitionError> {
         self.acquire_with_use(mutex, None, assumptions)
@@ -1489,7 +1491,7 @@ impl MutexContext {
 
     fn acquire_with_use(
         &self,
-        mutex: &Address,
+        mutex: &OldAddress,
         usage: Option<MutexUseBinding>,
         assumptions: &PureFactContext,
     ) -> Result<(Self, MutexGuard), MutexTransitionError> {
@@ -1601,7 +1603,7 @@ impl MutexContext {
 
     pub(super) fn acquire_current(
         &self,
-        mutex: &Address,
+        mutex: &OldAddress,
         assumptions: &PureFactContext,
     ) -> Result<Self, MutexTransitionError> {
         // The resource occurrence selects the borrow; an address or a borrow
@@ -1636,7 +1638,7 @@ impl MutexContext {
 
     pub(super) fn release_current(
         &self,
-        mutex: &Address,
+        mutex: &OldAddress,
         assumptions: &PureFactContext,
     ) -> Result<Self, MutexTransitionError> {
         if let Some(opened) = self.open_direct_loop_guard(mutex, assumptions)? {
@@ -1690,7 +1692,7 @@ impl MutexContext {
 
     pub(super) fn destroy(
         &self,
-        mutex: &Address,
+        mutex: &OldAddress,
         assumptions: &PureFactContext,
     ) -> Result<Self, MutexTransitionError> {
         if let Some(opened) = self.open_direct_loop_guard(mutex, assumptions)? {
@@ -1915,13 +1917,13 @@ impl MutexLedger {
         }
     }
 
-    fn get(&self, mutex: &Address) -> Option<&MutexEntry> {
+    fn get(&self, mutex: &OldAddress) -> Option<&MutexEntry> {
         self.storage.entries.get(mutex)
     }
 
     /// The type authenticated by this initialization, without exposing an
     /// owned payload or any of its current field observations.
-    pub(super) fn protected_type(&self, mutex: &Address) -> Option<&super::ResourceDescription> {
+    pub(super) fn protected_type(&self, mutex: &OldAddress) -> Option<&super::ResourceDescription> {
         self.get(mutex)?
             .interface()
             .map(|interface| interface.description())
@@ -1980,7 +1982,7 @@ impl MutexLedger {
     /// footprint is not derived here: unfolding names it in current memory.
     pub(super) fn havoc_protected_for_call(
         state: &ExecutionState,
-        mutex: &Address,
+        mutex: &OldAddress,
         definition: &super::CompositeResourceDefinition,
         definitions: &Arc<[super::CompositeResourceDefinition]>,
         assumptions: &PureFactContext,
@@ -2133,14 +2135,14 @@ impl MutexLedger {
         None
     }
 
-    pub(super) fn live_resource(&self, mutex: &Address) -> Option<ResourceFact> {
+    pub(super) fn live_resource(&self, mutex: &OldAddress) -> Option<ResourceFact> {
         let (MutexEntry::Unlocked { initialization, .. }
         | MutexEntry::Locked { initialization, .. }
         | MutexEntry::ConditionalLoop { initialization, .. }) = self.get(mutex)?;
         Some(initialization.resource_fact(mutex))
     }
 
-    pub(super) fn guard_resource(&self, mutex: &Address) -> Option<ResourceFact> {
+    pub(super) fn guard_resource(&self, mutex: &OldAddress) -> Option<ResourceFact> {
         match self.get(mutex) {
             Some(MutexEntry::Locked { epoch, .. } | MutexEntry::ConditionalLoop { epoch, .. }) => {
                 Some(ResourceFact::own(Resource::MutexGuard(
@@ -2154,14 +2156,14 @@ impl MutexLedger {
         }
     }
 
-    pub(super) fn held_condition(&self, mutex: &Address) -> OldConditionTerm {
+    pub(super) fn held_condition(&self, mutex: &OldAddress) -> OldConditionTerm {
         match self.get(mutex) {
             Some(MutexEntry::ConditionalLoop { held, .. }) => held.old_form().clone(),
             entry => OldConditionTerm::Constant(matches!(entry, Some(MutexEntry::Locked { .. }))),
         }
     }
 
-    fn with_inserted(&self, mutex: Address, entry: MutexEntry) -> Self {
+    fn with_inserted(&self, mutex: OldAddress, entry: MutexEntry) -> Self {
         let was_locked = matches!(
             self.get(&mutex),
             Some(MutexEntry::Locked { .. } | MutexEntry::ConditionalLoop { .. })
@@ -2235,7 +2237,7 @@ impl MutexLedger {
         }
     }
 
-    fn without(&self, mutex: &Address) -> Self {
+    fn without(&self, mutex: &OldAddress) -> Self {
         let was_locked = matches!(
             self.get(mutex),
             Some(MutexEntry::Locked { .. } | MutexEntry::ConditionalLoop { .. })
@@ -2303,7 +2305,7 @@ impl MutexLedger {
         }
     }
 
-    fn with_storage_consumed(&self, mutex: &Address) -> Self {
+    fn with_storage_consumed(&self, mutex: &OldAddress) -> Self {
         let storage = &self.storage;
         Self {
             storage: Arc::new(MutexLedgerStorage {
@@ -2324,7 +2326,7 @@ impl MutexLedger {
         }
     }
 
-    fn storage_consumed(&self, mutex: &Address) -> bool {
+    fn storage_consumed(&self, mutex: &OldAddress) -> bool {
         self.storage.consumed_storage.contains_key(mutex)
     }
 
@@ -2511,7 +2513,7 @@ mod tests {
     use super::*;
 
     fn guard_spec(
-        mutex: Address,
+        mutex: OldAddress,
         retained_state: super::super::ResourceStateSource,
     ) -> super::super::ResourceSpec {
         use super::super::*;
@@ -2531,7 +2533,7 @@ mod tests {
     fn evaluate_guard(
         entry: &ExecutionState,
         current: &ExecutionState,
-        mutex: Address,
+        mutex: OldAddress,
         retained_state: super::super::ResourceStateSource,
     ) -> ResourceFact {
         super::super::functions::evaluate_function_resource_spec_with_entry(
@@ -2589,7 +2591,7 @@ mod tests {
         assert!(bind_assumed_lifetime_inputs(input, &assumptions).is_err());
     }
 
-    fn assumed_guard_state(address: &Address) -> ExecutionState {
+    fn assumed_guard_state(address: &OldAddress) -> ExecutionState {
         let mut state = ExecutionState::new();
         state.preserves_mutex_protocols = true;
         let description = guard_resource(&state, address, true).unwrap();
@@ -3234,7 +3236,7 @@ mod tests {
         assert!(destroyed.state().mutex_ledger.is_none());
     }
 
-    fn automatic_holder() -> (ExecutionState, Address) {
+    fn automatic_holder() -> (ExecutionState, OldAddress) {
         let state = ExecutionState::new().with_local("holder", super::super::int32(0));
         let slot = state.locals().slot("holder").unwrap().clone();
         let state = state
@@ -3343,7 +3345,7 @@ mod tests {
     fn automatic_storage_cannot_ignore_a_symbolic_mutex_alias() {
         let assumptions = PureFactContext::new();
         let (state, address) = automatic_holder();
-        let symbolic = Address::symbolic(super::super::Variable(72_000));
+        let symbolic = OldAddress::symbolic(super::super::Variable(72_000));
         assert!(!symbolic.base.proven_distinct(&address.base));
         let context = MutexContext::new(state)
             .initialize_empty(symbolic.clone(), 40)
@@ -3514,7 +3516,7 @@ mod tests {
     #[test]
     fn reservation_requires_separation_from_a_symbolic_alias() {
         use super::super::*;
-        let address = Address::symbolic(Variable(91_101));
+        let address = OldAddress::symbolic(Variable(91_101));
         let context = MutexContext::new(ExecutionState::new())
             .initialize_empty(address.clone(), 40)
             .unwrap();
@@ -3533,8 +3535,8 @@ mod tests {
     #[test]
     fn assumed_guard_projection_distinguishes_guards_from_use_storage() {
         use super::super::*;
-        let held = Address::symbolic(Variable(91_201));
-        let requested = Address::symbolic(Variable(91_202));
+        let held = OldAddress::symbolic(Variable(91_201));
+        let requested = OldAddress::symbolic(Variable(91_202));
         let mut state = ExecutionState::new();
         state.mutex_input_reservations = MutexInputReservations::from_ranges_and_guards(
             [storage_range(&requested, 40)],
@@ -3566,7 +3568,7 @@ mod tests {
         assert!(
             abstract_guard_acquisition_refusal(
                 &state,
-                &Address::symbolic(super::super::Variable(91_203)),
+                &OldAddress::symbolic(super::super::Variable(91_203)),
                 &assumptions,
             )
             .is_some()
@@ -3574,7 +3576,7 @@ mod tests {
         assert!(
             abstract_guard_acquisition_refusal(
                 &state,
-                &Address {
+                &OldAddress {
                     base: "local:f:fresh_mutex".into(),
                     offset: super::super::OldAddressOffset::Constant(0),
                 },
@@ -3670,7 +3672,7 @@ mod tests {
     #[test]
     fn initialization_requires_the_complete_owned_storage_and_alignment() {
         use super::super::*;
-        let pointer = Address::symbolic(Variable(91_000));
+        let pointer = OldAddress::symbolic(Variable(91_000));
         let aligned = PureFactContext::new()
             .assume_condition(OldConditionTerm::pointer_aligned(pointer.clone(), 8), true);
         let state_for = |bytes, owned| {
@@ -3834,7 +3836,7 @@ mod tests {
             ))];
             let mut context = if name == "pthread_mutex_init" {
                 arguments.push(ProgramExpression::Value(ProgramValue::pointer(
-                    Address::null(),
+                    OldAddress::null(),
                 )));
                 context
             } else {
@@ -3881,7 +3883,7 @@ mod tests {
     #[test]
     fn initialization_does_not_reuse_consumed_or_zero_storage_authority() {
         use super::super::*;
-        let pointer = Address {
+        let pointer = OldAddress {
             base: AddressBase::Heap(91_003),
             offset: OldAddressOffset::Constant(0),
         };
@@ -3901,7 +3903,7 @@ mod tests {
         assert!(overlapping_zero.owns_storage_access(&pointer, 40, &assumptions));
     }
 
-    fn allocation_range(base: Address, bytes: u32) -> super::super::MemoryRange {
+    fn allocation_range(base: OldAddress, bytes: u32) -> super::super::MemoryRange {
         super::super::MemoryRange::new_with_element_width(base, 0u32.into(), bytes.into(), 1)
     }
 
@@ -3990,11 +3992,11 @@ mod tests {
     #[test]
     fn retirement_requires_separation_from_symbolic_initializations() {
         use super::super::*;
-        let base = Address {
+        let base = OldAddress {
             base: AddressBase::Heap(90_000),
             offset: OldAddressOffset::constant(0),
         };
-        let symbolic = Address::symbolic(Variable(90_001));
+        let symbolic = OldAddress::symbolic(Variable(90_001));
         let context = MutexContext::new(ExecutionState::new())
             .initialize_empty(symbolic.clone(), 40)
             .unwrap();
@@ -4279,8 +4281,8 @@ mod tests {
         ResourceInstance, Variable, int32,
     };
 
-    fn mutex(index: usize) -> Address {
-        Address {
+    fn mutex(index: usize) -> OldAddress {
+        OldAddress {
             base: format!("mutex-{index}").into(),
             offset: OldAddressOffset::Constant(0),
         }
@@ -4452,7 +4454,7 @@ mod tests {
 
     fn runtime_mutex_call(
         state: &ExecutionState,
-        address: &Address,
+        address: &OldAddress,
         name: &str,
     ) -> Result<ExecutionState, super::super::RuntimeError> {
         use super::super::*;
@@ -5293,7 +5295,7 @@ mod wide_range_reader_tests {
     // A real reserved mutex makes the emptiness reader inspect a native write.
     #[test]
     fn wide_writes_to_reserved_mutex_storage_are_refused_without_panicking() {
-        let base = Address::symbolic(Variable(985_000));
+        let base = OldAddress::symbolic(Variable(985_000));
         let ledger = MutexLedger::new().with_inserted(
             base.clone(),
             MutexEntry::Unlocked {

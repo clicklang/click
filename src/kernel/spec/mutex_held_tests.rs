@@ -1,8 +1,8 @@
 use super::*;
 use crate::kernel::mutexes::MutexContext;
 
-fn address(index: usize) -> Address {
-    Address {
+fn address(index: usize) -> OldAddress {
+    OldAddress {
         base: format!("typed-held-{index}").into(),
         offset: OldAddressOffset::Constant(0),
     }

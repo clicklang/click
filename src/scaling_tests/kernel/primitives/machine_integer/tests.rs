@@ -280,8 +280,8 @@ fn narrow_widening_construction_and_word_reads_do_constant_work_on_deep_operands
 }
 
 /// A cell `index` words into one local block.
-fn read_cell(index: u64) -> crate::kernel::Address {
-    crate::kernel::Address {
+fn read_cell(index: u64) -> crate::kernel::OldAddress {
+    crate::kernel::OldAddress {
         base: crate::kernel::AddressBase::Concrete("local:integer-read-cells".into()),
         offset: crate::kernel::OldAddressOffset::Constant(8 * index as i64),
     }
@@ -344,7 +344,7 @@ fn hashed_bytes(value: &impl std::hash::Hash) -> usize {
 
 /// An address whose offset sums `terms` scaled variables: as large as the
 /// caller likes, with no read inside to shortcut its comparison.
-fn wide_address(terms: u64) -> crate::kernel::Address {
+fn wide_address(terms: u64) -> crate::kernel::OldAddress {
     use crate::kernel::{OldAddressOffset, Variable};
     let mut offset = OldAddressOffset::Constant(0);
     for term in 0..terms {
@@ -353,7 +353,7 @@ fn wide_address(terms: u64) -> crate::kernel::Address {
             OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(149_100 + term)), 4),
         );
     }
-    crate::kernel::Address {
+    crate::kernel::OldAddress {
         base: crate::kernel::AddressBase::Concrete("local:integer-read-wide".into()),
         offset,
     }

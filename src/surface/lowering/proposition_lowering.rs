@@ -30,10 +30,10 @@ pub(in crate::surface) fn comparison_proposition(
     let right = right.numeric_value().clone();
     let pointer_and_null = match (&left, &right) {
         (ProgramValue::Pointer(pointer), ProgramValue::Int32(bits32_constant!(0))) => {
-            Some((pointer.address().clone(), Address::null()))
+            Some((pointer.address().clone(), OldAddress::null()))
         }
         (ProgramValue::Int32(int32_constant!(0)), ProgramValue::Pointer(pointer)) => {
-            Some((Address::null(), pointer.address().clone()))
+            Some((OldAddress::null(), pointer.address().clone()))
         }
         _ => None,
     };

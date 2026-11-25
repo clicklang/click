@@ -4,7 +4,7 @@ use super::*;
 fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
     let samples = [(2, 16), (64, 64), (65536, 256)].map(|(amount, unrelated)| {
         let pointer = ProgramValue::typed_pointer(
-            Address {
+            OldAddress {
                 base: AddressBase::ExternalArgument,
                 offset: OldAddressOffset::Constant(0),
             },
@@ -33,7 +33,7 @@ fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
             let other = ResourceDescription::new(
                 "unrelated".into(),
                 vec![
-                    ProgramValue::pointer(Address {
+                    ProgramValue::pointer(OldAddress {
                         base: AddressBase::ExternalArgument,
                         offset: OldAddressOffset::Variable(Variable(950_000 + index as u64)),
                     })
@@ -201,7 +201,7 @@ fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
 
 #[test]
 fn contained_transfer_frontier_scales_with_selected_depth_and_indexed_definitions() {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: "payload".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -931,7 +931,7 @@ fn resource_expansion_diagnostics_bound_the_named_frontier() {
     let resources = ResourceContext::new().unchecked_with_facts((0..32).map(|id| {
         ResourceFact::own(Resource::Composite {
             name: format!("resource_{id}_{}", "x".repeat(1000)),
-            arguments: vec![ProgramValue::pointer(Address::null()).into()].into(),
+            arguments: vec![ProgramValue::pointer(OldAddress::null()).into()].into(),
         })
     }));
     let diagnostic = bounded_contract_resource_frontier(&resources);

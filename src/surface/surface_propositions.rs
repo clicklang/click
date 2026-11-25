@@ -15,8 +15,8 @@ use super::{
     ClickError, ClickType, ProgramPointSelector, SurfaceBinder, SyntaxProposition, SyntaxTerm,
     clone_click_proposition_iteratively, proof,
 };
-use crate::kernel::{Address, OldConditionTerm, OldMachineTerm, Proposition, Sort, Variable};
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{OldAddress, OldConditionTerm, OldMachineTerm, Proposition, Sort, Variable};
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -32,7 +32,7 @@ pub struct SurfacePropositionMap {
 pub(in crate::surface) struct SurfacePropositionStorage {
     /// Source names for qualified storage reads, independent of the heap
     /// state. These are synthesis hints, never evidence of a fact.
-    pub(in crate::surface) qualified_load_sources: PersistentMap<Address, SyntaxTerm>,
+    pub(in crate::surface) qualified_load_sources: PersistentMap<OldAddress, SyntaxTerm>,
     /// Source forms for certified stores, indexed by the versioned read that
     /// identifies the written cell. Keep the producer's exact fact for lookup.
     store_sources: PersistentMap<StoreReadKey, (Arc<Proposition>, Arc<SyntaxProposition>)>,
@@ -77,7 +77,7 @@ struct StoreReadKey {
 }
 
 impl StoreReadKey {
-    fn of(equation: &Proposition) -> Option<(Self, &Address)> {
+    fn of(equation: &Proposition) -> Option<(Self, &OldAddress)> {
         use crate::kernel::{AddressBase, LoadKind};
         let Some((
             OldConditionTerm::Compare {
@@ -836,7 +836,7 @@ impl SurfacePropositionMap {
         &mut self,
         equation: &Arc<Proposition>,
         surface: &SyntaxProposition,
-        source_address: &Address,
+        source_address: &OldAddress,
     ) -> bool {
         let Some((key, address)) = StoreReadKey::of(equation) else {
             return false;
@@ -1353,7 +1353,7 @@ mod store_source_tests {
         };
 
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-        let address = Address {
+        let address = OldAddress {
             base: AddressBase::ExternalArgument,
             offset: OldAddressOffset::Variable(Variable(1)),
         };
@@ -1375,7 +1375,7 @@ mod store_source_tests {
             right: SyntaxTerm::Binding("value".into()),
         };
         let mut map = SurfacePropositionMap::default();
-        let other = Address {
+        let other = OldAddress {
             base: AddressBase::ExternalArgument,
             offset: OldAddressOffset::Variable(Variable(2)),
         };
@@ -1394,7 +1394,7 @@ mod store_source_tests {
         };
 
         let _session = VerificationSession::enter();
-        let address = Address {
+        let address = OldAddress {
             base: AddressBase::ExternalArgument,
             offset: OldAddressOffset::Constant(0),
         };

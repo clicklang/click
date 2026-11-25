@@ -3261,7 +3261,7 @@ fn collect_load_address_atoms(
 }
 
 fn collect_pointer_bitvector_atoms(
-    pointer: &Address,
+    pointer: &OldAddress,
     atoms: &mut BTreeSet<BitvectorEqualityAtomKey>,
 ) {
     let mut address_hasher = std::collections::hash_map::DefaultHasher::new();
@@ -3612,7 +3612,7 @@ fn collect_owned_atomic_conjuncts(fact: &Proposition, output: &mut Vec<Propositi
 mod integer_equality_fact_index_tests {
     use super::*;
     use crate::kernel::{
-        Address, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType, OldAddressOffset,
+        IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType, OldAddress, OldAddressOffset,
         OldMachineTerm, ProgramValue, SharedIntegerRangeEndpoint, SharedIntegerTerm,
         SharedMachineIntegerTerm, Sort, SymbolicMemory, Variable,
     };
@@ -3621,8 +3621,8 @@ mod integer_equality_fact_index_tests {
     #[cfg(not(feature = "fast-gate"))]
     #[ignore = "nightly: 1.4s in the parallel gate"]
     fn opaque_pointer_alias_selection_ignores_unrelated_facts() {
-        let read = Address::symbolic(Variable(949_001));
-        let target = Address::symbolic(Variable(949_002));
+        let read = OldAddress::symbolic(Variable(949_001));
+        let target = OldAddress::symbolic(Variable(949_002));
         let alias =
             Proposition::condition_is(OldConditionTerm::address_equal(read.clone(), target), true);
         let goal = Proposition::condition_is(
@@ -3641,8 +3641,8 @@ mod integer_equality_fact_index_tests {
             for index in 0..size {
                 facts = facts.with_kernel_checked_fact(Proposition::condition_is(
                     OldConditionTerm::address_equal(
-                        Address::symbolic(Variable(950_000 + 2 * u64::from(index))),
-                        Address::symbolic(Variable(950_001 + 2 * u64::from(index))),
+                        OldAddress::symbolic(Variable(950_000 + 2 * u64::from(index))),
+                        OldAddress::symbolic(Variable(950_001 + 2 * u64::from(index))),
                     ),
                     true,
                 ));
@@ -3717,7 +3717,7 @@ mod integer_equality_fact_index_tests {
                 MachineIntegerType::Int32,
                 OldMachineTerm::read_named(
                     ProgramPoint::at(memory),
-                    Box::new(Address {
+                    Box::new(OldAddress {
                         base: "retained_state-alpha-facts".into(),
                         offset: OldAddressOffset::Constant(0),
                     }),
@@ -3750,7 +3750,7 @@ mod integer_equality_fact_index_tests {
             Sort::ProgramInt32,
             Proposition::MemoryLoadable {
                 memory: memory.clone(),
-                base: Address {
+                base: OldAddress {
                     base: block.into(),
                     offset,
                 },
@@ -3784,7 +3784,7 @@ mod integer_equality_fact_index_tests {
             Sort::ProgramInt32,
             Proposition::MemoryLoadable {
                 memory: memory.clone(),
-                base: Address {
+                base: OldAddress {
                     base: block.into(),
                     offset,
                 },
@@ -3798,7 +3798,7 @@ mod integer_equality_fact_index_tests {
     fn transport_index_extracts_separation_without_importing_arithmetic() {
         let range = |block: &str| {
             crate::kernel::Resource::Memory(crate::kernel::MemoryRange::new(
-                Address {
+                OldAddress {
                     base: block.into(),
                     offset: OldAddressOffset::Constant(0),
                 },
@@ -3982,7 +3982,7 @@ mod integer_equality_fact_index_tests {
             SymbolicMemory::new().with_block("retained_state-alpha-facts", 8),
         );
         let changed = crate::kernel::intern_memory(before.as_ref().clone().store(
-            Address {
+            OldAddress {
                 base: "retained_state-alpha-facts".into(),
                 offset: OldAddressOffset::Constant(0),
             },
@@ -4018,7 +4018,7 @@ mod integer_equality_fact_index_tests {
         let memory = SymbolicMemory::new()
             .with_block("quantified-viewable", 32)
             .store(
-                Address {
+                OldAddress {
                     base: "quantified-viewable".into(),
                     offset: OldAddressOffset::Constant(0),
                 },
@@ -4027,7 +4027,7 @@ mod integer_equality_fact_index_tests {
                 ProgramValue::Int32(OldMachineTerm::Variable(Variable(207_900))),
             );
         let changed_memory = memory.clone().store(
-            Address {
+            OldAddress {
                 base: "quantified-viewable".into(),
                 offset: OldAddressOffset::Constant(0),
             },
@@ -4180,7 +4180,7 @@ mod integer_equality_fact_index_tests {
         let block = "implication-existential-viewable";
         let memory = SymbolicMemory::new().with_block(block, 32);
         let changed_memory = memory.clone().store(
-            Address {
+            OldAddress {
                 base: block.into(),
                 offset: OldAddressOffset::Constant(0),
             },
@@ -4490,7 +4490,7 @@ mod integer_equality_fact_index_tests {
             SymbolicMemory::new().with_block("retained_state-alpha-facts", 8),
         );
         let changed = crate::kernel::intern_memory(before.as_ref().clone().store(
-            Address {
+            OldAddress {
                 base: "retained_state-alpha-facts".into(),
                 offset: OldAddressOffset::Constant(0),
             },
@@ -4705,7 +4705,7 @@ mod held_separation_tests {
 
     fn cell(index: u64) -> Resource {
         Resource::Memory(MemoryRange::new(
-            Address {
+            OldAddress {
                 base: "shared".into(),
                 offset: OldAddressOffset::Variable(Variable(980_000 + index)),
             },

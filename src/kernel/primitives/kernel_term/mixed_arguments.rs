@@ -15,7 +15,7 @@ fn mixed_call_arguments_import_structurally_and_keep_exact_native_forms() {
         },
     };
     let pointer = OldPointer::new(
-        Address::symbolic(Variable(1008501)),
+        OldAddress::symbolic(Variable(1008501)),
         ProgramType::Int32Pointer,
     );
     let arguments = vec![
@@ -152,7 +152,7 @@ fn prepared_call_children_reuse_the_producer_only_in_the_current_session() {
         "session_pointer_argument".into(),
         vec![PureFunctionArgument::Value(ProgramValue::Pointer(
             OldPointer::new(
-                Address::symbolic(Variable(1008515)),
+                OldAddress::symbolic(Variable(1008515)),
                 ProgramType::Int32Pointer,
             ),
         ))],
@@ -184,7 +184,7 @@ fn prepared_call_children_do_not_cross_threads_with_equal_session_generations() 
         "thread_pointer_argument".into(),
         vec![PureFunctionArgument::Value(ProgramValue::Pointer(
             OldPointer::new(
-                Address::symbolic(Variable(1008517)),
+                OldAddress::symbolic(Variable(1008517)),
                 ProgramType::Int32Pointer,
             ),
         ))],
@@ -229,7 +229,7 @@ fn opaque_call_children_borrow_their_producers_exact_argument_slot() {
     let boolean = import.boolean_call(&first);
     let integer = import.integer(&IntegerTerm::PureFunctionApplication(first.clone()).into());
     let pointer = SharedPointer::import(&OldPointer::new(
-        Address::symbolic(Variable(1008520)),
+        OldAddress::symbolic(Variable(1008520)),
         ProgramType::Int32Pointer,
     ));
     let pointer = import.pointer_call(&first, vec![None], pointer);
@@ -280,7 +280,7 @@ fn a_null_array_argument_is_formed_at_no_state() {
     let empty = crate::kernel::ProgramPoint::of_memory(&SymbolicMemory::new());
     let other =
         crate::kernel::ProgramPoint::of_memory(&SymbolicMemory::new().with_block("local:x", 8));
-    let pointer = |address: Address| {
+    let pointer = |address: OldAddress| {
         KernelTerm::shared_pointer_value(SharedPointer::import(&OldPointer::new(
             address,
             ProgramType::Int32Pointer,
@@ -289,9 +289,9 @@ fn a_null_array_argument_is_formed_at_no_state() {
     let array = |point: &crate::kernel::ProgramPoint, pointer: &KernelTerm| {
         KernelTerm::shared_array_reference(point.clone(), pointer.clone(), ProgramType::Int32)
     };
-    let null = pointer(Address::null());
+    let null = pointer(OldAddress::null());
     assert_eq!(array(&empty, &null), array(&other, &null));
-    let symbolic = pointer(Address::symbolic(Variable(1008601)));
+    let symbolic = pointer(OldAddress::symbolic(Variable(1008601)));
     assert_ne!(array(&empty, &symbolic), array(&other, &symbolic));
 }
 

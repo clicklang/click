@@ -6,7 +6,7 @@ fn check_returned_resource_construction(outputs: u32) {
     for count in [4_u64, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let entry = state(outputs);
-        let pointer = Address {
+        let pointer = OldAddress {
             base: "produced-cells".into(),
             offset: OldAddressOffset::Constant(0),
         };
@@ -14,7 +14,7 @@ fn check_returned_resource_construction(outputs: u32) {
             facts.assume_condition(
                 OldConditionTerm::address_equal(
                     pointer.clone(),
-                    Address::symbolic(Variable(9_700_000 + index)),
+                    OldAddress::symbolic(Variable(9_700_000 + index)),
                 ),
                 true,
             )

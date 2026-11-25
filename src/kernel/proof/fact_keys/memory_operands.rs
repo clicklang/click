@@ -401,7 +401,7 @@ mod tests {
     #[test]
     fn retained_read_candidate_keys_keep_kind_and_do_not_build_a_native_load() {
         let _session = crate::kernel::VerificationSession::enter();
-        let address = Address::symbolic(Variable(998203));
+        let address = OldAddress::symbolic(Variable(998203));
         let before = crate::kernel::intern_memory(crate::kernel::SymbolicMemory::new());
         let after = crate::kernel::intern_memory(before.memory().clone().store(
             address.clone(),
@@ -434,7 +434,7 @@ mod tests {
         let memory = crate::kernel::intern_memory(
             crate::kernel::SymbolicMemory::new().with_block("retained_state-comparison", 4),
         );
-        let pointer = Address {
+        let pointer = OldAddress {
             base: "retained_state-comparison".into(),
             offset: OldAddressOffset::Constant(0),
         };
@@ -484,7 +484,7 @@ mod tests {
         let memory = crate::kernel::intern_memory(
             crate::kernel::SymbolicMemory::new().with_block("retained_state-key", 4),
         );
-        let pointer = Address {
+        let pointer = OldAddress {
             base: "retained_state-key".into(),
             offset: OldAddressOffset::Constant(0),
         };

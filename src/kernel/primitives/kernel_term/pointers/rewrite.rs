@@ -232,7 +232,7 @@ mod tests {
     #[test]
     fn selected_address_replacements_are_simultaneous_and_keep_metadata() {
         let source = SharedPointer::import(&super::super::tests::complete_source());
-        let replacement = SharedAddress::import(&Address::symbolic(Variable(1004000)));
+        let replacement = SharedAddress::import(&OldAddress::symbolic(Variable(1004000)));
         struct Selected {
             from: SharedAddress,
             to: SharedAddress,

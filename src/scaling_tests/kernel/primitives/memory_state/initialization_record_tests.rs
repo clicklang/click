@@ -9,8 +9,8 @@ fn unwritten_output_preserves_external_runs_without_expanding_their_slots() {
     let mut samples = Vec::new();
     for count in [8u32, 32, 128, 512, 65536] {
         let _session = crate::kernel::VerificationSession::enter();
-        let field = Address::symbolic(Variable(924_050));
-        let output = Address::symbolic(Variable(924_051));
+        let field = OldAddress::symbolic(Variable(924_050));
+        let output = OldAddress::symbolic(Variable(924_051));
         let before = SymbolicMemory::new()
             .with_seeded_cells(
                 field.clone(),
@@ -71,7 +71,7 @@ fn a_covering_query_scales_with_the_cells_it_crosses() {
             );
         }
         let index = OldMachineTerm::Variable(Variable(924_008));
-        let read = Address {
+        let read = OldAddress {
             base: AddressBase::from(block.as_str()),
             offset: OldAddressOffset::scale_int32(index.clone(), 4),
         };
@@ -93,17 +93,17 @@ fn forgotten_external_initialization_does_not_scan_unrelated_cached_cells() {
     let mut samples = Vec::new();
     for count in [16u32, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
-        let field = Address::symbolic(Variable(924_052));
-        let output = Address {
+        let field = OldAddress::symbolic(Variable(924_052));
+        let output = OldAddress {
             base: AddressBase::Heap(924_053),
             offset: OldAddressOffset::Constant(0),
         };
-        let background = |index| Address {
+        let background = |index| OldAddress {
             base: AddressBase::Heap(925_000 + u64::from(index)),
             offset: OldAddressOffset::Constant(0),
         };
         let mut before =
-            SymbolicMemory::new().store(field.clone(), ProgramValue::pointer(Address::null()));
+            SymbolicMemory::new().store(field.clone(), ProgramValue::pointer(OldAddress::null()));
         for index in 0..count {
             before = before.store(
                 background(index),

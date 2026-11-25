@@ -11,10 +11,10 @@ use crate::kernel::ResourceFact;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::{
-    Address, AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, AlgebraicValueType, ExecutionState,
-    ExpressionOutcome, IntegerRangeFoldIndex, IntegerTerm, OldAddressOffset, OldConditionTerm,
-    OldMachineTerm, ProgramValue, Proposition, PureFunctionArgument, Resource, Sort,
-    SpecCaptureRefusal, SymbolicMemory, Term, Variable,
+    AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, AlgebraicValueType, ExecutionState,
+    ExpressionOutcome, IntegerRangeFoldIndex, IntegerTerm, OldAddress, OldAddressOffset,
+    OldConditionTerm, OldMachineTerm, ProgramValue, Proposition, PureFunctionArgument, Resource,
+    Sort, SpecCaptureRefusal, SymbolicMemory, Term, Variable,
 };
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{
@@ -54,8 +54,8 @@ pub(crate) struct MemoryStateLabels {
     memory_identities: HashMap<(usize, usize, usize, usize, usize), usize>,
     trace_labels: bool,
     range_collisions: Option<range_collisions::RangeCollisions>,
-    pointer_values: HashMap<Address, usize>,
-    pointer_sources: HashMap<Address, String>,
+    pointer_values: HashMap<OldAddress, usize>,
+    pointer_sources: HashMap<OldAddress, String>,
     source_memories: Vec<(SymbolicMemory, String, std::sync::Arc<NamingTables>)>,
     current_point: Option<crate::kernel::program_point::ProgramPointId>,
     current_state: Option<ExecutionState>,
@@ -81,10 +81,10 @@ pub(crate) struct MemoryStateLabels {
     unknown_states: Vec<SymbolicMemory>,
     /// Addresses a source spelling names only by a report-local
     /// `<pointer A>`.
-    unnamed_pointers: HashMap<Address, String>,
+    unnamed_pointers: HashMap<OldAddress, String>,
     /// Addresses no structural spelling names, spelled as the pointer local
     /// that held them at a recorded state: `at(region(2).exit, p)`.
-    recorded_pointers: HashMap<Address, String>,
+    recorded_pointers: HashMap<OldAddress, String>,
     /// Typed values a recorded state names that the current state no
     /// longer holds: a call's result, `<region>.result`. A range over one is
     /// spelled from that name.
@@ -166,7 +166,7 @@ impl MemoryStateLabels {
     }
 
     /// Stable report-local identities, distinct from source spellings.
-    pub(crate) fn pointer_value_name(&mut self, pointer: &Address) -> String {
+    pub(crate) fn pointer_value_name(&mut self, pointer: &OldAddress) -> String {
         if let Some(index) = self.pointer_values.get(pointer) {
             return format!("value#{index}");
         }
@@ -296,7 +296,7 @@ impl MemoryStateLabels {
     /// An address no structural spelling names: the pointer local that held
     /// it at a recorded state when one did, otherwise a report-local
     /// `<pointer A>`.
-    pub(crate) fn unnamed_pointer(&mut self, pointer: &Address) -> String {
+    pub(crate) fn unnamed_pointer(&mut self, pointer: &OldAddress) -> String {
         if let Some(name) = self.recorded_pointers.get(pointer) {
             return name.clone();
         }
@@ -306,7 +306,7 @@ impl MemoryStateLabels {
 
     /// The name [`Self::unnamed_pointer`] falls back to before its
     /// placeholder, when one was registered.
-    pub(crate) fn state_pointer_name(&self, pointer: &Address) -> Option<&str> {
+    pub(crate) fn state_pointer_name(&self, pointer: &OldAddress) -> Option<&str> {
         self.recorded_pointers.get(pointer).map(String::as_str)
     }
 
@@ -315,8 +315,11 @@ impl MemoryStateLabels {
     /// base an address inside an allocation is spelled from. The current
     /// state's locals are preferred, then the shortest state name, so the
     /// choice does not depend on map order.
-    pub(crate) fn block_base_name(&self, pointer: &Address) -> Option<&str> {
-        fn shortest<'a>(names: &'a HashMap<Address, String>, pointer: &Address) -> Option<&'a str> {
+    pub(crate) fn block_base_name(&self, pointer: &OldAddress) -> Option<&str> {
+        fn shortest<'a>(
+            names: &'a HashMap<OldAddress, String>,
+            pointer: &OldAddress,
+        ) -> Option<&'a str> {
             names
                 .iter()
                 .filter(|(base, _)| {
@@ -330,7 +333,7 @@ impl MemoryStateLabels {
     }
 
     /// A report-local `<pointer A>`, whatever else names the address.
-    pub(crate) fn placeholder_pointer(&mut self, pointer: &Address) -> String {
+    pub(crate) fn placeholder_pointer(&mut self, pointer: &OldAddress) -> String {
         let next = self.unnamed_pointers.len();
         if next >= 128 && !self.unnamed_pointers.contains_key(pointer) {
             return "<another pointer>".into();
@@ -672,7 +675,7 @@ impl MemoryStateLabels {
 
     /// Spells `pointer` as `name` where no structural spelling names it, when
     /// nothing named it that way yet.
-    pub(crate) fn fallback_pointer_name(&mut self, pointer: &Address, name: String) {
+    pub(crate) fn fallback_pointer_name(&mut self, pointer: &OldAddress, name: String) {
         if self.recorded_pointers.len() < 128 {
             self.recorded_pointers
                 .entry(pointer.clone())
@@ -959,7 +962,7 @@ pub(crate) fn render_transport_cell_walk(
 
 /// One cell's address as a report names it: its source spelling when the
 /// report's names give one, and otherwise its labelled address.
-pub(crate) fn render_cell_address(pointer: &Address, labels: &mut MemoryStateLabels) -> String {
+pub(crate) fn render_cell_address(pointer: &OldAddress, labels: &mut MemoryStateLabels) -> String {
     let naming = labels.naming.clone();
     let (parameters, arguments) = naming
         .as_deref()
@@ -1183,7 +1186,7 @@ impl Drop for CLibraryPointerNames {
 }
 
 pub(in crate::surface) fn c_library_pointer_name(
-    pointer: &crate::kernel::Address,
+    pointer: &crate::kernel::OldAddress,
 ) -> Option<(String, crate::kernel::ProgramType)> {
     let crate::kernel::AddressBase::Symbolic(variable) = pointer.base else {
         return None;
@@ -2602,9 +2605,9 @@ impl Renderer<'_> {
             }
         }
     }
-    fn pointer(&mut self, p: &Address) {
+    fn pointer(&mut self, p: &OldAddress) {
         if self.trace_facts {
-            let name = if p == &Address::null() {
+            let name = if p == &OldAddress::null() {
                 "0".into()
             } else if crate::surface::proof_trace::pointer_definition(p).is_some() {
                 self.labels.pointer_value_name(p)
@@ -3003,7 +3006,7 @@ mod tests {
     fn old_projected_reads_keep_the_recorded_point_without_out_of_scope_values() {
         use crate::surface::{CodeRegionRef, ProgramPointKind, ProgramPointRef, RecordedStates};
         let _session = crate::kernel::VerificationSession::enter();
-        let cell = Address::symbolic(Variable(989_100));
+        let cell = OldAddress::symbolic(Variable(989_100));
         let memory = SymbolicMemory::new().with_block("unrelated", 4);
         let projected = crate::kernel::canonical_program_memory_for_pointer_load(&memory, &cell);
         let head = ExecutionState::new().with_memory(memory.clone());
@@ -3065,7 +3068,7 @@ mod tests {
     #[test]
     fn pointer_equality_diagnostic_keeps_provenance_distinct_at_the_same_address() {
         use crate::kernel::{OldPointer, ProgramType, SubobjectBounds};
-        let address = Address::symbolic(Variable(10993745));
+        let address = OldAddress::symbolic(Variable(10993745));
         let left = OldPointer::new(address.clone(), ProgramType::Int32Pointer);
         let right = left.clone().with_bounds(Some(SubobjectBounds {
             start: address,
@@ -3193,7 +3196,7 @@ mod tests {
             ("__rust_mir_14", "the memory after a store"),
             ("total", "the memory after the store to `total`"),
         ] {
-            let pointer = Address {
+            let pointer = OldAddress {
                 base: format!("local:{local}").into(),
                 offset: OldAddressOffset::Constant(0),
             };
@@ -3325,7 +3328,7 @@ mod tests {
     fn loadable_at(memory: SymbolicMemory) -> Proposition {
         Proposition::MemoryLoadable {
             memory,
-            base: Address {
+            base: OldAddress {
                 base: crate::kernel::AddressBase::ExternalArgument,
                 offset: OldAddressOffset::Constant(0),
             },
@@ -3489,7 +3492,7 @@ mod wide_range_reader_tests {
     #[test]
     fn wide_resource_diagnostics_keep_the_high_bits_of_bounds() {
         let wide = MemoryRange::new_wide(
-            Address::symbolic(Variable(985_500)),
+            OldAddress::symbolic(Variable(985_500)),
             OldMachineTerm::uint64_constant(0),
             OldMachineTerm::uint64_constant(1 << 33),
             4,
@@ -3513,7 +3516,7 @@ mod resource_detail_tests {
 
     #[test]
     fn typed_resource_arguments_keep_publication_payload_values() {
-        let flag = Address {
+        let flag = OldAddress {
             base: "ready".into(),
             offset: OldAddressOffset::Constant(0),
         };
@@ -3540,11 +3543,11 @@ mod resource_detail_tests {
 
     #[test]
     fn typed_iterated_resources_keep_guards_elements_and_taken_indices() {
-        let base = Address {
+        let base = OldAddress {
             base: "elements".into(),
             offset: OldAddressOffset::Constant(0),
         };
-        let guard = Address {
+        let guard = OldAddress {
             base: "flags".into(),
             offset: OldAddressOffset::Constant(0),
         };

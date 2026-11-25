@@ -163,14 +163,14 @@ fn retained_block_bounds_require_the_full_index_and_preserve_missing_bounds() {
     let _session = crate::kernel::VerificationSession::enter();
     use MachineIntegerType as T;
     for ty in [T::Int64, T::UInt64] {
-        let base = Address {
+        let base = OldAddress {
             base: AddressBase::Concrete("retained-formation".into()),
             offset: OldAddressOffset::Constant(0),
         };
         let state = ExecutionState::new()
             .with_memory(SymbolicMemory::new().with_block(base.base.clone(), 64));
         let variable = OldMachineTerm::Variable(Variable(993200));
-        let pointer = Address {
+        let pointer = OldAddress {
             base: base.base.clone(),
             offset: OldAddressOffset::Int64Scaled {
                 value: retained(ty, &variable),
@@ -216,7 +216,7 @@ mod scaling_tests {
 #[test]
 fn coordinate_reconstruction_keeps_the_selected_read_state() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = Address {
+    let pointer = OldAddress {
         base: AddressBase::Concrete("coordinate-retained_state".into()),
         offset: OldAddressOffset::Constant(0),
     };

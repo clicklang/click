@@ -26,7 +26,12 @@ fn provenance_queries_ignore_unrelated_origins() {
 
 #[test]
 fn typed_access_does_not_search_unrelated_address_equalities_or_ranges() {
-    let value = |id| OldPointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer);
+    let value = |id| {
+        OldPointer::new(
+            OldAddress::symbolic(Variable(id)),
+            ProgramType::Int32Pointer,
+        )
+    };
     let a = value(870_001);
     let b = value(870_002);
     let mut samples = Vec::new();
@@ -87,7 +92,7 @@ fn typed_access_does_not_search_unrelated_address_equalities_or_ranges() {
 #[test]
 fn pointer_integer_round_trips_ignore_unrelated_facts() {
     let pointer = OldPointer::new(
-        Address::symbolic(Variable(992_001)),
+        OldAddress::symbolic(Variable(992_001)),
         ProgramType::Int32Pointer,
     );
     let mut samples = Vec::new();
@@ -134,7 +139,12 @@ fn pointer_integer_round_trips_ignore_unrelated_facts() {
 #[test]
 fn packed_word_contract_lookup_and_scope_ignore_unrelated_words() {
     let _session = VerificationSession::enter();
-    let value = |id| OldPointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer);
+    let value = |id| {
+        OldPointer::new(
+            OldAddress::symbolic(Variable(id)),
+            ProgramType::Int32Pointer,
+        )
+    };
     let equality = |a: &OldPointer, b: &OldPointer| {
         Proposition::condition_is(
             OldConditionTerm::PointerEqual(Box::new(a.clone()), Box::new(b.clone())),
@@ -143,7 +153,7 @@ fn packed_word_contract_lookup_and_scope_ignore_unrelated_words() {
     };
     let reconstructed = |id| {
         let word = ProgramValue::UInt64(OldMachineTerm::Variable(Variable(id)))
-            .complete_word(Address::symbolic(Variable(id + 1)));
+            .complete_word(OldAddress::symbolic(Variable(id + 1)));
         let value = crate::kernel::eval::cast_program_value_to_type(
             word,
             ProgramType::Int32Pointer,
@@ -192,7 +202,7 @@ fn recent_pointer_read_origin_avoids_older_alias_histories() {
     let mut samples = Vec::new();
     for size in [16u64, 64, 256] {
         let _session = VerificationSession::enter();
-        let cell = |name: String| Address {
+        let cell = |name: String| OldAddress {
             base: name.into(),
             offset: OldAddressOffset::Constant(0),
         };
@@ -205,19 +215,19 @@ fn recent_pointer_read_origin_avoids_older_alias_histories() {
             older.push(pointer);
         }
         let before = intern_memory_ref(&memory);
-        let read = |retained_state: &SharedMemory, pointer: &Address| {
+        let read = |retained_state: &SharedMemory, pointer: &OldAddress| {
             OldPointer::from_read(
-                Address::loaded_value(retained_state, pointer),
+                OldAddress::loaded_value(retained_state, pointer),
                 ProgramType::Int32Pointer,
                 retained_state,
                 pointer,
             )
         };
         let value = OldPointer::new(
-            Address::symbolic(Variable(994_001)),
+            OldAddress::symbolic(Variable(994_001)),
             ProgramType::Int32Pointer,
         );
-        let fact = |pointer: &Address| {
+        let fact = |pointer: &OldAddress| {
             Proposition::condition_is(
                 OldConditionTerm::PointerEqual(
                     Box::new(read(&before, pointer)),
@@ -240,7 +250,7 @@ fn recent_pointer_read_origin_avoids_older_alias_histories() {
             &context,
         );
         let writes = [MemoryRange::new(
-            Address::symbolic(Variable(994_002)),
+            OldAddress::symbolic(Variable(994_002)),
             0u32.into(),
             1u32.into(),
         )];

@@ -1273,7 +1273,7 @@ mod tests {
         let memory = crate::kernel::intern_memory(
             crate::kernel::SymbolicMemory::new().with_block("static:test:values#static0", 16),
         );
-        let pointer = crate::kernel::Address {
+        let pointer = crate::kernel::OldAddress {
             base: crate::kernel::AddressBase::Concrete("static:test:values#static0".into()),
             offset: crate::kernel::OldAddressOffset::Constant(0),
         };
@@ -1329,7 +1329,7 @@ mod tests {
             .unwrap()
         );
 
-        let dynamic_pointer = crate::kernel::Address {
+        let dynamic_pointer = crate::kernel::OldAddress {
             base: crate::kernel::AddressBase::Concrete("heap:test".into()),
             offset: crate::kernel::OldAddressOffset::Constant(0),
         };
@@ -1381,7 +1381,7 @@ mod tests {
     #[test]
     fn quantified_external_range_capability_is_frontier_exact() {
         let memory = crate::kernel::SymbolicMemory::new();
-        let pointer = crate::kernel::Address {
+        let pointer = crate::kernel::OldAddress {
             base: crate::kernel::AddressBase::ExternalArgument,
             offset: crate::kernel::OldAddressOffset::Constant(0),
         };

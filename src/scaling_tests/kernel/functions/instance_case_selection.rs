@@ -115,8 +115,8 @@ fn check_resource_publication_work(
         for index in 0..size {
             assumptions = assumptions.assume_condition(
                 OldConditionTerm::address_equal(
-                    Address::symbolic(Variable(8_000_000 + index * 2)),
-                    Address::symbolic(Variable(8_000_001 + index * 2)),
+                    OldAddress::symbolic(Variable(8_000_000 + index * 2)),
+                    OldAddress::symbolic(Variable(8_000_001 + index * 2)),
                 ),
                 true,
             );

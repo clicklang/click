@@ -2,9 +2,9 @@ use super::*;
 
 #[test]
 fn concrete_storage_coordinates_follow_transitive_aliases_and_forks() {
-    let first = Address::symbolic(Variable(896_000));
-    let second = Address::symbolic(Variable(896_001));
-    let storage = Address {
+    let first = OldAddress::symbolic(Variable(896_000));
+    let second = OldAddress::symbolic(Variable(896_001));
+    let storage = OldAddress {
         base: "local:mutex".into(),
         offset: OldAddressOffset::Constant(8),
     };
@@ -26,7 +26,7 @@ fn concrete_storage_coordinates_follow_transitive_aliases_and_forks() {
         storage.offset_by_bytes(16)
     );
     assert_eq!(empty.equality_graph.storage_address(&first), first);
-    let other = Address {
+    let other = OldAddress {
         base: "local:other".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -39,19 +39,19 @@ fn concrete_storage_coordinates_follow_transitive_aliases_and_forks() {
 
 #[test]
 fn external_addresses_select_their_own_concrete_storage_anchor() {
-    let first = Address {
+    let first = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::Variable(Variable(896_010)),
     };
-    let second = Address {
+    let second = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::Variable(Variable(896_011)),
     };
-    let one = Address {
+    let one = OldAddress {
         base: "global:first".into(),
         offset: OldAddressOffset::Constant(8),
     };
-    let two = Address {
+    let two = OldAddress {
         base: "global:second".into(),
         offset: OldAddressOffset::Constant(16),
     };
@@ -82,9 +82,9 @@ fn external_addresses_select_their_own_concrete_storage_anchor() {
 
 #[test]
 fn alignment_uses_the_checked_storage_anchor_through_transitive_equality() {
-    let first = Address::symbolic(Variable(896_900));
-    let last = Address::symbolic(Variable(896_901));
-    let storage = Address {
+    let first = OldAddress::symbolic(Variable(896_900));
+    let last = OldAddress::symbolic(Variable(896_901));
+    let storage = OldAddress {
         base: AddressBase::Heap(896_990),
         offset: OldAddressOffset::Constant(0),
     };
@@ -118,9 +118,9 @@ fn alignment_uses_the_checked_storage_anchor_through_transitive_equality() {
 
 #[test]
 fn declared_alignment_follows_late_transitive_address_equality() {
-    let base = Address::symbolic(Variable(898_100));
-    let middle = Address::symbolic(Variable(898_101));
-    let alias = Address::symbolic(Variable(898_102));
+    let base = OldAddress::symbolic(Variable(898_100));
+    let middle = OldAddress::symbolic(Variable(898_101));
+    let alias = OldAddress::symbolic(Variable(898_102));
     let original = PureFactContext::new()
         .assume_condition(OldConditionTerm::pointer_aligned(base.clone(), 8), true);
     let facts = original
@@ -157,14 +157,14 @@ fn automatic_declaration_storage_is_an_anchor_and_an_indexed_local_alias() {
         0,
         Some("x".into()),
     );
-    let storage = Address {
+    let storage = OldAddress {
         base: AddressBase::AutomaticLocal {
             binding,
             instance: crate::kernel::LocalStorageInstance::Frame(3),
         },
         offset: OldAddressOffset::Constant(0),
     };
-    let alias = Address::symbolic(Variable(896_999));
+    let alias = OldAddress::symbolic(Variable(896_999));
     let facts = PureFactContext::new().assume_condition(
         OldConditionTerm::address_equal(alias.clone(), storage.clone()),
         true,

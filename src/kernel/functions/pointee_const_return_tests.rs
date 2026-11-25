@@ -51,7 +51,7 @@ fn pointee_const_return_function_address_cannot_convert_to_mutable_callback() {
     let value = type_function_address_value(
         &ProgramExpression::FunctionAddress("text".to_string()),
         ProgramValue::typed_pointer(
-            Address {
+            OldAddress {
                 base: AddressBase::Function("text".to_string()),
                 offset: OldAddressOffset::Constant(0),
             },

@@ -148,7 +148,7 @@ pub const C_PUBLIC_FORMS: &[&str] = &[
 
 #[derive(Clone, Debug)]
 struct StaticAddress {
-    pointer: crate::kernel::Address,
+    pointer: crate::kernel::OldAddress,
     interface_type: InterfaceType,
     constant: bool,
     /// The member subobject the address selects, if any.
@@ -1135,7 +1135,7 @@ fn kernel_integer_literal_value(
             if matches!(initializer, CExpression::Int32Literal(0)) =>
         {
             crate::kernel::ProgramValue::typed_pointer(
-                crate::kernel::Address::null(),
+                crate::kernel::OldAddress::null(),
                 interface_type.to_kernel_type(),
             )
         }
@@ -1166,7 +1166,7 @@ fn kernel_integer_literal_value(
             if matches!(initializer, CExpression::Int32Literal(0)) =>
         {
             crate::kernel::ProgramValue::typed_pointer(
-                crate::kernel::Address::null(),
+                crate::kernel::OldAddress::null(),
                 interface_type.to_kernel_type(),
             )
         }
@@ -1192,7 +1192,7 @@ fn kernel_aggregate_initializer_value(
             if matches!(initializer, CExpression::Int32Literal(0)) =>
         {
             Some(crate::kernel::ProgramValue::typed_pointer(
-                crate::kernel::Address::null(),
+                crate::kernel::OldAddress::null(),
                 interface_type.to_kernel_type(),
             ))
         }
@@ -1202,11 +1202,11 @@ fn kernel_aggregate_initializer_value(
         // writing the cell, so a later load dispatches to the concrete target.
         InterfaceType::FunctionPointer(_) => match initializer {
             CExpression::Int32Literal(0) => Some(crate::kernel::ProgramValue::typed_pointer(
-                crate::kernel::Address::null(),
+                crate::kernel::OldAddress::null(),
                 interface_type.to_kernel_type(),
             )),
             CExpression::FunctionAddress(name) => Some(crate::kernel::ProgramValue::typed_pointer(
-                crate::kernel::Address::function(name.clone()),
+                crate::kernel::OldAddress::function(name.clone()),
                 interface_type.to_kernel_type(),
             )),
             _ => None,
@@ -3073,7 +3073,7 @@ pub enum CExpression {
         interface_type: InterfaceType,
         struct_name: Option<String>,
     },
-    /// Address of an embedded struct field. Aggregate objects have no
+    /// OldAddress of an embedded struct field. Aggregate objects have no
     /// runtime `ProgramValue`; this node carries the aggregate place through nested
     /// member selection until a scalar field is selected.
     AggregateAddress {
@@ -3107,7 +3107,7 @@ pub enum CExpression {
         union_name: String,
         pointee_constant: bool,
     },
-    /// Address of an embedded union. Union members overlap at offset zero and
+    /// OldAddress of an embedded union. Union members overlap at offset zero and
     /// are selected as typed scalar loads; the union itself has no runtime
     /// aggregate value.
     UnionAddress {
@@ -15308,7 +15308,7 @@ impl Parser {
         }
     }
 
-    /// Address formation does not read the designated object, but it can read
+    /// OldAddress formation does not read the designated object, but it can read
     /// mutable pointer and index values used to find that object.
     fn lvalue_address_reads_potentially_changed_value(&self, expression: &CExpression) -> bool {
         match expression {

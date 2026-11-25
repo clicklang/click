@@ -8,11 +8,11 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
             let mut preparation = Vec::new();
             for count in [4_u64, 16, 64] {
                 let _session = crate::kernel::VerificationSession::enter();
-                let base = Address {
+                let base = OldAddress {
                     base: AddressBase::Heap(9_970_000),
                     offset: OldAddressOffset::Constant(0),
                 };
-                let guards = Address {
+                let guards = OldAddress {
                     base: "local:iterated-exposure-guards".into(),
                     offset: OldAddressOffset::Constant(0),
                 };
@@ -39,9 +39,9 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                         )));
                     } else if axis != "range premises" {
                         let alias = if axis == "aliases" {
-                            Address::symbolic(Variable(9_980_000 + index))
+                            OldAddress::symbolic(Variable(9_980_000 + index))
                         } else {
-                            Address {
+                            OldAddress {
                                 base: base.base.clone(),
                                 offset: OldAddressOffset::Variable(Variable(9_980_000 + index)),
                             }
@@ -237,7 +237,7 @@ fn indexed_slot_selection_ignores_other_clauses_at_the_same_base() {
     let template = |lower: u32| {
         IteratedMemory::new(
             "slots",
-            Address::symbolic(Variable(8_000)),
+            OldAddress::symbolic(Variable(8_000)),
             4,
             2,
             0,
@@ -245,7 +245,7 @@ fn indexed_slot_selection_ignores_other_clauses_at_the_same_base() {
             lower.into(),
             (lower + 2).into(),
             IteratedGuard::new(
-                Address::symbolic(Variable(8_001)),
+                OldAddress::symbolic(Variable(8_001)),
                 ProgramType::Int32,
                 4,
                 true,

@@ -57,7 +57,7 @@ fn marker_exits(count: usize, ambient: usize) -> Vec<ExecutionState> {
         .with_block("havoc:10000000", 0);
     for index in 0..ambient {
         memory = memory.store(
-            Address {
+            OldAddress {
                 base: AddressBase::Concrete("shared".into()),
                 offset: OldAddressOffset::Constant((index * 4) as i64),
             },
@@ -238,7 +238,7 @@ fn partial_value_binding_join_cannot_supply_a_missing_read_or_drop_declared_stor
 #[test]
 fn numeric_float_equality_does_not_materialize_positive_zero_bits() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = Address {
+    let pointer = OldAddress {
         base: AddressBase::Concrete("shared".into()),
         offset: OldAddressOffset::Constant(0),
     };
@@ -271,7 +271,7 @@ fn joined_call_epochs_do_not_transport_uncached_loads_or_hide_real_blocks() {
     let _session = crate::kernel::VerificationSession::enter();
     let exits = marker_exits(2, 4);
     let (successor, _) = measured_join(&exits);
-    let pointer = Address {
+    let pointer = OldAddress {
         base: AddressBase::Concrete("unknown".into()),
         offset: OldAddressOffset::Constant(0),
     };

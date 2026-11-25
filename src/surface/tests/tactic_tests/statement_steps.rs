@@ -262,11 +262,11 @@ fn clone_field_stores_with_observed_source_resource_verify() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_00")]
 fn simple_statement_transition_does_not_transport_facts_automatically() {
     let base_memory = SymbolicMemory::new();
-    let first = Address {
+    let first = OldAddress {
         base: "arg-memory".into(),
         offset: OldAddressOffset::Constant(0),
     };
-    let second = Address {
+    let second = OldAddress {
         base: "arg-memory".into(),
         offset: OldAddressOffset::Constant(4),
     };
@@ -1105,15 +1105,16 @@ fn execute_step_expands_call_assign_fact_from_internal_state() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_04")]
 fn synthesizes_loaded_pointer_equality_as_pointer_comparison() {
-    let owner = Address {
+    let owner = OldAddress {
         base: "arg-memory".into(),
         offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(41)), 4),
     };
-    let data = Address {
+    let data = OldAddress {
         base: "arg-memory".into(),
         offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(42)), 4),
     };
-    let read = Address::loaded_value(&crate::kernel::intern_memory(SymbolicMemory::new()), &owner);
+    let read =
+        OldAddress::loaded_value(&crate::kernel::intern_memory(SymbolicMemory::new()), &owner);
     let proposition = Proposition::condition_is(
         OldConditionTerm::pointer_equal(
             crate::kernel::OldPointer::new(read, ProgramType::Int32Pointer),
@@ -1167,11 +1168,11 @@ fn synthesizes_loaded_pointer_equality_as_pointer_comparison() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_04")]
 fn synthesizes_a_reassigned_pointer_parameter_at_entry() {
-    let passed = Address {
+    let passed = OldAddress {
         base: "arg-memory".into(),
         offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(43)), 4),
     };
-    let current = Address::symbolic(Variable(44));
+    let current = OldAddress::symbolic(Variable(44));
     let proposition = Proposition::condition_is(
         OldConditionTerm::pointer_equal(
             crate::kernel::OldPointer::new(passed.clone(), ProgramType::Int32Pointer),
@@ -1243,11 +1244,11 @@ fn synthesizes_dynamically_indexed_pointer_offset_equality() {
         ),
     ];
     let arguments = [
-        ProgramExpression::Value(ProgramValue::pointer(Address {
+        ProgramExpression::Value(ProgramValue::pointer(OldAddress {
             base: "arg-memory".into(),
             offset: owner_offset,
         })),
-        ProgramExpression::Value(ProgramValue::pointer(Address {
+        ProgramExpression::Value(ProgramValue::pointer(OldAddress {
             base: "arg-memory".into(),
             offset: data_offset,
         })),

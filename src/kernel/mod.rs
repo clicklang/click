@@ -77,7 +77,7 @@ pub(crate) use borrows::BorrowLedger;
 /// built the projection. One lookup; the canonical form is not rebuilt.
 pub(crate) fn load_projection_source(
     projected: &SharedMemory,
-    pointer: &Address,
+    pointer: &OldAddress,
 ) -> Option<SharedMemory> {
     reasoning::memory_resolution::canonical_load_projection_source(projected, pointer)
 }

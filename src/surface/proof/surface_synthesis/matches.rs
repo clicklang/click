@@ -229,7 +229,7 @@ mod tests {
             ProgramValue::Int128(word.clone()),
             ProgramValue::Float32(word.clone()),
             ProgramValue::Bool(word.clone()),
-            ProgramValue::typed_pointer(Address::symbolic(variable), ProgramType::Int32Pointer),
+            ProgramValue::typed_pointer(OldAddress::symbolic(variable), ProgramType::Int32Pointer),
             ProgramValue::Int32(OldMachineTerm::constant(0)),
         ];
         for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {

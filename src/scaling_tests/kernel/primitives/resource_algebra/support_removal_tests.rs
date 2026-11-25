@@ -114,7 +114,7 @@ fn a_resource_delta_refusal_does_not_walk_the_shared_past() {
 fn returned_symbolic_cell_rejoins_without_scanning_unrelated_ownership() {
     let mut samples = Vec::new();
     for size in [4_u64, 16, 64, 256] {
-        let base = Address::symbolic(Variable(987_400));
+        let base = OldAddress::symbolic(Variable(987_400));
         let index = OldMachineTerm::Variable(Variable(987_401));
         let middle = OldMachineTerm::add(index.clone(), 1u32.into());
         let end = OldMachineTerm::add(index.clone(), 2u32.into());
@@ -133,7 +133,7 @@ fn returned_symbolic_cell_rejoins_without_scanning_unrelated_ownership() {
         let mut resources = ResourceContext::new_with_equalities(&facts);
         for item in 0..size {
             resources = resources.unchecked_with_fact(range(
-                Address::symbolic(Variable(988_000 + item)),
+                OldAddress::symbolic(Variable(988_000 + item)),
                 0u32.into(),
                 2u32.into(),
             ));
@@ -174,7 +174,7 @@ fn shared_pointer_load_footprints_keep_depth_refusal_without_tree_expansion() {
     let mut costs = Vec::new();
     for depth in [8, 16, 32, 65] {
         let _session = crate::kernel::VerificationSession::enter();
-        let address = Address::symbolic(Variable(1081401));
+        let address = OldAddress::symbolic(Variable(1081401));
         let memory = crate::kernel::intern_memory(
             SymbolicMemory::new().store(address.clone(), crate::kernel::int32(7)),
         );

@@ -665,7 +665,7 @@ mod tests {
             KernelTerm::algebraic_read(
                 ty.clone(),
                 crate::kernel::ProgramPoint::at(&intern_memory(SymbolicMemory::new())),
-                SharedAddress::import(&Address::symbolic(Variable(999765))),
+                SharedAddress::import(&OldAddress::symbolic(Variable(999765))),
             ),
         ];
         fn hash(value: &impl std::hash::Hash) -> u64 {
@@ -840,7 +840,7 @@ mod tests {
     fn pointer_local_storage_retains_root_and_native_identity() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = OldPointer::new(
-            Address::symbolic(Variable(1027000)),
+            OldAddress::symbolic(Variable(1027000)),
             ProgramType::Int32Pointer,
         );
         let root = KernelTerm::shared_pointer_call(
@@ -903,7 +903,7 @@ mod tests {
     fn pointer_memory_cells_keep_roots_and_the_previous_native_key() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = OldPointer::new(
-            Address::symbolic(Variable(1027500)),
+            OldAddress::symbolic(Variable(1027500)),
             ProgramType::Int32Pointer,
         );
         let native = ProgramValue::Pointer(pointer.clone());
@@ -920,7 +920,7 @@ mod tests {
         }
         assert_eq!(hash(&retained), hash(&native_cell));
         assert_eq!(format!("{retained:?}"), format!("{native:?}"));
-        let address = Address::symbolic(Variable(1027501));
+        let address = OldAddress::symbolic(Variable(1027501));
         let mut cells = CellStore::new();
         cells.insert_retained(address.clone(), retained);
         assert_eq!(cells.get_retained(&address).unwrap().shared(), Some(&root));
@@ -933,7 +933,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let address = SymbolicMemory::local_pointer("retained_pointer_cell");
         let pointer = OldPointer::new(
-            Address::symbolic(Variable(1027600)),
+            OldAddress::symbolic(Variable(1027600)),
             ProgramType::Int32Pointer,
         );
         let root = KernelTerm::shared_pointer_call(
@@ -958,8 +958,10 @@ mod tests {
         );
         assert!(forgotten.known_value(&address).is_none());
         for retained_state in [&memory, &forgotten] {
-            let origin =
-                Address::loaded_value(&crate::kernel::intern_memory_ref(retained_state), &address);
+            let origin = OldAddress::loaded_value(
+                &crate::kernel::intern_memory_ref(retained_state),
+                &address,
+            );
             let recovered =
                 crate::kernel::memory_history::complete_pointer_carrier_read_retained_value(
                     &origin,

@@ -400,7 +400,7 @@ mod tests {
                     format!("{native:?}")
                 );
             }
-            let pointer = Address::symbolic(Variable(998100));
+            let pointer = OldAddress::symbolic(Variable(998100));
             assert_eq!(
                 crate::kernel::reasoning::substitute_pointer_variable_in_common_condition(
                     &root,
@@ -494,7 +494,7 @@ mod identity_tests {
             OldConditionTerm::AddressOffsetEqual(
                 Box::new(OldAddressOffset::scaled_int64_node(
                     OldMachineTerm::IntegerAddress(
-                        Box::new(Address::symbolic(Variable(998400))),
+                        Box::new(OldAddress::symbolic(Variable(998400))),
                         crate::kernel::AddressObjectClass::new(Some(CAccessClass::Scalar(class))),
                     ),
                     1,
@@ -518,7 +518,7 @@ mod identity_tests {
                 Box::new(OldConditionTerm::Constant(false)),
             );
             let root = KernelTermImport::default().condition(&source);
-            let target = Address::symbolic(Variable(998401));
+            let target = OldAddress::symbolic(Variable(998401));
             let expected = crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(
                 Variable(998400),
                 &target,

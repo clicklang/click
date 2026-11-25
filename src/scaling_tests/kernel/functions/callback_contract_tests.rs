@@ -6,7 +6,7 @@ use super::*;
 
 #[test]
 fn authoritative_memory_projection_scales_with_used_members_not_unrelated_frames() {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: AddressBase::Concrete("local:projection:data".to_string()),
         offset: OldAddressOffset::Constant(0),
     };
@@ -106,7 +106,7 @@ fn authoritative_memory_projection_scales_with_used_members_not_unrelated_frames
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn checked_transition_projection_ignores_unrelated_caller_frame() {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: AddressBase::Concrete("local:transition:data".to_string()),
         offset: OldAddressOffset::Constant(0),
     };
@@ -200,7 +200,7 @@ fn checked_transition_projection_ignores_unrelated_caller_frame() {
 
 #[test]
 fn checked_wrapper_projection_scales_with_used_members() {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: AddressBase::Concrete("local:wrapper:data".to_string()),
         offset: OldAddressOffset::Constant(0),
     };
@@ -288,7 +288,7 @@ fn checked_wrapper_projection_scales_with_used_members() {
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn callback_fact_lookup_scales_with_calls_not_unrelated_supported_facts() {
-    fn callback_fact(name: &str, pointer: Address, state: ExecutionState) -> Proposition {
+    fn callback_fact(name: &str, pointer: OldAddress, state: ExecutionState) -> Proposition {
         Proposition::Predicate {
             name: FunctionContract::predicate_name_for(name),
             arguments: vec![
@@ -304,7 +304,7 @@ fn callback_fact_lookup_scales_with_calls_not_unrelated_supported_facts() {
         }
     }
 
-    let target = Address::symbolic_function(Variable(92_000));
+    let target = OldAddress::symbolic_function(Variable(92_000));
     let mut samples = Vec::new();
     for calls in [1usize, 2, 4, 8, 16] {
         for unrelated in [4usize, 16, 64, 256, 1024] {
@@ -316,7 +316,7 @@ fn callback_fact_lookup_scales_with_calls_not_unrelated_supported_facts() {
             for index in 0..unrelated {
                 assumptions = assumptions.assume_proposition(callback_fact(
                     "Unrelated",
-                    Address::symbolic_function(Variable(93_000 + index as u64)),
+                    OldAddress::symbolic_function(Variable(93_000 + index as u64)),
                     ExecutionState::new(),
                 ));
             }
@@ -466,7 +466,7 @@ fn established_callback_frame_rule_ignores_unrelated_owners_and_aliases() {
         for count in [4_u64, 16, 64] {
             let _session = crate::kernel::VerificationSession::enter();
             let contract = opaque_callback_contract();
-            let callback = Address::symbolic_function(Variable(8_961_000));
+            let callback = OldAddress::symbolic_function(Variable(8_961_000));
             let (state, argument, held) = opaque_callback_state(if aliases { 1 } else { count });
             let mut facts = PureFactContext::new()
                 .assume_proposition(named_contract_fact(&contract, callback.clone()));
@@ -474,8 +474,8 @@ fn established_callback_frame_rule_ignores_unrelated_owners_and_aliases() {
                 for i in 0..count {
                     facts = facts.assume_condition(
                         OldConditionTerm::address_equal(
-                            Address::symbolic(Variable(8_960_000)),
-                            Address::symbolic(Variable(8_962_000 + i)),
+                            OldAddress::symbolic(Variable(8_960_000)),
+                            OldAddress::symbolic(Variable(8_962_000 + i)),
                         ),
                         true,
                     );

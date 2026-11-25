@@ -550,9 +550,9 @@ fn pointer_call_producers_retain_nested_arguments_and_native_metadata() {
     {
         let pointer = OldPointer::new(
             if null {
-                Address::null()
+                OldAddress::null()
             } else {
-                Address::symbolic(Variable(1025100))
+                OldAddress::symbolic(Variable(1025100))
             },
             ProgramType::Int32Pointer,
         )
@@ -772,11 +772,11 @@ fn boolean_composition_producers_preserve_casts_and_comparison_rules() {
 #[test]
 fn cold_native_array_argument_retains_the_entry_point_across_local_stores() {
     let _session = VerificationSession::enter();
-    let local = Address {
+    let local = OldAddress {
         base: "local:unrelated".into(),
         offset: OldAddressOffset::Constant(0),
     };
-    let pointer = Address {
+    let pointer = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::Constant(0),
     };
@@ -837,15 +837,15 @@ fn cold_native_array_argument_retains_the_entry_point_across_local_stores() {
 #[test]
 fn external_array_entry_crosses_checked_local_calls_with_bounded_cold_work() {
     let _session = VerificationSession::enter();
-    let array = Address {
+    let array = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::Constant(0),
     };
-    let local = Address {
+    let local = OldAddress {
         base: "local:callee-write".into(),
         offset: OldAddressOffset::Constant(0),
     };
-    let other = Address {
+    let other = OldAddress {
         base: "local:other-callee-write".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -861,7 +861,7 @@ fn external_array_entry_crosses_checked_local_calls_with_bounded_cold_work() {
             .with_block(other.base.clone(), 4),
     );
     let assumptions = PureFactContext::new();
-    let call = |state: &ExecutionState, changed: &Address, index| {
+    let call = |state: &ExecutionState, changed: &OldAddress, index| {
         state.memory().clone().with_call_memory_havoc(
             Variable(index),
             &[
@@ -900,7 +900,7 @@ fn external_array_entry_crosses_checked_local_calls_with_bounded_cold_work() {
         .with_memory(declared.memory().clone().store(array, int32(9)));
     let symbolic = declared.clone().with_memory(call(
         &declared,
-        &Address::symbolic(Variable(1011401)),
+        &OldAddress::symbolic(Variable(1011401)),
         1011402,
     ));
     for changed in [can_write, symbolic] {
@@ -966,7 +966,7 @@ fn static_array_versions_select_their_own_write_across_disjoint_calls() {
     assert_eq!(version(&written, &g_argument), version(&entry, &g_argument));
 
     let assumptions = PureFactContext::new();
-    let call = |state: &ExecutionState, address: &Address, id| {
+    let call = |state: &ExecutionState, address: &OldAddress, id| {
         state
             .clone()
             .with_memory(state.memory().clone().with_call_memory_havoc(
@@ -992,7 +992,7 @@ fn static_array_versions_select_their_own_write_across_disjoint_calls() {
     });
     assert!(work.iter().all(|units| *units <= work[0] + 4), "{work:?}");
 
-    let unknown = call(&written, &Address::symbolic(Variable(1013500)), 1013501);
+    let unknown = call(&written, &OldAddress::symbolic(Variable(1013500)), 1013501);
     assert!(
         unknown
             .program_point()
@@ -1005,7 +1005,7 @@ fn static_array_versions_select_their_own_write_across_disjoint_calls() {
 fn heap_array_versions_ignore_disjoint_local_stores() {
     let _session = VerificationSession::enter();
     let other = SymbolicMemory::local_pointer("unrelated");
-    let request = Address::symbolic(Variable(1013830));
+    let request = OldAddress::symbolic(Variable(1013830));
     let entry = ExecutionState::new().begin_function_entry_memory();
     let pending = entry.clone().with_memory(
         entry
@@ -1086,7 +1086,7 @@ fn automatic_array_versions_select_writes_across_disjoint_local_effects() {
             .with_block(other.base.clone(), 4),
     );
     let assumptions = PureFactContext::new();
-    let call = |state: &ExecutionState, address: &Address, id| {
+    let call = |state: &ExecutionState, address: &OldAddress, id| {
         state
             .clone()
             .with_memory(state.memory().clone().with_call_memory_havoc(
@@ -1103,7 +1103,7 @@ fn automatic_array_versions_select_writes_across_disjoint_local_effects() {
             .clone()
             .with_memory(state.memory().clone().store(array.clone(), int32(7)))
     };
-    let unknown = call(&declared, &Address::symbolic(Variable(1013600)), 1013601);
+    let unknown = call(&declared, &OldAddress::symbolic(Variable(1013600)), 1013601);
     assert!(
         unknown
             .program_point()
@@ -1147,7 +1147,7 @@ fn automatic_array_versions_select_writes_across_disjoint_local_effects() {
 #[test]
 fn pure_function_array_keeps_its_selected_point_without_an_indexed_version() {
     let _session = VerificationSession::enter();
-    let array = Address::symbolic(Variable(1013811));
+    let array = OldAddress::symbolic(Variable(1013811));
     let argument = SpecPureFunctionArgument::ArrayRef {
         point: SpecPoint::Current,
         pointer: SpecExpression::Value(ProgramValue::typed_pointer(
@@ -1198,7 +1198,7 @@ fn pure_function_array_keeps_its_selected_point_without_an_indexed_version() {
 #[test]
 fn declared_predicate_array_keeps_its_selected_point_without_an_indexed_version() {
     let _session = VerificationSession::enter();
-    let array = Address::symbolic(Variable(1013810));
+    let array = OldAddress::symbolic(Variable(1013810));
     let arguments = [SpecPredicateArgument::ArrayRef {
         point: SpecPoint::Current,
         pointer: SpecExpression::Value(ProgramValue::typed_pointer(
@@ -1243,11 +1243,11 @@ fn declared_predicate_array_keeps_its_selected_point_without_an_indexed_version(
 #[test]
 fn declared_predicate_array_names_its_entry_point_after_local_calls() {
     let _session = VerificationSession::enter();
-    let array = Address {
+    let array = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::Constant(0),
     };
-    let local = Address {
+    let local = OldAddress {
         base: "local:callee-write".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -1288,7 +1288,7 @@ fn declared_predicate_array_names_its_entry_point_after_local_calls() {
     assert_eq!(entry.memory(), independent.memory());
     assert_ne!(expected, lower(&independent));
 
-    let call = |state: &ExecutionState, changed: &Address, index| {
+    let call = |state: &ExecutionState, changed: &OldAddress, index| {
         state
             .clone()
             .with_memory(state.memory().clone().with_call_memory_havoc(

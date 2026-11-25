@@ -774,7 +774,7 @@ fn call_passes_witness_child(
         let variable = Variable::produced(Producer::TerminationParameter, index as u64);
         let value = if parameter.program_type().is_pointer() {
             ProgramValue::typed_pointer(
-                Address {
+                OldAddress {
                     base: AddressBase::ExternalArgument,
                     offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(variable), 1),
                 },
@@ -815,7 +815,7 @@ fn call_passes_witness_child(
             );
         }
         for (index, witness) in definition.witnesses().iter().enumerate() {
-            let pointer = Address::symbolic(Variable::produced(
+            let pointer = OldAddress::symbolic(Variable::produced(
                 Producer::TerminationWitness,
                 index as u64,
             ));
@@ -5069,7 +5069,7 @@ pub struct TerminationVerdicts {
     /// no evidence, and the caller of this check decides what an unjustified
     /// declaration means.
     pub unjustified_diverging: Vec<String>,
-    /// Address-takings that keep every call through a function pointer
+    /// OldAddress-takings that keep every call through a function pointer
     /// refused. While this is nonempty the verdicts are the strict ones, and
     /// `refusals` says why each named callback does not qualify.
     pub unsuitable_callbacks: Vec<UnsuitableCallback>,
@@ -5385,8 +5385,8 @@ mod ranking_member_tests {
         );
     }
 
-    fn int32_cell(name: &str) -> Address {
-        Address {
+    fn int32_cell(name: &str) -> OldAddress {
+        OldAddress {
             base: AddressBase::Concrete(name.to_string()),
             offset: OldAddressOffset::Constant(0),
         }
@@ -5394,7 +5394,7 @@ mod ranking_member_tests {
 
     /// A pure component that reads memory: the load is against the state the
     /// component is read at, not a state the surface named.
-    fn current_load(cell: &Address) -> SpecExpression {
+    fn current_load(cell: &OldAddress) -> SpecExpression {
         SpecExpression::MemoryLoad {
             point: SpecPoint::Current,
             pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(

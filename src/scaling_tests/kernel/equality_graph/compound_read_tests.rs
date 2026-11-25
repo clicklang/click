@@ -5,7 +5,7 @@ fn compound_read_query_ignores_cached_expression_size() {
     let mut samples = Vec::new();
     for size in [16, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
-        let slot = Address {
+        let slot = OldAddress {
             base: "cached-expression".into(),
             offset: OldAddressOffset::Constant(0),
         };

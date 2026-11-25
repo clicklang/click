@@ -1679,7 +1679,7 @@ enum AllocationContinuity {
 }
 
 fn canonical_memory_range(range: MemoryRange) -> MemoryRange {
-    let base = Address {
+    let base = OldAddress {
         base: range.base().base.clone(),
         offset: crate::kernel::eval::canonical_offset_term(&range.base().offset),
     };
@@ -2277,7 +2277,7 @@ pub(super) fn execute_program_function_call_paths(
         .selected_call_contract
         .as_deref()
     {
-        let pointer = Address::function(function.name());
+        let pointer = OldAddress::function(function.name());
         let owned = contracts_for_pointer(
             &pointer,
             assumptions,
@@ -3039,7 +3039,7 @@ struct FunctionContractApplication<'a> {
 fn representation_copy_arguments(
     values: &[ProgramValue],
     effect: RepresentationCopyEffect,
-) -> Option<(&Address, &Address, &ProgramValue)> {
+) -> Option<(&OldAddress, &OldAddress, &ProgramValue)> {
     let ProgramValue::Pointer(destination) = values.get(effect.destination_argument)? else {
         return None;
     };
@@ -3143,7 +3143,7 @@ pub(in crate::kernel) fn representation_copy_cell_moves(
     entry_memory: &SymbolicMemory,
     argument_values: &[ProgramValue],
     effect: RepresentationCopyEffect,
-) -> Vec<(Address, ProgramValue)> {
+) -> Vec<(OldAddress, ProgramValue)> {
     let Some((destination, source, bytes)) = representation_copy_arguments(argument_values, effect)
     else {
         return Vec::new();
@@ -3176,11 +3176,11 @@ pub(in crate::kernel) fn representation_copy_cell_moves(
     // `source_offset .. source_offset + bytes`. This range is therefore
     // exactly the candidate cells. A cell at `i64::MAX` cannot fit its
     // positive width, so saturating the end loses no candidate.
-    let start = Address {
+    let start = OldAddress {
         base: source_block.clone(),
         offset: OldAddressOffset::Constant(source_offset),
     };
-    let end = Address {
+    let end = OldAddress {
         base: source_block,
         offset: OldAddressOffset::Constant(source_offset.saturating_add(bytes)),
     };
@@ -3206,7 +3206,7 @@ pub(in crate::kernel) fn representation_copy_cell_moves(
             continue;
         }
         moves.push((
-            Address {
+            OldAddress {
                 base: destination_block.clone(),
                 offset: OldAddressOffset::Constant(destination_cell_offset),
             },
@@ -3833,7 +3833,7 @@ fn execute_verified_function_applications_with_suspension(
                 let (all_null, evidence) =
                     super::spec::pure_pointer_result_class(application.pointer_result, &arguments);
                 if all_null {
-                    pointer.replace_pointer(Address::null());
+                    pointer.replace_pointer(OldAddress::null());
                 }
                 ProgramValue::Pointer(pointer.with_object_type_evidence(evidence))
             } else {
@@ -5504,7 +5504,7 @@ fn refresh_call_written_locals(
             if !refreshed_blocks.insert(block.clone()) {
                 continue;
             }
-            let slot = Address {
+            let slot = OldAddress {
                 base: block,
                 offset: OldAddressOffset::Constant(0),
             };
@@ -7406,7 +7406,7 @@ impl std::ops::Deref for NamedContractApplication<'_> {
 /// `function_type`. A fact whose values do not have its contract's value
 /// parameter types contributes nothing.
 pub(super) fn contracts_for_pointer(
-    pointer: &Address,
+    pointer: &OldAddress,
     assumptions: &PureFactContext,
     environment: &ExecutionEnvironment,
     function_type: &ProgramType,
@@ -7946,11 +7946,11 @@ fn function_contract_requirement_is_proven(
                 pointer.clone()
             };
             let target = match comparison_pointer.address() {
-                Address {
+                OldAddress {
                     base: AddressBase::Function(target),
                     offset: OldAddressOffset::Constant(0),
                 } => Some(target),
-                Address {
+                OldAddress {
                     base: AddressBase::FunctionSymbolic(_) | AddressBase::Load(_),
                     offset: OldAddressOffset::Constant(0),
                 } if matches!(pointer.program_type(), ProgramType::FunctionPointer(_)) => None,
@@ -8031,7 +8031,7 @@ pub(crate) use named_contract_refinement::*;
 /// The surface spells it in source terms.
 #[derive(Clone, Debug)]
 pub(crate) enum StorageWriteOutsideFootprint {
-    Write { pointer: Address, bytes: u32 },
+    Write { pointer: OldAddress, bytes: u32 },
     Range(MemoryRange),
 }
 
@@ -8053,8 +8053,8 @@ pub(crate) fn storage_writes_outside_owned_footprint(
     transition_resources: Option<&[CheckedResourceFact]>,
     prepared_projection: Option<&FunctionMemoryEffectProjection>,
 ) -> ExecutionResult<Option<Vec<StorageWriteOutsideFootprint>>> {
-    let is_storage = |pointer: &Address| pointer.base.is_static_storage_block();
-    let storage_writes: Vec<(Address, crate::kernel::AccessExtent)> =
+    let is_storage = |pointer: &OldAddress| pointer.base.is_static_storage_block();
+    let storage_writes: Vec<(OldAddress, crate::kernel::AccessExtent)> =
         crate::kernel::reasoning::memory_effect_write_accesses(facts)
             .into_iter()
             .filter(|(pointer, _)| is_storage(pointer))
@@ -8137,7 +8137,7 @@ pub(crate) fn storage_writes_outside_owned_footprint(
 }
 
 fn storage_write_within_owned_footprint(
-    pointer: &Address,
+    pointer: &OldAddress,
     write_bytes: u32,
     owned: &[MemoryRange],
     assumptions: &PureFactContext,
@@ -8183,7 +8183,7 @@ fn storage_write_within_owned_footprint(
 /// does not cover whole elements, or any other shape, is left to the byte
 /// comparison.
 fn storage_write_within_owned_elements(
-    pointer: &Address,
+    pointer: &OldAddress,
     write_bytes: u32,
     range: &MemoryRange,
     assumptions: &PureFactContext,
@@ -8753,7 +8753,7 @@ fn open_unmatched_instance_body(
 /// same composition and give the same answer.
 pub(in crate::kernel) fn store_opened_instance_composition(
     state: &ExecutionState,
-    write: &Address,
+    write: &OldAddress,
     bytes: u32,
     assumptions: &PureFactContext,
 ) -> Option<ResourceContext> {
@@ -8762,7 +8762,7 @@ pub(in crate::kernel) fn store_opened_instance_composition(
         return None;
     }
     let definitions = crate::kernel::assumptions::frame_composite_definitions()?;
-    let write = Address {
+    let write = OldAddress {
         base: write.base.clone(),
         offset: crate::kernel::memory_history::normalize_exact_memory_loads_in_pointer_offset(
             &write.offset,
@@ -10092,9 +10092,9 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
 /// different formats are never the same allocation's (D5): a pair whose
 /// bases are not proven distinct is [`AllocationContinuity::CrossKind`].
 fn allocation_continuity(
-    input_base: &Address,
+    input_base: &OldAddress,
     input_size: &AllocationSize,
-    output_base: &Address,
+    output_base: &OldAddress,
     output_size: &AllocationSize,
     assumptions: &PureFactContext,
 ) -> AllocationContinuity {
@@ -10184,7 +10184,7 @@ mod allocation_continuity_tests;
 pub(in crate::kernel) fn caller_resource_left_stale_by_retirement<'a>(
     lent: &ResourceContext,
     kept: &'a ResourceContext,
-    base: &Address,
+    base: &OldAddress,
     bytes: &AllocationSize,
     assumptions: &PureFactContext,
 ) -> Option<&'a ResourceFact> {
@@ -10219,7 +10219,7 @@ pub(in crate::kernel) fn caller_resource_left_stale_by_retirement<'a>(
 /// width or with provably equal endpoints.
 fn lent_owned_memory_covers_allocation(
     lent: &ResourceContext,
-    base: &Address,
+    base: &OldAddress,
     bytes: &AllocationSize,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -10665,7 +10665,7 @@ pub(crate) fn initialize_program_program_storage(
 /// runs and concrete cells, not its elements.
 fn periodic_struct_array_blocks(
     memory: &SymbolicMemory,
-    constant_offset: impl Fn(&Address) -> u32,
+    constant_offset: impl Fn(&OldAddress) -> u32,
 ) -> BTreeMap<AddressBase, (u32, u32)> {
     // Each run and each concrete cell examined charges a unit. Nothing here
     // stops early: the caller's next checkpoint, one visit later, does.
@@ -10736,7 +10736,7 @@ fn initial_static_resources(
         count_visit();
         crate::instrumentation::deadline_exceeded()
     };
-    let constant_offset = |pointer: &Address| {
+    let constant_offset = |pointer: &OldAddress| {
         let OldAddressOffset::Constant(offset) = pointer.offset else {
             unreachable!("static initializers have constant cell offsets");
         };
@@ -10829,7 +10829,7 @@ fn initial_static_resources(
                 return None;
             }
             let range = MemoryRange::new_with_element_width(
-                Address {
+                OldAddress {
                     base: identity.clone(),
                     offset: OldAddressOffset::Constant(i64::from(start)),
                 },
@@ -11710,7 +11710,7 @@ fn string_literal_fact_value(
                 // Any other read is defined when the state holds a stored
                 // value of the read's width at that very cell, as a local
                 // array's bytes after their stores do.
-                let cell = Address {
+                let cell = OldAddress {
                     base: pointer.base.clone(),
                     offset: OldAddressOffset::Constant(offset),
                 };
@@ -11746,9 +11746,9 @@ fn string_literal_fact_value(
 }
 
 fn string_literal_pointer_with_bindings(
-    pointer: &Address,
+    pointer: &OldAddress,
     bindings: &[(Variable, OldMachineTerm)],
-) -> Address {
+) -> OldAddress {
     let mut pointer = pointer.clone();
     for (bound, value) in bindings {
         pointer = crate::kernel::reasoning::substitute_bitvector_variable_in_pointer(
@@ -11880,7 +11880,7 @@ pub(crate) fn guard_contract_refusal(
         .then_some("mutex authority contracts currently require preserving owned inputs")
 }
 
-fn private_aggregate_storage_owner(slot: Address, layout: &AggregateLayout) -> ResourceFact {
+fn private_aggregate_storage_owner(slot: OldAddress, layout: &AggregateLayout) -> ResourceFact {
     // A symbolic struct's storage is its whole object, `sizeof(S)` bytes.
     ResourceFact::own_memory(MemoryRange::object(slot, layout.size()))
 }
@@ -14588,7 +14588,7 @@ fn bind_composite_witness_values(
             .as_ref()
             .and_then(|term| {
                 if term.uint64_as_const() == Some(0) {
-                    return Some(Address::null());
+                    return Some(OldAddress::null());
                 }
                 let mut used = super::eval::pointer_tags::UsedFacts::new();
                 super::eval::pointer_tags::tagged_address_form(term, assumptions, &mut used)
@@ -14626,7 +14626,7 @@ fn bind_composite_witness_values(
             word.as_ref()
                 .map(super::eval::canonical_term)
                 .hash(&mut hasher);
-            Address::symbolic(Variable(4_000_000_000 + hasher.finish() % 4_000_000_000))
+            OldAddress::symbolic(Variable(4_000_000_000 + hasher.finish() % 4_000_000_000))
         });
         let value = ProgramValue::typed_pointer(pointer, witness.program_type());
         state.locals.bind_logical_typed(
@@ -14648,7 +14648,7 @@ fn held_child_witness(
     arguments: &[AlgebraicValue],
     resources: &ResourceContext,
     assumptions: &PureFactContext,
-) -> Option<Address> {
+) -> Option<OldAddress> {
     // The body's own instance is never its own child.
     let own_pointers = arguments
         .iter()
@@ -15260,7 +15260,7 @@ fn body_fact_is_established_through_a_pointer_alias(
     );
     variables.into_iter().any(|variable| {
         established
-            .exact_pointer_aliases(&Address::symbolic(variable))
+            .exact_pointer_aliases(&OldAddress::symbolic(variable))
             .any(|alias| {
                 let candidate =
                     crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_address_variable(
@@ -16501,7 +16501,7 @@ pub(super) fn loop_instance_guard(
     instance: &ResourceInstance,
     definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
-) -> Result<Option<(Address, OldConditionTerm)>, String> {
+) -> Result<Option<(OldAddress, OldConditionTerm)>, String> {
     let Ok(index) = definitions.binary_search_by(|d| {
         crate::instrumentation::record_deterministic_work(1);
         d.name().cmp(instance.name())
@@ -17893,7 +17893,7 @@ fn view_range_concretely_loadable(memory: &SymbolicMemory, range: &MemoryRange) 
         _ => 4,
     };
     (start..end).all(|index| {
-        let pointer = Address {
+        let pointer = OldAddress {
             base: range.base().base.clone(),
             offset: OldAddressOffset::add(
                 range.base().offset.clone(),
@@ -18576,7 +18576,7 @@ fn evaluate_resource_clauses_in_section(
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum ResourceClauseDependencyKey {
     Fact(ResourceFact),
-    MemoryBase(Address),
+    MemoryBase(OldAddress),
     MemoryBlock(AddressBase),
 }
 
@@ -18689,7 +18689,7 @@ fn evaluate_resource_clause_with_dependencies(
     entry_state: &ExecutionState,
     state: &ExecutionState,
     resource: &ResourceSpec,
-    selected_load_values: &BTreeMap<(Address, ProgramType), ProgramValue>,
+    selected_load_values: &BTreeMap<(OldAddress, ProgramType), ProgramValue>,
     mutex_storage: &mut Option<Arc<MemoryRange>>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -20154,7 +20154,7 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
     entry_state: &ExecutionState,
     state: &ExecutionState,
     resource: &ResourceSpec,
-    selected_load_values: &BTreeMap<(Address, ProgramType), ProgramValue>,
+    selected_load_values: &BTreeMap<(OldAddress, ProgramType), ProgramValue>,
     mutex_storage: &mut Option<Arc<MemoryRange>>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -20868,7 +20868,7 @@ fn evaluate_function_declared_resource_spec(
     argument_state_sources: &[ResourceStateSource],
     parameter_types: &[ProgramType],
     source_arguments: Option<&[String]>,
-    selected_load_values: &BTreeMap<(Address, ProgramType), ProgramValue>,
+    selected_load_values: &BTreeMap<(OldAddress, ProgramType), ProgramValue>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Result<ResourceFact, RuntimeError>> {
@@ -21647,7 +21647,7 @@ pub(in crate::kernel) fn function_exit_memory(
         Some(pointer)
             if pointer.address().base.is_local_block()
                 && (!caller_state.memory.has_block(&pointer.address().base)
-                    || callee_state.locals.is_proof_input_slot(&Address {
+                    || callee_state.locals.is_proof_input_slot(&OldAddress {
                         base: pointer.address().base.clone(),
                         offset: OldAddressOffset::Constant(0),
                     })) =>
@@ -23080,7 +23080,7 @@ pub(super) fn function_outcome_from_body(
                 crate::kernel::eval::retire_automatic_storage_owner(
                     &mut caller_state,
                     &MemoryRange::new_with_element_width(
-                        Address {
+                        OldAddress {
                             base: block.clone(),
                             offset: OldAddressOffset::Constant(0),
                         },
@@ -23163,7 +23163,7 @@ pub(super) fn function_outcome_from_body(
                 crate::kernel::eval::retire_automatic_storage_owner(
                     &mut caller_state,
                     &MemoryRange::new_with_element_width(
-                        Address {
+                        OldAddress {
                             base: block.clone(),
                             offset: OldAddressOffset::Constant(0),
                         },

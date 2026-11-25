@@ -2066,12 +2066,12 @@ mod condition_premise_tests {
 
     #[test]
     fn condition_component_keeps_load_address_and_state_variables() {
-        let pointer = Address {
+        let pointer = OldAddress {
             base: "cell".into(),
             offset: OldAddressOffset::scaled_int32_node(term(40), 4),
         };
         let memory = SymbolicMemory::new().with_block("cell", 64).store(
-            Address {
+            OldAddress {
                 base: "cell".into(),
                 offset: OldAddressOffset::Constant(0),
             },

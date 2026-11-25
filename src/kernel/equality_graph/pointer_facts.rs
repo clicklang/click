@@ -34,7 +34,9 @@ impl EqualityGraph {
     /// Checked values retained directly by an admitted, unconditional atom.
     /// Opaque call arguments may carry annotations from another interning
     /// context; they are not evidence here. Binders and states stay opaque.
-    fn object_type_keys(proposition: &Proposition) -> BTreeSet<(Address, terms::PointerFactKey)> {
+    fn object_type_keys(
+        proposition: &Proposition,
+    ) -> BTreeSet<(OldAddress, terms::PointerFactKey)> {
         enum Work<'a> {
             Term(&'a Term),
             Model(&'a AlgebraicTerm),
@@ -97,7 +99,7 @@ impl EqualityGraph {
 
     pub(in crate::kernel) fn has_object_type(
         &self,
-        pointer: &Address,
+        pointer: &OldAddress,
         class: &crate::kernel::effective_type::CAccessClass,
     ) -> bool {
         self.pointer_fact_candidates(pointer, &terms::PointerFactKey::ObjectType(class.clone()))
@@ -107,7 +109,7 @@ impl EqualityGraph {
 
     fn pointer_predicate_key(
         proposition: &crate::kernel::Proposition,
-    ) -> Option<(Address, terms::PointerFactKey)> {
+    ) -> Option<(OldAddress, terms::PointerFactKey)> {
         use crate::kernel::{ProgramValue, Proposition, Term};
         let Proposition::Predicate { name, arguments } = proposition else {
             return None;
@@ -225,7 +227,7 @@ impl EqualityGraph {
 
     fn pointer_fact_candidates(
         &self,
-        pointer: &Address,
+        pointer: &OldAddress,
         key: &terms::PointerFactKey,
     ) -> terms::PointerFactBucket {
         let address = self
@@ -294,7 +296,7 @@ impl EqualityGraph {
     /// every bounds owner a pointer equality has identified with it.
     pub(in crate::kernel) fn subobject_coverage_facts(
         &self,
-        start: &Address,
+        start: &OldAddress,
     ) -> Vec<crate::kernel::Proposition> {
         use crate::kernel::{OldPointer, ProgramType, SUBOBJECT_COVERS_PREDICATE_PREFIX};
         [3, 4]
@@ -324,7 +326,7 @@ impl EqualityGraph {
     /// fix for its value parameters: once for a contract with none.
     pub(in crate::kernel) fn pointer_function_contracts(
         &self,
-        pointer: &Address,
+        pointer: &OldAddress,
     ) -> impl Iterator<Item = (String, crate::kernel::Proposition)> {
         self.pointer_fact_candidates(pointer, &terms::PointerFactKey::FunctionContracts)
             .iter()

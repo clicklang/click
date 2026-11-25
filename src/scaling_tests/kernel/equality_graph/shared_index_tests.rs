@@ -5,7 +5,7 @@ fn shared_address_queries_reuse_growing_index_dags() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let graph = EqualityGraph::default();
-        let base = Address::symbolic(Variable(991411));
+        let base = OldAddress::symbolic(Variable(991411));
         let ty = MachineIntegerType::Int32;
         let mut root = KernelTermImport::default()
             .machine_arithmetic(ty, &OldMachineTerm::Variable(Variable(991412)))

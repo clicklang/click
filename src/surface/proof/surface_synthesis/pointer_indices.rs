@@ -181,7 +181,7 @@ mod tests {
         let _scope = SurfaceSynthesisScope::enter();
         let load = OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
-            Box::new(Address::symbolic(Variable(1014000))),
+            Box::new(OldAddress::symbolic(Variable(1014000))),
             crate::kernel::LoadKind::Int32,
         );
         let variable = OldMachineTerm::Variable(Variable(1014001));

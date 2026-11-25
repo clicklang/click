@@ -29,7 +29,7 @@ fn allocating_call_does_not_expand_the_callers_kept_objects() {
         vec![],
     )]);
     let interface = boxed.contract_interface();
-    let heap = |id: u64| Address {
+    let heap = |id: u64| OldAddress {
         base: AddressBase::Heap(id),
         offset: OldAddressOffset::Constant(0),
     };
@@ -119,7 +119,7 @@ fn consuming_call_does_not_expand_unrelated_folded_allocations() {
         vec![],
     )]);
     let interface = function.contract_interface();
-    let heap = |id| Address {
+    let heap = |id| OldAddress {
         base: AddressBase::Heap(id),
         offset: OldAddressOffset::Constant(0),
     };
@@ -276,19 +276,19 @@ fn allocation_companion_alias_lookup_ignores_unrelated_storage_and_alias_stars()
                 facts = facts.assume_condition(
                     OldConditionTerm::address_equal(
                         base.clone(),
-                        Address::symbolic(Variable(10_000_000 + id)),
+                        OldAddress::symbolic(Variable(10_000_000 + id)),
                     ),
                     true,
                 );
                 facts = facts.assume_condition(
                     OldConditionTerm::address_equal(
-                        Address::symbolic(Variable(20_000_000 + id)),
-                        Address::symbolic(Variable(30_000_000 + id)),
+                        OldAddress::symbolic(Variable(20_000_000 + id)),
+                        OldAddress::symbolic(Variable(30_000_000 + id)),
                     ),
                     true,
                 );
             }
-            let alias = Address::symbolic(Variable(if hit {
+            let alias = OldAddress::symbolic(Variable(if hit {
                 10_000_000 + size - 1
             } else {
                 40_000_000

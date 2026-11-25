@@ -5,7 +5,7 @@ use crate::kernel::BooleanOperandView as B;
 pub(in crate::kernel) fn substitute_pointer_boolean_value(
     root: &KernelTerm,
     from: Variable,
-    to: &Address,
+    to: &OldAddress,
 ) -> Option<KernelTerm> {
     let mut rewrite = TermRewrite::for_pointer_variable(from, to);
     let mut variables = rewrite.new_carrier_variables();
@@ -171,7 +171,7 @@ impl TermRewrite<'_> {
         } else {
             // Only the opaque block atom crosses its existing native rewrite
             // boundary. The original shared displacement is handled above.
-            let atom = self.pointer(&Address {
+            let atom = self.pointer(&OldAddress {
                 base: block.clone(),
                 offset: OldAddressOffset::Constant(0),
             });
@@ -197,7 +197,7 @@ pub(in crate::kernel) fn substitute_application_address_bits(
 pub(in crate::kernel) fn substitute_application_address_pointer(
     source: &crate::kernel::SharedAddress,
     from: Variable,
-    to: &Address,
+    to: &OldAddress,
 ) -> Option<crate::kernel::SharedAddress> {
     let mut rewrite = TermRewrite::for_pointer_variable(from, to);
     let mut variables = rewrite.new_carrier_variables();
@@ -224,7 +224,7 @@ impl TermRewrite<'_> {
                 && !self.pointer_addresses_only
         );
         let p = source.node();
-        let base = A::import(&Address {
+        let base = A::import(&OldAddress {
             base: p.address.node().base.native_atom().clone(),
             offset: OldAddressOffset::Constant(0),
         });

@@ -7,11 +7,11 @@ use super::*;
 #[test]
 fn aliased_read_validity_lookup_ignores_unrelated_facts() {
     let memory = SymbolicMemory::new();
-    let pointer = Address {
+    let pointer = OldAddress {
         base: AddressBase::Heap(941_000),
         offset: OldAddressOffset::Constant(0),
     };
-    let alias = Address::symbolic(Variable(941_001));
+    let alias = OldAddress::symbolic(Variable(941_001));
     let validity = Proposition::MemoryReadDefined {
         at: None,
         memory: memory.clone(),
@@ -29,7 +29,7 @@ fn aliased_read_validity_lookup_ignores_unrelated_facts() {
             unrelated = unrelated.assume_proposition(Proposition::MemoryReadDefined {
                 at: None,
                 memory: memory.clone(),
-                pointer: Address {
+                pointer: OldAddress {
                     base: AddressBase::Heap(942_000 + index),
                     offset: OldAddressOffset::Constant(0),
                 },
@@ -57,7 +57,7 @@ fn aliased_read_validity_lookup_ignores_unrelated_facts() {
 #[test]
 fn read_validity_lookup_ignores_unrelated_cells() {
     let memory = SymbolicMemory::new();
-    let pointer = Address {
+    let pointer = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::Constant(0),
     };
@@ -74,7 +74,7 @@ fn read_validity_lookup_ignores_unrelated_cells() {
             unrelated = unrelated.assume_proposition(Proposition::MemoryReadDefined {
                 at: None,
                 memory: memory.clone(),
-                pointer: Address {
+                pointer: OldAddress {
                     base: AddressBase::ExternalArgument,
                     offset: OldAddressOffset::Constant(index * 4),
                 },
@@ -97,7 +97,7 @@ fn read_validity_lookup_ignores_unrelated_cells() {
 
 #[test]
 fn unknown_read_validity_does_not_resolve_unrelated_cells() {
-    let target = Address {
+    let target = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(770)), 4),
     };
@@ -106,7 +106,7 @@ fn unknown_read_validity_does_not_resolve_unrelated_cells() {
         let mut memory = SymbolicMemory::new();
         for index in 0..count {
             memory = memory.store(
-                Address {
+                OldAddress {
                     base: AddressBase::ExternalArgument,
                     offset: OldAddressOffset::Constant(index * 4),
                 },
@@ -127,7 +127,7 @@ fn unknown_read_validity_does_not_resolve_unrelated_cells() {
 
 #[test]
 fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
-    let address = Address {
+    let address = OldAddress {
         base: AddressBase::Heap(9100),
         offset: OldAddressOffset::Constant(0),
     };
@@ -143,14 +143,14 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
                 value_type: ProgramType::Int32,
             });
             memory = memory.store(
-                Address {
+                OldAddress {
                     base: AddressBase::Heap(9200 + index),
                     offset: OldAddressOffset::Constant(0),
                 },
                 int32(1),
             );
         }
-        let request = Address {
+        let request = OldAddress {
             base: AddressBase::Symbolic(Variable(9300)),
             offset: OldAddressOffset::Constant(0),
         };
@@ -159,7 +159,7 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
         // C assigns malloc's result before branching on it. That intervening
         // store prevents failure from merely interning back to the old memory.
         let pending = pending.store(
-            Address {
+            OldAddress {
                 base: "local:result".into(),
                 offset: OldAddressOffset::Constant(0),
             },
@@ -212,7 +212,7 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
 #[test]
 fn free_allocation_discovery_ignores_unrelated_resource_tokens() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Address::symbolic(Variable(948_000));
+    let base = OldAddress::symbolic(Variable(948_000));
     let mut samples = Vec::new();
     for count in [0, 16, 64, 256] {
         let mut resources = ResourceContext::new()
@@ -224,7 +224,7 @@ fn free_allocation_discovery_ignores_unrelated_resource_tokens() {
             )));
         for index in 0..count {
             resources = resources.unchecked_with_fact(ResourceFact::own_allocation(
-                Address {
+                OldAddress {
                     base: AddressBase::Heap(948_100 + index),
                     offset: OldAddressOffset::Constant(0),
                 },
@@ -272,7 +272,7 @@ fn heap_free_borrow_obligation_ignores_unrelated_aliases_and_borrows() {
     let _session = VerificationSession::enter();
     let state = successful_heap_allocation_state();
     let free = program_heap_free(crate::kernel::program_expression::variable("p"));
-    let backing_base = Address::symbolic(Variable(949_000));
+    let backing_base = OldAddress::symbolic(Variable(949_000));
     for grow_aliases in [true, false] {
         let mut samples = Vec::new();
         for count in [4, 16, 64] {
@@ -285,7 +285,7 @@ fn heap_free_borrow_obligation_ignores_unrelated_aliases_and_borrows() {
                     assumptions = assumptions.assume_condition(
                         OldConditionTerm::address_equal(
                             backing_base.clone(),
-                            Address::symbolic(Variable(950_000 + i)),
+                            OldAddress::symbolic(Variable(950_000 + i)),
                         ),
                         true,
                     );
@@ -293,7 +293,7 @@ fn heap_free_borrow_obligation_ignores_unrelated_aliases_and_borrows() {
             }
             for i in 0..if grow_aliases { 1 } else { count } {
                 let backing = ResourceFact::own_memory(MemoryRange::new(
-                    Address::symbolic(Variable(949_000 + i)),
+                    OldAddress::symbolic(Variable(949_000 + i)),
                     0.into(),
                     1.into(),
                 ));
@@ -345,9 +345,9 @@ fn heap_free_borrow_obligation_ignores_unrelated_aliases_and_borrows() {
 #[test]
 fn realloc_borrow_requirement_work_is_bounded_by_the_pending_result() {
     let _session = VerificationSession::enter();
-    let state =
-        successful_heap_allocation_state().with_local("q", ProgramValue::pointer(Address::null()));
-    let borrow_base = Address::symbolic(Variable(954_000));
+    let state = successful_heap_allocation_state()
+        .with_local("q", ProgramValue::pointer(OldAddress::null()));
+    let borrow_base = OldAddress::symbolic(Variable(954_000));
     for grow_aliases in [true, false] {
         let mut samples = Vec::new();
         for count in [4, 16, 64] {
@@ -357,7 +357,7 @@ fn realloc_borrow_requirement_work_is_bounded_by_the_pending_result() {
                     assumptions = assumptions.assume_condition(
                         OldConditionTerm::address_equal(
                             borrow_base.clone(),
-                            Address::symbolic(Variable(955_000 + i)),
+                            OldAddress::symbolic(Variable(955_000 + i)),
                         ),
                         true,
                     );
@@ -368,7 +368,7 @@ fn realloc_borrow_requirement_work_is_bounded_by_the_pending_result() {
             let borrower = ledger.fresh_participant().unwrap();
             for i in 0..if grow_aliases { 1 } else { count } {
                 let backing = ResourceFact::own_memory(MemoryRange::new(
-                    Address::symbolic(Variable(954_000 + i)),
+                    OldAddress::symbolic(Variable(954_000 + i)),
                     0.into(),
                     1.into(),
                 ));
@@ -416,7 +416,7 @@ fn realloc_reference_check_ignores_unrelated_resource_tokens() {
         let mut resources = state.resources().clone();
         for index in 0..count {
             resources = resources.unchecked_with_fact(ResourceFact::own_allocation(
-                Address {
+                OldAddress {
                     base: AddressBase::Heap(949_100 + index),
                     offset: OldAddressOffset::Constant(0),
                 },
@@ -425,7 +425,7 @@ fn realloc_reference_check_ignores_unrelated_resource_tokens() {
         }
         let state = state
             .with_resource_context(resources)
-            .with_local("q", ProgramValue::pointer(Address::null()));
+            .with_local("q", ProgramValue::pointer(OldAddress::null()));
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
             execute_execution_statement_paths(
                 &state,
@@ -472,14 +472,14 @@ fn typed_pending_heap_binding_uses_the_allocation_delta() {
         let mut memory = SymbolicMemory::new();
         for index in 0..count {
             memory = memory.with_pending_typed_heap_allocation(
-                Address::symbolic(Variable(950_000 + index)),
+                OldAddress::symbolic(Variable(950_000 + index)),
                 AllocationSize::int32(8),
                 false,
                 Some(class.clone()),
             );
         }
         let ((next, resolved), work) = crate::instrumentation::measure_deterministic_work(|| {
-            let base = Address::symbolic(Variable(960_000));
+            let base = OldAddress::symbolic(Variable(960_000));
             let next = memory.clone().with_pending_typed_heap_allocation(
                 base.clone(),
                 AllocationSize::int32(8),
@@ -506,10 +506,10 @@ fn typed_pending_heap_binding_uses_the_allocation_delta() {
 
 #[test]
 fn free_ownership_lookup_ignores_unrelated_resources() {
-    let base = Address::symbolic(Variable(946_000));
-    let cell = Address::symbolic(Variable(946_001));
+    let base = OldAddress::symbolic(Variable(946_000));
+    let cell = OldAddress::symbolic(Variable(946_001));
     let range =
-        |p: Address| ResourceFact::own_memory(MemoryRange::new(p, 0u32.into(), 1u32.into()));
+        |p: OldAddress| ResourceFact::own_memory(MemoryRange::new(p, 0u32.into(), 1u32.into()));
     let assumptions = PureFactContext::new();
     let mut samples = Vec::new();
     for count in [0, 16, 64, 256] {
@@ -519,8 +519,8 @@ fn free_ownership_lookup_ignores_unrelated_resources() {
             .store(cell.clone(), int32(7));
         let mut ownership = ResourceContext::new().unchecked_with_fact(range(cell.clone()));
         for index in 0..count {
-            ownership =
-                ownership.unchecked_with_fact(range(Address::symbolic(Variable(947_000 + index))));
+            ownership = ownership
+                .unchecked_with_fact(range(OldAddress::symbolic(Variable(947_000 + index))));
         }
         let (freed, work) = crate::instrumentation::measure_deterministic_work(|| {
             memory
@@ -541,13 +541,13 @@ fn sequential_frees_preserving_one_owned_cell_stay_near_linear() {
     let mut samples = Vec::new();
     for count in [8, 16, 32, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let cell = Address::symbolic(Variable(948_000));
+        let cell = OldAddress::symbolic(Variable(948_000));
         let range =
-            |p: Address| ResourceFact::own_memory(MemoryRange::new(p, 0u32.into(), 1u32.into()));
+            |p: OldAddress| ResourceFact::own_memory(MemoryRange::new(p, 0u32.into(), 1u32.into()));
         let mut memory = SymbolicMemory::new().store(cell.clone(), int32(7));
         let mut ownership = ResourceContext::new().unchecked_with_fact(range(cell.clone()));
         let bases = (0..count)
-            .map(|index| Address {
+            .map(|index| OldAddress {
                 base: AddressBase::Heap(949_000 + index),
                 offset: OldAddressOffset::Constant(0),
             })
@@ -585,14 +585,14 @@ fn sequential_free_pointer_frames_stay_near_linear() {
     let mut samples = Vec::new();
     for count in [8, 16, 32, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let cell = Address::symbolic(Variable(951_000));
-        let value = Address::symbolic(Variable(951_001));
+        let cell = OldAddress::symbolic(Variable(951_000));
+        let value = OldAddress::symbolic(Variable(951_001));
         let mut memory = SymbolicMemory::new().store(cell.clone(), ProgramValue::pointer(value));
         let mut resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
             MemoryRange::new_with_element_width(cell.clone(), 0u32.into(), 1u32.into(), 8),
         ));
         let bases = (0..count)
-            .map(|index| Address {
+            .map(|index| OldAddress {
                 base: AddressBase::Heap(952_000 + index),
                 offset: OldAddressOffset::Constant(0),
             })
@@ -651,23 +651,23 @@ fn typed_validity_uses_one_storage_anchor_among_many_aliases() {
     let mut samples = Vec::new();
     for count in [1, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Address {
+        let base = OldAddress {
             base: "global:validity-anchor".into(),
             offset: OldAddressOffset::Constant(0),
         };
-        let query = Address::symbolic(Variable(960_000));
+        let query = OldAddress::symbolic(Variable(960_000));
         let mut memory = SymbolicMemory::new()
             .with_block(base.base.clone(), 8)
             .store(base.offset_by_bytes(4), int32(7));
         let mut facts = PureFactContext::new();
         for index in 0..count {
-            let alias = Address::symbolic(Variable(960_000 + index));
+            let alias = OldAddress::symbolic(Variable(960_000 + index));
             facts = facts.assume_proposition(Proposition::condition_is(
                 OldConditionTerm::address_equal(alias, base.clone()),
                 true,
             ));
             memory = memory.store(
-                Address {
+                OldAddress {
                     base: AddressBase::Heap(970_000 + index),
                     offset: OldAddressOffset::Constant(0),
                 },

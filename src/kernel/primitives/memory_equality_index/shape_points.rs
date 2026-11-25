@@ -10,7 +10,7 @@ pub(super) fn payload_is_empty(storage: &ResourceContextStorage) -> bool {
     storage.index.memory_by_block.is_empty() && storage.index.exact_shapes.is_empty()
 }
 
-fn shape_pointer(fact: &ResourceFact) -> Option<(Shape, &Address)> {
+fn shape_pointer(fact: &ResourceFact) -> Option<(Shape, &OldAddress)> {
     let (Resource::Token { name, arguments } | Resource::Composite { name, arguments }) =
         fact.resource()
     else {

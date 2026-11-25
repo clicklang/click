@@ -27,7 +27,7 @@ fn a_32_bit_size_hashes_and_prints_as_its_bytes() {
 #[test]
 fn allocation_tokens_and_ranges_carry_the_allocation_size_kind() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::Heap(3),
         offset: OldAddressOffset::Constant(0),
     };

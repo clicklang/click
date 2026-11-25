@@ -1,10 +1,10 @@
 use super::*;
-use crate::kernel::{Address, AddressBase, OldAddressOffset};
+use crate::kernel::{AddressBase, OldAddress, OldAddressOffset};
 
 /// A hold must not compare equal to the state it restricts.
 #[test]
 fn holding_a_scope_mints_a_distinct_ledger_identity() {
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::Concrete("global:g".to_string()),
         offset: OldAddressOffset::Constant(0),
     };

@@ -281,7 +281,7 @@ fn reservation_index_queries_same_object_in_logarithmic_work() {
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn initialization_storage_lookup_is_indexed_within_one_object() {
     use super::super::super::*;
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::Heap(91_001),
         offset: OldAddressOffset::Constant(0),
     };
@@ -353,7 +353,7 @@ fn retirement_alias_index_skips_unrelated_objects_at_multiple_sizes() {
             ] {
                 context = context
                     .initialize_empty(
-                        Address {
+                        OldAddress {
                             base: block,
                             offset: OldAddressOffset::constant(0),
                         },
@@ -366,7 +366,7 @@ fn retirement_alias_index_skips_unrelated_objects_at_multiple_sizes() {
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for block in &queries {
                 let range = allocation_range(
-                    Address {
+                    OldAddress {
                         base: block.clone(),
                         offset: OldAddressOffset::constant(0),
                     },
@@ -377,12 +377,12 @@ fn retirement_alias_index_skips_unrelated_objects_at_multiple_sizes() {
                 );
             }
         });
-        let symbolic = Address::symbolic(Variable(90_001));
+        let symbolic = OldAddress::symbolic(Variable(90_001));
         let context = context.initialize_empty(symbolic, 40).unwrap();
         let (_, ambiguous_work) = crate::instrumentation::measure_deterministic_work(|| {
             for block in queries {
                 let range = allocation_range(
-                    Address {
+                    OldAddress {
                         base: block,
                         offset: OldAddressOffset::constant(0),
                     },

@@ -263,8 +263,8 @@ fn opaque_source_matching_preserves_existing_fold_scope_refusals() {
 fn rewritten_opaque_observations_match_fresh_lowering_without_exports() {
     let _session = VerificationSession::enter();
     let format = MachineIntegerType::UInt64;
-    let source = OldMachineTerm::integer_address(Address::symbolic(Variable(992560)));
-    let replacement = OldMachineTerm::integer_address(Address::symbolic(Variable(992561)));
+    let source = OldMachineTerm::integer_address(OldAddress::symbolic(Variable(992560)));
+    let replacement = OldMachineTerm::integer_address(OldAddress::symbolic(Variable(992561)));
     let sum =
         |address| OldMachineTerm::uint64_add(address, OldMachineTerm::Variable(Variable(992562)));
     let input = IntegerTerm::from_machine(format, sum(source.clone())).unwrap();

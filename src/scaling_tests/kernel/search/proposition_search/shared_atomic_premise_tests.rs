@@ -54,7 +54,7 @@ fn solve_retains_recorded_equality_edges_instead_of_connected_aliases() {
 fn solve_reduces_connected_pointer_premises_before_spelling() {
     let mut samples = Vec::new();
     for count in [8, 16, 32, 64, 128] {
-        let pointer = |index| Address::symbolic(Variable(index));
+        let pointer = |index| OldAddress::symbolic(Variable(index));
         let left = pointer(1);
         let middle = pointer(2);
         let right = pointer(3);
@@ -117,7 +117,7 @@ fn solve_retains_recorded_load_address_equality_premises() {
         let load = |offset| {
             crate::kernel::canonical_term(&OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
-                Box::new(Address {
+                Box::new(OldAddress {
                     base: "indexed".into(),
                     offset,
                 }),
@@ -168,7 +168,7 @@ fn native_view_prefix_retains_only_its_order_path() {
         let first = le(OldMachineTerm::uint64_constant(1), middle.clone());
         let second = le(middle, n.clone());
         let memory = SymbolicMemory::new();
-        let base = Address::symbolic(Variable(9_340_002));
+        let base = OldAddress::symbolic(Variable(9_340_002));
         let source = Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
@@ -223,7 +223,7 @@ fn native_view_prefix_retains_only_its_order_path() {
 fn solve_retains_common_base_pointer_equality_for_load_congruence() {
     let mut samples = Vec::new();
     for count in [8u64, 16, 32, 64, 128] {
-        let pointer = |index| Address {
+        let pointer = |index| OldAddress {
             base: "indexed".into(),
             offset: OldAddressOffset::scaled_int32_node(
                 OldMachineTerm::Variable(Variable(9_340_000 + index)),

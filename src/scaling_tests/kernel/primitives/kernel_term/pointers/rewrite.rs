@@ -23,7 +23,7 @@ fn pointer_rewrites_visit_shared_offset_dags_once_and_reuse_numeric_results() {
             .map(|i| KernelTerm::variable(KernelType::Integer, Variable(1005000 + i)))
             .collect::<Vec<_>>();
         for size in [16, 64, 256] {
-            let source = SharedAddress::import(&Address::symbolic(Variable(1006000)));
+            let source = SharedAddress::import(&OldAddress::symbolic(Variable(1006000)));
             let from =
                 KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(1006001));
             let to =

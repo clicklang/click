@@ -242,7 +242,7 @@ enum StorageEvent {
 /// A pointer read is named by its read rather than spelled in the storage
 /// block it was read from; it is external exactly when that storage is, as
 /// the storage-block spelling of the same read was.
-pub(in crate::kernel) fn is_external_population_anchor(anchor: &crate::kernel::Address) -> bool {
+pub(in crate::kernel) fn is_external_population_anchor(anchor: &crate::kernel::OldAddress) -> bool {
     match &anchor.base {
         AddressBase::ExternalArgument => true,
         AddressBase::Load(load) => load.cell().base == AddressBase::ExternalArgument,

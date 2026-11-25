@@ -2,7 +2,7 @@ use super::*;
 // Both symbolic bases and native spans reach call-framing readers.
 #[test]
 fn wide_call_ranges_are_undecided() {
-    let base = Address::symbolic(Variable(984_000));
+    let base = OldAddress::symbolic(Variable(984_000));
     let wide = MemoryRange::new_wide(
         base.clone(),
         OldMachineTerm::uint64_constant(3),
@@ -24,7 +24,7 @@ fn wide_call_ranges_are_undecided() {
 #[test]
 fn wide_resource_body_loadability_preserves_native_span() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Address::symbolic(Variable(984_010));
+    let base = OldAddress::symbolic(Variable(984_010));
     let segment = MemorySegment::new(
         ProgramExpression::Value(ProgramValue::pointer(base.clone())),
         crate::kernel::program_expression::uint64_literal(0),

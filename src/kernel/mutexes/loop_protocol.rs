@@ -8,7 +8,7 @@ use super::*;
 
 pub(in crate::kernel) fn abstract_loop_mutex(
     state: &ExecutionState,
-    mutex: &Address,
+    mutex: &OldAddress,
     held: impl Into<StoredConditionTerm>,
 ) -> Result<ExecutionState, String> {
     if state.preserves_mutex_protocols {
@@ -68,7 +68,7 @@ impl MutexContext {
     /// altering resources. Unlock still requires the exact owned guard atom.
     pub(super) fn materialize_loop_mutex(
         &self,
-        mutex: &Address,
+        mutex: &OldAddress,
         assumptions: &PureFactContext,
     ) -> Result<Option<Self>, MutexTransitionError> {
         let Some(ledger) = &self.state.mutex_ledger else {
@@ -112,7 +112,7 @@ impl MutexContext {
 }
 
 impl MutexLedger {
-    pub(in crate::kernel) fn is_loop_abstract(&self, mutex: &Address) -> bool {
+    pub(in crate::kernel) fn is_loop_abstract(&self, mutex: &OldAddress) -> bool {
         matches!(self.get(mutex), Some(MutexEntry::ConditionalLoop { .. }))
     }
 
@@ -122,7 +122,7 @@ impl MutexLedger {
     pub(in crate::kernel) fn check_loop_protocol_state_since(
         &self,
         next: &Self,
-        checked_mutexes: &[Address],
+        checked_mutexes: &[OldAddress],
     ) -> Result<(), MutexProtocolMismatch> {
         let mut compared = next.clone();
         let mut seen = std::collections::BTreeSet::new();
@@ -153,24 +153,24 @@ mod tests {
     use super::*;
     use crate::kernel::{OldAddressOffset, OldMachineTerm, Variable};
 
-    fn mutex(index: usize) -> Address {
-        Address {
+    fn mutex(index: usize) -> OldAddress {
+        OldAddress {
             base: format!("loop-mutex-{index}").into(),
             offset: OldAddressOffset::Constant(0),
         }
     }
-    fn initialized(address: &Address) -> MutexContext {
+    fn initialized(address: &OldAddress) -> MutexContext {
         MutexContext::new(ExecutionState::new())
             .initialize_empty(address.clone(), 40)
             .unwrap()
     }
-    fn abstracted(context: &MutexContext, address: &Address, held: bool) -> MutexContext {
+    fn abstracted(context: &MutexContext, address: &OldAddress, held: bool) -> MutexContext {
         MutexContext::new(
             abstract_loop_mutex(context.state(), address, OldConditionTerm::Constant(held))
                 .unwrap(),
         )
     }
-    fn reveal_guard(context: &MutexContext, address: &Address) -> MutexContext {
+    fn reveal_guard(context: &MutexContext, address: &OldAddress) -> MutexContext {
         let mut state = context.state().clone();
         let guard = state
             .mutex_ledger
@@ -356,8 +356,8 @@ mod loop_rule_tests {
         ResourceTerm, ResourceTransferRole, SpecExpression, SpecProposition, Variable, int32,
     };
 
-    fn address() -> Address {
-        Address {
+    fn address() -> OldAddress {
+        OldAddress {
             base: "loop-rule-mutex".into(),
             offset: OldAddressOffset::Constant(0),
         }

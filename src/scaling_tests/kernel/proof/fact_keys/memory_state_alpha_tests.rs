@@ -185,7 +185,7 @@ fn algebraic_read_fold_alpha_keys_ignore_unrelated_cells() {
             algebraic_type: algebraic_type.clone(),
             node: AlgebraicTermNode::MemoryLoad {
                 point: crate::kernel::ProgramPoint::at(&memory.clone()),
-                pointer: Box::new(Address {
+                pointer: Box::new(OldAddress {
                     base: AddressBase::Heap(992_000),
                     offset: OldAddressOffset::Constant(0),
                 }),
@@ -211,7 +211,7 @@ fn algebraic_read_fold_alpha_keys_ignore_unrelated_cells() {
         let mut memory = SymbolicMemory::new();
         for index in 0..unrelated {
             memory = memory.store(
-                Address {
+                OldAddress {
                     base: AddressBase::Heap(993_000 + index),
                     offset: OldAddressOffset::Constant(0),
                 },

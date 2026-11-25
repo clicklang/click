@@ -6,7 +6,7 @@ use super::*;
 
 #[test]
 fn independent_body_expansion_indexes_definitions_and_walks_depth_once() {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: "counter".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -113,7 +113,7 @@ fn a_call_keeps_argument_direct_composites_in_work_independent_of_their_number()
     let mut asking = Vec::new();
     for size in [16u64, 64, 256] {
         let _session = VerificationSession::enter();
-        let object = |index: u64| Address::symbolic(Variable(782_000 + index));
+        let object = |index: u64| OldAddress::symbolic(Variable(782_000 + index));
         let residual = (0..size).fold(ResourceContext::new(), |residual, index| {
             residual.unchecked_with_fact(ResourceFact::own_composite(
                 "boxed".into(),
@@ -151,7 +151,7 @@ fn a_call_keeps_argument_direct_composites_in_work_independent_of_their_number()
 fn kept_call_reads_do_not_scan_same_block_owners_or_aliases() {
     let samples = [4u64, 16, 64, 256].map(|size| {
         let _session = VerificationSession::enter();
-        let argument = |index| Address {
+        let argument = |index| OldAddress {
             base: AddressBase::ExternalArgument,
             offset: OldAddressOffset::scale_int32(
                 OldMachineTerm::Variable(Variable(784_000 + index)),
@@ -170,7 +170,7 @@ fn kept_call_reads_do_not_scan_same_block_owners_or_aliases() {
             facts.assume_condition(
                 OldConditionTerm::address_equal(
                     hit.clone(),
-                    Address::symbolic(Variable(786_000 + index)),
+                    OldAddress::symbolic(Variable(786_000 + index)),
                 ),
                 true,
             )
@@ -214,7 +214,7 @@ fn a_transferred_flat_cell_does_not_open_unrelated_kept_composites() {
     let mut recording = Vec::new();
     for size in [2u64, 4, 8, 16] {
         let _session = VerificationSession::enter();
-        let object = |index: u64| Address {
+        let object = |index: u64| OldAddress {
             base: AddressBase::ExternalArgument,
             offset: OldAddressOffset::scale_int32(
                 OldMachineTerm::Variable(Variable(783_000 + index)),
@@ -279,7 +279,7 @@ fn call_frame_preparation_ignores_unrelated_retained_instances() {
                     InstanceId::from_variable(Variable(8_600_000 + index)),
                     "boxed".into(),
                     vec![
-                        ProgramValue::pointer(Address::symbolic(Variable(8_610_000 + index)))
+                        ProgramValue::pointer(OldAddress::symbolic(Variable(8_610_000 + index)))
                             .into(),
                     ]
                     .into(),
@@ -319,7 +319,7 @@ fn call_frame_preparation_must_not_open_unrelated_composites() {
     for memory_bound in [false, true] {
         let samples = [4_u64, 16, 64].map(|size| {
             let _session = VerificationSession::enter();
-            let object = |index| Address::symbolic(Variable(8_700_000 + index));
+            let object = |index| OldAddress::symbolic(Variable(8_700_000 + index));
             let body = if memory_bound {
                 vec![
                     ResourceSpec::owned_memory(MemorySegment::new(

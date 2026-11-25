@@ -221,7 +221,7 @@ pub(super) fn execute_publication_paths(
 /// Consumes the flag's explicit storage ownership and mints both rights.
 fn initialize(
     state: &ExecutionState,
-    flag: &Address,
+    flag: &OldAddress,
     value: &ProgramValue,
     payload: &crate::kernel::ResourceDescription,
     assumptions: &PureFactContext,
@@ -297,7 +297,7 @@ fn payload_fact(right: &PublicationRight) -> ResourceFact {
 /// payload's memory as an unlock forgets protected memory.
 fn release_store(
     state: &ExecutionState,
-    flag: &Address,
+    flag: &OldAddress,
     desired: &ProgramValue,
     order: &ProgramValue,
     assumptions: &PureFactContext,
@@ -389,7 +389,7 @@ fn release_store(
 /// some value and receives nothing.
 fn acquire_load(
     state: &ExecutionState,
-    flag: &Address,
+    flag: &OldAddress,
     order: &ProgramValue,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -507,8 +507,8 @@ mod tests {
     use super::*;
     use crate::kernel::{ResourceDescription, ResourceFieldSchema};
 
-    fn flag(index: usize) -> Address {
-        Address {
+    fn flag(index: usize) -> OldAddress {
+        OldAddress {
             base: format!("publication-flag-{index}").into(),
             offset: OldAddressOffset::Constant(0),
         }
@@ -539,7 +539,7 @@ mod tests {
             resources = resources.unchecked_with_fact(right(PublicationSide::Subscriber, index));
         }
         for index in subscribers..subscribers + unrelated {
-            let cell = Address {
+            let cell = OldAddress {
                 base: format!("unrelated-cell-{index}").into(),
                 offset: OldAddressOffset::Constant(0),
             };

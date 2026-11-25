@@ -133,7 +133,7 @@ fn sequence_native_identity_order_hash_and_debug_are_unchanged() {
         ProgramValue::Float32(OldMachineTerm::uint32_constant(0x7fc00123)),
         ProgramValue::Float64(OldMachineTerm::uint64_constant(0x8000000000000000)),
         ProgramValue::typed_pointer(
-            Address::symbolic(Variable(10993403)),
+            OldAddress::symbolic(Variable(10993403)),
             ProgramType::Int32Pointer,
         ),
     ];

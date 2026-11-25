@@ -1354,9 +1354,9 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                 | Sort::ProgramObjectPointer(program_type, _) => {
                     let pointer =
                         if matches!(program_type, crate::kernel::ProgramType::FunctionPointer(_)) {
-                            crate::kernel::Address::symbolic_function(chosen)
+                            crate::kernel::OldAddress::symbolic_function(chosen)
                         } else {
-                            crate::kernel::Address::symbolic(chosen)
+                            crate::kernel::OldAddress::symbolic(chosen)
                         };
                     crate::kernel::substitute_pointer_variable_in_proposition(&body, *var, &pointer)
                 }
@@ -3400,7 +3400,7 @@ mod tests {
     }
 
     /// The pointer-sorted introduction takes its witness from the same range,
-    /// for the same reason: `Address::symbolic(v)` over a C identity is a
+    /// for the same reason: `OldAddress::symbolic(v)` over a C identity is a
     /// pointer the function already has a name for.
     #[test]
     fn a_freshened_pointer_witness_never_takes_a_program_identity() {
@@ -3431,7 +3431,7 @@ mod tests {
             ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind, FrontierPosition,
         };
         use crate::kernel::{
-            Address, ExecutionState, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType,
+            ExecutionState, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType, OldAddress,
             OldAddressOffset, OldConditionTerm, ProgramValue, SharedIntegerRangeEndpoint,
             SymbolicMemory,
         };
@@ -3491,7 +3491,7 @@ mod tests {
                     )),
                     Box::new(Proposition::MemoryLoadable {
                         memory,
-                        base: Address {
+                        base: OldAddress {
                             base: "alpha".into(),
                             offset: OldAddressOffset::Constant(0),
                         },
@@ -3565,7 +3565,7 @@ mod tests {
         );
 
         let changed = before.clone().store(
-            Address {
+            OldAddress {
                 base: "alpha".into(),
                 offset: OldAddressOffset::Constant(0),
             },
@@ -3587,7 +3587,7 @@ mod tests {
             ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind, FrontierPosition,
         };
         use crate::kernel::{
-            Address, ExecutionState, LoopInvariantCheck, OldAddressOffset, ProgramType,
+            ExecutionState, LoopInvariantCheck, OldAddress, OldAddressOffset, ProgramType,
             ProgramValue, SpecExpression, SpecPoint, SpecProposition,
         };
         type TestProof = ProofObject<
@@ -3599,7 +3599,7 @@ mod tests {
             point: SpecPoint::Current,
             pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(
                 crate::kernel::OldPointer::new(
-                    Address {
+                    OldAddress {
                         base: "unallocated".into(),
                         offset: OldAddressOffset::Constant(0),
                     },

@@ -68,7 +68,7 @@ impl MemoryStateLabels {
         self.range_collisions = None;
     }
 
-    fn range_object_identity(&mut self, pointer: &Address) -> String {
+    fn range_object_identity(&mut self, pointer: &OldAddress) -> String {
         if let Some((parameters, arguments)) = self.naming.as_deref() {
             for (parameter, argument) in parameters.iter().zip(arguments).take(128) {
                 if let crate::kernel::ProgramExpression::Value(
@@ -137,9 +137,9 @@ mod tests {
     use crate::kernel::{AddressBase, OldPointer, ProgramType};
 
     fn range(origin: u64) -> MemoryRange {
-        let base = Address::symbolic(Variable(987_800));
+        let base = OldAddress::symbolic(Variable(987_800));
         let value = OldPointer::new(
-            Address::symbolic(Variable(origin)),
+            OldAddress::symbolic(Variable(origin)),
             ProgramType::Int32Pointer,
         )
         .with_address(base);
@@ -207,7 +207,7 @@ mod tests {
         }
         // Keep a concrete object in the metadata coverage too.
         let value = OldPointer::new(
-            Address {
+            OldAddress {
                 base: AddressBase::Concrete("global:table".into()),
                 offset: OldAddressOffset::Constant(0),
             },

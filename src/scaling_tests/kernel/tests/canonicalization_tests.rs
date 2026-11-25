@@ -40,7 +40,7 @@ fn variable_collection_walks_a_shared_state_dag_once() {
 #[test]
 fn variable_collection_after_a_store_costs_the_store() {
     let block = AddressBase::Concrete("counted-history".to_string());
-    let at = |offset: i64| Address {
+    let at = |offset: i64| OldAddress {
         base: block.clone(),
         offset: OldAddressOffset::Constant(offset),
     };

@@ -786,7 +786,7 @@ mod tests {
 
     #[test]
     fn rejected_read_prerequisite_uses_the_shared_state_legend() {
-        use crate::kernel::{Address, ProgramType, SymbolicMemory, Variable};
+        use crate::kernel::{OldAddress, ProgramType, SymbolicMemory, Variable};
         struct Rejected(Proposition);
         impl ProofDiagnosticState for Rejected {
             fn failed_requirement(&self) -> Option<(&str, &Proposition)> {
@@ -805,7 +805,7 @@ mod tests {
         let state = Rejected(Proposition::MemoryReadDefined {
             at: None,
             memory: SymbolicMemory::new(),
-            pointer: Address::symbolic(Variable(987_001)),
+            pointer: OldAddress::symbolic(Variable(987_001)),
             value_type: ProgramType::Int32,
         });
         let mut labels = render::MemoryStateLabels::default();
@@ -826,7 +826,7 @@ mod tests {
     #[test]
     fn rejected_resource_fact_uses_one_printer_and_state_legend() {
         let _typed = render::TypedNotationScope::enter();
-        use crate::kernel::{Address, ProgramType, SymbolicMemory, Variable};
+        use crate::kernel::{OldAddress, ProgramType, SymbolicMemory, Variable};
         struct Rejected(crate::kernel::proof::RejectedResourceRewriteFact);
         impl ProofDiagnosticState for Rejected {
             fn rejected_resource_fact(
@@ -847,7 +847,7 @@ mod tests {
         let read = |memory| Proposition::MemoryReadDefined {
             at: None,
             memory,
-            pointer: Address::symbolic(Variable(987_002)),
+            pointer: OldAddress::symbolic(Variable(987_002)),
             value_type: ProgramType::Int32,
         };
         let rejected = read(SymbolicMemory::new());
@@ -995,7 +995,7 @@ mod tests {
     #[test]
     fn reported_trace_uses_the_goals_state_labels() {
         use crate::kernel::{
-            Address, AddressBase, OldAddressOffset, OldMachineTerm, SymbolicMemory,
+            AddressBase, OldAddress, OldAddressOffset, OldMachineTerm, SymbolicMemory,
         };
 
         struct TracedState(Proposition);
@@ -1039,7 +1039,7 @@ mod tests {
         }
         let at = |memory| Proposition::MemoryLoadable {
             memory,
-            base: Address {
+            base: OldAddress {
                 base: AddressBase::ExternalArgument,
                 offset: OldAddressOffset::Constant(0),
             },

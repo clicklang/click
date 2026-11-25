@@ -5,7 +5,7 @@ fn shared_pointer_equality_visits_offset_pairs_and_load_pairs_once() {
     let _session = VerificationSession::enter();
     for unrelated in [0, 128, 512] {
         let _unrelated = (0..unrelated)
-            .map(|i| SharedAddress::import(&Address::symbolic(Variable(1013000 + i))))
+            .map(|i| SharedAddress::import(&OldAddress::symbolic(Variable(1013000 + i))))
             .collect::<Vec<_>>();
         for size in [16, 64, 256] {
             let cell = SymbolicMemory::global_pointer("shared-check-scaling");
@@ -15,7 +15,7 @@ fn shared_pointer_equality_visits_offset_pairs_and_load_pairs_once() {
                 ProgramValue::Int32(OldMachineTerm::constant(1)),
             );
             let make = |memory| {
-                let native = Address {
+                let native = OldAddress {
                     base: AddressBase::Concrete("shared-check-array".into()),
                     offset: OldAddressOffset::Int32Scaled {
                         value: SharedMachineIntegerTerm::index(

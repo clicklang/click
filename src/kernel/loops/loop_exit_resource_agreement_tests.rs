@@ -2,7 +2,7 @@ use super::*;
 
 fn range(block: &str) -> MemoryRange {
     MemoryRange::new_with_element_width(
-        Address {
+        OldAddress {
             base: AddressBase::Concrete(block.to_string()),
             offset: OldAddressOffset::Constant(0),
         },

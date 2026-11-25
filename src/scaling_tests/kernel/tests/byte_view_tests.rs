@@ -19,7 +19,7 @@ fn byte_assembly_masks_symbolic_bytes_and_ignores_unrelated_memory() {
         }
         for index in 0..size {
             memory = memory.with_block(format!("global:other{index}"), 4).store(
-                Address {
+                OldAddress {
                     base: format!("global:other{index}").into(),
                     offset: OldAddressOffset::Constant(0),
                 },
@@ -64,7 +64,7 @@ fn containing_cell_lookup_work_is_independent_of_unrelated_cells() {
         );
         for index in 0..unrelated {
             memory = memory.store(
-                Address {
+                OldAddress {
                     base: AddressBase::from(format!("global:unrelated{index}").as_str()),
                     offset: OldAddressOffset::Constant(0),
                 },
@@ -115,7 +115,7 @@ fn declared_word_read_representation_ignores_unrelated_memory() {
 #[test]
 fn containing_cell_lookup_keeps_compact_runs_compact() {
     let value = ProgramValue::UInt64(OldMachineTerm::uint64_constant(0x0102_0304_0506_0708));
-    let absent = Address {
+    let absent = OldAddress {
         base: AddressBase::from("global:other"),
         offset: OldAddressOffset::Constant(0),
     };

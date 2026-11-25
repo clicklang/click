@@ -1935,7 +1935,7 @@ mod retained_capture_tests {
             ProgramValue::Bool(OldMachineTerm::constant(1)),
             ProgramValue::Float64(OldMachineTerm::Variable(Variable(997002))),
             ProgramValue::Pointer(crate::kernel::OldPointer::new(
-                crate::kernel::Address::symbolic(Variable(997003)),
+                crate::kernel::OldAddress::symbolic(Variable(997003)),
                 ProgramType::Int32Pointer,
             )),
         ];
@@ -2005,7 +2005,7 @@ mod retained_binding_tests {
 #[test]
 fn fixed_array_argument_retains_the_selected_point_with_equal_memory() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = crate::kernel::Address::symbolic(crate::kernel::Variable(995_001));
+    let pointer = crate::kernel::OldAddress::symbolic(crate::kernel::Variable(995_001));
     let entry = ExecutionState::new()
         .with_memory(crate::kernel::SymbolicMemory::new())
         .with_local(

@@ -12,7 +12,7 @@ use super::*;
 #[test]
 fn facts_over_one_memory_reserve_its_variables_once() {
     let samples = [16u64, 64, 256].map(|size| {
-        let pointer = |index: u64| Address {
+        let pointer = |index: u64| OldAddress {
             base: AddressBase::ExternalObject(Variable(7_100_000 + index)),
             offset: OldAddressOffset::Constant(0),
         };
@@ -50,7 +50,7 @@ fn facts_over_one_memory_reserve_its_variables_once() {
 #[test]
 fn facts_over_one_memory_walk_its_bound_variables_once() {
     let samples = [16u64, 64, 256].map(|size| {
-        let pointer = |index: u64| Address {
+        let pointer = |index: u64| OldAddress {
             base: AddressBase::ExternalObject(Variable(7_300_000 + index)),
             offset: OldAddressOffset::Constant(0),
         };

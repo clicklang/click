@@ -14,7 +14,7 @@ use crate::kernel::{
 pub(in crate::kernel) fn memory_range_still_available(
     range_memory: &SymbolicMemory,
     current_memory: &SymbolicMemory,
-    base: &Address,
+    base: &OldAddress,
     assumptions: &PureFactContext,
 ) -> bool {
     // A pointer read's synthetic block is not the storage it designates.
@@ -933,8 +933,8 @@ pub(in crate::kernel) fn common_pointer_offset_element_width(
 }
 
 pub(in crate::kernel) fn shared_pointer_byte_offset_from_base(
-    pointer: &Address,
-    base: &Address,
+    pointer: &OldAddress,
+    base: &OldAddress,
 ) -> Option<SharedMachineIntegerTerm> {
     if pointer.base != base.base {
         return None;
@@ -2332,7 +2332,7 @@ pub(in crate::kernel) fn decide_with_facts(
             let mut path_facts = facts.fact_iter().peekable();
             path_facts.peek()?;
             let merged = path_facts.fold(
-                // Address comparisons need the checked aliases when adding
+                // OldAddress comparisons need the checked aliases when adding
                 // their two-holder separation projection. Keep the deferred
                 // policy; other comparisons retain their existing cheap path.
                 if !assumptions.should_defer_non_exact_condition_reasoning()

@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn specification_subtraction_widens_coordinates_and_retains_pointer_provenance() {
-    let external = |variable| Address {
+    let external = |variable| OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scaled_int32_node(
             OldMachineTerm::Variable(Variable(variable)),

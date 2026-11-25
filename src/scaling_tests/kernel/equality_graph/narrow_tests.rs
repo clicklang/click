@@ -143,7 +143,7 @@ fn narrow_store_equation_query_scaling(sizes: [u64; 4]) {
             let mut samples = Vec::new();
             for size in sizes {
                 let _session = crate::kernel::VerificationSession::enter();
-                let cell = |i| Address {
+                let cell = |i| OldAddress {
                     base: "narrow".into(),
                     offset: OldAddressOffset::Constant(i * 4),
                 };
@@ -154,14 +154,14 @@ fn narrow_store_equation_query_scaling(sizes: [u64; 4]) {
                     memory = memory.store(cell(i as i64), narrow_stored_value(format, 3));
                     facts = facts.assume_condition(
                         OldConditionTerm::address_equal(
-                            Address::symbolic(Variable(995000 + i)),
+                            OldAddress::symbolic(Variable(995000 + i)),
                             if related { cell(0) } else { cell(i as i64) },
                         ),
                         true,
                     );
                 }
                 memory = memory.store(cell(0), stored.clone());
-                let query = Address::symbolic(Variable(999999));
+                let query = OldAddress::symbolic(Variable(999999));
                 facts = facts.assume_condition(
                     OldConditionTerm::address_equal(query.clone(), cell(0)),
                     true,

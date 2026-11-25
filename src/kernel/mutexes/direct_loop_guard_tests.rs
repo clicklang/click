@@ -4,8 +4,8 @@ use super::direct_loop_guard::{
 use super::*;
 use crate::kernel::*;
 
-fn address(index: usize) -> Address {
-    Address {
+fn address(index: usize) -> OldAddress {
+    OldAddress {
         base: format!("direct-loop-{index}").into(),
         offset: OldAddressOffset::Constant(0),
     }

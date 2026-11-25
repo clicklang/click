@@ -2,7 +2,7 @@
 //! one block can alias.
 //!
 //! Every memory map and heap collection in a `SymbolicMemory` is keyed by a
-//! `Address` (or by a key whose ordering starts with one), and `Address`
+//! `OldAddress` (or by a key whose ordering starts with one), and `OldAddress`
 //! orders by `block` first. `AddressBase` in turn orders by variant:
 //!
 //! ```text
@@ -54,7 +54,7 @@
 //! entry a search over the whole collection would.
 
 use super::{
-    Address, AddressBase, HashedOrdMap, HashedOrdSet, OldAddressOffset, ProgramType, Variable,
+    AddressBase, HashedOrdMap, HashedOrdSet, OldAddress, OldAddressOffset, ProgramType, Variable,
 };
 use std::hash::Hash;
 use std::ops::Bound;
@@ -76,7 +76,7 @@ impl BlockKeyed for AddressBase {
     }
 }
 
-impl BlockKeyed for Address {
+impl BlockKeyed for OldAddress {
     fn key_block(&self) -> &AddressBase {
         &self.base
     }
@@ -84,21 +84,21 @@ impl BlockKeyed for Address {
     fn first_key_of(block: &AddressBase) -> Self {
         // `Constant` is `OldAddressOffset`'s first variant, so this offset
         // orders below every offset term.
-        Address {
+        OldAddress {
             base: block.clone(),
             offset: OldAddressOffset::Constant(i64::MIN),
         }
     }
 }
 
-impl BlockKeyed for (Address, ProgramType) {
+impl BlockKeyed for (OldAddress, ProgramType) {
     fn key_block(&self) -> &AddressBase {
         &self.0.base
     }
 
     fn first_key_of(block: &AddressBase) -> Self {
         // `Void` is `ProgramType`'s first variant.
-        (Address::first_key_of(block), ProgramType::Void)
+        (OldAddress::first_key_of(block), ProgramType::Void)
     }
 }
 
@@ -725,12 +725,12 @@ mod tests {
         ]
     }
 
-    fn cells_of(blocks: &[AddressBase]) -> HashedOrdMap<Address, u32> {
+    fn cells_of(blocks: &[AddressBase]) -> HashedOrdMap<OldAddress, u32> {
         let mut map = HashedOrdMap::new();
         for (index, block) in blocks.iter().enumerate() {
             for offset in [0, 4, 8] {
                 map.insert(
-                    Address {
+                    OldAddress {
                         base: block.clone(),
                         offset: OldAddressOffset::Constant(offset),
                     },
@@ -738,7 +738,7 @@ mod tests {
                 );
             }
             map.insert(
-                Address {
+                OldAddress {
                     base: block.clone(),
                     offset: OldAddressOffset::Variable(Variable(1)),
                 },

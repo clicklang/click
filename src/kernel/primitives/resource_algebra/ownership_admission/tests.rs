@@ -1,9 +1,9 @@
 use super::*;
 
-fn at(id: u64) -> Address {
-    Address::symbolic(Variable(8_770_000 + id))
+fn at(id: u64) -> OldAddress {
+    OldAddress::symbolic(Variable(8_770_000 + id))
 }
-fn owner(base: Address, start: u32, end: u32) -> ResourceFact {
+fn owner(base: OldAddress, start: u32, end: u32) -> ResourceFact {
     ResourceFact::own_memory(MemoryRange::new_with_element_width(
         base,
         start.into(),
@@ -334,7 +334,7 @@ fn private_frame_coverage_is_scoped_to_its_registry_and_defers_to_local_aliases(
 fn automatic_storage_and_entry_arguments_keep_their_structural_partition() {
     let _session = crate::kernel::VerificationSession::enter();
     let facts = PureFactContext::new();
-    let pointer = |block| Address {
+    let pointer = |block| OldAddress {
         base: block,
         offset: OldAddressOffset::Constant(0),
     };

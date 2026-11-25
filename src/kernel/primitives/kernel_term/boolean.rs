@@ -855,12 +855,12 @@ mod tests {
     fn common_boolean_pointer_substitution_keeps_native_folding_policy() {
         let _session = crate::kernel::VerificationSession::enter();
         let from = Variable(971_020);
-        let pointer = Address::null();
+        let pointer = OldAddress::null();
         let atom = OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: Box::new(OldMachineTerm::IntegerAddress(
-                Box::new(Address::symbolic(from)),
+                Box::new(OldAddress::symbolic(from)),
                 crate::kernel::AddressObjectClass::NONE,
             )),
             right: Box::new(OldMachineTerm::uint64_constant(0)),
@@ -900,12 +900,12 @@ mod tests {
         let source = OldConditionTerm::BoolEqual(
             Box::new(OldConditionTerm::boolean_cell_read(
                 crate::kernel::ProgramPoint::at(&memory.clone()),
-                Address::symbolic(from),
+                OldAddress::symbolic(from),
             )),
             Box::new(OldConditionTerm::Constant(true)),
         );
         let root = KernelTermImport::default().condition(&source);
-        let pointer = Address::symbolic(Variable(971_011));
+        let pointer = OldAddress::symbolic(Variable(971_011));
         let actual = crate::kernel::reasoning::substitute_pointer_variable_in_common_condition(
             &root, from, &pointer,
         )
