@@ -88,7 +88,7 @@ fn with_count_width(
             relation,
             [
                 MachineOperandView::Shared(root),
-                MachineOperandView::Legacy(&bound),
+                MachineOperandView::Old(&bound),
             ],
         )
     };

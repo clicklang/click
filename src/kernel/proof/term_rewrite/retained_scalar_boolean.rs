@@ -58,7 +58,7 @@ impl TermRewrite<'_> {
                         if let Some(value) = MachineOperandView::Shared(operand).literal()
                             && matches!(
                                 value,
-                                MachineTerm::Constant {
+                                OldMachineTerm::Constant {
                                     format: MachineIntegerType::UInt32,
                                     ..
                                 }
@@ -74,7 +74,7 @@ impl TermRewrite<'_> {
                     if [(views[0], views[1]), (views[1], views[0])].into_iter().any(|(address, zero)| {
                         zero.uint64_constant() == Some(0)
                             && matches!(address, MachineOperandView::Shared(root)
-                                if matches!(root.machine_conversion_leaf(), Some(MachineTerm::IntegerAddress(..))))
+                                if matches!(root.machine_conversion_leaf(), Some(OldMachineTerm::IntegerAddress(..))))
                     }) {
                         self.changed = true;
                         return Some(KernelTerm::boolean_comparison(*format, *relation, arguments));
@@ -173,10 +173,10 @@ mod tests {
     fn scalar_machine_predicates_preserve_native_raw_formats_scopes_and_warm_queries() {
         let _session = VerificationSession::enter();
         let from = Variable(998100);
-        let source = MachineTerm::Variable(from);
+        let source = OldMachineTerm::Variable(from);
         for format in crate::kernel::machine_integer::FORMATS {
             let literal = |n| {
-                MachineTerm::machine_constant(
+                OldMachineTerm::machine_constant(
                     MachineIntegerConstant::from_signed(format.format(), n).unwrap(),
                 )
             };
@@ -212,7 +212,7 @@ mod tests {
                 for replacement in [
                     literal(0),
                     literal(1),
-                    MachineTerm::Variable(Variable(998101)),
+                    OldMachineTerm::Variable(Variable(998101)),
                 ] {
                     let mut baseline = TermRewrite::for_bits_checked(&source, &replacement);
                     let mut rewrite = TermRewrite::for_bits_checked(&source, &replacement);
@@ -318,13 +318,13 @@ mod tests {
         let _session = VerificationSession::enter();
         let from = Variable(998140);
         for format in crate::kernel::machine_integer::FORMATS {
-            let zero = MachineTerm::machine_constant(
+            let zero = OldMachineTerm::machine_constant(
                 MachineIntegerConstant::from_signed(format.format(), 0).unwrap(),
             );
             let predicate = ConditionTerm::Compare {
                 format,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(from)),
+                left: Box::new(OldMachineTerm::Variable(from)),
                 right: Box::new(zero.clone()),
             };
             let conditional = IntegerTerm::If {
@@ -335,7 +335,7 @@ mod tests {
             let predicate_root = KernelTermImport::for_exact_field_inputs().condition(&predicate);
             let conditional_root =
                 KernelTermImport::for_exact_field_inputs().integer(&conditional.clone().into());
-            let source = MachineTerm::Variable(from);
+            let source = OldMachineTerm::Variable(from);
             for raw_first in [false, true] {
                 let mut baseline = TermRewrite::for_bits_checked(&source, &zero);
                 let mut rewrite = TermRewrite::for_bits_checked(&source, &zero);
@@ -373,7 +373,7 @@ mod tests {
     fn scalar_guard_selection_preserves_native_literal_work_and_nonfolding() {
         let _session = VerificationSession::enter();
         let from = Variable(998160);
-        let word = MachineTerm::Variable(from);
+        let word = OldMachineTerm::Variable(from);
         let integer_from = Variable(998161);
         let large = IntegerTerm::Constant(num_bigint::BigInt::from(1) << 1024usize);
         let predicates = [
@@ -382,7 +382,7 @@ mod tests {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(word.clone()),
-                    right: Box::new(MachineTerm::constant(0)),
+                    right: Box::new(OldMachineTerm::constant(0)),
                 },
                 true,
             ),
@@ -391,7 +391,7 @@ mod tests {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
                     left: Box::new(word.clone()),
-                    right: Box::new(MachineTerm::int64_constant(0)),
+                    right: Box::new(OldMachineTerm::int64_constant(0)),
                 },
                 false,
             ),
@@ -400,7 +400,7 @@ mod tests {
                     format: MachineIntegerType::Int32,
                     op: OverflowOperation::Add,
                     left: Box::new(word),
-                    right: Box::new(MachineTerm::constant(0)),
+                    right: Box::new(OldMachineTerm::constant(0)),
                 },
                 false,
             ),
@@ -426,9 +426,9 @@ mod tests {
                     ..
                 }
             ) {
-                MachineTerm::int64_constant(0)
+                OldMachineTerm::int64_constant(0)
             } else {
-                MachineTerm::constant(0)
+                OldMachineTerm::constant(0)
             };
             let program =
                 BTreeMap::from([(from, TypedProgramValueReplacement::Bitvector(replacement))]);
@@ -471,8 +471,8 @@ mod tests {
         let input = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(Variable(998180))),
-            right: Box::new(MachineTerm::constant(0)),
+            left: Box::new(OldMachineTerm::Variable(Variable(998180))),
+            right: Box::new(OldMachineTerm::constant(0)),
         };
         let root = KernelTermImport::for_exact_field_inputs().condition(&input);
         let facts = HashMap::from([(input.clone(), true)]);
@@ -494,7 +494,7 @@ mod tests {
             let atom = KernelTerm::variable(KernelType::Bool, Variable(998183));
             let program = BTreeMap::from([(
                 Variable(998183),
-                TypedProgramValueReplacement::Bitvector(MachineTerm::bool_cast(
+                TypedProgramValueReplacement::Bitvector(OldMachineTerm::bool_cast(
                     MachineIntegerType::UInt8,
                     unsupported,
                 )),

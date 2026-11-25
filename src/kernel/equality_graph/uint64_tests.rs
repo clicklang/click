@@ -1,31 +1,31 @@
 use super::*;
 use crate::kernel::VerificationSession;
 
-fn word(memory: &SharedMemory, pointer: &Address, bytes: u32) -> MachineTerm {
-    MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+fn word(memory: &SharedMemory, pointer: &Address, bytes: u32) -> OldMachineTerm {
+    OldMachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
         memory,
         pointer,
         LoadKind::Bits64,
         bytes,
     ))
 }
-fn packed(value: &MachineTerm, parent: &Address) -> MachineTerm {
-    MachineTerm::Binary {
+fn packed(value: &OldMachineTerm, parent: &Address) -> OldMachineTerm {
+    OldMachineTerm::Binary {
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::Add,
-        left: Box::new(MachineTerm::IntegerAddress(
+        left: Box::new(OldMachineTerm::IntegerAddress(
             Box::new(parent.clone()),
             crate::kernel::AddressObjectClass::NONE,
         )),
-        right: Box::new(MachineTerm::Binary {
+        right: Box::new(OldMachineTerm::Binary {
             format: MachineIntegerType::UInt64,
             op: MachineBinaryOp::BitwiseAnd,
             left: Box::new(value.clone()),
-            right: Box::new(MachineTerm::uint64_constant(1)),
+            right: Box::new(OldMachineTerm::uint64_constant(1)),
         }),
     }
 }
-fn fact(a: MachineTerm, b: MachineTerm) -> Proposition {
+fn fact(a: OldMachineTerm, b: OldMachineTerm) -> Proposition {
     Proposition::condition_is(ConditionTerm::uint64_equal(a, b), true)
 }
 fn alias(a: &Address, b: &Address) -> Proposition {
@@ -35,15 +35,15 @@ fn proved(context: &PureFactContext, goal: &Proposition) -> bool {
     crate::kernel::reasoning::required_obligation_is_exactly_discharged(context, goal)
 }
 
-fn raw_address(pointer: &Address) -> MachineTerm {
+fn raw_address(pointer: &Address) -> OldMachineTerm {
     // Deliberately bypass the surface constructor's address cancellation.
-    MachineTerm::IntegerAddress(Box::new(pointer.clone()), AddressObjectClass::NONE)
+    OldMachineTerm::IntegerAddress(Box::new(pointer.clone()), AddressObjectClass::NONE)
 }
 
 #[test]
 fn integer_address_coordinates_join_word_classes_and_follow_scoped_equalities() {
     let _session = VerificationSession::enter();
-    let bits = MachineTerm::Variable(Variable(960_001));
+    let bits = OldMachineTerm::Variable(Variable(960_001));
     let pointer = Address::symbolic(Variable(960_002));
     let decoded = Address::from_integer_address(bits.clone());
     let equation = fact(bits.clone(), raw_address(&pointer));
@@ -94,13 +94,13 @@ fn integer_address_coordinates_join_word_classes_and_follow_scoped_equalities() 
 #[test]
 fn integer_address_definition_preserves_byte_displacements_and_load_states() {
     let _session = VerificationSession::enter();
-    let bits = MachineTerm::Variable(Variable(960_003));
+    let bits = OldMachineTerm::Variable(Variable(960_003));
     let decoded = Address::from_integer_address(bits.clone());
     let shifted = Address {
         base: decoded.base.clone(),
         offset: AddressOffset::Constant(8),
     };
-    let sum = MachineTerm::uint64_add(bits.clone(), MachineTerm::uint64_constant(8));
+    let sum = OldMachineTerm::uint64_add(bits.clone(), OldMachineTerm::uint64_constant(8));
     let graph = EqualityGraph::default();
     assert!(graph.are_uint64_equal(&raw_address(&shifted), &sum));
     assert!(!graph.are_uint64_equal(&raw_address(&shifted), &bits));
@@ -112,7 +112,7 @@ fn integer_address_definition_preserves_byte_displacements_and_load_states() {
     };
     let after = intern_memory(memory.memory().clone().store(
         pointer.clone(),
-        ProgramValue::UInt64(MachineTerm::uint64_constant(19)),
+        ProgramValue::UInt64(OldMachineTerm::uint64_constant(19)),
     ));
     let mut graph = graph;
     assert!(!graph.are_uint64_equal(&word(&memory, &decoded, 8), &word(&memory, &pointer, 8)));
@@ -124,8 +124,8 @@ fn integer_address_definition_preserves_byte_displacements_and_load_states() {
 #[test]
 fn equal_integer_address_words_do_not_merge_pointer_names_or_domains() {
     let _session = VerificationSession::enter();
-    let a = MachineTerm::Variable(Variable(960_005));
-    let b = MachineTerm::Variable(Variable(960_006));
+    let a = OldMachineTerm::Variable(Variable(960_005));
+    let b = OldMachineTerm::Variable(Variable(960_006));
     let p = Address::from_integer_address(a.clone());
     let q = Address::from_integer_address(b.clone());
     let mut context = PureFactContext::new();
@@ -198,7 +198,7 @@ fn wide_reads_preserve_state_width_and_value_sort() {
     let q = Address::symbolic(Variable(920_002));
     let after = intern_memory(before.memory().clone().store(
         p.clone(),
-        ProgramValue::UInt64(MachineTerm::uint64_constant(9)),
+        ProgramValue::UInt64(OldMachineTerm::uint64_constant(9)),
     ));
     let a = word(&before, &p, 8);
     let b = word(&before, &q, 8);
@@ -208,15 +208,15 @@ fn wide_reads_preserve_state_width_and_value_sort() {
     assert!(graph.are_uint64_equal(&a, &b));
     assert!(!sibling.are_uint64_equal(&a, &b));
     assert!(!graph.are_uint64_equal(&a, &word(&after, &q, 8)));
-    let narrow = MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+    let narrow = OldMachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
         &before,
         &q,
         LoadKind::Int32,
         4,
     ));
     assert!(!graph.are_uint64_equal(&a, &narrow));
-    let x = MachineTerm::Variable(Variable(920_010));
-    let y = MachineTerm::Variable(Variable(920_011));
+    let x = OldMachineTerm::Variable(Variable(920_010));
+    let y = OldMachineTerm::Variable(Variable(920_011));
     graph.add_int32_equality(&x, &y);
     assert!(!graph.are_uint64_equal(&x, &y));
     let mut wide_only = EqualityGraph::default();
@@ -233,8 +233,8 @@ fn wide_equality_inputs_reconstruct_in_derived_graphs() {
     let _session = VerificationSession::enter();
     let p = Address::symbolic(Variable(930_001));
     let q = Address::symbolic(Variable(930_002));
-    let a = MachineTerm::Variable(Variable(930_003));
-    let b = MachineTerm::Variable(Variable(930_004));
+    let a = OldMachineTerm::Variable(Variable(930_003));
+    let b = OldMachineTerm::Variable(Variable(930_004));
     let mut graph = EqualityGraph::default();
     let mut derived = graph.input_root();
     graph.add_uint64_equality(&a, &packed(&b, &p));
@@ -257,7 +257,7 @@ fn a_wide_read_requires_an_explicit_store_equation_even_through_aliases() {
         base: "cells".into(),
         offset: AddressOffset::Constant(8),
     };
-    let value = ProgramValue::UInt64(MachineTerm::uint64_constant(5));
+    let value = ProgramValue::UInt64(OldMachineTerm::uint64_constant(5));
     let after = intern_memory(
         memory
             .memory()
@@ -266,7 +266,7 @@ fn a_wide_read_requires_an_explicit_store_equation_even_through_aliases() {
     );
     let alias_of = Address::symbolic(Variable(960_101));
     let read = word(&after, &alias_of, 8);
-    let five = MachineTerm::uint64_constant(5);
+    let five = OldMachineTerm::uint64_constant(5);
     let base = PureFactContext::new();
     assert!(!base.equality_graph.are_uint64_equal(&read, &five));
     let aliased = base
@@ -302,14 +302,14 @@ fn raw_wide_read_requires_its_explicit_store_equation() {
         base: "wide".into(),
         offset: AddressOffset::Constant(0),
     };
-    let value = MachineTerm::uint64_constant(0xfedc_ba98_7654_3210);
+    let value = OldMachineTerm::uint64_constant(0xfedc_ba98_7654_3210);
     let stored = ProgramValue::UInt64(value.clone());
     let after = intern_memory(
         SymbolicMemory::new()
             .with_block("wide", 8)
             .store(pointer.clone(), stored.clone()),
     );
-    let read = MachineTerm::read_named(
+    let read = OldMachineTerm::read_named(
         ProgramPoint::at(&after),
         Box::new(pointer.clone()),
         LoadKind::Bits64,
@@ -353,14 +353,14 @@ fn shared_wide_endpoint_queries_preserve_exact_sources_and_scope() {
     use crate::kernel::{KernelTermExport, KernelTermImport, MachineOperandView as V};
     let _session = VerificationSession::enter();
     let ty = MachineIntegerType::UInt64;
-    let a = MachineTerm::Variable(Variable(984001));
-    let b = MachineTerm::Variable(Variable(984002));
-    let source = MachineTerm::Variable(Variable(984003));
-    let query = MachineTerm::uint64_add(a, b);
+    let a = OldMachineTerm::Variable(Variable(984001));
+    let b = OldMachineTerm::Variable(Variable(984002));
+    let source = OldMachineTerm::Variable(Variable(984003));
+    let query = OldMachineTerm::uint64_add(a, b);
     let root = KernelTermImport::default()
         .machine_arithmetic(ty, &query)
         .unwrap();
-    let address = MachineTerm::integer_address(Address::symbolic(Variable(984004)));
+    let address = OldMachineTerm::integer_address(Address::symbolic(Variable(984004)));
     let parent = PureFactContext::new().assume_proposition(fact(source.clone(), address));
     let exports = KernelTermExport::machine_export_count();
     assert!(
@@ -376,7 +376,7 @@ fn shared_wide_endpoint_queries_preserve_exact_sources_and_scope() {
         .wide_equation_endpoints_equal_to(V::Shared(&root));
     let native = child
         .equality_graph
-        .wide_equation_endpoints_equal_to(V::Legacy(&query));
+        .wide_equation_endpoints_equal_to(V::Old(&query));
     assert_eq!(shared, native);
     assert!(shared.contains(&source));
     assert!(
@@ -400,20 +400,20 @@ fn machine_observation_cast_round_trip_is_congruent_inside_arithmetic() {
         MachineIntegerType::UInt64,
     ] {
         let _session = crate::kernel::VerificationSession::enter();
-        let leaf = MachineTerm::PureFunctionApplication {
+        let leaf = OldMachineTerm::PureFunctionApplication {
             name: "opaque_round_trip_probe".into(),
-            arguments: vec![MachineTerm::Variable(Variable(989801))],
+            arguments: vec![OldMachineTerm::Variable(Variable(989801))],
         };
         let observed = SharedMachineIntegerTerm::intern(format, leaf.clone());
-        let round_trip = MachineTerm::IntegerToMachine {
+        let round_trip = OldMachineTerm::IntegerToMachine {
             value: IntegerTerm::Machine(observed).into(),
             destination: format,
         };
-        let parent = |left: MachineTerm| MachineTerm::Binary {
+        let parent = |left: OldMachineTerm| OldMachineTerm::Binary {
             format,
             op: crate::kernel::MachineBinaryOp::Add,
             left: left.into(),
-            right: MachineTerm::Variable(Variable(989802)).into(),
+            right: OldMachineTerm::Variable(Variable(989802)).into(),
         };
         let goal = crate::kernel::ConditionTerm::machine_compare(
             format,
@@ -439,9 +439,9 @@ fn machine_observation_round_trip_keeps_equality_scope_and_format() {
         MachineIntegerType::Int64,
         MachineIntegerType::UInt64,
     ] {
-        let x = MachineTerm::Variable(Variable(989811));
-        let y = MachineTerm::Variable(Variable(989812));
-        let converted = MachineTerm::IntegerToMachine {
+        let x = OldMachineTerm::Variable(Variable(989811));
+        let y = OldMachineTerm::Variable(Variable(989812));
+        let converted = OldMachineTerm::IntegerToMachine {
             destination: format,
             value: IntegerTerm::Machine(SharedMachineIntegerTerm::intern(format, x.clone())).into(),
         };
@@ -462,29 +462,29 @@ fn machine_observation_round_trip_keeps_equality_scope_and_format() {
     // into its unsigned bit pattern.
     let signed = SharedMachineIntegerTerm::intern(
         MachineIntegerType::Int32,
-        MachineTerm::constant(u32::MAX),
+        OldMachineTerm::constant(u32::MAX),
     );
-    let changed_sign = MachineTerm::IntegerToMachine {
+    let changed_sign = OldMachineTerm::IntegerToMachine {
         destination: MachineIntegerType::UInt32,
         value: IntegerTerm::Machine(signed).into(),
     };
     assert_ne!(
         PureFactContext::new().decide(&ConditionTerm::equal(
             changed_sign,
-            MachineTerm::constant(u32::MAX)
+            OldMachineTerm::constant(u32::MAX)
         )),
         Some(true)
     );
     let wide = SharedMachineIntegerTerm::intern(
         MachineIntegerType::UInt64,
-        MachineTerm::uint64_constant(1u64 << 32),
+        OldMachineTerm::uint64_constant(1u64 << 32),
     );
-    let narrowed = MachineTerm::IntegerToMachine {
+    let narrowed = OldMachineTerm::IntegerToMachine {
         destination: MachineIntegerType::UInt32,
         value: IntegerTerm::Machine(wide).into(),
     };
     assert_ne!(
-        PureFactContext::new().decide(&ConditionTerm::equal(narrowed, MachineTerm::constant(0))),
+        PureFactContext::new().decide(&ConditionTerm::equal(narrowed, OldMachineTerm::constant(0))),
         Some(true)
     );
 }
@@ -506,11 +506,11 @@ fn machine_observation_round_trip_covers_each_declared_integer_format() {
     ] {
         let _session = VerificationSession::enter();
         let source =
-            SharedMachineIntegerTerm::intern(format, MachineTerm::Variable(Variable(989841)));
+            SharedMachineIntegerTerm::intern(format, OldMachineTerm::Variable(Variable(989841)));
         let original = IntegerTerm::Machine(source);
         let converted = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             format,
-            MachineTerm::IntegerToMachine {
+            OldMachineTerm::IntegerToMachine {
                 destination: format,
                 value: original.clone().into(),
             },
@@ -529,29 +529,29 @@ fn machine_fold_endpoint_congruence_retains_shared_operands() {
     };
     for unsigned in [false, true] {
         let _session = VerificationSession::enter();
-        let x = MachineTerm::Variable(Variable(989921));
-        let y = MachineTerm::Variable(Variable(989922));
+        let x = OldMachineTerm::Variable(Variable(989921));
+        let y = OldMachineTerm::Variable(Variable(989922));
         let format = if unsigned {
             MachineIntegerType::UInt64
         } else {
             MachineIntegerType::Int32
         };
-        let fold = |value: MachineTerm| {
-            let native = MachineTerm::Binary {
+        let fold = |value: OldMachineTerm| {
+            let native = OldMachineTerm::Binary {
                 format,
                 op: MachineBinaryOp::Add,
                 left: value.into(),
                 right: if unsigned {
-                    MachineTerm::uint64_constant(1)
+                    OldMachineTerm::uint64_constant(1)
                 } else {
-                    MachineTerm::constant(1)
+                    OldMachineTerm::constant(1)
                 }
                 .into(),
             };
             let root = crate::kernel::KernelTermImport::default()
                 .machine_arithmetic(MachineIntegerType::Int32, &native)
                 .unwrap();
-            let endpoint = SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0))
+            let endpoint = SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(0))
                 .with_shared_operand(root)
                 .unwrap();
             assert!(!endpoint.machine_operand().has_boxed_operand());

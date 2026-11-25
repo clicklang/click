@@ -51,7 +51,7 @@ fn update(
         } else {
             let value = KernelTermImport::default().machine(
                 MachineIntegerType::Int32,
-                &MachineTerm::constant_at32(format, coefficient),
+                &OldMachineTerm::constant_at32(format, coefficient),
             );
             KernelTerm::machine_binary_shared_as(
                 MachineIntegerType::Int32,
@@ -105,18 +105,18 @@ pub(super) struct EndpointKeys {
 impl EndpointKeys {
     pub(super) fn key(&mut self, view: V<'_>) -> Key {
         match view {
-            V::Legacy(term) => {
+            V::Old(term) => {
                 let canonical = super::proposition_reasoning::order_endpoint_key(term);
                 self.normalized_legacy(&canonical)
             }
             V::Shared(term) => self.shared(term),
         }
     }
-    pub(super) fn normalized_legacy(&mut self, term: &MachineTerm) -> Key {
+    pub(super) fn normalized_legacy(&mut self, term: &OldMachineTerm) -> Key {
         self.normalized_legacy_pair(term).1
     }
 
-    pub(super) fn normalized_legacy_pair(&mut self, term: &MachineTerm) -> (Key, Key) {
+    pub(super) fn normalized_legacy_pair(&mut self, term: &OldMachineTerm) -> (Key, Key) {
         match KernelTermImport::default().machine_arithmetic(MachineIntegerType::Int32, term) {
             Some(term) => (Key::new(V::Shared(&term)), self.shared(&term)),
             None => {
@@ -198,7 +198,7 @@ impl EndpointKeys {
             Some(root) if sum.constant == 0 => root,
             rendered => {
                 let constant = KernelTermImport::default()
-                    .machine(format, &MachineTerm::constant_at32(format, sum.constant));
+                    .machine(format, &OldMachineTerm::constant_at32(format, sum.constant));
                 match rendered {
                     Some(root) => KernelTerm::machine_binary_shared_as(
                         MachineIntegerType::Int32,

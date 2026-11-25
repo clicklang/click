@@ -41,7 +41,7 @@ fn boolean_calls_keep_shared_arguments_across_selected_native_readings() {
                 crate::kernel::reasoning::substitute_bitvector_variable_in_common_condition(
                     &root,
                     Variable(999411),
-                    &MachineTerm::constant(1)
+                    &OldMachineTerm::constant(1)
                 ),
                 Some(root.clone())
             );

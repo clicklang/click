@@ -148,7 +148,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn signed_operand_bound_premises(
         search_input: &Proof<'a>,
         width: SignedDefinedWidth,
-        operands: [(&MachineTerm, &SyntaxTerm); 2],
+        operands: [(&OldMachineTerm, &SyntaxTerm); 2],
     ) -> Vec<SyntaxProposition> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("signed_operand_bound_premises");
@@ -176,7 +176,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_signed_definedness_with_operand_definedness(
         search_input: &Proof<'a>,
         width: SignedDefinedWidth,
-        operands: [(&MachineTerm, &SyntaxTerm); 2],
+        operands: [(&OldMachineTerm, &SyntaxTerm); 2],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_signed_definedness_with_operand_definedness");
@@ -220,7 +220,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_signed_definedness_after_operand_substitution(
         search_input: &Proof<'a>,
         width: SignedDefinedWidth,
-        operands: [(&MachineTerm, &SyntaxTerm); 2],
+        operands: [(&OldMachineTerm, &SyntaxTerm); 2],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery(

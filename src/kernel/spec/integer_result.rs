@@ -86,13 +86,13 @@ impl IntegerResult {
     pub(super) fn into_kernel(self) -> KernelTerm {
         self.0
     }
-    pub(super) fn native_compat(&self) -> SharedIntegerTerm {
+    pub(super) fn old_form(&self) -> SharedIntegerTerm {
         KernelTermExport::default()
             .integer(&self.0)
             .expect("Integer result compatibility boundary")
     }
     pub(in crate::kernel) fn into_native_compat(self) -> IntegerTerm {
-        self.native_compat().as_ref().clone()
+        self.old_form().as_ref().clone()
     }
     pub(super) fn as_const(&self) -> Option<&num_bigint::BigInt> {
         match self.0.node() {
@@ -181,7 +181,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let observation = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
-            MachineTerm::Variable(Variable(1009701)),
+            OldMachineTerm::Variable(Variable(1009701)),
         ));
         let expected = IntegerTerm::Add(observation.into(), IntegerTerm::constant_i64(7).into());
         let source: SharedIntegerTerm = expected.clone().into();

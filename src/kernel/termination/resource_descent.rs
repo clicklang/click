@@ -506,7 +506,7 @@ mod tests {
         ResourceFact::own(Resource::Composite {
             name: family.into(),
             arguments: vec![AlgebraicValue::Program(crate::kernel::int32(
-                MachineTerm::constant(value),
+                OldMachineTerm::constant(value),
             ))]
             .into(),
         })
@@ -530,7 +530,7 @@ mod tests {
                 ResourceAccessMode::Own,
                 "list".into(),
                 vec![ProgramExpression::Value(crate::kernel::int32(
-                    MachineTerm::constant(0),
+                    OldMachineTerm::constant(0),
                 ))],
                 vec![ProgramType::Int32],
             ),
@@ -680,7 +680,7 @@ mod tests {
         let assumptions = PureFactContext::new();
         let child = ResourceFact::Own(
             fact("list", 1).resource().clone(),
-            Box::new(MachineTerm::constant(0).into()),
+            Box::new(OldMachineTerm::constant(0).into()),
         );
         let opening = state
             .resources()

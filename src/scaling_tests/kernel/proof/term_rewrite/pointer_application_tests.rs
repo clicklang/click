@@ -47,13 +47,13 @@ fn pure_pointer_dag_substitution_and_capture_collection_scale_linearly() {
 #[test]
 fn pure_pointer_legacy_scalar_substitution_visits_the_shared_dag_once() {
     let variable = Variable(710);
-    let replacement = MachineTerm::constant(9);
+    let replacement = OldMachineTerm::constant(9);
     let mut measurements = Vec::new();
     for depth in [8, 16, 32] {
         let mut input = call(
             "scalar",
             vec![PureFunctionArgument::Value(ProgramValue::Int32(
-                MachineTerm::Variable(variable),
+                OldMachineTerm::Variable(variable),
             ))],
         );
         let mut expected = call(
@@ -172,7 +172,10 @@ fn displaced_full_pointer_rewrite_scales_with_the_selected_offset() {
                 OldPointer::new(
                     Address {
                         base: AddressBase::ExternalArgument,
-                        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(id)), 1),
+                        offset: AddressOffset::scale_int32(
+                            OldMachineTerm::Variable(Variable(id)),
+                            1,
+                        ),
                     },
                     ProgramType::UInt8Pointer,
                 )
@@ -190,7 +193,10 @@ fn displaced_full_pointer_rewrite_scales_with_the_selected_offset() {
             let delta = (0..size).fold(AddressOffset::Constant(0), |offset, index| {
                 AddressOffset::add(
                     offset,
-                    AddressOffset::scale_int32(MachineTerm::Variable(Variable(920_000 + index)), 1),
+                    AddressOffset::scale_int32(
+                        OldMachineTerm::Variable(Variable(920_000 + index)),
+                        1,
+                    ),
                 )
             });
             let input = source.clone().with_address(Address {
@@ -230,13 +236,13 @@ fn displaced_full_pointer_rewrite_scales_with_the_selected_offset() {
 
 #[test]
 fn integer_address_rewrite_visits_a_shared_pointer_dag_once() {
-    let word = MachineTerm::Variable(Variable(912));
-    let replacement = MachineTerm::uint64_constant(1);
+    let word = OldMachineTerm::Variable(Variable(912));
+    let replacement = OldMachineTerm::uint64_constant(1);
     let mut costs = Vec::new();
     for depth in [8, 16, 32] {
-        let mut input = Address::from_integer_address(MachineTerm::uint64_bitwise_and(
+        let mut input = Address::from_integer_address(OldMachineTerm::uint64_bitwise_and(
             word.clone(),
-            MachineTerm::uint64_constant(!3),
+            OldMachineTerm::uint64_constant(!3),
         ));
         for _ in 0..depth {
             input = call("pair", vec![argument(input.clone()), argument(input)]);
@@ -277,17 +283,17 @@ fn integer_address_rewrite_visits_a_shared_pointer_dag_once() {
 
 #[test]
 fn integer_address_rewrite_ignores_unrelated_interned_applications() {
-    let word = MachineTerm::Variable(Variable(913));
-    let replacement = MachineTerm::uint64_constant(1);
+    let word = OldMachineTerm::Variable(Variable(913));
+    let replacement = OldMachineTerm::uint64_constant(1);
     let mut costs = Vec::new();
     let mut repeated_costs = Vec::new();
     for size in [0, 64, 256] {
         // Compare cold queries at each size, and repeated queries separately.
         // Typed application keys populate the session's observation cache.
         let _session = crate::kernel::VerificationSession::enter();
-        let input = Address::from_integer_address(MachineTerm::uint64_bitwise_and(
+        let input = Address::from_integer_address(OldMachineTerm::uint64_bitwise_and(
             word.clone(),
-            MachineTerm::uint64_constant(!3),
+            OldMachineTerm::uint64_constant(!3),
         ));
         let _unrelated = (0..size)
             .map(|i| {

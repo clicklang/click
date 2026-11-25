@@ -83,15 +83,15 @@ impl EqualityGraph {
 
     pub(in crate::kernel) fn exact_uint64_equalities(
         &self,
-        term: &MachineTerm,
-    ) -> impl Iterator<Item = (&MachineTerm, &ConditionTerm)> {
-        self.exact_uint64_equalities_view(crate::kernel::MachineOperandView::Legacy(term))
+        term: &OldMachineTerm,
+    ) -> impl Iterator<Item = (&OldMachineTerm, &ConditionTerm)> {
+        self.exact_uint64_equalities_view(crate::kernel::MachineOperandView::Old(term))
     }
 
     pub(in crate::kernel) fn exact_uint64_equalities_view(
         &self,
         term: crate::kernel::MachineOperandView<'_>,
-    ) -> impl Iterator<Item = (&MachineTerm, &ConditionTerm)> {
+    ) -> impl Iterator<Item = (&OldMachineTerm, &ConditionTerm)> {
         self.admitted
             .bitvector64_equality_facts
             .get(
@@ -119,15 +119,15 @@ impl EqualityGraph {
 impl EqualityGraph {
     pub(in crate::kernel) fn recorded_uint64_equals(
         &self,
-        term: &MachineTerm,
-    ) -> Vec<(MachineTerm, ConditionTerm)> {
+        term: &OldMachineTerm,
+    ) -> Vec<(OldMachineTerm, ConditionTerm)> {
         let exact = self
             .admitted
             .bitvector64_equality_facts
             .get(
                 &crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey::for_format(
                     MachineIntegerType::UInt64,
-                    crate::kernel::MachineOperandView::Legacy(term),
+                    crate::kernel::MachineOperandView::Old(term),
                 ),
             )
             .map(|neighbors| {
@@ -180,9 +180,9 @@ impl EqualityGraph {
 impl EqualityGraph {
     pub(in crate::kernel) fn exact_literal_sources(
         &self,
-        term: &MachineTerm,
+        term: &OldMachineTerm,
     ) -> Option<&crate::persistent::PersistentMap<ConditionTerm, i64>> {
-        self.exact_literal_sources_view(crate::kernel::MachineOperandView::Legacy(term))
+        self.exact_literal_sources_view(crate::kernel::MachineOperandView::Old(term))
     }
 
     pub(in crate::kernel) fn exact_literal_sources_view(
@@ -206,7 +206,7 @@ impl EqualityGraph {
                 .pointer_alias_endpoints_by_object
                 .contains_key(&bucket)
             || parameter_partition_variable(&bucket).is_some_and(|variable| {
-                self.exact_uint64_equalities(&MachineTerm::Variable(*variable))
+                self.exact_uint64_equalities(&OldMachineTerm::Variable(*variable))
                     .next()
                     .is_some()
             })
@@ -250,7 +250,7 @@ impl EqualityGraph {
                 if self.admitted.bitvector64_equality_facts.contains_key(
                     &crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey::for_format(
                         MachineIntegerType::UInt64,
-                        crate::kernel::MachineOperandView::Legacy(&MachineTerm::Variable(
+                        crate::kernel::MachineOperandView::Old(&OldMachineTerm::Variable(
                             *variable,
                         )),
                     ),
@@ -277,7 +277,7 @@ impl EqualityGraph {
                 if let Some(neighbors) = self.admitted.bitvector64_equality_facts.get(
                     &crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey::for_format(
                         MachineIntegerType::UInt64,
-                        crate::kernel::MachineOperandView::Legacy(&term),
+                        crate::kernel::MachineOperandView::Old(&term),
                     ),
                 ) {
                     terms.extend(neighbors.keys().cloned());

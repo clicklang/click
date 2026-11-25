@@ -315,14 +315,14 @@ mod tests {
         ];
         for width in [0, -8, 4, 1 << 24, (1 << 24) + 1] {
             for bits in [
-                MachineTerm::constant(0),
-                MachineTerm::Variable(Variable(998002)),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::Variable(Variable(998002)),
             ] {
                 result.push(AddressOffset::scaled_int32_node(bits, width));
             }
             for unsigned in [false, true] {
                 result.push(AddressOffset::scaled_int64_node(
-                    MachineTerm::Variable(Variable(998003)),
+                    OldMachineTerm::Variable(Variable(998003)),
                     width,
                     unsigned,
                 ));
@@ -330,7 +330,7 @@ mod tests {
         }
         for n in [30, 31, 32, 33] {
             let mut offset =
-                AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(998002)), 4);
+                AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(998002)), 4);
             for _ in 0..n {
                 offset = AddressOffset::Add(Box::new(offset), Box::new(AddressOffset::Constant(1)));
             }
@@ -383,7 +383,7 @@ mod tests {
             );
             assert!(B::Shared(&root).syntax_equal(B::Native(&source)));
             for from in [Variable(998002), Variable(998099)] {
-                let to = MachineTerm::constant(3);
+                let to = OldMachineTerm::constant(3);
                 let native = crate::kernel::reasoning::substitute_bitvector_variable_in_condition(
                     &source, from, &to,
                 );
@@ -417,13 +417,13 @@ mod tests {
             .with_block("offset-other", 4);
         let after = before.clone().store(
             crate::kernel::SymbolicMemory::global_pointer("offset-other"),
-            ProgramValue::Int32(MachineTerm::constant(1)),
+            ProgramValue::Int32(OldMachineTerm::constant(1)),
         );
         let memory_a = crate::kernel::intern_memory(before);
         let memory_b = crate::kernel::intern_memory(after);
         for wide in [false, true] {
             let condition = |memory| {
-                let value = MachineTerm::read_named(
+                let value = OldMachineTerm::read_named(
                     memory,
                     Box::new(crate::kernel::SymbolicMemory::global_pointer(
                         "offset-condition",
@@ -449,7 +449,7 @@ mod tests {
             let ar = KernelTermImport::default().condition(&a);
             let br = KernelTermImport::default().condition(&b);
             for allowed in [false, true] {
-                let loads = |_: &MachineTerm, _: &MachineTerm| allowed;
+                let loads = |_: &OldMachineTerm, _: &OldMachineTerm| allowed;
                 let expected =
                     crate::kernel::assumptions::conditions_equal_with_load_atoms(&a, &b, &loads);
                 assert_eq!(
@@ -490,7 +490,7 @@ mod identity_tests {
         let sources = [CScalarClass::Int, CScalarClass::Char].map(|class| {
             ConditionTerm::AddressOffsetEqual(
                 Box::new(AddressOffset::scaled_int64_node(
-                    MachineTerm::IntegerAddress(
+                    OldMachineTerm::IntegerAddress(
                         Box::new(Address::symbolic(Variable(998400))),
                         crate::kernel::AddressObjectClass::new(Some(CAccessClass::Scalar(class))),
                     ),

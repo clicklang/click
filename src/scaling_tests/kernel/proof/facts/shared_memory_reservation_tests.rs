@@ -19,7 +19,7 @@ fn facts_over_one_memory_reserve_its_variables_once() {
         let memory = (0..size).fold(SymbolicMemory::new(), |memory, index| {
             memory.store(
                 pointer(index),
-                ProgramValue::Int32(MachineTerm::Variable(Variable(7_200_000 + index))),
+                ProgramValue::Int32(OldMachineTerm::Variable(Variable(7_200_000 + index))),
             )
         });
         crate::kernel::intern_memory(memory.clone());
@@ -27,7 +27,7 @@ fn facts_over_one_memory_reserve_its_variables_once() {
             .map(|index| Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: pointer(index),
-                bytes: (MachineTerm::constant(4)).into(),
+                bytes: (OldMachineTerm::constant(4)).into(),
                 wide: false,
             })
             .collect::<Vec<_>>();
@@ -57,7 +57,7 @@ fn facts_over_one_memory_walk_its_bound_variables_once() {
         let memory = (0..size).fold(SymbolicMemory::new(), |memory, index| {
             memory.store(
                 pointer(index),
-                ProgramValue::Int32(MachineTerm::Variable(Variable(7_400_000 + index))),
+                ProgramValue::Int32(OldMachineTerm::Variable(Variable(7_400_000 + index))),
             )
         });
         crate::kernel::intern_memory(memory.clone());
@@ -65,7 +65,7 @@ fn facts_over_one_memory_walk_its_bound_variables_once() {
             .map(|index| Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: pointer(index),
-                bytes: (MachineTerm::constant(4)).into(),
+                bytes: (OldMachineTerm::constant(4)).into(),
                 wide: false,
             })
             .collect::<Vec<_>>();
@@ -81,7 +81,7 @@ fn facts_over_one_memory_walk_its_bound_variables_once() {
         let extended = built.with_fact(Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: pointer(0),
-            bytes: (MachineTerm::constant(8)).into(),
+            bytes: (OldMachineTerm::constant(8)).into(),
             wide: false,
         });
         assert_eq!(

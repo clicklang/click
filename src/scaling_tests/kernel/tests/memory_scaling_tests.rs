@@ -38,7 +38,7 @@ fn symbolic_stores_into_compact_arrays_scale_with_represented_cells() {
                 .store(beside.clone(), value.clone())
                 .store(after.clone(), value.clone())
                 .store(separate.clone(), value.clone());
-            let index = MachineTerm::Variable(Variable(925_002));
+            let index = OldMachineTerm::Variable(Variable(925_002));
             let assumptions = if bounded {
                 let range = |base: &Address, elements: u32| {
                     ResourceFact::own_memory(MemoryRange::new_with_element_width(
@@ -153,7 +153,7 @@ fn scaling_cell(block: &str, index: usize) -> Address {
 }
 
 fn scaling_value(index: usize) -> ProgramValue {
-    ProgramValue::UInt32(MachineTerm::constant(index as u32))
+    ProgramValue::UInt32(OldMachineTerm::constant(index as u32))
 }
 
 /// A memory holding one cell in each of `count` unrelated blocks.
@@ -381,7 +381,7 @@ fn normalizing_64_bit_allocation_tokens_in_distinct_heap_blocks_is_linear() {
     for size in SIZES {
         let _session = crate::kernel::VerificationSession::enter();
         let resources = (0..size as u64).fold(ResourceContext::new(), |resources, identity| {
-            let count = MachineTerm::Variable(Variable((1 << 40) + identity));
+            let count = OldMachineTerm::Variable(Variable((1 << 40) + identity));
             resources.unchecked_with_fact(ResourceFact::own_heap_allocation(
                 heap_cell(identity, 0),
                 &wide_allocation_size(&count),
@@ -443,7 +443,7 @@ fn with_initialized_allocation(
         .resolve_pending_heap_allocation(&pending, true)
         .expect("the pending allocation resolves");
     assert_eq!(base, heap_cell(identity, 0));
-    memory.store(base, ProgramValue::UInt32(MachineTerm::constant(value)))
+    memory.store(base, ProgramValue::UInt32(OldMachineTerm::constant(value)))
 }
 
 /// `unrelated` live allocations, each holding one initialized cell, and the
@@ -479,8 +479,8 @@ fn one_heap_store_is_logarithmic_in_unrelated_allocations() {
         let resources =
             ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
                 heap_cell(TARGET_HEAP, 0),
-                MachineTerm::constant(0),
-                MachineTerm::constant(4),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(4),
             )));
         let state = ExecutionState::new()
             .with_memory(memory)
@@ -491,7 +491,7 @@ fn one_heap_store_is_logarithmic_in_unrelated_allocations() {
                 heap_cell(TARGET_HEAP, 4),
                 ProgramType::UInt32Pointer,
             )),
-            value: ProgramExpression::Value(ProgramValue::UInt32(MachineTerm::constant(9))),
+            value: ProgramExpression::Value(ProgramValue::UInt32(OldMachineTerm::constant(9))),
             value_type: ProgramType::UInt32,
             volatile: false,
             pointee_constant: false,
@@ -519,18 +519,18 @@ fn one_heap_store_is_logarithmic_in_unrelated_allocations() {
 
 /// `n * 4` bytes for a symbolic `size_t` count `n`: a 64-bit size
 /// (`design/heap-allocation-sizes.md`, stage 2).
-fn wide_allocation_size(count: &MachineTerm) -> AllocationSize {
+fn wide_allocation_size(count: &OldMachineTerm) -> AllocationSize {
     AllocationSize::new(
-        MachineTerm::uint64_multiply(count.clone(), MachineTerm::uint64_constant(4)),
+        OldMachineTerm::uint64_multiply(count.clone(), OldMachineTerm::uint64_constant(4)),
         AllocationSizeKind::UInt64,
     )
 }
 
 /// The wide owned range `base[0..count]` of `uint32` elements.
-fn wide_heap_range(identity: u64, count: &MachineTerm) -> MemoryRange {
+fn wide_heap_range(identity: u64, count: &OldMachineTerm) -> MemoryRange {
     MemoryRange::new_wide(
         heap_cell(identity, 0),
-        MachineTerm::uint64_constant(0),
+        OldMachineTerm::uint64_constant(0),
         count.clone(),
         4,
     )
@@ -547,14 +547,14 @@ fn one_store_into_a_64_bit_heap_block_is_logarithmic_in_unrelated_64_bit_allocat
     let mut samples = Vec::new();
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let count = |identity: u64| MachineTerm::Variable(Variable((1 << 40) + identity));
-        let index = MachineTerm::Variable(Variable(1 << 41));
+        let count = |identity: u64| OldMachineTerm::Variable(Variable((1 << 40) + identity));
+        let index = OldMachineTerm::Variable(Variable(1 << 41));
         // The allocation's admission bound and the store's index bound.
         let assumptions = PureFactContext::new()
             .assume_condition(
                 ConditionTerm::uint64_less_equal(
                     count(TARGET_HEAP),
-                    MachineTerm::uint64_constant(i64::MAX as u64 / 4),
+                    OldMachineTerm::uint64_constant(i64::MAX as u64 / 4),
                 ),
                 true,
             )
@@ -603,7 +603,7 @@ fn one_store_into_a_64_bit_heap_block_is_logarithmic_in_unrelated_64_bit_allocat
                     index.clone(),
                 ))),
             ),
-            value: ProgramExpression::Value(ProgramValue::UInt32(MachineTerm::constant(9))),
+            value: ProgramExpression::Value(ProgramValue::UInt32(OldMachineTerm::constant(9))),
             value_type: ProgramType::UInt32,
             volatile: false,
             pointee_constant: false,
@@ -639,16 +639,16 @@ fn one_field_store_into_a_64_bit_struct_array_block_is_logarithmic_in_unrelated_
     let mut samples = Vec::new();
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let count = |identity: u64| MachineTerm::Variable(Variable((1 << 40) + identity));
+        let count = |identity: u64| OldMachineTerm::Variable(Variable((1 << 40) + identity));
         let bytes = |identity: u64| {
-            MachineTerm::uint64_multiply(count(identity), MachineTerm::uint64_constant(8))
+            OldMachineTerm::uint64_multiply(count(identity), OldMachineTerm::uint64_constant(8))
         };
-        let index = MachineTerm::Variable(Variable(1 << 41));
+        let index = OldMachineTerm::Variable(Variable(1 << 41));
         let assumptions = PureFactContext::new()
             .assume_condition(
                 ConditionTerm::uint64_less_equal(
                     count(TARGET_HEAP),
-                    MachineTerm::uint64_constant(i64::MAX as u64 / 8),
+                    OldMachineTerm::uint64_constant(i64::MAX as u64 / 8),
                 ),
                 true,
             )
@@ -673,7 +673,7 @@ fn one_field_store_into_a_64_bit_struct_array_block_is_logarithmic_in_unrelated_
             let resources =
                 resources.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new_wide(
                     heap_cell(identity, 0),
-                    MachineTerm::uint64_constant(0),
+                    OldMachineTerm::uint64_constant(0),
                     bytes(identity),
                     1,
                 )));
@@ -696,7 +696,7 @@ fn one_field_store_into_a_64_bit_struct_array_block_is_logarithmic_in_unrelated_
                 ProgramType::UInt8Pointer,
             ))),
             Box::new(ProgramExpression::Value(ProgramValue::Int64(
-                MachineTerm::int64_multiply(index.clone(), MachineTerm::int64_constant(8)),
+                OldMachineTerm::int64_multiply(index.clone(), OldMachineTerm::int64_constant(8)),
             ))),
         );
         let statement = ProgramStatement::TypedStore {
@@ -705,7 +705,7 @@ fn one_field_store_into_a_64_bit_struct_array_block_is_logarithmic_in_unrelated_
                 pointer: Box::new(element),
                 bytes: 4.into(),
             },
-            value: ProgramExpression::Value(ProgramValue::UInt32(MachineTerm::constant(9))),
+            value: ProgramExpression::Value(ProgramValue::UInt32(OldMachineTerm::constant(9))),
             value_type: ProgramType::UInt32,
             volatile: false,
             pointee_constant: false,
@@ -748,14 +748,14 @@ fn one_classed_heap_store_and_read_are_logarithmic_in_recorded_effective_types()
         let mut memory = memory_with_unrelated_allocations(size);
         for index in 0..size {
             let cell = heap_cell(index as u64 + 1, 0);
-            let value = ProgramValue::UInt32(MachineTerm::constant(index as u32));
+            let value = ProgramValue::UInt32(OldMachineTerm::constant(index as u32));
             memory = memory.with_heap_effective_type(&cell, 4, Some(INT), &value);
         }
         let resources =
             ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
                 heap_cell(TARGET_HEAP, 0),
-                MachineTerm::constant(0),
-                MachineTerm::constant(8),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(8),
             )));
         let state = ExecutionState::new()
             .with_memory(memory)
@@ -767,7 +767,7 @@ fn one_classed_heap_store_and_read_are_logarithmic_in_recorded_effective_types()
         let store = ProgramStatement::TypedStore {
             access_class: Some(INT),
             pointer: pointer.clone(),
-            value: ProgramExpression::Value(ProgramValue::UInt32(MachineTerm::constant(9))),
+            value: ProgramExpression::Value(ProgramValue::UInt32(OldMachineTerm::constant(9))),
             value_type: ProgramType::UInt32,
             volatile: false,
             pointee_constant: false,
@@ -820,8 +820,8 @@ fn one_classed_heap_store_and_read_are_logarithmic_in_recorded_effective_types()
 fn target_range() -> MemoryRange {
     MemoryRange::new_with_element_width(
         heap_cell(TARGET_HEAP, 0),
-        MachineTerm::constant(0),
-        MachineTerm::constant(16),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(16),
         1,
     )
 }
@@ -905,7 +905,7 @@ fn one_heap_load_is_logarithmic_in_unrelated_allocations() {
                 .expect("the claim registers")
                 .store(
                     heap_cell(TARGET_HEAP, 0),
-                    ProgramValue::UInt32(MachineTerm::constant(7)),
+                    ProgramValue::UInt32(OldMachineTerm::constant(7)),
                 )
         };
         let _session = crate::kernel::VerificationSession::enter();
@@ -930,7 +930,7 @@ fn one_heap_load_is_logarithmic_in_unrelated_allocations() {
         assert_eq!(paths.len(), 1);
         assert_eq!(
             paths[0].outcome,
-            ExpressionOutcome::Value(ProgramValue::UInt32(MachineTerm::constant(7)))
+            ExpressionOutcome::Value(ProgramValue::UInt32(OldMachineTerm::constant(7)))
         );
         known.push((size, work));
         let (paths, work) = load(8);
@@ -958,16 +958,16 @@ fn owned_parameter_objects_and_a_region_store(
 ) -> (SymbolicMemory, PureFactContext, Address, Vec<Address>) {
     let parameter = |id: u64| Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(id)), 4),
+        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 4),
     };
     let objects = (0..count)
         .map(|index| parameter(97_000 + index as u64))
         .collect::<Vec<_>>();
     let region = parameter(97_900);
     let data = parameter(97_901);
-    let length = MachineTerm::Variable(Variable(97_902));
-    let index = MachineTerm::Variable(Variable(97_903));
-    let field = |object: &Address| object.offset_by_elements(MachineTerm::constant(1), 4);
+    let length = OldMachineTerm::Variable(Variable(97_902));
+    let index = OldMachineTerm::Variable(Variable(97_903));
+    let field = |object: &Address| object.offset_by_elements(OldMachineTerm::constant(1), 4);
     let mut cells = objects.iter().map(field).collect::<Vec<_>>();
     cells.push(field(&region));
     let memory = cells
@@ -979,8 +979,8 @@ fn owned_parameter_objects_and_a_region_store(
     let object_range = |base: &Address, elements: u32| {
         MemoryRange::new(
             base.clone(),
-            MachineTerm::constant(0),
-            MachineTerm::constant(elements),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(elements),
         )
     };
     let composition = objects
@@ -990,14 +990,14 @@ fn owned_parameter_objects_and_a_region_store(
             ResourceFact::own_memory(object_range(&region, 3)),
             ResourceFact::own_memory(MemoryRange::new(
                 data.clone(),
-                MachineTerm::constant(0),
+                OldMachineTerm::constant(0),
                 length.clone(),
             )),
         ])
         .fold(ResourceContext::new(), ResourceContext::unchecked_with_fact);
     let assumptions = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_less_equal(MachineTerm::constant(0), index.clone()),
+            ConditionTerm::signed_less_equal(OldMachineTerm::constant(0), index.clone()),
             true,
         )
         .assume_condition(ConditionTerm::signed_less_than(index.clone(), length), true)
@@ -1105,17 +1105,17 @@ fn consecutive_reallocating_calls_cost_the_same_each() {
     const CALLS: [usize; 4] = [16, 64, 256, 1024];
     let external = |variable: u64| Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
+        offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(variable)), 4),
     };
     let int32_range = |base: &Address, end: u32| {
         MemoryRange::new_with_element_width(
             base.clone(),
-            MachineTerm::constant(0),
-            MachineTerm::constant(end),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(end),
             4,
         )
     };
-    let bytes = MachineTerm::constant(4);
+    let bytes = OldMachineTerm::constant(4);
     let assumptions = PureFactContext::new();
     let mut last_call_samples = Vec::new();
     let mut total_samples = Vec::new();
@@ -1227,19 +1227,19 @@ fn consecutive_reallocating_calls_cost_the_same_each() {
 fn retirement_admits_a_view_of_a_kept_owned_range() {
     let external = |variable: u64| Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
+        offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(variable)), 4),
     };
     let int32_range = |base: &Address, end: u32| {
         MemoryRange::new_with_element_width(
             base.clone(),
-            MachineTerm::constant(0),
-            MachineTerm::constant(end),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(end),
             4,
         )
     };
     let data = external(5_300_000);
     let descriptor = external(5_300_001);
-    let bytes = MachineTerm::constant(8);
+    let bytes = OldMachineTerm::constant(8);
     let assumptions = PureFactContext::new();
     let lent =
         ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(int32_range(&data, 2)));
@@ -1293,10 +1293,11 @@ fn retirement_admits_a_view_of_a_kept_owned_range() {
 /// accumulates about objects a query does not name.
 fn unrelated_condition_facts(count: usize) -> PureFactContext {
     (0..count as u64).fold(PureFactContext::new(), |facts, index| {
-        let variable = |offset: u64| MachineTerm::Variable(Variable(96_000 + 3 * index + offset));
+        let variable =
+            |offset: u64| OldMachineTerm::Variable(Variable(96_000 + 3 * index + offset));
         facts
             .assume_condition(
-                ConditionTerm::signed_less_equal(variable(0), MachineTerm::constant(1_000)),
+                ConditionTerm::signed_less_equal(variable(0), OldMachineTerm::constant(1_000)),
                 true,
             )
             .assume_condition(ConditionTerm::equal(variable(1), variable(2)), true)
@@ -1314,9 +1315,9 @@ fn unrelated_condition_facts(count: usize) -> PureFactContext {
 #[test]
 fn condition_fact_queries_ignore_unrelated_facts() {
     let (low, high, alias) = (
-        MachineTerm::Variable(Variable(95_001)),
-        MachineTerm::Variable(Variable(95_002)),
-        MachineTerm::Variable(Variable(95_003)),
+        OldMachineTerm::Variable(Variable(95_001)),
+        OldMachineTerm::Variable(Variable(95_002)),
+        OldMachineTerm::Variable(Variable(95_003)),
     );
     let symbolic = Address {
         base: AddressBase::Symbolic(Variable(95_004)),
@@ -1324,7 +1325,7 @@ fn condition_fact_queries_ignore_unrelated_facts() {
     };
     let argument = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(95_005)), 4),
+        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(95_005)), 4),
     };
     let mut samples = Vec::new();
     for size in [8, 16, 32, 64] {
@@ -1384,8 +1385,8 @@ fn condition_fact_queries_ignore_unrelated_facts() {
                 facts.pointer_in_range_with_width(
                     &symbolic,
                     &argument,
-                    &MachineTerm::constant(0),
-                    &MachineTerm::constant(1),
+                    &OldMachineTerm::constant(0),
+                    &OldMachineTerm::constant(1),
                     4,
                 )
             },
@@ -1408,7 +1409,7 @@ fn condition_fact_queries_ignore_unrelated_facts() {
 fn external_object(identity: u64) -> Address {
     Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(identity)), 4),
+        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(identity)), 4),
     }
 }
 
@@ -1425,8 +1426,8 @@ fn external_field(identity: u64, bytes: i64) -> Address {
 fn external_range(identity: u64, start: u32, end: u32) -> MemoryRange {
     MemoryRange::new(
         external_object(identity),
-        MachineTerm::constant(start),
-        MachineTerm::constant(end),
+        OldMachineTerm::constant(start),
+        OldMachineTerm::constant(end),
     )
 }
 
@@ -1444,7 +1445,7 @@ fn kept_call_havoc_work(residual: ResourceContext) -> (usize, usize) {
     );
     let memory = SymbolicMemory::new().store(
         external_field(KEPT_MEMBER, 8),
-        ProgramValue::Int32(MachineTerm::constant(5)),
+        ProgramValue::Int32(OldMachineTerm::constant(5)),
     );
     // The callee's footprint shares the parameters' block, so the
     // separation rule cannot keep the cell on its own.
@@ -1514,8 +1515,8 @@ fn a_call_records_kept_members_without_visiting_unrelated_residual_resources() {
                     [
                         ResourceFact::own_memory(MemoryRange::new(
                             heap_cell(index as u64 + 1, 0),
-                            MachineTerm::constant(0),
-                            MachineTerm::constant(4),
+                            OldMachineTerm::constant(0),
+                            OldMachineTerm::constant(4),
                         )),
                         ResourceFact::view_memory(external_range(index as u64 + 1, 0, 4)),
                     ]
@@ -1571,7 +1572,7 @@ fn a_call_rechecks_cached_members_after_ownership_withdrawal_or_width_change() {
     let writes = [external_range(3_000_000, 0, 16)];
     let changed = memory.clone().store(
         pointer.clone(),
-        ProgramValue::Int64(MachineTerm::int64_constant(9)),
+        ProgramValue::Int64(OldMachineTerm::int64_constant(9)),
     );
     for (before, residual, retained) in
         [
@@ -1622,7 +1623,7 @@ fn a_call_kept_instance_range_is_placed_in_work_linear_in_its_body() {
     let mut samples = Vec::new();
     for size in HEAP_SIZES {
         let _session = crate::kernel::VerificationSession::enter();
-        let data = |index: MachineTerm| Address {
+        let data = |index: OldMachineTerm| Address {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::Add(
                 Box::new(external_object(DATA).offset),
@@ -1632,10 +1633,10 @@ fn a_call_kept_instance_range_is_placed_in_work_linear_in_its_body() {
         // `data[start..start + 1]`, spelled through the instance's field.
         let range = MemoryRange::new(
             external_object(DATA),
-            MachineTerm::Variable(Variable(START_FIELD)),
-            MachineTerm::add(
-                MachineTerm::Variable(Variable(START_FIELD)),
-                MachineTerm::constant(1),
+            OldMachineTerm::Variable(Variable(START_FIELD)),
+            OldMachineTerm::add(
+                OldMachineTerm::Variable(Variable(START_FIELD)),
+                OldMachineTerm::constant(1),
             ),
         );
         // The body facts: `region->start == start` and `size` unrelated ones.
@@ -1643,16 +1644,16 @@ fn a_call_kept_instance_range_is_placed_in_work_linear_in_its_body() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(Variable(START_LOAD))),
-                right: Box::new(MachineTerm::Variable(Variable(START_FIELD))),
+                left: Box::new(OldMachineTerm::Variable(Variable(START_LOAD))),
+                right: Box::new(OldMachineTerm::Variable(Variable(START_FIELD))),
             },
             true,
         ))
         .chain((0..size).map(|index| {
             (
                 ConditionTerm::signed_less_equal(
-                    MachineTerm::constant(0),
-                    MachineTerm::Variable(Variable(REGION + 1 + index as u64)),
+                    OldMachineTerm::constant(0),
+                    OldMachineTerm::Variable(Variable(REGION + 1 + index as u64)),
                 ),
                 true,
             )
@@ -1664,7 +1665,7 @@ fn a_call_kept_instance_range_is_placed_in_work_linear_in_its_body() {
             None,
         );
         let assumptions = PureFactContext::new();
-        let cell = data(MachineTerm::Variable(Variable(START_LOAD)));
+        let cell = data(OldMachineTerm::Variable(Variable(START_LOAD)));
         let (held, work) = crate::instrumentation::measure_deterministic_work(|| {
             kept.holds_access(&cell, 4, &assumptions)
         });
@@ -1693,8 +1694,8 @@ fn symbolic_range_membership_ignores_unrelated_index_bounds() {
     for size in [16, 32, 64, 128] {
         let _session = crate::kernel::VerificationSession::enter();
         let base = Address::symbolic(Variable(94_100));
-        let index = MachineTerm::Variable(Variable(94_101));
-        let end = MachineTerm::Variable(Variable(94_102));
+        let index = OldMachineTerm::Variable(Variable(94_101));
+        let end = OldMachineTerm::Variable(Variable(94_102));
         let range = memory_range(base.clone(), 0, end.clone());
         let pointer = base.offset_by_int32_elements(index.clone());
         let mut facts = PureFactContext::new()
@@ -1712,7 +1713,7 @@ fn symbolic_range_membership_ignores_unrelated_index_bounds() {
                 true,
             );
         for i in 0..size {
-            let unrelated = MachineTerm::Variable(Variable(95_000 + i));
+            let unrelated = OldMachineTerm::Variable(Variable(95_000 + i));
             facts = facts
                 .assume_condition(
                     ConditionTerm::signed_less_equal(0.into(), unrelated.clone()),
@@ -1731,7 +1732,9 @@ fn symbolic_range_membership_ignores_unrelated_index_bounds() {
             };
             (
                 contains(&pointer),
-                contains(&base.offset_by_int32_elements(MachineTerm::Variable(Variable(99_999)))),
+                contains(
+                    &base.offset_by_int32_elements(OldMachineTerm::Variable(Variable(99_999))),
+                ),
             )
         });
         assert_eq!(verdicts, (true, false));
@@ -1754,15 +1757,15 @@ fn wide_range_membership_ignores_unrelated_index_bounds() {
     for size in [64, 128, 256, 512] {
         let _session = crate::kernel::VerificationSession::enter();
         let base = Address::symbolic(Variable(96_100));
-        let index = MachineTerm::Variable(Variable(96_101));
-        let end = MachineTerm::Variable(Variable(96_102));
+        let index = OldMachineTerm::Variable(Variable(96_101));
+        let end = OldMachineTerm::Variable(Variable(96_102));
         let range = MemoryRange::new_wide(
             base.clone(),
-            MachineTerm::uint64_constant(0),
+            OldMachineTerm::uint64_constant(0),
             end.clone(),
             4,
         );
-        let at = |index: MachineTerm| base.offset_by_typed_elements(index, 4, true, true);
+        let at = |index: OldMachineTerm| base.offset_by_typed_elements(index, 4, true, true);
         let mut facts = PureFactContext::new()
             .assume_condition(
                 ConditionTerm::uint64_less_than(index.clone(), end.clone()),
@@ -1771,12 +1774,12 @@ fn wide_range_membership_ignores_unrelated_index_bounds() {
             .assume_condition(
                 ConditionTerm::uint64_less_equal(
                     end.clone(),
-                    MachineTerm::uint64_constant(i64::MAX as u64 / 4),
+                    OldMachineTerm::uint64_constant(i64::MAX as u64 / 4),
                 ),
                 true,
             );
         for i in 0..size {
-            let unrelated = MachineTerm::Variable(Variable(97_000 + i));
+            let unrelated = OldMachineTerm::Variable(Variable(97_000 + i));
             facts = facts.assume_condition(
                 ConditionTerm::uint64_less_than(unrelated, end.clone()),
                 true,
@@ -1790,7 +1793,7 @@ fn wide_range_membership_ignores_unrelated_index_bounds() {
             };
             (
                 contains(&at(index.clone())),
-                contains(&at(MachineTerm::Variable(Variable(99_998)))),
+                contains(&at(OldMachineTerm::Variable(Variable(99_998)))),
             )
         });
         assert_eq!(verdicts, (true, false));
@@ -1912,10 +1915,10 @@ fn extending_a_cloned_context_leaves_the_original_propositions() {
 /// `n`, so its work is the same at every size.
 #[test]
 fn wide_order_walk_ignores_uint64_bounds_of_other_indices() {
-    let variable = |id: u64| MachineTerm::Variable(Variable(97_600 + id));
+    let variable = |id: u64| OldMachineTerm::Variable(Variable(97_600 + id));
     let (x, n) = (variable(0), variable(1));
-    let four = MachineTerm::uint64_constant(4);
-    let bounded = |facts: PureFactContext, index: &MachineTerm| {
+    let four = OldMachineTerm::uint64_constant(4);
+    let bounded = |facts: PureFactContext, index: &OldMachineTerm| {
         facts.assume_condition(
             ConditionTerm::uint64_less_than(index.clone(), n.clone()),
             true,
@@ -1951,7 +1954,7 @@ fn wide_order_walk_ignores_uint64_bounds_of_other_indices() {
 /// covering query is one lookup whatever the array's size.
 #[test]
 fn an_unplaced_store_records_a_local_array_as_one_run() {
-    let index = MachineTerm::Variable(Variable(7_001));
+    let index = OldMachineTerm::Variable(Variable(7_001));
     let mut samples = Vec::new();
     for size in SIZES {
         let _session = crate::kernel::VerificationSession::enter();
@@ -2009,18 +2012,22 @@ fn wide_shifted_suffix_coverage_ignores_unrelated_bounds() {
     for size in [0, 64, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
         let base = Address::symbolic(Variable(983_300));
-        let n = MachineTerm::Variable(Variable(983_301));
-        let count = MachineTerm::Variable(Variable(983_302));
-        let available =
-            MemoryRange::new_wide(base.clone(), MachineTerm::uint64_constant(0), n.clone(), 4);
+        let n = OldMachineTerm::Variable(Variable(983_301));
+        let count = OldMachineTerm::Variable(Variable(983_302));
+        let available = MemoryRange::new_wide(
+            base.clone(),
+            OldMachineTerm::uint64_constant(0),
+            n.clone(),
+            4,
+        );
         let required = MemoryRange::new_wide(
             base.offset_by_typed_elements(
-                MachineTerm::uint64_subtract(n.clone(), count.clone()),
+                OldMachineTerm::uint64_subtract(n.clone(), count.clone()),
                 4,
                 true,
                 true,
             ),
-            MachineTerm::uint64_constant(0),
+            OldMachineTerm::uint64_constant(0),
             count.clone(),
             4,
         );
@@ -2028,7 +2035,7 @@ fn wide_shifted_suffix_coverage_ignores_unrelated_bounds() {
             .assume_condition(
                 ConditionTerm::uint64_less_equal(
                     n.clone(),
-                    MachineTerm::uint64_constant(i64::MAX as u64 / 4),
+                    OldMachineTerm::uint64_constant(i64::MAX as u64 / 4),
                 ),
                 true,
             )
@@ -2038,14 +2045,14 @@ fn wide_shifted_suffix_coverage_ignores_unrelated_bounds() {
             );
         let offset_suffix = MemoryRange::new_wide(
             base.offset_by_typed_elements(count.clone(), 4, true, true),
-            MachineTerm::uint64_constant(0),
-            MachineTerm::uint64_subtract(n.clone(), count),
+            OldMachineTerm::uint64_constant(0),
+            OldMachineTerm::uint64_subtract(n.clone(), count),
             4,
         );
         for i in 0..size {
             facts = facts.assume_condition(
                 ConditionTerm::uint64_less_equal(
-                    MachineTerm::Variable(Variable(984_000 + i)),
+                    OldMachineTerm::Variable(Variable(984_000 + i)),
                     n.clone(),
                 ),
                 true,
@@ -2086,10 +2093,10 @@ fn wide_range_observer_transport_ignores_unrelated_equalities() {
             let pointer = scaling_cell("global:wide-observer", 0);
             let memory = SymbolicMemory::new().store(
                 pointer.clone(),
-                ProgramValue::UInt64(MachineTerm::uint64_constant(3)),
+                ProgramValue::UInt64(OldMachineTerm::uint64_constant(3)),
             );
             let load = |memory| {
-                MachineTerm::read_named(
+                OldMachineTerm::read_named(
                     ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                     Box::new(pointer.clone()),
                     LoadKind::Bits64,
@@ -2098,9 +2105,9 @@ fn wide_range_observer_transport_ignores_unrelated_equalities() {
             let before = load(memory.clone());
             let after = load(memory.store(
                 scaling_cell("global:beside-wide-observer", 0),
-                ProgramValue::UInt64(MachineTerm::uint64_constant(9)),
+                ProgramValue::UInt64(OldMachineTerm::uint64_constant(9)),
             ));
-            let observer = MachineTerm::Variable(Variable(985_002));
+            let observer = OldMachineTerm::Variable(Variable(985_002));
             let mut facts = PureFactContext::new()
                 .assume_condition(ConditionTerm::uint64_equal(observer.clone(), before), true);
             // Structural read-over-write matching also files observer == 3.
@@ -2110,8 +2117,8 @@ fn wide_range_observer_transport_ignores_unrelated_equalities() {
             if same_value_class {
                 facts = facts.assume_condition(
                     ConditionTerm::uint64_equal(
-                        MachineTerm::Variable(Variable(985_003)),
-                        MachineTerm::uint64_constant(3),
+                        OldMachineTerm::Variable(Variable(985_003)),
+                        OldMachineTerm::uint64_constant(3),
                     ),
                     true,
                 );
@@ -2119,8 +2126,8 @@ fn wide_range_observer_transport_ignores_unrelated_equalities() {
             for index in 0..size {
                 facts = facts.assume_condition(
                     ConditionTerm::uint64_equal(
-                        MachineTerm::Variable(Variable(986_000 + index)),
-                        MachineTerm::uint64_constant(if same_value_class {
+                        OldMachineTerm::Variable(Variable(986_000 + index)),
+                        OldMachineTerm::uint64_constant(if same_value_class {
                             3
                         } else {
                             1000 + index
@@ -2206,7 +2213,7 @@ fn sequential_owned_parameter_stores_ignore_earlier_cached_fields() {
                 .map(|index| Address {
                     base: AddressBase::ExternalArgument,
                     offset: AddressOffset::scale_int32(
-                        MachineTerm::Variable(Variable(980_000 + index as u64)),
+                        OldMachineTerm::Variable(Variable(980_000 + index as u64)),
                         4,
                     ),
                 })
@@ -2220,7 +2227,7 @@ fn sequential_owned_parameter_stores_ignore_earlier_cached_fields() {
                         4u32.into(),
                     )))
                 });
-            let unrelated = MachineTerm::read_named(
+            let unrelated = OldMachineTerm::read_named(
                 ProgramPoint::at(&intern_memory(SymbolicMemory::new())),
                 Box::new(Address::symbolic(Variable(970_000))),
                 LoadKind::Int32,
@@ -2228,7 +2235,7 @@ fn sequential_owned_parameter_stores_ignore_earlier_cached_fields() {
             let assumptions = PureFactContext::new()
                 .assume_proposition(Proposition::ResourceComposition(composition))
                 .assume_condition(
-                    ConditionTerm::equal(unrelated, MachineTerm::constant(7)),
+                    ConditionTerm::equal(unrelated, OldMachineTerm::constant(7)),
                     true,
                 );
             let mut memory = SymbolicMemory::new();
@@ -2313,8 +2320,8 @@ fn a_symbolic_store_skips_locals_whose_address_is_never_taken() {
 /// their recorded-equality classes, whatever the number of unrelated facts.
 #[test]
 fn open_sided_condition_queries_read_only_their_variables_facts() {
-    let variable = |id: u64| MachineTerm::Variable(Variable(96_000 + id));
-    let successor = |term: MachineTerm| MachineTerm::add(term, MachineTerm::constant(1));
+    let variable = |id: u64| OldMachineTerm::Variable(Variable(96_000 + id));
+    let successor = |term: OldMachineTerm| OldMachineTerm::add(term, OldMachineTerm::constant(1));
     let (a, x, y) = (variable(0), variable(1), variable(2));
     let mut samples = Vec::new();
     for size in [8u64, 32, 128] {
@@ -2363,7 +2370,7 @@ fn direct_literal_checks_do_not_walk_related_equality_classes() {
         let mut samples = Vec::new();
         for size in [8u64, 32, 128] {
             let _session = crate::kernel::VerificationSession::enter();
-            let var = |i| MachineTerm::Variable(Variable(990_000 + i));
+            let var = |i| OldMachineTerm::Variable(Variable(990_000 + i));
             let mut facts = PureFactContext::new();
             for i in 1..=size {
                 let (a, b) = match shape {
@@ -2382,7 +2389,7 @@ fn direct_literal_checks_do_not_walk_related_equality_classes() {
                 facts = facts.assume_condition(ConditionTerm::equal(endpoint, 7u32.into()), true);
             }
             let query = if shape == "folded" {
-                MachineTerm::add(var(0), 1u32.into())
+                OldMachineTerm::add(var(0), 1u32.into())
             } else {
                 var(0)
             };
@@ -2497,7 +2504,7 @@ fn store_preservation_ignores_unrelated_owned_members() {
 
 #[test]
 fn store_distinctness_does_not_search_same_block_range_candidates() {
-    let index = |i| MachineTerm::Variable(Variable(998_000 + i));
+    let index = |i| OldMachineTerm::Variable(Variable(998_000 + i));
     let pointer = |i| Address {
         base: AddressBase::ExternalArgument,
         offset: AddressOffset::scale_int32(index(i), 4),
@@ -2573,7 +2580,7 @@ fn wide_store_index_lookup_ignores_unrelated_facts_and_same_array_cells() {
         } else {
             MachineIntegerType::Int64
         };
-        let index = |i: u64| MachineTerm::Variable(Variable(999_100 + i));
+        let index = |i: u64| OldMachineTerm::Variable(Variable(999_100 + i));
         let pointer = |i: u64| Address {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::scale_int64(index(i), 4, unsigned),
@@ -2797,7 +2804,7 @@ fn store_byte_gap_bounds_recorded_order_walks() {
         let mut samples = Vec::new();
         for size in [4u64, 16, 64] {
             let _session = crate::kernel::VerificationSession::enter();
-            let index = |i| MachineTerm::Variable(Variable(999_800 + i));
+            let index = |i| OldMachineTerm::Variable(Variable(999_800 + i));
             let pointer = |i| Address {
                 base: AddressBase::ExternalArgument,
                 offset: AddressOffset::scale_int32(index(i), 4),
@@ -3296,7 +3303,7 @@ fn symbolic_store_into_loaded_run_bounds_logical_slot_work() {
                 .with_block(base.base.clone(), count * 4)
                 .with_seeded_cells(base.clone(), 4, ProgramType::Int32, 0, count, source);
             assert_eq!(memory.cells.runs_in_block(&base.base).count(), 1);
-            let index = MachineTerm::Variable(Variable(999_900));
+            let index = OldMachineTerm::Variable(Variable(999_900));
             let facts = if bounded {
                 PureFactContext::new()
                     .assume_condition(
@@ -3661,7 +3668,7 @@ fn wide_store_comparisons_keep_retained_arithmetic_and_exact_sources() {
             );
             let one = KernelTerm::retained_native_machine_operand(
                 format,
-                &MachineTerm::int64_constant(1),
+                &OldMachineTerm::int64_constant(1),
             );
             for _ in 0..size {
                 root = KernelTerm::machine_binary_shared(
@@ -3688,7 +3695,7 @@ fn wide_store_comparisons_keep_retained_arithmetic_and_exact_sources() {
                 CompareRelation::Equal,
                 [
                     MachineOperandView::Shared(&root),
-                    MachineOperandView::Legacy(&MachineTerm::int64_constant(0)),
+                    MachineOperandView::Old(&OldMachineTerm::int64_constant(0)),
                 ],
             );
             let empty = PureFactContext::new();

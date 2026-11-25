@@ -57,7 +57,7 @@ fn an_exact_read_is_named_by_its_own_state_not_the_version_point() {
     let stored = ExecutionState::new().with_memory(stored);
     let after = stored.clone().with_memory(after);
     let own_read = |state: &ExecutionState| {
-        int32(MachineTerm::read_named(
+        int32(OldMachineTerm::read_named(
             state.program_point().for_exact_read(),
             Box::new(cell.clone()),
             LoadKind::Int32,

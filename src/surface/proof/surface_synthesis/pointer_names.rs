@@ -118,7 +118,7 @@ mod tests {
                         formed_root,
                         crate::kernel::KernelTerm::retained_native_machine_operand(
                             crate::kernel::MachineIntegerType::UInt64,
-                            &crate::kernel::MachineTerm::uint64_constant(0),
+                            &crate::kernel::OldMachineTerm::uint64_constant(0),
                         ),
                     ],
                     retained.clone(),
@@ -180,7 +180,7 @@ mod tests {
         );
         let right = left.clone().with_bounds(Some(SubobjectBounds {
             start: left.address().clone(),
-            width: crate::kernel::MachineTerm::uint64_constant(4),
+            width: crate::kernel::OldMachineTerm::uint64_constant(4),
         }));
         let root = crate::kernel::KernelTerm::pointer_equal_raw(
             [&left, &right].map(SharedPointer::import),
@@ -222,7 +222,7 @@ mod tests {
     #[test]
     fn numeric_pointer_observation_roots_raise_and_lower_through_existing_casts() {
         use crate::kernel::{
-            KernelTermImport, MachineIntegerType, MachineTerm, PureFunctionArgument,
+            KernelTermImport, MachineIntegerType, OldMachineTerm, PureFunctionArgument,
         };
         let _session = VerificationSession::enter();
         let pointer = OldPointer::new(
@@ -233,7 +233,7 @@ mod tests {
         let bindings =
             ProgramValueBindings::from([("p".to_string(), ProgramValue::Pointer(pointer.clone()))]);
         for format in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
-            let value = format.value_from_term(MachineTerm::object_pointer_address(
+            let value = format.value_from_term(OldMachineTerm::object_pointer_address(
                 pointer.address().clone(),
                 pointer.object_class(),
             ));
@@ -296,14 +296,14 @@ mod tests {
         let before = SymbolicMemory::new().with_block("pointer-name-width", 4);
         let after = before.clone().store(
             address.clone(),
-            ProgramValue::Int32(MachineTerm::constant(12)),
+            ProgramValue::Int32(OldMachineTerm::constant(12)),
         );
         let pointer = Address::symbolic(Variable(1015010));
         let make = |memory| {
             OldPointer::new(pointer.clone(), ProgramType::Int32Pointer).with_bounds(Some(
                 SubobjectBounds {
                     start: pointer.clone(),
-                    width: MachineTerm::read_named(
+                    width: OldMachineTerm::read_named(
                         crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                         Box::new(address.clone()),
                         crate::kernel::LoadKind::Int32,

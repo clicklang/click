@@ -8,7 +8,7 @@ fn unwrap_leaf(view: View<'_>) -> View<'_> {
     match view {
         View::Shared(root) => root
             .machine_conversion_leaf()
-            .map(View::Legacy)
+            .map(View::Old)
             .unwrap_or(view),
         _ => view,
     }
@@ -44,7 +44,7 @@ fn payload(root: View<'_>) -> Option<usize> {
     let mut total = 0usize;
     while let Some(term) = pending.pop() {
         let term = unwrap_leaf(term);
-        if let View::Legacy(term) = term {
+        if let View::Old(term) = term {
             total = total.checked_add(bitvector_payload(term)?)?;
         } else {
             total = total.checked_add(1)?;
@@ -78,10 +78,10 @@ fn read_identity(view: View<'_>) -> Option<crate::kernel::KernelTerm> {
         View::Shared(term) if view.read().is_some() => {
             Some(term.with_machine_observation_type(MachineIntegerType::Int32))
         }
-        View::Legacy(MachineTerm::Variable(variable)) => {
+        View::Old(OldMachineTerm::Variable(variable)) => {
             crate::kernel::eval::registered_scalar_read_term(variable, MachineIntegerType::Int32)
         }
-        View::Legacy(value @ MachineTerm::MemoryLoad(..)) => {
+        View::Old(value @ OldMachineTerm::MemoryLoad(..)) => {
             crate::kernel::KernelTermImport::default()
                 .machine_arithmetic(MachineIntegerType::Int32, value)
         }
@@ -92,7 +92,7 @@ fn read_identity(view: View<'_>) -> Option<crate::kernel::KernelTerm> {
 /// Structural equality restricted to precisely the certificate fragment.
 /// No identity shortcut may bypass unsupported operators or the payload bound.
 pub(super) fn equal(left: View<'_>, right: View<'_>) -> bool {
-    if let (View::Legacy(left), View::Legacy(right)) = (left, right) {
+    if let (View::Old(left), View::Old(right)) = (left, right) {
         return legacy_bitvector_equal(left, right);
     }
     if !payload(left).is_some_and(charge_payload) || !payload(right).is_some_and(charge_payload) {
@@ -101,7 +101,7 @@ pub(super) fn equal(left: View<'_>, right: View<'_>) -> bool {
     let mut pending = vec![(left, right)];
     while let Some((left, right)) = pending.pop() {
         let (left, right) = (unwrap_leaf(left), unwrap_leaf(right));
-        if let (View::Legacy(left), View::Legacy(right)) = (left, right) {
+        if let (View::Old(left), View::Old(right)) = (left, right) {
             if !legacy_bitvector_equal(left, right) {
                 return false;
             }
@@ -167,7 +167,7 @@ mod tests {
             LoadKind::UInt16,
             2,
         );
-        let named = MachineTerm::Variable(name);
+        let named = OldMachineTerm::Variable(name);
         let read = KernelTermImport::default()
             .machine_arithmetic(MachineIntegerType::UInt16, &named)
             .unwrap();
@@ -175,7 +175,7 @@ mod tests {
             KernelTermImport::default()
                 .machine_arithmetic(
                     MachineIntegerType::UInt16,
-                    &MachineTerm::read_named(memory, Box::new(address), kind),
+                    &OldMachineTerm::read_named(memory, Box::new(address), kind),
                 )
                 .unwrap()
         };
@@ -189,7 +189,7 @@ mod tests {
             address.clone(),
             LoadKind::Int16,
         );
-        let raw = MachineTerm::read_named(
+        let raw = OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&memory),
             Box::new(address.clone()),
             LoadKind::UInt16,
@@ -198,7 +198,7 @@ mod tests {
             crate::kernel::ProgramPoint::at(
                 &(crate::kernel::intern_memory(memory.memory().clone().store(
                     address.clone(),
-                    ProgramValue::UInt16(MachineTerm::narrow_constant(
+                    ProgramValue::UInt16(OldMachineTerm::narrow_constant(
                         MachineIntegerType::UInt16,
                         7,
                     )),
@@ -208,9 +208,9 @@ mod tests {
             LoadKind::UInt16,
         );
         let exports = KernelTermExport::machine_export_count();
-        assert!(equal(View::Shared(&read), View::Legacy(&named)));
-        assert!(equal(View::Shared(&read), View::Legacy(&raw)));
-        assert!(equal(View::Legacy(&raw), View::Shared(&read)));
+        assert!(equal(View::Shared(&read), View::Old(&named)));
+        assert!(equal(View::Shared(&read), View::Old(&raw)));
+        assert!(equal(View::Old(&raw), View::Shared(&read)));
         for other in [&other_address, &other_kind, &other_memory_state] {
             assert!(!equal(View::Shared(&read), View::Shared(other)));
         }
@@ -238,11 +238,11 @@ mod tests {
                 MachineBinaryOp::BitwiseOr,
                 MachineBinaryOp::BitwiseXor,
             ] {
-                let native = MachineTerm::Binary {
+                let native = OldMachineTerm::Binary {
                     format,
                     op,
-                    left: Box::new(MachineTerm::Variable(Variable(997101))),
-                    right: Box::new(MachineTerm::Variable(Variable(997102))),
+                    left: Box::new(OldMachineTerm::Variable(Variable(997101))),
+                    right: Box::new(OldMachineTerm::Variable(Variable(997102))),
                 };
                 let Some(root) = KernelTermImport::default().machine_arithmetic(format, &native)
                 else {
@@ -257,7 +257,7 @@ mod tests {
                     "{format:?} {op:?}"
                 );
                 assert_eq!(
-                    equal(shared.operand_view(), View::Legacy(&native)),
+                    equal(shared.operand_view(), View::Old(&native)),
                     expected,
                     "mixed {format:?} {op:?}"
                 );

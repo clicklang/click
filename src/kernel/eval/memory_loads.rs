@@ -427,7 +427,7 @@ pub(in crate::kernel) fn evaluate_indexed_read(
     let kind = LoadKind::of_type(value_type).expect("indexed integer read");
     let format = MachineIntegerType::from_program_type(value_type).expect("indexed integer read");
     read_observations::record_at(&version, &pointer, kind, origin, value_type.byte_width());
-    let read = crate::kernel::MachineTerm::read_named(version, pointer.clone(), kind);
+    let read = crate::kernel::OldMachineTerm::read_named(version, pointer.clone(), kind);
     let value = match value_type {
         ProgramType::Int8 => ProgramValue::Int8(read.clone()),
         ProgramType::UInt8 => ProgramValue::UInt8(read.clone()),
@@ -537,7 +537,7 @@ fn exact_logical_read_value(
     } else {
         let kind = LoadKind::of_type(value_type)?;
         read_observations::record_at(&point, pointer, kind, &point, value_type.byte_width());
-        let bits = crate::kernel::MachineTerm::read_named(point.clone(), pointer.clone(), kind);
+        let bits = crate::kernel::OldMachineTerm::read_named(point.clone(), pointer.clone(), kind);
         ProgramValue::from_bitvector_term(value_type, bits)?
     };
     Some(complete_loaded_word(
@@ -548,8 +548,12 @@ fn exact_logical_read_value(
     ))
 }
 
-fn float_read_term(point: ProgramPoint, pointer: &Address, format: KernelFloatType) -> MachineTerm {
-    crate::kernel::MachineTerm::read_named(
+fn float_read_term(
+    point: ProgramPoint,
+    pointer: &Address,
+    format: KernelFloatType,
+) -> OldMachineTerm {
+    crate::kernel::OldMachineTerm::read_named(
         point.for_exact_read(),
         pointer.clone(),
         format.load_kind(),
@@ -560,7 +564,7 @@ fn point_named_float_load(
     source: &ProgramPoint,
     pointer: &Address,
     value_type: ProgramType,
-) -> Option<MachineTerm> {
+) -> Option<OldMachineTerm> {
     let format = KernelFloatType::from_program_type(value_type)?;
     source
         .has_certified_read_view()
@@ -595,7 +599,7 @@ fn point_named_symbolic_read(
         let kind = LoadKind::of_type(value_type)?;
         return Some(crate::kernel::cell_run_value(
             value_type,
-            crate::kernel::MachineTerm::read_named(version, pointer.clone(), kind),
+            crate::kernel::OldMachineTerm::read_named(version, pointer.clone(), kind),
         ));
     }
     point_named_symbolic_float_read(Some(point), pointer, value_type)
@@ -697,7 +701,7 @@ fn evaluate_logical_memory_load_paths_unbridged(
                 })
                 .and_then(|stored| {
                     let complete_pointer = matches!(&stored, ProgramValue::Pointer(_))
-                        || matches!(&stored, ProgramValue::Int32(MachineTerm::Variable(variable))
+                        || matches!(&stored, ProgramValue::Int32(OldMachineTerm::Variable(variable))
                         if registered_load_kind_for_variable(variable) == Some(LoadKind::Int32)
                             && registered_load_bytes_for_variable(variable)
                                 == Some(crate::kernel::C_POINTER_BYTE_WIDTH));
@@ -772,7 +776,7 @@ fn holds_its_own_read(stored: &ProgramValue, pointer: &Address) -> bool {
     crate::kernel::spec::program_value_bitvector_term(stored)
         .and_then(|term| viewed_as_memory_load(&term))
         .is_some_and(
-            |term| matches!(term, MachineTerm::MemoryLoad(_, address, _) if *address == *pointer),
+            |term| matches!(term, OldMachineTerm::MemoryLoad(_, address, _) if *address == *pointer),
         )
 }
 
@@ -781,7 +785,7 @@ fn retained_cell_holds_its_own_read(value: &ExecutionValue, pointer: &Address) -
     let native_read = |word| {
         matches!(
             viewed_as_memory_load(word),
-            Some(MachineTerm::MemoryLoad(_, cell, _)) if *cell == *pointer
+            Some(OldMachineTerm::MemoryLoad(_, cell, _)) if *cell == *pointer
         )
     };
     let Some(root) = value.shared() else {
@@ -795,7 +799,7 @@ fn retained_cell_holds_its_own_read(value: &ExecutionValue, pointer: &Address) -
             AddressKey::native(pointer) == AddressKey::shared(read.parts().1)
         }
         KernelTermNode::Variable(variable) if value.program_type() != ProgramType::Bool => {
-            native_read(&MachineTerm::Variable(*variable))
+            native_read(&OldMachineTerm::Variable(*variable))
         }
         KernelTermNode::ImportedScalar(input) => native_read(input.value()),
         _ => root.retained_machine_input().is_some_and(native_read),
@@ -1847,14 +1851,14 @@ fn evaluate_retained_memory_load_case(
 
     if memory.is_zeroed_heap_address(&pointer, value_type.byte_width(), assumptions) {
         let value = match value_type {
-            ProgramType::Int8 => int8(MachineTerm::constant(0)),
-            ProgramType::Int16 => int16(MachineTerm::constant(0)),
-            ProgramType::Int32 => int32(MachineTerm::constant(0)),
-            ProgramType::UInt8 => uint8(MachineTerm::constant(0)),
-            ProgramType::UInt16 => uint16(MachineTerm::constant(0)),
-            ProgramType::UInt32 => ProgramValue::UInt32(MachineTerm::uint32_constant(0)),
-            ProgramType::Int64 => ProgramValue::Int64(MachineTerm::int64_constant(0)),
-            ProgramType::UInt64 => ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
+            ProgramType::Int8 => int8(OldMachineTerm::constant(0)),
+            ProgramType::Int16 => int16(OldMachineTerm::constant(0)),
+            ProgramType::Int32 => int32(OldMachineTerm::constant(0)),
+            ProgramType::UInt8 => uint8(OldMachineTerm::constant(0)),
+            ProgramType::UInt16 => uint16(OldMachineTerm::constant(0)),
+            ProgramType::UInt32 => ProgramValue::UInt32(OldMachineTerm::uint32_constant(0)),
+            ProgramType::Int64 => ProgramValue::Int64(OldMachineTerm::int64_constant(0)),
+            ProgramType::UInt64 => ProgramValue::UInt64(OldMachineTerm::uint64_constant(0)),
             ProgramType::Int128 => match crate::kernel::program_expression::int128_literal(0) {
                 ProgramExpression::Value(value) => value,
                 _ => unreachable!("wide literal is a value"),
@@ -1863,8 +1867,8 @@ fn evaluate_retained_memory_load_case(
                 ProgramExpression::Value(value) => value,
                 _ => unreachable!("wide literal is a value"),
             },
-            ProgramType::Float32 => ProgramValue::Float32(MachineTerm::constant(0)),
-            ProgramType::Float64 => ProgramValue::Float64(MachineTerm::uint64_constant(0)),
+            ProgramType::Float32 => ProgramValue::Float32(OldMachineTerm::constant(0)),
+            ProgramType::Float64 => ProgramValue::Float64(OldMachineTerm::uint64_constant(0)),
             _ if value_type.is_pointer() => {
                 ProgramValue::typed_pointer(Address::null(), value_type)
             }
@@ -1938,7 +1942,7 @@ fn evaluate_retained_memory_load_case(
         let proposition = Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: pointer.clone(),
-            bytes: (MachineTerm::constant(value_type.byte_width())).into(),
+            bytes: (OldMachineTerm::constant(value_type.byte_width())).into(),
             wide: false,
         };
         if purpose == LoadPurpose::Validity {
@@ -1949,7 +1953,7 @@ fn evaluate_retained_memory_load_case(
             if !assumptions.proves_memory_loadable_for_memory_resolution(
                 &memory,
                 &pointer,
-                &MachineTerm::constant(value_type.byte_width()),
+                &OldMachineTerm::constant(value_type.byte_width()),
             ) && !assumptions.proves_exact(&proposition)
                 && !obligations
                     .iter()
@@ -2071,7 +2075,7 @@ pub(in crate::kernel) fn abstract_value_source(
         let ProgramValue::Int32(term) = memory.known_value(&address)? else {
             return None;
         };
-        let MachineTerm::MemoryLoad(loaded, loaded_address, LoadKind::Int32) =
+        let OldMachineTerm::MemoryLoad(loaded, loaded_address, LoadKind::Int32) =
             viewed_as_memory_load(&term)?
         else {
             return None;
@@ -2191,7 +2195,7 @@ fn held_pointer_cell_state(
     lower_state: &SharedMemory,
 ) -> Option<SharedMemory> {
     let upper = pointer.offset_by_bytes(4);
-    let ProgramValue::Int32(MachineTerm::MemoryLoad(state, address, LoadKind::Int32)) =
+    let ProgramValue::Int32(OldMachineTerm::MemoryLoad(state, address, LoadKind::Int32)) =
         memory.known_value(&upper)?
     else {
         return None;
@@ -2220,24 +2224,24 @@ fn canonicalized_pointer_value_from_int_cell(
     // cell's upper bytes (`held_pointer_cell_state`).
     let mut prefix_read = None;
     let (fresh, defining_load) = match value {
-        ProgramValue::Int8(bits @ MachineTerm::MemoryLoad(..)) => {
+        ProgramValue::Int8(bits @ OldMachineTerm::MemoryLoad(..)) => {
             return Some(ProgramValue::Int8(canonical_scalar_read(bits)));
         }
-        ProgramValue::Int16(bits @ MachineTerm::MemoryLoad(..)) => {
+        ProgramValue::Int16(bits @ OldMachineTerm::MemoryLoad(..)) => {
             return Some(ProgramValue::Int16(canonical_scalar_read(bits)));
         }
-        ProgramValue::Int32(bits @ MachineTerm::MemoryLoad(..)) => {
+        ProgramValue::Int32(bits @ OldMachineTerm::MemoryLoad(..)) => {
             if purpose == LoadPurpose::VolatileProgram {
                 let fresh = load_variable_for_term(bits)?.0;
                 (Some(fresh), registered_load_term_for_variable(&fresh))
             } else {
-                if let MachineTerm::MemoryLoad(state, address, _) = bits {
+                if let OldMachineTerm::MemoryLoad(state, address, _) = bits {
                     prefix_read = Some((state.shared_memory().clone(), address.as_ref().clone()));
                 }
                 (None, Some(canonical_scalar_read(bits)))
             }
         }
-        ProgramValue::Int32(MachineTerm::Variable(variable)) if is_load_variable(variable) => (
+        ProgramValue::Int32(OldMachineTerm::Variable(variable)) if is_load_variable(variable) => (
             (purpose == LoadPurpose::VolatileProgram).then_some(*variable),
             registered_load_term_for_variable(variable),
         ),
@@ -2254,7 +2258,7 @@ fn canonicalized_pointer_value_from_int_cell(
     // pointer here is this cell's own read, never the other cell's.
     let copied_prefix = matches!(
         &defining_load,
-        Some(MachineTerm::MemoryLoad(_, address, _))
+        Some(OldMachineTerm::MemoryLoad(_, address, _))
             if address.as_ref() != pointer
                 && (purpose != LoadPurpose::Program || SpecificationReadScope::is_active()
                     || !crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
@@ -2330,7 +2334,7 @@ fn canonicalized_pointer_value_from_int_cell(
         if !copied_prefix
             && (matches!(purpose, LoadPurpose::Logical | LoadPurpose::Validity)
                 || purpose == LoadPurpose::Program && SpecificationReadScope::is_active())
-            && let MachineTerm::MemoryLoad(memory, address, _) = &load
+            && let OldMachineTerm::MemoryLoad(memory, address, _) = &load
         {
             // The read is registered at the state that names it.
             match loaded.as_loaded_value() {
@@ -2450,8 +2454,8 @@ fn symbolic_index_run_load(
                                 &crate::kernel::assumptions::wide_index_comparison(
                                     CompareRelation::LessThan,
                                     index.operand_view(),
-                                    crate::kernel::MachineOperandView::Legacy(
-                                        &MachineTerm::uint64_constant(u64::from(
+                                    crate::kernel::MachineOperandView::Old(
+                                        &OldMachineTerm::uint64_constant(u64::from(
                                             *live_high - first,
                                         )),
                                     ),
@@ -2687,47 +2691,47 @@ fn canonicalized_retained_symbolic_load_value_with_identity(
     match &value {
         // A signed byte read is its own load (byte R-mem relates it to the
         // byte's unsigned read).
-        ProgramValue::Int8(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
+        ProgramValue::Int8(bits @ OldMachineTerm::MemoryLoad(_, _, _)) => {
             let read = canonical_scalar_read(bits);
             return Some((ProgramValue::Int8(read)).into());
         }
-        ProgramValue::Int16(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
+        ProgramValue::Int16(bits @ OldMachineTerm::MemoryLoad(_, _, _)) => {
             let read = canonical_scalar_read(bits);
             return Some((ProgramValue::Int16(read)).into());
         }
-        ProgramValue::Int32(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
+        ProgramValue::Int32(bits @ OldMachineTerm::MemoryLoad(_, _, _)) => {
             let read = canonical_scalar_read(bits);
             return Some((ProgramValue::Int32(read)).into());
         }
-        ProgramValue::UInt8(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
+        ProgramValue::UInt8(bits @ OldMachineTerm::MemoryLoad(_, _, _)) => {
             let read = canonical_scalar_read(bits);
             return Some((ProgramValue::UInt8(read)).into());
         }
-        ProgramValue::UInt16(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
+        ProgramValue::UInt16(bits @ OldMachineTerm::MemoryLoad(_, _, _)) => {
             let read = canonical_scalar_read(bits);
             return Some((ProgramValue::UInt16(read)).into());
         }
-        ProgramValue::UInt32(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
+        ProgramValue::UInt32(bits @ OldMachineTerm::MemoryLoad(_, _, _)) => {
             let read = canonical_scalar_read(bits);
             return Some((ProgramValue::UInt32(read)).into());
         }
-        ProgramValue::Int64(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
+        ProgramValue::Int64(bits @ OldMachineTerm::MemoryLoad(_, _, _)) => {
             let read = canonical_scalar_read(bits);
             return Some(
                 (complete_loaded_word(ProgramValue::Int64(read), memory, site, &address)).into(),
             );
         }
-        ProgramValue::UInt64(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
+        ProgramValue::UInt64(bits @ OldMachineTerm::MemoryLoad(_, _, _)) => {
             let read = canonical_scalar_read(bits);
             return Some(
                 (complete_loaded_word(ProgramValue::UInt64(read), memory, site, &address)).into(),
             );
         }
-        ProgramValue::Int128(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
+        ProgramValue::Int128(bits @ OldMachineTerm::MemoryLoad(_, _, _)) => {
             let read = canonical_scalar_read(bits);
             return Some((ProgramValue::Int128(read)).into());
         }
-        ProgramValue::UInt128(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
+        ProgramValue::UInt128(bits @ OldMachineTerm::MemoryLoad(_, _, _)) => {
             let read = canonical_scalar_read(bits);
             return Some((ProgramValue::UInt128(read)).into());
         }
@@ -2813,7 +2817,7 @@ fn canonicalized_retained_symbolic_load_value_with_identity(
         && matches!(pointer_value.address().base, AddressBase::Load(_))
     {
         let retained_state = crate::kernel::intern_memory_ref(memory);
-        let bits = crate::kernel::MachineTerm::read_named(
+        let bits = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::read_at_optional(&retained_state, site),
             address.clone(),
             LoadKind::Int32,
@@ -2944,10 +2948,10 @@ pub(crate) fn is_load_variable_defining_fact(proposition: &Proposition) -> bool 
         return false;
     };
     match (left.as_ref(), right.as_ref()) {
-        (MachineTerm::Variable(variable), MachineTerm::MemoryLoad(_, _, _)) => {
+        (OldMachineTerm::Variable(variable), OldMachineTerm::MemoryLoad(_, _, _)) => {
             is_load_variable(variable)
         }
-        (MachineTerm::Variable(variable), MachineTerm::Variable(read)) => {
+        (OldMachineTerm::Variable(variable), OldMachineTerm::Variable(read)) => {
             variable == read && is_load_variable(variable)
         }
         _ => false,
@@ -3013,15 +3017,15 @@ thread_local! {
     /// current function's effect states never connect to.
     static LOAD_ORIGIN_EPOCH: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     static LOAD_VARIABLE_CACHE: std::cell::RefCell<
-        std::collections::HashMap<MachineTerm, (Variable, MachineTerm)>,
+        std::collections::HashMap<OldMachineTerm, (Variable, OldMachineTerm)>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
     // The flag retains whether version selection used an observed width.
     // Such hits need no second metadata lookup; widening clears this cache.
     static SCALAR_READ_IDENTITY_CACHE: std::cell::RefCell<
-        std::collections::HashMap<MachineTerm, (ScalarReadComparisonIdentity, bool)>,
+        std::collections::HashMap<OldMachineTerm, (ScalarReadComparisonIdentity, bool)>,
     > = Default::default();
     static TERM_CACHE: std::cell::RefCell<
-        std::collections::HashMap<MachineTerm, MachineTerm>,
+        std::collections::HashMap<OldMachineTerm, OldMachineTerm>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
     #[cfg(test)]
     static LOAD_SUBSTITUTION_TERM_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
@@ -3145,8 +3149,8 @@ pub(crate) fn begin_load_origin_epoch() {
 /// returns when its state records the cell's value at exactly
 /// its address. The read retains its version, so this holds
 /// at every point; it depends on the memory, never on facts.
-pub(crate) fn read_over_write_value(term: &MachineTerm) -> Option<MachineTerm> {
-    let MachineTerm::MemoryLoad(memory, pointer, kind) = viewed_as_memory_load(term)? else {
+pub(crate) fn read_over_write_value(term: &OldMachineTerm) -> Option<OldMachineTerm> {
+    let OldMachineTerm::MemoryLoad(memory, pointer, kind) = viewed_as_memory_load(term)? else {
         return None;
     };
     let stored = memory.shared_memory().known_value(&pointer).or_else(|| {
@@ -3204,9 +3208,8 @@ thread_local! {
 /// fact. Only the two literal roots are inspected.
 pub(crate) fn comparison_form(proposition: &Proposition) -> Option<Proposition> {
     if let Proposition::ConditionIs(condition, value) = proposition
-        && let Some(decided) = crate::kernel::machine_integer::comparison::closed_condition_value(
-            condition.native_compat(),
-        )
+        && let Some(decided) =
+            crate::kernel::machine_integer::comparison::closed_condition_value(condition.old_form())
     {
         return Some(Proposition::condition_is(
             ConditionTerm::Constant(decided),
@@ -3258,12 +3261,10 @@ fn decide_closed_conditions(proposition: &Proposition) -> Option<Proposition> {
     };
     match proposition {
         Proposition::ConditionIs(condition, value)
-            if !matches!(condition.native_compat(), ConditionTerm::Constant(_)) =>
+            if !matches!(condition.old_form(), ConditionTerm::Constant(_)) =>
         {
-            crate::kernel::machine_integer::comparison::closed_condition_value(
-                condition.native_compat(),
-            )
-            .map(|decided| Proposition::condition_is(ConditionTerm::Constant(decided), *value))
+            crate::kernel::machine_integer::comparison::closed_condition_value(condition.old_form())
+                .map(|decided| Proposition::condition_is(ConditionTerm::Constant(decided), *value))
         }
         Proposition::And(left, right) => pair(left, right).map(|(l, r)| Proposition::And(l, r)),
         Proposition::Or(left, right) => pair(left, right).map(|(l, r)| Proposition::Or(l, r)),
@@ -3332,7 +3333,7 @@ fn comparison_form_uncached(proposition: &Proposition) -> Option<Proposition> {
     let algebraic_reads = reads
         .iter()
         .filter_map(|read| {
-            let MachineTerm::MemoryLoad(memory, pointer, LoadKind::Algebraic(read_type)) = read
+            let OldMachineTerm::MemoryLoad(memory, pointer, LoadKind::Algebraic(read_type)) = read
             else {
                 return None;
             };
@@ -3348,7 +3349,7 @@ fn comparison_form_uncached(proposition: &Proposition) -> Option<Proposition> {
         .collect::<std::collections::HashMap<_, _>>();
     let replacements = variables
         .into_iter()
-        .map(MachineTerm::Variable)
+        .map(OldMachineTerm::Variable)
         .chain(reads)
         .filter_map(|read| read_over_write_value(&read).map(|value| (read, value)));
     let mut resolved =
@@ -3425,7 +3426,7 @@ fn read_over_write_boolean(condition: &ConditionTerm) -> Option<ConditionTerm> {
     if right.bool_constant_value() != Some(false) {
         return None;
     }
-    let MachineTerm::MemoryLoad(point, pointer, LoadKind::UInt8) = left.as_ref() else {
+    let OldMachineTerm::MemoryLoad(point, pointer, LoadKind::UInt8) = left.as_ref() else {
         return None;
     };
     let version;
@@ -3685,7 +3686,7 @@ pub(crate) fn holds_by_read_over_write(proposition: &Proposition) -> bool {
 /// logical read of a stored cell evaluates to, as a diagnostic or a test
 /// reports it, now that the read names its version.
 pub(crate) fn read_over_write_program_value(value: &ProgramValue) -> ProgramValue {
-    let resolve = |term: &MachineTerm| read_over_write_value(term).unwrap_or(term.clone());
+    let resolve = |term: &OldMachineTerm| read_over_write_value(term).unwrap_or(term.clone());
     match value {
         ProgramValue::Int8(term) => ProgramValue::Int8(resolve(term)),
         ProgramValue::Int16(term) => ProgramValue::Int16(resolve(term)),
@@ -3727,10 +3728,10 @@ pub(crate) fn registered_load_point_for_variable(
 
 /// The load term a load variable names, kind included: the right-hand side
 /// of its defining equation.
-pub(crate) fn registered_load_term_for_variable(variable: &Variable) -> Option<MachineTerm> {
+pub(crate) fn registered_load_term_for_variable(variable: &Variable) -> Option<OldMachineTerm> {
     LOAD_VARIABLE_REGISTRY.with(|registry| {
         registry.borrow().get(variable).map(|load| {
-            crate::kernel::MachineTerm::read_named(
+            crate::kernel::OldMachineTerm::read_named(
                 load.point.clone(),
                 load.pointer.clone(),
                 load.kind,
@@ -3804,7 +3805,7 @@ pub(in crate::kernel) fn scalar_read_origin_for_cell(
 
 /// Build an exact read and publish its typed observation. This does not
 /// select a comparison identity or change the supplied memory state. Use
-/// `MachineTerm::memory_read` when no observation needs to be published.
+/// `OldMachineTerm::memory_read` when no observation needs to be published.
 #[cfg(test)]
 #[track_caller]
 pub(crate) fn scalar_read_for_exact_cell(
@@ -3812,7 +3813,7 @@ pub(crate) fn scalar_read_for_exact_cell(
     pointer: &Address,
     kind: LoadKind,
     bytes: u32,
-) -> MachineTerm {
+) -> OldMachineTerm {
     scalar_read_for_exact_cell_at(&ProgramPoint::unplaced(memory), pointer, kind, bytes)
 }
 
@@ -3822,10 +3823,10 @@ pub(crate) fn scalar_read_for_exact_cell_at(
     pointer: &Address,
     kind: LoadKind,
     bytes: u32,
-) -> MachineTerm {
+) -> OldMachineTerm {
     let id = read_observations::record_at(point, pointer, kind, point, bytes);
     read_observations::select(id);
-    crate::kernel::MachineTerm::read_named(point.clone(), pointer.clone(), kind)
+    crate::kernel::OldMachineTerm::read_named(point.clone(), pointer.clone(), kind)
 }
 
 pub(crate) fn is_selected_scalar_read(
@@ -4147,8 +4148,8 @@ pub(crate) fn registered_load_bytes_for_variable(variable: &Variable) -> Option<
 pub(crate) fn registered_load_origin_for_variable(
     variable: &Variable,
 ) -> Option<(SharedMemory, Address)> {
-    let read = scalar_read_observation(crate::kernel::MachineOperandView::Legacy(
-        &MachineTerm::Variable(*variable),
+    let read = scalar_read_observation(crate::kernel::MachineOperandView::Old(
+        &OldMachineTerm::Variable(*variable),
     ))?;
     Some((read.origin?.into_shared_memory(), read.pointer))
 }
@@ -4157,19 +4158,21 @@ pub(crate) fn registered_load_origin_for_variable(
 pub(crate) fn registered_load_origin_point_for_variable(
     variable: &Variable,
 ) -> Option<(ProgramPoint, Address)> {
-    let read = scalar_read_observation(crate::kernel::MachineOperandView::Legacy(
-        &MachineTerm::Variable(*variable),
+    let read = scalar_read_observation(crate::kernel::MachineOperandView::Old(
+        &OldMachineTerm::Variable(*variable),
     ))?;
     Some((read.origin?, read.pointer))
 }
 
 /// [`registered_load_origin_for_variable`] as the load term it names there:
 /// the same read, kind included, at the live origin.
-pub(crate) fn registered_load_origin_term_for_variable(variable: &Variable) -> Option<MachineTerm> {
-    let read = scalar_read_observation(crate::kernel::MachineOperandView::Legacy(
-        &MachineTerm::Variable(*variable),
+pub(crate) fn registered_load_origin_term_for_variable(
+    variable: &Variable,
+) -> Option<OldMachineTerm> {
+    let read = scalar_read_observation(crate::kernel::MachineOperandView::Old(
+        &OldMachineTerm::Variable(*variable),
     ))?;
-    Some(crate::kernel::MachineTerm::read_named(
+    Some(crate::kernel::OldMachineTerm::read_named(
         read.origin?,
         read.pointer,
         read.kind,
@@ -4203,8 +4206,8 @@ pub(crate) fn loaded_pointer_predates_block(variable: &Variable, block: &Address
 }
 
 /// Retain the selected read's observation independently of any scalar name.
-pub(crate) fn record_pointer_load_source(load: &Load, read: &MachineTerm) {
-    let MachineTerm::MemoryLoad(memory, address, kind) = read else {
+pub(crate) fn record_pointer_load_source(load: &Load, read: &OldMachineTerm) {
+    let OldMachineTerm::MemoryLoad(memory, address, kind) = read else {
         return;
     };
     if let Some(observation) = read_observations::existing_at(memory, address, *kind) {
@@ -4250,10 +4253,10 @@ pub(crate) fn loaded_pointer_read_heap_identities(load: &Load) -> Option<Vec<u64
 /// Views a term as a memory load for equality reasoning: load terms pass
 /// through, and registered load variables resolve to the loads they
 /// represent. Other terms are not loads.
-pub(crate) fn viewed_as_memory_load(term: &MachineTerm) -> Option<MachineTerm> {
+pub(crate) fn viewed_as_memory_load(term: &OldMachineTerm) -> Option<OldMachineTerm> {
     match term {
-        MachineTerm::MemoryLoad(_, _, _) => Some(term.clone()),
-        MachineTerm::Variable(variable) => registered_load_term_for_variable(variable),
+        OldMachineTerm::MemoryLoad(_, _, _) => Some(term.clone()),
+        OldMachineTerm::Variable(variable) => registered_load_term_for_variable(variable),
         _ => None,
     }
 }
@@ -4293,7 +4296,7 @@ pub(crate) const LOAD_VARIABLE_RANGE: std::ops::Range<u64> =
 /// structural key and take the same complete path directly.
 ///
 /// [`canonicalize_atomic_loads`]: crate::kernel::memory_history::canonicalize_atomic_loads
-pub(crate) fn canonical_term(term: &MachineTerm) -> MachineTerm {
+pub(crate) fn canonical_term(term: &OldMachineTerm) -> OldMachineTerm {
     let cacheable = crate::kernel::memory_history::term_is_shallow_structural_cache_key(term);
     if cacheable && let Some(hit) = TERM_CACHE.with(|cache| cache.borrow().get(term).cloned()) {
         return hit;
@@ -4301,8 +4304,8 @@ pub(crate) fn canonical_term(term: &MachineTerm) -> MachineTerm {
     let structural = crate::kernel::memory_history::canonicalize_atomic_loads(term);
     // Register the live observation before its projected form can claim the
     // load's origin. Keep the established projected canonical identity.
-    if matches!(term, MachineTerm::MemoryLoad(..))
-        && matches!(structural, MachineTerm::MemoryLoad(..))
+    if matches!(term, OldMachineTerm::MemoryLoad(..))
+        && matches!(structural, OldMachineTerm::MemoryLoad(..))
     {
         canonical_scalar_read(term);
     }
@@ -4383,9 +4386,9 @@ pub(crate) fn canonical_offset_term(offset: &AddressOffset) -> AddressOffset {
 
 /// Keep an index's read structure at the producer boundary.
 pub(crate) fn canonicalized_offset_index_term(
-    bits: MachineTerm,
+    bits: OldMachineTerm,
     _facts: &mut ExecutionFacts,
-) -> MachineTerm {
+) -> OldMachineTerm {
     let bits = bits.into_index_word32();
     let observed = if term_mentions_a_memory_load(&bits) {
         select_scalar_reads(&bits)
@@ -4398,14 +4401,14 @@ pub(crate) fn canonicalized_offset_index_term(
 
 /// Legacy selected-version read policy shared by execution, resource
 /// materialization, and contract evaluation. Exact descriptor construction is
-/// `MachineTerm::memory_read`; this adapter still retains the comparison
+/// `OldMachineTerm::memory_read`; this adapter still retains the comparison
 /// identity as the read term until those callers migrate to exact states.
 pub(crate) fn canonical_form_of_load(
     memory: SharedMemory,
     pointer: Address,
     kind: LoadKind,
-) -> MachineTerm {
-    canonical_scalar_read(&MachineTerm::memory_read(memory, pointer, kind))
+) -> OldMachineTerm {
+    canonical_scalar_read(&OldMachineTerm::memory_read(memory, pointer, kind))
 }
 
 /// [`canonical_form_of_load`] of the read made at `site`: named by `site`'s
@@ -4416,8 +4419,8 @@ pub(crate) fn canonical_form_of_load_at(
     site: &ProgramPoint,
     pointer: Address,
     kind: LoadKind,
-) -> MachineTerm {
-    canonical_scalar_read(&MachineTerm::read_named(
+) -> OldMachineTerm {
+    canonical_scalar_read(&OldMachineTerm::read_named(
         ProgramPoint::read_at(site.shared_memory(), site),
         pointer,
         kind,
@@ -4429,7 +4432,7 @@ pub(crate) fn canonical_cell_load(
     source: &ProgramPoint,
     pointer: &Address,
     ty: ProgramType,
-) -> MachineTerm {
+) -> OldMachineTerm {
     if let Some(read) = point_named_cell_load(source, pointer, ty) {
         return read;
     }
@@ -4442,7 +4445,7 @@ pub(in crate::kernel) fn point_named_cell_load(
     source: &ProgramPoint,
     pointer: &Address,
     ty: ProgramType,
-) -> Option<MachineTerm> {
+) -> Option<OldMachineTerm> {
     let read = expected_point_named_cell_read(source, pointer, ty)?;
     record_indexed_cell_read(source, &read);
     Some(read)
@@ -4485,11 +4488,11 @@ fn indexed_resource_scalar_read(
     source: &ProgramPoint,
     pointer: &Address,
     ty: ProgramType,
-) -> Option<MachineTerm> {
+) -> Option<OldMachineTerm> {
     MachineIntegerType::from_program_type(ty)?;
     let kind = LoadKind::of_type(ty)?;
     let point = source.indexed_integer_version(pointer, kind)?;
-    Some(crate::kernel::MachineTerm::read_named(
+    Some(crate::kernel::OldMachineTerm::read_named(
         point,
         pointer.clone(),
         kind,
@@ -4500,13 +4503,13 @@ pub(in crate::kernel) fn expected_point_named_cell_read(
     source: &ProgramPoint,
     pointer: &Address,
     ty: ProgramType,
-) -> Option<MachineTerm> {
+) -> Option<OldMachineTerm> {
     point_named_float_load(source, pointer, ty)
         .or_else(|| indexed_resource_scalar_read(source, pointer, ty))
         .or_else(|| {
             let kind = LoadKind::of_type(ty)?;
             let point = source.entry_cell_version(pointer, ty)?;
-            Some(crate::kernel::MachineTerm::read_named(
+            Some(crate::kernel::OldMachineTerm::read_named(
                 point,
                 pointer.clone(),
                 kind,
@@ -4517,16 +4520,16 @@ pub(in crate::kernel) fn expected_point_named_cell_read(
 pub(in crate::kernel) fn observe_entry_integer_cell(
     source: &ProgramPoint,
     pointer: &Address,
-) -> Option<MachineTerm> {
+) -> Option<OldMachineTerm> {
     let kind = LoadKind::Int32;
     let point = source.entry_integer_version(pointer, kind)?;
-    let read = crate::kernel::MachineTerm::read_named(point, pointer.clone(), kind);
+    let read = crate::kernel::OldMachineTerm::read_named(point, pointer.clone(), kind);
     record_indexed_cell_read(source, &read);
     Some(read)
 }
 
-fn record_indexed_cell_read(source: &ProgramPoint, read: &MachineTerm) {
-    let MachineTerm::MemoryLoad(version, pointer, kind) = read else {
+fn record_indexed_cell_read(source: &ProgramPoint, read: &OldMachineTerm) {
+    let OldMachineTerm::MemoryLoad(version, pointer, kind) = read else {
         unreachable!("indexed resource read")
     };
     read_observations::record_at(version, pointer, *kind, source, kind.byte_width());
@@ -4660,8 +4663,8 @@ pub(crate) fn is_store_fact(condition: &ConditionTerm, value: bool) -> bool {
         return false;
     };
     let (load, stored) = match (left.as_ref(), right.as_ref()) {
-        (MachineTerm::MemoryLoad(memory, pointer, kind), stored)
-        | (stored, MachineTerm::MemoryLoad(memory, pointer, kind)) => {
+        (OldMachineTerm::MemoryLoad(memory, pointer, kind), stored)
+        | (stored, OldMachineTerm::MemoryLoad(memory, pointer, kind)) => {
             ((memory, pointer, kind), stored)
         }
         _ => return false,
@@ -4721,24 +4724,24 @@ pub(crate) fn canonical_condition_fact(fact: &Proposition) -> Proposition {
     let Proposition::ConditionIs(condition, value) = fact else {
         return fact.clone();
     };
-    Proposition::condition_is(canonical_condition(condition.native_compat()), *value)
+    Proposition::condition_is(canonical_condition(condition.old_form()), *value)
 }
 
 /// Select unresolved read descriptors with an explicit worklist. Range-fold
 /// bodies remain scoped and are not assigned a global read identity.
-fn select_scalar_reads(term: &MachineTerm) -> MachineTerm {
+fn select_scalar_reads(term: &OldMachineTerm) -> OldMachineTerm {
     select_scalar_reads_impl(term, false)
 }
 
 /// Prepare an equality-graph expression by selecting only read identities.
 /// Preserve a producer-selected read exactly; never substitute cached values.
-pub(in crate::kernel) fn select_graph_scalar_reads(term: &MachineTerm) -> MachineTerm {
+pub(in crate::kernel) fn select_graph_scalar_reads(term: &OldMachineTerm) -> OldMachineTerm {
     select_scalar_reads_impl(term, true)
 }
 
-fn select_scalar_reads_impl(term: &MachineTerm, retain_selected: bool) -> MachineTerm {
+fn select_scalar_reads_impl(term: &OldMachineTerm, retain_selected: bool) -> OldMachineTerm {
     enum Task<'a> {
-        VisitTerm(&'a MachineTerm),
+        VisitTerm(&'a OldMachineTerm),
         VisitCondition(&'a ConditionTerm),
         VisitOffset(&'a AddressOffset),
         RebuildBinary(BitvectorBinaryOp),
@@ -4778,18 +4781,18 @@ fn select_scalar_reads_impl(term: &MachineTerm, retain_selected: bool) -> Machin
                 #[cfg(test)]
                 LOAD_SUBSTITUTION_TERM_VISITS.with(|visits| visits.set(visits.get() + 1));
                 match term {
-                    MachineTerm::ThreadHandle(_) => term_results.push(term.clone()),
+                    OldMachineTerm::ThreadHandle(_) => term_results.push(term.clone()),
                     bits32_constant!(_)
                     | int64_constant!(_)
                     | uint64_constant!(_)
                     | native_constant!(_, _) => term_results.push(term.clone()),
-                    MachineTerm::Variable(variable) => {
+                    OldMachineTerm::Variable(variable) => {
                         term_results.push(
                             registered_load_term_for_variable(variable)
                                 .unwrap_or_else(|| term.clone()),
                         );
                     }
-                    MachineTerm::MemoryLoad(memory, pointer, kind) => {
+                    OldMachineTerm::MemoryLoad(memory, pointer, kind) => {
                         term_results.push(if memory.is_exact_read() {
                             comparison_identity_of_exact_read(memory, pointer, *kind)
                         } else if retain_selected && is_selected_scalar_read(memory, pointer, *kind)
@@ -4799,12 +4802,11 @@ fn select_scalar_reads_impl(term: &MachineTerm, retain_selected: bool) -> Machin
                             canonical_scalar_read(term)
                         });
                     }
-                    MachineTerm::IntegerAddress(_, _) | MachineTerm::IntegerToMachine { .. } => {
-                        term_results.push(term.clone())
-                    }
-                    MachineTerm::ClickFunctionApplication { .. }
-                    | MachineTerm::AlgebraicMatch { .. } => term_results.push(term.clone()),
-                    MachineTerm::If {
+                    OldMachineTerm::IntegerAddress(_, _)
+                    | OldMachineTerm::IntegerToMachine { .. } => term_results.push(term.clone()),
+                    OldMachineTerm::ClickFunctionApplication { .. }
+                    | OldMachineTerm::AlgebraicMatch { .. } => term_results.push(term.clone()),
+                    OldMachineTerm::If {
                         condition,
                         then_term,
                         else_term,
@@ -4814,15 +4816,15 @@ fn select_scalar_reads_impl(term: &MachineTerm, retain_selected: bool) -> Machin
                         tasks.push(Task::VisitTerm(then_term));
                         tasks.push(Task::VisitCondition(condition));
                     }
-                    MachineTerm::BoolCast { to, value } => {
+                    OldMachineTerm::BoolCast { to, value } => {
                         tasks.push(Task::RebuildBoolCast(*to));
                         tasks.push(Task::VisitCondition(value));
                     }
                     // A fold is a binder boundary: loads in its body can mention
                     // bound variables and therefore do not have a global load
                     // identity. Preserve the whole scoped term verbatim.
-                    MachineTerm::RangeFold { .. } => term_results.push(term.clone()),
-                    MachineTerm::PureFunctionApplication { name, arguments } => {
+                    OldMachineTerm::RangeFold { .. } => term_results.push(term.clone()),
+                    OldMachineTerm::PureFunctionApplication { name, arguments } => {
                         tasks.push(Task::RebuildPureFunction {
                             name: name.clone(),
                             argument_count: arguments.len(),
@@ -4992,7 +4994,7 @@ fn select_scalar_reads_impl(term: &MachineTerm, retain_selected: bool) -> Machin
             }
             Task::RebuildBoolCast(to) => {
                 let value = condition_results.pop().expect("visited cast operand");
-                term_results.push(MachineTerm::BoolCast {
+                term_results.push(OldMachineTerm::BoolCast {
                     to,
                     value: Box::new(value),
                 });
@@ -5001,7 +5003,7 @@ fn select_scalar_reads_impl(term: &MachineTerm, retain_selected: bool) -> Machin
                 let else_term = term_results.pop().expect("visited else term");
                 let then_term = term_results.pop().expect("visited then term");
                 let condition = condition_results.pop().expect("visited condition");
-                term_results.push(MachineTerm::If {
+                term_results.push(OldMachineTerm::If {
                     condition: Box::new(condition),
                     then_term: Box::new(then_term),
                     else_term: Box::new(else_term),
@@ -5013,7 +5015,7 @@ fn select_scalar_reads_impl(term: &MachineTerm, retain_selected: bool) -> Machin
             } => {
                 let first = term_results.len() - argument_count;
                 let arguments = term_results.split_off(first);
-                term_results.push(MachineTerm::rebuild_pure_application(name, arguments));
+                term_results.push(OldMachineTerm::rebuild_pure_application(name, arguments));
             }
             Task::RebuildConditionBinary(op) => {
                 let right = term_results.pop().expect("visited right condition operand");
@@ -5093,7 +5095,10 @@ fn select_scalar_reads_impl(term: &MachineTerm, retain_selected: bool) -> Machin
 /// identical. Load-free terms are fixed points of the canonical form, so
 /// they compare by identity without a canonicalization walk. Both
 /// canonicalization stages are bounded by explicit term size.
-pub(crate) fn terms_have_same_canonical_form(left: &MachineTerm, right: &MachineTerm) -> bool {
+pub(crate) fn terms_have_same_canonical_form(
+    left: &OldMachineTerm,
+    right: &OldMachineTerm,
+) -> bool {
     if left == right {
         return true;
     }
@@ -5133,7 +5138,7 @@ pub(in crate::kernel) fn operand_mentions_a_memory_load(
 ) -> bool {
     use crate::kernel::MachineOperandView as V;
     let V::Shared(root) = operand else {
-        let V::Legacy(term) = operand else {
+        let V::Old(term) = operand else {
             unreachable!()
         };
         return term_mentions_a_memory_load(term);
@@ -5194,8 +5199,7 @@ fn common_float_conversion_mentions_load(root: &KernelTerm) -> bool {
             | KernelTermNode::FloatBinary { .. } => pending.extend(term.children()),
             _ => {
                 if let Some(view) = crate::kernel::FloatOperandView::from_shared(term) {
-                    if term_mentions_a_memory_load(view.native_compat().expect("native float atom"))
-                    {
+                    if term_mentions_a_memory_load(view.old_form().expect("native float atom")) {
                         return true;
                     }
                 } else if operand_mentions_a_memory_load(crate::kernel::MachineOperandView::Shared(
@@ -5209,19 +5213,19 @@ fn common_float_conversion_mentions_load(root: &KernelTerm) -> bool {
     false
 }
 
-pub(in crate::kernel) fn term_mentions_a_memory_load(term: &MachineTerm) -> bool {
+pub(in crate::kernel) fn term_mentions_a_memory_load(term: &OldMachineTerm) -> bool {
     match term {
-        MachineTerm::ThreadHandle(_) => false,
+        OldMachineTerm::ThreadHandle(_) => false,
         bits32_constant!(_)
-        | MachineTerm::Variable(_)
+        | OldMachineTerm::Variable(_)
         | int64_constant!(_)
         | uint64_constant!(_)
         | native_constant!(_, _) => false,
-        MachineTerm::MemoryLoad(_, _, _) => true,
-        MachineTerm::IntegerAddress(pointer, _) => pointer
+        OldMachineTerm::MemoryLoad(_, _, _) => true,
+        OldMachineTerm::IntegerAddress(pointer, _) => pointer
             .offset
             .any_scaled_operand(|value| operand_mentions_a_memory_load(value.operand_view())),
-        MachineTerm::If {
+        OldMachineTerm::If {
             condition,
             then_term,
             else_term,
@@ -5233,16 +5237,16 @@ pub(in crate::kernel) fn term_mentions_a_memory_load(term: &MachineTerm) -> bool
         // The structural stage canonicalizes inside fold bodies even though
         // name substitution stops at the binder, so a fold may still change
         // under the canonical form.
-        MachineTerm::RangeFold { .. } => true,
-        MachineTerm::PureFunctionApplication { name: _, arguments } => {
+        OldMachineTerm::RangeFold { .. } => true,
+        OldMachineTerm::PureFunctionApplication { name: _, arguments } => {
             arguments.iter().any(term_mentions_a_memory_load)
         }
-        MachineTerm::ClickFunctionApplication { .. } => true,
-        MachineTerm::AlgebraicMatch { arms, .. } => arms
+        OldMachineTerm::ClickFunctionApplication { .. } => true,
+        OldMachineTerm::AlgebraicMatch { arms, .. } => arms
             .iter()
             .any(|arm| term_mentions_a_memory_load(&arm.body)),
-        MachineTerm::IntegerToMachine { .. } => true,
-        MachineTerm::BoolCast { value, .. } => condition_mentions_a_memory_load(value),
+        OldMachineTerm::IntegerToMachine { .. } => true,
+        OldMachineTerm::BoolCast { value, .. } => condition_mentions_a_memory_load(value),
         term => {
             if let Some((_, left, right)) = term.as_binary() {
                 term_mentions_a_memory_load(left) || term_mentions_a_memory_load(right)
@@ -5429,8 +5433,8 @@ pub(crate) mod load_variable_fact_census {
         let variable = load_variable_for_cell(&memory, &pointer, LoadKind::Int32);
         let native = Proposition::condition_is(
             ConditionTerm::signed_less_than(
-                MachineTerm::Variable(variable),
-                MachineTerm::constant(5),
+                OldMachineTerm::Variable(variable),
+                OldMachineTerm::constant(5),
             ),
             true,
         );
@@ -5438,7 +5442,7 @@ pub(crate) mod load_variable_fact_census {
             ConditionTerm::integer_less_than(
                 crate::kernel::IntegerTerm::from_machine(
                     MachineIntegerType::Int32,
-                    MachineTerm::Variable(variable),
+                    OldMachineTerm::Variable(variable),
                 )
                 .unwrap(),
                 crate::kernel::IntegerTerm::constant(5.into()),
@@ -5473,7 +5477,7 @@ pub(crate) mod load_variable_fact_census {
             return;
         }
         let kind = match proposition {
-            Proposition::ConditionIs(condition, _) => match condition.native_compat() {
+            Proposition::ConditionIs(condition, _) => match condition.old_form() {
                 crate::kernel::integer_comparison_condition!(_, _) => {
                     "condition: integer comparison".to_string()
                 }
@@ -5518,7 +5522,7 @@ pub(crate) mod load_variable_fact_census {
 /// Those two terms denote one value, but no rule relates them, so a fact
 /// stated with one does not prove a goal stated with the other. Each report
 /// names the source line that built the memory-named read, as the read
-/// constructor `MachineTerm::read_named` records it through
+/// constructor `OldMachineTerm::read_named` records it through
 /// `#[track_caller]` (the wrappers that build reads pass their callers on),
 /// which is the producer still to migrate. Two different points with equal memory are not
 /// reported: that is the precision the migration adds.
@@ -5552,7 +5556,7 @@ pub(crate) mod mixed_read_names {
     }
 
     /// Files the source line that built a memory-named read, from the read
-    /// constructor (`MachineTerm::read_named`). The first producer of a read
+    /// constructor (`OldMachineTerm::read_named`). The first producer of a read
     /// is kept.
     pub(crate) fn record_producer(
         point: &ProgramPoint,
@@ -5658,7 +5662,11 @@ pub(crate) mod duplicate_read_names {
         };
         let stored = version.memory().known_value(pointer);
         let read = |memory: &SharedMemory| {
-            crate::kernel::MachineTerm::read_named(ProgramPoint::at(memory), pointer.clone(), kind)
+            crate::kernel::OldMachineTerm::read_named(
+                ProgramPoint::at(memory),
+                pointer.clone(),
+                kind,
+            )
         };
         let empty = PureFactContext::new();
         let duplicate = earlier.iter().any(|earlier| {
@@ -5783,8 +5791,8 @@ fn mint_load_variable_at(
 // Keep the actual producer expression, including its live state and
 // pointer. Load identities can recur in disconnected model arms; their first
 // registered origin is not necessarily in the current arm's memory history.
-fn record_wide_load_observation(term: &MachineTerm, variable: Variable) {
-    let MachineTerm::MemoryLoad(memory, pointer, LoadKind::Bits64) = term else {
+fn record_wide_load_observation(term: &OldMachineTerm, variable: Variable) {
+    let OldMachineTerm::MemoryLoad(memory, pointer, LoadKind::Bits64) = term else {
         return;
     };
     if registered_load_kind_for_variable(&variable) != Some(LoadKind::Bits64) {
@@ -5841,7 +5849,7 @@ pub(crate) fn latest_pointer_read_observation(value: &Address) -> Option<(Shared
         .with(|registry| registry.borrow().get(&(epoch, value.clone())).cloned())
 }
 
-pub(crate) fn latest_wide_load_observation(variable: &Variable) -> Option<MachineTerm> {
+pub(crate) fn latest_wide_load_observation(variable: &Variable) -> Option<OldMachineTerm> {
     let epoch = LOAD_ORIGIN_EPOCH.with(std::cell::Cell::get);
     crate::instrumentation::record_deterministic_work(1);
     WIDE_LOAD_OBSERVATIONS.with(|registry| {
@@ -5849,7 +5857,7 @@ pub(crate) fn latest_wide_load_observation(variable: &Variable) -> Option<Machin
             .borrow()
             .get(&(epoch, *variable))
             .map(|(point, pointer)| {
-                crate::kernel::MachineTerm::read_named(
+                crate::kernel::OldMachineTerm::read_named(
                     point.clone(),
                     pointer.clone(),
                     LoadKind::Bits64,
@@ -5865,14 +5873,14 @@ pub(crate) fn comparison_identity_of_exact_read(
     point: &ProgramPoint,
     pointer: &Address,
     kind: LoadKind,
-) -> MachineTerm {
+) -> OldMachineTerm {
     match point
         .indexed_integer_version(pointer, kind)
         .or_else(|| point.call_output_integer_version(pointer, kind))
         .or_else(|| point.entry_integer_version(pointer, kind))
         .or_else(|| point.has_certified_read_view().then(|| point.clone()))
     {
-        Some(version) => crate::kernel::MachineTerm::read_named(version, pointer.clone(), kind),
+        Some(version) => crate::kernel::OldMachineTerm::read_named(version, pointer.clone(), kind),
         None => canonical_form_of_load_at(point, pointer.clone(), kind),
     }
 }
@@ -5881,8 +5889,9 @@ pub(crate) fn comparison_identity_of_exact_read(
 /// Exact construction, comparison identity selection, and observation
 /// publication are separate operations. Until exact-state lowering migrates,
 /// callers still retain the selected identity as their read term.
-pub(in crate::kernel) fn canonical_scalar_read(bits: &MachineTerm) -> MachineTerm {
-    if matches!(bits, MachineTerm::MemoryLoad(point, _, _) if point.read_version_id().is_some()) {
+pub(in crate::kernel) fn canonical_scalar_read(bits: &OldMachineTerm) -> OldMachineTerm {
+    if matches!(bits, OldMachineTerm::MemoryLoad(point, _, _) if point.read_version_id().is_some())
+    {
         return bits.clone();
     }
     let Some(descriptor) = ScalarReadDescriptor::from_term(bits) else {
@@ -5891,7 +5900,7 @@ pub(in crate::kernel) fn canonical_scalar_read(bits: &MachineTerm) -> MachineTer
     if let Some((identity, typed)) =
         SCALAR_READ_IDENTITY_CACHE.with(|cache| cache.borrow().get(bits).cloned())
     {
-        let MachineTerm::MemoryLoad(memory, pointer, kind) = identity.as_legacy_read() else {
+        let OldMachineTerm::MemoryLoad(memory, pointer, kind) = identity.as_legacy_read() else {
             unreachable!("cached scalar read identity");
         };
         // Preserve master's intrinsic byte/halfword width on cache hits.
@@ -5924,7 +5933,7 @@ pub(in crate::kernel) fn canonical_scalar_read(bits: &MachineTerm) -> MachineTer
     identity.into_legacy_read()
 }
 
-pub(crate) fn latest_scalar_read_observation(read: &MachineTerm) -> Option<MachineTerm> {
+pub(crate) fn latest_scalar_read_observation(read: &OldMachineTerm) -> Option<OldMachineTerm> {
     read_observations::latest(read)
 }
 
@@ -5934,8 +5943,8 @@ pub(crate) fn latest_scalar_read_observation(read: &MachineTerm) -> Option<Machi
 /// different symbolic states therefore shares one load variable whenever
 /// the difference is representational. The second return value is the form
 /// retained in the producer binding, exactly as registered under the name.
-pub(crate) fn load_variable_for_term(bits: &MachineTerm) -> Option<(Variable, MachineTerm)> {
-    let MachineTerm::MemoryLoad(..) = bits else {
+pub(crate) fn load_variable_for_term(bits: &OldMachineTerm) -> Option<(Variable, OldMachineTerm)> {
+    let OldMachineTerm::MemoryLoad(..) = bits else {
         return None;
     };
     // Naming is deterministic per term, and callers ask per fact atom per
@@ -5970,8 +5979,8 @@ fn has_selected_read_point(point: &ProgramPoint) -> bool {
     point.read_version_id().is_some() && point.has_certified_read_view()
 }
 
-fn load_variable_for_term_uncached(bits: &MachineTerm) -> Option<(Variable, MachineTerm)> {
-    if let MachineTerm::MemoryLoad(point, pointer, kind) = bits
+fn load_variable_for_term_uncached(bits: &OldMachineTerm) -> Option<(Variable, OldMachineTerm)> {
+    if let OldMachineTerm::MemoryLoad(point, pointer, kind) = bits
         && has_selected_read_point(point)
     {
         let bytes =
@@ -5980,8 +5989,8 @@ fn load_variable_for_term_uncached(bits: &MachineTerm) -> Option<(Variable, Mach
         return Some((variable, bits.clone()));
     }
     let canonical = crate::kernel::memory_history::canonicalize_atomic_loads(bits);
-    if let MachineTerm::MemoryLoad(memory, pointer, kind) = &canonical {
-        let MachineTerm::MemoryLoad(origin, _, _) = bits else {
+    if let OldMachineTerm::MemoryLoad(memory, pointer, kind) = &canonical {
+        let OldMachineTerm::MemoryLoad(origin, _, _) = bits else {
             unreachable!("the pattern above matched a memory load");
         };
         // A cell of the canonical state holding this cell's own read (a
@@ -5990,7 +5999,7 @@ fn load_variable_for_term_uncached(bits: &MachineTerm) -> Option<(Variable, Mach
         // the canonical state is projected from, holds it, so the cell is
         // asked of the canonical state. Only a read of the same address
         // and kind qualifies, so no stored value replaces a read.
-        if let Some(MachineTerm::Variable(held)) = memory
+        if let Some(OldMachineTerm::Variable(held)) = memory
             .memory()
             .known_value(pointer)
             .and_then(|value| crate::kernel::spec::program_value_bitvector_term(&value))
@@ -6032,13 +6041,13 @@ fn load_variable_for_term_uncached(bits: &MachineTerm) -> Option<(Variable, Mach
     // resolution is structural and assumption-free, and the havoc's retention
     // decision is re-checked during certification, so this adds no alias
     // approximation of its own.
-    if let MachineTerm::Variable(variable) = &canonical
-        && let MachineTerm::MemoryLoad(_, _, kind) = bits
+    if let OldMachineTerm::Variable(variable) = &canonical
+        && let OldMachineTerm::MemoryLoad(_, _, kind) = bits
         && registered_load_kind_for_variable(variable) == Some(*kind)
     {
         return Some((*variable, bits.clone()));
     }
-    let MachineTerm::MemoryLoad(memory, pointer, kind) = bits else {
+    let OldMachineTerm::MemoryLoad(memory, pointer, kind) = bits else {
         unreachable!("the pattern above matched a memory load");
     };
     Some((
@@ -6054,7 +6063,7 @@ fn load_variable_for_term_uncached(bits: &MachineTerm) -> Option<(Variable, Mach
 /// downstream.
 #[cfg(test)]
 fn mint_load_variable(
-    bits: &MachineTerm,
+    bits: &OldMachineTerm,
     facts: &mut ExecutionFacts,
     _assumptions: &PureFactContext,
     source: Option<&LoadSourceId>,
@@ -6071,7 +6080,7 @@ fn mint_load_variable(
 #[cfg(test)]
 pub(crate) fn record_load_variable_defining_fact(
     variable: Variable,
-    load: MachineTerm,
+    load: OldMachineTerm,
     facts: &mut ExecutionFacts,
 ) {
     record_load_variable_defining_fact_with_source(variable, load, facts, None);
@@ -6080,7 +6089,7 @@ pub(crate) fn record_load_variable_defining_fact(
 #[cfg(test)]
 pub(crate) fn record_load_variable_defining_fact_with_source(
     variable: Variable,
-    load: MachineTerm,
+    load: OldMachineTerm,
     facts: &mut ExecutionFacts,
     source: Option<&LoadSourceId>,
 ) {
@@ -6089,12 +6098,12 @@ pub(crate) fn record_load_variable_defining_fact_with_source(
 
 fn record_load_variable_defining_fact_with_source_and_pointer(
     variable: Variable,
-    load: MachineTerm,
+    load: OldMachineTerm,
     facts: &mut ExecutionFacts,
     source: Option<&LoadSourceId>,
     typed_pointer_value: Option<&Address>,
 ) {
-    let MachineTerm::MemoryLoad(memory, pointer, kind) = &load else {
+    let OldMachineTerm::MemoryLoad(memory, pointer, kind) = &load else {
         // `load_variable_for_term` currently returns a memory load's
         // canonical operand.  Keep this guard explicit so future changes
         // cannot attach producer metadata to an unrelated term.
@@ -6119,7 +6128,7 @@ fn record_load_variable_defining_fact_with_source_and_pointer(
                 LoadKind::Int32 | LoadKind::UInt32 | LoadKind::Float32 => MachineIntegerType::Int32,
             },
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(variable)),
+            left: Box::new(OldMachineTerm::Variable(variable)),
             // Cite the same read as logical lowering. A selected point already
             // supplies the read's name.
             right: Box::new(if has_selected_read_point(memory) {
@@ -6284,7 +6293,7 @@ pub(in crate::kernel) fn cached_symbolic_storage_cell_value(
     pointer: &Address,
     program_type: ProgramType,
 ) -> Option<ProgramValue> {
-    let (kind, wrap): (LoadKind, fn(MachineTerm) -> ProgramValue) = match program_type {
+    let (kind, wrap): (LoadKind, fn(OldMachineTerm) -> ProgramValue) = match program_type {
         // A signed byte read is its own load.
         ProgramType::Int8 => (LoadKind::Int8, ProgramValue::Int8),
         ProgramType::Int16 => (LoadKind::Int16, ProgramValue::Int16),
@@ -6295,7 +6304,7 @@ pub(in crate::kernel) fn cached_symbolic_storage_cell_value(
         ProgramType::Int64 => (LoadKind::Bits64, ProgramValue::Int64),
         ProgramType::UInt64 => (LoadKind::Bits64, ProgramValue::UInt64),
         _ if program_type.is_object_pointer() => {
-            let load = crate::kernel::MachineTerm::read_named(
+            let load = crate::kernel::OldMachineTerm::read_named(
                 ProgramPoint::unplaced(&(crate::kernel::intern_memory(memory.clone()))),
                 pointer.clone(),
                 LoadKind::Int32,
@@ -6312,7 +6321,7 @@ pub(in crate::kernel) fn cached_symbolic_storage_cell_value(
         }
         _ => return None,
     };
-    let load = crate::kernel::MachineTerm::read_named(
+    let load = crate::kernel::OldMachineTerm::read_named(
         ProgramPoint::unplaced(&(crate::kernel::intern_memory(memory.clone()))),
         pointer.clone(),
         kind,
@@ -6336,7 +6345,7 @@ pub(in crate::kernel) fn symbolic_storage_cell_value(
         if record_width && pointer.base.is_local_block() {
             record_load_access_width(memory, pointer, program_type.byte_width());
         }
-        let load = crate::kernel::MachineTerm::read_named(
+        let load = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::read_at_optional(&(crate::kernel::intern_memory(memory.clone())), site),
             pointer.clone(),
             LoadKind::Int32,
@@ -6456,7 +6465,7 @@ mod tests {
             let before = intern_memory_ref(&memory);
             let after = crate::kernel::intern_memory(memory.store(other, int32(9)));
             let integer = || {
-                canonical_scalar_read(&MachineTerm::read_named(
+                canonical_scalar_read(&OldMachineTerm::read_named(
                     ProgramPoint::at(&after),
                     cell.clone(),
                     LoadKind::Bits64,
@@ -6470,7 +6479,7 @@ mod tests {
                 let integer_read = integer();
                 (integer_read, pointer())
             };
-            let MachineTerm::MemoryLoad(point, address, _) = &integer_read else {
+            let OldMachineTerm::MemoryLoad(point, address, _) = &integer_read else {
                 panic!("a selected integer read: {integer_read:?}");
             };
             assert_eq!(
@@ -6543,8 +6552,8 @@ mod tests {
         let after = crate::kernel::intern_memory(memory.store(other, int32(9)));
         record_load_access_width(before.memory(), &pointer, 4);
         record_load_access_width(after.memory(), &pointer, 4);
-        let first = MachineTerm::memory_read(before.clone(), pointer.clone(), LoadKind::Int32);
-        let second = MachineTerm::memory_read(after.clone(), pointer.clone(), LoadKind::Int32);
+        let first = OldMachineTerm::memory_read(before.clone(), pointer.clone(), LoadKind::Int32);
+        let second = OldMachineTerm::memory_read(after.clone(), pointer.clone(), LoadKind::Int32);
         assert_ne!(
             first, second,
             "exact descriptors retain their selected memory"
@@ -6574,7 +6583,7 @@ mod tests {
         let legacy = canonical_scalar_read(&second);
         assert_eq!(&legacy, second_identity.as_legacy_read());
         let observation =
-            scalar_read_observation(crate::kernel::MachineOperandView::Legacy(&legacy)).unwrap();
+            scalar_read_observation(crate::kernel::MachineOperandView::Old(&legacy)).unwrap();
         assert_eq!(observation.origin, Some(ProgramPoint::at(&after)));
         assert_eq!(observation.bytes, 4);
         assert_eq!(
@@ -6646,7 +6655,7 @@ mod tests {
         let ExpressionOutcome::Value(value) = &path.outcome else {
             panic!("static storage supplies the word: {:?}", path.outcome);
         };
-        let Some(MachineTerm::MemoryLoad(version, address, kind)) =
+        let Some(OldMachineTerm::MemoryLoad(version, address, kind)) =
             crate::kernel::spec::program_value_bitvector_term(&value.native())
         else {
             panic!("one symbolic word read");
@@ -6660,11 +6669,10 @@ mod tests {
                 .and_then(|version| version.read_version_id()),
             entry.program_point_id(),
         );
-        let written = next.clone().with_memory(
-            next.memory()
-                .clone()
-                .store(cell.clone(), ProgramValue::Int32(MachineTerm::constant(7))),
-        );
+        let written = next.clone().with_memory(next.memory().clone().store(
+            cell.clone(),
+            ProgramValue::Int32(OldMachineTerm::constant(7)),
+        ));
         assert!(
             written
                 .program_point()
@@ -6739,7 +6747,7 @@ mod tests {
         let ExpressionOutcome::Value(value) = &path.outcome else {
             panic!("expected the call-modified value: {:?}", path.outcome);
         };
-        let Some(MachineTerm::MemoryLoad(version, address, kind)) =
+        let Some(OldMachineTerm::MemoryLoad(version, address, kind)) =
             crate::kernel::spec::program_value_bitvector_term(&value.native())
         else {
             panic!("expected a typed integer read");
@@ -6821,7 +6829,7 @@ mod tests {
         let ExpressionOutcome::Value(value) = &path.outcome else {
             panic!("the call initialized the cell: {:?}", path.outcome);
         };
-        let Some(MachineTerm::MemoryLoad(version, address, kind)) =
+        let Some(OldMachineTerm::MemoryLoad(version, address, kind)) =
             crate::kernel::spec::program_value_bitvector_term(&value.native())
         else {
             panic!("one typed word read");
@@ -6925,7 +6933,7 @@ mod tests {
 
         assert_eq!(
             compare(&first),
-            crate::kernel::MachineTerm::read_named(first.clone(), address.clone(), kind),
+            crate::kernel::OldMachineTerm::read_named(first.clone(), address.clone(), kind),
         );
         assert_ne!(compare(&first), compare(&second));
     }
@@ -6943,7 +6951,7 @@ mod tests {
         let before = intern_memory_ref(&memory);
         let after = crate::kernel::intern_memory(memory.store(pointer.clone(), int32(9)));
         let identity = |memory: SharedMemory, kind| {
-            let read = MachineTerm::memory_read(memory, pointer.clone(), kind);
+            let read = OldMachineTerm::memory_read(memory, pointer.clone(), kind);
             scalar_reads::select_comparison_identity(
                 ScalarReadDescriptor::from_term(&read).unwrap(),
             )
@@ -7020,7 +7028,7 @@ mod tests {
             (LoadKind::Int16, 2),
             (LoadKind::UInt16, 2),
         ] {
-            let raw = crate::kernel::MachineTerm::read_named(
+            let raw = crate::kernel::OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 pointer.clone(),
                 kind,
@@ -7028,7 +7036,7 @@ mod tests {
             for _ in 0..2 {
                 let read = canonical_scalar_read(&raw);
                 assert_eq!(
-                    scalar_read_observation(crate::kernel::MachineOperandView::Legacy(&read))
+                    scalar_read_observation(crate::kernel::MachineOperandView::Old(&read))
                         .unwrap()
                         .bytes,
                     bytes,
@@ -7036,14 +7044,14 @@ mod tests {
                 );
             }
         }
-        let wide = crate::kernel::MachineTerm::read_named(
+        let wide = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
             pointer,
             LoadKind::Int32,
         );
         let read = canonical_scalar_read(&wide);
         assert_eq!(
-            scalar_read_observation(crate::kernel::MachineOperandView::Legacy(&read))
+            scalar_read_observation(crate::kernel::MachineOperandView::Old(&read))
                 .unwrap()
                 .bytes,
             8,
@@ -7058,7 +7066,7 @@ mod tests {
             let memory = crate::kernel::intern_memory(SymbolicMemory::new());
             let pointer = Address::symbolic(Variable(993149));
             let name = load_variable_for_exact_cell(&memory, &pointer, LoadKind::Int32, bytes);
-            let raw = crate::kernel::MachineTerm::read_named(
+            let raw = crate::kernel::OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 pointer.clone(),
                 LoadKind::Int32,
@@ -7068,10 +7076,10 @@ mod tests {
                 bytes
             );
             let canonical = canonical_term(&raw);
-            assert!(matches!(canonical, MachineTerm::MemoryLoad(..)));
+            assert!(matches!(canonical, OldMachineTerm::MemoryLoad(..)));
             assert_eq!(registered_load_bytes_for_variable(&name), Some(bytes));
             assert_eq!(
-                scalar_read_observation(crate::kernel::MachineOperandView::Legacy(&canonical))
+                scalar_read_observation(crate::kernel::MachineOperandView::Old(&canonical))
                     .unwrap()
                     .bytes,
                 bytes
@@ -7451,7 +7459,7 @@ mod tests {
         );
         let address = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(955_002)), 4),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(955_002)), 4),
         };
         let alias = Address::symbolic(Variable(955_003));
         let current = base.clone().materialize_named_cell(
@@ -7680,7 +7688,7 @@ mod tests {
             .assume_proposition(Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: cell.clone(),
-                bytes: (MachineTerm::constant(8)).into(),
+                bytes: (OldMachineTerm::constant(8)).into(),
                 wide: false,
             });
         let paths = evaluate_spec_memory_load_paths(
@@ -7732,7 +7740,7 @@ mod tests {
                     .assume_proposition(Proposition::MemoryLoadable {
                         memory: memory.clone(),
                         base: cell.clone(),
-                        bytes: (MachineTerm::constant(8)).into(),
+                        bytes: (OldMachineTerm::constant(8)).into(),
                         wide: false,
                     });
                 for logical in [false, true] {
@@ -7775,7 +7783,7 @@ mod tests {
                     );
                     assert_eq!(value.program_type(), value_type);
                 }
-                let bits = crate::kernel::MachineTerm::read_named(
+                let bits = crate::kernel::OldMachineTerm::read_named(
                     ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
                     cell.clone(),
                     crate::kernel::LoadKind::Int32,
@@ -7835,13 +7843,13 @@ mod tests {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::Add(
                 Box::new(AddressOffset::scaled_int32_node(
-                    MachineTerm::Variable(Variable(944_021)),
+                    OldMachineTerm::Variable(Variable(944_021)),
                     4,
                 )),
                 Box::new(AddressOffset::Constant(16)),
             ),
         };
-        let expected = ProgramValue::Int32(MachineTerm::constant(7));
+        let expected = ProgramValue::Int32(OldMachineTerm::constant(7));
         let memory = SymbolicMemory::new().store(pointer.clone(), expected.clone());
         let paths = evaluate_logical_memory_load_paths(
             &memory,
@@ -7927,7 +7935,7 @@ mod tests {
                 );
                 assert!(!value.address().base.proven_distinct(&target.base));
             }
-            let bits = crate::kernel::MachineTerm::read_named(
+            let bits = crate::kernel::OldMachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
                 cell.clone(),
                 crate::kernel::LoadKind::Int32,
@@ -7954,7 +7962,7 @@ mod tests {
 
     #[test]
     fn indexed_load_uses_proven_alias_without_inventing_initialization() {
-        let index = MachineTerm::Variable(Variable(839));
+        let index = OldMachineTerm::Variable(Variable(839));
         let base = Address {
             base: "local:indexed".into(),
             offset: AddressOffset::Constant(0),
@@ -7966,8 +7974,10 @@ mod tests {
                 AddressOffset::scale_int32(index.clone(), 4),
             ),
         };
-        let assumptions = PureFactContext::new()
-            .assume_condition(ConditionTerm::equal(index, MachineTerm::constant(1)), true);
+        let assumptions = PureFactContext::new().assume_condition(
+            ConditionTerm::equal(index, OldMachineTerm::constant(1)),
+            true,
+        );
         let memory = SymbolicMemory::new()
             .with_block(base.base.clone(), 12)
             .store(base.offset_by_bytes(4), int32(3));
@@ -8036,9 +8046,9 @@ mod tests {
 
     #[test]
     fn ancestor_named_load_does_not_cross_into_an_aliasing_fact_context() {
-        let retained_index = MachineTerm::Variable(Variable(812));
-        let written_index = MachineTerm::Variable(Variable(813));
-        let read_index = MachineTerm::Variable(Variable(814));
+        let retained_index = OldMachineTerm::Variable(Variable(812));
+        let written_index = OldMachineTerm::Variable(Variable(813));
+        let read_index = OldMachineTerm::Variable(Variable(814));
         let at = |index| Address {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::scale_int32(index, 4),
@@ -8077,7 +8087,7 @@ mod tests {
         let [distinct_path] = distinct_paths.as_slice() else {
             panic!("the decided distinct load should have one path");
         };
-        let ExpressionOutcome::Value(ProgramValue::Int32(MachineTerm::MemoryLoad(
+        let ExpressionOutcome::Value(ProgramValue::Int32(OldMachineTerm::MemoryLoad(
             named_memory,
             named_pointer,
             LoadKind::Int32,
@@ -8117,7 +8127,7 @@ mod tests {
         let address = Address::symbolic(Variable(89_007));
         for kind in [LoadKind::Int32, LoadKind::Bits64] {
             let read = || {
-                crate::kernel::MachineTerm::read_named(
+                crate::kernel::OldMachineTerm::read_named(
                     ProgramPoint::starting_at(&memory).for_exact_read(),
                     address.clone(),
                     kind,
@@ -8150,7 +8160,7 @@ mod tests {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::Constant(12),
         };
-        let load = crate::kernel::MachineTerm::read_named(
+        let load = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
             pointer.clone(),
             crate::kernel::LoadKind::Int32,
@@ -8191,7 +8201,7 @@ mod tests {
             (LoadKind::Int128, MachineIntegerType::Int128),
             (LoadKind::UInt128, MachineIntegerType::UInt128),
         ] {
-            let raw = crate::kernel::MachineTerm::read_named(
+            let raw = crate::kernel::OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 pointer.clone(),
                 kind,
@@ -8203,7 +8213,7 @@ mod tests {
                 ConditionTerm::Compare {
                     format,
                     relation: CompareRelation::Equal,
-                    left: Box::new(MachineTerm::Variable(variable)),
+                    left: Box::new(OldMachineTerm::Variable(variable)),
                     right: Box::new(descriptor),
                 },
                 true,
@@ -8232,7 +8242,7 @@ mod tests {
         let memory = intern_memory(SymbolicMemory::new());
         let address = Address::symbolic(Variable(299_201));
         let raw = |pointer, kind| {
-            crate::kernel::MachineTerm::read_named(ProgramPoint::at(&memory), pointer, kind)
+            crate::kernel::OldMachineTerm::read_named(ProgramPoint::at(&memory), pointer, kind)
         };
         let (variable, definition) =
             load_variable_for_term(&raw(address.clone(), LoadKind::Int32)).unwrap();
@@ -8253,8 +8263,8 @@ mod tests {
             let other = load_variable_for_term(&raw(pointer, kind)).unwrap().0;
             let changed = Proposition::condition_is(
                 ConditionTerm::equal(
-                    MachineTerm::Variable(variable),
-                    MachineTerm::Variable(other),
+                    OldMachineTerm::Variable(variable),
+                    OldMachineTerm::Variable(other),
                 ),
                 true,
             );
@@ -8273,8 +8283,8 @@ mod tests {
         // it with an equal-content descriptor from this new arena does not.
         let replacement = Proposition::condition_is(
             ConditionTerm::equal(
-                MachineTerm::Variable(variable),
-                crate::kernel::MachineTerm::read_named(
+                OldMachineTerm::Variable(variable),
+                crate::kernel::OldMachineTerm::read_named(
                     ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
                     Address::symbolic(Variable(299_201)),
                     LoadKind::Int32,
@@ -8297,7 +8307,7 @@ mod tests {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::Constant(12),
         };
-        let load = crate::kernel::MachineTerm::read_named(
+        let load = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
             pointer,
             crate::kernel::LoadKind::Int32,
@@ -8332,7 +8342,7 @@ mod tests {
             offset: AddressOffset::Constant(20),
         };
         let first_memory = crate::kernel::intern_memory(SymbolicMemory::new());
-        let first_load = crate::kernel::MachineTerm::read_named(
+        let first_load = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&first_memory),
             pointer.clone(),
             crate::kernel::LoadKind::Int32,
@@ -8353,7 +8363,7 @@ mod tests {
         // Exercise the raw descriptor form too: a proposition carried into a
         // new epoch must not carry producer authority.
         let fact = ExecutionPureFact::certified(Proposition::condition_is(
-            ConditionTerm::equal(MachineTerm::Variable(variable), first_load),
+            ConditionTerm::equal(OldMachineTerm::Variable(variable), first_load),
             true,
         ))
         .with_generated_load_binding(produced.generated_load_binding().unwrap().clone())
@@ -8365,7 +8375,7 @@ mod tests {
         // cell in the new epoch is another term.
         crate::kernel::primitives::start_fresh_memory_arena();
         let second_memory = crate::kernel::intern_memory(SymbolicMemory::new());
-        let second_load = crate::kernel::MachineTerm::read_named(
+        let second_load = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&second_memory),
             pointer,
             crate::kernel::LoadKind::Int32,
@@ -8374,7 +8384,7 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(variable)),
+                left: Box::new(OldMachineTerm::Variable(variable)),
                 right: Box::new(second_load),
             },
             true,
@@ -8414,7 +8424,7 @@ mod tests {
                 }
                 let pointer = Address {
                     base: block,
-                    offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(841)), 4),
+                    offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(841)), 4),
                 };
                 evaluate_memory_load_paths(
                     &memory,
@@ -8480,7 +8490,7 @@ mod tests {
     fn logical_pointer_field_alias_keeps_loaded_supplier_base_after_call() {
         let _session = crate::kernel::VerificationSession::enter();
         let owner = Address::symbolic(Variable(955_920))
-            .offset_by_elements(MachineTerm::Variable(Variable(955_921)), 4);
+            .offset_by_elements(OldMachineTerm::Variable(Variable(955_921)), 4);
         let alias = Address::symbolic(Variable(955_922));
         let target = Address::symbolic(Variable(955_923));
         let right = owner.offset_by_bytes(8);
@@ -8563,7 +8573,7 @@ mod tests {
         let alias = Address::symbolic(Variable(989_961));
         let memory = SymbolicMemory::new().store(
             slot.clone(),
-            ProgramValue::UInt64(MachineTerm::uint64_constant(7)),
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(7)),
         );
         let empty = PureFactContext::new()
             .allow_symbolic_contract_loads()
@@ -8603,7 +8613,7 @@ mod tests {
             base: owner.base.clone(),
             offset: AddressOffset::add(
                 owner.offset.clone(),
-                AddressOffset::scale_int32(MachineTerm::Variable(Variable(95_011)), 4),
+                AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(95_011)), 4),
             ),
         };
         let alias = Address {
@@ -8614,8 +8624,8 @@ mod tests {
             .allow_symbolic_contract_loads()
             .assume_condition(
                 ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(95_011)),
-                    MachineTerm::constant(3),
+                    OldMachineTerm::Variable(Variable(95_011)),
+                    OldMachineTerm::constant(3),
                 ),
                 true,
             )
@@ -8649,7 +8659,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let owner = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(95_000)), 4),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(95_000)), 4),
         };
         let alias = Address::symbolic(Variable(95_001));
         let memory = SymbolicMemory::new();
@@ -8896,7 +8906,7 @@ mod tests {
             for bits in 0..count {
                 state = state.clone().with_memory(state.memory().clone().store(
                     other.clone(),
-                    ProgramValue::Int32(MachineTerm::constant(bits)),
+                    ProgramValue::Int32(OldMachineTerm::constant(bits)),
                 ));
             }
             let load = read(&state, value_type);
@@ -8936,7 +8946,7 @@ mod tests {
             PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: field.clone(),
-                bytes: (MachineTerm::constant(bytes)).into(),
+                bytes: (OldMachineTerm::constant(bytes)).into(),
                 wide: false,
             })
         };
@@ -9061,7 +9071,9 @@ mod tests {
         let pointer = OldPointer::new(target.clone(), ProgramType::Int32Pointer)
             .with_bounds(Some(SubobjectBounds::constant(target.clone(), 4)));
         let stored = ProgramValue::PointerInteger(PointerIntegerValue {
-            numeric: Box::new(ProgramValue::UInt64(MachineTerm::integer_address(target))),
+            numeric: Box::new(ProgramValue::UInt64(OldMachineTerm::integer_address(
+                target,
+            ))),
             pointer: Box::new(pointer.clone()),
             kind: PointerIntegerKind::Exact,
         });
@@ -9129,13 +9141,13 @@ mod tests {
             .unwrap()
         };
         for kind in [PointerIntegerKind::Exact, PointerIntegerKind::Tagged] {
-            let bits = MachineTerm::integer_address(target.clone());
+            let bits = OldMachineTerm::integer_address(target.clone());
             let bits = if kind == PointerIntegerKind::Tagged {
-                MachineTerm::Binary {
+                OldMachineTerm::Binary {
                     format: MachineIntegerType::UInt64,
                     op: MachineBinaryOp::BitwiseOr,
                     left: Box::new(bits),
-                    right: Box::new(MachineTerm::uint64_constant(1)),
+                    right: Box::new(OldMachineTerm::uint64_constant(1)),
                 }
             } else {
                 bits
@@ -9185,7 +9197,9 @@ mod tests {
             },
         ));
         let stored = ProgramValue::PointerInteger(PointerIntegerValue {
-            numeric: Box::new(ProgramValue::UInt64(MachineTerm::integer_address(target))),
+            numeric: Box::new(ProgramValue::UInt64(OldMachineTerm::integer_address(
+                target,
+            ))),
             pointer: Box::new(pointer.clone()),
             kind: PointerIntegerKind::Exact,
         });
@@ -9351,7 +9365,10 @@ mod tests {
         };
         let argument = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(210_510)), 4),
+            offset: AddressOffset::scaled_int32_node(
+                OldMachineTerm::Variable(Variable(210_510)),
+                4,
+            ),
         };
         let target = Address::function("callback");
         let replacement = Address::function("replacement");
@@ -9498,7 +9515,7 @@ mod tests {
         else {
             unreachable!()
         };
-        let source_word = crate::kernel::MachineTerm::read_named(
+        let source_word = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory(base.clone()))),
             source.clone(),
             crate::kernel::LoadKind::Int32,
@@ -9506,7 +9523,7 @@ mod tests {
         let (variable, _) = load_variable_for_term(&source_word).unwrap();
         let cached = base.store(
             destination.clone(),
-            ProgramValue::Int32(MachineTerm::Variable(variable)),
+            ProgramValue::Int32(OldMachineTerm::Variable(variable)),
         );
         let ProgramValue::Pointer(prefix) =
             cached.symbolic_pointer_load(None, &destination, ProgramType::Int32Pointer)
@@ -9576,7 +9593,7 @@ mod tests {
         assert!(memory.known_value(&slot).is_none());
         let variable =
             load_variable_for_exact_cell(&intern_memory_ref(&memory), &slot, LoadKind::Int32, 8);
-        let cached = ProgramValue::Int32(MachineTerm::Variable(variable));
+        let cached = ProgramValue::Int32(OldMachineTerm::Variable(variable));
         let own = |pointer| {
             ResourceFact::own_memory(MemoryRange::new_with_element_width(
                 pointer,
@@ -9643,13 +9660,13 @@ mod tests {
         let memory = SymbolicMemory::new();
         let source = Address::symbolic(Variable(989_910));
         let destination = Address::symbolic(Variable(989_911));
-        let read = crate::kernel::MachineTerm::read_named(
+        let read = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&(intern_memory_ref(&memory))),
             source.clone(),
             LoadKind::Int32,
         );
         let variable = load_variable_for_term(&read).unwrap().0;
-        let value = ProgramValue::Int32(MachineTerm::Variable(variable));
+        let value = ProgramValue::Int32(OldMachineTerm::Variable(variable));
         let empty = PureFactContext::new();
         let facts = empty.clone().assume_condition(
             ConditionTerm::address_equal(source, destination.clone()),
@@ -9728,11 +9745,11 @@ mod tests {
         let origin = intern_memory_ref(&base);
         let a = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(940_091)), 4),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(940_091)), 4),
         };
         let b = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(940_092)), 4),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(940_092)), 4),
         };
         let field_a = a.clone().offset_by_bytes(8);
         let field_b = b.clone().offset_by_bytes(8);
@@ -9757,7 +9774,7 @@ mod tests {
             true,
         );
         let canonical = |field: &Address| {
-            Address::loaded(&canonical_term(&crate::kernel::MachineTerm::read_named(
+            Address::loaded(&canonical_term(&crate::kernel::OldMachineTerm::read_named(
                 ProgramPoint::at(&origin),
                 field.clone(),
                 LoadKind::Int32,
@@ -9861,7 +9878,7 @@ mod tests {
         let slot = Address::symbolic(Variable(92_330));
         let write = Address::symbolic(Variable(92_331));
         let before = intern_memory(SymbolicMemory::new());
-        let load = crate::kernel::MachineTerm::read_named(
+        let load = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&before),
             slot.clone(),
             LoadKind::Int32,
@@ -9881,7 +9898,7 @@ mod tests {
             };
             let mut memory = before.memory().clone().store(
                 written.clone(),
-                ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
+                ProgramValue::UInt64(OldMachineTerm::uint64_constant(0)),
             );
             let mut transitions = vec![(before.memory().clone(), memory.clone(), written)];
             // Separation across more than one write requires an explicit
@@ -9891,7 +9908,7 @@ mod tests {
                 let write = slot.offset_by_bytes(16 + 8 * n);
                 memory = memory.store(
                     write.clone(),
-                    ProgramValue::UInt64(MachineTerm::uint64_constant(1)),
+                    ProgramValue::UInt64(OldMachineTerm::uint64_constant(1)),
                 );
                 transitions.push((previous, memory.clone(), write));
             }
@@ -9923,7 +9940,7 @@ mod tests {
             let ProgramValue::Pointer(result) = canonicalized_pointer_value_from_int_cell(
                 &memory,
                 &slot,
-                &ProgramValue::Int32(MachineTerm::Variable(variable)),
+                &ProgramValue::Int32(OldMachineTerm::Variable(variable)),
                 ProgramType::Int64Pointer,
                 &mut facts,
                 &context,
@@ -10020,7 +10037,7 @@ mod tests {
         let context = PureFactContext::new();
         let address = Address::symbolic(Variable(92_310));
         let retained_state = intern_memory(SymbolicMemory::new());
-        let load = crate::kernel::MachineTerm::read_named(
+        let load = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&retained_state),
             address.clone(),
             crate::kernel::LoadKind::Int32,
@@ -10031,7 +10048,7 @@ mod tests {
         let ProgramValue::Pointer(value) = canonicalized_pointer_value_from_int_cell(
             &retained_state,
             &address,
-            &ProgramValue::Int32(MachineTerm::Variable(variable)),
+            &ProgramValue::Int32(OldMachineTerm::Variable(variable)),
             ProgramType::Int64Pointer,
             &mut facts,
             &context,
@@ -10083,13 +10100,13 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let address = Address::symbolic(Variable(92_312));
         let before = SymbolicMemory::new();
-        let (variable, _) = load_variable_for_term(&crate::kernel::MachineTerm::read_named(
+        let (variable, _) = load_variable_for_term(&crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&(intern_memory_ref(&before))),
             address.clone(),
             LoadKind::Int32,
         ))
         .unwrap();
-        let cached = ProgramValue::Int32(MachineTerm::Variable(variable));
+        let cached = ProgramValue::Int32(OldMachineTerm::Variable(variable));
         let read = |memory: &SymbolicMemory, context: &PureFactContext| {
             let ProgramValue::Pointer(value) = canonicalized_pointer_value_from_int_cell(
                 memory,
@@ -10164,7 +10181,7 @@ mod tests {
         let context = PureFactContext::new();
         let address = Address::symbolic(Variable(92_311));
         let retained_state = intern_memory(SymbolicMemory::new());
-        let load = crate::kernel::MachineTerm::read_named(
+        let load = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&retained_state),
             address.clone(),
             crate::kernel::LoadKind::Int32,
@@ -10174,7 +10191,7 @@ mod tests {
         let ProgramValue::Pointer(value) = canonicalized_pointer_value_from_int_cell(
             &retained_state,
             &address,
-            &ProgramValue::Int32(MachineTerm::Variable(variable)),
+            &ProgramValue::Int32(OldMachineTerm::Variable(variable)),
             ProgramType::Int64Pointer,
             &mut facts,
             &context,
@@ -10408,7 +10425,7 @@ mod tests {
             .without_possible_aliasing_cells(&address.offset_by_bytes(4), 4, &empty)
             .store(
                 address.offset_by_bytes(4),
-                ProgramValue::Int32(MachineTerm::constant(0)),
+                ProgramValue::Int32(OldMachineTerm::constant(0)),
             );
         let changed = read(changed, &address, 99_104, 8);
         assert!(
@@ -10441,7 +10458,7 @@ mod tests {
         let scalar = read(
             SymbolicMemory::new().store(
                 scalar_address.clone(),
-                ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
+                ProgramValue::UInt64(OldMachineTerm::uint64_constant(0)),
             ),
             &scalar_address,
             99_108,
@@ -10469,7 +10486,7 @@ mod tests {
         let address = Address::symbolic(Variable(103_001));
         let stored = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(103_002)), 4),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(103_002)), 4),
         };
         let memory = SymbolicMemory::new().store(
             address.clone(),
@@ -10492,14 +10509,14 @@ mod tests {
         );
         let wrong_value = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(103_004)), 4),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(103_004)), 4),
         };
         assert!(normalize_using_conditions(&equality(&read, &wrong_value), &[], &facts).is_err());
         let partial = memory
             .without_possible_aliasing_cells(&address.offset_by_bytes(4), 4, &context)
             .store(
                 address.offset_by_bytes(4),
-                ProgramValue::Int32(MachineTerm::constant(0)),
+                ProgramValue::Int32(OldMachineTerm::constant(0)),
             );
         record_load_access_width(&partial, &address, 8);
         let changed = Address::loaded_value(&intern_memory(partial), &address);
@@ -10515,11 +10532,11 @@ mod tests {
         let context = PureFactContext::new();
         let address = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(104_001)), 4),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(104_001)), 4),
         };
         let written = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(104_002)), 4),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(104_002)), 4),
         };
         let stored = Address::symbolic(Variable(104_003));
         let source = SymbolicMemory::new()
@@ -10530,13 +10547,13 @@ mod tests {
             );
         record_load_access_width(&source, &address, 8);
         let source = intern_memory(source);
-        let original = crate::kernel::MachineTerm::read_named(
+        let original = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&source),
             address.clone(),
             LoadKind::Int32,
         );
         let projected = crate::kernel::memory_history::canonicalize_atomic_loads_deep(&original);
-        let MachineTerm::MemoryLoad(projected, _, _) = projected else {
+        let OldMachineTerm::MemoryLoad(projected, _, _) = projected else {
             panic!("an unresolved aliased read must remain a load");
         };
         assert_ne!(source, *projected.shared_memory());
@@ -10600,7 +10617,7 @@ mod tests {
         };
         assert_eq!(
             crate::kernel::equality_graph::logical_pointer_read_term(value.address()),
-            Some(crate::kernel::MachineTerm::read_named(
+            Some(crate::kernel::OldMachineTerm::read_named(
                 ProgramPoint::at(&(intern_memory(memory.clone()))),
                 address.clone(),
                 LoadKind::Int32
@@ -10616,7 +10633,7 @@ mod tests {
             None
         );
         assert!(!memory.is_loadable_concretely(&address, 8));
-        let cell_bits = crate::kernel::MachineTerm::read_named(
+        let cell_bits = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&(intern_memory(memory))),
             address.clone(),
             LoadKind::Int32,
@@ -10736,14 +10753,14 @@ mod pointer_comparison_tests {
                 .store(target.offset_by_bytes(4), ProgramValue::Int32(37u32.into())),
         );
         let address = Address::loaded_value(&memory, &slot).offset_by_bytes(4);
-        let raw = crate::kernel::MachineTerm::read_named(
+        let raw = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
             address,
             LoadKind::Int32,
         );
         let (name, _) = load_variable_for_term(&raw).expect("the integer read has a version name");
         assert_eq!(
-            read_over_write_value(&MachineTerm::Variable(name)),
+            read_over_write_value(&OldMachineTerm::Variable(name)),
             Some(37u32.into())
         );
     }
@@ -10881,11 +10898,11 @@ mod pointer_read_value_definition_tests {
 fn arithmetic_comparison_normalizes_selected_read_addresses_without_changing_terms() {
     use crate::kernel::{MachineBinaryOp, MachineIntegerType};
     let _session = crate::kernel::VerificationSession::enter();
-    let index = MachineTerm::Variable(Variable(989_784));
-    let written = MachineTerm::logical_machine_binary(
+    let index = OldMachineTerm::Variable(Variable(989_784));
+    let written = OldMachineTerm::logical_machine_binary(
         MachineIntegerType::UInt64,
         MachineBinaryOp::Add,
-        MachineTerm::uint64_constant(0),
+        OldMachineTerm::uint64_constant(0),
         index.clone(),
     );
     let pointer = |value| Address {
@@ -10912,14 +10929,14 @@ fn arithmetic_comparison_normalizes_selected_read_addresses_without_changing_ter
     );
     assert!(matches!(
         written,
-        MachineTerm::Binary {
+        OldMachineTerm::Binary {
             op: MachineBinaryOp::Add,
             ..
         }
     ));
     let changed = SymbolicMemory::new().store(
         pointer(index.clone()),
-        ProgramValue::Int32(MachineTerm::constant(17)),
+        ProgramValue::Int32(OldMachineTerm::constant(17)),
     );
     let different_state = equality(original, read(crate::kernel::intern_memory(changed), index));
     assert!(!crate::kernel::proposition_holds_without_facts(
@@ -10941,10 +10958,10 @@ mod structural_read_connective_tests {
         );
         let name = load_variable_for_cell(&memory, &address, LoadKind::Int32);
         let read = registered_load_term_for_variable(&name).unwrap();
-        let named = MachineTerm::Variable(name);
+        let named = OldMachineTerm::Variable(name);
         assert!(terms_have_same_canonical_form(&read, &named));
         assert!(terms_have_same_canonical_form(&named, &read));
-        let other = crate::kernel::MachineTerm::read_named(
+        let other = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
             address.offset_by_bytes(4),
             LoadKind::Int32,
@@ -10959,7 +10976,7 @@ mod structural_read_connective_tests {
         let memory = intern_memory(
             SymbolicMemory::new().store(address.clone(), ProgramValue::Int32(37u32.into())),
         );
-        let read = crate::kernel::MachineTerm::read_named(
+        let read = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
             address,
             LoadKind::Int32,
@@ -10996,17 +11013,17 @@ mod float_conversion_load_tests {
     #[test]
     fn retained_float_conversion_load_detection_keeps_opaque_integer_source_payloads() {
         let _session = crate::kernel::VerificationSession::enter();
-        let read = crate::kernel::MachineTerm::read_named(
+        let read = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
             Address::symbolic(Variable(999977)),
             LoadKind::Int32,
         );
-        for source in [read, MachineTerm::Variable(Variable(999978))] {
-            let native = MachineTerm::opaque_conversion(
+        for source in [read, OldMachineTerm::Variable(Variable(999978))] {
+            let native = OldMachineTerm::opaque_conversion(
                 "c_float32_to_int32",
-                MachineTerm::opaque_conversion(
+                OldMachineTerm::opaque_conversion(
                     "c_int32_to_float32",
-                    MachineTerm::PureFunctionApplication {
+                    OldMachineTerm::PureFunctionApplication {
                         name: "opaque_integer_source".into(),
                         arguments: vec![source],
                     },
@@ -11041,7 +11058,7 @@ fn symbolic_copied_run_reads_keep_the_original_source_address_and_point() {
     };
     let value_type = ProgramType::Int32;
     let stride = value_type.byte_width();
-    let index = MachineTerm::Variable(Variable(986_235));
+    let index = OldMachineTerm::Variable(Variable(986_235));
     for source in [
         entry.program_point(),
         ProgramPoint::of_memory(entry.memory()),
@@ -11049,9 +11066,9 @@ fn symbolic_copied_run_reads_keep_the_original_source_address_and_point() {
         for wide in [false, true] {
             let assumptions = PureFactContext::new().assume_condition(
                 if wide {
-                    ConditionTerm::uint64_equal(index.clone(), MachineTerm::uint64_constant(0))
+                    ConditionTerm::uint64_equal(index.clone(), OldMachineTerm::uint64_constant(0))
                 } else {
-                    ConditionTerm::equal(index.clone(), MachineTerm::constant(0))
+                    ConditionTerm::equal(index.clone(), OldMachineTerm::constant(0))
                 },
                 true,
             );
@@ -11098,7 +11115,8 @@ fn symbolic_copied_run_reads_keep_the_original_source_address_and_point() {
                         LoadPurpose::Logical,
                     )
                 });
-                let Some(ProgramValue::Int32(MachineTerm::MemoryLoad(point, address, kind))) = read
+                let Some(ProgramValue::Int32(OldMachineTerm::MemoryLoad(point, address, kind))) =
+                    read
                 else {
                     panic!("expected a copied word read");
                 };
@@ -11131,7 +11149,7 @@ mod float_memory_handoff_tests {
         for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
             for state in [&first, &second] {
                 let origin = state.program_point();
-                let expected = format.value(crate::kernel::MachineTerm::read_named(
+                let expected = format.value(crate::kernel::OldMachineTerm::read_named(
                     origin.clone().for_exact_read(),
                     address.clone(),
                     format.load_kind(),
@@ -11190,14 +11208,16 @@ mod float_memory_handoff_tests {
         for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
             let value_type = format.program_type();
             let bytes = value_type.byte_width();
-            let index = MachineTerm::Variable(Variable(986_234));
+            let index = OldMachineTerm::Variable(Variable(986_234));
             let pointer = Address {
                 base: base.base.clone(),
                 offset: AddressOffset::scale_int32(index.clone(), i64::from(bytes)),
             };
-            let assumptions = PureFactContext::new()
-                .assume_condition(ConditionTerm::equal(index, MachineTerm::constant(0)), true);
-            let expected = format.value(crate::kernel::MachineTerm::read_named(
+            let assumptions = PureFactContext::new().assume_condition(
+                ConditionTerm::equal(index, OldMachineTerm::constant(0)),
+                true,
+            );
+            let expected = format.value(crate::kernel::OldMachineTerm::read_named(
                 point.clone().for_exact_read(),
                 pointer.clone(),
                 format.load_kind(),
@@ -11231,12 +11251,12 @@ mod float_memory_handoff_tests {
         let _session = crate::kernel::VerificationSession::enter();
         for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
             let negative_zero = match format {
-                KernelFloatType::Float32 => MachineTerm::uint32_constant(0x80000000),
-                KernelFloatType::Float64 => MachineTerm::uint64_constant(0x8000000000000000),
+                KernelFloatType::Float32 => OldMachineTerm::uint32_constant(0x80000000),
+                KernelFloatType::Float64 => OldMachineTerm::uint64_constant(0x8000000000000000),
             };
             let nan = match format {
-                KernelFloatType::Float32 => MachineTerm::uint32_constant(0x7fc00123),
-                KernelFloatType::Float64 => MachineTerm::uint64_constant(0x7ff8000000000123),
+                KernelFloatType::Float32 => OldMachineTerm::uint32_constant(0x7fc00123),
+                KernelFloatType::Float64 => OldMachineTerm::uint64_constant(0x7ff8000000000123),
             };
             for root in [
                 KernelTermImport::default().float(format, &negative_zero),

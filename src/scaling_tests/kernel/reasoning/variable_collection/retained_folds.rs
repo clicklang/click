@@ -211,7 +211,7 @@ fn float_arithmetic_reader_summaries_visit_shared_operands_once() {
                 assert!(
                     crate::kernel::FloatOperandView::from_shared(&root)
                         .unwrap()
-                        .native_compat()
+                        .old_form()
                         .is_none()
                 );
             }
@@ -223,13 +223,13 @@ fn float_arithmetic_reader_summaries_visit_shared_operands_once() {
 fn cached_integer_condition_variable_readers_reuse_the_produced_operands() {
     use crate::kernel::{
         BooleanOperandView, IntegerComparisonOperator, IntegerTerm, KernelTermImport,
-        MachineIntegerType, MachineTerm, StoredConditionTerm,
+        MachineIntegerType, OldMachineTerm, StoredConditionTerm,
     };
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let machine = IntegerTerm::from_machine(
             MachineIntegerType::UInt64,
-            MachineTerm::Variable(Variable(979101)),
+            OldMachineTerm::Variable(Variable(979101)),
         )
         .unwrap();
         let mut operand = KernelTerm::integer_operation(
@@ -253,7 +253,7 @@ fn cached_integer_condition_variable_readers_reuse_the_produced_operands() {
         )
         .unwrap();
         let stored = StoredConditionTerm::from_root(root.clone()).unwrap();
-        let native = stored.native_compat().clone();
+        let native = stored.old_form().clone();
         let exports = KernelTermExport::machine_export_count();
         let repeats = 16;
         for mode in [
@@ -294,17 +294,17 @@ fn cached_integer_condition_variable_readers_reuse_the_produced_operands() {
 #[test]
 fn minted_scalar_comparison_readers_reuse_selected_native_read_work() {
     use crate::kernel::{
-        BooleanOperandView, CompareRelation, ConditionTerm, MachineTerm, StoredConditionTerm,
+        BooleanOperandView, CompareRelation, ConditionTerm, OldMachineTerm, StoredConditionTerm,
     };
     for size in [16, 64, 256] {
         let _session = VerificationSession::enter();
-        let mut offset = MachineTerm::Variable(Variable(979200));
+        let mut offset = OldMachineTerm::Variable(Variable(979200));
         for n in 1..size {
-            offset = MachineTerm::Binary {
+            offset = OldMachineTerm::Binary {
                 format: MachineIntegerType::Int32,
                 op: MachineBinaryOp::Add,
                 left: Box::new(offset),
-                right: Box::new(MachineTerm::Variable(Variable(979200 + n))),
+                right: Box::new(OldMachineTerm::Variable(Variable(979200 + n))),
             };
         }
         let memory = crate::kernel::intern_memory(crate::kernel::SymbolicMemory::new());
@@ -315,7 +315,7 @@ fn minted_scalar_comparison_readers_reuse_selected_native_read_work() {
         let native = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::read_named(
+            left: Box::new(OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&memory),
                 Box::new(pointer),
                 LoadKind::Int32,

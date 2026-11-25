@@ -35,7 +35,7 @@ fn copying_a_union_drops_destination_views_absent_from_source() {
         .store_union(
             destination.clone(),
             ProgramType::Int32,
-            ProgramValue::Int32(MachineTerm::constant(0x5151)),
+            ProgramValue::Int32(OldMachineTerm::constant(0x5151)),
         );
 
     let copied = copy_aggregate_fields(memory, &source, &destination, &layout);
@@ -83,20 +83,20 @@ fn forgotten_local_packet(
         .with_block(destination.base.clone(), 8)
         .store(
             source.clone(),
-            ProgramValue::Int32(MachineTerm::constant(1)),
+            ProgramValue::Int32(OldMachineTerm::constant(1)),
         );
     if union_written {
         memory = memory.store_union(
             source.offset_by_bytes(4),
             ProgramType::Int32,
-            ProgramValue::Int32(MachineTerm::constant(2)),
+            ProgramValue::Int32(OldMachineTerm::constant(2)),
         );
     }
     // `source[u] = …` for an index the facts do not place: every cell
     // and view of the block may be the one it writes.
     let unplaced = Address {
         base: source.base.clone(),
-        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(925_001)), 4),
+        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(925_001)), 4),
     };
     let memory = memory.without_possible_aliasing_cells(&unplaced, 4, &PureFactContext::new());
     assert!(memory.known_value(&source).is_none());
@@ -168,7 +168,7 @@ fn aggregate_copy_array_keeps_its_caller_source_point_after_an_earlier_field() {
     assert!(runs.next().is_none());
     assert_eq!(run.count(), 4);
     assert_eq!(run.source_point().id(), point.id());
-    let Some(ProgramValue::UInt32(MachineTerm::MemoryLoad(version, address, kind))) =
+    let Some(ProgramValue::UInt32(OldMachineTerm::MemoryLoad(version, address, kind))) =
         copied.known_value(&target.offset_by_bytes(8))
     else {
         panic!("a typed read from the caller's field");
@@ -221,7 +221,7 @@ fn aggregate_copy_names_uncached_scalar_fields_at_the_caller_versions() {
         );
         let value = copied.known_value(&target.offset_by_bytes(offset)).unwrap();
         assert_eq!(value.program_type(), ty);
-        let Some(MachineTerm::MemoryLoad(point, address, kind)) =
+        let Some(OldMachineTerm::MemoryLoad(point, address, kind)) =
             crate::kernel::spec::program_value_bitvector_term(&value)
         else {
             panic!("expected a typed source read");
@@ -279,7 +279,7 @@ fn aggregate_copy_names_forgotten_integer_fields_by_their_typed_stores() {
     let target = SymbolicMemory::frame_local_pointer(1, "forgotten_record_copy");
     for value in [
         crate::kernel::uint8(17),
-        ProgramValue::UInt64(MachineTerm::uint64_constant(42)),
+        ProgramValue::UInt64(OldMachineTerm::uint64_constant(42)),
     ] {
         let ty = value.program_type();
         let bytes = ty.byte_width();
@@ -299,7 +299,7 @@ fn aggregate_copy_names_forgotten_integer_fields_by_their_typed_stores() {
         let copied = copy_aggregate_fields_checked_at(&before, &source, &target, &layout).unwrap();
         let value = copied.known_value(&target).unwrap();
         assert_eq!(value.program_type(), ty);
-        let Some(MachineTerm::MemoryLoad(point, address, kind)) =
+        let Some(OldMachineTerm::MemoryLoad(point, address, kind)) =
             crate::kernel::spec::program_value_bitvector_term(&value)
         else {
             panic!("expected a typed source read");
@@ -406,7 +406,7 @@ fn aggregate_copy_union_reads_keep_the_caller_versions() {
     );
 
     let copied = copy_aggregate_fields_checked_at(&initial, &source, &target, &layout).unwrap();
-    let Some(ProgramValue::Int32(MachineTerm::MemoryLoad(point, address, kind))) =
+    let Some(ProgramValue::Int32(OldMachineTerm::MemoryLoad(point, address, kind))) =
         copied.known_union_value(&target_member, ProgramType::Int32)
     else {
         panic!("expected a typed caller word");
@@ -486,7 +486,7 @@ fn verified_aggregate_argument_keeps_caller_entry_read() {
     .expect("bind a checked aggregate argument");
 
     let slot = bound.locals.slot("input").expect("private argument slot");
-    let Some(ProgramValue::Int32(MachineTerm::MemoryLoad(point, address, kind))) =
+    let Some(ProgramValue::Int32(OldMachineTerm::MemoryLoad(point, address, kind))) =
         bound.memory().known_value(slot)
     else {
         panic!("expected a typed caller word");
@@ -575,7 +575,7 @@ fn aggregate_and_union_copies_keep_retained_pointer_producers() {
     assert_eq!(value.shared(), Some(&root));
     let overwritten = copied.store(
         target.clone(),
-        ProgramValue::Int32(MachineTerm::constant(0)),
+        ProgramValue::Int32(OldMachineTerm::constant(0)),
     );
     assert!(
         overwritten

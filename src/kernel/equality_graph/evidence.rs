@@ -25,8 +25,8 @@ pub(in crate::kernel) fn scalar_evidence_pair(
             left: a,
             right: b,
         } => (
-            evidence_key(MachineOperandView::Legacy(a)),
-            evidence_key(MachineOperandView::Legacy(b)),
+            evidence_key(MachineOperandView::Old(a)),
+            evidence_key(MachineOperandView::Old(b)),
         ),
         ConditionTerm::IntegerEqual(..) => {
             let view =
@@ -56,7 +56,7 @@ pub(in crate::kernel) fn scalar_evidence_pair(
 
 fn evidence_key(operand: MachineOperandView<'_>) -> SharedMachineIntegerTerm {
     match operand {
-        MachineOperandView::Legacy(term) => SharedMachineIntegerTerm::intern(
+        MachineOperandView::Old(term) => SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
             equality_graph_term_key(term),
         ),
@@ -184,14 +184,17 @@ impl EqualityGraph {
                 let Proposition::ConditionIs(condition, true) = premise else {
                     return None;
                 };
-                let (a, b) = condition.native_compat().pointer_offset_sides()?;
+                let (a, b) = condition.old_form().pointer_offset_sides()?;
                 ((a == left && b == right) || (a == right && b == left)).then_some(premise)
             })
     }
 
     #[cfg(test)]
-    pub(in crate::kernel) fn scalar_evidence_class(&self, term: &MachineTerm) -> Vec<MachineTerm> {
-        self.scalar_evidence_class_view(MachineOperandView::Legacy(term))
+    pub(in crate::kernel) fn scalar_evidence_class(
+        &self,
+        term: &OldMachineTerm,
+    ) -> Vec<OldMachineTerm> {
+        self.scalar_evidence_class_view(MachineOperandView::Old(term))
             .into_iter()
             .map(|term| term.value().clone())
             .collect()
@@ -227,7 +230,7 @@ impl EqualityGraph {
         // the allocation order of retained handles.
         fn written(term: &SharedMachineIntegerTerm) -> MachineOperandView<'_> {
             term.retained_written_operand()
-                .map(MachineOperandView::Legacy)
+                .map(MachineOperandView::Old)
                 .unwrap_or_else(|| term.operand_view())
         }
         let mut members: Vec<_> = seen.into_iter().collect();
@@ -313,7 +316,7 @@ impl EqualityGraph {
                     };
                     let view =
                         crate::kernel::machine_integer::comparison::structural_comparison_view(
-                            condition.native_compat(),
+                            condition.old_form(),
                         )?;
                     if view.negated
                         || view.relation != CompareRelation::Equal
@@ -327,9 +330,7 @@ impl EqualityGraph {
                     view.operands
                         .iter()
                         .all(|operand| match operand.operand_view() {
-                            MachineOperandView::Legacy(term) => {
-                                equality_graph_term_key(term) == *term
-                            }
+                            MachineOperandView::Old(term) => equality_graph_term_key(term) == *term,
                             MachineOperandView::Shared(_) => true,
                         })
                         .then_some(premise)
@@ -353,7 +354,7 @@ impl EqualityGraph {
         &self,
         term: MachineOperandView<'_>,
     ) -> Option<u32> {
-        if let MachineOperandView::Legacy(term) = term {
+        if let MachineOperandView::Old(term) = term {
             return self.direct_scalar_constant(term);
         }
         if let Some(bits) = term.word32_constant() {
@@ -370,7 +371,7 @@ impl EqualityGraph {
             .then_some(value as u32)
     }
 
-    pub(in crate::kernel) fn direct_scalar_constant(&self, term: &MachineTerm) -> Option<u32> {
+    pub(in crate::kernel) fn direct_scalar_constant(&self, term: &OldMachineTerm) -> Option<u32> {
         if let Some(value) = term.as_const() {
             return Some(value);
         }
@@ -378,7 +379,7 @@ impl EqualityGraph {
         let (_, R::Known(value)) = self.scalar_constant_class(term)? else {
             return None;
         };
-        let literal = MachineTerm::constant(value as u32);
+        let literal = OldMachineTerm::constant(value as u32);
         for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
             for (left, right) in [(term, &literal), (&literal, term)] {
                 crate::instrumentation::record_deterministic_work(1);

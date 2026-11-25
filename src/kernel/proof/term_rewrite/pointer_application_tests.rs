@@ -27,7 +27,7 @@ fn rewriting_an_exact_scalar_read_keeps_its_named_point() {
     let source = Address::symbolic(Variable(1008322));
     let target = Address::symbolic(Variable(1008323));
     let read = |point: &ProgramPoint, address: &Address| {
-        MachineTerm::read_named(point.clone(), Box::new(address.clone()), LoadKind::Bits64)
+        OldMachineTerm::read_named(point.clone(), Box::new(address.clone()), LoadKind::Bits64)
     };
     let original = read(&point, &source);
     let expected = read(&point, &target);
@@ -49,7 +49,7 @@ fn rewriting_an_exact_scalar_index_keeps_its_named_point() {
     let point = ProgramPoint::starting_at(&SymbolicMemory::new()).for_exact_read();
     let pointer = Address::symbolic(Variable(1008324));
     let read = |address: Address| {
-        MachineTerm::read_named(point.clone(), Box::new(address), LoadKind::UInt32)
+        OldMachineTerm::read_named(point.clone(), Box::new(address), LoadKind::UInt32)
     };
     let from = AddressOffset::Constant(0);
     let to = AddressOffset::Constant(4);
@@ -59,8 +59,8 @@ fn rewriting_an_exact_scalar_index_keeps_its_named_point() {
         expected
     );
 
-    let variable = MachineTerm::Variable(Variable(1008325));
-    let replacement = MachineTerm::constant(4);
+    let variable = OldMachineTerm::Variable(Variable(1008325));
+    let replacement = OldMachineTerm::constant(4);
     let indexed = Address {
         base: pointer.base,
         offset: AddressOffset::Int32Scaled {
@@ -92,7 +92,7 @@ fn rewriting_a_scalar_store_read_keeps_its_program_point() {
         .indexed_integer_version(&source, kind)
         .unwrap();
     assert!(version.indexed_stored_value().is_some());
-    let original = MachineTerm::read_named(version.clone(), Box::new(source.clone()), kind);
+    let original = OldMachineTerm::read_named(version.clone(), Box::new(source.clone()), kind);
 
     let source_pointer = OldPointer::new(source.clone(), ProgramType::Int32Pointer);
     let target_pointer = OldPointer::new(target.clone(), ProgramType::Int32Pointer);
@@ -101,7 +101,7 @@ fn rewriting_a_scalar_store_read_keeps_its_program_point() {
         TermRewrite::for_pointer_value_exact(&source_pointer, &target_pointer),
     ] {
         let rewritten = rewrite.bits(&original);
-        let MachineTerm::MemoryLoad(point, address, load_kind) = rewritten else {
+        let OldMachineTerm::MemoryLoad(point, address, load_kind) = rewritten else {
             panic!("the rewritten term is a read");
         };
         assert_eq!(point.read_version_id(), version.read_version_id());
@@ -130,9 +130,9 @@ fn rewriting_a_scalar_caller_store_read_keeps_its_program_point() {
         .indexed_integer_version(&source, kind)
         .expect("indexed caller store");
     assert!(version.indexed_stored_value().is_some());
-    let original = MachineTerm::read_named(version.clone(), Box::new(source.clone()), kind);
+    let original = OldMachineTerm::read_named(version.clone(), Box::new(source.clone()), kind);
     let rewritten = TermRewrite::for_pointer_exact(&source, &target).bits(&original);
-    let MachineTerm::MemoryLoad(point, address, load_kind) = rewritten else {
+    let OldMachineTerm::MemoryLoad(point, address, load_kind) = rewritten else {
         panic!("the rewritten term is a read");
     };
     assert_eq!(point.read_version_id(), version.read_version_id());
@@ -199,7 +199,7 @@ fn pure_pointer_arguments_respect_match_binders_and_avoid_capture() {
             variants,
         )]))),
     };
-    let input = MachineTerm::AlgebraicMatch {
+    let input = OldMachineTerm::AlgebraicMatch {
         scrutinee: Box::new(AlgebraicTerm {
             algebraic_type,
             node: AlgebraicTermNode::Variable(Variable(502)),
@@ -211,7 +211,7 @@ fn pure_pointer_arguments_respect_match_binders_and_avoid_capture() {
                 Address::symbolic(bound),
                 ProgramType::Int32Pointer,
             ))],
-            body: MachineTerm::ClickFunctionApplication {
+            body: OldMachineTerm::ClickFunctionApplication {
                 name: "observe".into(),
                 arguments: vec![argument(call(
                     "select",
@@ -225,7 +225,7 @@ fn pure_pointer_arguments_respect_match_binders_and_avoid_capture() {
     };
     let replacement = call("replacement", vec![argument(Address::symbolic(bound))]);
     let mut rewrite = TermRewrite::for_pointer_variable(free, &replacement);
-    let MachineTerm::AlgebraicMatch { arms, .. } = rewrite.bits(&input) else {
+    let OldMachineTerm::AlgebraicMatch { arms, .. } = rewrite.bits(&input) else {
         panic!("lost match")
     };
     assert_eq!(rewrite.refusal(), None);
@@ -233,7 +233,7 @@ fn pure_pointer_arguments_respect_match_binders_and_avoid_capture() {
         panic!("lost binder")
     };
     assert_ne!(renamed.address(), &Address::symbolic(bound));
-    let expected = MachineTerm::ClickFunctionApplication {
+    let expected = OldMachineTerm::ClickFunctionApplication {
         name: "observe".into(),
         arguments: vec![argument(call(
             "select",
@@ -261,17 +261,17 @@ fn pure_pointer_capture_cache_does_not_hide_a_free_occurrence_after_a_fold() {
     let application = call(
         "select",
         vec![PureFunctionArgument::Value(ProgramValue::Int32(
-            MachineTerm::Variable(item),
+            OldMachineTerm::Variable(item),
         ))],
     );
-    let observed = MachineTerm::ClickFunctionApplication {
+    let observed = OldMachineTerm::ClickFunctionApplication {
         name: "observe".into(),
         arguments: vec![argument(application)],
     };
-    let fold = MachineTerm::RangeFold {
-        start: Box::new(MachineTerm::constant(0)),
-        end: Box::new(MachineTerm::constant(4)),
-        initial: Box::new(MachineTerm::constant(0)),
+    let fold = OldMachineTerm::RangeFold {
+        start: Box::new(OldMachineTerm::constant(0)),
+        end: Box::new(OldMachineTerm::constant(4)),
+        initial: Box::new(OldMachineTerm::constant(0)),
         accumulator: Variable(611),
         item,
         body: Box::new(observed.clone()),
@@ -488,7 +488,7 @@ fn full_program_argument_pointer_rewrite_reaches_a_displaced_copy() {
         OldPointer::new(
             Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(id)), 1),
+                offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 1),
             },
             ProgramType::UInt8Pointer,
         )
@@ -584,7 +584,7 @@ fn displaced_program_argument_rewrite_inherits_known_replacement_bounds() {
         OldPointer::new(
             Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(id)), 1),
+                offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 1),
             },
             ProgramType::UInt8Pointer,
         )
@@ -681,13 +681,14 @@ fn displaced_copy_keeps_a_domain_not_named_by_the_full_equality() {
 
 #[test]
 fn rewriting_integer_address_zero_keeps_canonical_null_and_displacement() {
-    let word = MachineTerm::Variable(Variable(911));
-    let bits = MachineTerm::uint64_bitwise_and(word.clone(), MachineTerm::uint64_constant(!3));
+    let word = OldMachineTerm::Variable(Variable(911));
+    let bits =
+        OldMachineTerm::uint64_bitwise_and(word.clone(), OldMachineTerm::uint64_constant(!3));
     for value in [0, 1, 2, 3, 4, 5, u64::MAX] {
         for displacement in [0, 8] {
             let mut input = Address::from_integer_address(bits.clone());
             input.offset = AddressOffset::Constant(displacement);
-            let replacement = MachineTerm::uint64_constant(value);
+            let replacement = OldMachineTerm::uint64_constant(value);
             let mut rewrite = TermRewrite::for_bits(&word, &replacement);
             let output = rewrite.pointer(&input);
             assert_eq!(rewrite.refusal(), None);
@@ -716,7 +717,7 @@ fn exact_displacement_replacement_keeps_the_retained_offset() {
     let _session = VerificationSession::enter();
     let index = SharedMachineIntegerTerm::index(
         MachineIntegerType::UInt64,
-        MachineTerm::Variable(Variable(1008337)),
+        OldMachineTerm::Variable(Variable(1008337)),
     );
     let from = AddressOffset::Int64Scaled {
         value: index,

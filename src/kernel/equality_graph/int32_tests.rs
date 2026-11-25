@@ -2,15 +2,15 @@ use super::*;
 use crate::kernel::VerificationSession;
 use crate::kernel::binary_node;
 
-fn var(id: u64) -> MachineTerm {
-    MachineTerm::Variable(Variable(id))
+fn var(id: u64) -> OldMachineTerm {
+    OldMachineTerm::Variable(Variable(id))
 }
 
-fn eq(left: &MachineTerm, right: &MachineTerm) -> ConditionTerm {
+fn eq(left: &OldMachineTerm, right: &OldMachineTerm) -> ConditionTerm {
     ConditionTerm::equal(left.clone(), right.clone())
 }
 
-fn unsigned_composition(value: MachineTerm) -> MachineTerm {
+fn unsigned_composition(value: OldMachineTerm) -> OldMachineTerm {
     binary_node!(
         Int32,
         BitwiseXor,
@@ -68,9 +68,9 @@ fn unsigned_congruence_propagates_late_aliases_without_injectivity_or_signed_coe
         UInt32,
         Divide,
         Box::new(a),
-        Box::new(MachineTerm::constant(0))
+        Box::new(OldMachineTerm::constant(0))
     );
-    assert!(!graph.are_int32_equal(&undefined, &MachineTerm::constant(0)));
+    assert!(!graph.are_int32_equal(&undefined, &OldMachineTerm::constant(0)));
 }
 
 #[test]
@@ -83,9 +83,9 @@ fn unsigned_congruence_keeps_load_states_and_widths_distinct() {
     };
     let after = intern_memory(before.memory().clone().store(
         pointer.clone(),
-        ProgramValue::UInt32(MachineTerm::constant(9)),
+        ProgramValue::UInt32(OldMachineTerm::constant(9)),
     ));
-    let load = |memory, kind| MachineTerm::read_named(memory, Box::new(pointer.clone()), kind);
+    let load = |memory, kind| OldMachineTerm::read_named(memory, Box::new(pointer.clone()), kind);
     let old = load(ProgramPoint::at(&before), LoadKind::Int32);
     let value = var(90_012);
     let mut graph = EqualityGraph::default();
@@ -128,7 +128,7 @@ fn shallow_scalar_decision_uses_graph_congruence_and_keeps_branch_scope() {
             Int32,
             Add,
             Box::new(value),
-            Box::new(MachineTerm::constant(1))
+            Box::new(OldMachineTerm::constant(1))
         )
     };
     let premise = eq(&a, &b);
@@ -155,7 +155,7 @@ fn shallow_scalar_decision_uses_graph_congruence_and_keeps_branch_scope() {
 #[test]
 fn fact_transport_uses_graph_int32_congruence_without_the_legacy_index() {
     let (a, b, limit) = (var(1), var(2), var(3));
-    let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
+    let sum = |value| OldMachineTerm::add(value, OldMachineTerm::constant(1));
     let source = ConditionTerm::signed_less_than(sum(a.clone()), limit.clone());
     let target = ConditionTerm::signed_less_than(sum(b.clone()), limit);
     let premise = eq(&a, &b);
@@ -177,7 +177,7 @@ fn fact_transport_uses_registered_load_congruence_only_in_one_state() {
         offset: AddressOffset::scale_int32(index, 4),
     };
     let load = |memory: &SharedMemory, index| {
-        MachineTerm::Variable(load_variable_for_cell_with_origin(
+        OldMachineTerm::Variable(load_variable_for_cell_with_origin(
             memory,
             &pointer(index),
             crate::kernel::LoadKind::Int32,
@@ -188,14 +188,14 @@ fn fact_transport_uses_registered_load_congruence_only_in_one_state() {
     let (a, b) = (var(11), var(12));
     let after = intern_memory(before.memory().clone().store(
         pointer(b.clone()),
-        ProgramValue::Int32(MachineTerm::constant(9)),
+        ProgramValue::Int32(OldMachineTerm::constant(9)),
     ));
     let left = load(&before, a.clone());
     let right = load(&before, b.clone());
     let later = load(&after, b.clone());
-    let fact = ConditionTerm::signed_less_than(left, MachineTerm::constant(20));
-    let target = ConditionTerm::signed_less_than(right, MachineTerm::constant(20));
-    let later_target = ConditionTerm::signed_less_than(later, MachineTerm::constant(20));
+    let fact = ConditionTerm::signed_less_than(left, OldMachineTerm::constant(20));
+    let target = ConditionTerm::signed_less_than(right, OldMachineTerm::constant(20));
+    let later_target = ConditionTerm::signed_less_than(later, OldMachineTerm::constant(20));
     let context = PureFactContext::new().assume_condition(eq(&a, &b), true);
     assert!(context.condition_matches(&fact, &target));
     assert!(!context.condition_matches(&fact, &later_target));
@@ -209,10 +209,10 @@ fn resolved_four_byte_load_uses_graph_value_equality_but_keeps_state_scope() {
         offset: AddressOffset::Constant(0),
     };
     let (a, b) = (var(31), var(32));
-    let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
+    let sum = |value| OldMachineTerm::add(value, OldMachineTerm::constant(1));
     // A stored byte is a canonical `uint8` carrier: the conversion of the sum.
     let byte = |value| {
-        MachineTerm::machine_integer_cast(
+        OldMachineTerm::machine_integer_cast(
             crate::kernel::MachineIntegerType::Int32,
             crate::kernel::MachineIntegerType::UInt8,
             value,
@@ -225,7 +225,7 @@ fn resolved_four_byte_load_uses_graph_value_equality_but_keeps_state_scope() {
     );
     let after = intern_memory(before.memory().clone().store(
         pointer.clone(),
-        ProgramValue::Int32(MachineTerm::constant(9)),
+        ProgramValue::Int32(OldMachineTerm::constant(9)),
     ));
     let byte_memory = intern_memory(
         SymbolicMemory::new()
@@ -233,7 +233,7 @@ fn resolved_four_byte_load_uses_graph_value_equality_but_keeps_state_scope() {
             .store(pointer.clone(), ProgramValue::UInt8(byte(sum(a.clone())))),
     );
     let load = |memory: &SharedMemory| {
-        MachineTerm::Variable(load_variable_for_cell_with_origin(
+        OldMachineTerm::Variable(load_variable_for_cell_with_origin(
             memory,
             &pointer,
             crate::kernel::LoadKind::Int32,
@@ -243,7 +243,7 @@ fn resolved_four_byte_load_uses_graph_value_equality_but_keeps_state_scope() {
     };
     let old_load = load(&before);
     let new_load = load(&after);
-    let byte_load = MachineTerm::Variable(load_variable_for_cell_with_origin(
+    let byte_load = OldMachineTerm::Variable(load_variable_for_cell_with_origin(
         &byte_memory,
         &pointer,
         crate::kernel::LoadKind::UInt8,
@@ -280,10 +280,10 @@ fn two_resolved_four_byte_loads_compare_values_with_state_scope() {
         offset: AddressOffset::Constant(offset),
     };
     let (a, b) = (var(41), var(42));
-    let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
+    let sum = |value| OldMachineTerm::add(value, OldMachineTerm::constant(1));
     // A stored byte is a canonical `uint8` carrier: the conversion of the sum.
     let byte = |value| {
-        MachineTerm::machine_integer_cast(
+        OldMachineTerm::machine_integer_cast(
             crate::kernel::MachineIntegerType::Int32,
             crate::kernel::MachineIntegerType::UInt8,
             value,
@@ -299,7 +299,7 @@ fn two_resolved_four_byte_loads_compare_values_with_state_scope() {
     );
     let after = intern_memory(before.memory().clone().store(
         right_pointer.clone(),
-        ProgramValue::Int32(MachineTerm::constant(9)),
+        ProgramValue::Int32(OldMachineTerm::constant(9)),
     ));
     let byte_memory = intern_memory(
         SymbolicMemory::new()
@@ -315,7 +315,7 @@ fn two_resolved_four_byte_loads_compare_values_with_state_scope() {
         } else {
             crate::kernel::LoadKind::Int32
         };
-        MachineTerm::Variable(load_variable_for_cell_with_origin(
+        OldMachineTerm::Variable(load_variable_for_cell_with_origin(
             memory, pointer, kind, width, memory,
         ))
     };
@@ -348,7 +348,7 @@ fn direct_composite_int32_argument_uses_graph_with_state_scope() {
         offset: AddressOffset::scale_int32(index, 4),
     };
     let load = |memory: &SharedMemory, index| {
-        MachineTerm::Variable(load_variable_for_cell_with_origin(
+        OldMachineTerm::Variable(load_variable_for_cell_with_origin(
             memory,
             &pointer(index),
             crate::kernel::LoadKind::Int32,
@@ -359,7 +359,7 @@ fn direct_composite_int32_argument_uses_graph_with_state_scope() {
     let (a, b) = (var(51), var(52));
     let after = intern_memory(before.memory().clone().store(
         pointer(b.clone()),
-        ProgramValue::Int32(MachineTerm::constant(9)),
+        ProgramValue::Int32(OldMachineTerm::constant(9)),
     ));
     let resource = |value| Resource::Composite {
         name: "indexed-value".into(),
@@ -394,7 +394,7 @@ fn resource_instance_int32_field_uses_graph_with_state_scope() {
         offset: AddressOffset::scale_int32(index, 4),
     };
     let load = |memory: &SharedMemory, index| {
-        MachineTerm::Variable(load_variable_for_cell_with_origin(
+        OldMachineTerm::Variable(load_variable_for_cell_with_origin(
             memory,
             &pointer(index),
             crate::kernel::LoadKind::Int32,
@@ -405,7 +405,7 @@ fn resource_instance_int32_field_uses_graph_with_state_scope() {
     let (a, b) = (var(61), var(62));
     let after = intern_memory(before.memory().clone().store(
         pointer(b.clone()),
-        ProgramValue::Int32(MachineTerm::constant(9)),
+        ProgramValue::Int32(OldMachineTerm::constant(9)),
     ));
     let schema = ResourceFieldSchema::new(vec![(
         "value".into(),
@@ -417,7 +417,7 @@ fn resource_instance_int32_field_uses_graph_with_state_scope() {
             ResourceInstance::new(
                 InstanceId::from_variable(Variable(6100)),
                 "instance-value".into(),
-                vec![ProgramValue::Int32(MachineTerm::constant(3)).into()].into(),
+                vec![ProgramValue::Int32(OldMachineTerm::constant(3)).into()].into(),
                 schema.clone(),
                 vec![ProgramValue::Int32(value).into()].into(),
             )
@@ -453,7 +453,7 @@ fn certification_uses_graph_int32_equality_with_state_scope() {
         offset: AddressOffset::scale_int32(index, 4),
     };
     let load = |memory: &SharedMemory, index| {
-        MachineTerm::Variable(load_variable_for_cell_with_origin(
+        OldMachineTerm::Variable(load_variable_for_cell_with_origin(
             memory,
             &pointer(index),
             crate::kernel::LoadKind::Int32,
@@ -464,9 +464,9 @@ fn certification_uses_graph_int32_equality_with_state_scope() {
     let (a, b) = (var(81), var(82));
     let after = intern_memory(before.memory().clone().store(
         pointer(b.clone()),
-        ProgramValue::Int32(MachineTerm::constant(9)),
+        ProgramValue::Int32(OldMachineTerm::constant(9)),
     ));
-    let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
+    let sum = |value| OldMachineTerm::add(value, OldMachineTerm::constant(1));
     let left = sum(load(&before, a.clone()));
     let right = sum(load(&before, b.clone()));
     let later = sum(load(&after, b.clone()));
@@ -494,7 +494,7 @@ fn reordered_sum_matches_graph_equal_load_addends_in_one_state() {
         offset: AddressOffset::scale_int32(index, 4),
     };
     let load = |memory: &SharedMemory, index| {
-        MachineTerm::Variable(load_variable_for_cell_with_origin(
+        OldMachineTerm::Variable(load_variable_for_cell_with_origin(
             memory,
             &pointer(index),
             crate::kernel::LoadKind::Int32,
@@ -505,9 +505,9 @@ fn reordered_sum_matches_graph_equal_load_addends_in_one_state() {
     let (a, b) = (var(21), var(22));
     let after = intern_memory(before.memory().clone().store(
         pointer(b.clone()),
-        ProgramValue::Int32(MachineTerm::constant(9)),
+        ProgramValue::Int32(OldMachineTerm::constant(9)),
     ));
-    let sum = |value, other| MachineTerm::add(value, other);
+    let sum = |value, other| OldMachineTerm::add(value, other);
     let fixed = var(23);
     let left = sum(load(&before, a.clone()), fixed.clone());
     let right = sum(fixed.clone(), load(&before, b.clone()));
@@ -544,7 +544,7 @@ fn int32_classes_are_typed_and_integer_operators_have_congruence() {
             Int32,
             Add,
             Box::new(value),
-            Box::new(MachineTerm::constant(1))
+            Box::new(OldMachineTerm::constant(1))
         )
     };
     assert!(graph.are_int32_equal(&plus_one(a.clone()), &plus_one(b.clone())));
@@ -553,7 +553,7 @@ fn int32_classes_are_typed_and_integer_operators_have_congruence() {
             Int32,
             Subtract,
             Box::new(value),
-            Box::new(MachineTerm::constant(1))
+            Box::new(OldMachineTerm::constant(1))
         )
     };
     assert!(graph.are_int32_equal(&minus_one(a.clone()), &minus_one(b.clone())));
@@ -563,7 +563,7 @@ fn int32_classes_are_typed_and_integer_operators_have_congruence() {
         &AddressOffset::Variable(Variable(4)),
     );
     assert!(!graph.are_int32_equal(&var(3), &var(4)));
-    assert!(!graph.are_int32_equal(&MachineTerm::constant(0), &MachineTerm::constant(1)));
+    assert!(!graph.are_int32_equal(&OldMachineTerm::constant(0), &OldMachineTerm::constant(1)));
 }
 
 #[test]
@@ -599,16 +599,16 @@ fn int32_load_identity_keeps_states_separate() {
     let pointer = Address::symbolic(Variable(40));
     let after = intern_memory(before.memory().clone().store(
         pointer.clone(),
-        ProgramValue::Int32(MachineTerm::constant(9)),
+        ProgramValue::Int32(OldMachineTerm::constant(9)),
     ));
     let load = |memory: &SharedMemory| {
-        MachineTerm::read_named(
+        OldMachineTerm::read_named(
             ProgramPoint::at(memory),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
         )
     };
-    let named = MachineTerm::Variable(load_variable_for_cell_with_origin(
+    let named = OldMachineTerm::Variable(load_variable_for_cell_with_origin(
         &before,
         &pointer,
         crate::kernel::LoadKind::Int32,
@@ -648,7 +648,7 @@ fn int32_load_identity_keeps_states_separate() {
 #[test]
 fn offset_premises_support_scalar_graph_edges() {
     let (a, b, c) = (var(70), var(71), var(72));
-    let offset_eq = |left: MachineTerm, right: MachineTerm| {
+    let offset_eq = |left: OldMachineTerm, right: OldMachineTerm| {
         ConditionTerm::address_offset_equal(
             AddressOffset::scale_int32(left, 4),
             AddressOffset::scale_int32(right, 4),
@@ -752,8 +752,8 @@ fn recorded_shared_index_members_keep_source_order_without_exporting() {
     let _session = crate::kernel::VerificationSession::enter();
     let x = var(1081701);
     let y = var(1081702);
-    let shared = |term: &MachineTerm| {
-        let root = KernelTerm::retained_machine_operand(T::Int32, V::Legacy(term));
+    let shared = |term: &OldMachineTerm| {
+        let root = KernelTerm::retained_machine_operand(T::Int32, V::Old(term));
         S::from_shared(
             T::Int32,
             KernelTerm::machine_binary_shared(T::Int32, O::Add, [root.clone(), root]),

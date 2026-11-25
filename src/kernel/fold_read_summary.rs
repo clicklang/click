@@ -339,7 +339,7 @@ impl CheckedFoldReadSummary {
         let endpoint = |template: FoldEndpointTemplate| match template {
             FoldEndpointTemplate::Literal(value) => Some(SharedMachineIntegerTerm::index(
                 MachineIntegerType::Int32,
-                MachineTerm::constant(value),
+                OldMachineTerm::constant(value),
             )),
             FoldEndpointTemplate::Parameter(position) => match &arguments[position] {
                 PureFunctionArgument::SharedMachine(value)
@@ -478,10 +478,12 @@ impl BodyChecker<'_> {
         }
     }
 
-    fn bitvector(&self, term: &MachineTerm, scope: Scope) -> Result<(), FoldReadDecline> {
+    fn bitvector(&self, term: &OldMachineTerm, scope: Scope) -> Result<(), FoldReadDecline> {
         match term {
             bits32_constant!(_) => Ok(()),
-            MachineTerm::Variable(variable) if scope == Scope::Body && *variable == self.item => {
+            OldMachineTerm::Variable(variable)
+                if scope == Scope::Body && *variable == self.item =>
+            {
                 Ok(())
             }
             _ => Err(Self::unsupported("an evaluated machine term")),
@@ -507,7 +509,7 @@ impl BodyChecker<'_> {
             )
             && matches!(
                 elements.as_ref(),
-                SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(variable)))
+                SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::Variable(variable)))
                     if *variable == self.item
             )
     }
@@ -807,12 +809,9 @@ fn zip_proposition(
         (
             Proposition::ConditionIs(left, left_value),
             Proposition::ConditionIs(right, right_value),
-        ) if left_value == right_value => zip_condition(
-            left.native_compat(),
-            right.native_compat(),
-            assumptions,
-            checked,
-        ),
+        ) if left_value == right_value => {
+            zip_condition(left.old_form(), right.old_form(), assumptions, checked)
+        }
         (Proposition::And(a, b), Proposition::And(c, d))
         | (Proposition::Or(a, b), Proposition::Or(c, d))
         | (Proposition::Implies(a, b), Proposition::Implies(c, d)) => {
@@ -1156,7 +1155,7 @@ impl LinearOffset {
                 Some((
                     SharedMachineIntegerTerm::intern(
                         MachineIntegerType::Int32,
-                        MachineTerm::constant(index as u32),
+                        OldMachineTerm::constant(index as u32),
                     ),
                     self.constant - i128::from(index) * width,
                 ))
@@ -1193,13 +1192,13 @@ fn scaled_index_from(
 /// `left <= right` as signed `int32`, from syntax, constants, or one exact
 /// fact. Only indexed lookups: nothing scans the context.
 fn proven_signed_le(
-    left: &MachineTerm,
-    right: &MachineTerm,
+    left: &OldMachineTerm,
+    right: &OldMachineTerm,
     assumptions: &PureFactContext,
 ) -> bool {
     proven_signed_le_views(
-        MachineOperandView::Legacy(left),
-        MachineOperandView::Legacy(right),
+        MachineOperandView::Old(left),
+        MachineOperandView::Old(right),
         assumptions,
     )
 }
@@ -1328,12 +1327,12 @@ fn range_misses_interval(
         // because nothing here decides what bytes such a write set covers.
         if proven_signed_le(written.start(), written.end(), assumptions)
             && (proven_signed_le_views(
-                MachineOperandView::Legacy(written.end()),
+                MachineOperandView::Old(written.end()),
                 interval.start.operand_view(),
                 assumptions,
             ) || proven_signed_le_views(
                 interval.end.operand_view(),
-                MachineOperandView::Legacy(written.start()),
+                MachineOperandView::Old(written.start()),
                 assumptions,
             ))
         {
@@ -1389,13 +1388,13 @@ fn range_contains_interval(
             |(index, rest)| rest == 0 && index.operand_view().word32_constant() == Some(0),
         )
         && proven_signed_le_views(
-            MachineOperandView::Legacy(range.start()),
+            MachineOperandView::Old(range.start()),
             interval.start.operand_view(),
             assumptions,
         )
         && proven_signed_le_views(
             interval.end.operand_view(),
-            MachineOperandView::Legacy(range.end()),
+            MachineOperandView::Old(range.end()),
             assumptions,
         )
 }
@@ -1418,13 +1417,13 @@ fn range_contains_access(
     constant >= 0
         && constant + i128::from(bytes) <= i128::from(width)
         && proven_signed_le_views(
-            MachineOperandView::Legacy(range.start()),
+            MachineOperandView::Old(range.start()),
             index.operand_view(),
             assumptions,
         )
         && proven_signed_lt_views(
             index.operand_view(),
-            MachineOperandView::Legacy(range.end()),
+            MachineOperandView::Old(range.end()),
             assumptions,
         )
 }

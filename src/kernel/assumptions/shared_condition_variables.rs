@@ -60,13 +60,13 @@ impl Index {
                             shared = true;
                             root.clone()
                         }
-                        MachineOperandView::Legacy(MachineTerm::Variable(variable)) => {
+                        MachineOperandView::Old(OldMachineTerm::Variable(variable)) => {
                             KernelTerm::variable(
                                 KernelType::Program(value.ty().program_type()),
                                 *variable,
                             )
                         }
-                        MachineOperandView::Legacy(value) if value.as_const().is_some() => continue,
+                        MachineOperandView::Old(value) if value.as_const().is_some() => continue,
                         _ => return None,
                     };
                     // Read addresses and states have their own dependency
@@ -259,8 +259,8 @@ mod tests {
         let second = bound(product(xy.clone(), variable(994702)), 8);
         let third = bound(product(xy.clone(), xy), 9);
         let native = ConditionTerm::signed_less_equal(
-            MachineTerm::Variable(Variable(994700)),
-            MachineTerm::constant(10),
+            OldMachineTerm::Variable(Variable(994700)),
+            OldMachineTerm::constant(10),
         );
         let parent = PureFactContext::new().assume_condition(first.clone(), true);
         assert_eq!(

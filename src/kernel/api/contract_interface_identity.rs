@@ -194,7 +194,7 @@ mod tests {
                         program_type: ProgramType::Int32,
                     },
                     operator: ComparisonOperator::Equal,
-                    right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
+                    right: SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(0))),
                 }],
                 vec![],
                 vec![],

@@ -199,7 +199,7 @@ fn assert_caller_integer_reads_keep_the_entry_point(value_types: &[ProgramType])
         let pointer = ProgramValue::typed_pointer(address.clone(), pointer_type);
         let kind = LoadKind::of_type(ty).unwrap();
         let check = |read: &ProgramValue| {
-            let Some(MachineTerm::MemoryLoad(point, cell, load_kind)) =
+            let Some(OldMachineTerm::MemoryLoad(point, cell, load_kind)) =
                 program_value_bitvector_term(read)
             else {
                 panic!("expected a symbolic {ty:?} read");

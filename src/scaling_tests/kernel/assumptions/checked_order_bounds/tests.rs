@@ -106,18 +106,18 @@ fn native_order_premises_select_retained_promoted_call_bounds() {
     ] {
         for truth in [false, true] {
             let _session = crate::kernel::VerificationSession::enter();
-            let call = MachineTerm::ClickFunctionApplication {
+            let call = OldMachineTerm::ClickFunctionApplication {
                 name: "indexed_digit".into(),
                 arguments: vec![PureFunctionArgument::Value(ProgramValue::UInt64(
-                    MachineTerm::uint64_constant(7),
+                    OldMachineTerm::uint64_constant(7),
                 ))],
             };
             let endpoint =
-                MachineTerm::machine_integer_cast(MachineIntegerType::UInt8, format, call);
+                OldMachineTerm::machine_integer_cast(MachineIntegerType::UInt8, format, call);
             let literal = if format == MachineIntegerType::Int64 {
-                MachineTerm::int64_constant(48)
+                OldMachineTerm::int64_constant(48)
             } else {
-                MachineTerm::constant(48)
+                OldMachineTerm::constant(48)
             };
             let fact = ConditionTerm::Compare {
                 format,

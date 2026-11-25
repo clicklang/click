@@ -1245,7 +1245,7 @@ impl ConstructedReturnBodies {
             // its bindings, without reconstructing any child descriptions.
             if matches!(support.resource(), Resource::Instance(_)) {
                 let mut body = ConstructedReturnBody::opaque(support, occurrence.source);
-                if support.owned_quantity_term() == Some(&MachineTerm::constant(1))
+                if support.owned_quantity_term() == Some(&OldMachineTerm::constant(1))
                     && let Resource::Instance(instance) = support.resource()
                     && let Some(bounds) = opaque_boundary::construct(
                         instance,

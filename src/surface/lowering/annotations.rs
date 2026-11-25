@@ -5275,9 +5275,9 @@ impl AnnotationLowerer<'_> {
                     self.quantifier_producer,
                 )?;
                 let item_carrier = if wide {
-                    ProgramValue::UInt64(MachineTerm::Variable(variable))
+                    ProgramValue::UInt64(OldMachineTerm::Variable(variable))
                 } else {
-                    ProgramValue::Int32(MachineTerm::Variable(variable))
+                    ProgramValue::Int32(OldMachineTerm::Variable(variable))
                 };
                 let item_value = SpecExpression::Value(item_carrier.clone());
                 let mut body_environment = environment.clone();
@@ -5341,9 +5341,9 @@ impl AnnotationLowerer<'_> {
                     self.quantifier_producer,
                 )?;
                 let item_carrier = if wide {
-                    ProgramValue::UInt64(MachineTerm::Variable(variable))
+                    ProgramValue::UInt64(OldMachineTerm::Variable(variable))
                 } else {
-                    ProgramValue::Int32(MachineTerm::Variable(variable))
+                    ProgramValue::Int32(OldMachineTerm::Variable(variable))
                 };
                 let item_value = SpecExpression::Value(item_carrier.clone());
                 let mut body_environment = environment.clone();
@@ -6650,9 +6650,9 @@ impl AnnotationLowerer<'_> {
                     SpecExpression::Value(ProgramValue::Int32(bits32_constant!(value)))
                         if constant_u32(*value) <= i32::MAX as u32 =>
                     {
-                        SpecExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(
-                            u64::from(constant_u32(*value)),
-                        )))
+                        SpecExpression::Value(ProgramValue::UInt64(
+                            OldMachineTerm::uint64_constant(u64::from(constant_u32(*value))),
+                        ))
                     }
                     _ => expression,
                 };
@@ -6663,7 +6663,7 @@ impl AnnotationLowerer<'_> {
                 } else {
                     (start, end, false)
                 };
-                let item_term = MachineTerm::Variable(item_variable);
+                let item_term = OldMachineTerm::Variable(item_variable);
                 body_environment.values.insert(
                     item.clone(),
                     SpecExpression::Value(if unsigned64 {
@@ -7083,11 +7083,11 @@ impl AnnotationLowerer<'_> {
                     "an arbitrary Integer literal requires Integer context".to_string()
                 })?;
                 let value = if value <= i32::MAX as u64 {
-                    ProgramValue::Int32(MachineTerm::constant(value as u32))
+                    ProgramValue::Int32(OldMachineTerm::constant(value as u32))
                 } else if value <= i64::MAX as u64 {
-                    ProgramValue::Int64(MachineTerm::int64_constant(value as i64))
+                    ProgramValue::Int64(OldMachineTerm::int64_constant(value as i64))
                 } else {
-                    ProgramValue::UInt64(MachineTerm::uint64_constant(value))
+                    ProgramValue::UInt64(OldMachineTerm::uint64_constant(value))
                 };
                 Ok(SpecExpression::Value(value))
             }
@@ -7413,7 +7413,7 @@ impl AnnotationLowerer<'_> {
                     && value <= (i32::MAX as u64) + 1
                 {
                     return Ok(SpecExpression::Value(ProgramValue::Int32(
-                        MachineTerm::constant(0u32.wrapping_sub(value as u32)),
+                        OldMachineTerm::constant(0u32.wrapping_sub(value as u32)),
                     )));
                 }
                 Ok(SpecExpression::Negate(Box::new(
@@ -10305,7 +10305,7 @@ impl AnnotationLowerer<'_> {
                     let offset = self.lower_contract_expression_to_spec(right, environment)?;
                     let negative_offset = SpecExpression::Subtract(
                         Box::new(SpecExpression::Value(ProgramValue::Int32(
-                            MachineTerm::constant(0),
+                            OldMachineTerm::constant(0),
                         ))),
                         Box::new(offset),
                     );
@@ -11413,7 +11413,7 @@ mod integer_source_quantifier_tests {
     #[test]
     fn captured_integer_freshness_ignores_unrelated_heap_state() {
         use crate::kernel::{
-            Address, AddressBase, AddressOffset, MachineTerm, ProgramType, ProgramValue,
+            Address, AddressBase, AddressOffset, OldMachineTerm, ProgramType, ProgramValue,
             SpecExpression, SpecPoint, SpecPureFunctionArgument, SymbolicMemory,
         };
 
@@ -11427,7 +11427,7 @@ mod integer_source_quantifier_tests {
             .with_block(heap_pointer.base.clone(), 4)
             .store(
                 heap_pointer,
-                ProgramValue::Int32(MachineTerm::Variable(unrelated_heap_variable)),
+                ProgramValue::Int32(OldMachineTerm::Variable(unrelated_heap_variable)),
             );
         let captured_array = SpecIntegerExpression::PureFunctionApplication {
             name: "captured_array_value".to_string(),
@@ -11481,7 +11481,7 @@ mod integer_source_quantifier_tests {
             crate::kernel::Variable::produced(crate::kernel::Producer::ProofQuantifier, 17),
         ] {
             let captured =
-                ProgramValue::UInt64(crate::kernel::MachineTerm::Variable(captured_variable));
+                ProgramValue::UInt64(crate::kernel::OldMachineTerm::Variable(captured_variable));
             for embedded in [false, true] {
                 let mut proposition = proposition.clone();
                 if embedded {
@@ -11525,7 +11525,7 @@ mod integer_source_quantifier_tests {
                 assert_eq!(
                     right,
                     SpecExpression::Value(ProgramValue::UInt64(
-                        crate::kernel::MachineTerm::Variable(variable)
+                        crate::kernel::OldMachineTerm::Variable(variable)
                     ))
                 );
             }

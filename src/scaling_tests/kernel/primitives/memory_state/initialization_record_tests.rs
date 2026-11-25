@@ -67,10 +67,10 @@ fn a_covering_query_scales_with_the_cells_it_crosses() {
         for index in 0..count {
             memory = memory.store(
                 element(&block, index),
-                ProgramValue::Int32(MachineTerm::constant(1)),
+                ProgramValue::Int32(OldMachineTerm::constant(1)),
             );
         }
-        let index = MachineTerm::Variable(Variable(924_008));
+        let index = OldMachineTerm::Variable(Variable(924_008));
         let read = Address {
             base: AddressBase::from(block.as_str()),
             offset: AddressOffset::scale_int32(index.clone(), 4),
@@ -107,7 +107,7 @@ fn forgotten_external_initialization_does_not_scan_unrelated_cached_cells() {
         for index in 0..count {
             before = before.store(
                 background(index),
-                ProgramValue::Int32(MachineTerm::constant(7)),
+                ProgramValue::Int32(OldMachineTerm::constant(7)),
             );
         }
         let before = before.with_uninitialized_object(output.clone(), 4);

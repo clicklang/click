@@ -4,7 +4,7 @@ use super::*;
 fn external(id: u64) -> Address {
     Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(id)), 4),
+        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 4),
     }
 }
 fn copy(memory: SymbolicMemory, target: &Address, source: &Address, count: u32) -> SymbolicMemory {

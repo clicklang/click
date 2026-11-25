@@ -10,13 +10,13 @@ use crate::kernel::{MachineBinaryOp, MachineIntegerType};
 fn wide_cast_construction_and_validation_do_constant_work_on_large_operands() {
     use crate::kernel::Variable;
     for size in [16, 64, 256, 1024] {
-        let mut operand = MachineTerm::Variable(Variable(149_002));
+        let mut operand = OldMachineTerm::Variable(Variable(149_002));
         for _ in 0..size {
-            operand = MachineTerm::Binary {
+            operand = OldMachineTerm::Binary {
                 format: MachineIntegerType::Int64,
                 op: MachineBinaryOp::Add,
                 left: Box::new(operand),
-                right: Box::new(MachineTerm::int64_constant(1)),
+                right: Box::new(OldMachineTerm::int64_constant(1)),
             };
         }
         let (converted, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -42,18 +42,18 @@ fn wide_cast_construction_and_validation_do_constant_work_on_large_operands() {
 fn symbolic_modulo_conversion_work_is_independent_of_operand_depth() {
     for right_nested in [false, true] {
         for size in [16, 64, 256, 1024] {
-            let mut term = MachineTerm::Variable(super::super::super::Variable(138_002));
+            let mut term = OldMachineTerm::Variable(super::super::super::Variable(138_002));
             for _ in 0..size {
-                let one = MachineTerm::uint64_constant(1);
+                let one = OldMachineTerm::uint64_constant(1);
                 term = if right_nested {
-                    MachineTerm::Binary {
+                    OldMachineTerm::Binary {
                         format: MachineIntegerType::UInt64,
                         op: MachineBinaryOp::Add,
                         left: Box::new(one),
                         right: Box::new(term),
                     }
                 } else {
-                    MachineTerm::Binary {
+                    OldMachineTerm::Binary {
                         format: MachineIntegerType::UInt64,
                         op: MachineBinaryOp::Add,
                         left: Box::new(term),
@@ -154,17 +154,17 @@ fn sign_cast_construction_and_word_reads_do_constant_work_on_deep_operands() {
     use crate::kernel::Variable;
     let mut observe_works = Vec::new();
     for size in [16, 64, 256, 1024] {
-        let mut operand = MachineTerm::Variable(Variable(149_003));
+        let mut operand = OldMachineTerm::Variable(Variable(149_003));
         for _ in 0..size {
             operand = binary_node!(
                 Int32,
                 Add,
                 Box::new(operand),
-                Box::new(MachineTerm::Variable(Variable(149_004))),
+                Box::new(OldMachineTerm::Variable(Variable(149_004))),
             );
         }
         let (cast, work) = crate::instrumentation::measure_deterministic_work(|| {
-            MachineTerm::sign_cast32(
+            OldMachineTerm::sign_cast32(
                 MachineIntegerType::Int32,
                 MachineIntegerType::UInt32,
                 operand.clone(),
@@ -183,7 +183,7 @@ fn sign_cast_construction_and_word_reads_do_constant_work_on_deep_operands() {
         assert_eq!(index, operand, "size {size}");
         assert_eq!(index_work, 0, "size {size}");
         let (back, work) = crate::instrumentation::measure_deterministic_work(|| {
-            MachineTerm::sign_cast32(
+            OldMachineTerm::sign_cast32(
                 MachineIntegerType::UInt32,
                 MachineIntegerType::Int32,
                 cast.clone(),
@@ -213,13 +213,13 @@ fn sign_cast_construction_and_word_reads_do_constant_work_on_deep_operands() {
             crate::instrumentation::measure_deterministic_work(|| observed.value_read().clone());
         assert_eq!(Some(reading), read, "σ(σ(x)) reads as x, size {size}");
         observe_works.push(observe_work);
-        let sum = MachineTerm::add_at(
+        let sum = OldMachineTerm::add_at(
             MachineIntegerType::UInt32,
             cast.clone(),
-            MachineTerm::uint32_constant(1),
+            OldMachineTerm::uint32_constant(1),
         );
         assert!(
-            matches!(&sum, MachineTerm::Binary { left, .. } if **left == cast),
+            matches!(&sum, OldMachineTerm::Binary { left, .. } if **left == cast),
             "size {size}"
         );
     }
@@ -238,17 +238,17 @@ fn sign_cast_construction_and_word_reads_do_constant_work_on_deep_operands() {
 fn narrow_widening_construction_and_word_reads_do_constant_work_on_deep_operands() {
     use crate::kernel::Variable;
     for size in [16, 64, 256, 1024] {
-        let mut sum = MachineTerm::Variable(Variable(149_005));
+        let mut sum = OldMachineTerm::Variable(Variable(149_005));
         for _ in 0..size {
             sum = binary_node!(
                 Int32,
                 Add,
                 Box::new(sum),
-                Box::new(MachineTerm::Variable(Variable(149_006))),
+                Box::new(OldMachineTerm::Variable(Variable(149_006))),
             );
         }
         // A narrow value over a deep word: the C narrowing of the sum.
-        let operand = MachineTerm::machine_integer_cast(
+        let operand = OldMachineTerm::machine_integer_cast(
             MachineIntegerType::Int32,
             MachineIntegerType::UInt8,
             sum,
@@ -271,8 +271,8 @@ fn narrow_widening_construction_and_word_reads_do_constant_work_on_deep_operands
             });
             assert_eq!(read_work, 0, "size {size}");
             assert_ne!(
-                MachineTerm::add(cast.clone(), MachineTerm::constant(1)),
-                MachineTerm::add(operand.clone(), MachineTerm::constant(1)),
+                OldMachineTerm::add(cast.clone(), OldMachineTerm::constant(1)),
+                OldMachineTerm::add(operand.clone(), OldMachineTerm::constant(1)),
                 "size {size}"
             );
         }
@@ -302,18 +302,18 @@ fn building_an_integer_read_is_flat_in_the_number_of_interned_reads() {
         let point = state.program_point();
         let before = crate::kernel::interned_load_count();
         for index in 0..reads {
-            MachineTerm::read_named(point.clone(), read_cell(index), LoadKind::Int32);
+            OldMachineTerm::read_named(point.clone(), read_cell(index), LoadKind::Int32);
         }
         assert_eq!(
             crate::kernel::interned_load_count() - before,
             reads as usize
         );
         let (next, work) = crate::instrumentation::measure_deterministic_work(|| {
-            MachineTerm::read_named(point.clone(), read_cell(reads), LoadKind::Int32)
+            OldMachineTerm::read_named(point.clone(), read_cell(reads), LoadKind::Int32)
         });
         fresh.push(work);
         let (again, work) = crate::instrumentation::measure_deterministic_work(|| {
-            MachineTerm::read_named(point.clone(), read_cell(reads), LoadKind::Int32)
+            OldMachineTerm::read_named(point.clone(), read_cell(reads), LoadKind::Int32)
         });
         assert_eq!(again, next);
         found.push(work);
@@ -350,7 +350,7 @@ fn wide_address(terms: u64) -> crate::kernel::Address {
     for term in 0..terms {
         offset = AddressOffset::add(
             offset,
-            AddressOffset::scale_int32(MachineTerm::Variable(Variable(149_100 + term)), 4),
+            AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(149_100 + term)), 4),
         );
     }
     crate::kernel::Address {
@@ -372,8 +372,8 @@ fn comparing_integer_reads_is_flat_in_address_size() {
     let mut term_bytes = Vec::new();
     let mut address_bytes = Vec::new();
     for terms in [4, 64, 512] {
-        let left = MachineTerm::read_named(point.clone(), wide_address(terms), LoadKind::Int32);
-        let right = MachineTerm::read_named(point.clone(), wide_address(terms), LoadKind::Int32);
+        let left = OldMachineTerm::read_named(point.clone(), wide_address(terms), LoadKind::Int32);
+        let right = OldMachineTerm::read_named(point.clone(), wide_address(terms), LoadKind::Int32);
         assert_eq!(left, right);
         assert_eq!(left.cmp(&right), std::cmp::Ordering::Equal);
         assert_eq!(hashed_bytes(&left), hashed_bytes(&right));
@@ -408,18 +408,16 @@ fn one_load_per_integer_cell_across_selections_and_widths() {
         let _session = crate::kernel::VerificationSession::enter();
         let start = ExecutionState::new()
             .with_memory(SymbolicMemory::new().with_block(slot.base.clone(), 8));
-        let written = start.clone().with_memory(
-            start
-                .memory()
-                .clone()
-                .store(slot.clone(), ProgramValue::Int32(MachineTerm::constant(3))),
-        );
+        let written = start.clone().with_memory(start.memory().clone().store(
+            slot.clone(),
+            ProgramValue::Int32(OldMachineTerm::constant(3)),
+        ));
         let point = written.program_point();
         let indexed = point
             .indexed_typed_version(&slot, ProgramType::Int32)
             .expect("the store's version");
         let before = crate::kernel::interned_load_count();
-        let first = MachineTerm::read_named(indexed.clone(), slot.clone(), LoadKind::Int32);
+        let first = OldMachineTerm::read_named(indexed.clone(), slot.clone(), LoadKind::Int32);
         for read in 0..reads {
             let selection = if read % 2 == 0 {
                 point.clone().for_exact_read()
@@ -427,7 +425,7 @@ fn one_load_per_integer_cell_across_selections_and_widths() {
                 indexed.clone()
             };
             let kind = KINDS[read % KINDS.len()];
-            let term = MachineTerm::read_named(selection, slot.clone(), kind);
+            let term = OldMachineTerm::read_named(selection, slot.clone(), kind);
             assert_eq!(
                 term == first,
                 kind == LoadKind::Int32,
@@ -440,7 +438,7 @@ fn one_load_per_integer_cell_across_selections_and_widths() {
             "one cell is one load"
         );
         let (next, work) = crate::instrumentation::measure_deterministic_work(|| {
-            MachineTerm::read_named(
+            OldMachineTerm::read_named(
                 point.clone().for_exact_read(),
                 slot.clone(),
                 LoadKind::Int32,

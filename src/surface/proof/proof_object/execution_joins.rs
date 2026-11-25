@@ -4021,8 +4021,8 @@ mod progress_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: Box::new(MachineTerm::Variable(Variable(0))),
-                right: Box::new(MachineTerm::constant(index)),
+                left: Box::new(OldMachineTerm::Variable(Variable(0))),
+                right: Box::new(OldMachineTerm::constant(index)),
             },
             true,
         )
@@ -4035,7 +4035,7 @@ mod progress_tests {
         let parsed = syntax::parse_function("int32 identity(int32 x) { return x; }").unwrap();
         let function = parsed.to_kernel_function();
         let arguments = [ProgramExpression::Value(ProgramValue::Int32(
-            MachineTerm::Variable(Variable(71_000)),
+            OldMachineTerm::Variable(Variable(71_000)),
         ))];
         let functions = ExecutionEnvironment::new();
         let resources = ResourceEnvironment::new(&[]);
@@ -4080,8 +4080,8 @@ mod progress_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: Box::new(MachineTerm::Variable(Variable(71_000))),
-                right: Box::new(MachineTerm::constant(10)),
+                left: Box::new(OldMachineTerm::Variable(Variable(71_000))),
+                right: Box::new(OldMachineTerm::constant(10)),
             },
             true,
         );
@@ -4172,7 +4172,7 @@ mod progress_tests {
         .expect("test C function should parse");
         let function = parsed_function.to_kernel_function();
         let arguments = vec![ProgramExpression::Value(ProgramValue::Int32(
-            MachineTerm::Variable(Variable(71_000)),
+            OldMachineTerm::Variable(Variable(71_000)),
         ))];
         let function_environment = ExecutionEnvironment::new();
         let condition = SyntaxProposition::Comparison {

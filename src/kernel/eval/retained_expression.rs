@@ -401,10 +401,10 @@ pub(in crate::kernel) fn evaluate_expression_value_paths(
             let promoted_zero = if matches!(expression, ProgramExpression::Negate(_)) {
                 match right_value.program_type() {
                     ProgramType::UInt32 => Some(ExecutionValue::from(ProgramValue::UInt32(
-                        MachineTerm::uint32_constant(0),
+                        OldMachineTerm::uint32_constant(0),
                     ))),
                     ProgramType::UInt64 => Some(ExecutionValue::from(ProgramValue::UInt64(
-                        MachineTerm::uint64_constant(0),
+                        OldMachineTerm::uint64_constant(0),
                     ))),
                     _ => None,
                 }
@@ -670,7 +670,7 @@ fn retained_binary(
         KernelTerm::retained_machine_operand(format, right),
     ];
     let raw = KernelTerm::machine_binary_shared(format, op, children.clone());
-    // These constructors reproduce MachineTerm's native root reductions, not
+    // These constructors reproduce OldMachineTerm's native root reductions, not
     // an equality/fact-driven choice of the result representation.
     let value =
         crate::kernel::proof::equality_rewrite::rebuild_normalized_machine_node(&raw, &children)?;
@@ -764,10 +764,10 @@ mod tests {
         )));
         let index = ProgramExpression::Add(
             Box::new(ProgramExpression::Value(ProgramValue::Int32(
-                MachineTerm::Variable(Variable(1023001)),
+                OldMachineTerm::Variable(Variable(1023001)),
             ))),
             Box::new(ProgramExpression::Value(ProgramValue::Int32(
-                MachineTerm::constant(2),
+                OldMachineTerm::constant(2),
             ))),
         );
         let index_paths = evaluate(&index);
@@ -775,9 +775,9 @@ mod tests {
             panic!("index value");
         };
         let index_root = index_value.shared().unwrap();
-        let wide = ProgramExpression::Value(ProgramValue::UInt64(MachineTerm::Variable(Variable(
-            1023002,
-        ))));
+        let wide = ProgramExpression::Value(ProgramValue::UInt64(OldMachineTerm::Variable(
+            Variable(1023002),
+        )));
         let expressions = vec![
             ProgramExpression::Add(Box::new(pointer.clone()), Box::new(index.clone())),
             ProgramExpression::Add(Box::new(index), Box::new(pointer.clone())),
@@ -793,13 +793,13 @@ mod tests {
                     ProgramType::Int32Pointer,
                 ))),
                 Box::new(ProgramExpression::Value(ProgramValue::Int32(
-                    MachineTerm::constant(1),
+                    OldMachineTerm::constant(1),
                 ))),
             ),
             ProgramExpression::Add(
                 Box::new(ProgramExpression::FunctionAddress("f".into())),
                 Box::new(ProgramExpression::Value(ProgramValue::Int32(
-                    MachineTerm::constant(1),
+                    OldMachineTerm::constant(1),
                 ))),
             ),
         ];
@@ -848,7 +848,7 @@ mod tests {
         let mut state = ExecutionState::new();
         state
             .locals
-            .set("x", ProgramValue::Int32(MachineTerm::constant(7)));
+            .set("x", ProgramValue::Int32(OldMachineTerm::constant(7)));
         let array = Address::symbolic(Variable(1022001));
         state
             .locals
@@ -1052,19 +1052,19 @@ mod tests {
             };
             let constant = |n| {
                 if format == MachineIntegerType::UInt32 {
-                    MachineTerm::uint32_constant(n as u32)
+                    OldMachineTerm::uint32_constant(n as u32)
                 } else {
-                    MachineTerm::uint64_constant(n)
+                    OldMachineTerm::uint64_constant(n)
                 }
             };
-            let variable = MachineTerm::Variable(Variable(991101));
+            let variable = OldMachineTerm::Variable(Variable(991101));
             let terms = [
                 constant(0),
                 constant(1),
                 constant(u64::MAX),
                 variable.clone(),
-                MachineTerm::machine_binary(format, Op::Add, variable.clone(), constant(2)),
-                MachineTerm::machine_binary(format, Op::Subtract, variable.clone(), constant(2)),
+                OldMachineTerm::machine_binary(format, Op::Add, variable.clone(), constant(2)),
+                OldMachineTerm::machine_binary(format, Op::Subtract, variable.clone(), constant(2)),
             ];
             for op in [Op::Add, Op::Subtract, Op::Multiply] {
                 for left in &terms {
@@ -1074,7 +1074,7 @@ mod tests {
                         let result = retained_binary(op, &a, &b).unwrap();
                         assert_eq!(
                             result.into_native(),
-                            wrap(MachineTerm::machine_binary(
+                            wrap(OldMachineTerm::machine_binary(
                                 format,
                                 op,
                                 left.clone(),
@@ -1092,14 +1092,14 @@ mod tests {
     fn retained_execution_conditional_keeps_selected_value_without_export() {
         let expression = ProgramExpression::Ternary {
             condition: Box::new(ProgramExpression::Value(ProgramValue::Int32(
-                MachineTerm::constant(1),
+                OldMachineTerm::constant(1),
             ))),
             then_branch: Box::new(ProgramExpression::BitwiseXor(
                 Box::new(ProgramExpression::Value(ProgramValue::UInt32(
-                    MachineTerm::Variable(Variable(991103)),
+                    OldMachineTerm::Variable(Variable(991103)),
                 ))),
                 Box::new(ProgramExpression::Value(ProgramValue::UInt32(
-                    MachineTerm::uint32_constant(7),
+                    OldMachineTerm::uint32_constant(7),
                 ))),
             )),
             else_branch: Box::new(ProgramExpression::Variable("not_evaluated".into())),
@@ -1127,7 +1127,7 @@ mod tests {
         ));
         let expression = ProgramExpression::Ternary {
             condition: Box::new(ProgramExpression::Value(ProgramValue::Int32(
-                MachineTerm::Variable(Variable(1026202)),
+                OldMachineTerm::Variable(Variable(1026202)),
             ))),
             then_branch: Box::new(ProgramExpression::Value(left)),
             else_branch: Box::new(ProgramExpression::Value(right)),
@@ -1205,8 +1205,8 @@ mod tests {
                     ProgramExpression::GreaterEqual,
                 ),
             ] {
-                let left = ProgramValue::UInt32(MachineTerm::uint32_constant(left));
-                let right = ProgramValue::UInt32(MachineTerm::uint32_constant(right));
+                let left = ProgramValue::UInt32(OldMachineTerm::uint32_constant(left));
+                let right = ProgramValue::UInt32(OldMachineTerm::uint32_constant(right));
                 let result = evaluate(&expression(
                     Box::new(ProgramExpression::Value(left.clone())),
                     Box::new(ProgramExpression::Value(right.clone())),
@@ -1241,7 +1241,7 @@ mod tests {
             left = retained_binary(
                 Op::Multiply,
                 &left,
-                &ExecutionValue::from(ProgramValue::UInt32(MachineTerm::uint32_constant(3))),
+                &ExecutionValue::from(ProgramValue::UInt32(OldMachineTerm::uint32_constant(3))),
             )
             .unwrap();
         }
@@ -1250,7 +1250,7 @@ mod tests {
             retained_comparison(
                 ComparisonOperator::LessThan,
                 &left,
-                &ExecutionValue::from(ProgramValue::UInt32(MachineTerm::uint32_constant(10)))
+                &ExecutionValue::from(ProgramValue::UInt32(OldMachineTerm::uint32_constant(10)))
             )
             .is_some()
         );
@@ -1261,10 +1261,10 @@ mod tests {
     fn retained_execution_preserves_signed_overflow_and_unbound_errors() {
         let overflow = ProgramExpression::Add(
             Box::new(ProgramExpression::Value(ProgramValue::Int32(
-                MachineTerm::constant(i32::MAX as u32),
+                OldMachineTerm::constant(i32::MAX as u32),
             ))),
             Box::new(ProgramExpression::Value(ProgramValue::Int32(
-                MachineTerm::constant(1),
+                OldMachineTerm::constant(1),
             ))),
         );
         assert!(
@@ -1275,7 +1275,7 @@ mod tests {
         let missing = ProgramExpression::Multiply(
             Box::new(ProgramExpression::Variable("missing".into())),
             Box::new(ProgramExpression::Value(ProgramValue::UInt32(
-                MachineTerm::uint32_constant(2),
+                OldMachineTerm::uint32_constant(2),
             ))),
         );
         assert!(matches!(&evaluate(&missing)[0].outcome,
@@ -1283,8 +1283,8 @@ mod tests {
         assert!(
             retained_binary(
                 Op::Add,
-                &ProgramValue::Int32(MachineTerm::constant(1)).into(),
-                &ProgramValue::UInt32(MachineTerm::uint32_constant(1)).into()
+                &ProgramValue::Int32(OldMachineTerm::constant(1)).into(),
+                &ProgramValue::UInt32(OldMachineTerm::uint32_constant(1)).into()
             )
             .is_none()
         );
@@ -1293,27 +1293,27 @@ mod tests {
     #[test]
     fn retained_bitwise_and_preserves_tag_facts_and_missing_bound_refusals() {
         let _session = crate::kernel::VerificationSession::enter();
-        let word = MachineTerm::Variable(Variable(998272));
-        let tag = MachineTerm::Variable(Variable(998273));
+        let word = OldMachineTerm::Variable(Variable(998272));
+        let tag = OldMachineTerm::Variable(Variable(998273));
         let lower = ConditionTerm::signed_less_equal(0u32.into(), tag.clone());
         let upper = ConditionTerm::signed_less_equal(tag.clone(), 1u32.into());
         let empty = PureFactContext::new();
         let nonnegative = empty.clone().assume_condition(lower, true);
         let bounded = nonnegative.clone().assume_condition(upper.clone(), true);
         let upper_only = empty.clone().assume_condition(upper, true);
-        let left = ProgramValue::UInt64(MachineTerm::uint64_bitwise_or(
+        let left = ProgramValue::UInt64(OldMachineTerm::uint64_bitwise_or(
             word.clone(),
-            MachineTerm::uint64_from_int32(tag),
+            OldMachineTerm::uint64_from_int32(tag),
         ));
-        let right = ProgramValue::UInt64(MachineTerm::uint64_constant(!3));
-        let added = ProgramValue::UInt64(MachineTerm::uint64_add(
+        let right = ProgramValue::UInt64(OldMachineTerm::uint64_constant(!3));
+        let added = ProgramValue::UInt64(OldMachineTerm::uint64_add(
             word.clone(),
-            MachineTerm::uint64_constant(1),
+            OldMachineTerm::uint64_constant(1),
         ));
         let clear = empty.clone().assume_condition(
             ConditionTerm::uint64_equal(
-                MachineTerm::uint64_bitwise_and(word, MachineTerm::uint64_constant(1)),
-                MachineTerm::uint64_constant(0),
+                OldMachineTerm::uint64_bitwise_and(word, OldMachineTerm::uint64_constant(1)),
+                OldMachineTerm::uint64_constant(0),
             ),
             true,
         );
@@ -1396,12 +1396,12 @@ mod tests {
             MachineIntegerType::UInt64,
         ] {
             let left = ProgramExpression::Value(
-                format.value_from_term(MachineTerm::Variable(Variable(998300))),
+                format.value_from_term(OldMachineTerm::Variable(Variable(998300))),
             );
             for count in [-1i32, 0, 1, 7, 8, 16, 32, 64] {
-                let right = ProgramExpression::Value(ProgramValue::Int32(MachineTerm::constant(
-                    count as u32,
-                )));
+                let right = ProgramExpression::Value(ProgramValue::Int32(
+                    OldMachineTerm::constant(count as u32),
+                ));
                 for expression in [
                     ProgramExpression::RustShiftLeft(
                         Box::new(left.clone()),
@@ -1440,15 +1440,15 @@ mod tests {
             MachineIntegerType::UInt16,
         ] {
             for right in [
-                format.value_from_term(MachineTerm::Variable(Variable(998301))),
-                ProgramValue::Int32(MachineTerm::constant(3)),
-                ProgramValue::Int32(MachineTerm::constant(70000)),
-                ProgramValue::UInt64(MachineTerm::uint64_constant(3)),
+                format.value_from_term(OldMachineTerm::Variable(Variable(998301))),
+                ProgramValue::Int32(OldMachineTerm::constant(3)),
+                ProgramValue::Int32(OldMachineTerm::constant(70000)),
+                ProgramValue::UInt64(OldMachineTerm::uint64_constant(3)),
             ] {
                 let expression = narrow_expression(
                     ProgramExpression::Add(
                         Box::new(ProgramExpression::Value(
-                            format.value_from_term(MachineTerm::Variable(Variable(998300))),
+                            format.value_from_term(OldMachineTerm::Variable(Variable(998300))),
                         )),
                         Box::new(ProgramExpression::Value(right)),
                     ),
@@ -1476,12 +1476,12 @@ mod tests {
     #[test]
     fn retained_rust_shift_discharges_only_established_count_domains() {
         let _session = crate::kernel::VerificationSession::enter();
-        let count = MachineTerm::Variable(Variable(998302));
+        let count = OldMachineTerm::Variable(Variable(998302));
         let bound =
-            ConditionTerm::unsigned_less_than(count.clone(), MachineTerm::uint32_constant(8));
+            ConditionTerm::unsigned_less_than(count.clone(), OldMachineTerm::uint32_constant(8));
         let expression = ProgramExpression::RustShiftLeft(
             Box::new(ProgramExpression::Value(ProgramValue::Int8(
-                MachineTerm::Variable(Variable(998303)),
+                OldMachineTerm::Variable(Variable(998303)),
             ))),
             Box::new(ProgramExpression::Value(ProgramValue::UInt32(count))),
         );
@@ -1511,9 +1511,9 @@ mod tests {
             MachineIntegerType::UInt32
         };
         let zero = if rust {
-            MachineTerm::narrow_constant(format, 0)
+            OldMachineTerm::narrow_constant(format, 0)
         } else {
-            MachineTerm::uint32_constant(0)
+            OldMachineTerm::uint32_constant(0)
         };
         ExecutionState::new().with_local("received", format.value_from_term(zero))
     }
@@ -1530,9 +1530,9 @@ mod tests {
         };
         let program_type = format.program_type();
         let three = if rust {
-            MachineTerm::narrow_constant(format, 3)
+            OldMachineTerm::narrow_constant(format, 3)
         } else {
-            MachineTerm::uint32_constant(3)
+            OldMachineTerm::uint32_constant(3)
         };
         let multiply = ProgramExpression::Multiply(
             Box::new(crate::kernel::program_expression::variable("held")),
@@ -1570,7 +1570,7 @@ mod tests {
             0,
             "machine_handoff",
             vec![ProgramExpression::Value(
-                format.value_from_term(MachineTerm::Variable(Variable(998341))),
+                format.value_from_term(OldMachineTerm::Variable(Variable(998341))),
             )],
         );
         if !rust && let ProgramStatement::CallResult { result_type, .. } = &mut call {
@@ -1625,10 +1625,10 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let statement = ProgramStatement::Return(ProgramExpression::Multiply(
             Box::new(ProgramExpression::Value(ProgramValue::UInt32(
-                MachineTerm::Variable(Variable(998330)),
+                OldMachineTerm::Variable(Variable(998330)),
             ))),
             Box::new(ProgramExpression::Value(ProgramValue::UInt32(
-                MachineTerm::uint32_constant(3),
+                OldMachineTerm::uint32_constant(3),
             ))),
         ));
         let exports = KernelTermExport::machine_export_count();
@@ -1688,7 +1688,7 @@ mod tests {
                 KernelTerm::variable(KernelType::Program(ProgramType::UInt32), Variable(998322)),
                 KernelTerm::retained_native_machine_operand(
                     format,
-                    &MachineTerm::uint32_constant(3),
+                    &OldMachineTerm::uint32_constant(3),
                 ),
             ],
         );
@@ -1706,7 +1706,7 @@ mod tests {
         let saved = state.locals.binding("source").unwrap().clone();
         state.locals.set(
             "source",
-            ProgramValue::UInt32(MachineTerm::uint32_constant(7)),
+            ProgramValue::UInt32(OldMachineTerm::uint32_constant(7)),
         );
         state.locals.restore_binding("source", saved);
         let paths = evaluate_expression_value_paths(
@@ -1730,7 +1730,7 @@ mod tests {
         );
         state.locals.set_typed_with_all_qualifiers(
             "target",
-            ProgramValue::UInt32(MachineTerm::uint32_constant(0)),
+            ProgramValue::UInt32(OldMachineTerm::uint32_constant(0)),
             ProgramType::UInt32,
             false,
             false,
@@ -1808,7 +1808,7 @@ mod tests {
             MachineIntegerType::UInt32,
             MachineIntegerType::Int64,
         ] {
-            let term = MachineTerm::bool_cast(format, ConditionTerm::Variable(Variable(998325)));
+            let term = OldMachineTerm::bool_cast(format, ConditionTerm::Variable(Variable(998325)));
             let expected =
                 crate::kernel::program_bool_cast_range_facts(&format.value_from_term(term.clone()))
                     .unwrap();
@@ -1999,7 +1999,7 @@ mod tests {
             expression: ProgramExpression::Add(
                 Box::new(ProgramExpression::Variable("p".into())),
                 Box::new(ProgramExpression::Value(ProgramValue::Int32(
-                    MachineTerm::constant(1),
+                    OldMachineTerm::constant(1),
                 ))),
             ),
             value_type: Some(ProgramType::Int32Pointer),

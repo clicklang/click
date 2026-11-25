@@ -36,7 +36,7 @@ impl KernelTerm {
 impl FloatOperandView<'_> {
     pub(crate) fn is_call(self) -> bool {
         match self {
-            Self::Native(_, MachineTerm::ClickFunctionApplication { .. }) => true,
+            Self::Native(_, OldMachineTerm::ClickFunctionApplication { .. }) => true,
             Self::Shared(root) => matches!(root.node(), KernelTermNode::FloatCall(_)),
             _ => false,
         }
@@ -50,9 +50,9 @@ mod tests {
     fn float_calls_preserve_exact_argument_carriers_and_nested_structure() {
         let _session = crate::kernel::VerificationSession::enter();
         for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
-            let integer = MachineTerm::add(
-                MachineTerm::Variable(Variable(1008200)),
-                MachineTerm::constant(1),
+            let integer = OldMachineTerm::add(
+                OldMachineTerm::Variable(Variable(1008200)),
+                OldMachineTerm::constant(1),
             );
             let arguments = [
                 PureFunctionArgument::Value(ProgramValue::Int32(integer.clone())),
@@ -62,19 +62,19 @@ mod tests {
                 )),
             ];
             let roots = arguments.map(|argument| {
-                let source = MachineTerm::ClickFunctionApplication {
+                let source = OldMachineTerm::ClickFunctionApplication {
                     name: "float_result".into(),
                     arguments: vec![
                         argument,
                         PureFunctionArgument::Value(format.value(
-                            MachineTerm::ClickFunctionApplication {
+                            OldMachineTerm::ClickFunctionApplication {
                                 name: "float_seed".into(),
                                 arguments: vec![
                                     PureFunctionArgument::Value(ProgramValue::Float32(
-                                        MachineTerm::uint32_constant(0x7fc00123),
+                                        OldMachineTerm::uint32_constant(0x7fc00123),
                                     )),
                                     PureFunctionArgument::Value(ProgramValue::Float64(
-                                        MachineTerm::uint64_constant(0x8000000000000000),
+                                        OldMachineTerm::uint64_constant(0x8000000000000000),
                                     )),
                                 ],
                             },

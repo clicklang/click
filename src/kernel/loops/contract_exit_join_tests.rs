@@ -23,11 +23,11 @@ fn exit_disjunct_restates_model_getters_without_replacing_history() {
     let fact = |model| {
         Proposition::condition_is(
             ConditionTerm::equal(
-                MachineTerm::ClickFunctionApplication {
+                OldMachineTerm::ClickFunctionApplication {
                     name: "pending".into(),
                     arguments: vec![crate::kernel::PureFunctionArgument::Algebraic(model)],
                 },
-                MachineTerm::constant(0),
+                OldMachineTerm::constant(0),
             ),
             true,
         )
@@ -243,7 +243,7 @@ fn numeric_float_equality_does_not_materialize_positive_zero_bits() {
         offset: AddressOffset::Constant(0),
     };
     let memory = SymbolicMemory::new().with_block("shared", 4);
-    let zero = ProgramValue::Float32(MachineTerm::constant(0));
+    let zero = ProgramValue::Float32(OldMachineTerm::constant(0));
     let load =
         symbolic_storage_cell_value(&memory, None, &pointer, ProgramType::Float32, true).unwrap();
     // This equation also permits a negative-zero representation. Filling

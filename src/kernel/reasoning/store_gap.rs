@@ -60,7 +60,7 @@
 //! cells their producer has already proved separate.
 
 #[cfg(test)]
-use crate::kernel::MachineTerm;
+use crate::kernel::OldMachineTerm;
 use crate::kernel::{Address, AddressOffset, PureFactContext};
 
 /// The widest cell there is: no `ProgramValue` is wider, and a cell holding
@@ -254,8 +254,8 @@ mod tests {
     use super::*;
     use crate::kernel::{ConditionTerm, ProgramValue, SymbolicMemory, Variable};
 
-    fn variable(id: u64) -> MachineTerm {
-        MachineTerm::Variable(Variable(id))
+    fn variable(id: u64) -> OldMachineTerm {
+        OldMachineTerm::Variable(Variable(id))
     }
 
     /// The anchors the generated offsets are built on: a scaled parameter
@@ -290,8 +290,8 @@ mod tests {
             let field = store.offset_by_bytes(8);
             let connected = PureFactContext::new().assume_condition(
                 ConditionTerm::uint64_equal(
-                    MachineTerm::integer_address(store.clone()),
-                    MachineTerm::integer_address(other.clone()),
+                    OldMachineTerm::integer_address(store.clone()),
+                    OldMachineTerm::integer_address(other.clone()),
                 ),
                 true,
             );
@@ -317,8 +317,8 @@ mod tests {
             let aliased_field = other.offset_by_bytes(8);
             let overlaps = PureFactContext::new().assume_condition(
                 ConditionTerm::uint64_equal(
-                    MachineTerm::integer_address(store.clone()),
-                    MachineTerm::integer_address(aliased_field.clone()),
+                    OldMachineTerm::integer_address(store.clone()),
+                    OldMachineTerm::integer_address(aliased_field.clone()),
                 ),
                 true,
             );
@@ -336,8 +336,8 @@ mod tests {
         match width {
             1 => crate::kernel::uint8(seed & 0xff),
             2 => crate::kernel::int16(seed & 0x7fff),
-            4 => ProgramValue::Int32(MachineTerm::constant(seed)),
-            8 => ProgramValue::Int64(MachineTerm::int64_constant(i64::from(seed))),
+            4 => ProgramValue::Int32(OldMachineTerm::constant(seed)),
+            8 => ProgramValue::Int64(OldMachineTerm::int64_constant(i64::from(seed))),
             16 => match crate::kernel::program_expression::uint128_literal(
                 (1u128 << 127) | u128::from(seed),
             ) {
@@ -353,20 +353,20 @@ mod tests {
         vec![
             PureFactContext::new(),
             PureFactContext::new().assume_condition(
-                ConditionTerm::equal(index.clone(), MachineTerm::constant(2)),
+                ConditionTerm::equal(index.clone(), OldMachineTerm::constant(2)),
                 true,
             ),
             PureFactContext::new()
                 .assume_condition(
-                    ConditionTerm::signed_less_equal(MachineTerm::constant(0), index.clone()),
+                    ConditionTerm::signed_less_equal(OldMachineTerm::constant(0), index.clone()),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::signed_less_than(index, MachineTerm::constant(3)),
+                    ConditionTerm::signed_less_than(index, OldMachineTerm::constant(3)),
                     true,
                 ),
             PureFactContext::new().assume_condition(
-                ConditionTerm::equal(variable(900), MachineTerm::constant(1)),
+                ConditionTerm::equal(variable(900), OldMachineTerm::constant(1)),
                 true,
             ),
         ]
@@ -495,8 +495,8 @@ mod tests {
         let anchor = AddressOffset::scale_int32(variable(900), 4);
         let shifted =
             |shift: i64| AddressOffset::add(anchor.clone(), AddressOffset::Constant(shift));
-        let int32 = |value: u32| ProgramValue::Int32(MachineTerm::constant(value));
-        let int64 = |value: i64| ProgramValue::Int64(MachineTerm::int64_constant(value));
+        let int32 = |value: u32| ProgramValue::Int32(OldMachineTerm::constant(value));
+        let int64 = |value: i64| ProgramValue::Int64(OldMachineTerm::int64_constant(value));
         // Far cells on both sides, which every later store skips.
         let far = [(shifted(-64), int32(90)), (shifted(64), int32(91))];
 
@@ -612,7 +612,7 @@ mod tests {
             // A load, which normalization may rewrite.
             AddressOffset::add(
                 AddressOffset::scale_int32(
-                    MachineTerm::read_named(
+                    OldMachineTerm::read_named(
                         crate::kernel::ProgramPoint::at(
                             &(crate::kernel::intern_memory(SymbolicMemory::new())),
                         ),

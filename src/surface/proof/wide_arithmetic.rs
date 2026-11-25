@@ -117,20 +117,18 @@ impl Carrier {
     pub(super) fn typed_literals(self, expression: &SyntaxTerm) -> SyntaxTerm {
         match expression {
             SyntaxTerm::IntegerLiteral(text) => {
-                let value = match self {
-                    Self::UInt64 => text
-                        .parse::<u64>()
-                        .ok()
-                        .map(|value| ProgramValue::UInt64(MachineTerm::uint64_constant(value))),
-                    Self::Int64 => text
-                        .parse::<i64>()
-                        .ok()
-                        .map(|value| ProgramValue::Int64(MachineTerm::int64_constant(value))),
-                    Self::UInt32 => text
-                        .parse::<u32>()
-                        .ok()
-                        .map(|value| ProgramValue::UInt32(MachineTerm::uint32_constant(value))),
-                };
+                let value =
+                    match self {
+                        Self::UInt64 => text.parse::<u64>().ok().map(|value| {
+                            ProgramValue::UInt64(OldMachineTerm::uint64_constant(value))
+                        }),
+                        Self::Int64 => text.parse::<i64>().ok().map(|value| {
+                            ProgramValue::Int64(OldMachineTerm::int64_constant(value))
+                        }),
+                        Self::UInt32 => text.parse::<u32>().ok().map(|value| {
+                            ProgramValue::UInt32(OldMachineTerm::uint32_constant(value))
+                        }),
+                    };
                 value
                     .map(|value| SyntaxTerm::ProgramExpression(ProgramExpression::Value(value)))
                     .unwrap_or_else(|| expression.clone())

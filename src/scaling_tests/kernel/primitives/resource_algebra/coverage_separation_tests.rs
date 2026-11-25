@@ -16,12 +16,12 @@ fn range_coverage_ignores_related_separations() {
     for size in [16u64, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let base = Address::symbolic(Variable(9_889_001));
-        let n = MachineTerm::Variable(Variable(9_889_002));
-        let count = MachineTerm::Variable(Variable(9_889_003));
-        let window = |offset: MachineTerm, length: MachineTerm| {
+        let n = OldMachineTerm::Variable(Variable(9_889_002));
+        let count = OldMachineTerm::Variable(Variable(9_889_003));
+        let window = |offset: OldMachineTerm, length: OldMachineTerm| {
             MemoryRange::new_wide(
                 base.offset_by_typed_elements(offset, 1, true, true),
-                MachineTerm::uint64_constant(0),
+                OldMachineTerm::uint64_constant(0),
                 length,
                 1,
             )
@@ -30,7 +30,7 @@ fn range_coverage_ignores_related_separations() {
             .assume_condition(
                 ConditionTerm::uint64_less_equal(
                     n.clone(),
-                    MachineTerm::uint64_constant(i64::MAX as u64),
+                    OldMachineTerm::uint64_constant(i64::MAX as u64),
                 ),
                 true,
             )
@@ -41,21 +41,25 @@ fn range_coverage_ignores_related_separations() {
         for index in 0..size {
             facts = facts.assume_proposition(separation(
                 window(
-                    MachineTerm::Variable(Variable(9_890_000 + index)),
-                    MachineTerm::uint64_constant(8),
+                    OldMachineTerm::Variable(Variable(9_890_000 + index)),
+                    OldMachineTerm::uint64_constant(8),
                 ),
                 MemoryRange::new_wide(
                     Address::symbolic(Variable(9_891_000 + index)),
-                    MachineTerm::uint64_constant(0),
-                    MachineTerm::uint64_constant(8),
+                    OldMachineTerm::uint64_constant(0),
+                    OldMachineTerm::uint64_constant(8),
                     1,
                 ),
             ));
         }
-        let held =
-            MemoryRange::new_wide(base.clone(), MachineTerm::uint64_constant(0), n.clone(), 1);
+        let held = MemoryRange::new_wide(
+            base.clone(),
+            OldMachineTerm::uint64_constant(0),
+            n.clone(),
+            1,
+        );
         let read = window(
-            MachineTerm::uint64_subtract(n.clone(), count.clone()),
+            OldMachineTerm::uint64_subtract(n.clone(), count.clone()),
             count,
         );
         let (covered, work) = crate::instrumentation::measure_deterministic_work(|| {

@@ -337,7 +337,7 @@ fn observation_equality(
         && narrow != MachineIntegerType::Int32
     {
         let widen =
-            |value| MachineTerm::machine_integer_cast(narrow, MachineIntegerType::Int32, value);
+            |value| OldMachineTerm::machine_integer_cast(narrow, MachineIntegerType::Int32, value);
         return Some(Proposition::condition_is(
             ConditionTerm::equal(widen(integer_bits(after)?), widen(integer_bits(before)?)),
             true,
@@ -369,7 +369,7 @@ fn observation_equality(
     Some(Proposition::condition_is(condition, true))
 }
 
-fn integer_bits(value: ProgramValue) -> Option<MachineTerm> {
+fn integer_bits(value: ProgramValue) -> Option<OldMachineTerm> {
     match value {
         ProgramValue::Int8(t)
         | ProgramValue::UInt8(t)
@@ -387,8 +387,8 @@ fn integer_bits(value: ProgramValue) -> Option<MachineTerm> {
 
 fn integer_equality(
     format: MachineIntegerType,
-    left: MachineTerm,
-    right: MachineTerm,
+    left: OldMachineTerm,
+    right: OldMachineTerm,
 ) -> Option<ConditionTerm> {
     Some(match format {
         MachineIntegerType::Int8
@@ -406,8 +406,8 @@ fn integer_equality(
                 format,
                 CompareRelation::Equal,
                 [
-                    MachineOperandView::Legacy(&left),
-                    MachineOperandView::Legacy(&right),
+                    MachineOperandView::Old(&left),
+                    MachineOperandView::Old(&right),
                 ],
             )
         }
@@ -486,11 +486,11 @@ mod tests {
             // Grow both related history and unrelated memory.
             memory = memory.store(
                 pointer.clone(),
-                ProgramValue::Int32(MachineTerm::constant(i as u32)),
+                ProgramValue::Int32(OldMachineTerm::constant(i as u32)),
             );
             memory = memory.store(
                 Address::symbolic(Variable(8_420_000 + i)),
-                ProgramValue::Int32(MachineTerm::constant(i as u32)),
+                ProgramValue::Int32(OldMachineTerm::constant(i as u32)),
             );
         }
         let before = ExecutionState::new().with_memory(memory.clone());
@@ -551,8 +551,8 @@ mod tests {
         ] {
             let range = MemoryRange::new_with_element_width(
                 Address::symbolic(Variable(8_499_100)),
-                MachineTerm::constant(start as u32),
-                MachineTerm::constant(end as u32),
+                OldMachineTerm::constant(start as u32),
+                OldMachineTerm::constant(end as u32),
                 width,
             );
             assert_eq!(
@@ -629,16 +629,16 @@ mod tests {
         resource_fixture_with_values(
             size,
             MachineIntegerType::Int32,
-            MachineTerm::Variable(Variable(8_390_901)),
-            MachineTerm::Variable(Variable(8_390_902)),
+            OldMachineTerm::Variable(Variable(8_390_901)),
+            OldMachineTerm::Variable(Variable(8_390_902)),
         )
     }
 
     pub(super) fn resource_fixture_with_values(
         size: u64,
         format: MachineIntegerType,
-        before_value: MachineTerm,
-        after_value: MachineTerm,
+        before_value: OldMachineTerm,
+        after_value: OldMachineTerm,
     ) -> (Preservation, Proposition) {
         let schema = ResourceFieldSchema::new(vec![(
             "value".into(),
@@ -661,7 +661,7 @@ mod tests {
             resources =
                 resources.unchecked_with_fact(ResourceFact::own(Resource::Instance(instance(
                     9_000_000 + i,
-                    MachineTerm::Variable(Variable(10_000_000 + i)),
+                    OldMachineTerm::Variable(Variable(10_000_000 + i)),
                 ))));
         }
         let before = ExecutionState::new().with_resource_context(
@@ -714,16 +714,19 @@ mod tests {
     fn wide_resource_field_equalities_retain_their_selected_endpoints() {
         for format in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
             let _session = crate::kernel::VerificationSession::enter();
-            let variable = MachineTerm::Variable(Variable(8_390_901));
+            let variable = OldMachineTerm::Variable(Variable(8_390_901));
             let literal = if format == MachineIntegerType::Int64 {
-                MachineTerm::int64_constant(7)
+                OldMachineTerm::int64_constant(7)
             } else {
-                MachineTerm::uint64_constant(7)
+                OldMachineTerm::uint64_constant(7)
             };
             for (before, after) in [
                 (variable.clone(), variable.clone()),
                 (literal.clone(), literal.clone()),
-                (variable.clone(), MachineTerm::Variable(Variable(8_390_902))),
+                (
+                    variable.clone(),
+                    OldMachineTerm::Variable(Variable(8_390_902)),
+                ),
                 (literal, variable),
             ] {
                 let (mut preservation, goal) =
@@ -740,7 +743,7 @@ mod tests {
                 let ConditionTerm::Compare { left, .. } = &mut condition else {
                     panic!("wide equality")
                 };
-                **left = MachineTerm::Variable(Variable(8_390_999));
+                **left = OldMachineTerm::Variable(Variable(8_390_999));
                 preservation.result = Proposition::condition_is(condition, truth);
                 assert!(preservation.apply(|p| p == &separation).is_err());
             }
@@ -804,7 +807,7 @@ mod tests {
         let (mut preservation, _) = resource_fixture(8);
         let result = &mut preservation.result;
         *result = Proposition::condition_is(
-            ConditionTerm::equal(MachineTerm::Variable(Variable(8_390_902)), 99u32.into()),
+            ConditionTerm::equal(OldMachineTerm::Variable(Variable(8_390_902)), 99u32.into()),
             true,
         );
         assert!(
@@ -852,7 +855,7 @@ mod tests {
         for i in 0..history {
             before = before.store(
                 Address::symbolic(Variable(8_320_000 + i)),
-                ProgramValue::Int32(MachineTerm::constant(i as u32)),
+                ProgramValue::Int32(OldMachineTerm::constant(i as u32)),
             );
         }
         if cached {
@@ -869,7 +872,7 @@ mod tests {
             .without_possible_aliasing_cells(&changed, 4, &PureFactContext::new())
             .store(
                 changed.clone(),
-                ProgramValue::Int32(MachineTerm::constant(1)),
+                ProgramValue::Int32(OldMachineTerm::constant(1)),
             );
         let resource = |p, bytes| {
             Box::new(Resource::Memory(MemoryRange::new_with_element_width(
@@ -1088,25 +1091,25 @@ mod tests {
             LoadKind::Bits64,
             MachineIntegerType::Int64,
             8,
-            ProgramValue::Int64(MachineTerm::int64_constant(i64::MIN)),
+            ProgramValue::Int64(OldMachineTerm::int64_constant(i64::MIN)),
         );
         check_indexed_preservation(
             LoadKind::Bits64,
             MachineIntegerType::UInt64,
             8,
-            ProgramValue::UInt64(MachineTerm::uint64_constant(1u64 << 63)),
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(1u64 << 63)),
         );
         check_indexed_preservation(
             LoadKind::UInt32,
             MachineIntegerType::UInt32,
             4,
-            ProgramValue::UInt32(MachineTerm::uint32_constant(0x8000_0000)),
+            ProgramValue::UInt32(OldMachineTerm::uint32_constant(0x8000_0000)),
         );
         check_indexed_preservation(
             LoadKind::Int16,
             MachineIntegerType::Int16,
             2,
-            ProgramValue::Int16(MachineTerm::narrow_constant(
+            ProgramValue::Int16(OldMachineTerm::narrow_constant(
                 MachineIntegerType::Int16,
                 0x8000,
             )),
@@ -1115,7 +1118,7 @@ mod tests {
             LoadKind::UInt16,
             MachineIntegerType::UInt16,
             2,
-            ProgramValue::UInt16(MachineTerm::narrow_constant(
+            ProgramValue::UInt16(OldMachineTerm::narrow_constant(
                 MachineIntegerType::UInt16,
                 0x8000,
             )),
@@ -1124,13 +1127,16 @@ mod tests {
             LoadKind::Int8,
             MachineIntegerType::Int8,
             1,
-            ProgramValue::Int8(MachineTerm::narrow_constant(MachineIntegerType::Int8, 0x80)),
+            ProgramValue::Int8(OldMachineTerm::narrow_constant(
+                MachineIntegerType::Int8,
+                0x80,
+            )),
         );
         check_indexed_preservation(
             LoadKind::UInt8,
             MachineIntegerType::UInt8,
             1,
-            ProgramValue::UInt8(MachineTerm::narrow_constant(
+            ProgramValue::UInt8(OldMachineTerm::narrow_constant(
                 MachineIntegerType::UInt8,
                 0x80,
             )),
@@ -1163,7 +1169,7 @@ mod tests {
             before
                 .memory()
                 .clone()
-                .store(other, ProgramValue::Int32(MachineTerm::constant(1))),
+                .store(other, ProgramValue::Int32(OldMachineTerm::constant(1))),
         );
         let read = |state: &ExecutionState| {
             let version = state
@@ -1199,7 +1205,7 @@ mod tests {
             _ => format,
         };
         let comparison_type = ReadType::Integer(comparison);
-        let operand = |bits| MachineTerm::machine_integer_cast(format, comparison, bits);
+        let operand = |bits| OldMachineTerm::machine_integer_cast(format, comparison, bits);
         let condition = match bytes {
             16 => ConditionTerm::integer_equal(
                 IntegerTerm::from_machine(format, after_read.clone()).unwrap(),
@@ -1246,7 +1252,7 @@ mod tests {
             let mixed = Proposition::condition_is(
                 ConditionTerm::equal(
                     operand(after_read),
-                    MachineTerm::machine_integer_cast(other_format, comparison, before_read),
+                    OldMachineTerm::machine_integer_cast(other_format, comparison, before_read),
                 ),
                 true,
             );

@@ -4,10 +4,10 @@ use crate::kernel::{
     SharedMachineIntegerTerm, VerificationSession,
 };
 
-fn retained(ty: MachineIntegerType, term: &MachineTerm) -> SharedMachineIntegerTerm {
+fn retained(ty: MachineIntegerType, term: &OldMachineTerm) -> SharedMachineIntegerTerm {
     SharedMachineIntegerTerm::from_shared(
         ty,
-        KernelTerm::retained_machine_operand(ty, V::Legacy(term)),
+        KernelTerm::retained_machine_operand(ty, V::Old(term)),
     )
     .unwrap()
 }
@@ -65,14 +65,14 @@ fn bindings() -> AlphaBindings {
 #[test]
 fn pointer_index_keys_match_native_arithmetic_and_opaque_binders() {
     let _session = VerificationSession::enter();
-    let x = MachineTerm::Variable(Variable(1019001));
-    let fold = MachineTerm::RangeFold {
-        start: MachineTerm::constant(0).into(),
-        end: MachineTerm::constant(2).into(),
+    let x = OldMachineTerm::Variable(Variable(1019001));
+    let fold = OldMachineTerm::RangeFold {
+        start: OldMachineTerm::constant(0).into(),
+        end: OldMachineTerm::constant(2).into(),
         initial: x.clone().into(),
         accumulator: Variable(1019002),
         item: Variable(1019003),
-        body: MachineTerm::Variable(Variable(1019002)).into(),
+        body: OldMachineTerm::Variable(Variable(1019002)).into(),
     };
     for ty in [
         MachineIntegerType::Int32,
@@ -83,10 +83,10 @@ fn pointer_index_keys_match_native_arithmetic_and_opaque_binders() {
         for leaf in [
             x.clone(),
             fold.clone(),
-            MachineTerm::If {
+            OldMachineTerm::If {
                 condition: ConditionTerm::Variable(Variable(1019004)).into(),
                 then_term: x.clone().into(),
-                else_term: MachineTerm::constant(3).into(),
+                else_term: OldMachineTerm::constant(3).into(),
             },
         ] {
             for op in [
@@ -95,20 +95,20 @@ fn pointer_index_keys_match_native_arithmetic_and_opaque_binders() {
                 MachineBinaryOp::Multiply,
                 MachineBinaryOp::BitwiseAnd,
             ] {
-                let term = MachineTerm::Binary {
+                let term = OldMachineTerm::Binary {
                     format: ty,
                     op,
                     left: leaf.clone().into(),
                     right: leaf.clone().into(),
                 };
-                let leaf_root = KernelTerm::retained_machine_operand(ty, V::Legacy(&leaf));
+                let leaf_root = KernelTerm::retained_machine_operand(ty, V::Old(&leaf));
                 let root =
                     KernelTerm::machine_binary_shared(ty, op, [leaf_root.clone(), leaf_root]);
                 let value = SharedMachineIntegerTerm::from_shared(ty, root).unwrap();
                 let native = value.structural_value();
                 let expected_state = memory_erased_bitvector_key(native);
                 let expected_alpha =
-                    alpha_machine_key::<true>(V::Legacy(native), &mut bindings(), &mut 0);
+                    alpha_machine_key::<true>(V::Old(native), &mut bindings(), &mut 0);
                 let exports = KernelTermExport::machine_export_count();
                 let actual_alpha =
                     alpha_machine_key::<true>(value.operand_view(), &mut bindings(), &mut 0);
@@ -142,11 +142,11 @@ fn pointer_index_keys_match_native_arithmetic_and_opaque_binders() {
 fn pointer_index_keys_preserve_quantifiers_free_variables_and_stride() {
     let _session = VerificationSession::enter();
     let build = |bound, free, width, unsigned, ty| {
-        let term = MachineTerm::Binary {
+        let term = OldMachineTerm::Binary {
             format: ty,
             op: MachineBinaryOp::Add,
-            left: MachineTerm::Variable(Variable(bound)).into(),
-            right: MachineTerm::Variable(Variable(free)).into(),
+            left: OldMachineTerm::Variable(Variable(bound)).into(),
+            right: OldMachineTerm::Variable(Variable(free)).into(),
         };
         quantified(
             Variable(bound),
@@ -188,15 +188,15 @@ fn pointer_index_keys_erase_states_only_for_candidate_selection() {
     let before = crate::kernel::SymbolicMemory::new().with_block("key-read", 16);
     let after = before.clone().store(
         pointer.clone(),
-        ProgramValue::Int32(MachineTerm::constant(7)),
+        ProgramValue::Int32(OldMachineTerm::constant(7)),
     );
     let make = |memory, kind| {
-        let load = MachineTerm::read_named(
+        let load = OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
             Box::new(pointer.clone()),
             kind,
         );
-        let sum = MachineTerm::Binary {
+        let sum = OldMachineTerm::Binary {
             format: MachineIntegerType::Int32,
             op: MachineBinaryOp::Add,
             left: load.clone().into(),
@@ -225,21 +225,21 @@ fn pointer_index_fold_keys_restore_shadowed_binders_and_keep_free_variables() {
     let _session = VerificationSession::enter();
     let make = |bound, item, free| {
         let ty = MachineIntegerType::Int32;
-        let fold = MachineTerm::RangeFold {
-            start: MachineTerm::constant(0).into(),
-            end: MachineTerm::constant(2).into(),
-            initial: MachineTerm::Variable(Variable(bound)).into(),
+        let fold = OldMachineTerm::RangeFold {
+            start: OldMachineTerm::constant(0).into(),
+            end: OldMachineTerm::constant(2).into(),
+            initial: OldMachineTerm::Variable(Variable(bound)).into(),
             accumulator: Variable(bound),
             item: Variable(item),
-            body: MachineTerm::Binary {
+            body: OldMachineTerm::Binary {
                 format: ty,
                 op: MachineBinaryOp::Add,
-                left: MachineTerm::Variable(Variable(bound)).into(),
-                right: MachineTerm::Variable(Variable(free)).into(),
+                left: OldMachineTerm::Variable(Variable(bound)).into(),
+                right: OldMachineTerm::Variable(Variable(free)).into(),
             }
             .into(),
         };
-        let leaf = KernelTerm::retained_machine_operand(ty, V::Legacy(&fold));
+        let leaf = KernelTerm::retained_machine_operand(ty, V::Old(&fold));
         let repeated =
             KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [leaf.clone(), leaf]);
         let root = KernelTerm::machine_binary_shared(

@@ -540,7 +540,7 @@ pub(crate) fn is_quotient_remainder_order(goal: &Proposition) -> bool {
             ..
         } => [left.as_ref(), right.as_ref()]
             .into_iter()
-            .any(|operand| machine_division(MachineOperandView::Legacy(operand))),
+            .any(|operand| machine_division(MachineOperandView::Old(operand))),
         _ => false,
     }
 }
@@ -701,20 +701,19 @@ pub(crate) fn known_bridge_leaf(
             true
         }
         Proposition::ConditionIs(condition, truth)
-            if let Some(reduced) =
-                super::closed_integer_if_comparison(condition.native_compat())
+            if let Some(reduced) = super::closed_integer_if_comparison(condition.old_form())
                 && comparison_holds(reduced, *truth, available) =>
         {
             true
         }
         Proposition::ConditionIs(condition, truth)
-            if let Some(reduced) = trivial_fold_comparison(condition.native_compat())
+            if let Some(reduced) = trivial_fold_comparison(condition.old_form())
                 && comparison_holds(reduced, *truth, available) =>
         {
             true
         }
         Proposition::ConditionIs(condition, true)
-            if let Some(wide) = pointer_projection_source(condition.native_compat()) =>
+            if let Some(wide) = pointer_projection_source(condition.old_form()) =>
         {
             comparison_holds(
                 ConditionTerm::IntegerLessEqual(
@@ -727,7 +726,7 @@ pub(crate) fn known_bridge_leaf(
         }
         Proposition::ConditionIs(condition, truth)
             if let Some(reduced) =
-                super::reduce_known_int32_match_comparison(condition.native_compat()) =>
+                super::reduce_known_int32_match_comparison(condition.old_form()) =>
         {
             comparison_holds(reduced, *truth, available)
         }
@@ -804,8 +803,8 @@ pub(crate) fn known_bridge_leaf(
             )
         }
         Proposition::Equal(Term::Algebraic(a), Term::Algebraic(b)) => {
-            algebraic_arm(a.native_compat(), b.native_compat(), available)
-                || algebraic_arm(b.native_compat(), a.native_compat(), available)
+            algebraic_arm(a.old_form(), b.old_form(), available)
+                || algebraic_arm(b.old_form(), a.old_form(), available)
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
             if let Some((ConditionTerm::AlgebraicEqual(a, b), _)) =
@@ -879,8 +878,8 @@ mod tests {
         Proposition::condition_is(ConditionTerm::IntegerEqual(a.into(), b.into()), true)
     }
     fn operation(ty: MachineIntegerType, op: Operation) -> Option<(IntegerTerm, IntegerTerm)> {
-        let a = MachineTerm::Variable(Variable(995701));
-        let b = MachineTerm::Variable(Variable(995702));
+        let a = OldMachineTerm::Variable(Variable(995701));
+        let b = OldMachineTerm::Variable(Variable(995702));
         let native =
             representation::operation_word(ty, op, Box::new(a.clone()), Box::new(b.clone()))?;
         Some((
@@ -990,7 +989,7 @@ mod tests {
     fn adjacent_footprint_needs_order_and_the_exact_boundary() {
         let _session = VerificationSession::enter();
         let base = Address::symbolic(Variable(997400));
-        let endpoint = MachineTerm::Variable(Variable(997401));
+        let endpoint = OldMachineTerm::Variable(Variable(997401));
         let memory = |base, end| {
             Resource::Memory(MemoryRange::new_with_element_width(
                 base,
@@ -1037,7 +1036,7 @@ mod tests {
                     Proposition::condition_is(
                         ConditionTerm::signed_less_equal(
                             0u32.into(),
-                            MachineTerm::Variable(Variable(997500 + i)),
+                            OldMachineTerm::Variable(Variable(997500 + i)),
                         ),
                         true,
                     )
@@ -1088,7 +1087,7 @@ mod tests {
             let operand = IntegerTerm::var(Variable(995705));
             let observed = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 ty,
-                MachineTerm::IntegerToMachine {
+                OldMachineTerm::IntegerToMachine {
                     value: operand.clone().into(),
                     destination: ty,
                 },
@@ -1160,11 +1159,11 @@ mod tests {
     fn native_binary(ty: MachineIntegerType, op: MachineBinaryOp, count: i32) -> IntegerTerm {
         IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             ty,
-            MachineTerm::Binary {
+            OldMachineTerm::Binary {
                 format: ty,
                 op,
-                left: Box::new(MachineTerm::Variable(Variable(995710))),
-                right: Box::new(MachineTerm::constant(count as u32)),
+                left: Box::new(OldMachineTerm::Variable(Variable(995710))),
+                right: Box::new(OldMachineTerm::constant(count as u32)),
             },
         ))
     }
@@ -1173,7 +1172,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
         let source =
-            IntegerTerm::from_machine(ty, MachineTerm::Variable(Variable(995710))).unwrap();
+            IntegerTerm::from_machine(ty, OldMachineTerm::Variable(Variable(995710))).unwrap();
         for count in [0, 1, 2, 31] {
             let exact = IntegerTerm::Multiply(
                 source.clone().into(),

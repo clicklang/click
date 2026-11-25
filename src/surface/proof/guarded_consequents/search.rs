@@ -61,7 +61,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             // An equality consequent names a goal operand: rewriting the goal
             // with it leaves the operands' own facts to close what remains.
             if matches!(consequent.as_ref(), Proposition::ConditionIs(condition, truth)
-                if crate::kernel::machine_integer::comparison::comparison_view(condition.native_compat(), *truth)
+                if crate::kernel::machine_integer::comparison::comparison_view(condition.old_form(), *truth)
                     .is_some_and(|v| v.relation == crate::kernel::machine_integer::Relation::Equal
                         && matches!(v.format, MachineIntegerType::Int32 | MachineIntegerType::UInt32 | MachineIntegerType::Int64 | MachineIntegerType::UInt64)))
                 && let Some(rewritten) = attempt::candidate_outcome(
@@ -176,7 +176,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     if search_input
                         .facts()
                         .assumptions()
-                        .decide(condition.native_compat())
+                        .decide(condition.old_form())
                         .is_some_and(|decided| decided != *value) =>
                 {
                     return true;

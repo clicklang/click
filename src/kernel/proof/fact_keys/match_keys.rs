@@ -22,7 +22,7 @@ pub(super) fn machine<const ALLOW_LOADS: bool>(
             (
                 arm.variant.as_str(),
                 arm.bindings.as_slice(),
-                crate::kernel::MachineOperandView::Legacy(&arm.body),
+                crate::kernel::MachineOperandView::Old(&arm.body),
             )
         }),
         bindings,
@@ -161,8 +161,8 @@ mod tests {
     use super::*;
     use crate::kernel::{AlgebraicBitvectorMatchArm, AlgebraicValue, ProgramValue};
 
-    fn selected_match(bound: u64, count: usize) -> MachineTerm {
-        MachineTerm::AlgebraicMatch {
+    fn selected_match(bound: u64, count: usize) -> OldMachineTerm {
+        OldMachineTerm::AlgebraicMatch {
             scrutinee: Box::new(AlgebraicTerm {
                 algebraic_type: crate::kernel::AlgebraicType::parameter("Payload".into()),
                 node: AlgebraicTermNode::Variable(Variable(900)),
@@ -171,16 +171,16 @@ mod tests {
                 .map(|index| AlgebraicBitvectorMatchArm {
                     variant: format!("Arm{index}"),
                     bindings: vec![AlgebraicValue::Program(ProgramValue::Int32(
-                        MachineTerm::Variable(Variable(bound)),
+                        OldMachineTerm::Variable(Variable(bound)),
                     ))],
-                    body: MachineTerm::Variable(Variable(bound)),
+                    body: OldMachineTerm::Variable(Variable(bound)),
                     binding_names: Default::default(),
                 })
                 .collect(),
         }
     }
 
-    fn key(term: &MachineTerm) -> Option<AlphaBitvectorKey> {
+    fn key(term: &OldMachineTerm) -> Option<AlphaBitvectorKey> {
         alpha_bitvector_key::<false>(term, &mut BTreeMap::new(), &mut 0)
     }
 
@@ -191,19 +191,19 @@ mod tests {
         assert!(key(&left).is_some());
         assert_eq!(key(&left), key(&right));
         let mut different = right.clone();
-        let MachineTerm::AlgebraicMatch { arms, .. } = &mut different else {
+        let OldMachineTerm::AlgebraicMatch { arms, .. } = &mut different else {
             unreachable!()
         };
-        arms[1].body = MachineTerm::Variable(Variable(100));
+        arms[1].body = OldMachineTerm::Variable(Variable(100));
         assert_ne!(key(&left), key(&different));
 
         // A C binder must not capture an algebraic argument with the same ID.
         let with_free_algebraic = |bound| {
             let mut term = selected_match(bound, 1);
-            let MachineTerm::AlgebraicMatch { arms, .. } = &mut term else {
+            let OldMachineTerm::AlgebraicMatch { arms, .. } = &mut term else {
                 unreachable!()
             };
-            arms[0].body = MachineTerm::ClickFunctionApplication {
+            arms[0].body = OldMachineTerm::ClickFunctionApplication {
                 name: "read".into(),
                 arguments: vec![PureFunctionArgument::Algebraic(AlgebraicTerm {
                     algebraic_type: crate::kernel::AlgebraicType::parameter("Other".into()),
@@ -223,10 +223,10 @@ mod tests {
         use crate::kernel::{KernelMatch, KernelTermImport, MachineIntegerType};
         let left = selected_match(100, 2);
         let mut changed = selected_match(200, 2);
-        let MachineTerm::AlgebraicMatch { arms, .. } = &mut changed else {
+        let OldMachineTerm::AlgebraicMatch { arms, .. } = &mut changed else {
             unreachable!()
         };
-        arms[1].body = MachineTerm::Variable(Variable(100));
+        arms[1].body = OldMachineTerm::Variable(Variable(100));
         for right in [selected_match(200, 2), changed] {
             let expected = key(&left).unwrap() == key(&right).unwrap();
             let a = KernelMatch::import_machine(

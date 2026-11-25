@@ -279,12 +279,12 @@ mod tests {
         ];
         for width in [0, -8, 4] {
             values.push(AddressOffset::scaled_int32_node(
-                MachineTerm::Variable(Variable(994002)),
+                OldMachineTerm::Variable(Variable(994002)),
                 width,
             ));
             for unsigned in [false, true] {
                 values.push(AddressOffset::scaled_int64_node(
-                    MachineTerm::Variable(Variable(994003)),
+                    OldMachineTerm::Variable(Variable(994003)),
                     width,
                     unsigned,
                 ));
@@ -298,7 +298,7 @@ mod tests {
             assert_eq!(root.node().offset_children().len(), 2);
         }
         let signed = AddressOffset::scaled_int64_node(
-            MachineTerm::Constant {
+            OldMachineTerm::Constant {
                 format: MachineIntegerType::Int64,
                 bits: u64::MAX as u128,
             },
@@ -306,7 +306,7 @@ mod tests {
             false,
         );
         let unsigned = AddressOffset::scaled_int64_node(
-            MachineTerm::Constant {
+            OldMachineTerm::Constant {
                 format: MachineIntegerType::Int64,
                 bits: u64::MAX as u128,
             },
@@ -329,7 +329,7 @@ mod tests {
             MachineIntegerType::UInt64,
         ] {
             let value =
-                SharedMachineIntegerTerm::index(format, MachineTerm::Variable(Variable(994006)));
+                SharedMachineIntegerTerm::index(format, OldMachineTerm::Variable(Variable(994006)));
             let source = if format.format().bits() == 32 {
                 AddressOffset::Int32Scaled {
                     value: value.clone(),
@@ -360,7 +360,7 @@ mod tests {
         for class in [CScalarClass::Int, CScalarClass::Char] {
             let expected = Some(CAccessClass::Scalar(class));
             let source = AddressOffset::scaled_int64_node(
-                MachineTerm::IntegerAddress(
+                OldMachineTerm::IntegerAddress(
                     Box::new(Address::symbolic(Variable(994004))),
                     crate::kernel::AddressObjectClass::new(expected.clone()),
                 ),
@@ -373,7 +373,7 @@ mod tests {
             let AddressOffset::Int64Scaled { value, .. } = output else {
                 panic!("scaled index")
             };
-            let MachineTerm::IntegerAddress(_, annotation) = value.structural_value() else {
+            let OldMachineTerm::IntegerAddress(_, annotation) = value.structural_value() else {
                 panic!("exact address input")
             };
             assert_eq!(annotation.class(), expected);

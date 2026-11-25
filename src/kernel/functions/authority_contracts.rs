@@ -1125,11 +1125,11 @@ pub(in crate::kernel) fn check_wildcard_consumption_at_return(
                 };
                 (
                     description.clone(),
-                    Box::new(MachineTerm::constant(1).into()),
+                    Box::new(OldMachineTerm::constant(1).into()),
                 )
             }
         };
-        let quantity = Box::new(quantity.native_compat().clone());
+        let quantity = Box::new(quantity.old_form().clone());
         // A declared consumption under an authority this proof holds is a
         // death the caller applies, so the body must have recorded it with a
         // checked spend. Otherwise a returned control could state its counter
@@ -1153,7 +1153,7 @@ pub(in crate::kernel) fn check_wildcard_consumption_at_return(
         {
             continue;
         }
-        let zero = |term: &MachineTerm| {
+        let zero = |term: &OldMachineTerm| {
             term.as_const() == Some(0)
                 || crate::kernel::quantity_condition_holds(
                     assumptions,
@@ -1161,7 +1161,7 @@ pub(in crate::kernel) fn check_wildcard_consumption_at_return(
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(term.clone()),
-                        right: Box::new(MachineTerm::constant(0)),
+                        right: Box::new(OldMachineTerm::constant(0)),
                     },
                 )
         };
@@ -1289,7 +1289,7 @@ pub(super) fn check_quantity_exchange_at_return(
                         binary_node!(
                             Int32,
                             Subtract,
-                            Box::new(MachineTerm::constant(0)),
+                            Box::new(OldMachineTerm::constant(0)),
                             Box::new(actual),
                         )
                     };
@@ -1302,8 +1302,8 @@ pub(super) fn check_quantity_exchange_at_return(
                             right: Box::new(binary_node!(
                                 Int32,
                                 Subtract,
-                                Box::new(produced.native_compat().clone()),
-                                Box::new(consumed.native_compat().clone()),
+                                Box::new(produced.old_form().clone()),
+                                Box::new(consumed.old_form().clone()),
                             )),
                         },
                     )

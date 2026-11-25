@@ -31,7 +31,7 @@
 use super::*;
 use crate::kernel::CompareRelation as R;
 use crate::kernel::MachineIntegerType as Ty;
-use crate::kernel::MachineTerm;
+use crate::kernel::OldMachineTerm;
 use crate::kernel::machine_integer::{
     Relation,
     comparison::{
@@ -79,7 +79,7 @@ fn comparison(condition: &ConditionTerm) -> Option<NativeComparisonView<'_>> {
 
 fn retain(format: Ty, operand: View<'_>) -> ComparisonOperand<'static> {
     match operand {
-        View::Legacy(value) => ComparisonOperand::Constant(value.clone()),
+        View::Old(value) => ComparisonOperand::Constant(value.clone()),
         View::Shared(_) => ComparisonOperand::Observation(operand.retain(format)),
     }
 }
@@ -97,7 +97,7 @@ fn constant(term: View<'_>) -> Option<i64> {
 /// The rule reads one inverse sign pair; it does not rewrite stored terms.
 fn sign_cast(source: Ty, destination: Ty, operand: View<'_>) -> ComparisonOperand<'static> {
     if let Some(bits32_constant!(bits)) = operand.literal() {
-        return ComparisonOperand::Constant(MachineTerm::constant_at32(
+        return ComparisonOperand::Constant(OldMachineTerm::constant_at32(
             destination,
             constant_u32(bits),
         ));
@@ -109,7 +109,7 @@ fn sign_cast(source: Ty, destination: Ty, operand: View<'_>) -> ComparisonOperan
         return retain(destination, value);
     }
     match operand {
-        View::Legacy(value) => ComparisonOperand::Constant(MachineTerm::Cast {
+        View::Old(value) => ComparisonOperand::Constant(OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value: Box::new(value.clone()),
             from: source,
@@ -123,7 +123,7 @@ fn sign_cast(source: Ty, destination: Ty, operand: View<'_>) -> ComparisonOperan
 
 fn converted(source: Ty, destination: Ty, operand: View<'_>) -> ComparisonOperand<'static> {
     match operand {
-        View::Legacy(value) => ComparisonOperand::Constant(MachineTerm::machine_integer_cast(
+        View::Old(value) => ComparisonOperand::Constant(OldMachineTerm::machine_integer_cast(
             source,
             destination,
             value.clone(),
@@ -136,7 +136,7 @@ fn converted(source: Ty, destination: Ty, operand: View<'_>) -> ComparisonOperan
 
 fn unsigned64_wrapper(operand: View<'_>) -> ComparisonOperand<'static> {
     match operand {
-        View::Legacy(value) => ComparisonOperand::Constant(MachineTerm::legacy_cast(
+        View::Old(value) => ComparisonOperand::Constant(OldMachineTerm::legacy_cast(
             MachineCastSpelling::UInt64FromInt64,
             Box::new(value.clone()),
         )),
@@ -180,11 +180,11 @@ fn constant_on_the_right<'a>(view: &'a NativeComparisonView<'_>) -> Option<(R, V
 
 fn bound(format: Ty, relation: R, operand: View<'_>, value: i64) -> ConditionTerm {
     let value = match format {
-        Ty::Int64 => MachineTerm::int64_constant(value),
-        Ty::UInt64 => MachineTerm::uint64_constant(value as u64),
-        _ => MachineTerm::constant(value as u32),
+        Ty::Int64 => OldMachineTerm::int64_constant(value),
+        Ty::UInt64 => OldMachineTerm::uint64_constant(value as u64),
+        _ => OldMachineTerm::constant(value as u32),
     };
-    condition_for_operand_views(format, relation, [operand, View::Legacy(&value)])
+    condition_for_operand_views(format, relation, [operand, View::Old(&value)])
 }
 
 fn sign_condition(format: Ty, operand: View<'_>, negative: bool) -> ConditionTerm {
@@ -192,11 +192,11 @@ fn sign_condition(format: Ty, operand: View<'_>, negative: bool) -> ConditionTer
         return bound(format, R::LessThan, operand, 0);
     }
     let zero = if format == Ty::Int64 {
-        MachineTerm::int64_constant(0)
+        OldMachineTerm::int64_constant(0)
     } else {
-        MachineTerm::constant(0)
+        OldMachineTerm::constant(0)
     };
-    condition_for_operand_views(format, R::LessEqual, [View::Legacy(&zero), operand])
+    condition_for_operand_views(format, R::LessEqual, [View::Old(&zero), operand])
 }
 
 /// A sign test `negative` (`< 0`, or `>= 0` when false) or a half-range
@@ -273,11 +273,11 @@ impl PureFactContext {
         let (relation, operand, value) = constant_on_the_right(view)?;
         let format = view.format;
         let in_range = |term: View<'_>, lower: i64, upper: i64| {
-            let lower = MachineTerm::constant(lower as u32);
+            let lower = OldMachineTerm::constant(lower as u32);
             self.decide(&condition_for_operand_views(
                 Ty::Int32,
                 R::LessEqual,
-                [View::Legacy(&lower), term],
+                [View::Old(&lower), term],
             )) == Some(true)
                 && self.decide(&bound(Ty::Int32, R::LessEqual, term, upper)) == Some(true)
         };
@@ -439,18 +439,18 @@ mod tests {
     use super::*;
     use crate::kernel::{KernelTermExport, KernelTermImport, MachineBinaryOp as Op, Variable};
 
-    fn variable(n: u64) -> MachineTerm {
-        MachineTerm::Variable(Variable(n))
+    fn variable(n: u64) -> OldMachineTerm {
+        OldMachineTerm::Variable(Variable(n))
     }
-    fn sum(format: Ty) -> MachineTerm {
-        MachineTerm::Binary {
+    fn sum(format: Ty) -> OldMachineTerm {
+        OldMachineTerm::Binary {
             format,
             op: Op::Add,
             left: Box::new(variable(189201)),
             right: Box::new(variable(189202)),
         }
     }
-    fn shape(condition: ConditionTerm) -> (Ty, Relation, [MachineTerm; 2]) {
+    fn shape(condition: ConditionTerm) -> (Ty, Relation, [OldMachineTerm; 2]) {
         let view = comparison(&condition).unwrap();
         (
             view.format,
@@ -518,14 +518,14 @@ mod tests {
                 } else {
                     Ty::Int32
                 };
-                operands.push(MachineTerm::sign_cast32(other, format, sum(other)));
-                operands.push(MachineTerm::sign_cast32(
+                operands.push(OldMachineTerm::sign_cast32(other, format, sum(other)));
+                operands.push(OldMachineTerm::sign_cast32(
                     other,
                     format,
-                    MachineTerm::sign_cast32(format, other, sum(format)),
+                    OldMachineTerm::sign_cast32(format, other, sum(format)),
                 ));
             } else if format == Ty::UInt64 {
-                operands.push(MachineTerm::legacy_cast(
+                operands.push(OldMachineTerm::legacy_cast(
                     MachineCastSpelling::UInt64FromInt64,
                     Box::new(sum(Ty::Int64)),
                 ));
@@ -540,7 +540,7 @@ mod tests {
             };
             for operand in operands {
                 for relation in relations {
-                    let native = bound(format, relation, View::Legacy(&operand), threshold);
+                    let native = bound(format, relation, View::Old(&operand), threshold);
                     let result = shared_equivalents(&context, &native).unwrap();
                     assert_eq!(result.len(), if format == Ty::Int64 { 2 } else { 1 });
                     let ConditionTerm::Compare { left, right, .. } = native else {
@@ -574,18 +574,18 @@ mod tests {
         let prefix =
             KernelTerm::machine_binary_shared(Ty::UInt32, Op::Add, [variable.clone(), variable]);
         let mask = KernelTermImport::default()
-            .machine_arithmetic(Ty::UInt32, &MachineTerm::uint32_constant(255))
+            .machine_arithmetic(Ty::UInt32, &OldMachineTerm::uint32_constant(255))
             .unwrap();
         let masked = KernelTerm::machine_binary_shared(Ty::UInt32, Op::BitwiseAnd, [prefix, mask]);
         let cast =
             KernelTerm::machine_cast_shared(Encoding::Generic, Ty::UInt32, Ty::Int32, masked);
-        let zero = MachineTerm::constant(0);
+        let zero = OldMachineTerm::constant(0);
         let context = PureFactContext::new();
         for (relation, expected) in [(R::LessThan, false), (R::GreaterEqual, true)] {
             let query = condition_for_operand_views(
                 Ty::Int32,
                 relation,
-                [View::Shared(&cast), View::Legacy(&zero)],
+                [View::Shared(&cast), View::Old(&zero)],
             );
             let exports = KernelTermExport::machine_export_count();
             assert_eq!(context.decide_by_sign_bit(&query), Some(expected));
@@ -606,20 +606,20 @@ mod tests {
             (Ty::Int16, Ty::UInt16, 32767i32),
         ] {
             let operand = sum(Ty::Int32);
-            let cast = MachineTerm::Cast {
+            let cast = OldMachineTerm::Cast {
                 spelling: MachineCastSpelling::Generic,
                 from: source,
                 to: destination,
                 value: Box::new(operand.clone()),
             };
             let query =
-                ConditionTerm::signed_greater_than(cast, MachineTerm::constant(maximum as u32));
+                ConditionTerm::signed_greater_than(cast, OldMachineTerm::constant(maximum as u32));
             let lower = ConditionTerm::signed_less_equal(
-                MachineTerm::constant((-maximum - 1) as u32),
+                OldMachineTerm::constant((-maximum - 1) as u32),
                 operand.clone(),
             );
             let upper =
-                ConditionTerm::signed_less_equal(operand, MachineTerm::constant(maximum as u32));
+                ConditionTerm::signed_less_equal(operand, OldMachineTerm::constant(maximum as u32));
             for (has_lower, has_upper) in
                 [(false, false), (true, false), (false, true), (true, true)]
             {
@@ -645,23 +645,26 @@ mod tests {
             [(Ty::UInt8, Ty::Int8, 255), (Ty::UInt16, Ty::Int16, 65535)]
         {
             let operand = sum(Ty::Int32);
-            let converted = MachineTerm::Cast {
+            let converted = OldMachineTerm::Cast {
                 spelling: MachineCastSpelling::Generic,
                 from: source,
                 to: destination,
                 value: Box::new(operand.clone()),
             };
-            let query = ConditionTerm::signed_less_than(converted, MachineTerm::constant(0));
+            let query = ConditionTerm::signed_less_than(converted, OldMachineTerm::constant(0));
             assert!(shared_equivalents(&PureFactContext::new(), &query).is_none());
             let source = Proposition::condition_is(
-                ConditionTerm::unsigned_less_equal(operand, MachineTerm::constant(max)),
+                ConditionTerm::unsigned_less_equal(operand, OldMachineTerm::constant(max)),
                 true,
             );
             let facts = PureFactContext::new().assume_proposition(source.clone());
             assert!(shared_equivalents(&facts, &query).is_some());
             // Use an independently weaker context for the missing-bound control.
             let weak = PureFactContext::new().assume_condition(
-                ConditionTerm::unsigned_less_equal(sum(Ty::Int32), MachineTerm::constant(max + 1)),
+                ConditionTerm::unsigned_less_equal(
+                    sum(Ty::Int32),
+                    OldMachineTerm::constant(max + 1),
+                ),
                 true,
             );
             assert!(shared_equivalents(&weak, &query).is_none());

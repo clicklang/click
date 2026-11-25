@@ -431,13 +431,13 @@ impl CGlobal {
         let value = match self.interface_type {
             InterfaceType::Float32 => match initializer {
                 CExpression::Float32Literal(bits) => {
-                    crate::kernel::float32(crate::kernel::MachineTerm::constant(*bits))
+                    crate::kernel::float32(crate::kernel::OldMachineTerm::constant(*bits))
                 }
                 _ => return None,
             },
             InterfaceType::Float64 => match initializer {
                 CExpression::Float64Literal(bits) => {
-                    crate::kernel::float64(crate::kernel::MachineTerm::uint64_constant(*bits))
+                    crate::kernel::float64(crate::kernel::OldMachineTerm::uint64_constant(*bits))
                 }
                 _ => return None,
             },
@@ -1066,13 +1066,13 @@ fn kernel_integer_literal_value(
         }
         InterfaceType::Float32 => match initializer {
             CExpression::Float32Literal(bits) => {
-                crate::kernel::float32(crate::kernel::MachineTerm::constant(*bits))
+                crate::kernel::float32(crate::kernel::OldMachineTerm::constant(*bits))
             }
             _ => return None,
         },
         InterfaceType::Float64 => match initializer {
             CExpression::Float64Literal(bits) => {
-                crate::kernel::float64(crate::kernel::MachineTerm::uint64_constant(*bits))
+                crate::kernel::float64(crate::kernel::OldMachineTerm::uint64_constant(*bits))
             }
             _ => return None,
         },
@@ -1085,45 +1085,45 @@ fn kernel_integer_literal_value(
         InterfaceType::UInt32 => crate::kernel::uint32(initializer_integer_bits(initializer)?),
         InterfaceType::Int64(_) => match initializer {
             CExpression::Int64Literal(value) => {
-                crate::kernel::int64(crate::kernel::MachineTerm::int64_constant(*value))
+                crate::kernel::int64(crate::kernel::OldMachineTerm::int64_constant(*value))
             }
             CExpression::Int32Literal(value) => {
-                crate::kernel::int64(crate::kernel::MachineTerm::int64_from_32(
-                    crate::kernel::MachineTerm::constant(*value),
+                crate::kernel::int64(crate::kernel::OldMachineTerm::int64_from_32(
+                    crate::kernel::OldMachineTerm::constant(*value),
                 ))
             }
             CExpression::UInt8Literal(value) => {
-                crate::kernel::int64(crate::kernel::MachineTerm::int64_from_uint32(
-                    crate::kernel::MachineTerm::constant(u32::from(*value)),
+                crate::kernel::int64(crate::kernel::OldMachineTerm::int64_from_uint32(
+                    crate::kernel::OldMachineTerm::constant(u32::from(*value)),
                 ))
             }
             CExpression::UInt32Literal(value) => {
-                crate::kernel::int64(crate::kernel::MachineTerm::int64_from_uint32(
-                    crate::kernel::MachineTerm::constant(*value),
+                crate::kernel::int64(crate::kernel::OldMachineTerm::int64_from_uint32(
+                    crate::kernel::OldMachineTerm::constant(*value),
                 ))
             }
             _ => return None,
         },
         InterfaceType::UInt64(_) => match initializer {
             CExpression::UInt64Literal(value) => {
-                crate::kernel::uint64(crate::kernel::MachineTerm::uint64_constant(*value))
+                crate::kernel::uint64(crate::kernel::OldMachineTerm::uint64_constant(*value))
             }
-            CExpression::Int64Literal(value) if *value >= 0 => {
-                crate::kernel::uint64(crate::kernel::MachineTerm::uint64_constant(*value as u64))
-            }
+            CExpression::Int64Literal(value) if *value >= 0 => crate::kernel::uint64(
+                crate::kernel::OldMachineTerm::uint64_constant(*value as u64),
+            ),
             CExpression::Int32Literal(value) => {
-                crate::kernel::uint64(crate::kernel::MachineTerm::uint64_from_int32(
-                    crate::kernel::MachineTerm::constant(*value),
+                crate::kernel::uint64(crate::kernel::OldMachineTerm::uint64_from_int32(
+                    crate::kernel::OldMachineTerm::constant(*value),
                 ))
             }
             CExpression::UInt8Literal(value) => {
-                crate::kernel::uint64(crate::kernel::MachineTerm::uint64_from_32(
-                    crate::kernel::MachineTerm::constant(u32::from(*value)),
+                crate::kernel::uint64(crate::kernel::OldMachineTerm::uint64_from_32(
+                    crate::kernel::OldMachineTerm::constant(u32::from(*value)),
                 ))
             }
             CExpression::UInt32Literal(value) => {
-                crate::kernel::uint64(crate::kernel::MachineTerm::uint64_from_32(
-                    crate::kernel::MachineTerm::constant(*value),
+                crate::kernel::uint64(crate::kernel::OldMachineTerm::uint64_from_32(
+                    crate::kernel::OldMachineTerm::constant(*value),
                 ))
             }
             _ => return None,
@@ -1425,13 +1425,13 @@ impl CStaticLocal {
         let value = match self.interface_type {
             InterfaceType::Float32 => match &self.initializer {
                 CExpression::Float32Literal(bits) => {
-                    crate::kernel::float32(crate::kernel::MachineTerm::constant(*bits))
+                    crate::kernel::float32(crate::kernel::OldMachineTerm::constant(*bits))
                 }
                 _ => return None,
             },
             InterfaceType::Float64 => match &self.initializer {
                 CExpression::Float64Literal(bits) => {
-                    crate::kernel::float64(crate::kernel::MachineTerm::uint64_constant(*bits))
+                    crate::kernel::float64(crate::kernel::OldMachineTerm::uint64_constant(*bits))
                 }
                 _ => return None,
             },

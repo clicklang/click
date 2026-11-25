@@ -13,13 +13,13 @@ pub(super) enum Input {
     PointerReadValue(Address, Address),
     Address(Address, Address),
     Offset(AddressOffset, AddressOffset),
-    Int32(MachineTerm, MachineTerm),
+    Int32(OldMachineTerm, OldMachineTerm),
     Int32Operands(
         crate::kernel::SharedMachineIntegerTerm,
         crate::kernel::SharedMachineIntegerTerm,
     ),
     Algebraic(AlgebraicTerm, AlgebraicTerm),
-    UInt64(MachineTerm, MachineTerm),
+    UInt64(OldMachineTerm, OldMachineTerm),
     Integer(
         crate::kernel::SharedIntegerTerm,
         crate::kernel::SharedIntegerTerm,
@@ -223,10 +223,10 @@ pub(crate) struct ReadEqualityDelta {
     pub(crate) equalities: Vec<crate::kernel::Proposition>,
 }
 
-fn is_scalar_read(term: &MachineTerm) -> bool {
+fn is_scalar_read(term: &OldMachineTerm) -> bool {
     match term {
-        MachineTerm::MemoryLoad(..) => true,
-        MachineTerm::Variable(variable) => {
+        OldMachineTerm::MemoryLoad(..) => true,
+        OldMachineTerm::Variable(variable) => {
             crate::kernel::registered_load_term_for_variable(variable).is_some()
         }
         _ => false,
@@ -450,15 +450,15 @@ mod read_trace_tests {
         let mut graph = EqualityGraph::default();
         let mut replay = graph.input_root();
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-        let read = V::Legacy(&MachineTerm::read_named(
+        let read = V::Old(&OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(pointer(305_000)),
             LoadKind::Int32,
         ))
         .retain(MachineIntegerType::Int32);
         let variable =
-            V::Legacy(&MachineTerm::Variable(Variable(305_001))).retain(MachineIntegerType::Int32);
-        let one = V::Legacy(&MachineTerm::constant(1)).retain(MachineIntegerType::Int32);
+            V::Old(&OldMachineTerm::Variable(Variable(305_001))).retain(MachineIntegerType::Int32);
+        let one = V::Old(&OldMachineTerm::constant(1)).retain(MachineIntegerType::Int32);
         let sum = KernelTerm::machine_binary_shared(
             MachineIntegerType::Int32,
             MachineBinaryOp::Add,
@@ -480,13 +480,13 @@ mod read_trace_tests {
     fn admitted_read_trace_includes_read_values_carried_as_offsets() {
         let mut graph = EqualityGraph::default();
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-        let load = MachineTerm::read_named(
+        let load = OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(pointer(304_000)),
             LoadKind::Int32,
         );
         let (variable, _) = crate::kernel::load_variable_for_term(&load).unwrap();
-        let read = AddressOffset::scaled_int32_node(MachineTerm::Variable(variable), 4);
+        let read = AddressOffset::scaled_int32_node(OldMachineTerm::Variable(variable), 4);
         let target = AddressOffset::Constant(8);
         let checkpoint = graph.read_equality_checkpoint();
         graph.add_offset_equality(&read, &target);

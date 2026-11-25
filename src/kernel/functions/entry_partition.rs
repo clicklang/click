@@ -87,7 +87,7 @@ pub(crate) fn admit_declared_entry_resources(
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterThan,
                         left: Box::new(quantity.clone()),
-                        right: Box::new(MachineTerm::constant(1)),
+                        right: Box::new(OldMachineTerm::constant(1)),
                     },
                 )
             });

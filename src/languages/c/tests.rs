@@ -692,7 +692,7 @@ fn c_sequential_profile_rejects_concurrency_builtins() {
 
 #[test]
 fn c_wide_static_initializers_use_checked_wide_values() {
-    use crate::kernel::{MachineTerm, ProgramValue};
+    use crate::kernel::{OldMachineTerm, ProgramValue};
     let unit = syntax::parse_translation_unit_for_source(
         r#"
         static long low = -9223372036854775807L - 1;
@@ -712,40 +712,40 @@ fn c_wide_static_initializers_use_checked_wide_values() {
     for (name, expected) in [
         (
             "low",
-            ProgramValue::Int64(MachineTerm::int64_constant(i64::MIN)),
+            ProgramValue::Int64(OldMachineTerm::int64_constant(i64::MIN)),
         ),
         (
             "high",
-            ProgramValue::UInt64(MachineTerm::uint64_constant(u64::MAX)),
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(u64::MAX)),
         ),
         (
             "wrapped",
-            ProgramValue::UInt64(MachineTerm::uint64_constant(u64::MAX)),
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(u64::MAX)),
         ),
         (
             "mixed",
-            ProgramValue::UInt32(MachineTerm::uint32_constant(0)),
+            ProgramValue::UInt32(OldMachineTerm::uint32_constant(0)),
         ),
         (
             "conditional",
-            ProgramValue::UInt32(MachineTerm::uint32_constant(u32::MAX)),
+            ProgramValue::UInt32(OldMachineTerm::uint32_constant(u32::MAX)),
         ),
         (
             "shifted",
-            ProgramValue::UInt32(MachineTerm::uint32_constant(u32::MAX - 1)),
+            ProgramValue::UInt32(OldMachineTerm::uint32_constant(u32::MAX - 1)),
         ),
         (
             "zero",
-            ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(0)),
         ),
         (
             "promoted",
-            ProgramValue::Int64(MachineTerm::int64_constant(i64::from(u32::MAX))),
+            ProgramValue::Int64(OldMachineTerm::int64_constant(i64::from(u32::MAX))),
         ),
         // GCC converts an out-of-range constant modulo 2^64.
         (
             "converted",
-            ProgramValue::Int64(MachineTerm::int64_constant(i64::MIN)),
+            ProgramValue::Int64(OldMachineTerm::int64_constant(i64::MIN)),
         ),
     ] {
         let global = unit.globals[name].to_kernel_global().unwrap();
@@ -3557,16 +3557,16 @@ fn c_static_array_parity_rejects_invalid_initializers() {
 
 fn memory_range(
     base: crate::kernel::Address,
-    start: impl Into<crate::kernel::MachineTerm>,
-    end: impl Into<crate::kernel::MachineTerm>,
+    start: impl Into<crate::kernel::OldMachineTerm>,
+    end: impl Into<crate::kernel::OldMachineTerm>,
 ) -> crate::kernel::MemoryRange {
     crate::kernel::MemoryRange::new(base, start.into(), end.into())
 }
 
 fn view_memory_context(
     base: crate::kernel::Address,
-    start: impl Into<crate::kernel::MachineTerm>,
-    end: impl Into<crate::kernel::MachineTerm>,
+    start: impl Into<crate::kernel::OldMachineTerm>,
+    end: impl Into<crate::kernel::OldMachineTerm>,
 ) -> crate::kernel::ResourceContext {
     crate::kernel::ResourceContext::new().unchecked_with_fact(
         crate::kernel::ResourceFact::view_memory(memory_range(base, start, end)),
@@ -3575,8 +3575,8 @@ fn view_memory_context(
 
 fn own_memory_context(
     base: crate::kernel::Address,
-    start: impl Into<crate::kernel::MachineTerm>,
-    end: impl Into<crate::kernel::MachineTerm>,
+    start: impl Into<crate::kernel::OldMachineTerm>,
+    end: impl Into<crate::kernel::OldMachineTerm>,
 ) -> crate::kernel::ResourceContext {
     crate::kernel::ResourceContext::new().unchecked_with_fact(
         crate::kernel::ResourceFact::own_memory(memory_range(base, start, end)),
@@ -5526,7 +5526,7 @@ fn c_unary_minus_preserves_signed_overflow_semantics() {
             .find(|parameter| parameter.name() == "value")
             .unwrap()
             .binding_name(),
-        crate::kernel::int32(crate::kernel::MachineTerm::constant(0x8000_0000)),
+        crate::kernel::int32(crate::kernel::OldMachineTerm::constant(0x8000_0000)),
     );
     let theorem = crate::kernel::prove_symbolic_program_execution(
         state.clone(),
@@ -6894,8 +6894,8 @@ fn c_syntax_targets_kernel_max_body() {
 
     let a = crate::kernel::Variable(30);
     let b = crate::kernel::Variable(31);
-    let a_bits = crate::kernel::MachineTerm::Variable(a);
-    let b_bits = crate::kernel::MachineTerm::Variable(b);
+    let a_bits = crate::kernel::OldMachineTerm::Variable(a);
+    let b_bits = crate::kernel::OldMachineTerm::Variable(b);
     let condition = crate::kernel::program_max_lt_condition(a_bits.clone(), b_bits.clone());
     let state = crate::kernel::ExecutionState::new()
         .with_local(
@@ -6923,7 +6923,7 @@ fn c_syntax_targets_kernel_max_body() {
                 state: Box::new(state.clone()),
                 statement: Box::new(statement),
                 outcome: crate::kernel::StatementOutcome::Return {
-                    value: crate::kernel::int32(crate::kernel::MachineTerm::Variable(b)).into(),
+                    value: crate::kernel::int32(crate::kernel::OldMachineTerm::Variable(b)).into(),
                     state: Box::new(state),
                 },
             }),
@@ -7216,7 +7216,7 @@ fn c_syntax_targets_kernel_float64_struct_field_load() {
         base: "object".into(),
         offset: crate::kernel::AddressOffset::Constant(0),
     };
-    let value = crate::kernel::float64(crate::kernel::MachineTerm::uint64_constant(
+    let value = crate::kernel::float64(crate::kernel::OldMachineTerm::uint64_constant(
         1.25f64.to_bits(),
     ));
     let statement = function.body_kernel_statement();
@@ -8808,14 +8808,14 @@ fn c_wide_scalar_struct_fields_execute_at_declared_widths() {
                         base: "packet".into(),
                         offset: crate::kernel::AddressOffset::Constant(8),
                     },
-                    crate::kernel::int64(crate::kernel::MachineTerm::int64_constant(-9)),
+                    crate::kernel::int64(crate::kernel::OldMachineTerm::int64_constant(-9)),
                 )
                 .store(
                     crate::kernel::Address {
                         base: "packet".into(),
                         offset: crate::kernel::AddressOffset::Constant(16),
                     },
-                    crate::kernel::uint64(crate::kernel::MachineTerm::uint64_constant(11)),
+                    crate::kernel::uint64(crate::kernel::OldMachineTerm::uint64_constant(11)),
                 ),
         )
         .with_resource_context(resources);
@@ -8844,7 +8844,7 @@ fn c_wide_scalar_struct_fields_execute_at_declared_widths() {
             function: Box::new(function),
             arguments,
             outcome: crate::kernel::FunctionOutcome::Return {
-                value: crate::kernel::uint64(crate::kernel::MachineTerm::uint64_constant(11))
+                value: crate::kernel::uint64(crate::kernel::OldMachineTerm::uint64_constant(11))
                     .into(),
                 state: Box::new(final_state),
             },
@@ -11109,7 +11109,7 @@ fn c_syntax_targets_kernel_float_argument_conversion() {
     };
     assert_eq!(
         value,
-        crate::kernel::MachineTerm::uint64_constant(1.0f64.to_bits())
+        crate::kernel::OldMachineTerm::uint64_constant(1.0f64.to_bits())
     );
 }
 
@@ -12708,7 +12708,7 @@ fn c_floating_point_storage_initializers_cover_static_local_arrays_and_calloc() 
     );
     assert_eq!(
         load.to_kernel_function().static_variables()[0].initial_value(),
-        &crate::kernel::ProgramValue::Float32(crate::kernel::MachineTerm::constant(
+        &crate::kernel::ProgramValue::Float32(crate::kernel::OldMachineTerm::constant(
             2.5f32.to_bits(),
         ))
     );
@@ -13430,7 +13430,7 @@ fn signed_byte_storage_and_pointer_identity() {
 /// automatic initializer, an assignment, a cast, a return, and an argument.
 #[test]
 fn c_out_of_range_integer_constants_convert_modulo_the_destination_width() {
-    use crate::kernel::{MachineTerm, ProgramValue};
+    use crate::kernel::{OldMachineTerm, ProgramValue};
     let unit = syntax::parse_translation_unit_for_source(
         "signed char high = 128; signed char low = -129; unsigned char negative = -56;\n\
          unsigned char wide = 300; short big = 40000; int value = (unsigned char) 256;",
@@ -13444,7 +13444,7 @@ fn c_out_of_range_integer_constants_convert_modulo_the_destination_width() {
         ("negative", crate::kernel::uint8(200)),
         ("wide", crate::kernel::uint8(44)),
         ("big", crate::kernel::int16(-25536i32 as u32)),
-        ("value", ProgramValue::Int32(MachineTerm::constant(0))),
+        ("value", ProgramValue::Int32(OldMachineTerm::constant(0))),
     ] {
         let global = unit.globals[name].to_kernel_global().unwrap();
         assert_eq!(global.initial_value(), &expected, "{name}");
@@ -14609,7 +14609,7 @@ fn c_long_double_prototypes_are_unusable_and_keep_type_positions() {
 // updates as statements, including full-width unsigned wrap.
 #[test]
 fn c_scalar_updates_preserve_old_new_values_and_loop_exit_updates() {
-    use crate::kernel::{ExecutionState, FunctionOutcome, MachineTerm, Proposition};
+    use crate::kernel::{ExecutionState, FunctionOutcome, OldMachineTerm, Proposition};
     for (source, expected) in [
         (
             "int32 run() { int32 n = 5; return n++; }",
@@ -14625,11 +14625,11 @@ fn c_scalar_updates_preserve_old_new_values_and_loop_exit_updates() {
         ),
         (
             "uint64 run() { uint64 n = 0; uint64 before = n--; return n; }",
-            crate::kernel::uint64(MachineTerm::uint64_constant(u64::MAX)),
+            crate::kernel::uint64(OldMachineTerm::uint64_constant(u64::MAX)),
         ),
         (
             "uint64 run() { uint64 n = 0; while (n--) { } return n; }",
-            crate::kernel::uint64(MachineTerm::uint64_constant(u64::MAX)),
+            crate::kernel::uint64(OldMachineTerm::uint64_constant(u64::MAX)),
         ),
         (
             "int32 run() { uint64 n = 2; int32 count = 0; while (n--) { count++; } return count; }",

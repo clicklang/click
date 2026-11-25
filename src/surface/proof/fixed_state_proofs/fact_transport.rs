@@ -955,18 +955,20 @@ const TRANSPORT_SEARCH_MISS: &str = "\n  this is a search miss, not a refusal; u
 pub(in crate::surface::proof) fn memory_erased_comparison(
     proposition: &Proposition,
 ) -> Option<Proposition> {
-    fn erase_term(term: &MachineTerm) -> MachineTerm {
+    fn erase_term(term: &OldMachineTerm) -> OldMachineTerm {
         match term {
-            MachineTerm::MemoryLoad(_, pointer, kind) => crate::kernel::MachineTerm::read_named(
-                crate::kernel::ProgramPoint::unplaced(
-                    &(crate::kernel::intern_memory(SymbolicMemory::default())),
-                ),
-                Address {
-                    base: pointer.base.clone(),
-                    offset: erase_offset(&pointer.offset),
-                },
-                *kind,
-            ),
+            OldMachineTerm::MemoryLoad(_, pointer, kind) => {
+                crate::kernel::OldMachineTerm::read_named(
+                    crate::kernel::ProgramPoint::unplaced(
+                        &(crate::kernel::intern_memory(SymbolicMemory::default())),
+                    ),
+                    Address {
+                        base: pointer.base.clone(),
+                        offset: erase_offset(&pointer.offset),
+                    },
+                    *kind,
+                )
+            }
             binary_term!(Bits32 @ format32, Add, left, right) => {
                 binary_node!(
                 @ *format32,
@@ -1008,7 +1010,7 @@ pub(in crate::surface::proof) fn memory_erased_comparison(
     let Proposition::ConditionIs(condition, value) = proposition else {
         return None;
     };
-    let erased = match condition.native_compat() {
+    let erased = match condition.old_form() {
         // A 32-bit comparison, signed or `uint32` (equality is filed at
         // `int32`).
         ConditionTerm::Compare {
@@ -1059,10 +1061,7 @@ pub(in crate::surface::proof) fn path_condition_equivalent(
                 left: other_left,
                 right: other_right,
             },
-        ) = (
-            left_condition.native_compat(),
-            right_condition.native_compat(),
-        )
+        ) = (left_condition.old_form(), right_condition.old_form())
         else {
             return false;
         };
@@ -1093,10 +1092,7 @@ pub(in crate::surface::proof) fn path_condition_equivalent(
         if left_value != right_value {
             return false;
         }
-        match (
-            left_condition.native_compat(),
-            right_condition.native_compat(),
-        ) {
+        match (left_condition.old_form(), right_condition.old_form()) {
             (
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
@@ -1439,15 +1435,15 @@ mod path_condition_tests {
         let source = Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
-            bytes: (MachineTerm::constant(1)).into(),
+            bytes: (OldMachineTerm::constant(1)).into(),
             wide: false,
         };
         let guard = Proposition::condition_is(
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Subtract,
-                left: Box::new(MachineTerm::Variable(Variable(7))),
-                right: Box::new(MachineTerm::constant(1)),
+                left: Box::new(OldMachineTerm::Variable(Variable(7))),
+                right: Box::new(OldMachineTerm::constant(1)),
             },
             false,
         );
@@ -1463,7 +1459,7 @@ mod path_condition_tests {
         let wider = Proposition::MemoryLoadable {
             memory,
             base,
-            bytes: (MachineTerm::constant(2)).into(),
+            bytes: (OldMachineTerm::constant(2)).into(),
             wide: false,
         };
         let invalid = Proposition::And(Box::new(guard), Box::new(wider));
@@ -1474,8 +1470,8 @@ mod path_condition_tests {
 
     #[test]
     fn pointer_offset_path_equality_accepts_reversed_operands() {
-        let left = AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(41)), 4);
-        let right = AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(42)), 4);
+        let left = AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(41)), 4);
+        let right = AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(42)), 4);
         let forward = Proposition::condition_is(
             ConditionTerm::AddressOffsetEqual(Box::new(left.clone()), Box::new(right.clone())),
             true,

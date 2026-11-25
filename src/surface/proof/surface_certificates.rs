@@ -248,12 +248,12 @@ pub(super) fn surface_implication_parts(
     }
 }
 
-fn contract_expression_for_instantiation_value(value: &MachineTerm) -> Option<SyntaxTerm> {
+fn contract_expression_for_instantiation_value(value: &OldMachineTerm) -> Option<SyntaxTerm> {
     let bits32_constant!(bits) = value else {
         return None;
     };
     Some(SyntaxTerm::ProgramExpression(ProgramExpression::Value(
-        ProgramValue::Int32(MachineTerm::constant(constant_u32(*bits))),
+        ProgramValue::Int32(OldMachineTerm::constant(constant_u32(*bits))),
     )))
 }
 
@@ -276,7 +276,7 @@ pub(super) fn instantiation_guard_tactics(
         atomic_conjuncts(guard, &mut conjuncts);
         conjuncts.iter().all(|guard| available.iter().any(|fact| fact == guard)
             || matches!(guard, Proposition::ConditionIs(condition, expected)
-                if crate::kernel::proof::fact_reasoning::trivial_condition_value(condition.native_compat()) == Some(*expected)))
+                if crate::kernel::proof::fact_reasoning::trivial_condition_value(condition.old_form()) == Some(*expected)))
     };
     let mut remaining = instance;
     while let Proposition::Implies(guard, conclusion) = remaining {
@@ -409,7 +409,7 @@ pub(super) fn plan_explicit_forall_instantiation_transport(
     goal: &Proposition,
     surface_goal: &SyntaxProposition,
     premise_pairs: &[(Proposition, SyntaxProposition)],
-    extra_arguments: &[(MachineTerm, SyntaxTerm)],
+    extra_arguments: &[(OldMachineTerm, SyntaxTerm)],
     conclusion_gate: &dyn Fn(&Proposition) -> bool,
 ) -> Option<UniversalConclusionPlan> {
     for (index, (kernel, surface)) in premise_pairs.iter().enumerate() {
@@ -469,7 +469,7 @@ pub(super) fn plan_explicit_forall_instantiation_transport(
 fn plan_explicit_universal_conclusion_discharge(
     premise_kernel: &Proposition,
     premise_surface: &SyntaxProposition,
-    argument_term: MachineTerm,
+    argument_term: OldMachineTerm,
     argument_expression: &SyntaxTerm,
     goal_conclusion: &Proposition,
     surface_goal_conclusion: &SyntaxProposition,
@@ -664,7 +664,7 @@ pub(super) fn plan_explicit_forall_goal_from_premises(
         let Some(mut plan) = plan_explicit_universal_conclusion_discharge(
             kernel,
             surface,
-            MachineTerm::Variable(goal_witness),
+            OldMachineTerm::Variable(goal_witness),
             &SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                 (binder_name.clone()).into(),
             )),
@@ -1793,7 +1793,7 @@ pub(super) fn rebased_viewability_restriction_steps(
         matches!(
             contract_expression_as_program_expression(value),
             Some(ProgramExpression::Value(ProgramValue::Int32(value)
-                | ProgramValue::UInt64(value))) if matches!(value, MachineTerm::Constant { bits: 0, .. })
+                | ProgramValue::UInt64(value))) if matches!(value, OldMachineTerm::Constant { bits: 0, .. })
         )
     };
     if !is_zero(zero) {
@@ -2183,7 +2183,7 @@ pub(super) fn viewability_restriction_requirements(
 
 pub(super) fn signed_strict_parts(
     proposition: &Proposition,
-) -> Option<(&MachineTerm, &MachineTerm)> {
+) -> Option<(&OldMachineTerm, &OldMachineTerm)> {
     match proposition {
         condition_source_0 @ Proposition::ConditionIs(_, true)
             if let Some((
@@ -2217,7 +2217,7 @@ pub(super) fn signed_strict_parts(
 
 pub(super) fn signed_nonstrict_parts(
     proposition: &Proposition,
-) -> Option<(&MachineTerm, &MachineTerm)> {
+) -> Option<(&OldMachineTerm, &OldMachineTerm)> {
     match proposition {
         condition_source_0 @ Proposition::ConditionIs(_, true)
             if let Some((
@@ -2255,7 +2255,7 @@ pub(super) fn signed_nonstrict_parts(
 /// strict.
 fn negated_signed_order_parts(
     proposition: &Proposition,
-) -> Option<(&MachineTerm, &MachineTerm, bool)> {
+) -> Option<(&OldMachineTerm, &OldMachineTerm, bool)> {
     let condition = match proposition {
         Proposition::Not(body) => match body.as_ref() {
             Proposition::ConditionIs(condition, true) => condition,
@@ -2264,7 +2264,7 @@ fn negated_signed_order_parts(
         Proposition::ConditionIs(condition, false) => condition,
         _ => return None,
     };
-    match condition.native_compat() {
+    match condition.old_form() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
@@ -2302,7 +2302,7 @@ pub(super) fn spell_signed_goal(
     premise_pairs: &[(Proposition, SyntaxProposition)],
 ) -> Option<SyntaxProposition> {
     use crate::kernel::{MachineBinaryOp, MachineOperandView, SignedDefinedWidth};
-    let mut operands: Vec<(&MachineTerm, SyntaxTerm)> = Vec::new();
+    let mut operands: Vec<(&OldMachineTerm, SyntaxTerm)> = Vec::new();
     for (kernel, surface) in premise_pairs {
         let parts = signed_strict_parts(kernel)
             .zip(surface_strict_parts(surface))
@@ -2328,7 +2328,7 @@ pub(super) fn spell_signed_goal(
     }
     fn spell(
         term: MachineOperandView<'_>,
-        operands: &[(&MachineTerm, SyntaxTerm)],
+        operands: &[(&OldMachineTerm, SyntaxTerm)],
     ) -> Option<SyntaxTerm> {
         if let Some(value) = term.word32_constant() {
             return Some(SyntaxTerm::ProgramExpression(ProgramExpression::Value(
@@ -2357,11 +2357,11 @@ pub(super) fn spell_signed_goal(
             _ => None,
         }
     }
-    let compare = |left: &MachineTerm, operator, right: &MachineTerm| {
+    let compare = |left: &OldMachineTerm, operator, right: &OldMachineTerm| {
         Some(SyntaxProposition::Comparison {
-            left: spell(MachineOperandView::Legacy(left), &operands)?,
+            left: spell(MachineOperandView::Old(left), &operands)?,
             operator,
-            right: spell(MachineOperandView::Legacy(right), &operands)?,
+            right: spell(MachineOperandView::Old(right), &operands)?,
         })
     };
     if let Some((SignedDefinedWidth::Int32, values, subtract)) =
@@ -2378,7 +2378,7 @@ pub(super) fn spell_signed_goal(
         });
     }
     match goal {
-        Proposition::ConditionIs(condition, true) => match condition.native_compat() {
+        Proposition::ConditionIs(condition, true) => match condition.old_form() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
@@ -2564,7 +2564,7 @@ pub(super) fn plan_recorded_int32_equal_one_predecessor(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
-            left: Box::new(MachineTerm::constant(1)),
+            left: Box::new(OldMachineTerm::constant(1)),
             right: Box::new(value.clone()),
         },
         true,
@@ -2733,7 +2733,7 @@ fn orient_surface_bitvector_equality(
         return None;
     };
     let view = crate::kernel::machine_integer::comparison::structural_comparison_view(
-        condition.native_compat(),
+        condition.old_form(),
     )?;
     if view.negated
         || view.relation != CompareRelation::Equal
@@ -2943,7 +2943,7 @@ pub(super) fn plan_recorded_load_address_congruence(
 
 /// The goal-side counterpart of [`signed_strict_parts`]: a goal written
 /// `<`, not its reversed (`>`) spelling, which other rules recognize.
-fn goal_exact_less_than_parts(goal: &Proposition) -> Option<(&MachineTerm, &MachineTerm)> {
+fn goal_exact_less_than_parts(goal: &Proposition) -> Option<(&OldMachineTerm, &OldMachineTerm)> {
     match goal {
         condition_source_0 @ Proposition::ConditionIs(_, true)
             if let Some((
@@ -2964,7 +2964,7 @@ fn goal_exact_less_than_parts(goal: &Proposition) -> Option<(&MachineTerm, &Mach
 
 /// The goal-side counterpart of [`signed_nonstrict_parts`]; see
 /// [`goal_exact_less_than_parts`].
-fn goal_exact_less_equal_parts(goal: &Proposition) -> Option<(&MachineTerm, &MachineTerm)> {
+fn goal_exact_less_equal_parts(goal: &Proposition) -> Option<(&OldMachineTerm, &OldMachineTerm)> {
     match goal {
         condition_source_0 @ Proposition::ConditionIs(_, true)
             if let Some((
@@ -2983,13 +2983,13 @@ fn goal_exact_less_equal_parts(goal: &Proposition) -> Option<(&MachineTerm, &Mac
     }
 }
 
-fn increment_base(term: &MachineTerm) -> Option<&MachineTerm> {
+fn increment_base(term: &OldMachineTerm) -> Option<&OldMachineTerm> {
     let binary_term!(Int32, Add, left, right) = term else {
         return None;
     };
-    if right.as_ref() == &MachineTerm::constant(1) {
+    if right.as_ref() == &OldMachineTerm::constant(1) {
         Some(left)
-    } else if left.as_ref() == &MachineTerm::constant(1) {
+    } else if left.as_ref() == &OldMachineTerm::constant(1) {
         Some(right)
     } else {
         None
@@ -3158,14 +3158,14 @@ pub(super) fn plan_explicit_positive_is_nonnegative(
     // `0 <= value` and `value >= 0` are one order; arithmetic closes either
     // spelling.
     let (goal_lower, goal_value) = signed_nonstrict_parts(goal)?;
-    if goal_lower != &MachineTerm::constant(0) {
+    if goal_lower != &OldMachineTerm::constant(0) {
         return None;
     }
     for (kernel, surface) in premise_pairs {
         let Some((premise_lower, premise_value)) = signed_strict_parts(kernel) else {
             continue;
         };
-        if premise_lower != &MachineTerm::constant(0) || premise_value != goal_value {
+        if premise_lower != &OldMachineTerm::constant(0) || premise_value != goal_value {
             continue;
         }
         surface_strict_parts(surface)?;
@@ -3523,7 +3523,8 @@ pub(super) fn plan_explicit_negated_strict_successor_bound(
             }
             _ => continue,
         };
-        if premise_value != goal_value.as_ref() || premise_upper != &MachineTerm::constant(upper) {
+        if premise_value != goal_value.as_ref() || premise_upper != &OldMachineTerm::constant(upper)
+        {
             continue;
         }
         let SyntaxProposition::Not(inner) = surface else {
@@ -3663,7 +3664,7 @@ enum SignedOrder {
 }
 
 impl SignedOrder {
-    fn kernel_parts(self, proposition: &Proposition) -> Option<(&MachineTerm, &MachineTerm)> {
+    fn kernel_parts(self, proposition: &Proposition) -> Option<(&OldMachineTerm, &OldMachineTerm)> {
         match self {
             Self::NonStrict => signed_nonstrict_parts(proposition),
             Self::Strict => signed_strict_parts(proposition),
@@ -3896,7 +3897,7 @@ fn plan_explicit_constant_lower_bound_weakening(
 // observation handle is an exact syntax key, not a value/equality-graph read.
 fn same_written_int32_operand(
     operand: crate::kernel::MachineOperandView<'_>,
-    written: &MachineTerm,
+    written: &OldMachineTerm,
 ) -> bool {
     operand.retain(MachineIntegerType::Int32)
         == crate::kernel::SharedMachineIntegerTerm::intern(
@@ -3937,7 +3938,7 @@ fn int32_increment_bound<'s>(
     } else {
         (left, right)
     };
-    if one.literal() != Some(MachineTerm::constant(1)) {
+    if one.literal() != Some(OldMachineTerm::constant(1)) {
         return None;
     }
     for (kernel, surface) in premise_pairs {
@@ -3945,7 +3946,7 @@ fn int32_increment_bound<'s>(
             continue;
         };
         if !same_written_int32_operand(value, premise_value)
-            || upper != &MachineTerm::constant(i32::MAX as u32)
+            || upper != &OldMachineTerm::constant(i32::MAX as u32)
         {
             continue;
         }
@@ -4035,14 +4036,14 @@ pub(super) fn plan_explicit_one_plus_strictly_increases(
     let binary_term!(Int32, Add, one, added_value) = sum.as_ref() else {
         return None;
     };
-    if one.as_ref() != &MachineTerm::constant(1) || added_value.as_ref() != value.as_ref() {
+    if one.as_ref() != &OldMachineTerm::constant(1) || added_value.as_ref() != value.as_ref() {
         return None;
     }
     for (kernel, surface) in premise_pairs {
         let Some((premise_value, upper)) = signed_strict_parts(kernel) else {
             continue;
         };
-        if premise_value != value.as_ref() || upper != &MachineTerm::constant(i32::MAX as u32) {
+        if premise_value != value.as_ref() || upper != &OldMachineTerm::constant(i32::MAX as u32) {
             continue;
         }
         surface_strict_parts(surface)?;
@@ -4061,7 +4062,7 @@ pub(super) fn plan_explicit_nonnegative_add_within_max_is_defined(
         return None;
     };
     let [value, amount] = [&operands[0], &operands[1]].map(|operand| operand.operand_view());
-    let zero = MachineTerm::constant(0);
+    let zero = OldMachineTerm::constant(0);
     let (_, nonnegative_surface) = premise_pairs.iter().find(|(kernel, _)| {
         signed_nonstrict_parts(kernel)
             .is_some_and(|(left, right)| left == &zero && same_written_int32_operand(amount, right))
@@ -4074,7 +4075,7 @@ pub(super) fn plan_explicit_nonnegative_add_within_max_is_defined(
             return false;
         };
         same_written_int32_operand(value, left)
-            && maximum.as_ref() == &MachineTerm::constant(i32::MAX as u32)
+            && maximum.as_ref() == &OldMachineTerm::constant(i32::MAX as u32)
             && same_written_int32_operand(amount, subtracted)
     })?;
     surface_nonstrict_parts(nonnegative_surface)?;
@@ -4163,7 +4164,7 @@ pub(super) fn plan_explicit_nonnegative_subtract_within_value_is_defined(
         return None;
     };
     let [value, amount] = [&operands[0], &operands[1]].map(|operand| operand.operand_view());
-    let zero = MachineTerm::constant(0);
+    let zero = OldMachineTerm::constant(0);
     let (_, nonnegative_surface) = premise_pairs.iter().find(|(kernel, _)| {
         signed_nonstrict_parts(kernel)
             .is_some_and(|(left, right)| left == &zero && same_written_int32_operand(amount, right))
@@ -4188,20 +4189,20 @@ pub(super) fn plan_explicit_positive_predecessor_is_nonnegative(
     premise_pairs: &[(Proposition, SyntaxProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let (goal_lower, predecessor) = goal_exact_less_equal_parts(goal)?;
-    if goal_lower != &MachineTerm::constant(0) {
+    if goal_lower != &OldMachineTerm::constant(0) {
         return None;
     }
     let binary_term!(Int32, Subtract, value, amount) = predecessor else {
         return None;
     };
-    if amount.as_ref() != &MachineTerm::constant(1) {
+    if amount.as_ref() != &OldMachineTerm::constant(1) {
         return None;
     }
     for (kernel, surface) in premise_pairs {
         let Some((premise_lower, premise_value)) = signed_strict_parts(kernel) else {
             continue;
         };
-        if premise_lower != &MachineTerm::constant(0) || premise_value != value.as_ref() {
+        if premise_lower != &OldMachineTerm::constant(0) || premise_value != value.as_ref() {
             continue;
         }
         surface_strict_parts(surface)?;
@@ -4228,12 +4229,12 @@ pub(super) fn plan_explicit_predecessor_upper_bound(
     let binary_term!(Int32, Subtract, value, amount) = predecessor else {
         return None;
     };
-    if amount.as_ref() != &MachineTerm::constant(1) {
+    if amount.as_ref() != &OldMachineTerm::constant(1) {
         return None;
     }
     let (_, nonnegative) = premise_pairs.iter().find(|(kernel, _)| {
         signed_nonstrict_parts(kernel).is_some_and(|(lower, bounded)| {
-            lower == &MachineTerm::constant(0) && bounded == value.as_ref()
+            lower == &OldMachineTerm::constant(0) && bounded == value.as_ref()
         })
     })?;
     let (_, surface) = premise_pairs.iter().find(|(kernel, _)| {
@@ -4258,13 +4259,13 @@ pub(super) fn plan_explicit_one_le_predecessor(
     premise_pairs: &[(Proposition, SyntaxProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let value = if let Some((goal_lower, predecessor)) = goal_exact_less_equal_parts(goal) {
-        if goal_lower != &MachineTerm::constant(0) {
+        if goal_lower != &OldMachineTerm::constant(0) {
             return None;
         }
         let binary_term!(Int32, Subtract, value, amount) = predecessor else {
             return None;
         };
-        if amount.as_ref() != &MachineTerm::constant(1) {
+        if amount.as_ref() != &OldMachineTerm::constant(1) {
             return None;
         }
         value.as_ref()
@@ -4273,7 +4274,7 @@ pub(super) fn plan_explicit_one_le_predecessor(
         let binary_term!(Int32, Subtract, predecessor_value, amount) = predecessor else {
             return None;
         };
-        if predecessor_value.as_ref() != value || amount.as_ref() != &MachineTerm::constant(1) {
+        if predecessor_value.as_ref() != value || amount.as_ref() != &OldMachineTerm::constant(1) {
             return None;
         }
         value
@@ -4282,7 +4283,7 @@ pub(super) fn plan_explicit_one_le_predecessor(
         let Some((premise_lower, premise_value)) = signed_nonstrict_parts(kernel) else {
             continue;
         };
-        if premise_lower != &MachineTerm::constant(1) || premise_value != value {
+        if premise_lower != &OldMachineTerm::constant(1) || premise_value != value {
             continue;
         }
         surface_nonstrict_parts(surface)?;
@@ -4291,21 +4292,21 @@ pub(super) fn plan_explicit_one_le_predecessor(
     None
 }
 
-fn one_le_predecessor_value(goal: &Proposition) -> Option<MachineTerm> {
+fn one_le_predecessor_value(goal: &Proposition) -> Option<OldMachineTerm> {
     if let Some((goal_lower, predecessor)) = goal_exact_less_equal_parts(goal) {
-        if goal_lower != &MachineTerm::constant(0) {
+        if goal_lower != &OldMachineTerm::constant(0) {
             return None;
         }
         let binary_term!(Int32, Subtract, value, amount) = predecessor else {
             return None;
         };
-        (amount.as_ref() == &MachineTerm::constant(1)).then(|| value.as_ref().clone())
+        (amount.as_ref() == &OldMachineTerm::constant(1)).then(|| value.as_ref().clone())
     } else {
         let (predecessor, value) = goal_exact_less_than_parts(goal)?;
         let binary_term!(Int32, Subtract, predecessor_value, amount) = predecessor else {
             return None;
         };
-        (predecessor_value.as_ref() == value && amount.as_ref() == &MachineTerm::constant(1))
+        (predecessor_value.as_ref() == value && amount.as_ref() == &OldMachineTerm::constant(1))
             .then(|| value.clone())
     }
 }
@@ -4340,14 +4341,14 @@ pub(super) fn plan_explicit_positive_predecessor_strictly_decreases(
     let binary_term!(Int32, Subtract, predecessor_value, amount) = predecessor else {
         return None;
     };
-    if predecessor_value.as_ref() != value || amount.as_ref() != &MachineTerm::constant(1) {
+    if predecessor_value.as_ref() != value || amount.as_ref() != &OldMachineTerm::constant(1) {
         return None;
     }
     for (kernel, surface) in premise_pairs {
         let Some((premise_lower, premise_value)) = signed_strict_parts(kernel) else {
             continue;
         };
-        if premise_lower != &MachineTerm::constant(0) || premise_value != value {
+        if premise_lower != &OldMachineTerm::constant(0) || premise_value != value {
             continue;
         }
         surface_strict_parts(surface)?;
@@ -4479,15 +4480,15 @@ pub(super) fn plan_pointer_advanced_load_equality(
     None
 }
 
-fn registered_load_pointer(term: &MachineTerm) -> Option<Address> {
-    crate::kernel::scalar_read_observation(crate::kernel::MachineOperandView::Legacy(term))
+fn registered_load_pointer(term: &OldMachineTerm) -> Option<Address> {
+    crate::kernel::scalar_read_observation(crate::kernel::MachineOperandView::Old(term))
         .map(|read| read.pointer)
 }
 
 fn pointer_array_index_pair(
     source: &AddressOffset,
     target: &AddressOffset,
-) -> Option<(MachineTerm, MachineTerm)> {
+) -> Option<(OldMachineTerm, OldMachineTerm)> {
     let source = pointer_offset_addends(source)?;
     let target = pointer_offset_addends(target)?;
     if source.len() != 2 || target.len() != 2 {
@@ -4517,7 +4518,7 @@ fn pointer_offset_addends(offset: &AddressOffset) -> Option<Vec<AddressOffset>> 
     }
 }
 
-fn pointer_int32_scaled_value(offset: &AddressOffset) -> Option<MachineTerm> {
+fn pointer_int32_scaled_value(offset: &AddressOffset) -> Option<OldMachineTerm> {
     let AddressOffset::Int32Scaled { value, byte_width } = offset else {
         return None;
     };
@@ -4651,9 +4652,9 @@ pub(super) fn plan_explicit_successor_le_implies_lt(
         };
         if bound_value != value
             || successor
-                != &crate::kernel::canonical_term(&MachineTerm::add(
+                != &crate::kernel::canonical_term(&OldMachineTerm::add(
                     lower.clone(),
-                    MachineTerm::constant(1),
+                    OldMachineTerm::constant(1),
                 ))
         {
             continue;
@@ -4700,8 +4701,14 @@ pub(super) fn plan_explicit_increment_preserves_order(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
-                    left: Box::new(MachineTerm::add(lower.clone(), MachineTerm::constant(1))),
-                    right: Box::new(MachineTerm::add(value.clone(), MachineTerm::constant(1))),
+                    left: Box::new(OldMachineTerm::add(
+                        lower.clone(),
+                        OldMachineTerm::constant(1),
+                    )),
+                    right: Box::new(OldMachineTerm::add(
+                        value.clone(),
+                        OldMachineTerm::constant(1),
+                    )),
                 },
                 true,
             );
@@ -4795,8 +4802,8 @@ mod shared_goal_spelling_tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
-                    left: Box::new(MachineTerm::Variable(variable)),
-                    right: Box::new(MachineTerm::constant(10)),
+                    left: Box::new(OldMachineTerm::Variable(variable)),
+                    right: Box::new(OldMachineTerm::constant(10)),
                 },
                 true,
             ),

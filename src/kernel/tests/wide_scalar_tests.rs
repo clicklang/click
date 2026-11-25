@@ -9,7 +9,7 @@ fn evaluated(expression: ProgramExpression) -> ExpressionOutcome {
     let Proposition::ProgramExpressionEvaluates { outcome, .. } = theorem.proposition() else {
         panic!("expected expression evaluation");
     };
-    let native_outcome = outcome.native_compat();
+    let native_outcome = outcome.old_form();
     let outcome = &native_outcome;
     outcome.clone().map_value(Into::into)
 }
@@ -125,10 +125,10 @@ fn wide_scalar_symbolic_identity_substitution_and_observation_preserve_type() {
         let Proposition::ProgramExpressionEvaluates { outcome, .. } = theorem.proposition() else {
             unreachable!()
         };
-        let native_outcome = outcome.native_compat();
+        let native_outcome = outcome.old_form();
         let outcome = &native_outcome;
         assert_eq!(outcome, &ExpressionOutcome::Value(value.clone()));
-        let term = MachineTerm::Variable(variable);
+        let term = OldMachineTerm::Variable(variable);
         let observation = IntegerTerm::from_machine(ty, term).unwrap();
         let IntegerTerm::Machine(observed) = observation else {
             unreachable!()
@@ -166,15 +166,15 @@ fn wide_scalar_rejects_legacy_carriers_and_unsupported_arithmetic() {
             .constant_term(MachineIntegerConstant::from_unsigned(other.format(), 1).unwrap())
             .unwrap();
         for term in [
-            MachineTerm::constant(1),
-            MachineTerm::int64_constant(1),
-            MachineTerm::uint64_constant(1),
+            OldMachineTerm::constant(1),
+            OldMachineTerm::int64_constant(1),
+            OldMachineTerm::uint64_constant(1),
             wrong,
             binary_node!(
                 Int32,
                 Add,
-                Box::new(MachineTerm::Variable(Variable(148_002))),
-                Box::new(MachineTerm::constant(1)),
+                Box::new(OldMachineTerm::Variable(Variable(148_002))),
+                Box::new(OldMachineTerm::constant(1)),
             ),
         ] {
             assert!(IntegerTerm::from_machine(ty, term.clone()).is_none());
@@ -344,9 +344,9 @@ fn wide_cast_widening_preserves_integer_observation_but_narrowing_does_not() {
         MachineIntegerType::Int64,
         MachineIntegerType::UInt64,
     ] {
-        let term = MachineTerm::Variable(Variable(149_003));
+        let term = OldMachineTerm::Variable(Variable(149_003));
         let wide =
-            MachineTerm::machine_integer_cast(source, MachineIntegerType::Int128, term.clone());
+            OldMachineTerm::machine_integer_cast(source, MachineIntegerType::Int128, term.clone());
         // The observation keeps its widening as written; its value is the
         // operand's by rule W.
         let observed = IntegerTerm::from_machine(MachineIntegerType::Int128, wide).unwrap();
@@ -354,8 +354,8 @@ fn wide_cast_widening_preserves_integer_observation_but_narrowing_does_not() {
         assert_ne!(observed, original);
         assert_eq!(observed.value_read(), &original);
     }
-    let term = MachineTerm::Variable(Variable(149_004));
-    let narrowed = MachineTerm::machine_integer_cast(
+    let term = OldMachineTerm::Variable(Variable(149_004));
+    let narrowed = OldMachineTerm::machine_integer_cast(
         MachineIntegerType::UInt128,
         MachineIntegerType::Int64,
         term.clone(),
@@ -371,7 +371,7 @@ fn wide_cast_widening_preserves_integer_observation_but_narrowing_does_not() {
     assert_eq!(machine.ty(), MachineIntegerType::Int64);
     assert!(matches!(
         machine.value(),
-        MachineTerm::Cast {
+        OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             from: MachineIntegerType::UInt128,
             to: MachineIntegerType::Int64,
@@ -458,7 +458,7 @@ fn wide_cast_specification_signed_narrowing_keeps_both_range_obligations() {
     let mut none = Vec::new();
     assert!(
         crate::kernel::eval::coerce_program_value_to_type(
-            ProgramValue::Int128(MachineTerm::Variable(Variable(149_005))),
+            ProgramValue::Int128(OldMachineTerm::Variable(Variable(149_005))),
             ProgramType::Int64,
             &mut none,
             &PureFactContext::new(),
@@ -477,7 +477,7 @@ fn wide_cast_specification_signed_narrowing_keeps_both_range_obligations() {
                 assumptions,
             )
         };
-    let value = ProgramValue::Int128(MachineTerm::Variable(Variable(149_005)));
+    let value = ProgramValue::Int128(OldMachineTerm::Variable(Variable(149_005)));
     let mut obligations = Vec::new();
     let result = coerce_program_value_to_type(
         value,
@@ -508,11 +508,11 @@ fn wide_cast_specification_signed_narrowing_keeps_both_range_obligations() {
                 unreachable!()
             };
             assumptions =
-                assumptions.assume_condition((condition.clone()).native_compat().clone(), true);
+                assumptions.assume_condition((condition.clone()).old_form().clone(), true);
         }
         let mut remaining = Vec::new();
         let result = coerce_program_value_to_type(
-            ProgramValue::Int128(MachineTerm::Variable(Variable(149_005))),
+            ProgramValue::Int128(OldMachineTerm::Variable(Variable(149_005))),
             ProgramType::Int64,
             &mut remaining,
             &assumptions,
@@ -521,7 +521,7 @@ fn wide_cast_specification_signed_narrowing_keeps_both_range_obligations() {
         assert_eq!(result.program_type(), ProgramType::Int64);
         assert_eq!(remaining.len(), 2 - provided);
     }
-    let value = ProgramValue::Int128(MachineTerm::Variable(Variable(149_005)));
+    let value = ProgramValue::Int128(OldMachineTerm::Variable(Variable(149_005)));
     assert!(
         crate::kernel::machine_integer::conversion::convert_value(value, MachineIntegerType::Int64)
             .is_some()
@@ -563,33 +563,33 @@ fn wide_cast_function_argument_widens_and_return_narrows_without_truncating_earl
 #[test]
 fn wide_cast_hostile_metadata_and_word_payloads_are_rejected_locally() {
     for term in [
-        MachineTerm::Cast {
+        OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             from: MachineIntegerType::Int64,
             to: MachineIntegerType::UInt128,
-            value: Box::new(MachineTerm::Variable(Variable(149_006))),
+            value: Box::new(OldMachineTerm::Variable(Variable(149_006))),
         },
-        MachineTerm::Cast {
+        OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             from: MachineIntegerType::Int128,
             to: MachineIntegerType::Int128,
-            value: Box::new(MachineTerm::constant(1)),
+            value: Box::new(OldMachineTerm::constant(1)),
         },
-        MachineTerm::Cast {
+        OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             from: MachineIntegerType::Int64,
             to: MachineIntegerType::Int128,
-            value: Box::new(MachineTerm::uint64_constant(1)),
+            value: Box::new(OldMachineTerm::uint64_constant(1)),
         },
-        MachineTerm::Cast {
+        OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             from: MachineIntegerType::Int64,
             to: MachineIntegerType::Int128,
-            value: Box::new(MachineTerm::Cast {
+            value: Box::new(OldMachineTerm::Cast {
                 spelling: MachineCastSpelling::Generic,
                 from: MachineIntegerType::Int32,
                 to: MachineIntegerType::Int64,
-                value: Box::new(MachineTerm::int64_constant(1)),
+                value: Box::new(OldMachineTerm::int64_constant(1)),
             }),
         },
     ] {
@@ -601,7 +601,7 @@ fn wide_cast_hostile_metadata_and_word_payloads_are_rejected_locally() {
     }
     assert!(
         crate::kernel::machine_integer::conversion::convert_value(
-            ProgramValue::Int64(MachineTerm::machine_constant(
+            ProgramValue::Int64(OldMachineTerm::machine_constant(
                 MachineIntegerConstant::from_unsigned(
                     MachineIntegerType::UInt128.format(),
                     u128::MAX
@@ -624,14 +624,14 @@ fn wide_cast_canonicalization_keeps_source_load_width_and_memory_dependencies() 
         .with_block("wide-cast-source", 4)
         .store(
             pointer.clone(),
-            ProgramValue::Int32(MachineTerm::constant((-1i32) as u32)),
+            ProgramValue::Int32(OldMachineTerm::constant((-1i32) as u32)),
         );
-    let load = MachineTerm::read_named(
+    let load = OldMachineTerm::read_named(
         ProgramPoint::at(&(intern_memory(memory))),
         Box::new(pointer),
         LoadKind::Int32,
     );
-    let wide = MachineTerm::machine_integer_cast(
+    let wide = OldMachineTerm::machine_integer_cast(
         MachineIntegerType::Int32,
         MachineIntegerType::Int128,
         load,
@@ -649,7 +649,7 @@ fn wide_cast_canonicalization_keeps_source_load_width_and_memory_dependencies() 
 
 #[test]
 fn uint64_to_int64_specification_cast_requires_exact_representable_range() {
-    let bits = MachineTerm::Variable(Variable(149_100));
+    let bits = OldMachineTerm::Variable(Variable(149_100));
     let mut none = Vec::new();
     assert_eq!(
         crate::kernel::eval::coerce_program_value_to_type(
@@ -675,7 +675,7 @@ fn uint64_to_int64_specification_cast_requires_exact_representable_range() {
     let bound = Proposition::condition_is(
         ConditionTerm::uint64_less_equal(
             bits.clone(),
-            MachineTerm::uint64_constant(i64::MAX as u64),
+            OldMachineTerm::uint64_constant(i64::MAX as u64),
         ),
         true,
     );
@@ -709,7 +709,7 @@ fn uint64_to_int64_specification_cast_requires_exact_representable_range() {
     let weaker = Proposition::condition_is(
         ConditionTerm::uint64_less_equal(
             bits.clone(),
-            MachineTerm::uint64_constant((i64::MAX as u64) + 1),
+            OldMachineTerm::uint64_constant((i64::MAX as u64) + 1),
         ),
         true,
     );
@@ -765,9 +765,9 @@ fn wide_cached_load_canonicalization_preserves_kind_and_all_bits() {
             offset: AddressOffset::Constant(0),
         };
         let bits = if signed {
-            MachineTerm::int64_constant(0x1_0000_0001)
+            OldMachineTerm::int64_constant(0x1_0000_0001)
         } else {
-            MachineTerm::uint64_constant(0x1_0000_0001)
+            OldMachineTerm::uint64_constant(0x1_0000_0001)
         };
         let value = if signed {
             ProgramValue::Int64(bits.clone())
@@ -780,7 +780,7 @@ fn wide_cached_load_canonicalization_preserves_kind_and_all_bits() {
                 .store(pointer.clone(), value),
         );
         let load = |kind| {
-            MachineTerm::read_named(ProgramPoint::at(&memory), Box::new(pointer.clone()), kind)
+            OldMachineTerm::read_named(ProgramPoint::at(&memory), Box::new(pointer.clone()), kind)
         };
         assert_eq!(
             crate::kernel::api::canonicalize_atomic_loads(&load(LoadKind::Bits64)),
@@ -801,10 +801,10 @@ fn wide_cached_load_canonicalization_preserves_kind_and_all_bits() {
                 )
                 .store(
                     pointer.offset_by_bytes(4),
-                    ProgramValue::Int32(MachineTerm::constant(0)),
+                    ProgramValue::Int32(OldMachineTerm::constant(0)),
                 ),
         );
-        let changed = MachineTerm::read_named(
+        let changed = OldMachineTerm::read_named(
             ProgramPoint::at(&overwritten),
             Box::new(pointer.clone()),
             LoadKind::Bits64,

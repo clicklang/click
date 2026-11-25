@@ -413,13 +413,13 @@ mod tests {
                 variant: "Arm".into(),
                 fields: vec![
                     AlgebraicValue::Program(ProgramValue::Pointer(pointer)),
-                    AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::add(
-                        MachineTerm::Variable(Variable(999621)),
-                        MachineTerm::constant(1),
+                    AlgebraicValue::Program(ProgramValue::Int32(OldMachineTerm::add(
+                        OldMachineTerm::Variable(Variable(999621)),
+                        OldMachineTerm::constant(1),
                     ))),
                 ],
             };
-            MachineTerm::AlgebraicMatch {
+            OldMachineTerm::AlgebraicMatch {
                 scrutinee: Box::new(source),
                 arms: vec![AlgebraicBitvectorMatchArm {
                     variant: "Arm".into(),
@@ -428,12 +428,12 @@ mod tests {
                             Address::symbolic(Variable(999623)),
                             ProgramType::Int32Pointer,
                         ))),
-                        AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::Variable(
+                        AlgebraicValue::Program(ProgramValue::Int32(OldMachineTerm::Variable(
                             Variable(999624),
                         ))),
                     ],
                     binding_names: Default::default(),
-                    body: MachineTerm::Variable(Variable(999622)),
+                    body: OldMachineTerm::Variable(Variable(999622)),
                 }],
             }
         };

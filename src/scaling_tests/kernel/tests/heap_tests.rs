@@ -99,7 +99,7 @@ fn read_validity_lookup_ignores_unrelated_cells() {
 fn unknown_read_validity_does_not_resolve_unrelated_cells() {
     let target = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(770)), 4),
+        offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(770)), 4),
     };
     let mut samples = Vec::new();
     for count in [0, 16, 64, 256] {
@@ -191,8 +191,8 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
             Variable(9301),
             &[MemoryRange::new(
                 address.clone(),
-                MachineTerm::constant(0),
-                MachineTerm::constant(1),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(1),
             )],
             &assumptions,
             None,
@@ -678,7 +678,7 @@ fn typed_validity_uses_one_storage_anchor_among_many_aliases() {
         facts = facts.assume_proposition(Proposition::MemoryLoadable {
             memory: memory.clone(),
             base: query.clone(),
-            bytes: (MachineTerm::constant(8)).into(),
+            bytes: (OldMachineTerm::constant(8)).into(),
             wide: false,
         });
         let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {

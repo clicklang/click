@@ -13,8 +13,8 @@ use crate::kernel::population_authority::storage_creation::{
 };
 use crate::kernel::{
     Address, CompositeResourceDefinition, ConditionOutcome, ExecutionBudget, ExecutionLimit,
-    ExecutionPureFact, ExecutionState, FunctionExecutionCandidates, FunctionOutcome, MachineTerm,
-    MemoryRange, ProgramExpression, ProgramFunction, ProgramStatement, ProgramValue,
+    ExecutionPureFact, ExecutionState, FunctionExecutionCandidates, FunctionOutcome, MemoryRange,
+    OldMachineTerm, ProgramExpression, ProgramFunction, ProgramStatement, ProgramValue,
     ProofObligation, Proposition, PureFactContext, Resource, ResourceContext, ResourceFact,
     ResourceSpec, RuntimeError, SpecProposition, StatementOutcome, SymbolicMemory, Theorem,
     Variable, VerifiedLoopRule,
@@ -1150,7 +1150,7 @@ fn memory_only_adds_named_cells(
         let Some(kind) = LoadKind::of_value(&value) else {
             return Err("added a cell no load reads".into());
         };
-        if let Some(MachineTerm::MemoryLoad(point, _, _)) =
+        if let Some(OldMachineTerm::MemoryLoad(point, _, _)) =
             crate::kernel::spec::program_value_bitvector_term(&value)
             && point.read_version_id().is_some()
         {
@@ -1189,7 +1189,7 @@ fn describe_unnamed_cell_addition(
     base: &crate::kernel::SharedMemory,
     pointer: &crate::kernel::Address,
     value: &ProgramValue,
-    load: &MachineTerm,
+    load: &OldMachineTerm,
 ) -> String {
     let held = truncate_debug(value, 240);
     let expected = truncate_debug(load, 240);
@@ -1272,7 +1272,7 @@ fn describe_changed_state_field(
 /// cell, in one of the representations resource projection writes: the scalar
 /// term itself, the `_Bool` normalization of it, or the complete typed pointer
 /// read (including its provenance and bounds).
-fn cell_value_is_exactly_load(value: &ProgramValue, load: &MachineTerm) -> bool {
+fn cell_value_is_exactly_load(value: &ProgramValue, load: &OldMachineTerm) -> bool {
     match value {
         ProgramValue::Int8(term) => term == load,
         ProgramValue::Int16(term)
@@ -1287,10 +1287,10 @@ fn cell_value_is_exactly_load(value: &ProgramValue, load: &MachineTerm) -> bool 
         | ProgramValue::Float32(term)
         | ProgramValue::Float64(term) => term == load,
         ProgramValue::Bool(term) => {
-            term == &MachineTerm::if_then_else(
-                crate::kernel::ConditionTerm::equal(load.clone(), MachineTerm::constant(0)),
-                MachineTerm::constant(0),
-                MachineTerm::constant(1),
+            term == &OldMachineTerm::if_then_else(
+                crate::kernel::ConditionTerm::equal(load.clone(), OldMachineTerm::constant(0)),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(1),
             )
         }
         ProgramValue::Pointer(pointer) => {
@@ -1600,7 +1600,7 @@ impl CheckedResourceRewrite {
                     imported
                         .entry_symbolic_members
                         .clone()
-                        .unwrap_or(MachineTerm::constant(imported.entry_owned_members)),
+                        .unwrap_or(OldMachineTerm::constant(imported.entry_owned_members)),
                 ),
                 true,
             );
@@ -2814,8 +2814,8 @@ impl CheckedResourceObservation {
                     MachineIntegerType::Int32,
                     CompareRelation::LessEqual,
                     [
-                        crate::kernel::MachineOperandView::Legacy(&MachineTerm::constant(0)),
-                        crate::kernel::MachineOperandView::Legacy(quantity),
+                        crate::kernel::MachineOperandView::Old(&OldMachineTerm::constant(0)),
+                        crate::kernel::MachineOperandView::Old(quantity),
                     ],
                 ),
                 true,
@@ -5142,8 +5142,8 @@ fn memory_diff_is_covered_by_writes(
                     &diff_pointer,
                     value.byte_width(),
                     changed_pointer,
-                    &MachineTerm::constant(0),
-                    &MachineTerm::constant(1),
+                    &OldMachineTerm::constant(0),
+                    &OldMachineTerm::constant(1),
                     *bytes,
                 ),
                 // A whole object of abstract size changes the cell at its
@@ -5904,7 +5904,7 @@ impl CheckedInterfaceLoadDefinition {
         else {
             return None;
         };
-        let (MachineTerm::Variable(variable), load @ MachineTerm::MemoryLoad(_, _, _)) =
+        let (OldMachineTerm::Variable(variable), load @ OldMachineTerm::MemoryLoad(_, _, _)) =
             (left.as_ref(), right.as_ref())
         else {
             return None;
@@ -6819,7 +6819,7 @@ pub(crate) fn checked_branch_fact_is_available(facts: &PureFactStore, fact: &Pro
         // shared comparison spellings use the same retained source; this
         // does not derive a weaker bound or search for a missing premise.
         || matches!(fact, Proposition::ConditionIs(condition, truth)
-            if facts.assumptions().selected_comparison_source(condition.native_compat(), *truth).is_some())
+            if facts.assumptions().selected_comparison_source(condition.old_form(), *truth).is_some())
         || matches!(&fact, condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.condition_native(), Some((crate::kernel::ConditionTerm::Compare { .. }, _)) if crate::kernel::proposition_holds_without_facts(fact)))
         || matches!(fact, Proposition::And(left, right)
             if checked_branch_fact_is_available(facts, left)
@@ -10241,7 +10241,7 @@ impl ExecutionProofCore {
                         };
                         if *other != scrutinee
                             && !matches!(other, Term::Algebraic(term)
-                                if matches!(term.native_compat().node, crate::kernel::AlgebraicTermNode::Constructor { .. }))
+                                if matches!(term.old_form().node, crate::kernel::AlgebraicTermNode::Constructor { .. }))
                         {
                             arm_facts = arm_facts
                                 .with_fact(Proposition::Equal(other.clone(), constructor.clone()));
@@ -10268,8 +10268,8 @@ impl ExecutionProofCore {
                     body_clauses = crate::kernel::functions::matched_resource_instance_case_clauses(
                         &self.state,
                         projection,
-                        model.native_compat(),
-                        constructor.native_compat(),
+                        model.old_form(),
+                        constructor.old_form(),
                         definitions,
                         arm_facts.assumptions(),
                     );
@@ -10287,7 +10287,7 @@ impl ExecutionProofCore {
                     crate::kernel::AlgebraicTermNode::Constructor { .. }
                 ) && let Proposition::Equal(left, Term::Algebraic(constructor)) = case
                     && let crate::kernel::AlgebraicTermNode::Constructor { variant, fields } =
-                        &constructor.native_compat().node
+                        &constructor.old_form().node
                 {
                     let spelled_fields = fields
                         .iter()
@@ -10308,7 +10308,7 @@ impl ExecutionProofCore {
                         .collect::<Vec<_>>();
                     if spelled_fields != *fields {
                         let spelled = crate::kernel::AlgebraicTerm {
-                            algebraic_type: constructor.native_compat().algebraic_type.clone(),
+                            algebraic_type: constructor.old_form().algebraic_type.clone(),
                             node: crate::kernel::AlgebraicTermNode::Constructor {
                                 variant: variant.clone(),
                                 fields: spelled_fields,
@@ -10324,7 +10324,7 @@ impl ExecutionProofCore {
                 if let crate::kernel::AlgebraicTermNode::Variable(variable) = value.node
                     && let Proposition::Equal(_, Term::Algebraic(constructor)) = case
                 {
-                    for instance in matched_value_premise_instances(facts, variable, constructor.native_compat()) {
+                    for instance in matched_value_premise_instances(facts, variable, constructor.old_form()) {
                         arm_facts = arm_facts.with_fact(instance);
                     }
                 }

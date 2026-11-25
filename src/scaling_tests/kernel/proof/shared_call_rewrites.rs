@@ -14,8 +14,8 @@ fn common_call_rewrite_visits_shared_arguments_once() {
                 [child.clone(), child],
             );
         }
-        let from = MachineTerm::Variable(Variable(995870));
-        let to = MachineTerm::Variable(Variable(995871));
+        let from = OldMachineTerm::Variable(Variable(995870));
+        let to = OldMachineTerm::Variable(Variable(995871));
         let exports = KernelTermExport::machine_export_count();
         let mut rewrite = TermRewrite::for_bits_checked(&from, &to);
         let (result, cold) = crate::instrumentation::measure_deterministic_work(|| {

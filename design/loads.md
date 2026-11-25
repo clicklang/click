@@ -28,7 +28,7 @@ is a load decoded at a pointer type.
 A value loaded from memory has six encodings today, each with its own identity,
 store lookup and raising:
 
-1. `MachineTerm::MemoryLoad(point, address, LoadKind)`, with fourteen kinds:
+1. `OldMachineTerm::MemoryLoad(point, address, LoadKind)`, with fourteen kinds:
    every integer width and signedness, `Bits64`, both floats and
    `Abstract(T)`.
 2. `AlgebraicTermNode::MemoryLoad`, for specification values held in memory.
@@ -130,7 +130,7 @@ the load.
 This resolves an inconsistency in the current kinds. Today 8-, 16-, 32- and
 128-bit loads carry signedness in their `LoadKind`, so the `int8` and `uint8`
 loads of a byte are two terms (maintainer direction, 2026-10-30, stated at
-`MachineTerm::memory_read`), while signed and unsigned 64-bit loads share
+`OldMachineTerm::memory_read`), while signed and unsigned 64-bit loads share
 `Bits64`, one term with signedness at the use
 (`docs/concepts/memory-model.md`). Under this model every width is like
 `Bits64`: one load, decoded at each format. The 2026-10-30 direction's
@@ -169,8 +169,8 @@ at an abstract type, whose value the kernel treats as opaque.
   keyed by `(read_key, cell)`, never by the whole `ProgramPoint`, whose
   `IndexedWrite` selection holds a derivation.
 - **Integer and float values** are `decode<format>(load)`. Today that is
-  `MachineTerm::MemoryLoad(point, address, kind)`, built only by
-  `MachineTerm::read_named` and `MachineTerm::memory_read` (enforced by
+  `OldMachineTerm::MemoryLoad(point, address, kind)`, built only by
+  `OldMachineTerm::read_named` and `OldMachineTerm::memory_read` (enforced by
   `build_support/read_construction.rs`). Since step 3a-i its identity is the
   interned load plus its kind, `MemoryLoad(ReadPoint, LoadCell, LoadKind)`;
   step 3b makes the kind a format.
@@ -321,7 +321,7 @@ is one PR, measured with the gate harnesses, the raise-lower audit and
        `MemoryLoad(point, cell, kind)`
        holds a `ReadPoint`, the producer's selected point, and a `LoadCell`,
        the producer's address with its `Load::at(point, address)`, both built
-       only by `read_operands` inside `MachineTerm::read_named`
+       only by `read_operands` inside `OldMachineTerm::read_named`
        (`src/kernel/primitives/load.rs`; the ratchet counts `MemoryLoad(..)`,
        `read_operands(..)` calls, `ReadPoint(..)` and `LoadCell { .. }`).
        Equality, hashing and ordering go by `(Load, kind)`: the `ReadPoint`

@@ -139,7 +139,7 @@ fn the_pointer_word_bridge_records_its_site_and_is_the_same_read() {
     let memory = site.shared_memory().clone();
     let at = cell(1_207_051);
     let sited = crate::kernel::legacy_pointer_word_read(&memory, Some(&site), &at);
-    let MachineTerm::MemoryLoad(point, _, _) = &sited else {
+    let OldMachineTerm::MemoryLoad(point, _, _) = &sited else {
         panic!("a memory read: {sited:?}");
     };
     assert!(point.read_site().is_some_and(|path| path.id() == site.id()));

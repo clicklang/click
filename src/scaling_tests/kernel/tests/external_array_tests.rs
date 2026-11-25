@@ -143,7 +143,7 @@ fn external_array_copy_statement_retains_the_uncached_source_point() {
         assert!(runs.next().is_none());
         assert_eq!(run.source_point().id(), point.id());
         assert_eq!(run.count(), count);
-        let ExpressionOutcome::Value(ProgramValue::UInt32(MachineTerm::MemoryLoad(
+        let ExpressionOutcome::Value(ProgramValue::UInt32(OldMachineTerm::MemoryLoad(
             version,
             address,
             LoadKind::UInt32,

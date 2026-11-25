@@ -74,7 +74,7 @@ fn deep_canonicalization_preserves_numeric_load_and_copy_runs() {
                     // can resolve its source to a stored literal.
                     assert!(matches!(
                         bits,
-                        MachineTerm::MemoryLoad(..) | MachineTerm::Variable(_)
+                        OldMachineTerm::MemoryLoad(..) | OldMachineTerm::Variable(_)
                     ));
                     assert_eq!(canonical.cells.get(&run.slot_pointer(index)), Some(value));
                 }

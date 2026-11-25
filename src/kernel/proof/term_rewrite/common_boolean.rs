@@ -45,7 +45,7 @@ pub(in crate::kernel) fn substitute_pointer_boolean_value(
                 if [(views[0], views[1]), (views[1], views[0])].into_iter().any(|(address, zero)| {
                     zero.uint64_constant() == Some(0)
                         && matches!(address, MachineOperandView::Shared(root)
-                            if matches!(root.machine_conversion_leaf(), Some(MachineTerm::IntegerAddress(..))))
+                            if matches!(root.machine_conversion_leaf(), Some(OldMachineTerm::IntegerAddress(..))))
                 }) {
                     return Ok(KernelTerm::boolean_comparison(*format, *relation, arguments));
                 }
@@ -184,9 +184,9 @@ impl TermRewrite<'_> {
 pub(in crate::kernel) fn substitute_application_address_bits(
     source: &crate::kernel::SharedAddress,
     from: Variable,
-    to: &MachineTerm,
+    to: &OldMachineTerm,
 ) -> Option<crate::kernel::SharedAddress> {
-    let from = MachineTerm::Variable(from);
+    let from = OldMachineTerm::Variable(from);
     let mut rewrite = TermRewrite::for_bits(&from, to);
     let mut variables = rewrite.new_carrier_variables();
     collect_common_address_carriers(source, &mut variables);

@@ -44,9 +44,9 @@ fn selected_view_checks_alias_coordinates_without_enumerating_the_class() {
             let query = Address::symbolic(Variable(820_002));
             let span = |n| {
                 if wide {
-                    MachineTerm::uint64_constant(n)
+                    OldMachineTerm::uint64_constant(n)
                 } else {
-                    MachineTerm::constant(n as u32)
+                    OldMachineTerm::constant(n as u32)
                 }
             };
             let fact = Proposition::MemoryLoadable {
@@ -235,9 +235,9 @@ fn selected_views_follow_same_block_aliases_without_walking_the_star() {
             let memory = SymbolicMemory::new();
             let span = |n| {
                 if wide {
-                    MachineTerm::uint64_constant(n)
+                    OldMachineTerm::uint64_constant(n)
                 } else {
-                    MachineTerm::constant(n as u32)
+                    OldMachineTerm::constant(n as u32)
                 }
             };
             let mut context =

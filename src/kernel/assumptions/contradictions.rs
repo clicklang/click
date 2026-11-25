@@ -33,7 +33,7 @@ use crate::kernel::CompareRelation;
 use crate::kernel::MachineIntegerType;
 use crate::kernel::MachineOperandView as V;
 #[cfg(test)]
-use crate::kernel::MachineTerm;
+use crate::kernel::OldMachineTerm;
 use crate::kernel::equality_graph::scalar_evidence_pair;
 use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
 use crate::kernel::{ConditionTerm, Variable};
@@ -263,7 +263,7 @@ impl Contradictions {
     /// An endpoint and its key name one value, so they share a class.
     fn register(&mut self, endpoint: V<'_>) -> Key {
         let (graph_key, key) = match endpoint {
-            V::Legacy(term) => {
+            V::Old(term) => {
                 let graph = super::equality_graph_term_key(term);
                 if let Some(root) = crate::kernel::KernelTermImport::default()
                     .machine_arithmetic(MachineIntegerType::Int32, &graph)
@@ -467,8 +467,8 @@ mod tests {
     use super::*;
     use crate::kernel::PureFactContext;
 
-    fn var(index: u64) -> MachineTerm {
-        MachineTerm::Variable(Variable(986_100 + index))
+    fn var(index: u64) -> OldMachineTerm {
+        OldMachineTerm::Variable(Variable(986_100 + index))
     }
 
     /// A deterministic stream of facts over a few variables, constants, sums
@@ -482,12 +482,12 @@ mod tests {
                 .wrapping_add(1);
             self.0 >> 33
         }
-        fn term(&mut self) -> MachineTerm {
+        fn term(&mut self) -> OldMachineTerm {
             match self.next() % 6 {
                 0 | 1 => var(self.next() % 4),
-                2 => MachineTerm::constant((self.next() % 7) as u32),
-                3 => MachineTerm::constant(u32::MAX - (self.next() % 2) as u32),
-                4 => MachineTerm::add(var(self.next() % 4), MachineTerm::constant(1)),
+                2 => OldMachineTerm::constant((self.next() % 7) as u32),
+                3 => OldMachineTerm::constant(u32::MAX - (self.next() % 2) as u32),
+                4 => OldMachineTerm::add(var(self.next() % 4), OldMachineTerm::constant(1)),
                 _ => var(self.next() % 4),
             }
         }
@@ -528,7 +528,7 @@ mod tests {
                 _ => ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
-                    left: Box::new(MachineTerm::Variable(Variable(
+                    left: Box::new(OldMachineTerm::Variable(Variable(
                         crate::kernel::eval::LOAD_VARIABLE_RANGE.start + self.next() % 2,
                     ))),
                     right,
@@ -602,7 +602,7 @@ mod tests {
         );
     }
 
-    fn less(left: MachineTerm, right: MachineTerm) -> (ConditionTerm, bool) {
+    fn less(left: OldMachineTerm, right: OldMachineTerm) -> (ConditionTerm, bool) {
         (
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -614,7 +614,7 @@ mod tests {
         )
     }
 
-    fn equal(left: MachineTerm, right: MachineTerm) -> (ConditionTerm, bool) {
+    fn equal(left: OldMachineTerm, right: OldMachineTerm) -> (ConditionTerm, bool) {
         (
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -697,7 +697,7 @@ mod tests {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
                         left: Box::new(var(size + 1)),
-                        right: Box::new(MachineTerm::constant(7)),
+                        right: Box::new(OldMachineTerm::constant(7)),
                     },
                     true,
                 );

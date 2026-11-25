@@ -63,7 +63,7 @@ use super::{
 };
 use crate::kernel::equality_graph::{NumericAddressConnectivity, NumericAddressOwners};
 use crate::kernel::primitives::LoadKind;
-use crate::kernel::primitives::MachineTerm;
+use crate::kernel::primitives::OldMachineTerm;
 use crate::kernel::{ExecutionValue, PureFactContext, StoredMemoryValue, Variable};
 use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
@@ -487,8 +487,8 @@ impl CellRun {
     pub(crate) fn range(&self) -> super::MemoryRange {
         super::MemoryRange::new_with_element_width(
             self.base.clone(),
-            MachineTerm::constant(0),
-            MachineTerm::constant(self.count),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(self.count),
             self.element_width,
         )
     }
@@ -813,7 +813,7 @@ impl BlockKeyed for RunKey {
 /// The value a seeded cell of type `element_type` at `pointer` holds when its
 /// load is `load`: the load itself for a scalar, the load's truth for a
 /// `bool`, and a complete typed read for object and function pointers.
-pub(crate) fn cell_run_value(element_type: ProgramType, load: MachineTerm) -> ProgramValue {
+pub(crate) fn cell_run_value(element_type: ProgramType, load: OldMachineTerm) -> ProgramValue {
     match element_type {
         // The byte rule (Stage 5): the `Bool` `load != 0`.
         ProgramType::Bool => crate::kernel::bool_value(load),
@@ -834,14 +834,14 @@ pub(crate) fn cell_run_value(element_type: ProgramType, load: MachineTerm) -> Pr
             // C load observes it. Retain its exact producer definition so a
             // later logical read through an alias can use load congruence.
             let definition = match &load {
-                MachineTerm::MemoryLoad(_, _, _) => Some(load.clone()),
-                MachineTerm::Variable(variable) => {
+                OldMachineTerm::MemoryLoad(_, _, _) => Some(load.clone()),
+                OldMachineTerm::Variable(variable) => {
                     crate::kernel::registered_load_term_for_variable(variable)
                 }
                 _ => None,
             };
             let value = Address::loaded(&load).expect("a pointer cell's canonical read is a load");
-            if let Some(MachineTerm::MemoryLoad(retained_state, address, LoadKind::Int32)) =
+            if let Some(OldMachineTerm::MemoryLoad(retained_state, address, LoadKind::Int32)) =
                 definition
             {
                 crate::kernel::equality_graph::EqualityGraph::default()
@@ -2350,7 +2350,7 @@ impl CellStore {
         fn variable(value: &ProgramValue) -> Option<Variable> {
             match value {
                 crate::kernel::integer_c_value!(term) => match term {
-                    MachineTerm::Variable(variable) => Some(*variable),
+                    OldMachineTerm::Variable(variable) => Some(*variable),
                     _ => None,
                 },
                 _ => None,
@@ -3679,14 +3679,14 @@ mod tests {
                 IndexIntervals::default(),
             );
             for index in 0..2 {
-                let ProgramValue::Int32(read @ MachineTerm::MemoryLoad(..)) = run.value(index)
+                let ProgramValue::Int32(read @ OldMachineTerm::MemoryLoad(..)) = run.value(index)
                 else {
                     panic!("typed symbolic read");
                 };
                 let address = base.offset_by_bytes(index * 8);
                 assert_eq!(
                     crate::kernel::eval::scalar_read_observation(
-                        crate::kernel::MachineOperandView::Legacy(&read)
+                        crate::kernel::MachineOperandView::Old(&read)
                     )
                     .map(|observation| observation.bytes),
                     Some(4)
@@ -3814,10 +3814,13 @@ mod tests {
             Some(seeded.value(2).byte_width())
         );
         assert_eq!(store.value_width_at(&shifted(28)), None);
-        store.insert(shifted(20), ProgramValue::Int32(MachineTerm::constant(7)));
+        store.insert(
+            shifted(20),
+            ProgramValue::Int32(OldMachineTerm::constant(7)),
+        );
         assert_eq!(
             store.get(&shifted(20)),
-            Some(ProgramValue::Int32(MachineTerm::constant(7)))
+            Some(ProgramValue::Int32(OldMachineTerm::constant(7)))
         );
         assert_eq!(store.len(), 3);
         let below = run(shifted(-4), 4, 3, &source(1));
@@ -3896,7 +3899,7 @@ mod tests {
                         };
                         let seeded = match stream.next(4) {
                             0 | 1 => {
-                                let constant = MachineTerm::constant(stream.next(2) as u32);
+                                let constant = OldMachineTerm::constant(stream.next(2) as u32);
                                 with_mode(RunValueMode::Constant(if width == 1 {
                                     crate::kernel::uint8(constant)
                                 } else {
@@ -3920,7 +3923,9 @@ mod tests {
                             .next();
                         let value = match (stream.next(2), run_value) {
                             (0, Some(value)) => value,
-                            _ => ProgramValue::Int32(MachineTerm::constant(stream.next(3) as u32)),
+                            _ => {
+                                ProgramValue::Int32(OldMachineTerm::constant(stream.next(3) as u32))
+                            }
                         };
                         store.insert(pointer.clone(), value.clone());
                         model.insert(pointer, value);
@@ -4038,11 +4043,11 @@ mod tests {
         let written = constant(&global, 20);
         forward_stored.insert(
             written.clone(),
-            ProgramValue::Int32(MachineTerm::constant(7)),
+            ProgramValue::Int32(OldMachineTerm::constant(7)),
         );
         backward_stored.insert(
             written.clone(),
-            ProgramValue::Int32(MachineTerm::constant(7)),
+            ProgramValue::Int32(OldMachineTerm::constant(7)),
         );
         assert!(forward_stored == backward_stored);
         assert!(forward_stored != forward);
@@ -4064,7 +4069,7 @@ mod tests {
         for index in 0..3 {
             restored.insert(
                 seeded.slot_pointer(index),
-                ProgramValue::Int32(MachineTerm::constant(index)),
+                ProgramValue::Int32(OldMachineTerm::constant(index)),
             );
         }
         for index in 0..3 {
@@ -4079,7 +4084,7 @@ mod tests {
         let mut other_value = restored.clone();
         other_value.insert(
             seeded.slot_pointer(1),
-            ProgramValue::Int32(MachineTerm::constant(41)),
+            ProgramValue::Int32(OldMachineTerm::constant(41)),
         );
         assert!(!other_value.same_cells_as(&store));
         assert!(!store.same_cells_as(&other_value));
@@ -4092,7 +4097,7 @@ mod tests {
         let mut extra = restored.clone();
         extra.insert(
             constant(&global, 400),
-            ProgramValue::Int32(MachineTerm::constant(0)),
+            ProgramValue::Int32(OldMachineTerm::constant(0)),
         );
         assert!(!extra.same_cells_as(&store));
         assert!(!store.same_cells_as(&extra));
@@ -4117,7 +4122,7 @@ mod tests {
         for index in 0..2 {
             concrete.insert(
                 seeded.slot_pointer(index),
-                ProgramValue::Int32(MachineTerm::constant(9)),
+                ProgramValue::Int32(OldMachineTerm::constant(9)),
             );
         }
         for index in 0..2 {
@@ -4168,7 +4173,7 @@ mod tests {
         for index in 0..3 {
             written.insert(
                 seeded.slot_pointer(index),
-                ProgramValue::Int32(MachineTerm::constant(index)),
+                ProgramValue::Int32(OldMachineTerm::constant(index)),
             );
         }
         assert_eq!(written.run_count(), 0);
@@ -4226,9 +4231,9 @@ mod tests {
         for pointer in [constant(&global, 4), constant(&global, 5)] {
             left.insert(
                 pointer.clone(),
-                ProgramValue::Int32(MachineTerm::constant(1)),
+                ProgramValue::Int32(OldMachineTerm::constant(1)),
             );
-            left_model.insert(pointer, ProgramValue::Int32(MachineTerm::constant(1)));
+            left_model.insert(pointer, ProgramValue::Int32(OldMachineTerm::constant(1)));
         }
         assert_eq!(logical_model(&left), left_model);
         assert_eq!(
@@ -4354,7 +4359,7 @@ mod tests {
             let samples = [1usize, 10, 100, 1000].map(|runs| {
                 let (store, pointers) = many_runs(runs, layout.as_ref());
                 let probe = pointers[runs / 2].clone();
-                let value = ProgramValue::Int32(MachineTerm::constant(3));
+                let value = ProgramValue::Int32(OldMachineTerm::constant(3));
                 // Loads of a run slot and of a pointer no run holds.
                 let loads = work(|| {
                     for _ in 0..16 {

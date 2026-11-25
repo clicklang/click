@@ -237,15 +237,14 @@ impl PureFactContext {
                 })
         };
         if let Some(span) = upper_span {
-            let first = MachineTerm::Variable(*span.members.front()?);
-            if upper.variable() != V::Legacy(&first).variable() && direct(lower, V::Legacy(&first))
-            {
+            let first = OldMachineTerm::Variable(*span.members.front()?);
+            if upper.variable() != V::Old(&first).variable() && direct(lower, V::Old(&first)) {
                 return Some(true);
             }
         }
         if let Some(span) = lower_span {
-            let last = MachineTerm::Variable(*span.members.back()?);
-            if lower.variable() != V::Legacy(&last).variable() && direct(V::Legacy(&last), upper) {
+            let last = OldMachineTerm::Variable(*span.members.back()?);
+            if lower.variable() != V::Old(&last).variable() && direct(V::Old(&last), upper) {
                 return Some(true);
             }
         }
@@ -296,8 +295,8 @@ mod tests {
             }
             for pair in edges {
                 let edge = ConditionTerm::signed_less_than(
-                    MachineTerm::Variable(pair[0]),
-                    MachineTerm::Variable(pair[1]),
+                    OldMachineTerm::Variable(pair[0]),
+                    OldMachineTerm::Variable(pair[1]),
                 );
                 context = context.assume_condition(edge.clone(), true);
                 if pair[0] != variables[1] {
@@ -312,8 +311,8 @@ mod tests {
                 assert_eq!(span.rank, position);
             }
             let query = ConditionTerm::signed_less_than(
-                MachineTerm::Variable(variables[0]),
-                MachineTerm::Variable(variables[4]),
+                OldMachineTerm::Variable(variables[0]),
+                OldMachineTerm::Variable(variables[4]),
             );
             assert_eq!(context.decide_from_variable_chain(&query), Some(true));
             assert_eq!(broken.decide_from_variable_chain(&query), None);
@@ -322,7 +321,7 @@ mod tests {
 
     #[test]
     fn branching_orders_do_not_order_siblings() {
-        let variable = |id| MachineTerm::Variable(Variable(id));
+        let variable = |id| OldMachineTerm::Variable(Variable(id));
         let context = PureFactContext::new()
             .assume_condition(
                 ConditionTerm::signed_less_than(variable(1), variable(3)),
@@ -370,8 +369,8 @@ mod memory_tests {
         for pair in variables.windows(2) {
             context = context.assume_condition(
                 ConditionTerm::signed_less_than(
-                    MachineTerm::Variable(pair[0]),
-                    MachineTerm::Variable(pair[1]),
+                    OldMachineTerm::Variable(pair[0]),
+                    OldMachineTerm::Variable(pair[1]),
                 ),
                 true,
             );
@@ -379,15 +378,15 @@ mod memory_tests {
         for (index, variable) in variables.iter().enumerate() {
             context = context.assume_condition(
                 ConditionTerm::equal(
-                    MachineTerm::Variable(*variable),
-                    MachineTerm::constant(index as u32 + 1),
+                    OldMachineTerm::Variable(*variable),
+                    OldMachineTerm::constant(index as u32 + 1),
                 ),
                 true,
             );
         }
         let pointer = |variable, stride| Address {
             base: AddressBase::from("ordered"),
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(variable), stride),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(variable), stride),
         };
         let mut memory = SymbolicMemory::new().with_block("ordered", 4096);
         for (index, variable) in variables.iter().enumerate() {
@@ -421,7 +420,7 @@ mod memory_tests {
             .without_possible_aliasing_cells(&near, 8, &context)
             .store(
                 near.clone(),
-                ProgramValue::UInt64(MachineTerm::uint64_constant(7)),
+                ProgramValue::UInt64(OldMachineTerm::uint64_constant(7)),
             );
         let after = wide.without_possible_aliasing_cells(&pointer(variables[4], 4), 4, &context);
         assert!(

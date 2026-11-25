@@ -46,7 +46,7 @@ pub(in crate::kernel) fn index_syntax_equal(
 
 pub(in crate::kernel) fn map_index(
     value: &SharedMachineIntegerTerm,
-    map_leaf: impl Fn(&MachineTerm) -> Option<MachineTerm>,
+    map_leaf: impl Fn(&OldMachineTerm) -> Option<OldMachineTerm>,
     rebuild: impl Fn(&KernelTerm, &[KernelTerm]) -> Option<KernelTerm>,
 ) -> Option<SharedMachineIntegerTerm> {
     map_index_with_descent(value, map_leaf, rebuild, |root| {
@@ -56,7 +56,7 @@ pub(in crate::kernel) fn map_index(
 
 pub(in crate::kernel) fn map_index_with_descent(
     value: &SharedMachineIntegerTerm,
-    map_leaf: impl Fn(&MachineTerm) -> Option<MachineTerm>,
+    map_leaf: impl Fn(&OldMachineTerm) -> Option<OldMachineTerm>,
     rebuild: impl Fn(&KernelTerm, &[KernelTerm]) -> Option<KernelTerm>,
     descend: impl Fn(&KernelTerm) -> bool,
 ) -> Option<SharedMachineIntegerTerm> {
@@ -65,7 +65,7 @@ pub(in crate::kernel) fn map_index_with_descent(
 
 pub(in crate::kernel) fn map_index_with_fold(
     value: &SharedMachineIntegerTerm,
-    map_leaf: impl Fn(&MachineTerm) -> Option<MachineTerm>,
+    map_leaf: impl Fn(&OldMachineTerm) -> Option<OldMachineTerm>,
     rebuild: impl Fn(&KernelTerm, &[KernelTerm]) -> Option<KernelTerm>,
     descend: impl Fn(&KernelTerm) -> bool,
     map_fold: impl Fn(&KernelTerm) -> Result<Option<KernelTerm>, ()>,
@@ -84,7 +84,7 @@ pub(in crate::kernel) fn map_index_with_fold(
 /// neither states nor substitutions may change while it is reused.
 pub(in crate::kernel) fn map_index_with_fold_and_cache(
     value: &SharedMachineIntegerTerm,
-    map_leaf: impl Fn(&MachineTerm) -> Option<MachineTerm>,
+    map_leaf: impl Fn(&OldMachineTerm) -> Option<OldMachineTerm>,
     rebuild: impl Fn(&KernelTerm, &[KernelTerm]) -> Option<KernelTerm>,
     descend: impl Fn(&KernelTerm) -> bool,
     map_fold: impl Fn(&KernelTerm) -> Result<Option<KernelTerm>, ()>,
@@ -97,7 +97,7 @@ pub(in crate::kernel) fn map_index_with_fold_and_cache(
         descend,
         map_fold,
         |condition| {
-            let guard = MachineTerm::BoolCast {
+            let guard = OldMachineTerm::BoolCast {
                 to: MachineIntegerType::UInt8,
                 value: Box::new(crate::kernel::KernelTermExport::condition(condition).ok()?),
             };
@@ -115,7 +115,7 @@ pub(in crate::kernel) fn map_index_with_fold_and_cache(
 
 fn map_index_with_guard(
     value: &SharedMachineIntegerTerm,
-    map_leaf: impl Fn(&MachineTerm) -> Option<MachineTerm>,
+    map_leaf: impl Fn(&OldMachineTerm) -> Option<OldMachineTerm>,
     rebuild: impl Fn(&KernelTerm, &[KernelTerm]) -> Option<KernelTerm>,
     descend: impl Fn(&KernelTerm) -> bool,
     map_fold: impl Fn(&KernelTerm) -> Result<Option<KernelTerm>, ()>,
@@ -311,7 +311,7 @@ mod tests {
         let application = SharedPureApplication::intern(
             "state_call".into(),
             vec![PureFunctionArgument::Value(ProgramValue::Int32(
-                MachineTerm::read_named(ProgramPoint::at(&before), address, LoadKind::Int32),
+                OldMachineTerm::read_named(ProgramPoint::at(&before), address, LoadKind::Int32),
             ))],
         );
         for format in [
@@ -351,12 +351,16 @@ mod tests {
         }
     }
 
-    fn retained(ty: MachineIntegerType, term: &MachineTerm) -> SharedMachineIntegerTerm {
-        let root = KernelTerm::retained_machine_operand(ty, MachineOperandView::Legacy(term));
+    fn retained(ty: MachineIntegerType, term: &OldMachineTerm) -> SharedMachineIntegerTerm {
+        let root = KernelTerm::retained_machine_operand(ty, MachineOperandView::Old(term));
         SharedMachineIntegerTerm::from_shared(ty, root).unwrap()
     }
 
-    fn normalization_parity(ty: MachineIntegerType, term: &MachineTerm, facts: &PureFactContext) {
+    fn normalization_parity(
+        ty: MachineIntegerType,
+        term: &OldMachineTerm,
+        facts: &PureFactContext,
+    ) {
         let value = retained(ty, term);
         let expected = normalize_exact_memory_loads_in_bitvector(value.structural_value(), facts);
         let exports = KernelTermExport::machine_export_count();
@@ -439,7 +443,7 @@ mod tests {
 
     fn parity(
         ty: MachineIntegerType,
-        term: &MachineTerm,
+        term: &OldMachineTerm,
         after: &SymbolicMemory,
         facts: Option<(&PureFactContext, bool)>,
     ) {
@@ -521,7 +525,7 @@ mod tests {
     fn framed_index_transport_preserves_native_constructor_rules() {
         let _session = VerificationSession::enter();
         let after = SymbolicMemory::new();
-        let x = MachineTerm::Variable(Variable(1018901));
+        let x = OldMachineTerm::Variable(Variable(1018901));
         for ty in [
             MachineIntegerType::Int8,
             MachineIntegerType::UInt16,
@@ -549,7 +553,7 @@ mod tests {
             ] {
                 for a in std::iter::once(&x).chain(constants.iter()) {
                     for b in std::iter::once(&x).chain(constants.iter()) {
-                        let term = MachineTerm::Binary {
+                        let term = OldMachineTerm::Binary {
                             format: ty,
                             op,
                             left: Box::new(a.clone()),
@@ -579,10 +583,10 @@ mod tests {
         ] {
             for operand in [
                 x.clone(),
-                MachineTerm::constant(3),
-                MachineTerm::add(x.clone(), x.clone()),
+                OldMachineTerm::constant(3),
+                OldMachineTerm::add(x.clone(), x.clone()),
             ] {
-                let term = MachineTerm::Cast {
+                let term = OldMachineTerm::Cast {
                     spelling,
                     from: source,
                     to: destination,
@@ -591,11 +595,11 @@ mod tests {
                 parity(destination, &term, &after, None);
                 parity(
                     destination,
-                    &MachineTerm::Binary {
+                    &OldMachineTerm::Binary {
                         format: destination,
                         op: MachineBinaryOp::Multiply,
                         left: Box::new(term),
-                        right: Box::new(MachineTerm::int64_constant(4)),
+                        right: Box::new(OldMachineTerm::int64_constant(4)),
                     },
                     &after,
                     None,
@@ -615,24 +619,24 @@ mod tests {
             .with_block("transport-index", 16)
             .store(
                 pointer.clone(),
-                ProgramValue::Int32(MachineTerm::constant(7)),
+                ProgramValue::Int32(OldMachineTerm::constant(7)),
             );
-        let load = MachineTerm::read_named(
+        let load = OldMachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory(before.clone()))),
             Box::new(pointer.clone()),
             LoadKind::Int32,
         );
-        let term = MachineTerm::add(load.clone(), load.clone());
+        let term = OldMachineTerm::add(load.clone(), load.clone());
         let facts = PureFactContext::new();
         for after in [
             before.clone(),
             before.clone().store(
                 pointer.offset_by_bytes(8),
-                ProgramValue::Int32(MachineTerm::constant(9)),
+                ProgramValue::Int32(OldMachineTerm::constant(9)),
             ),
             before.clone().store(
                 pointer.clone(),
-                ProgramValue::Int32(MachineTerm::constant(9)),
+                ProgramValue::Int32(OldMachineTerm::constant(9)),
             ),
             before.clone().with_loop_memory_havoc_preserving_borrows(
                 Variable(1018911),
@@ -663,19 +667,19 @@ mod tests {
             offset: AddressOffset::Constant(0),
         };
         let before = SymbolicMemory::new().with_block("registered-index", 16);
-        let load = MachineTerm::read_named(
+        let load = OldMachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory(before.clone()))),
             Box::new(pointer.clone()),
             LoadKind::Int32,
         );
         let (variable, _) = crate::kernel::eval::load_variable_for_term(&load).unwrap();
-        let term = MachineTerm::add(
-            MachineTerm::Variable(variable),
-            MachineTerm::Variable(variable),
+        let term = OldMachineTerm::add(
+            OldMachineTerm::Variable(variable),
+            OldMachineTerm::Variable(variable),
         );
         let after = before.clone().store(
             pointer.offset_by_bytes(8),
-            ProgramValue::Int32(MachineTerm::constant(9)),
+            ProgramValue::Int32(OldMachineTerm::constant(9)),
         );
         let facts = PureFactContext::new();
         parity(
@@ -689,12 +693,12 @@ mod tests {
     #[test]
     fn framed_index_transport_keeps_opaque_refusals() {
         let _session = VerificationSession::enter();
-        let term = MachineTerm::If {
+        let term = OldMachineTerm::If {
             condition: Box::new(ConditionTerm::Constant(true)),
-            then_term: Box::new(MachineTerm::constant(1)),
-            else_term: Box::new(MachineTerm::constant(2)),
+            then_term: Box::new(OldMachineTerm::constant(1)),
+            else_term: Box::new(OldMachineTerm::constant(2)),
         };
-        let term = MachineTerm::add(term, MachineTerm::Variable(Variable(1018902)));
+        let term = OldMachineTerm::add(term, OldMachineTerm::Variable(Variable(1018902)));
         parity(
             MachineIntegerType::Int32,
             &term,
@@ -715,18 +719,18 @@ mod tests {
     fn framed_index_transport_keeps_opaque_constant_readings() {
         let _session = VerificationSession::enter();
         let after = SymbolicMemory::new();
-        let null = MachineTerm::IntegerAddress(
+        let null = OldMachineTerm::IntegerAddress(
             Box::new(Address::null()),
             crate::kernel::AddressObjectClass::NONE,
         );
-        let x = MachineTerm::Variable(Variable(1018912));
+        let x = OldMachineTerm::Variable(Variable(1018912));
         for ty in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
             let one = if ty == MachineIntegerType::Int64 {
-                MachineTerm::int64_constant(1)
+                OldMachineTerm::int64_constant(1)
             } else {
-                MachineTerm::uint64_constant(1)
+                OldMachineTerm::uint64_constant(1)
             };
-            let compound = MachineTerm::Binary {
+            let compound = OldMachineTerm::Binary {
                 format: ty,
                 op: MachineBinaryOp::Add,
                 left: Box::new(x.clone()),
@@ -742,7 +746,7 @@ mod tests {
                 for other in [one.clone(), compound.clone()] {
                     parity(
                         ty,
-                        &MachineTerm::Binary {
+                        &OldMachineTerm::Binary {
                             format: ty,
                             op,
                             left: Box::new(null.clone()),
@@ -753,7 +757,7 @@ mod tests {
                     );
                     parity(
                         ty,
-                        &MachineTerm::Binary {
+                        &OldMachineTerm::Binary {
                             format: ty,
                             op,
                             left: Box::new(other),
@@ -783,48 +787,48 @@ mod tests {
                 )
                 .unwrap()
             };
-            let x = MachineTerm::Variable(Variable(1018960));
-            let y = MachineTerm::Variable(Variable(1018961));
-            let compound = MachineTerm::Binary {
+            let x = OldMachineTerm::Variable(Variable(1018960));
+            let y = OldMachineTerm::Variable(Variable(1018961));
+            let compound = OldMachineTerm::Binary {
                 format: ty,
                 op: MachineBinaryOp::Add,
                 left: x.clone().into(),
                 right: y.clone().into(),
             };
-            let opaque = MachineTerm::If {
+            let opaque = OldMachineTerm::If {
                 condition: ConditionTerm::Variable(Variable(1018962)).into(),
                 then_term: x.clone().into(),
                 else_term: y.clone().into(),
             };
-            let xor = MachineTerm::Binary {
+            let xor = OldMachineTerm::Binary {
                 format: ty,
                 op: MachineBinaryOp::BitwiseXor,
                 left: compound.clone().into(),
                 right: opaque.clone().into(),
             };
-            let difference = MachineTerm::Binary {
+            let difference = OldMachineTerm::Binary {
                 format: ty,
                 op: MachineBinaryOp::Subtract,
                 left: compound.clone().into(),
                 right: x.clone().into(),
             };
-            let negative = MachineTerm::Binary {
+            let negative = OldMachineTerm::Binary {
                 format: ty,
                 op: MachineBinaryOp::Subtract,
                 left: c(0).into(),
                 right: x.clone().into(),
             };
-            let cast = MachineTerm::Cast {
+            let cast = OldMachineTerm::Cast {
                 spelling: MachineCastSpelling::Generic,
                 from: MachineIntegerType::Int32,
                 to: ty,
-                value: MachineTerm::Variable(Variable(1018963)).into(),
+                value: OldMachineTerm::Variable(Variable(1018963)).into(),
             };
-            let other_cast = MachineTerm::Cast {
+            let other_cast = OldMachineTerm::Cast {
                 spelling: MachineCastSpelling::Generic,
                 from: MachineIntegerType::UInt64,
                 to: ty,
-                value: MachineTerm::Variable(Variable(1018959)).into(),
+                value: OldMachineTerm::Variable(Variable(1018959)).into(),
             };
             let operands = [
                 other_cast,
@@ -856,7 +860,7 @@ mod tests {
                     for b in &operands {
                         normalization_parity(
                             ty,
-                            &MachineTerm::Binary {
+                            &OldMachineTerm::Binary {
                                 format: ty,
                                 op,
                                 left: a.clone().into(),
@@ -868,7 +872,7 @@ mod tests {
                 }
             }
             for operand in operands {
-                let unary = MachineTerm::Unary {
+                let unary = OldMachineTerm::Unary {
                     format: ty,
                     op: crate::kernel::MachineUnaryOp::BitwiseNot,
                     operand: operand.into(),
@@ -876,7 +880,7 @@ mod tests {
                 normalization_parity(ty, &unary, &facts);
                 normalization_parity(
                     ty,
-                    &MachineTerm::Unary {
+                    &OldMachineTerm::Unary {
                         format: ty,
                         op: crate::kernel::MachineUnaryOp::BitwiseNot,
                         operand: unary.into(),
@@ -894,7 +898,7 @@ mod tests {
         let initial = SymbolicMemory::new().with_block("exact-index", 16);
         let stored = initial.clone().store(
             pointer.clone(),
-            ProgramValue::Int32(MachineTerm::constant(7)),
+            ProgramValue::Int32(OldMachineTerm::constant(7)),
         );
         let empty = PureFactContext::new();
         for memory in [
@@ -902,11 +906,11 @@ mod tests {
             stored.clone(),
             stored.clone().store(
                 pointer.offset_by_bytes(8),
-                ProgramValue::Int32(MachineTerm::constant(9)),
+                ProgramValue::Int32(OldMachineTerm::constant(9)),
             ),
             stored.clone().store(
                 pointer.clone(),
-                ProgramValue::Int32(MachineTerm::constant(9)),
+                ProgramValue::Int32(OldMachineTerm::constant(9)),
             ),
             stored.with_loop_memory_havoc_preserving_borrows(
                 Variable(1018950),
@@ -916,20 +920,20 @@ mod tests {
             ),
         ] {
             for kind in [LoadKind::Int32, LoadKind::UInt32, LoadKind::UInt8] {
-                let load = MachineTerm::read_named(
+                let load = OldMachineTerm::read_named(
                     ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
                     Box::new(pointer.clone()),
                     kind,
                 );
                 for term in [
                     load.clone(),
-                    MachineTerm::add(load.clone(), load.clone()),
-                    MachineTerm::If {
+                    OldMachineTerm::add(load.clone(), load.clone()),
+                    OldMachineTerm::If {
                         condition: ConditionTerm::Variable(Variable(1018951)).into(),
                         then_term: load.clone().into(),
-                        else_term: MachineTerm::constant(3).into(),
+                        else_term: OldMachineTerm::constant(3).into(),
                     },
-                    MachineTerm::PureFunctionApplication {
+                    OldMachineTerm::PureFunctionApplication {
                         name: "exact-index-function".into(),
                         arguments: vec![load.clone()],
                     },
@@ -938,15 +942,15 @@ mod tests {
                 }
             }
         }
-        let index = MachineTerm::Variable(Variable(1018953));
+        let index = OldMachineTerm::Variable(Variable(1018953));
         let query = Address {
             base: pointer.base.clone(),
             offset: AddressOffset::scaled_int32_node(index.clone(), 4),
         };
-        let load = MachineTerm::read_named(
+        let load = OldMachineTerm::read_named(
             ProgramPoint::at(
                 &(crate::kernel::intern_memory(
-                    initial.store(pointer, ProgramValue::Int32(MachineTerm::constant(5))),
+                    initial.store(pointer, ProgramValue::Int32(OldMachineTerm::constant(5))),
                 )),
             ),
             Box::new(query),
@@ -954,12 +958,13 @@ mod tests {
         );
         let value = retained(
             MachineIntegerType::Int32,
-            &MachineTerm::add(load.clone(), load),
+            &OldMachineTerm::add(load.clone(), load),
         );
         let parent = normalize_exact_index(&value, &empty).unwrap();
-        let child = empty
-            .clone()
-            .assume_condition(ConditionTerm::equal(index, MachineTerm::constant(0)), true);
+        let child = empty.clone().assume_condition(
+            ConditionTerm::equal(index, OldMachineTerm::constant(0)),
+            true,
+        );
         normalization_parity(MachineIntegerType::Int32, value.structural_value(), &child);
         assert_eq!(
             normalize_exact_index(&value, &child)
@@ -982,13 +987,13 @@ mod tests {
         let ty = MachineIntegerType::Int32;
         let value = retained(
             ty,
-            &MachineTerm::If {
+            &OldMachineTerm::If {
                 condition: Box::new(ConditionTerm::address_equal(
                     Address::symbolic(Variable(1007510)),
                     Address::symbolic(Variable(1007511)),
                 )),
-                then_term: Box::new(MachineTerm::constant(1)),
-                else_term: Box::new(MachineTerm::constant(0)),
+                then_term: Box::new(OldMachineTerm::constant(1)),
+                else_term: Box::new(OldMachineTerm::constant(0)),
             },
         );
         let empty = PureFactContext::new();

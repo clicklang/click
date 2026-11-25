@@ -6,14 +6,14 @@ fn executed_body_return_axis(axis: &str) {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(100)), 4),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(100)), 4),
         };
         let other = |index| {
             if axis == "same-block aliases" {
                 Address {
                     base: AddressBase::ExternalArgument,
                     offset: AddressOffset::scale_int32(
-                        MachineTerm::Variable(Variable(9_910_000 + index)),
+                        OldMachineTerm::Variable(Variable(9_910_000 + index)),
                         4,
                     ),
                 }
@@ -22,7 +22,7 @@ fn executed_body_return_axis(axis: &str) {
             }
         };
         let neighbor = other(0);
-        let end = MachineTerm::Variable(Variable(9_920_000));
+        let end = OldMachineTerm::Variable(Variable(9_920_000));
         let mut facts = PureFactContext::new()
             .assume_condition(
                 ConditionTerm::address_equal(pointer.clone(), neighbor.clone()),
@@ -215,11 +215,11 @@ fn early_return_group_alias_work(symbolic_end: bool) -> Vec<[usize; 3]> {
             let _session = crate::kernel::VerificationSession::enter();
             let pointer = Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(100)), 4),
+                offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(100)), 4),
             };
             let neighbor = Address::symbolic(Variable(9_810_000));
             let mut facts = PureFactContext::new();
-            let end = MachineTerm::Variable(Variable(9_820_000));
+            let end = OldMachineTerm::Variable(Variable(9_820_000));
             if symbolic_end {
                 facts = facts
                     .assume_condition(
@@ -1204,7 +1204,7 @@ fn flat_body_admission_ignores_retained_owners_and_aliases_on_hits_refusals_and_
                     frame = frame.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
                         pointer.clone(),
                         0u32.into(),
-                        MachineTerm::Variable(Variable(8_839_599)),
+                        OldMachineTerm::Variable(Variable(8_839_599)),
                     )));
                 }
                 if axis != "cold" {
@@ -1338,7 +1338,7 @@ fn composite_transfer_consumers_ignore_unrelated_inputs_aliases_and_creation_his
                 )));
                 post = post.with_local(
                     format!("unrelated_{index}"),
-                    ProgramValue::Int32(MachineTerm::constant(index)),
+                    ProgramValue::Int32(OldMachineTerm::constant(index)),
                 );
             }
             frame.synchronize_memory_equalities(&facts);
@@ -1597,7 +1597,7 @@ fn unsupported_body_boundary_does_not_revalidate_the_retained_frame() {
                     frame = frame.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
                         pointer.clone(),
                         0u32.into(),
-                        MachineTerm::Variable(Variable(8_849_001)),
+                        OldMachineTerm::Variable(Variable(8_849_001)),
                     )));
                     frame.synchronize_memory_equalities(&facts);
                 }
@@ -1818,7 +1818,7 @@ fn recursive_return_frontiers_ignore_depth_aliases_and_retained_state() {
                 let state = ExecutionState::new().with_resource_context(frame.clone());
                 let evaluated = recursive_output(
                     pointer,
-                    MachineTerm::constant(if axis == "depth" { count } else { 2 }),
+                    OldMachineTerm::constant(if axis == "depth" { count } else { 2 }),
                     &facts,
                 );
                 let source = evaluated.occurrences[0].source;
@@ -1886,7 +1886,7 @@ fn recursive_call_preparation_does_not_deepen_a_decided_tail() {
         )
         .with_resource_summary(vec![clause.clone()], vec![clause])
         .with_composite_resource_definitions(vec![recursive_definition()]);
-        let evaluated = recursive_output(pointer.clone(), MachineTerm::constant(depth), &facts);
+        let evaluated = recursive_output(pointer.clone(), OldMachineTerm::constant(depth), &facts);
         let (transfer, work) = crate::instrumentation::measure_deterministic_work(|| {
             super::tests::prepare_scalar_transfer(&function, pointer, evaluated.resources, &facts)
         });
@@ -2715,7 +2715,7 @@ fn bounded_body_boundary_does_not_revalidate_the_retained_frame() {
                     frame = frame.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
                         pointer.clone(),
                         1000u32.into(),
-                        MachineTerm::Variable(Variable(8_849_001)),
+                        OldMachineTerm::Variable(Variable(8_849_001)),
                     )));
                     frame.synchronize_memory_equalities(&facts);
                 }
@@ -2785,7 +2785,7 @@ fn output_partitions_and_caller_admission_scale_with_the_delta_not_history() {
         for count in [4u32, 16, 64] {
             let _session = crate::kernel::VerificationSession::enter();
             let p = Address::symbolic(Variable(8_916_000));
-            let n = MachineTerm::Variable(Variable(8_916_001));
+            let n = OldMachineTerm::Variable(Variable(8_916_001));
             let mut facts = PureFactContext::new()
                 .assume_condition(
                     ConditionTerm::signed_less_equal(1u32.into(), n.clone()),
@@ -2897,7 +2897,7 @@ fn pending_return_refusal_does_not_walk_symbolic_owners() {
                 MemoryRange::new_with_element_width(
                     p.clone(),
                     (index * 4 + 100).into(),
-                    MachineTerm::Variable(Variable(8_917_100 + u64::from(index))),
+                    OldMachineTerm::Variable(Variable(8_917_100 + u64::from(index))),
                     1,
                 ),
             ));

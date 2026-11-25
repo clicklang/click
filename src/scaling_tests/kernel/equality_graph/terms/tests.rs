@@ -59,7 +59,7 @@ fn addition_congruence_forks_do_not_reindex_unrelated_parents() {
 
 #[test]
 fn offset_graph_construction_and_fork_queries_scale_with_indexed_work() {
-    let offset = |id| AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(id)), 4);
+    let offset = |id| AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(id)), 4);
     for size in [16u64, 64, 256, 1024] {
         let ((graph, work), map_work) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
@@ -98,7 +98,7 @@ fn late_wide_zero_reindexes_only_its_existing_offsets() {
         let scaled = |base: &Address, value| Address {
             base: base.base.clone(),
             offset: AddressOffset::scaled_int64_node(
-                MachineTerm::Variable(Variable(value)),
+                OldMachineTerm::Variable(Variable(value)),
                 4,
                 true,
             ),
@@ -112,8 +112,8 @@ fn late_wide_zero_reindexes_only_its_existing_offsets() {
         assert!(!graph.are_equal(&pointer, &base));
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             graph.add_uint64_equality(
-                &MachineTerm::Variable(Variable(898_001)),
-                &MachineTerm::uint64_constant(0),
+                &OldMachineTerm::Variable(Variable(898_001)),
+                &OldMachineTerm::uint64_constant(0),
             );
         });
         assert!(graph.are_equal(&pointer, &base));
@@ -138,15 +138,16 @@ fn shared_machine_prefix_registration_is_linear_and_branch_local() {
             let mut graph = EqualityGraph::default();
             for i in 0..unrelated {
                 graph.add_int32_equality(
-                    &MachineTerm::Variable(Variable(960000 + i)),
-                    &MachineTerm::Variable(Variable(970000 + i)),
+                    &OldMachineTerm::Variable(Variable(960000 + i)),
+                    &OldMachineTerm::Variable(Variable(970000 + i)),
                 );
             }
             let format = MachineIntegerType::Int64;
             let mut term =
                 KernelTerm::variable(KernelType::Program(ProgramType::Int64), Variable(980000));
             let other =
-                IntegerTerm::from_machine(format, MachineTerm::Variable(Variable(980001))).unwrap();
+                IntegerTerm::from_machine(format, OldMachineTerm::Variable(Variable(980001)))
+                    .unwrap();
             let mut retained = Vec::new();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for _ in 0..size {

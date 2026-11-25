@@ -694,8 +694,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// Integer arithmetic. Both lookups are exact: no fact is scanned.
     fn try_unsigned_strict_fact(
         search_input: &Proof<'a>,
-        lower: &MachineTerm,
-        upper: &MachineTerm,
+        lower: &OldMachineTerm,
+        upper: &OldMachineTerm,
         surface_fact: &dyn Fn(&Proposition) -> Option<SyntaxProposition>,
     ) -> Option<(Proof<'a>, SyntaxProposition, SyntaxTerm, SyntaxTerm)> {
         #[cfg(test)]
@@ -1456,7 +1456,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return false;
         };
         let assumptions = search_input.facts().assumptions();
-        if let ConditionTerm::IntegerEqual(left, right) = condition.native_compat() {
+        if let ConditionTerm::IntegerEqual(left, right) = condition.old_form() {
             if !*wanted {
                 return false;
             }
@@ -1531,7 +1531,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let _scope = crate::kernel::assumptions::PureFactContextIdScope::enter(assumptions);
             return !assumptions.is_inconsistent();
         }
-        let (left, right) = match condition.native_compat() {
+        let (left, right) = match condition.old_form() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
@@ -1548,7 +1548,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         if *wanted
             && matches!(
-                condition.native_compat(),
+                condition.old_form(),
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
@@ -1559,7 +1559,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             // Adding or subtracting a nonzero word has no fixed point,
             // including at unsigned wraparound. A retained equality names
             // the same base without spelling unrelated historical premises.
-            fn offset_base(term: &MachineTerm) -> Option<&MachineTerm> {
+            fn offset_base(term: &OldMachineTerm) -> Option<&OldMachineTerm> {
                 match term {
                     binary_term!(Int32, Add, base, delta)
                     | binary_term!(Int32, Subtract, base, delta)
@@ -1570,7 +1570,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     _ => None,
                 }
             }
-            let same_value = |left: &MachineTerm, right: &MachineTerm| {
+            let same_value = |left: &OldMachineTerm, right: &OldMachineTerm| {
                 left == right
                     || search_input.facts().contains(&Proposition::condition_is(
                         ConditionTerm::Compare {
@@ -1611,7 +1611,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(Proposition::ConditionIs(condition, wanted)) = search_input.goal() else {
             return false;
         };
-        let (left, right) = match condition.native_compat() {
+        let (left, right) = match condition.old_form() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
@@ -1627,13 +1627,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             _ => return false,
         };
         let assumptions = search_input.facts().assumptions();
-        let literal = |term: &MachineTerm| matches!(term, bits32_constant!(_) | int64_constant!(_));
+        let literal =
+            |term: &OldMachineTerm| matches!(term, bits32_constant!(_) | int64_constant!(_));
         // A closed comparison, which lowering retains, is false whatever the
         // facts: like the goal `false`, only a refutation of the context
         // proves it, which the strategies after this one search for.
         if !literal(left) && !literal(right)
             || crate::kernel::machine_integer::comparison::closed_condition_value(
-                condition.native_compat(),
+                condition.old_form(),
             )
             .is_some()
         {
@@ -1641,7 +1642,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         !assumptions.is_inconsistent()
             && assumptions
-                .decide(condition.native_compat())
+                .decide(condition.old_form())
                 .is_some_and(|known| known != *wanted)
     }
 
@@ -2670,7 +2671,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         let Some(witnessed) = attempt::candidate_outcome(search_input.driver().apply_step(
             ProofStep::Witness(ProofWitness::single(SyntaxTerm::ProgramExpression(
-                ProgramExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
+                ProgramExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(0))),
             ))),
         ))?
         else {
@@ -3576,7 +3577,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 bits32_constant!(value),
             ))) if unsigned && constant_u32(*value) == bound => {
                 SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt32(
-                    MachineTerm::uint32_constant(constant_u32(*value) + 1),
+                    OldMachineTerm::uint32_constant(constant_u32(*value) + 1),
                 )))
             }
             SyntaxTerm::IntegerLiteral(literal)
@@ -5786,7 +5787,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // holds of every value: `0 <= x` in an unsigned order, which no
         // fact states and the step's own range reasoning supplies.
         let zero =
-            |term: &MachineTerm| term.as_const() == Some(0) || term.uint64_as_const() == Some(0);
+            |term: &OldMachineTerm| term.as_const() == Some(0) || term.uint64_as_const() == Some(0);
         let pairs = match search_input.goal()? {
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((
@@ -5959,7 +5960,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 continue;
             }
             let assumptions = search_input.facts().assumptions();
-            let term = MachineTerm::Variable(variable);
+            let term = OldMachineTerm::Variable(variable);
             // A `uint32` goal's bounds are `uint32` orders, filed in their
             // own index.
             let entries = assumptions
@@ -7035,7 +7036,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 for (endpoint, other, strict, forward) in search_input
                     .facts()
                     .assumptions()
-                    .signed_order_bound_entries(&MachineTerm::Variable(*variable))
+                    .signed_order_bound_entries(&OldMachineTerm::Variable(*variable))
                 {
                     let (left, right) = if forward {
                         (endpoint, other)
@@ -7096,7 +7097,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         MachineIntegerType::Int32,
                         CompareRelation::LessThan,
                         [
-                            crate::kernel::MachineOperandView::Legacy(&MachineTerm::Variable(
+                            crate::kernel::MachineOperandView::Old(&OldMachineTerm::Variable(
                                 variable,
                             )),
                             pivot.operand_view(),
@@ -7545,8 +7546,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if facts.pure_known_available(goal)
             || search_input.premise_fixed_state_view().is_none()
             || !matches!(goal, Proposition::ConditionIs(condition, true)
-            if condition.native_compat().pointer_offset_sides().is_some()
-                || matches!(condition.native_compat(), ConditionTerm::Compare {
+            if condition.old_form().pointer_offset_sides().is_some()
+                || matches!(condition.old_form(), ConditionTerm::Compare {
                     format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal, ..
                 }))
@@ -7684,12 +7685,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let load = match right.as_ref() {
-            MachineTerm::Variable(variable) => {
+            OldMachineTerm::Variable(variable) => {
                 crate::kernel::registered_load_term_for_variable(variable)
             }
             term => Some(term.clone()),
         };
-        let Some(MachineTerm::MemoryLoad(_, address, _)) = load else {
+        let Some(OldMachineTerm::MemoryLoad(_, address, _)) = load else {
             return Ok(None);
         };
         let Some(view) = search_input.premise_fixed_state_view() else {
@@ -8051,15 +8052,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 return Ok(None);
             };
             let load_address =
-                |term: &MachineTerm, valid_kind: fn(crate::kernel::LoadKind) -> bool| {
+                |term: &OldMachineTerm, valid_kind: fn(crate::kernel::LoadKind) -> bool| {
                     let load = match term {
-                        MachineTerm::Variable(variable) => {
+                        OldMachineTerm::Variable(variable) => {
                             crate::kernel::registered_load_term_for_variable(variable)?
                         }
                         term => term.clone(),
                     };
                     match load {
-                        MachineTerm::MemoryLoad(_, address, kind) if valid_kind(kind) => {
+                        OldMachineTerm::MemoryLoad(_, address, kind) if valid_kind(kind) => {
                             Some(address)
                         }
                         _ => None,
@@ -8080,7 +8081,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 ),
                 (false, MachineIntegerType::Int64 | MachineIntegerType::UInt64) => (
                     [left, right].into_iter().find_map(|term| {
-                        let MachineTerm::Binary {
+                        let OldMachineTerm::Binary {
                             op: crate::kernel::MachineBinaryOp::BitwiseAnd,
                             left,
                             right,
@@ -8601,16 +8602,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
-        let load = |term: &MachineTerm| match term {
-            MachineTerm::Variable(variable) => {
+        let load = |term: &OldMachineTerm| match term {
+            OldMachineTerm::Variable(variable) => {
                 crate::kernel::registered_load_term_for_variable(variable)
             }
-            MachineTerm::MemoryLoad(..) => Some(term.clone()),
+            OldMachineTerm::MemoryLoad(..) => Some(term.clone()),
             _ => None,
         };
         let (
-            Some(MachineTerm::MemoryLoad(left_memory, left_pointer, left_kind)),
-            Some(MachineTerm::MemoryLoad(right_memory, right_pointer, right_kind)),
+            Some(OldMachineTerm::MemoryLoad(left_memory, left_pointer, left_kind)),
+            Some(OldMachineTerm::MemoryLoad(right_memory, right_pointer, right_kind)),
         ) = (load(left), load(right))
         else {
             return Ok(None);
@@ -9411,7 +9412,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 | ProgramValue::Int64(term)
                 | ProgramValue::UInt64(term)
                 | ProgramValue::Bool(term),
-            ) => *term == MachineTerm::Variable(var),
+            ) => *term == OldMachineTerm::Variable(var),
             _ => false,
         };
         // The written pattern and the value it describes, in either order.
@@ -9422,16 +9423,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .map(|index| (variant.clone(), index)),
             _ => None,
         };
-        let Some((value, (variant, index))) = split(right.native_compat())
+        let Some((value, (variant, index))) = split(right.old_form())
             .map(|found| (left, found))
-            .or_else(|| split(left.native_compat()).map(|found| (right, found)))
+            .or_else(|| split(left.old_form()).map(|found| (right, found)))
         else {
             return Ok(None);
         };
         let Some(known) = search_input
             .facts()
             .assumptions()
-            .known_algebraic_constructor(value.native_compat())
+            .known_algebraic_constructor(value.old_form())
         else {
             return Ok(None);
         };
@@ -9477,7 +9478,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             | ProgramValue::Int64(term)
             | ProgramValue::UInt64(term)
             | ProgramValue::Bool(term) => match term {
-                MachineTerm::Variable(variable) => Some(*variable),
+                OldMachineTerm::Variable(variable) => Some(*variable),
                 _ => None,
             },
             _ => None,
@@ -9560,7 +9561,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // source-backed existential requirements without searching ambient
         // facts.
         candidates.push(SyntaxTerm::ProgramExpression(ProgramExpression::Value(
-            ProgramValue::Int32(MachineTerm::constant(0)),
+            ProgramValue::Int32(OldMachineTerm::constant(0)),
         )));
         for value in candidates {
             check_verification_deadline()?;
@@ -9820,9 +9821,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .map(|(value, ty)| {
                     SyntaxTerm::ProgramExpression(ProgramExpression::Value(ty.value_from_term(
                         if *ty == MachineIntegerType::UInt64 {
-                            MachineTerm::uint64_constant(*value as u64)
+                            OldMachineTerm::uint64_constant(*value as u64)
                         } else {
-                            MachineTerm::constant(*value as u32)
+                            OldMachineTerm::constant(*value as u32)
                         },
                     )))
                 })
@@ -10252,7 +10253,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// [`MAX_INCREMENT_HEADROOM_PREMISES`] of them.
     pub(in crate::surface::proof) fn increment_headroom_premises(
         search_input: &Proof<'a>,
-        pivot: &MachineTerm,
+        pivot: &OldMachineTerm,
         surface_facts: &SurfacePropositionMap,
         premise_anchor: Option<&ProgramPointRef>,
     ) -> Vec<SyntaxProposition> {
@@ -10416,7 +10417,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // forms when present; do not invent spellings by searching history.
         if (is_reflexive_pointer_equality(kernel)
             || matches!(kernel, Proposition::ConditionIs(condition, value)
-                if crate::kernel::is_store_fact(condition.native_compat(), *value)))
+                if crate::kernel::is_store_fact(condition.old_form(), *value)))
             && surface_facts.surfaces(kernel).next().is_none()
             && search_input
                 .local_surface_facts()
@@ -11109,7 +11110,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 left: source.clone(),
                 operator: ComparisonOperator::Equal,
                 right: SyntaxTerm::ProgramExpression(ProgramExpression::Value(
-                    ProgramValue::Int32(MachineTerm::constant(constant_u32(*value))),
+                    ProgramValue::Int32(OldMachineTerm::constant(constant_u32(*value))),
                 )),
             };
             let scope = search_input.driver().open_have(surface.clone()).ok()?;
@@ -11435,7 +11436,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let Proposition::ConditionIs(term, polarity) = premise else {
                 continue;
             };
-            let bound = match (term.native_compat(), polarity, lower_bound) {
+            let bound = match (term.old_form(), polarity, lower_bound) {
                 (
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
@@ -11617,7 +11618,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_unsigned_order_step_from");
         let (order, left, right) = unsigned_order_parts(search_input.goal()?)?;
-        let zero = MachineTerm::constant(0);
+        let zero = OldMachineTerm::constant(0);
         // The goal from one comparison read the other way round, by
         // Integer arithmetic: the premise's operands, compared the goal's
         // way. `arithmetic() using` reads such a premise itself.
@@ -11693,7 +11694,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         };
                         let positive = SyntaxProposition::Comparison {
                             left: SyntaxTerm::ProgramExpression(ProgramExpression::Value(
-                                ProgramValue::UInt32(MachineTerm::uint32_constant(0)),
+                                ProgramValue::UInt32(OldMachineTerm::uint32_constant(0)),
                             )),
                             operator: ComparisonOperator::LessThan,
                             right: difference.clone(),
@@ -11801,7 +11802,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let binary_term!(Int32, Subtract, value, amount) = predecessor.as_ref() else {
             return None;
         };
-        if amount.as_ref() != &MachineTerm::constant(1) {
+        if amount.as_ref() != &OldMachineTerm::constant(1) {
             return None;
         }
         let upper_kernel = Proposition::condition_is(
@@ -12444,7 +12445,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .iter()
                 .filter_map(|(name, binding)| match binding {
                     SyntaxTerm::ProgramExpression(ProgramExpression::Value(
-                        ProgramValue::Int32(MachineTerm::Variable(variable)),
+                        ProgramValue::Int32(OldMachineTerm::Variable(variable)),
                     )) => Some((*variable, name.clone())),
                     _ => None,
                 })
@@ -12620,7 +12621,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     let argument = match value {
                         bits32_constant!(bits) => {
                             Some(SyntaxTerm::ProgramExpression(ProgramExpression::Value(
-                                ProgramValue::Int32(MachineTerm::constant(constant_u32(*bits))),
+                                ProgramValue::Int32(OldMachineTerm::constant(constant_u32(*bits))),
                             )))
                         }
                         uint64_constant!(_) => Some(SyntaxTerm::ProgramExpression(
@@ -12629,7 +12630,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         int64_constant!(_) => Some(SyntaxTerm::ProgramExpression(
                             ProgramExpression::Value(ProgramValue::Int64(value.clone())),
                         )),
-                        MachineTerm::Variable(variable) => {
+                        OldMachineTerm::Variable(variable) => {
                             let Some(goal) = search_input.proposition_obligation() else {
                                 continue;
                             };
@@ -12637,9 +12638,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                                 matches!(
                                     binding,
                                     SyntaxTerm::ProgramExpression(ProgramExpression::Value(
-                                        ProgramValue::Int32(MachineTerm::Variable(bound))
-                                        | ProgramValue::UInt64(MachineTerm::Variable(bound))
-                                        | ProgramValue::Int64(MachineTerm::Variable(bound))
+                                        ProgramValue::Int32(OldMachineTerm::Variable(bound))
+                                        | ProgramValue::UInt64(OldMachineTerm::Variable(bound))
+                                        | ProgramValue::Int64(OldMachineTerm::Variable(bound))
                                     )) if bound == variable
                                 )
                                 .then(|| {

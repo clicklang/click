@@ -694,14 +694,15 @@ pub(crate) fn matching_recomputed_call_havoc_views(
         pointer: &Address,
         value: &ProgramValue,
     ) -> bool {
-        let (ProgramValue::Int8(MachineTerm::MemoryLoad(load_memory, load_pointer, kind))
-        | ProgramValue::Int16(MachineTerm::MemoryLoad(load_memory, load_pointer, kind))
-        | ProgramValue::Int32(MachineTerm::MemoryLoad(load_memory, load_pointer, kind))
-        | ProgramValue::UInt8(MachineTerm::MemoryLoad(load_memory, load_pointer, kind))
-        | ProgramValue::UInt16(MachineTerm::MemoryLoad(load_memory, load_pointer, kind))
-        | ProgramValue::UInt32(MachineTerm::MemoryLoad(load_memory, load_pointer, kind))
-        | ProgramValue::Int64(MachineTerm::MemoryLoad(load_memory, load_pointer, kind))
-        | ProgramValue::UInt64(MachineTerm::MemoryLoad(load_memory, load_pointer, kind))) = value
+        let (ProgramValue::Int8(OldMachineTerm::MemoryLoad(load_memory, load_pointer, kind))
+        | ProgramValue::Int16(OldMachineTerm::MemoryLoad(load_memory, load_pointer, kind))
+        | ProgramValue::Int32(OldMachineTerm::MemoryLoad(load_memory, load_pointer, kind))
+        | ProgramValue::UInt8(OldMachineTerm::MemoryLoad(load_memory, load_pointer, kind))
+        | ProgramValue::UInt16(OldMachineTerm::MemoryLoad(load_memory, load_pointer, kind))
+        | ProgramValue::UInt32(OldMachineTerm::MemoryLoad(load_memory, load_pointer, kind))
+        | ProgramValue::Int64(OldMachineTerm::MemoryLoad(load_memory, load_pointer, kind))
+        | ProgramValue::UInt64(OldMachineTerm::MemoryLoad(load_memory, load_pointer, kind))) =
+            value
         else {
             return false;
         };
@@ -878,8 +879,8 @@ fn memory_range_lists_definitionally_equal(
 mod range_list_equality_graph_tests {
     use super::*;
 
-    fn var(id: u64) -> MachineTerm {
-        MachineTerm::Variable(Variable(id))
+    fn var(id: u64) -> OldMachineTerm {
+        OldMachineTerm::Variable(Variable(id))
     }
 
     #[test]
@@ -892,7 +893,7 @@ mod range_list_equality_graph_tests {
             offset: AddressOffset::scale_int32(index, 4),
         };
         let load = |memory: &SharedMemory, index| {
-            MachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
+            OldMachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
                 memory,
                 &pointer(index),
                 crate::kernel::LoadKind::Int32,
@@ -903,11 +904,11 @@ mod range_list_equality_graph_tests {
         let (a, b) = (var(91), var(92));
         let after = crate::kernel::intern_memory(before.memory().clone().store(
             pointer(b.clone()),
-            ProgramValue::Int32(MachineTerm::constant(9)),
+            ProgramValue::Int32(OldMachineTerm::constant(9)),
         ));
         let base = Address::symbolic(Variable(9100));
-        let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
-        let range = |start| MemoryRange::new(base.clone(), start, MachineTerm::constant(16));
+        let sum = |value| OldMachineTerm::add(value, OldMachineTerm::constant(1));
+        let range = |start| MemoryRange::new(base.clone(), start, OldMachineTerm::constant(16));
         let left = range(sum(load(&before, a.clone())));
         let right = range(sum(load(&before, b.clone())));
         let later = range(sum(load(&after, b.clone())));
@@ -1075,9 +1076,9 @@ fn materialized_load_is_unchanged(
 ) -> bool {
     // Materialized cells retain their structural read. Legacy scalar names
     // remain input adapters for older producer families.
-    let load_of = |bits: &MachineTerm| match bits {
-        MachineTerm::MemoryLoad(_, _, _) => Some(bits.clone()),
-        MachineTerm::Variable(variable) if crate::kernel::eval::is_load_variable(variable) => {
+    let load_of = |bits: &OldMachineTerm| match bits {
+        OldMachineTerm::MemoryLoad(_, _, _) => Some(bits.clone()),
+        OldMachineTerm::Variable(variable) if crate::kernel::eval::is_load_variable(variable) => {
             crate::kernel::eval::registered_load_term_for_variable(variable)
         }
         _ => None,
@@ -1100,7 +1101,7 @@ fn materialized_load_is_unchanged(
                 ProgramType::FunctionPointer(_)
             ) =>
             {
-                load_of(&MachineTerm::Variable(*variable))
+                load_of(&OldMachineTerm::Variable(*variable))
             }
             Address {
                 offset: AddressOffset::Int32Scaled { value: bits, .. },
@@ -1119,14 +1120,14 @@ fn materialized_load_is_unchanged(
     let Some(left) = load else {
         return false;
     };
-    let MachineTerm::MemoryLoad(_, load_pointer, kind) = &left else {
+    let OldMachineTerm::MemoryLoad(_, load_pointer, kind) = &left else {
         return false;
     };
     let kind = *kind;
     if !kind.reads_value(value) {
         return false;
     }
-    let right = crate::kernel::MachineTerm::read_named(
+    let right = crate::kernel::OldMachineTerm::read_named(
         ProgramPoint::unplaced(&(crate::kernel::intern_memory(symbolic_memory.clone()))),
         pointer.clone(),
         kind,
@@ -1778,7 +1779,7 @@ fn obligation_has_known_condition_consequent(
     }
     match obligation {
         Proposition::ConditionIs(condition, value) => {
-            assumptions.difference_decision(condition.native_compat(), &[]) == Some(*value)
+            assumptions.difference_decision(condition.old_form(), &[]) == Some(*value)
         }
         _ => false,
     }
@@ -2943,7 +2944,7 @@ fn reflexive_completion_condition(condition: BooleanOperandView<'_>) -> bool {
     {
         use crate::kernel::MachineOperandView;
         return match (left, right) {
-            (MachineOperandView::Legacy(left), MachineOperandView::Legacy(right)) => left == right,
+            (MachineOperandView::Old(left), MachineOperandView::Old(right)) => left == right,
             (MachineOperandView::Shared(left), MachineOperandView::Shared(right)) => {
                 let plain_word = |root: &crate::kernel::KernelTerm| {
                     root.is_shared_machine_operand()
@@ -3117,10 +3118,10 @@ fn literal_completion_key(outcome: &FunctionOutcome) -> Option<(bool, ProgramVal
             KernelTermNode::MachineLiteral(literal) => Some((
                 exceptional,
                 MachineIntegerType::from_program_type(value.program_type())?
-                    .value_from_term(literal.legacy_term()),
+                    .value_from_term(literal.old_term()),
             )),
             KernelTermNode::ImportedScalar(input)
-                if matches!(input.value(), MachineTerm::Constant { .. }) =>
+                if matches!(input.value(), OldMachineTerm::Constant { .. }) =>
             {
                 native_literal_completion_key(exceptional, root.program_value_native_compat()?)
             }
@@ -3156,7 +3157,7 @@ fn native_literal_completion_key(
         ProgramValue::Pointer(_) | ProgramValue::Parameter(_) => return None,
     };
     match term {
-        MachineTerm::Constant { .. } => Some((exceptional, value.clone())),
+        OldMachineTerm::Constant { .. } => Some((exceptional, value.clone())),
         _ => None,
     }
 }
@@ -3297,9 +3298,9 @@ mod heap_free_effect_tests {
             base: AddressBase::Heap(940_100),
             offset: AddressOffset::Constant(0),
         };
-        let bytes = MachineTerm::uint64_multiply(
-            MachineTerm::Variable(Variable(940_101)),
-            MachineTerm::uint64_constant(4),
+        let bytes = OldMachineTerm::uint64_multiply(
+            OldMachineTerm::Variable(Variable(940_101)),
+            OldMachineTerm::uint64_constant(4),
         );
         let wide = AllocationSize::new(bytes.clone(), AllocationSizeKind::UInt64);
         let before = SymbolicMemory::new();
@@ -3328,8 +3329,8 @@ mod checked_proposition_index_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(Variable(variable))),
-                right: Box::new(MachineTerm::constant(1)),
+                left: Box::new(OldMachineTerm::Variable(Variable(variable))),
+                right: Box::new(OldMachineTerm::constant(1)),
             },
             value,
         )
@@ -3487,8 +3488,8 @@ mod checked_proposition_index_tests {
         // certification setup.
         let body_fact = Proposition::condition_is(
             ConditionTerm::signed_less_than(
-                MachineTerm::Variable(Variable(93_001)),
-                MachineTerm::constant(8),
+                OldMachineTerm::Variable(Variable(93_001)),
+                OldMachineTerm::constant(8),
             ),
             true,
         );
@@ -3498,7 +3499,7 @@ mod checked_proposition_index_tests {
             function: Box::new(function.clone()),
             arguments: Vec::new(),
             outcome: FunctionOutcome::Return {
-                value: ProgramValue::Int32(MachineTerm::constant(0)).into(),
+                value: ProgramValue::Int32(OldMachineTerm::constant(0)).into(),
                 state: Box::new(state),
             },
         };
@@ -3565,11 +3566,11 @@ mod heap_status_equality_tests {
         ));
 
         let left = FunctionOutcome::Return {
-            value: ProgramValue::Int32(MachineTerm::constant(0)).into(),
+            value: ProgramValue::Int32(OldMachineTerm::constant(0)).into(),
             state: Box::new(ExecutionState::new().with_memory(base)),
         };
         let right = FunctionOutcome::Return {
-            value: ProgramValue::Int32(MachineTerm::constant(0)).into(),
+            value: ProgramValue::Int32(OldMachineTerm::constant(0)).into(),
             state: Box::new(ExecutionState::new().with_memory(other)),
         };
         assert!(
@@ -3594,8 +3595,8 @@ mod unproved_path_obligation_message_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(MachineTerm::Variable(Variable(7))),
-                right: Box::new(MachineTerm::constant(3)),
+                left: Box::new(OldMachineTerm::Variable(Variable(7))),
+                right: Box::new(OldMachineTerm::constant(3)),
             },
             true,
         );
@@ -3621,8 +3622,8 @@ mod wide_range_reader_tests {
         let base = Address::symbolic(Variable(984_400));
         let wide = MemoryRange::new_wide(
             base.clone(),
-            MachineTerm::uint64_constant(0),
-            MachineTerm::uint64_constant(1 << 33),
+            OldMachineTerm::uint64_constant(0),
+            OldMachineTerm::uint64_constant(1 << 33),
             1,
         );
         let narrow = MemoryRange::new_with_element_width(base, 0u32.into(), 1u32.into(), 1);
@@ -3645,7 +3646,7 @@ mod materialized_function_load_tests {
     use super::*;
 
     fn callback_load(memory: &SymbolicMemory, address: &Address, kind: LoadKind) -> ProgramValue {
-        let load = crate::kernel::MachineTerm::read_named(
+        let load = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
             address.clone(),
             kind,
@@ -3772,8 +3773,8 @@ mod claim_requirement_tests {
     fn claim_identity_requires_its_evaluation_obligations_in_this_context() {
         let domain = Proposition::condition_is(
             ConditionTerm::equal(
-                MachineTerm::Variable(Variable(991_001)),
-                MachineTerm::constant(1),
+                OldMachineTerm::Variable(Variable(991_001)),
+                OldMachineTerm::constant(1),
             ),
             true,
         );
@@ -4002,8 +4003,8 @@ mod completion_operand_tests {
     fn completion_uses_retained_condition_identity() {
         let _session = crate::kernel::VerificationSession::enter();
         let address = Address::symbolic(Variable(100_295));
-        let variable = MachineTerm::Variable(Variable(100_296));
-        let other_variable = MachineTerm::Variable(Variable(100_297));
+        let variable = OldMachineTerm::Variable(Variable(100_296));
+        let other_variable = OldMachineTerm::Variable(Variable(100_297));
         let compare = |format, right| ConditionTerm::Compare {
             format,
             relation: CompareRelation::Equal,

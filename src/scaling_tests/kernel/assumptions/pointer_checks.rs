@@ -10,16 +10,17 @@ fn shared_pointer_equality_visits_offset_pairs_and_load_pairs_once() {
         for size in [16, 64, 256] {
             let cell = SymbolicMemory::global_pointer("shared-check-scaling");
             let before = SymbolicMemory::new().with_block("shared-check-scaling", 16);
-            let after = before
-                .clone()
-                .store(cell.clone(), ProgramValue::Int32(MachineTerm::constant(1)));
+            let after = before.clone().store(
+                cell.clone(),
+                ProgramValue::Int32(OldMachineTerm::constant(1)),
+            );
             let make = |memory| {
                 let native = Address {
                     base: AddressBase::Concrete("shared-check-array".into()),
                     offset: AddressOffset::Int32Scaled {
                         value: SharedMachineIntegerTerm::index(
                             MachineIntegerType::Int32,
-                            MachineTerm::read_named(
+                            OldMachineTerm::read_named(
                                 ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                                 Box::new(cell.clone()),
                                 LoadKind::Int32,
@@ -38,7 +39,7 @@ fn shared_pointer_equality_visits_offset_pairs_and_load_pairs_once() {
             let a = make(before);
             let b = make(after);
             let calls = std::cell::Cell::new(0);
-            let loads = |_: &MachineTerm, _: &MachineTerm| {
+            let loads = |_: &OldMachineTerm, _: &OldMachineTerm| {
                 calls.set(calls.get() + 1);
                 true
             };

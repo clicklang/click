@@ -49,7 +49,7 @@ fn indexed_constant_arithmetic_premises(
     for variable in crate::kernel::proposition_variables(&canonical) {
         selected.extend(assumptions.signed_constant_bound_facts(
             crate::kernel::SignedDefinedWidth::Int32,
-            &MachineTerm::Variable(variable),
+            &OldMachineTerm::Variable(variable),
         ));
     }
     selected.into_iter().collect()
@@ -63,7 +63,7 @@ fn incompatible_machine_offsets(
     right: &crate::kernel::IntegerTerm,
 ) -> bool {
     use crate::kernel::IntegerTerm;
-    fn offset(term: &IntegerTerm) -> Option<(MachineIntegerType, MachineTerm, BigInt)> {
+    fn offset(term: &IntegerTerm) -> Option<(MachineIntegerType, OldMachineTerm, BigInt)> {
         match term {
             IntegerTerm::Add(base, delta) | IntegerTerm::Subtract(base, delta)
                 if delta.as_const().is_some() =>
@@ -88,7 +88,7 @@ fn incompatible_machine_offsets(
                 let format = machine.ty();
                 let mut base = machine.value();
                 let mut delta = BigInt::zero();
-                while let MachineTerm::Binary {
+                while let OldMachineTerm::Binary {
                     format: operation_format,
                     op,
                     left,
@@ -368,10 +368,13 @@ fn collect_signed_surface_proposition_terms<'a>(
 /// `(x as int32)`: arithmetic over the narrow expression itself would
 /// re-lower at its own width, not as the certificate's `int32` arithmetic.
 /// An expression that already is a cast to `int32` is kept.
-fn int32_widening_spelling(term: &crate::kernel::MachineTerm, candidate: SyntaxTerm) -> SyntaxTerm {
+fn int32_widening_spelling(
+    term: &crate::kernel::OldMachineTerm,
+    candidate: SyntaxTerm,
+) -> SyntaxTerm {
     let widening = matches!(
         term,
-        crate::kernel::MachineTerm::Cast { spelling: MachineCastSpelling::Generic,
+        crate::kernel::OldMachineTerm::Cast { spelling: MachineCastSpelling::Generic,
             from: source,
             to: crate::kernel::MachineIntegerType::Int32,
             ..
@@ -532,7 +535,7 @@ pub(super) fn observed_native_surface_comparison(
     if crate::kernel::machine_integer::comparison::integer_readings_with_promotions(kernel)
         .is_empty()
         && !matches!(kernel, Proposition::ConditionIs(condition, _)
-            if crate::kernel::machine_integer::comparison::structural_comparison_view(condition.native_compat()).is_some())
+            if crate::kernel::machine_integer::comparison::structural_comparison_view(condition.old_form()).is_some())
         && !crate::kernel::machine_integer::comparison::reads_wide_integer_observations(kernel)
     {
         return written.clone();
@@ -541,7 +544,7 @@ pub(super) fn observed_native_surface_comparison(
     // Preserve that carrier when its sides become Integer observations;
     // observing the original narrow source instead changes the certificate.
     let native_int32 = matches!(kernel, Proposition::ConditionIs(condition, _)
-        if crate::kernel::machine_integer::comparison::structural_comparison_view(condition.native_compat())
+        if crate::kernel::machine_integer::comparison::structural_comparison_view(condition.old_form())
             .is_some_and(|view| view.format == MachineIntegerType::Int32));
     // An operand already written as an Integer (an unsuffixed literal, an
     // observation, or arithmetic over one) keeps its spelling.
@@ -1440,7 +1443,7 @@ fn kernel_upper_bound_split_candidate(
         return None;
     };
     let comparison = crate::kernel::machine_integer::comparison::structural_comparison_view(
-        condition.native_compat(),
+        condition.old_form(),
     )?;
     if comparison.format != MachineIntegerType::Int32 || comparison.negated {
         return None;
@@ -1696,7 +1699,7 @@ fn script_arm_with_continuation<'a>(
 impl<'a> Proof<'a> {
     fn signed_surface_term(
         &self,
-        term: &crate::kernel::MachineTerm,
+        term: &crate::kernel::OldMachineTerm,
         candidates: &[&SyntaxTerm],
     ) -> Option<SyntaxTerm> {
         if let Some(value) = term.as_const() {
@@ -1706,7 +1709,7 @@ impl<'a> Proof<'a> {
             // a negative decimal IntegerLiteral is not a native expression.
             if matches!(term, bits32_constant!(_)) {
                 return Some(SyntaxTerm::ProgramExpression(ProgramExpression::Value(
-                    int32(MachineTerm::constant(value)),
+                    int32(OldMachineTerm::constant(value)),
                 )));
             }
         }
@@ -1734,7 +1737,7 @@ impl<'a> Proof<'a> {
                 continue;
             };
             let Some(view) = crate::kernel::machine_integer::comparison::structural_comparison_view(
-                condition.native_compat(),
+                condition.old_form(),
             ) else {
                 continue;
             };
@@ -1754,7 +1757,7 @@ impl<'a> Proof<'a> {
                 use crate::kernel::proof::signed_arithmetic::SignedArithmeticAtom as Atom;
                 Atom::from_canonical_operand(operand)
                     .zip(Atom::from_canonical_operand(
-                        crate::kernel::MachineOperandView::Legacy(term),
+                        crate::kernel::MachineOperandView::Old(term),
                     ))
                     .is_some_and(|(left, right)| left == right)
             };
@@ -1776,7 +1779,7 @@ impl<'a> Proof<'a> {
     fn signed_surface_term_is_int32(
         &self,
         candidate: &SyntaxTerm,
-        term: &crate::kernel::MachineTerm,
+        term: &crate::kernel::OldMachineTerm,
     ) -> bool {
         let probe = SyntaxProposition::Comparison {
             left: candidate.clone(),
@@ -1789,7 +1792,7 @@ impl<'a> Proof<'a> {
             return false;
         };
         let Some(view) = crate::kernel::machine_integer::comparison::structural_comparison_view(
-            condition.native_compat(),
+            condition.old_form(),
         ) else {
             return false;
         };
@@ -1803,7 +1806,7 @@ impl<'a> Proof<'a> {
         view.operands[1].operand_view().word32_constant() == Some(0)
             && Atom::from_canonical_operand(view.operands[0].operand_view())
                 .zip(Atom::from_canonical_operand(
-                    crate::kernel::MachineOperandView::Legacy(term),
+                    crate::kernel::MachineOperandView::Old(term),
                 ))
                 .is_some_and(|(left, right)| left == right)
     }
@@ -1942,7 +1945,7 @@ impl<'a> Proof<'a> {
         for surface in &rendered_premises {
             collect_signed_surface_proposition_terms(surface, &mut terms);
         }
-        let term = |term: &crate::kernel::MachineTerm| self.signed_surface_term(term, &terms);
+        let term = |term: &crate::kernel::OldMachineTerm| self.signed_surface_term(term, &terms);
         let generated_goal;
         let surface_goal = if integer_surface_ordered_parts(
             &surface_comparison_with_anchored_operands(surface_goal),
@@ -1953,7 +1956,7 @@ impl<'a> Proof<'a> {
                 return None;
             };
             let view = crate::kernel::machine_integer::comparison::structural_comparison_view(
-                condition.native_compat(),
+                condition.old_form(),
             )?;
             if view.negated || view.relation != crate::kernel::CompareRelation::LessEqual {
                 return None;
@@ -2147,7 +2150,9 @@ impl<'a> Proof<'a> {
                 SignedArithmeticNode::Trivial { result } => claim_surface(result),
                 SignedArithmeticNode::Int32Range { result } => {
                     let (atom, coefficient) = result.terms.iter().next()?;
-                    let atom = term(&crate::kernel::MachineTerm::Variable(atom.as_variable()?))?;
+                    let atom = term(&crate::kernel::OldMachineTerm::Variable(
+                        atom.as_variable()?,
+                    ))?;
                     Some(observe_comparison(if coefficient.is_positive() {
                         SyntaxProposition::Comparison {
                             left: atom,
@@ -2796,7 +2801,7 @@ impl<'a> Proof<'a> {
         let Proposition::ConditionIs(condition, truth) = proposition else {
             return None;
         };
-        let (left, operator, right) = match (condition.native_compat(), truth) {
+        let (left, operator, right) = match (condition.old_form(), truth) {
             (ConditionTerm::IntegerLessEqual(left, right), true) => {
                 (left, ComparisonOperator::LessEqual, right)
             }
@@ -3205,11 +3210,11 @@ impl<'a> Proof<'a> {
                     }
                     Proposition::ConditionIs(condition, true) => format!(
                         "an internal {} goal with no Click spelling",
-                        condition_kind(condition.native_compat())
+                        condition_kind(condition.old_form())
                     ),
                     Proposition::ConditionIs(condition, false) => format!(
                         "the negation of an internal {} goal with no Click spelling",
-                        condition_kind(condition.native_compat())
+                        condition_kind(condition.old_form())
                     ),
                     _ => format!(
                         "the goal {}",
@@ -3237,9 +3242,8 @@ impl<'a> Proof<'a> {
         let Proposition::ConditionIs(condition, expected) = self.goal()? else {
             return None;
         };
-        (crate::surface::checking::normalize_condition_without_assumptions(
-            condition.native_compat(),
-        ) == Some(!*expected))
+        (crate::surface::checking::normalize_condition_without_assumptions(condition.old_form())
+            == Some(!*expected))
         .then(|| {
             "it is false at this point: the values its reads resolve to here refute it, so no \
              further fact proves it."
@@ -4155,8 +4159,8 @@ fn same_canonical_word_comparison(left: &Proposition, right: &Proposition) -> bo
         return false;
     };
     let (Some(a), Some(b)) = (
-        comparison_view(a.native_compat(), *av),
-        comparison_view(b.native_compat(), *bv),
+        comparison_view(a.old_form(), *av),
+        comparison_view(b.old_form(), *bv),
     ) else {
         return false;
     };
@@ -4217,11 +4221,11 @@ pub(super) fn propositions_match_after_canonical_loads(
             // A constant condition and a closed literal comparison, which
             // lowering retains as written, match by the truth they state.
             (Proposition::ConditionIs(left, expected), Proposition::ConditionIs(right, other))
-                if closed_condition_value(left.native_compat()).is_some()
-                    && closed_condition_value(right.native_compat()).is_some() =>
+                if closed_condition_value(left.old_form()).is_some()
+                    && closed_condition_value(right.old_form()).is_some() =>
             {
-                if (closed_condition_value(left.native_compat()) == Some(*expected))
-                    != (closed_condition_value(right.native_compat()) == Some(*other))
+                if (closed_condition_value(left.old_form()) == Some(*expected))
+                    != (closed_condition_value(right.old_form()) == Some(*other))
                 {
                     return false;
                 }
@@ -5233,7 +5237,7 @@ fn mirrored_order_goal(goal: &Proposition) -> Option<Proposition> {
     let Proposition::ConditionIs(condition, value) = goal else {
         return None;
     };
-    let mirrored = match condition.native_compat() {
+    let mirrored = match condition.old_form() {
         ConditionTerm::Compare {
             format,
             relation,
@@ -5331,8 +5335,8 @@ mod synthesized_literal_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(MachineTerm::Variable(Variable(991984))),
-                right: Box::new(MachineTerm::constant(10)),
+                left: Box::new(OldMachineTerm::Variable(Variable(991984))),
+                right: Box::new(OldMachineTerm::constant(10)),
             },
             true,
         );
@@ -5379,7 +5383,7 @@ mod synthesized_literal_tests {
         };
         let trivial = Proposition::condition_is(less_equal(0u32.into(), 0u32.into()), true);
         let bound = Proposition::condition_is(
-            less_equal(MachineTerm::var(Variable(71_229)), 10u32.into()),
+            less_equal(OldMachineTerm::var(Variable(71_229)), 10u32.into()),
             true,
         );
         assert!(!lowered_states_requirement(
@@ -5408,17 +5412,18 @@ mod synthesized_literal_tests {
         let before = intern_memory(SymbolicMemory::new());
         let after = intern_memory(before.memory().clone().store(
             pointer.clone(),
-            ProgramValue::Int32(MachineTerm::constant(1)),
+            ProgramValue::Int32(OldMachineTerm::constant(1)),
         ));
-        let read = |memory, pointer, kind| MachineTerm::read_named(memory, Box::new(pointer), kind);
+        let read =
+            |memory, pointer, kind| OldMachineTerm::read_named(memory, Box::new(pointer), kind);
         let value = read(
             crate::kernel::ProgramPoint::at(&before),
             pointer.clone(),
             LoadKind::Int32,
         );
-        let atom = |term: &MachineTerm| {
+        let atom = |term: &OldMachineTerm| {
             crate::kernel::proof::signed_arithmetic::SignedArithmeticAtom::from_canonical_operand(
-                crate::kernel::MachineOperandView::Legacy(term),
+                crate::kernel::MachineOperandView::Old(term),
             )
         };
         assert_eq!(atom(&value), atom(&value));
@@ -5451,8 +5456,8 @@ mod synthesized_literal_tests {
         };
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let x = MachineTerm::Variable(Variable(71231));
-        let sum = MachineTerm::logical_machine_binary(ty, Op::Add, x, 1u32.into());
+        let x = OldMachineTerm::Variable(Variable(71231));
+        let sum = OldMachineTerm::logical_machine_binary(ty, Op::Add, x, 1u32.into());
         let pointer = Address::symbolic(Variable(71232));
         let before = intern_memory(SymbolicMemory::new());
         let after = intern_memory(
@@ -5462,10 +5467,9 @@ mod synthesized_literal_tests {
                 .store(pointer.clone(), ProgramValue::Int32(sum.clone())),
         );
         let read =
-            |memory| MachineTerm::read_named(memory, Box::new(pointer.clone()), LoadKind::Int32);
-        let retained = |relation, left: &MachineTerm, right: &MachineTerm| {
-            let roots =
-                [left, right].map(|v| KernelTerm::retained_machine_operand(ty, V::Legacy(v)));
+            |memory| OldMachineTerm::read_named(memory, Box::new(pointer.clone()), LoadKind::Int32);
+        let retained = |relation, left: &OldMachineTerm, right: &OldMachineTerm| {
+            let roots = [left, right].map(|v| KernelTerm::retained_machine_operand(ty, V::Old(v)));
             Proposition::condition_is(
                 crate::kernel::machine_integer::comparison::condition_for_operand_views(
                     ty,
@@ -5475,7 +5479,7 @@ mod synthesized_literal_tests {
                 true,
             )
         };
-        let zero = MachineTerm::constant(0);
+        let zero = OldMachineTerm::constant(0);
         let order = retained(R::GreaterEqual, &sum, &zero);
         let mirror = retained(R::LessEqual, &zero, &sum);
         let exports = crate::kernel::KernelTermExport::machine_export_count();
@@ -5519,18 +5523,18 @@ mod synthesized_literal_tests {
     fn upper_bound_split_reads_integer_observations_of_the_native_increment() {
         let _session = crate::kernel::VerificationSession::enter();
         let index = Variable(71_220);
-        let pivot = MachineTerm::Variable(Variable(71_221));
+        let pivot = OldMachineTerm::Variable(Variable(71_221));
         let observe = |value| {
             crate::kernel::IntegerTerm::from_machine(MachineIntegerType::Int32, value).unwrap()
         };
         let bound = |amount| {
             Proposition::condition_is(
                 ConditionTerm::integer_less_than(
-                    observe(MachineTerm::Variable(index)),
-                    observe(MachineTerm::add_at(
+                    observe(OldMachineTerm::Variable(index)),
+                    observe(OldMachineTerm::add_at(
                         MachineIntegerType::Int32,
                         pivot.clone(),
-                        MachineTerm::constant(amount),
+                        OldMachineTerm::constant(amount),
                     )),
                 ),
                 true,
@@ -5678,7 +5682,7 @@ enum UnsignedOrder {
 /// A held `uint32` order and its operands.
 fn unsigned_order_parts(
     proposition: &Proposition,
-) -> Option<(UnsignedOrder, MachineTerm, MachineTerm)> {
+) -> Option<(UnsignedOrder, OldMachineTerm, OldMachineTerm)> {
     let Some((
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt32,
@@ -5737,7 +5741,7 @@ mod scaling_tests {
 /// The sides of a native machine equality fact a smart `rewrite` can cite:
 /// a 32- or 64-bit equality, or an 8- or 16-bit one, which is the same fact
 /// as the `int32` equality of its widenings (rule K8).
-fn rewrite_equality_sides(equality: &Proposition) -> Option<(&MachineTerm, &MachineTerm)> {
+fn rewrite_equality_sides(equality: &Proposition) -> Option<(&OldMachineTerm, &OldMachineTerm)> {
     match equality {
         condition_source_0 @ Proposition::ConditionIs(_, true)
             if let Some((
@@ -5765,8 +5769,8 @@ fn rewrite_equality_sides(equality: &Proposition) -> Option<(&MachineTerm, &Mach
 
 /// A machine literal: a smart `rewrite` reduces operands to literals and
 /// never expands one.
-fn is_rewrite_literal(term: &MachineTerm) -> bool {
-    matches!(term, MachineTerm::Constant { .. })
+fn is_rewrite_literal(term: &OldMachineTerm) -> bool {
+    matches!(term, OldMachineTerm::Constant { .. })
 }
 
 #[test]
@@ -5778,11 +5782,11 @@ fn machine_offset_refusal_respects_wraparound_and_word_width() {
         MachineIntegerType::Int64,
         MachineIntegerType::UInt64,
     ] {
-        let base = MachineTerm::Variable(Variable(981_772));
+        let base = OldMachineTerm::Variable(Variable(981_772));
         let observe = |value| IntegerTerm::from_machine(format, value).unwrap();
         let three =
             crate::kernel::machine_integer::range::constant_word(format, &3.into()).unwrap();
-        let plus_three = observe(MachineTerm::logical_machine_binary(
+        let plus_three = observe(OldMachineTerm::logical_machine_binary(
             format,
             MachineBinaryOp::Add,
             base.clone(),
@@ -5807,17 +5811,17 @@ fn machine_offset_refusal_respects_wraparound_and_word_width() {
 fn operation_identities_order_dependencies_with_multiple_roots() {
     use crate::kernel::IntegerTerm;
     let format = MachineIntegerType::Int32;
-    let inner = MachineTerm::logical_machine_binary(
+    let inner = OldMachineTerm::logical_machine_binary(
         format,
         MachineBinaryOp::Add,
-        MachineTerm::Variable(Variable(989_776)),
-        MachineTerm::constant(1),
+        OldMachineTerm::Variable(Variable(989_776)),
+        OldMachineTerm::constant(1),
     );
-    let outer = MachineTerm::logical_machine_binary(
+    let outer = OldMachineTerm::logical_machine_binary(
         format,
         MachineBinaryOp::Add,
         inner.clone(),
-        MachineTerm::constant(2),
+        OldMachineTerm::constant(2),
     );
     let inner = IntegerTerm::from_machine(format, inner).unwrap();
     let outer = IntegerTerm::from_machine(format, outer).unwrap();

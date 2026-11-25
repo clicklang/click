@@ -3,7 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
-use crate::kernel::{MachineCastSpelling, MachineTerm};
+use crate::kernel::{MachineCastSpelling, OldMachineTerm};
 
 #[test]
 fn narrowed_variable_atom_identity_work_scales_linearly() {
@@ -11,9 +11,9 @@ fn narrowed_variable_atom_identity_work_scales_linearly() {
     for size in [16usize, 64, 256, 1024] {
         let terms: Vec<_> = (0..size)
             .map(|index| {
-                MachineTerm::legacy_cast(
+                OldMachineTerm::legacy_cast(
                     MachineCastSpelling::UInt32From64,
-                    Box::new(MachineTerm::Variable(Variable(index as u64))),
+                    Box::new(OldMachineTerm::Variable(Variable(index as u64))),
                 )
             })
             .collect();
@@ -34,10 +34,10 @@ fn narrowed_variable_atom_identity_work_scales_linearly() {
 fn opaque_payload_work_scales_with_application_identity() {
     let mut measurements = Vec::new();
     for payload_size in [8usize, 16, 32, 64] {
-        let term = MachineTerm::PureFunctionApplication {
+        let term = OldMachineTerm::PureFunctionApplication {
             name: "opaque".repeat(payload_size),
             arguments: (0..payload_size)
-                .map(|index| MachineTerm::Variable(Variable(index as u64)))
+                .map(|index| OldMachineTerm::Variable(Variable(index as u64)))
                 .collect(),
         };
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -60,7 +60,7 @@ fn opaque_payload_work_scales_with_application_identity() {
 fn deep_opaque_payload_work_is_iterative_and_budgeted() {
     let mut term = x();
     for _ in 0..4096 {
-        term = MachineTerm::PureFunctionApplication {
+        term = OldMachineTerm::PureFunctionApplication {
             name: "f".to_string(),
             arguments: vec![term],
         };

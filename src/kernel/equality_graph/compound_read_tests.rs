@@ -3,24 +3,24 @@ use crate::kernel::{
     KernelTermImport, MachineBinaryOp as Op, MachineIntegerType as M, MachineOperandView as V,
 };
 
-fn sum(format: M, left: MachineTerm, right: MachineTerm) -> MachineTerm {
-    MachineTerm::machine_binary(format, Op::Add, left, right)
+fn sum(format: M, left: OldMachineTerm, right: OldMachineTerm) -> OldMachineTerm {
+    OldMachineTerm::machine_binary(format, Op::Add, left, right)
 }
-fn number(format: M, n: u128) -> MachineTerm {
+fn number(format: M, n: u128) -> OldMachineTerm {
     match format {
-        M::Int32 => MachineTerm::constant(n as u32),
-        M::UInt64 => MachineTerm::uint64_constant(n as u64),
+        M::Int32 => OldMachineTerm::constant(n as u32),
+        M::UInt64 => OldMachineTerm::uint64_constant(n as u64),
         _ => unreachable!(),
     }
 }
-fn stored(format: M, value: MachineTerm) -> ProgramValue {
+fn stored(format: M, value: OldMachineTerm) -> ProgramValue {
     match format {
         M::Int32 => ProgramValue::Int32(value),
         M::UInt64 => ProgramValue::UInt64(value),
         _ => unreachable!(),
     }
 }
-fn equal(graph: &EqualityGraph, format: M, left: &MachineTerm, right: &MachineTerm) -> bool {
+fn equal(graph: &EqualityGraph, format: M, left: &OldMachineTerm, right: &OldMachineTerm) -> bool {
     match format {
         M::Int32 => graph.are_int32_equal(left, right),
         M::UInt64 => graph.are_uint64_equal(left, right),
@@ -42,7 +42,8 @@ fn compound_read_queries_require_explicit_equations() {
         if kind.is_word32() {
             crate::kernel::eval::record_load_access_width(memory.memory(), &slot, 4);
         }
-        let read = MachineTerm::read_named(ProgramPoint::at(&memory), Box::new(slot.clone()), kind);
+        let read =
+            OldMachineTerm::read_named(ProgramPoint::at(&memory), Box::new(slot.clone()), kind);
         let expression = sum(format, read.clone(), number(format, 3));
         let expected = number(format, 10);
         let empty = PureFactContext::new();
@@ -71,7 +72,7 @@ fn compound_read_queries_require_explicit_equations() {
         }
         let through_alias = sum(
             format,
-            MachineTerm::read_named(ProgramPoint::at(&memory), Box::new(alias.clone()), kind),
+            OldMachineTerm::read_named(ProgramPoint::at(&memory), Box::new(alias.clone()), kind),
             number(format, 3),
         );
         assert!(!equal(
@@ -94,12 +95,12 @@ fn compound_read_queries_require_explicit_equations() {
             assert!(
                 !empty
                     .equality_graph
-                    .are_int32_equal_views(V::Shared(&shared), V::Legacy(&expected))
+                    .are_int32_equal_views(V::Shared(&shared), V::Old(&expected))
             );
             assert!(
                 facts
                     .equality_graph
-                    .are_int32_equal_views(V::Shared(&shared), V::Legacy(&expected))
+                    .are_int32_equal_views(V::Shared(&shared), V::Old(&expected))
             );
         }
     }

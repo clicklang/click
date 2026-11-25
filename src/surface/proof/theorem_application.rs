@@ -1343,7 +1343,7 @@ pub(super) fn theorem_application_bindings(
                 spec_definitions,
                 &active_functions,
             )?);
-            let native = value.native_compat();
+            let native = value.old_form();
             if !program_value_matches_click_type(native, parameter_type) {
                 let (naming_parameters, naming_arguments) =
                     crate::surface::diagnostics::value_naming_tables(context.values);

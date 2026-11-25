@@ -59,7 +59,7 @@ fn literal(value: &BigInt) -> SyntaxTerm {
         let observed = SyntaxTerm::Call {
             name: "to_integer".into(),
             arguments: vec![SyntaxTerm::ProgramExpression(ProgramExpression::Value(
-                crate::kernel::uint64(MachineTerm::uint64_constant(magnitude)),
+                crate::kernel::uint64(OldMachineTerm::uint64_constant(magnitude)),
             ))],
         };
         return observed;
@@ -225,7 +225,7 @@ fn reading(proposition: &Proposition) -> Option<Reading> {
         return None;
     };
     let truth = *truth != negative;
-    if matches!(condition.native_compat(), ConditionTerm::Compare { .. }) {
+    if matches!(condition.old_form(), ConditionTerm::Compare { .. }) {
         let observed =
             crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
                 &Proposition::condition_is(condition.clone(), truth),
@@ -234,7 +234,7 @@ fn reading(proposition: &Proposition) -> Option<Reading> {
             .next()?;
         return reading(&observed);
     }
-    let (a, b, equal, strict, reverse) = match (condition.native_compat(), truth) {
+    let (a, b, equal, strict, reverse) = match (condition.old_form(), truth) {
         (ConditionTerm::IntegerEqual(a, b), true)
         | (ConditionTerm::IntegerNotEqual(a, b), false) => (a, b, true, false, false),
         (ConditionTerm::IntegerLessEqual(a, b), true)
@@ -455,7 +455,7 @@ fn disequality_operands(proposition: &Proposition) -> Vec<(SharedIntegerTerm, Sh
     let Proposition::ConditionIs(c, v) = p else {
         return Vec::new();
     };
-    if matches!(c.native_compat(), ConditionTerm::Compare { .. }) {
+    if matches!(c.old_form(), ConditionTerm::Compare { .. }) {
         return crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
             &Proposition::condition_is(c.clone(), *v != negative),
         )
@@ -463,7 +463,7 @@ fn disequality_operands(proposition: &Proposition) -> Vec<(SharedIntegerTerm, Sh
         .flat_map(disequality_operands)
         .collect();
     }
-    match (c.native_compat(), *v != negative) {
+    match (c.old_form(), *v != negative) {
         (ConditionTerm::IntegerNotEqual(a, b), true)
         | (ConditionTerm::IntegerEqual(a, b), false) => vec![(a.clone(), b.clone())],
         _ => Vec::new(),
@@ -860,7 +860,7 @@ fn range_bound_available(proof: &Proof<'_>, bound: &Proposition) -> bool {
         return true;
     }
     let reversed = match bound {
-        Proposition::ConditionIs(condition, value) => match condition.native_compat() {
+        Proposition::ConditionIs(condition, value) => match condition.old_form() {
             ConditionTerm::IntegerGreaterEqual(left, right) => Proposition::condition_is(
                 ConditionTerm::IntegerLessEqual(right.clone(), left.clone()),
                 *value,

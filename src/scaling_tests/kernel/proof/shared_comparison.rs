@@ -43,12 +43,12 @@ fn comparison_read_prefixes_retain_conversions_without_exports() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let value = MachineTerm::IntegerToMachine {
+        let value = OldMachineTerm::IntegerToMachine {
             value: IntegerTerm::Variable(Variable(992202)).into(),
             destination: format,
         };
         let (load, _) = comparison_read_fixture(value.clone());
-        let mut root = imported(format, MachineTerm::Variable(load));
+        let mut root = imported(format, OldMachineTerm::Variable(load));
         let mut expected = imported(format, value);
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -94,8 +94,8 @@ fn quantified_variable_substitution_visits_shared_nodes_once() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let source = MachineTerm::Variable(Variable(993101));
-        let replacement = MachineTerm::Variable(Variable(993102));
+        let source = OldMachineTerm::Variable(Variable(993101));
+        let replacement = OldMachineTerm::Variable(Variable(993102));
         let mut root = imported(format, source.clone());
         let mut expected = imported(format, replacement.clone());
         for _ in 0..size {
@@ -138,7 +138,7 @@ fn exact_integer_machine_rewrites_preserve_shared_dag_work() {
         let leaf = |value| {
             imported(
                 format,
-                MachineTerm::IntegerToMachine {
+                OldMachineTerm::IntegerToMachine {
                     value,
                     destination: format,
                 },
@@ -181,11 +181,11 @@ fn compound_source_rewrites_import_the_selected_source_once() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let mut source = MachineTerm::Variable(Variable(993202));
+        let mut source = OldMachineTerm::Variable(Variable(993202));
         for n in 0..size {
-            source = MachineTerm::add(source, MachineTerm::Variable(Variable(994000 + n)));
+            source = OldMachineTerm::add(source, OldMachineTerm::Variable(Variable(994000 + n)));
         }
-        let replacement = MachineTerm::add(source.clone(), 1u32.into());
+        let replacement = OldMachineTerm::add(source.clone(), 1u32.into());
         let mut input = imported(format, source.clone());
         let mut expected = imported(format, replacement.clone());
         for _ in 0..size {
@@ -223,7 +223,7 @@ fn conditional_remainder_queries_skip_unchanged_shared_prefixes() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::UInt64;
-        let mut root = imported(ty, MachineTerm::Variable(Variable(985101)));
+        let mut root = imported(ty, OldMachineTerm::Variable(Variable(985101)));
         let one = constant(ty, 1);
         let five = constant(ty, 5);
         let mut selected = PureFactContext::new();
@@ -279,13 +279,13 @@ fn wide_checking_syntax_growing_prefixes_retain_shared_work() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::UInt64;
-        let mut root = imported(format, MachineTerm::Variable(Variable(989621)));
-        let mask = imported(format, MachineTerm::uint64_constant(7));
-        let zero = imported(format, MachineTerm::uint64_constant(0));
+        let mut root = imported(format, OldMachineTerm::Variable(Variable(989621)));
+        let mask = imported(format, OldMachineTerm::uint64_constant(7));
+        let zero = imported(format, OldMachineTerm::uint64_constant(0));
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 0..size {
-                let fresh = imported(format, MachineTerm::Variable(Variable(989622 + index)));
+                let fresh = imported(format, OldMachineTerm::Variable(Variable(989622 + index)));
                 root = KernelTerm::machine_binary_shared(
                     format,
                     MachineBinaryOp::Multiply,
@@ -319,21 +319,21 @@ fn substituted_conditional_guards_match_evaluation_with_linear_work() {
     let samples = [4, 16, 64].map(|size| {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let source = MachineTerm::Variable(Variable(994600));
+        let source = OldMachineTerm::Variable(Variable(994600));
         let replacement = KernelTerm::machine_binary_shared(
             format,
             MachineBinaryOp::Subtract,
             [
-                imported(format, MachineTerm::Variable(Variable(994601))),
-                imported(format, MachineTerm::constant(1)),
+                imported(format, OldMachineTerm::Variable(Variable(994601))),
+                imported(format, OldMachineTerm::constant(1)),
             ],
         );
-        let one = imported(format, MachineTerm::constant(1));
-        let zero = imported(format, MachineTerm::constant(0));
+        let one = imported(format, OldMachineTerm::constant(1));
+        let zero = imported(format, OldMachineTerm::constant(0));
         let mut root = zero.clone();
         let mut expected = zero.clone();
         for index in 0..size {
-            let bound = MachineTerm::constant(index);
+            let bound = OldMachineTerm::constant(index);
             let guard = ConditionTerm::machine_compare(
                 format,
                 CompareRelation::Equal,
@@ -353,7 +353,7 @@ fn substituted_conditional_guards_match_evaluation_with_linear_work() {
                 CompareRelation::Equal,
                 [
                     MachineOperandView::Shared(&replacement),
-                    MachineOperandView::Legacy(&bound),
+                    MachineOperandView::Old(&bound),
                 ],
             );
             let rewritten = KernelTerm::machine_if_shared(

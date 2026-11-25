@@ -70,8 +70,8 @@ fn common_match_rewrite_shares_arm_bodies_without_machine_exports() {
             .collect();
         let matched =
             KernelMatch::new(KernelType::Program(ProgramType::Int32), scrutinee, arms).unwrap();
-        let from = MachineTerm::Variable(Variable(991922));
-        let to = MachineTerm::Variable(Variable(991923));
+        let from = OldMachineTerm::Variable(Variable(991922));
+        let to = OldMachineTerm::Variable(Variable(991923));
         let mut rewrite = TermRewrite::for_bits(&from, &to);
         let exports = KernelTermExport::machine_export_count();
         let (result, work) =
@@ -91,7 +91,7 @@ fn common_match_reduction_retains_shared_machine_body() {
         scrutinee.node = AlgebraicTermNode::Constructor {
             variant: "Arm".into(),
             fields: vec![AlgebraicValue::Program(ProgramValue::Int32(
-                MachineTerm::Variable(Variable(991924)),
+                OldMachineTerm::Variable(Variable(991924)),
             ))],
         };
         let mut body =
@@ -187,8 +187,8 @@ fn retained_algebraic_match_rewrite_keeps_shared_nested_bodies() {
         let KernelTermNode::Match(matched) = root.node() else {
             unreachable!()
         };
-        let from = MachineTerm::Variable(Variable(991995));
-        let to = MachineTerm::constant(7);
+        let from = OldMachineTerm::Variable(Variable(991995));
+        let to = OldMachineTerm::constant(7);
         let mut rewrite = TermRewrite::for_bits(&from, &to);
         let exports = KernelTermExport::algebraic_export_count();
         let (result, work) =

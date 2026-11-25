@@ -57,7 +57,7 @@ fn fold_endpoint_constant_spines_do_not_rewalk_growing_prefixes() {
     for count in [16u64, 64, 256] {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let one = KernelTermImport::default().machine(format, &MachineTerm::constant(1));
+        let one = KernelTermImport::default().machine(format, &OldMachineTerm::constant(1));
         let mut root =
             KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(999301));
         let exports = KernelTermExport::machine_export_count();
@@ -146,8 +146,8 @@ fn selected_endpoint_equality_looks_up_one_pair_in_growing_source_stars() {
                     ConditionTerm::machine_compare(
                         format,
                         CompareRelation::Equal,
-                        MachineTerm::Variable(anchor),
-                        MachineTerm::Variable(Variable(1001100 + index)),
+                        OldMachineTerm::Variable(anchor),
+                        OldMachineTerm::Variable(Variable(1001100 + index)),
                     ),
                     true,
                 );
@@ -174,8 +174,8 @@ fn selected_endpoint_equality_looks_up_one_pair_in_growing_source_stars() {
                 if format == MachineIntegerType::UInt64 {
                     let low_word = PureFactContext::new().assume_condition(
                         ConditionTerm::equal(
-                            MachineTerm::Variable(anchor),
-                            MachineTerm::Variable(Variable(1001500)),
+                            OldMachineTerm::Variable(anchor),
+                            OldMachineTerm::Variable(Variable(1001500)),
                         ),
                         true,
                     );

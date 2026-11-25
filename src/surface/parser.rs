@@ -13920,7 +13920,7 @@ impl Parser {
                 && let Some(parameter) = self.abstract_referent(binding)
             {
                 let start = ProgramExpression::Value(ProgramValue::UInt64(
-                    crate::kernel::MachineTerm::uint64_constant(0),
+                    crate::kernel::OldMachineTerm::uint64_constant(0),
                 ));
                 let end = ProgramExpression::Value(ProgramValue::UInt64(parameter.size_term()));
                 return Ok(vec![ContractSegment {
@@ -13999,7 +13999,7 @@ impl Parser {
                 && let Some(parameter) = self.abstract_referent(binding)
             {
                 let start = ProgramExpression::Value(ProgramValue::UInt64(
-                    crate::kernel::MachineTerm::uint64_constant(0),
+                    crate::kernel::OldMachineTerm::uint64_constant(0),
                 ));
                 let end = ProgramExpression::Value(ProgramValue::UInt64(parameter.size_term()));
                 return Ok(vec![ContractSegment {
@@ -14195,7 +14195,7 @@ impl Parser {
         // A symbolic struct's object is its `sizeof` bytes from `p`.
         if let crate::kernel::LayoutSize::Of(_) = layout.size() {
             let start = ProgramExpression::Value(ProgramValue::UInt64(
-                crate::kernel::MachineTerm::uint64_constant(0),
+                crate::kernel::OldMachineTerm::uint64_constant(0),
             ));
             let end = ProgramExpression::Value(ProgramValue::UInt64(layout.size().term()));
             let surface_base = SyntaxTerm::ProgramExpression(base.clone());
@@ -14513,7 +14513,7 @@ impl Parser {
                 && parameter.has_abstract_size()
             {
                 let start = ProgramExpression::Value(ProgramValue::UInt64(
-                    crate::kernel::MachineTerm::uint64_constant(0),
+                    crate::kernel::OldMachineTerm::uint64_constant(0),
                 ));
                 let end = ProgramExpression::Value(ProgramValue::UInt64(parameter.size_term()));
                 return ContractSegment {
@@ -15758,7 +15758,7 @@ impl Parser {
             if self.peek_next() == Some(&Token::Int64MinimumMagnitude) {
                 self.position += 2;
                 return Ok(SyntaxTerm::ProgramExpression(ProgramExpression::Value(
-                    ProgramValue::Int64(MachineTerm::int64_constant(i64::MIN)),
+                    ProgramValue::Int64(OldMachineTerm::int64_constant(i64::MIN)),
                 )));
             }
             self.position += 1;
@@ -17688,16 +17688,16 @@ impl Parser {
                 ProgramExpression::Value(crate::kernel::uint8(u32::from(value))),
             )),
             Some(Token::UInt32Number(value)) => Ok(SyntaxTerm::ProgramExpression(
-                ProgramExpression::Value(ProgramValue::UInt32(MachineTerm::uint32_constant(value))),
+                ProgramExpression::Value(ProgramValue::UInt32(OldMachineTerm::uint32_constant(value))),
             )),
             Some(Token::Int64MinimumMagnitude) => Err(self.error(
                 "positive int64 literal `9223372036854775808i64` is outside 0..9223372036854775807; this magnitude is allowed only after unary minus",
             )),
             Some(Token::Int64Number(value)) => Ok(SyntaxTerm::ProgramExpression(
-                ProgramExpression::Value(ProgramValue::Int64(MachineTerm::int64_constant(value))),
+                ProgramExpression::Value(ProgramValue::Int64(OldMachineTerm::int64_constant(value))),
             )),
             Some(Token::UInt64Number(value)) => Ok(SyntaxTerm::ProgramExpression(
-                ProgramExpression::Value(ProgramValue::UInt64(MachineTerm::uint64_constant(value))),
+                ProgramExpression::Value(ProgramValue::UInt64(OldMachineTerm::uint64_constant(value))),
             )),
             Some(Token::CharLiteral(value)) => Ok(SyntaxTerm::ProgramExpression(
                 ProgramExpression::Value(self.character_constant_value(value)?),
@@ -18970,7 +18970,7 @@ impl Parser {
             Some(syntax::PlainChar::Unsigned) => {
                 Ok(crate::kernel::uint8(u32::from(byte)))
             }
-            Some(plain @ syntax::PlainChar::Signed) => Ok(ProgramValue::Int32(MachineTerm::constant(
+            Some(plain @ syntax::PlainChar::Signed) => Ok(ProgramValue::Int32(OldMachineTerm::constant(
                 plain.character_value(byte) as i32 as u32,
             ))),
             None => Err(self.error(format!(
@@ -19407,7 +19407,7 @@ fn source_nesting_error_message(
 fn aligned_proposition(pointer: ProgramExpression, alignment: u64) -> SyntaxProposition {
     let uint64 = |value: u64| {
         SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt64(
-            MachineTerm::uint64_constant(value),
+            OldMachineTerm::uint64_constant(value),
         )))
     };
     SyntaxProposition::Comparison {
@@ -19690,7 +19690,7 @@ fn struct_byte_stride(index: ProgramExpression, width: u32) -> ProgramExpression
             explicit_qualification: false,
         }),
         Box::new(ProgramExpression::Value(crate::kernel::int64(
-            crate::kernel::MachineTerm::int64_constant(i64::from(width)),
+            crate::kernel::OldMachineTerm::int64_constant(i64::from(width)),
         ))),
     )
 }

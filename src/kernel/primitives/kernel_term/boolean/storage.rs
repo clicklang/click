@@ -11,7 +11,7 @@ impl KernelTerm {
         }
         self.0.argument_leaf.get_or_init(|| {
             Box::new(PureFunctionArgument::Value(ProgramValue::Bool(
-                MachineTerm::BoolCast {
+                OldMachineTerm::BoolCast {
                     to: MachineIntegerType::UInt8,
                     value: Box::new(value),
                 },
@@ -23,7 +23,7 @@ impl KernelTerm {
     /// a compatibility consumer. This must not initialize the slot: its
     /// initializer itself reads BooleanOperandView::native().
     pub(crate) fn cached_condition_output(&self) -> Option<&ConditionTerm> {
-        let PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::BoolCast {
+        let PureFunctionArgument::Value(ProgramValue::Bool(OldMachineTerm::BoolCast {
             value, ..
         })) = self.0.argument_leaf.get()?.as_ref()
         else {
@@ -48,7 +48,7 @@ impl KernelTerm {
                     .argument_leaf
                     .get_or_init(|| {
                         Box::new(PureFunctionArgument::Value(ProgramValue::Bool(
-                            MachineTerm::Variable(*variable),
+                            OldMachineTerm::Variable(*variable),
                         )))
                     })
                     .as_ref(),
@@ -71,12 +71,12 @@ impl KernelTerm {
                     // condition directly. Its storage wrapper needs no second
                     // constant-folding constructor.
                     let value = if matches!(self.node(), KernelTermNode::IntegerCompare { .. }) {
-                        MachineTerm::BoolCast {
+                        OldMachineTerm::BoolCast {
                             to: MachineIntegerType::UInt8,
                             value: Box::new(condition),
                         }
                     } else {
-                        MachineTerm::bool_cast(MachineIntegerType::UInt8, condition)
+                        OldMachineTerm::bool_cast(MachineIntegerType::UInt8, condition)
                     };
                     Box::new(PureFunctionArgument::Value(ProgramValue::Bool(value)))
                 })

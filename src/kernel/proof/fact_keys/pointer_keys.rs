@@ -383,11 +383,11 @@ mod tests {
             .with_provenance(Arc::new(address.clone()))
             .with_bounds(Some(SubobjectBounds {
                 start: address,
-                width: MachineTerm::Binary {
+                width: OldMachineTerm::Binary {
                     format: MachineIntegerType::Int32,
                     op: MachineBinaryOp::Add,
-                    left: MachineTerm::Variable(Variable(1010002)).into(),
-                    right: MachineTerm::constant(4).into(),
+                    left: OldMachineTerm::Variable(Variable(1010002)).into(),
+                    right: OldMachineTerm::constant(4).into(),
                 },
             }))
             .with_bounds_owner(Some(Arc::new(Address::symbolic(Variable(1010001)))))
@@ -403,7 +403,7 @@ mod tests {
             MachineIntegerType::UInt64,
         ] {
             let scalar =
-                SharedMachineIntegerTerm::index(ty, MachineTerm::Variable(Variable(1010003)));
+                SharedMachineIntegerTerm::index(ty, OldMachineTerm::Variable(Variable(1010003)));
             let scaled = if matches!(ty, MachineIntegerType::Int32 | MachineIntegerType::UInt32) {
                 AddressOffset::Int32Scaled {
                     value: scalar,
@@ -443,13 +443,13 @@ mod tests {
         let before = crate::kernel::SymbolicMemory::new().with_block("shared-key-load", 16);
         let after = before.clone().store(
             address.clone(),
-            ProgramValue::Int32(MachineTerm::constant(7)),
+            ProgramValue::Int32(OldMachineTerm::constant(7)),
         );
         let make = |memory| {
             SharedPointer::import(&pointer(AddressOffset::Int32Scaled {
                 value: SharedMachineIntegerTerm::index(
                     MachineIntegerType::Int32,
-                    MachineTerm::read_named(
+                    OldMachineTerm::read_named(
                         crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                         Box::new(address.clone()),
                         LoadKind::Int32,

@@ -143,9 +143,9 @@ mod tests {
         let _session = VerificationSession::enter();
         let from = Variable(992100);
         for replacement in [
-            MachineTerm::bool_cast(MachineIntegerType::UInt8, ConditionTerm::Constant(false)),
-            MachineTerm::bool_cast(MachineIntegerType::UInt8, ConditionTerm::Constant(true)),
-            MachineTerm::bool_cast(
+            OldMachineTerm::bool_cast(MachineIntegerType::UInt8, ConditionTerm::Constant(false)),
+            OldMachineTerm::bool_cast(MachineIntegerType::UInt8, ConditionTerm::Constant(true)),
+            OldMachineTerm::bool_cast(
                 MachineIntegerType::UInt8,
                 ConditionTerm::Variable(Variable(992102)),
             ),
@@ -286,9 +286,9 @@ mod tests {
         let integer = BTreeMap::new();
         let algebraic = BTreeMap::new();
         for replacement in [
-            MachineTerm::constant(0),
-            MachineTerm::constant(1),
-            MachineTerm::Variable(Variable(992121)),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(1),
+            OldMachineTerm::Variable(Variable(992121)),
         ] {
             let program = BTreeMap::from([(
                 Variable(992120),

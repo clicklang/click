@@ -5,12 +5,12 @@ use super::*;
 /// The XOR with a literal is zero exactly when the other operand equals
 /// that literal. A nonzero literal in an OR rules out zero directly.
 pub(super) fn decide_zero(
-    divisor: &MachineTerm,
+    divisor: &OldMachineTerm,
     zero: &ConditionTerm,
     assumptions: &PureFactContext,
     facts: &ExecutionFacts,
 ) -> Option<bool> {
-    let view = MachineOperandView::Legacy(divisor);
+    let view = MachineOperandView::Old(divisor);
     if let Some((format, operator, [left, right])) = view.binary() {
         if bitwise_excludes(format, divisor, false, assumptions, facts) {
             return Some(false);
@@ -24,7 +24,7 @@ pub(super) fn decide_zero(
                 let equal = condition_for_operand_views(
                     format,
                     CompareRelation::Equal,
-                    [operand, MachineOperandView::Legacy(&literal)],
+                    [operand, MachineOperandView::Old(&literal)],
                 );
                 if let Some(value) = indexed_condition_value(assumptions, facts, &equal) {
                     return Some(value);
@@ -37,14 +37,14 @@ pub(super) fn decide_zero(
 
 fn bitwise_excludes(
     format: MachineIntegerType,
-    divisor: &MachineTerm,
+    divisor: &OldMachineTerm,
     minus_one: bool,
     assumptions: &PureFactContext,
     facts: &ExecutionFacts,
 ) -> bool {
     crate::kernel::proof::arithmetic_special::bitwise_divisor_excludes(
         format,
-        MachineOperandView::Legacy(divisor),
+        MachineOperandView::Old(divisor),
         minus_one,
         |condition, truth| indexed_condition_value(assumptions, facts, &condition) == Some(truth),
     )
@@ -52,12 +52,12 @@ fn bitwise_excludes(
 
 pub(super) fn apply_nonzero(
     format: MachineIntegerType,
-    left: MachineTerm,
-    right: MachineTerm,
+    left: OldMachineTerm,
+    right: OldMachineTerm,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-    result: fn(MachineTerm, MachineTerm) -> MachineTerm,
+    result: fn(OldMachineTerm, OldMachineTerm) -> OldMachineTerm,
 ) -> Vec<ExpressionPath> {
     let [minimum, minus_one] =
         ConditionTerm::signed_division_exception_tests(format, &left, &right);
@@ -122,14 +122,14 @@ pub(super) fn apply_nonzero(
 mod tests {
     use super::*;
 
-    fn terms() -> (MachineTerm, MachineTerm) {
+    fn terms() -> (OldMachineTerm, OldMachineTerm) {
         (
-            MachineTerm::Variable(Variable(970_001)),
-            MachineTerm::Variable(Variable(970_002)),
+            OldMachineTerm::Variable(Variable(970_001)),
+            OldMachineTerm::Variable(Variable(970_002)),
         )
     }
-    fn result(left: MachineTerm, right: MachineTerm) -> MachineTerm {
-        MachineTerm::Binary {
+    fn result(left: OldMachineTerm, right: OldMachineTerm) -> OldMachineTerm {
+        OldMachineTerm::Binary {
             format: MachineIntegerType::Int32,
             op: MachineBinaryOp::Divide,
             left: Box::new(left),

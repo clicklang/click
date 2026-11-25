@@ -66,7 +66,7 @@ pub(super) fn kind(proposition: &Proposition) -> String {
             }
         ),
         Proposition::ConditionIs(condition, _) => {
-            format!("condition:{}", condition_kind(condition.native_compat()))
+            format!("condition:{}", condition_kind(condition.old_form()))
         }
         Proposition::Predicate { name, .. } if name.starts_with("__click") => {
             "predicate:internal".into()
@@ -144,7 +144,7 @@ pub(super) fn record(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{MachineTerm, Sort, Variable};
+    use crate::kernel::{OldMachineTerm, Sort, Variable};
 
     #[test]
     fn hidden_child_fields_have_structural_resource_surface_forms() {
@@ -1320,8 +1320,8 @@ theorem add3_adds_four() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(Variable(1))),
-                right: Box::new(MachineTerm::constant(0)),
+                left: Box::new(OldMachineTerm::Variable(Variable(1))),
+                right: Box::new(OldMachineTerm::constant(0)),
             },
             true,
         );

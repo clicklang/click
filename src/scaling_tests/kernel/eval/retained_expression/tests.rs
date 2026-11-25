@@ -5,14 +5,14 @@ fn c_expression_handoffs_retain_growing_arithmetic_without_exports() {
     let mut work = Vec::new();
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut expression = ProgramExpression::Value(ProgramValue::UInt32(MachineTerm::Variable(
-            Variable(998270),
-        )));
+        let mut expression = ProgramExpression::Value(ProgramValue::UInt32(
+            OldMachineTerm::Variable(Variable(998270)),
+        ));
         for _ in 0..size {
             expression = ProgramExpression::Multiply(
                 Box::new(expression),
                 Box::new(ProgramExpression::Value(ProgramValue::UInt32(
-                    MachineTerm::uint32_constant(3),
+                    OldMachineTerm::uint32_constant(3),
                 ))),
             );
         }
@@ -40,16 +40,16 @@ fn c_conditional_handoffs_keep_machine_results_without_exporting_prefixes() {
         let _session = crate::kernel::VerificationSession::enter();
         let mut expression = ProgramExpression::Multiply(
             Box::new(ProgramExpression::Value(ProgramValue::UInt64(
-                MachineTerm::Variable(Variable(998271)),
+                OldMachineTerm::Variable(Variable(998271)),
             ))),
             Box::new(ProgramExpression::Value(ProgramValue::UInt64(
-                MachineTerm::uint64_constant(3),
+                OldMachineTerm::uint64_constant(3),
             ))),
         );
         for _ in 0..size {
             expression = ProgramExpression::Ternary {
                 condition: Box::new(ProgramExpression::Value(ProgramValue::Int32(
-                    MachineTerm::constant(1),
+                    OldMachineTerm::constant(1),
                 ))),
                 then_branch: Box::new(expression),
                 else_branch: Box::new(ProgramExpression::Variable("unselected".into())),
@@ -79,7 +79,7 @@ fn rust_expression_handoffs_retain_growing_narrow_and_shift_results() {
         for size in [16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
             let mut expression = ProgramExpression::Value(ProgramValue::UInt8(
-                MachineTerm::Variable(Variable(998304)),
+                OldMachineTerm::Variable(Variable(998304)),
             ));
             for _ in 0..size {
                 expression = if narrow {
@@ -87,7 +87,7 @@ fn rust_expression_handoffs_retain_growing_narrow_and_shift_results() {
                         ProgramExpression::Multiply(
                             Box::new(expression),
                             Box::new(ProgramExpression::Value(ProgramValue::UInt8(
-                                MachineTerm::narrow_constant(MachineIntegerType::UInt8, 3),
+                                OldMachineTerm::narrow_constant(MachineIntegerType::UInt8, 3),
                             ))),
                         ),
                         ProgramType::UInt8,
@@ -96,7 +96,7 @@ fn rust_expression_handoffs_retain_growing_narrow_and_shift_results() {
                     ProgramExpression::RustShiftRight(
                         Box::new(expression),
                         Box::new(ProgramExpression::Value(ProgramValue::UInt32(
-                            MachineTerm::uint32_constant(1),
+                            OldMachineTerm::uint32_constant(1),
                         ))),
                     )
                 };
@@ -126,14 +126,14 @@ fn retained_local_assignment_and_readback_scale_without_prefix_exports() {
         let _session = crate::kernel::VerificationSession::enter();
         let mut state = ExecutionState::new().with_local(
             "held",
-            ProgramValue::UInt32(MachineTerm::Variable(Variable(998321))),
+            ProgramValue::UInt32(OldMachineTerm::Variable(Variable(998321))),
         );
         let assignment = ProgramStatement::Assign {
             name: "held".into(),
             expression: ProgramExpression::Multiply(
                 Box::new(ProgramExpression::Variable("held".into())),
                 Box::new(ProgramExpression::Value(ProgramValue::UInt32(
-                    MachineTerm::uint32_constant(3),
+                    OldMachineTerm::uint32_constant(3),
                 ))),
             ),
             source: Default::default(),
@@ -170,9 +170,10 @@ fn retained_return_and_caller_receipt_do_not_export_growing_prefixes() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::UInt32;
-        let mut root =
-            KernelTermImport::default().machine(format, &MachineTerm::Variable(Variable(998331)));
-        let three = KernelTermImport::default().machine(format, &MachineTerm::uint32_constant(3));
+        let mut root = KernelTermImport::default()
+            .machine(format, &OldMachineTerm::Variable(Variable(998331)));
+        let three =
+            KernelTermImport::default().machine(format, &OldMachineTerm::uint32_constant(3));
         for _ in 0..size {
             root = KernelTerm::machine_binary_shared(
                 format,
@@ -286,7 +287,7 @@ fn retained_pointer_step_receipts_do_not_walk_dags_or_sibling_results() {
         let _session = crate::kernel::VerificationSession::enter();
         let mut state = ExecutionState::new();
         for n in 0..unrelated {
-            state.set_step_result(1000 + n, ProgramValue::Int32(MachineTerm::constant(n)));
+            state.set_step_result(1000 + n, ProgramValue::Int32(OldMachineTerm::constant(n)));
         }
         for size in [16, 64, 256] {
             let mut argument =
@@ -342,9 +343,9 @@ fn click_negation_handoffs_retain_integer_operands_without_exports() {
     let mut work = Vec::new();
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut expression = ProgramExpression::Value(ProgramValue::UInt32(MachineTerm::Variable(
-            Variable(998270),
-        )));
+        let mut expression = ProgramExpression::Value(ProgramValue::UInt32(
+            OldMachineTerm::Variable(Variable(998270)),
+        ));
         for _ in 0..size {
             expression = ProgramExpression::Negate(Box::new(expression));
         }

@@ -1347,7 +1347,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                     crate::kernel::substitute_int32_variable_in_proposition(
                         &body,
                         *var,
-                        crate::kernel::MachineTerm::Variable(chosen),
+                        crate::kernel::OldMachineTerm::Variable(chosen),
                     )
                 }
                 Sort::ProgramPointer(program_type)
@@ -2969,7 +2969,7 @@ impl<P: Clone, O: Clone, E: Clone> ProofBranches<ProofBranch<ProofObligation<P, 
 mod tests {
     use super::*;
     use crate::kernel::proof::PropositionObligation;
-    use crate::kernel::{MachineTerm, Sort, Term, Variable};
+    use crate::kernel::{OldMachineTerm, Sort, Term, Variable};
 
     fn known_computation_proof(
         goal: Proposition,
@@ -3274,8 +3274,8 @@ mod tests {
         let bound = Variable(2_000_000);
         let body = Proposition::condition_is(
             crate::kernel::ConditionTerm::signed_less_equal(
-                MachineTerm::constant(0),
-                MachineTerm::Variable(bound),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::Variable(bound),
             ),
             true,
         );
@@ -3306,8 +3306,8 @@ mod tests {
         let second = facts
             .with_fact(Proposition::condition_is(
                 crate::kernel::ConditionTerm::signed_less_equal(
-                    MachineTerm::constant(0),
-                    MachineTerm::Variable(witness),
+                    OldMachineTerm::constant(0),
+                    OldMachineTerm::Variable(witness),
                 ),
                 true,
             ))
@@ -3328,7 +3328,7 @@ mod tests {
         let bound = Variable(2_000_000);
         let body = Proposition::Predicate {
             name: "witness_body".into(),
-            arguments: vec![Term::Bitvector32(MachineTerm::constant(0).into())],
+            arguments: vec![Term::Bitvector32(OldMachineTerm::constant(0).into())],
         };
         let reserving = crate::kernel::quantifiers::test_forall(
             Default::default(),
@@ -3395,8 +3395,8 @@ mod tests {
                             ConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
                                 relation: CompareRelation::LessEqual,
-                                left: Box::new(MachineTerm::constant(0)),
-                                right: Box::new(MachineTerm::Variable(variable)),
+                                left: Box::new(OldMachineTerm::constant(0)),
+                                right: Box::new(OldMachineTerm::Variable(variable)),
                             },
                             true,
                         )),
@@ -3404,8 +3404,8 @@ mod tests {
                             ConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
                                 relation: CompareRelation::LessEqual,
-                                left: Box::new(MachineTerm::Variable(variable)),
-                                right: Box::new(MachineTerm::constant(16)),
+                                left: Box::new(OldMachineTerm::Variable(variable)),
+                                right: Box::new(OldMachineTerm::constant(16)),
                             },
                             true,
                         )),
@@ -3416,7 +3416,7 @@ mod tests {
                             base: "alpha".into(),
                             offset: AddressOffset::Constant(0),
                         },
-                        bytes: (MachineTerm::Variable(variable)).into(),
+                        bytes: (OldMachineTerm::Variable(variable)).into(),
                         wide: false,
                     }),
                 ),
@@ -3441,8 +3441,8 @@ mod tests {
         let fold = |accumulator, item| {
             IntegerTerm::range_fold(
                 IntegerRangeFoldIndex::Int32 {
-                    start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
-                    end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(2)),
+                    start: SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(0)),
+                    end: SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(2)),
                 },
                 IntegerTerm::constant_i64(0),
                 accumulator,
@@ -3451,7 +3451,7 @@ mod tests {
                     IntegerTerm::var(accumulator),
                     IntegerTerm::from_machine(
                         MachineIntegerType::Int32,
-                        MachineTerm::Variable(item),
+                        OldMachineTerm::Variable(item),
                     )
                     .unwrap(),
                 ),
@@ -3490,7 +3490,7 @@ mod tests {
                 base: "alpha".into(),
                 offset: AddressOffset::Constant(0),
             },
-            ProgramValue::Int32(MachineTerm::constant(7)),
+            ProgramValue::Int32(OldMachineTerm::constant(7)),
         );
         assert!(
             root(
@@ -3639,7 +3639,7 @@ mod tests {
         let binder = Variable(186);
         let body = Proposition::Predicate {
             name: "holds".to_string(),
-            arguments: vec![Term::Bitvector32(MachineTerm::Variable(binder).into())],
+            arguments: vec![Term::Bitvector32(OldMachineTerm::Variable(binder).into())],
         };
         let goal = crate::kernel::quantifiers::test_forall(
             Default::default(),
@@ -3681,7 +3681,9 @@ mod tests {
             obligation.proposition(),
             &Proposition::Predicate {
                 name: "holds".to_string(),
-                arguments: vec![Term::Bitvector32(MachineTerm::Variable(introduced).into())],
+                arguments: vec![Term::Bitvector32(
+                    OldMachineTerm::Variable(introduced).into()
+                )],
             }
         );
     }

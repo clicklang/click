@@ -85,7 +85,7 @@ fn exclusive_member_update_and_transfer_scale_over_neighboring_members() {
             .unwrap();
         let bounds = PureFactContext::new().assume_condition(
             ConditionTerm::signed_greater_equal(
-                MachineTerm::constant(i32::MAX as u32 - size - 1),
+                OldMachineTerm::constant(i32::MAX as u32 - size - 1),
                 events.observe_symbolic(&scope).unwrap().entry_count,
             ),
             true,
@@ -96,7 +96,7 @@ fn exclusive_member_update_and_transfer_scale_over_neighboring_members() {
                     &AddressBase::ExternalArgument,
                     &at(index),
                     true,
-                    &MachineTerm::constant(1),
+                    &OldMachineTerm::constant(1),
                     &bounds,
                 )
                 .unwrap()
@@ -146,7 +146,7 @@ fn wildcard_helper_birth_does_not_scan_unrelated_imports() {
                 .import_opaque_wildcard_authority(&opaque_scope(index).0)
                 .unwrap();
         }
-        let counter = MachineTerm::Variable(Variable(960_721));
+        let counter = OldMachineTerm::Variable(Variable(960_721));
         let mut bounded = PureFactContext::new()
             .assume_condition(
                 ConditionTerm::equal(
@@ -156,14 +156,14 @@ fn wildcard_helper_birth_does_not_scan_unrelated_imports() {
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_than(counter, MachineTerm::constant(i32::MAX as u32)),
+                ConditionTerm::signed_less_than(counter, OldMachineTerm::constant(i32::MAX as u32)),
                 true,
             );
         for index in 0..size {
             bounded = bounded.assume_condition(
                 ConditionTerm::signed_less_than(
-                    MachineTerm::Variable(Variable(970_000 + u64::from(index))),
-                    MachineTerm::constant(0),
+                    OldMachineTerm::Variable(Variable(970_000 + u64::from(index))),
+                    OldMachineTerm::constant(0),
                 ),
                 true,
             );
@@ -174,7 +174,7 @@ fn wildcard_helper_birth_does_not_scan_unrelated_imports() {
                     &AddressBase::ExternalArgument,
                     &member,
                     true,
-                    &MachineTerm::constant(1),
+                    &OldMachineTerm::constant(1),
                     &bounded,
                 )
                 .unwrap()
@@ -212,14 +212,14 @@ fn exact_count_lookup_and_update_do_not_scan_neighboring_members() {
         let (_, work) = crate::persistent::measure_persistent_work(|| {
             assert_eq!(
                 events.observe_exact_member(&selected).unwrap().entry_count,
-                MachineTerm::constant(1)
+                OldMachineTerm::constant(1)
             );
             let (spent, _) = events
                 .checked_member_exchange(&pool, &selected, false)
                 .unwrap();
             assert_eq!(
                 spent.observe_exact_member(&selected).unwrap().entry_count,
-                MachineTerm::constant(0)
+                OldMachineTerm::constant(0)
             );
         });
         work
@@ -252,12 +252,12 @@ fn wildcard_scope_lookup_and_exchange_ignore_unrelated_pools() {
         });
         assert_eq!(
             next.observe_term(&pool, "slot").unwrap(),
-            MachineTerm::constant(1)
+            OldMachineTerm::constant(1)
         );
         assert_eq!(
             next.observe_term(&AddressBase::Heap(930_001), "slot")
                 .unwrap(),
-            MachineTerm::constant(0)
+            OldMachineTerm::constant(0)
         );
         work
     });

@@ -131,11 +131,11 @@ fn exact_index_normalization_rewrites_shared_read_dags_without_exports() {
     for size in [16, 64, 256] {
         let _session = VerificationSession::enter();
         let pointer = SymbolicMemory::global_pointer("exact-scaling");
-        let stored = MachineTerm::Variable(Variable(1018970));
+        let stored = OldMachineTerm::Variable(Variable(1018970));
         let memory = SymbolicMemory::new()
             .with_block("exact-scaling", 4)
             .store(pointer.clone(), ProgramValue::Int32(stored.clone()));
-        let load = MachineTerm::read_named(
+        let load = OldMachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
             pointer,
             LoadKind::Int32,

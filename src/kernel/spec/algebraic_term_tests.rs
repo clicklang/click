@@ -646,7 +646,7 @@ fn match_on_symbolic_algebraic_value_remains_one_expression_path() {
     );
     assert!(paths[0].facts.is_empty());
     assert!(paths[0].obligations.is_empty());
-    let ProgramValue::Int32(MachineTerm::AlgebraicMatch { scrutinee, arms }) =
+    let ProgramValue::Int32(OldMachineTerm::AlgebraicMatch { scrutinee, arms }) =
         &paths[0].value.clone().into_native()
     else {
         panic!("unknown match should lower to an algebraic-match term");
@@ -712,12 +712,12 @@ fn nested_match_binder_remains_symbolic_inside_its_arm() {
         matched.arguments[2].node(),
         crate::kernel::KernelTermNode::Match(_)
     ));
-    let ProgramValue::Int32(MachineTerm::AlgebraicMatch { arms, .. }) =
+    let ProgramValue::Int32(OldMachineTerm::AlgebraicMatch { arms, .. }) =
         &paths[0].value.clone().into_native()
     else {
         panic!("the outer match should remain symbolic");
     };
-    let MachineTerm::AlgebraicMatch { .. } = &arms[1].body else {
+    let OldMachineTerm::AlgebraicMatch { .. } = &arms[1].body else {
         panic!("the nested binder should lower to the inner symbolic match");
     };
 }
@@ -891,10 +891,12 @@ fn pure_function_application_is_not_eagerly_evaluated() {
                 _ => panic!("common integer call result"),
             })
             .unwrap(),
-        PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::ClickFunctionApplication {
-            name: "increment".to_string(),
-            arguments: vec![PureFunctionArgument::Value(int32(41))],
-        }))
+        PureFunctionArgument::Value(ProgramValue::Int32(
+            OldMachineTerm::ClickFunctionApplication {
+                name: "increment".to_string(),
+                arguments: vec![PureFunctionArgument::Value(int32(41))],
+            }
+        ))
     );
 }
 
@@ -923,7 +925,7 @@ fn pure_function_application_retains_symbolic_algebraic_argument() {
     .expect("an ADT argument should remain one typed term");
 
     assert_eq!(paths.len(), 1);
-    let ProgramValue::Int32(MachineTerm::ClickFunctionApplication { arguments, .. }) =
+    let ProgramValue::Int32(OldMachineTerm::ClickFunctionApplication { arguments, .. }) =
         &paths[0].value.clone().into_native()
     else {
         panic!("pure call should remain an application");
@@ -1116,7 +1118,7 @@ fn model_argument_guard_query_does_not_materialize_stored_models() {
             variant: "Some".into(),
             fields: vec![SpecAlgebraicValue::Program(SpecExpression::Subtract(
                 Box::new(SpecExpression::Value(ProgramValue::Int32(
-                    MachineTerm::Variable(Variable(90_001)),
+                    OldMachineTerm::Variable(Variable(90_001)),
                 ))),
                 Box::new(SpecExpression::Value(int32(1))),
             ))],
@@ -1224,9 +1226,9 @@ fn signed_match_is_fact_stable_and_retains_guarded_definedness() {
         assert!(
             matches!(right.root().unwrap().node(), KernelTermNode::Constructor(constructor) if constructor.variant == "Some")
         );
-        assert_eq!(left.native_compat(), &expected);
+        assert_eq!(left.old_form(), &expected);
         assert!(
-            matches!(&right.native_compat().node, AlgebraicTermNode::Constructor { variant, .. } if variant == "Some")
+            matches!(&right.old_form().node, AlgebraicTermNode::Constructor { variant, .. } if variant == "Some")
         );
     }
 }

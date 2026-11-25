@@ -44,7 +44,7 @@ impl<'a> FloatOperandView<'a> {
         {
             return None;
         }
-        if let Some(native) = self.native_compat() {
+        if let Some(native) = self.old_form() {
             return match format {
                 KernelFloatType::Float32 => native.float32_as_const().map(u64::from),
                 KernelFloatType::Float64 => native.float64_as_const(),
@@ -63,16 +63,16 @@ impl<'a> FloatOperandView<'a> {
         let left = left.constant_bits()?;
         let right = right.constant_bits()?;
         match format {
-            KernelFloatType::Float32 => MachineTerm::float32_binary(
-                MachineTerm::constant(left as u32),
-                MachineTerm::constant(right as u32),
+            KernelFloatType::Float32 => OldMachineTerm::float32_binary(
+                OldMachineTerm::constant(left as u32),
+                OldMachineTerm::constant(right as u32),
                 operator,
             )
             .float32_as_const()
             .map(u64::from),
-            KernelFloatType::Float64 => MachineTerm::float64_binary(
-                MachineTerm::uint64_constant(left),
-                MachineTerm::uint64_constant(right),
+            KernelFloatType::Float64 => OldMachineTerm::float64_binary(
+                OldMachineTerm::uint64_constant(left),
+                OldMachineTerm::uint64_constant(right),
                 operator,
             )
             .float64_as_const(),
@@ -150,14 +150,14 @@ impl<'a> FloatOperandView<'a> {
                         .and_then(|(left, right)| {
                             let format = FloatOperandView::Shared(root).format();
                             let native = match format {
-                                KernelFloatType::Float32 => MachineTerm::float32_binary(
-                                    MachineTerm::constant(left as u32),
-                                    MachineTerm::constant(right as u32),
+                                KernelFloatType::Float32 => OldMachineTerm::float32_binary(
+                                    OldMachineTerm::constant(left as u32),
+                                    OldMachineTerm::constant(right as u32),
                                     operator,
                                 ),
-                                KernelFloatType::Float64 => MachineTerm::float64_binary(
-                                    MachineTerm::uint64_constant(left),
-                                    MachineTerm::uint64_constant(right),
+                                KernelFloatType::Float64 => OldMachineTerm::float64_binary(
+                                    OldMachineTerm::uint64_constant(left),
+                                    OldMachineTerm::uint64_constant(right),
                                     operator,
                                 ),
                             };
@@ -172,10 +172,10 @@ impl<'a> FloatOperandView<'a> {
 
     pub(crate) fn negate(self) -> Option<Self> {
         match self {
-            Self::Native(KernelFloatType::Float32, MachineTerm::Float32Negate(value)) => {
+            Self::Native(KernelFloatType::Float32, OldMachineTerm::Float32Negate(value)) => {
                 Some(Self::Native(KernelFloatType::Float32, value))
             }
-            Self::Native(KernelFloatType::Float64, MachineTerm::Float64Negate(value)) => {
+            Self::Native(KernelFloatType::Float64, OldMachineTerm::Float64Negate(value)) => {
                 Some(Self::Native(KernelFloatType::Float64, value))
             }
             Self::Shared(root) => match root.node() {
@@ -189,7 +189,7 @@ impl<'a> FloatOperandView<'a> {
         match self {
             Self::Native(
                 format,
-                MachineTerm::Float32Binary {
+                OldMachineTerm::Float32Binary {
                     operator,
                     left,
                     right,
@@ -200,7 +200,7 @@ impl<'a> FloatOperandView<'a> {
             )),
             Self::Native(
                 format,
-                MachineTerm::Float64Binary {
+                OldMachineTerm::Float64Binary {
                     operator,
                     left,
                     right,
@@ -222,9 +222,9 @@ impl<'a> FloatOperandView<'a> {
 }
 
 impl KernelTermImport {
-    pub(crate) fn float(&mut self, format: KernelFloatType, source: &MachineTerm) -> KernelTerm {
+    pub(crate) fn float(&mut self, format: KernelFloatType, source: &OldMachineTerm) -> KernelTerm {
         enum Task<'a> {
-            Enter(ProgramType, &'a MachineTerm),
+            Enter(ProgramType, &'a OldMachineTerm),
             Negate(KernelFloatType),
             Binary(KernelFloatType, FloatBinaryOperator),
             Convert(KernelFloatType, ProgramType),
@@ -253,16 +253,15 @@ impl KernelTermImport {
                         ));
                     } else if let Some(operand) = view.negate() {
                         pending.push(Task::Negate(format));
-                        pending.push(Task::Enter(
-                            ty,
-                            operand.native_compat().expect("native operand"),
-                        ));
+                        pending.push(Task::Enter(ty, operand.old_form().expect("native operand")));
                     } else if let Some((operator, arguments)) = view.binary() {
                         pending.push(Task::Binary(format, operator));
                         pending.extend(arguments.into_iter().rev().map(|argument| {
-                            Task::Enter(ty, argument.native_compat().expect("native operand"))
+                            Task::Enter(ty, argument.old_form().expect("native operand"))
                         }));
-                    } else if let MachineTerm::ClickFunctionApplication { name, arguments } = term {
+                    } else if let OldMachineTerm::ClickFunctionApplication { name, arguments } =
+                        term
+                    {
                         pending.push(Task::Call(format, name, arguments));
                         pending.extend(arguments.iter().rev().map(Task::Argument));
                     } else {
@@ -275,7 +274,7 @@ impl KernelTermImport {
                     {
                         pending.push(Task::Enter(
                             view.format().program_type(),
-                            view.native_compat().expect("native float argument"),
+                            view.old_form().expect("native float argument"),
                         ));
                     } else {
                         values.push(self.argument(argument));
@@ -329,7 +328,7 @@ impl KernelTermImport {
 }
 
 impl KernelTermExport {
-    pub(super) fn float_machine(source: &KernelTerm) -> Result<MachineTerm, &'static str> {
+    pub(super) fn float_machine(source: &KernelTerm) -> Result<OldMachineTerm, &'static str> {
         #[cfg(test)]
         FLOAT_EXPORT_COUNT.with(|count| count.set(count.get() + 1));
         enum Task<'a> {
@@ -380,11 +379,7 @@ impl KernelTermExport {
                             pending.push(Task::Binary(view.format(), *operator));
                             pending.extend(arguments.iter().rev().map(Task::Enter));
                         }
-                        _ => values.push(
-                            view.native_compat()
-                                .ok_or("unsupported float node")?
-                                .clone(),
-                        ),
+                        _ => values.push(view.old_form().ok_or("unsupported float node")?.clone()),
                     }
                 }
                 Task::Argument(root, carrier) => {
@@ -404,14 +399,14 @@ impl KernelTermExport {
                 }
                 Task::Call(call) => {
                     let arguments = arguments.split_off(arguments.len() - call.arguments.len());
-                    values.push(MachineTerm::ClickFunctionApplication {
+                    values.push(OldMachineTerm::ClickFunctionApplication {
                         name: call.name.clone(),
                         arguments,
                     });
                 }
                 Task::Convert(format, source) => {
                     let operand = values.pop().expect("conversion operand");
-                    values.push(MachineTerm::PureFunctionApplication {
+                    values.push(OldMachineTerm::PureFunctionApplication {
                         name: super::conversion::float_conversion_name(source, format),
                         arguments: vec![operand],
                     });
@@ -419,20 +414,20 @@ impl KernelTermExport {
                 Task::Negate(format) => {
                     let value = Box::new(values.pop().expect("negation operand"));
                     values.push(match format {
-                        KernelFloatType::Float32 => MachineTerm::Float32Negate(value),
-                        KernelFloatType::Float64 => MachineTerm::Float64Negate(value),
+                        KernelFloatType::Float32 => OldMachineTerm::Float32Negate(value),
+                        KernelFloatType::Float64 => OldMachineTerm::Float64Negate(value),
                     });
                 }
                 Task::Binary(format, operator) => {
                     let right = Box::new(values.pop().expect("right operand"));
                     let left = Box::new(values.pop().expect("left operand"));
                     values.push(match format {
-                        KernelFloatType::Float32 => MachineTerm::Float32Binary {
+                        KernelFloatType::Float32 => OldMachineTerm::Float32Binary {
                             operator,
                             left,
                             right,
                         },
-                        KernelFloatType::Float64 => MachineTerm::Float64Binary {
+                        KernelFloatType::Float64 => OldMachineTerm::Float64Binary {
                             operator,
                             left,
                             right,
@@ -453,10 +448,10 @@ mod tests {
     fn float_arithmetic_preserves_width_order_bits_and_raw_structure() {
         let _session = crate::kernel::VerificationSession::enter();
         for format in [KernelFloatType::Float32, KernelFloatType::Float64] {
-            let variable = MachineTerm::Variable(Variable(999930));
+            let variable = OldMachineTerm::Variable(Variable(999930));
             let literal = match format {
-                KernelFloatType::Float32 => MachineTerm::constant(0xffc01234),
-                KernelFloatType::Float64 => MachineTerm::uint64_constant(0xfff8000000001234),
+                KernelFloatType::Float32 => OldMachineTerm::constant(0xffc01234),
+                KernelFloatType::Float64 => OldMachineTerm::uint64_constant(0xfff8000000001234),
             };
             for operator in [
                 FloatBinaryOperator::Add,
@@ -465,20 +460,20 @@ mod tests {
                 FloatBinaryOperator::Divide,
             ] {
                 let raw = match format {
-                    KernelFloatType::Float32 => MachineTerm::Float32Binary {
+                    KernelFloatType::Float32 => OldMachineTerm::Float32Binary {
                         operator,
                         left: Box::new(variable.clone()),
                         right: Box::new(literal.clone()),
                     },
-                    KernelFloatType::Float64 => MachineTerm::Float64Binary {
+                    KernelFloatType::Float64 => OldMachineTerm::Float64Binary {
                         operator,
                         left: Box::new(variable.clone()),
                         right: Box::new(literal.clone()),
                     },
                 };
                 let source = match format {
-                    KernelFloatType::Float32 => MachineTerm::Float32Negate(Box::new(raw)),
-                    KernelFloatType::Float64 => MachineTerm::Float64Negate(Box::new(raw)),
+                    KernelFloatType::Float32 => OldMachineTerm::Float32Negate(Box::new(raw)),
+                    KernelFloatType::Float64 => OldMachineTerm::Float64Negate(Box::new(raw)),
                 };
                 let root = KernelTermImport::default().float(format, &source);
                 let view = FloatOperandView::from_shared(&root).unwrap();
@@ -490,7 +485,7 @@ mod tests {
                     arguments[1].literal(),
                     FloatOperandView::Native(format, &literal).literal()
                 );
-                assert!(view.native_compat().is_none());
+                assert!(view.old_form().is_none());
                 assert!(root.0.machine_leaf.0.get().is_none());
                 assert_eq!(
                     KernelTermExport::float(&root).unwrap(),

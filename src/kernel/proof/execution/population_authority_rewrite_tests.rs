@@ -280,7 +280,7 @@ fn member_exchange_requires_both_external_body_ownership_and_checked_span() {
     let span = |bytes| Proposition::MemoryLoadable {
         memory: owned.memory().clone(),
         base: external.clone(),
-        bytes: (MachineTerm::constant(bytes)).into(),
+        bytes: (OldMachineTerm::constant(bytes)).into(),
         wide: false,
     };
     let small = PureFactStore::default().with_fact(span(1));
@@ -662,8 +662,8 @@ fn checked_member_events_exchange_private_memory_and_reject_duplicate_birth() {
     };
     let memory = ResourceFact::own_memory(MemoryRange::new(
         pointer.address().clone(),
-        MachineTerm::constant(0),
-        MachineTerm::constant(1),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(1),
     ));
     let definition = CompositeResourceDefinition::new(
         "reference",

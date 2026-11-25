@@ -188,14 +188,14 @@ fn qualified_storage_source_index_preserves_forks_and_scales() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::read_named(
+                left: Box::new(OldMachineTerm::read_named(
                     crate::kernel::ProgramPoint::at(
                         &(crate::kernel::intern_memory(SymbolicMemory::new())),
                     ),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Int32,
                 )),
-                right: Box::new(MachineTerm::uint64_constant(u64::from(index))),
+                right: Box::new(OldMachineTerm::uint64_constant(u64::from(index))),
             },
             true,
         );

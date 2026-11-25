@@ -3362,7 +3362,7 @@ impl<'a> Proof<'a> {
             } => self.facts().assumptions().proves_native_memory_loadable(
                 memory,
                 base,
-                bytes.native_compat(),
+                bytes.old_form(),
             ),
             _ => {
                 return Some(format!(

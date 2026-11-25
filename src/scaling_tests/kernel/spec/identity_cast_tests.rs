@@ -7,7 +7,7 @@ fn identity_cast_chains_keep_all_integer_roots_without_exports() {
         for size in [16, 32, 64] {
             let _session = VerificationSession::enter();
             let root = KernelTermImport::default()
-                .machine(format, &MachineTerm::Variable(Variable(995412)));
+                .machine(format, &OldMachineTerm::Variable(Variable(995412)));
             let exports = KernelTermExport::machine_export_count();
             let (path, work) = cast_chain(&root, format.program_type(), size);
             assert_eq!(path.value, SpecValue::Shared(root));

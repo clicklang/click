@@ -46,8 +46,9 @@ fn work_is_independent_of_unrelated_bounded_values() {
 fn unsigned_work_is_flat_beside_values_bounded_by_its_hub() {
     let (i, n) = (variable(0), variable(1));
     let unbounded_divisor = variable(2);
-    let unsigned_lt =
-        |a: &MachineTerm, b: &MachineTerm| ConditionTerm::unsigned_less_than(a.clone(), b.clone());
+    let unsigned_lt = |a: &OldMachineTerm, b: &OldMachineTerm| {
+        ConditionTerm::unsigned_less_than(a.clone(), b.clone())
+    };
     let mut samples = Vec::new();
     for size in [64, 128, 512] {
         let mut graph = DifferenceGraph::new();
@@ -74,31 +75,31 @@ fn unsigned_work_is_flat_beside_values_bounded_by_its_hub() {
         assert_eq!(answer, Some(false));
         let (answer, widened) = graph_work(|| {
             graph.decide(&ConditionTerm::uint64_less_than(
-                MachineTerm::uint64_from_32(i.clone()),
-                MachineTerm::uint64_constant(1000),
+                OldMachineTerm::uint64_from_32(i.clone()),
+                OldMachineTerm::uint64_constant(1000),
             ))
         });
         assert_eq!(answer, Some(true));
         let (answer, masked) = graph_work(|| {
             graph.decide(&ConditionTerm::uint64_less_than(
-                MachineTerm::uint64_from_32(MachineTerm::Binary {
+                OldMachineTerm::uint64_from_32(OldMachineTerm::Binary {
                     format: crate::kernel::MachineIntegerType::UInt32,
                     op: crate::kernel::MachineBinaryOp::BitwiseAnd,
                     left: Box::new(unbounded_divisor.clone()),
-                    right: Box::new(MachineTerm::uint32_constant(1)),
+                    right: Box::new(OldMachineTerm::uint32_constant(1)),
                 }),
-                MachineTerm::uint64_constant(2),
+                OldMachineTerm::uint64_constant(2),
             ))
         });
         assert_eq!(answer, Some(true));
         let (answer, selected_slot) = graph_work(|| {
             let mut selected = graph.clone();
             let offset = crate::kernel::AddressOffset::scaled_int64_node(
-                MachineTerm::uint64_from_32(MachineTerm::Binary {
+                OldMachineTerm::uint64_from_32(OldMachineTerm::Binary {
                     format: crate::kernel::MachineIntegerType::UInt32,
                     op: crate::kernel::MachineBinaryOp::BitwiseAnd,
                     left: Box::new(unbounded_divisor.clone()),
-                    right: Box::new(MachineTerm::uint32_constant(1)),
+                    right: Box::new(OldMachineTerm::uint32_constant(1)),
                 }),
                 8,
                 true,
@@ -227,7 +228,7 @@ fn a_bound_on_a_shared_value_costs_the_same_beside_any_number_of_dependents() {
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.4s multi-domain high-degree bound scaling"]
 fn written_order_queries_are_flat_beside_a_high_degree_bound() {
-    let order = |domain, strict, left: &MachineTerm, right: &MachineTerm| {
+    let order = |domain, strict, left: &OldMachineTerm, right: &OldMachineTerm| {
         let (left, right) = (Box::new(left.clone()), Box::new(right.clone()));
         ConditionTerm::Compare {
             format: match domain {
@@ -294,8 +295,8 @@ fn written_order_queries_are_flat_beside_a_high_degree_bound() {
 #[test]
 fn an_order_of_a_sign_cast_costs_what_the_order_of_its_word_costs() {
     let (i, n) = (variable(0), variable(1));
-    let cast = |source, destination| MachineTerm::sign_cast32(source, destination, i.clone());
-    let order = |format, left: MachineTerm| ConditionTerm::Compare {
+    let cast = |source, destination| OldMachineTerm::sign_cast32(source, destination, i.clone());
+    let order = |format, left: OldMachineTerm| ConditionTerm::Compare {
         format,
         relation: CompareRelation::LessEqual,
         left: Box::new(left),
@@ -346,7 +347,7 @@ fn an_order_of_a_sign_cast_costs_what_the_order_of_its_word_costs() {
 #[test]
 fn an_order_against_a_uint32_constant_costs_what_its_word_costs() {
     let i = variable(0);
-    let order = |format, right: MachineTerm| ConditionTerm::Compare {
+    let order = |format, right: OldMachineTerm| ConditionTerm::Compare {
         format,
         relation: CompareRelation::LessThan,
         left: Box::new(i.clone()),
@@ -366,9 +367,10 @@ fn an_order_against_a_uint32_constant_costs_what_its_word_costs() {
         for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
             for bits in [8u32, 4_000_000_000] {
                 let (word, word_work) =
-                    graph_work(|| graph.decide(&order(format, MachineTerm::constant(bits))));
-                let (formatted, formatted_work) =
-                    graph_work(|| graph.decide(&order(format, MachineTerm::uint32_constant(bits))));
+                    graph_work(|| graph.decide(&order(format, OldMachineTerm::constant(bits))));
+                let (formatted, formatted_work) = graph_work(|| {
+                    graph.decide(&order(format, OldMachineTerm::uint32_constant(bits)))
+                });
                 assert_eq!(formatted, word, "{format:?} {bits}, {size}");
                 assert_eq!(formatted_work, word_work, "{format:?} {bits}, {size}");
                 work.push(formatted_work);
@@ -408,7 +410,7 @@ fn retained_rounding_bounds_follow_the_dividend_chain_linearly() {
             );
         }
         let facts = graph(&[(
-            ConditionTerm::uint64_less_than(MachineTerm::uint64_constant(0), divisor),
+            ConditionTerm::uint64_less_than(OldMachineTerm::uint64_constant(0), divisor),
             true,
         )]);
         let condition = crate::kernel::machine_integer::comparison::condition_for_operand_views(
@@ -435,19 +437,21 @@ fn retained_conditional_sum_bounds_preserve_native_intervals() {
     use crate::kernel::machine_integer::comparison::retained_arithmetic_comparison;
     let mut costs = Vec::new();
     for size in [16, 32, 64] {
-        let guard =
-            ConditionTerm::uint64_less_than(variable(1_019_001), MachineTerm::uint64_constant(10));
-        let choice = MachineTerm::if_then_else(
-            guard.clone(),
-            MachineTerm::uint64_constant(0),
-            MachineTerm::uint64_constant(1),
+        let guard = ConditionTerm::uint64_less_than(
+            variable(1_019_001),
+            OldMachineTerm::uint64_constant(10),
         );
-        let mut sum = MachineTerm::uint64_constant(0);
+        let choice = OldMachineTerm::if_then_else(
+            guard.clone(),
+            OldMachineTerm::uint64_constant(0),
+            OldMachineTerm::uint64_constant(1),
+        );
+        let mut sum = OldMachineTerm::uint64_constant(0);
         for _ in 0..size {
-            sum = MachineTerm::uint64_add(sum, choice.clone());
+            sum = OldMachineTerm::uint64_add(sum, choice.clone());
         }
         let bound = |limit| {
-            ConditionTerm::uint64_less_equal(sum.clone(), MachineTerm::uint64_constant(limit))
+            ConditionTerm::uint64_less_equal(sum.clone(), OldMachineTerm::uint64_constant(limit))
         };
         let native = bound(size);
         let retained = retained_arithmetic_comparison(&native).unwrap();

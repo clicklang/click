@@ -29,14 +29,14 @@ fn heap_base(identity: u64) -> Address {
 }
 
 fn cell(base: u64, index: u32) -> Address {
-    heap_base(base).offset_by_elements(MachineTerm::constant(index), 4)
+    heap_base(base).offset_by_elements(OldMachineTerm::constant(index), 4)
 }
 
 fn range(base: u64, start: u32, end: u32) -> MemoryRange {
     MemoryRange::new(
         heap_base(base),
-        MachineTerm::constant(start),
-        MachineTerm::constant(end),
+        OldMachineTerm::constant(start),
+        OldMachineTerm::constant(end),
     )
 }
 
@@ -49,14 +49,14 @@ fn cells_fact(capacity: u32) -> IteratedMemory {
         1,
         0,
         1,
-        MachineTerm::constant(0),
-        MachineTerm::constant(capacity),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(capacity),
         IteratedGuard::new(
             heap_base(OCCUPIED),
             ProgramType::Int32,
             4,
             true,
-            MachineTerm::constant(0),
+            OldMachineTerm::constant(0),
         ),
     )
     .expect("a one-cell element with stride one is a valid shape")
@@ -291,7 +291,7 @@ fn indexed_slots_use_the_selected_clause_across_states() {
     let read = |memory: &SymbolicMemory, address: &Address| Address {
         base: AddressBase::ExternalArgument,
         offset: AddressOffset::scaled_int32_node(
-            MachineTerm::read_named(
+            OldMachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
                 Box::new(address.clone()),
                 LoadKind::of_type(ProgramType::Int32Pointer).unwrap(),

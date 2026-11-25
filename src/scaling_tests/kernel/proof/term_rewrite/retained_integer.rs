@@ -50,8 +50,8 @@ fn retained_machine_observation_rewrites_keep_growing_numeric_dags_shared() {
         );
         let root = KernelTermImport::default().integer(&input.into());
         for variable in [from, Variable(991981)] {
-            let source = MachineTerm::Variable(variable);
-            let replacement = MachineTerm::Variable(Variable(991982));
+            let source = OldMachineTerm::Variable(variable);
+            let replacement = OldMachineTerm::Variable(Variable(991982));
             let mut rewrite = TermRewrite::for_bits_checked(&source, &replacement);
             let exports = KernelTermExport::machine_export_count();
             let was_cached = root.has_cached_native_argument();

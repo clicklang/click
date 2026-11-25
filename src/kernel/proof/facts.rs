@@ -372,7 +372,7 @@ fn call_payload_identity_key(fact: &Proposition) -> Option<CallPayloadKey> {
         })
     }
     let machine_call =
-        |term: &MachineTerm| matches!(term, MachineTerm::ClickFunctionApplication { .. });
+        |term: &OldMachineTerm| matches!(term, OldMachineTerm::ClickFunctionApplication { .. });
     let algebraic_call = |term: &AlgebraicTerm| {
         matches!(term.node, AlgebraicTermNode::PureFunctionApplication { .. })
     };
@@ -396,11 +396,11 @@ fn call_payload_identity_key(fact: &Proposition) -> Option<CallPayloadKey> {
                 [
                     crate::kernel::equality_graph::MachineAtom::from_operand(
                         *format,
-                        MachineOperandView::Legacy(left),
+                        MachineOperandView::Old(left),
                     ),
                     crate::kernel::equality_graph::MachineAtom::from_operand(
                         *format,
-                        MachineOperandView::Legacy(right),
+                        MachineOperandView::Old(right),
                     ),
                 ],
             )
@@ -413,11 +413,11 @@ fn call_payload_identity_key(fact: &Proposition) -> Option<CallPayloadKey> {
             CallPayloadKey::AlgebraicCondition(*truth, [algebraic(left)?, algebraic(right)?])
         }
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right))
-            if algebraic_call(left.native_compat()) || algebraic_call(right.native_compat()) =>
+            if algebraic_call(left.old_form()) || algebraic_call(right.old_form()) =>
         {
             CallPayloadKey::AlgebraicEquation([
-                algebraic(left.native_compat())?,
-                algebraic(right.native_compat())?,
+                algebraic(left.old_form())?,
+                algebraic(right.old_form())?,
             ])
         }
         _ => return None,
@@ -530,8 +530,8 @@ impl PropositionSource for PureFactStore {
 fn is_constructor_clash(proposition: &Proposition) -> bool {
     matches!(proposition,
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right))
-            if left.native_compat().algebraic_type == right.native_compat().algebraic_type
-                && matches!((&left.native_compat().node, &right.native_compat().node), (
+            if left.old_form().algebraic_type == right.old_form().algebraic_type
+                && matches!((&left.old_form().node, &right.old_form().node), (
                     AlgebraicTermNode::Constructor { variant: left, .. },
                     AlgebraicTermNode::Constructor { variant: right, .. },
                 ) if left != right))
@@ -1240,10 +1240,10 @@ impl PureFactStore {
     /// Numeric induction enters once per theorem. Check its domain from
     /// exact signed bounds on this measure, without searching other facts
     /// or deriving a replacement proof state.
-    pub(crate) fn has_nonnegative_induction_domain(&self, measure: &MachineTerm) -> bool {
+    pub(crate) fn has_nonnegative_induction_domain(&self, measure: &OldMachineTerm) -> bool {
         use crate::kernel::MachineOperandView as V;
         use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
-        let measure = Key::new(V::Legacy(measure));
+        let measure = Key::new(V::Old(measure));
         self.assumptions
             .signed_order_bound_views(measure.operand_view())
             .any(|(endpoint, bound, strict, forward)| {
@@ -1446,7 +1446,7 @@ impl PureFactStore {
         };
         let (view, bounds) =
             crate::kernel::machine_integer::comparison::comparison_view_through_integer_operations(
-                condition.native_compat(),
+                condition.old_form(),
                 *truth,
             )?;
         if !bounds
@@ -2040,7 +2040,7 @@ impl PureFactStore {
                         .all(|(source, operand)| {
                             self.assumptions.operands_equal_modulo_origin_unchanged(
                                 query.format,
-                                MachineOperandView::Legacy(source),
+                                MachineOperandView::Old(source),
                                 operand.operand_view(),
                             )
                         })
@@ -2103,7 +2103,7 @@ impl PureFactStore {
             }
         }
         if let Proposition::ConditionIs(condition, _) = proposition {
-            let finite: Vec<_> = match condition.native_compat() {
+            let finite: Vec<_> = match condition.old_form() {
                 ConditionTerm::Float32(FloatCondition::Comparison { left, right, .. }) => {
                     vec![(32, left), (32, right)]
                 }
@@ -2362,7 +2362,7 @@ impl PureFactStore {
     }
 
     #[cfg(test)]
-    pub(crate) fn equality_atom_lookup_comparisons(&self, term: &MachineTerm) -> usize {
+    pub(crate) fn equality_atom_lookup_comparisons(&self, term: &OldMachineTerm) -> usize {
         let key = bitvector_equality_atom_key(term).expect("test term should be an indexed atom");
         self.bitvector_equalities_by_atom.lookup_comparisons(&key)
     }
@@ -2430,7 +2430,7 @@ pub(crate) fn restore_range_span_spelling(
     original: &Proposition,
     renamed: Proposition,
     from: Variable,
-    to: &MachineTerm,
+    to: &OldMachineTerm,
 ) -> Proposition {
     let recurse = |original: &Proposition, renamed: Proposition| {
         Box::new(restore_range_span_spelling(original, renamed, from, to))
@@ -2447,7 +2447,7 @@ pub(crate) fn restore_range_span_spelling(
         ) => Proposition::MemoryLoadable {
             memory,
             base,
-            bytes: substituted_range_span(bytes.native_compat(), from, to)
+            bytes: substituted_range_span(bytes.old_form(), from, to)
                 .map(Into::into)
                 .unwrap_or(folded),
             wide: false,
@@ -2491,11 +2491,11 @@ pub(crate) fn restore_range_span_spelling(
 /// shape the folding constructors would collapse it to. `None` when the term
 /// is not a written range span, which is every other byte count.
 fn substituted_range_span(
-    bytes: &MachineTerm,
+    bytes: &OldMachineTerm,
     from: Variable,
-    to: &MachineTerm,
-) -> Option<MachineTerm> {
-    let substitute = |term: &MachineTerm| {
+    to: &OldMachineTerm,
+) -> Option<OldMachineTerm> {
+    let substitute = |term: &OldMachineTerm| {
         crate::kernel::reasoning::substitute_bitvector_variable(term, from, to)
     };
     let (count, width) = match bytes {
@@ -2690,7 +2690,7 @@ pub(crate) fn is_definedness_guard(proposition: &Proposition) -> bool {
     match proposition {
         Proposition::And(left, right) => is_definedness_guard(left) && is_definedness_guard(right),
         Proposition::ConditionIs(condition, false) => matches!(
-            condition.native_compat(),
+            condition.old_form(),
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Add,
@@ -2743,8 +2743,8 @@ pub(crate) fn is_definedness_guard(proposition: &Proposition) -> bool {
 fn closed_condition_holds(fact: &Proposition) -> bool {
     matches!(fact, Proposition::ConditionIs(condition, value)
     if condition.operand_view().closed_float_predicate_value().map_or_else(
-        || !matches!(condition.native_compat(), ConditionTerm::Constant(_))
-            && crate::kernel::machine_integer::comparison::closed_condition_value(condition.native_compat()) == Some(*value),
+        || !matches!(condition.old_form(), ConditionTerm::Constant(_))
+            && crate::kernel::machine_integer::comparison::closed_condition_value(condition.old_form()) == Some(*value),
         |actual| actual == *value,
     ))
 }
@@ -2760,7 +2760,7 @@ fn index_guarded_implication_fact(
         return index;
     };
     let Some(view) = crate::kernel::machine_integer::comparison::structural_comparison_view(
-        condition.native_compat(),
+        condition.old_form(),
     ) else {
         return index;
     };
@@ -2785,14 +2785,14 @@ fn index_guarded_implication_fact(
     for operand in &view.operands {
         let term = operand.operand_view();
         let atom = match term {
-            MachineOperandView::Legacy(term) => bitvector_equality_atom_key(term),
+            MachineOperandView::Old(term) => bitvector_equality_atom_key(term),
             MachineOperandView::Shared(root) => root
                 .machine_conversion_leaf()
                 .or_else(|| root.machine_read_leaf())
                 .and_then(bitvector_equality_atom_key)
                 .or_else(|| {
                     term.variable()
-                        .and_then(|v| bitvector_equality_atom_key(&MachineTerm::Variable(*v)))
+                        .and_then(|v| bitvector_equality_atom_key(&OldMachineTerm::Variable(*v)))
                 })
                 .or_else(|| {
                     term.literal()
@@ -2840,16 +2840,14 @@ fn index_algebraic_equality_fact(
     let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = fact.as_ref() else {
         return index;
     };
-    for term in [left, right].into_iter().filter(|term| {
-        !matches!(
-            term.native_compat().node,
-            AlgebraicTermNode::Constructor { .. }
-        )
-    }) {
-        let mut bucket = index.get(term.native_compat()).cloned().unwrap_or_default();
+    for term in [left, right]
+        .into_iter()
+        .filter(|term| !matches!(term.old_form().node, AlgebraicTermNode::Constructor { .. }))
+    {
+        let mut bucket = index.get(term.old_form()).cloned().unwrap_or_default();
         if !bucket.iter().any(|candidate| candidate == fact) {
             bucket.push(fact.clone());
-            index = index.with_inserted(term.native_compat().clone(), bucket);
+            index = index.with_inserted(term.old_form().clone(), bucket);
         }
     }
     index
@@ -2861,8 +2859,8 @@ fn collect_proposition_algebraic_terms(
 ) {
     match proposition {
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => {
-            collect_algebraic_term_roots(left.native_compat(), terms);
-            collect_algebraic_term_roots(right.native_compat(), terms);
+            collect_algebraic_term_roots(left.old_form(), terms);
+            collect_algebraic_term_roots(right.old_form(), terms);
         }
         condition_source_0 @ Proposition::ConditionIs(_, _)
             if let Some((ConditionTerm::AlgebraicEqual(left, right), _)) =
@@ -2883,7 +2881,7 @@ fn collect_proposition_algebraic_terms(
             )) = condition_source_0.condition_native() =>
         {
             for value in [left.as_ref(), right.as_ref()] {
-                if let MachineTerm::AlgebraicMatch { scrutinee, .. } = value {
+                if let OldMachineTerm::AlgebraicMatch { scrutinee, .. } = value {
                     collect_algebraic_term_roots(scrutinee, terms);
                 }
             }
@@ -2961,18 +2959,18 @@ fn collect_algebraic_term_roots(term: &AlgebraicTerm, terms: &mut BTreeSet<Algeb
     }
 }
 
-fn bitvector_equality_atom_key(term: &MachineTerm) -> Option<BitvectorEqualityAtomKey> {
+fn bitvector_equality_atom_key(term: &OldMachineTerm) -> Option<BitvectorEqualityAtomKey> {
     match term {
         // A `uint32` constant is its word's `Constant` (rule K1).
         bits32_constant!(value) => Some(BitvectorEqualityAtomKey::Constant(constant_u32(*value))),
-        MachineTerm::Variable(variable) => {
+        OldMachineTerm::Variable(variable) => {
             if let Some(read) = crate::kernel::registered_load_term_for_variable(variable) {
                 bitvector_equality_atom_key(&read)
             } else {
                 Some(BitvectorEqualityAtomKey::Variable(*variable))
             }
         }
-        MachineTerm::ClickFunctionApplication { name, arguments } => {
+        OldMachineTerm::ClickFunctionApplication { name, arguments } => {
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             let mut machine_identities = Vec::new();
             for argument in arguments {
@@ -3016,7 +3014,7 @@ fn bitvector_equality_atom_key(term: &MachineTerm) -> Option<BitvectorEqualityAt
                 machine_identities,
             })
         }
-        MachineTerm::MemoryLoad(memory, pointer, kind) => {
+        OldMachineTerm::MemoryLoad(memory, pointer, kind) => {
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             std::hash::Hash::hash(pointer.as_ref(), &mut hasher);
             std::hash::Hash::hash(kind, &mut hasher);
@@ -3035,7 +3033,7 @@ fn collect_proposition_bitvector_atoms(
 ) {
     match proposition {
         Proposition::ConditionIs(condition, _) => {
-            collect_condition_bitvector_atoms(condition.native_compat(), atoms)
+            collect_condition_bitvector_atoms(condition.old_form(), atoms)
         }
         Proposition::ResourceSeparate { left, right } => {
             for resource in [left, right] {
@@ -3072,13 +3070,13 @@ fn collect_condition_bitvector_atoms(
 
         ConditionTerm::AlgebraicEqual(left, right) => {
             left.for_each_machine_operand(|view| match view {
-                MachineOperandView::Legacy(term) => collect_bitvector_atoms(term, atoms),
+                MachineOperandView::Old(term) => collect_bitvector_atoms(term, atoms),
                 MachineOperandView::Shared(_) => {
                     selected_atoms::collect(&view.retain(MachineIntegerType::Int32), atoms)
                 }
             });
             right.for_each_machine_operand(|view| match view {
-                MachineOperandView::Legacy(term) => collect_bitvector_atoms(term, atoms),
+                MachineOperandView::Old(term) => collect_bitvector_atoms(term, atoms),
                 MachineOperandView::Shared(_) => {
                     selected_atoms::collect(&view.retain(MachineIntegerType::Int32), atoms)
                 }
@@ -3153,24 +3151,24 @@ fn collect_integer_bitvector_atoms(
     }
 }
 
-fn collect_bitvector_atoms(term: &MachineTerm, atoms: &mut BTreeSet<BitvectorEqualityAtomKey>) {
+fn collect_bitvector_atoms(term: &OldMachineTerm, atoms: &mut BTreeSet<BitvectorEqualityAtomKey>) {
     if let Some(atom) = bitvector_equality_atom_key(term) {
         atoms.insert(atom);
     }
     match term {
-        MachineTerm::ThreadHandle(_) => {}
+        OldMachineTerm::ThreadHandle(_) => {}
         crate::kernel::binary_machine_term!(left, right) => {
             collect_bitvector_atoms(left, atoms);
             collect_bitvector_atoms(right, atoms);
         }
-        MachineTerm::Float32Binary { left, right, .. }
-        | MachineTerm::Float64Binary { left, right, .. } => {
+        OldMachineTerm::Float32Binary { left, right, .. }
+        | OldMachineTerm::Float64Binary { left, right, .. } => {
             collect_bitvector_atoms(left, atoms);
             collect_bitvector_atoms(right, atoms);
         }
         crate::kernel::unary_machine_term!(value) => collect_bitvector_atoms(value, atoms),
-        MachineTerm::BoolCast { value, .. } => collect_condition_bitvector_atoms(value, atoms),
-        MachineTerm::If {
+        OldMachineTerm::BoolCast { value, .. } => collect_condition_bitvector_atoms(value, atoms),
+        OldMachineTerm::If {
             condition,
             then_term,
             else_term,
@@ -3179,7 +3177,7 @@ fn collect_bitvector_atoms(term: &MachineTerm, atoms: &mut BTreeSet<BitvectorEqu
             collect_bitvector_atoms(then_term, atoms);
             collect_bitvector_atoms(else_term, atoms);
         }
-        MachineTerm::RangeFold {
+        OldMachineTerm::RangeFold {
             start,
             end,
             initial,
@@ -3191,26 +3189,30 @@ fn collect_bitvector_atoms(term: &MachineTerm, atoms: &mut BTreeSet<BitvectorEqu
             collect_bitvector_atoms(initial, atoms);
             collect_bitvector_atoms(body, atoms);
         }
-        MachineTerm::PureFunctionApplication { arguments, .. } => {
+        OldMachineTerm::PureFunctionApplication { arguments, .. } => {
             for argument in arguments {
                 collect_bitvector_atoms(argument, atoms);
             }
         }
-        MachineTerm::ClickFunctionApplication { .. } => {}
-        MachineTerm::AlgebraicMatch { arms, .. } => {
+        OldMachineTerm::ClickFunctionApplication { .. } => {}
+        OldMachineTerm::AlgebraicMatch { arms, .. } => {
             for arm in arms {
                 collect_bitvector_atoms(&arm.body, atoms);
             }
         }
-        MachineTerm::MemoryLoad(_, pointer, _) => collect_pointer_bitvector_atoms(pointer, atoms),
-        MachineTerm::IntegerAddress(pointer, _) => collect_pointer_bitvector_atoms(pointer, atoms),
+        OldMachineTerm::MemoryLoad(_, pointer, _) => {
+            collect_pointer_bitvector_atoms(pointer, atoms)
+        }
+        OldMachineTerm::IntegerAddress(pointer, _) => {
+            collect_pointer_bitvector_atoms(pointer, atoms)
+        }
         // A load variable names one read; the atoms of the address it read
         // are the atoms an equality must rewrite to reach it (`p->q->x`
         // under `p->q == r`). Follow registered addresses a bounded number
         // of levels, so the selection stays proportional to the term.
-        MachineTerm::Variable(variable) => collect_load_address_atoms(*variable, atoms, 0),
-        MachineTerm::Constant { .. } => {}
-        MachineTerm::IntegerToMachine { .. } => {}
+        OldMachineTerm::Variable(variable) => collect_load_address_atoms(*variable, atoms, 0),
+        OldMachineTerm::Constant { .. } => {}
+        OldMachineTerm::IntegerToMachine { .. } => {}
     }
 }
 
@@ -3610,7 +3612,7 @@ mod integer_equality_fact_index_tests {
     use super::*;
     use crate::kernel::{
         Address, AddressOffset, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType,
-        MachineTerm, ProgramValue, SharedIntegerRangeEndpoint, SharedIntegerTerm,
+        OldMachineTerm, ProgramValue, SharedIntegerRangeEndpoint, SharedIntegerTerm,
         SharedMachineIntegerTerm, Sort, SymbolicMemory, Variable,
     };
 
@@ -3624,12 +3626,12 @@ mod integer_equality_fact_index_tests {
             Proposition::condition_is(ConditionTerm::address_equal(read.clone(), target), true);
         let goal = Proposition::condition_is(
             ConditionTerm::equal(
-                MachineTerm::read_named(
+                OldMachineTerm::read_named(
                     ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
                     Box::new(read.offset_by_bytes(4)),
                     crate::kernel::LoadKind::Int32,
                 ),
-                MachineTerm::constant(42),
+                OldMachineTerm::constant(42),
             ),
             true,
         );
@@ -3646,8 +3648,8 @@ mod integer_equality_fact_index_tests {
             }
             facts = facts.with_kernel_checked_fact(alias.clone());
             assert_eq!(facts.load_equalities_mentioning(&goal), vec![alias.clone()]);
-            let comparisons =
-                facts.equality_atom_lookup_comparisons(&MachineTerm::Variable(Variable(949_001)));
+            let comparisons = facts
+                .equality_atom_lookup_comparisons(&OldMachineTerm::Variable(Variable(949_001)));
             let height = (u32::BITS - size.leading_zeros()) as usize;
             assert!(comparisons <= 2 * height + 4, "{size}: {comparisons}");
             assert!(
@@ -3666,8 +3668,8 @@ mod integer_equality_fact_index_tests {
 
     fn int32_index() -> IntegerRangeFoldIndex {
         IntegerRangeFoldIndex::Int32 {
-            start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
-            end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(2)),
+            start: SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(0)),
+            end: SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(2)),
         }
     }
 
@@ -3709,7 +3711,7 @@ mod integer_equality_fact_index_tests {
             item,
             IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int32,
-                MachineTerm::read_named(
+                OldMachineTerm::read_named(
                     ProgramPoint::at(memory),
                     Box::new(Address {
                         base: "retained_state-alpha-facts".into(),
@@ -3728,12 +3730,12 @@ mod integer_equality_fact_index_tests {
         free_offset: Option<Variable>,
         bytes: u32,
     ) -> Proposition {
-        let bound_offset = AddressOffset::scaled_int32_node(MachineTerm::Variable(binder), 4);
+        let bound_offset = AddressOffset::scaled_int32_node(OldMachineTerm::Variable(binder), 4);
         let offset = free_offset.map_or(bound_offset.clone(), |free| {
             AddressOffset::Add(
                 Box::new(bound_offset),
                 Box::new(AddressOffset::scaled_int32_node(
-                    MachineTerm::Variable(free),
+                    OldMachineTerm::Variable(free),
                     1,
                 )),
             )
@@ -3748,7 +3750,7 @@ mod integer_equality_fact_index_tests {
                     base: block.into(),
                     offset,
                 },
-                bytes: (MachineTerm::constant(bytes)).into(),
+                bytes: (OldMachineTerm::constant(bytes)).into(),
                 wide: false,
             },
         )
@@ -3762,12 +3764,12 @@ mod integer_equality_fact_index_tests {
         free_offset: Option<Variable>,
         bytes: u32,
     ) -> Proposition {
-        let bound_offset = AddressOffset::scaled_int32_node(MachineTerm::Variable(binder), 4);
+        let bound_offset = AddressOffset::scaled_int32_node(OldMachineTerm::Variable(binder), 4);
         let offset = free_offset.map_or(bound_offset.clone(), |free| {
             AddressOffset::Add(
                 Box::new(bound_offset),
                 Box::new(AddressOffset::scaled_int32_node(
-                    MachineTerm::Variable(free),
+                    OldMachineTerm::Variable(free),
                     1,
                 )),
             )
@@ -3782,7 +3784,7 @@ mod integer_equality_fact_index_tests {
                     base: block.into(),
                     offset,
                 },
-                bytes: (MachineTerm::constant(bytes)).into(),
+                bytes: (OldMachineTerm::constant(bytes)).into(),
                 wide: false,
             },
         )
@@ -3796,8 +3798,8 @@ mod integer_equality_fact_index_tests {
                     base: block.into(),
                     offset: AddressOffset::Constant(0),
                 },
-                MachineTerm::constant(0),
-                MachineTerm::Variable(Variable(210_000)),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::Variable(Variable(210_000)),
             ))
         };
         let separation = Proposition::ResourceSeparate {
@@ -3806,8 +3808,8 @@ mod integer_equality_fact_index_tests {
         };
         let bound = Proposition::condition_is(
             ConditionTerm::signed_less_equal(
-                MachineTerm::constant(0),
-                MachineTerm::Variable(Variable(210_000)),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::Variable(Variable(210_000)),
             ),
             true,
         );
@@ -3838,7 +3840,7 @@ mod integer_equality_fact_index_tests {
 
     #[test]
     fn induction_domain_uses_only_the_selected_signed_bound_bucket() {
-        let measure = MachineTerm::Variable(Variable(123456));
+        let measure = OldMachineTerm::Variable(Variable(123456));
         for size in [8, 32, 128, 512] {
             let unrelated = (0..size)
                 .map(|index| {
@@ -3846,8 +3848,8 @@ mod integer_equality_fact_index_tests {
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::GreaterEqual,
-                            left: Box::new(MachineTerm::Variable(Variable(index))),
-                            right: Box::new(MachineTerm::constant(0)),
+                            left: Box::new(OldMachineTerm::Variable(Variable(index))),
+                            right: Box::new(OldMachineTerm::constant(0)),
                         },
                         true,
                     )
@@ -3866,14 +3868,14 @@ mod integer_equality_fact_index_tests {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterThan,
                         left: Box::new(measure.clone()),
-                        right: Box::new(MachineTerm::constant(bound as u32)),
+                        right: Box::new(OldMachineTerm::constant(bound as u32)),
                     }
                 } else {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
                         left: Box::new(measure.clone()),
-                        right: Box::new(MachineTerm::constant(bound as u32)),
+                        right: Box::new(OldMachineTerm::constant(bound as u32)),
                     }
                 };
                 let facts =
@@ -3980,7 +3982,7 @@ mod integer_equality_fact_index_tests {
                 base: "retained_state-alpha-facts".into(),
                 offset: AddressOffset::Constant(0),
             },
-            ProgramValue::Int32(MachineTerm::constant(7)),
+            ProgramValue::Int32(OldMachineTerm::constant(7)),
         ));
         let source_fact = less_equal(
             IntegerTerm::constant_i64(9),
@@ -4018,14 +4020,14 @@ mod integer_equality_fact_index_tests {
                 },
                 // A value the binder does not name: an occurrence of the
                 // binder inside the body's state would be bound too.
-                ProgramValue::Int32(MachineTerm::Variable(Variable(207_900))),
+                ProgramValue::Int32(OldMachineTerm::Variable(Variable(207_900))),
             );
         let changed_memory = memory.clone().store(
             Address {
                 base: "quantified-viewable".into(),
                 offset: AddressOffset::Constant(0),
             },
-            ProgramValue::Int32(MachineTerm::constant(7)),
+            ProgramValue::Int32(OldMachineTerm::constant(7)),
         );
         let source = loadable_forall(
             &memory,
@@ -4135,14 +4137,14 @@ mod integer_equality_fact_index_tests {
                     arguments: vec![
                         Term::ExecutionState(Box::new(state)),
                         Term::ProgramValue(
-                            (ProgramValue::Int32(MachineTerm::Variable(binder))).into(),
+                            (ProgramValue::Int32(OldMachineTerm::Variable(binder))).into(),
                         ),
                     ],
                 },
             )
         };
         let state =
-            ExecutionState::new().with_local("x", ProgramValue::Int32(MachineTerm::constant(7)));
+            ExecutionState::new().with_local("x", ProgramValue::Int32(OldMachineTerm::constant(7)));
         let available = predicate("first", Variable(300_001), state.clone());
         let renamed = predicate("second", Variable(300_002), state.clone());
         let independently_empty = predicate("second", Variable(300_002), ExecutionState::new());
@@ -4150,7 +4152,7 @@ mod integer_equality_fact_index_tests {
         let changed_state = predicate(
             "second",
             Variable(300_002),
-            state.with_local("x", ProgramValue::Int32(MachineTerm::constant(8))),
+            state.with_local("x", ProgramValue::Int32(OldMachineTerm::constant(8))),
         );
         assert_eq!(
             quantified_equivalence_index_key(&available),
@@ -4178,7 +4180,7 @@ mod integer_equality_fact_index_tests {
                 base: block.into(),
                 offset: AddressOffset::Constant(0),
             },
-            ProgramValue::Int32(MachineTerm::constant(1)),
+            ProgramValue::Int32(OldMachineTerm::constant(1)),
         );
         let consequent = loadable_exists(&memory, "callee", Variable(207_700), block, None, 4);
         let renamed = loadable_exists(&memory, "caller", Variable(207_800), block, None, 4);
@@ -4204,7 +4206,7 @@ mod integer_equality_fact_index_tests {
                 Sort::Algebraic(path_type.clone()),
                 Proposition::Equal(
                     Term::Bitvector32(
-                        MachineTerm::ClickFunctionApplication {
+                        OldMachineTerm::ClickFunctionApplication {
                             name: "walk".into(),
                             arguments: vec![PureFunctionArgument::Algebraic(AlgebraicTerm {
                                 algebraic_type: path_type.clone(),
@@ -4213,7 +4215,7 @@ mod integer_equality_fact_index_tests {
                         }
                         .into(),
                     ),
-                    Term::Bitvector32(MachineTerm::constant(1).into()),
+                    Term::Bitvector32(OldMachineTerm::constant(1).into()),
                 ),
             )
         };
@@ -4462,7 +4464,7 @@ mod integer_equality_fact_index_tests {
                 IntegerTerm::var(accumulator),
                 IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                     MachineIntegerType::Int32,
-                    MachineTerm::Variable(item),
+                    OldMachineTerm::Variable(item),
                 )),
             ),
         );
@@ -4485,7 +4487,7 @@ mod integer_equality_fact_index_tests {
                 base: "retained_state-alpha-facts".into(),
                 offset: AddressOffset::Constant(0),
             },
-            ProgramValue::Int32(MachineTerm::constant(7)),
+            ProgramValue::Int32(OldMachineTerm::constant(7)),
         ));
         let source_fact = equality(
             IntegerTerm::constant_i64(9),
@@ -4576,8 +4578,8 @@ mod retained_root_context_tests {
                 .map(|index| {
                     Proposition::condition_is(
                         ConditionTerm::equal(
-                            MachineTerm::Variable(Variable(970_000 + u64::from(index))),
-                            MachineTerm::constant(index),
+                            OldMachineTerm::Variable(Variable(970_000 + u64::from(index))),
+                            OldMachineTerm::constant(index),
                         ),
                         true,
                     )
@@ -4642,7 +4644,7 @@ mod held_separation_tests {
             );
         assert!(!projected.proves_exact_partition_separation(&a_other, &b));
         let non_unit = ResourceContext::new().unchecked_with_facts([
-            ResourceFact::Own(a, Box::new(MachineTerm::constant(0).into())),
+            ResourceFact::Own(a, Box::new(OldMachineTerm::constant(0).into())),
             ResourceFact::own(b.clone()),
         ]);
         assert!(!non_unit.proves_exact_partition_separation(&a_other, &b));
@@ -4700,8 +4702,8 @@ mod held_separation_tests {
                 base: "shared".into(),
                 offset: AddressOffset::Variable(Variable(980_000 + index)),
             },
-            MachineTerm::constant(0),
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(1),
         ))
     }
 
@@ -4718,8 +4720,8 @@ mod held_separation_tests {
         };
         Resource::Memory(MemoryRange::new_with_element_width(
             cell.base().clone(),
-            MachineTerm::constant(start),
-            MachineTerm::constant(end),
+            OldMachineTerm::constant(start),
+            OldMachineTerm::constant(end),
             width,
         ))
     }
@@ -5007,7 +5009,7 @@ mod integer_witness_freshness_tests {
         };
         let facts = PureFactStore::from_ordered(&[
             Proposition::condition_is(
-                ConditionTerm::equal(MachineTerm::Variable(load), MachineTerm::constant(0)),
+                ConditionTerm::equal(OldMachineTerm::Variable(load), OldMachineTerm::constant(0)),
                 true,
             ),
             integer_fact(binder),
@@ -5036,8 +5038,8 @@ mod quantified_conjunct_projection_tests {
     fn equals(var: u64, constant: u32) -> Proposition {
         Proposition::condition_is(
             ConditionTerm::equal(
-                MachineTerm::Variable(Variable(var)),
-                MachineTerm::constant(constant),
+                OldMachineTerm::Variable(Variable(var)),
+                OldMachineTerm::constant(constant),
             ),
             true,
         )
@@ -5045,8 +5047,8 @@ mod quantified_conjunct_projection_tests {
     fn at_most(var: u64, bound: u32) -> Proposition {
         Proposition::condition_is(
             ConditionTerm::signed_less_equal(
-                MachineTerm::Variable(Variable(var)),
-                MachineTerm::constant(bound),
+                OldMachineTerm::Variable(Variable(var)),
+                OldMachineTerm::constant(bound),
             ),
             true,
         )
@@ -5157,13 +5159,13 @@ mod retained_match_root_tests {
     #[test]
     fn shared_match_equalities_select_the_native_algebraic_scrutinee() {
         let _session = VerificationSession::enter();
-        let native = MachineTerm::AlgebraicMatch {
+        let native = OldMachineTerm::AlgebraicMatch {
             scrutinee: Box::new(crate::kernel::KernelMatch::test_scrutinee(vec![])),
             arms: vec![crate::kernel::AlgebraicBitvectorMatchArm {
                 variant: "Arm".into(),
                 bindings: vec![],
                 binding_names: Default::default(),
-                body: MachineTerm::constant(0),
+                body: OldMachineTerm::constant(0),
             }],
         };
         let machine = SharedMachineIntegerTerm::intern(MachineIntegerType::Int32, native.clone());
@@ -5172,7 +5174,7 @@ mod retained_match_root_tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(native),
-                right: Box::new(MachineTerm::constant(1)),
+                right: Box::new(OldMachineTerm::constant(1)),
             },
             true,
         );
@@ -5267,8 +5269,8 @@ mod unified_store_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(Variable(901_091))),
-                right: Box::new(MachineTerm::constant(7)),
+                left: Box::new(OldMachineTerm::Variable(Variable(901_091))),
+                right: Box::new(OldMachineTerm::constant(7)),
             },
             true,
         );

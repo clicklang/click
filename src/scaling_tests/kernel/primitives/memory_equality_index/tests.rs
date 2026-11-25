@@ -3,7 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
-use crate::kernel::{MachineCastSpelling, MachineTerm};
+use crate::kernel::{MachineCastSpelling, OldMachineTerm};
 
 /// The selection charges the same work beside 2, 4, 8 and 16 unrelated
 /// framed ranges as beside 1,024 (1,118 units at 16 to 1,024 on
@@ -29,7 +29,7 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
                 C_POINTER_BYTE_WIDTH,
                 &retained_state,
             );
-            let pointer = Address::loaded(&MachineTerm::Variable(variable)).unwrap();
+            let pointer = Address::loaded(&OldMachineTerm::Variable(variable)).unwrap();
             context.register_pointer_read(&pointer, &retained_state, address);
             pointer
         };
@@ -40,7 +40,7 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
             field.clone(),
             ProgramValue::Pointer(OldPointer::new(source.clone(), ProgramType::Int32Pointer)),
         );
-        let count = MachineTerm::Variable(Variable(999_321));
+        let count = OldMachineTerm::Variable(Variable(999_321));
         let range = |base| MemoryRange::new_with_element_width(base, 0u32.into(), count.clone(), 4);
         let field_range =
             MemoryRange::new_with_element_width(field.clone(), 0u32.into(), 2u32.into(), 4);
@@ -138,11 +138,11 @@ fn wide_read_keeps_full_buffer_index_beside_a_batch_cursor() {
         let _session = crate::kernel::VerificationSession::enter();
         let base = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(989_200)), 1),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(989_200)), 1),
         };
-        let prefix = MachineTerm::Variable(Variable(989_201));
-        let local = MachineTerm::Variable(Variable(989_202));
-        let full = MachineTerm::Variable(Variable(989_203));
+        let prefix = OldMachineTerm::Variable(Variable(989_201));
+        let local = OldMachineTerm::Variable(Variable(989_202));
+        let full = OldMachineTerm::Variable(Variable(989_203));
         let batch = Address::symbolic(Variable(989_204));
         let query = Address::symbolic(Variable(989_205));
         let global = base.offset_by_typed_elements(full.clone(), 1, true, true);
@@ -157,7 +157,7 @@ fn wide_read_keeps_full_buffer_index_beside_a_batch_cursor() {
             .assume_condition(
                 ConditionTerm::address_equal(
                     query.clone(),
-                    batch.offset_by_elements(MachineTerm::Variable(Variable(989_206)), 1),
+                    batch.offset_by_elements(OldMachineTerm::Variable(Variable(989_206)), 1),
                 ),
                 true,
             )
@@ -173,20 +173,20 @@ fn wide_read_keeps_full_buffer_index_beside_a_batch_cursor() {
             aliases = aliases.assume_condition(
                 ConditionTerm::address_equal(
                     query.clone(),
-                    batch.offset_by_elements(MachineTerm::Variable(Variable(990_000 + i)), 1),
+                    batch.offset_by_elements(OldMachineTerm::Variable(Variable(990_000 + i)), 1),
                 ),
                 true,
             );
         }
         let facts = aliases.clone().assume_condition(
-            ConditionTerm::uint64_less_than(full.clone(), MachineTerm::uint64_constant(22208)),
+            ConditionTerm::uint64_less_than(full.clone(), OldMachineTerm::uint64_constant(22208)),
             true,
         );
         let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::view_memory(
             MemoryRange::new_wide(
                 base.clone(),
-                MachineTerm::uint64_constant(0),
-                MachineTerm::uint64_constant(22208),
+                OldMachineTerm::uint64_constant(0),
+                OldMachineTerm::uint64_constant(22208),
                 1,
             ),
         ));
@@ -207,7 +207,7 @@ fn wide_read_keeps_full_buffer_index_beside_a_batch_cursor() {
         assert!(!resources.permits_memory_read(&query, 2, &facts));
         assert!(!resources.permits_memory_read(&query, 1, &aliases));
         let boundary = aliases.assume_condition(
-            ConditionTerm::uint64_equal(full, MachineTerm::uint64_constant(22208)),
+            ConditionTerm::uint64_equal(full, OldMachineTerm::uint64_constant(22208)),
             true,
         );
         assert!(!resources.permits_memory_read(&query, 1, &boundary));
@@ -240,8 +240,8 @@ fn wide_read_keeps_native_index_beside_a_narrow_alias() {
         let _session = crate::kernel::VerificationSession::enter();
         let bytes = Address::symbolic(Variable(986_000));
         let alternate = Address::symbolic(Variable(986_001));
-        let native_index = MachineTerm::Variable(Variable(986_002));
-        let narrow = alternate.offset_by_elements(MachineTerm::Variable(Variable(986_003)), 1);
+        let native_index = OldMachineTerm::Variable(Variable(986_002));
+        let narrow = alternate.offset_by_elements(OldMachineTerm::Variable(Variable(986_003)), 1);
         let wide = bytes.offset_by_typed_elements(native_index.clone(), 1, true, true);
         let query = Address::symbolic(Variable(986_004));
         let mut facts = PureFactContext::new()
@@ -250,15 +250,15 @@ fn wide_read_keeps_native_index_beside_a_narrow_alias() {
             .assume_condition(
                 ConditionTerm::uint64_less_than(
                     native_index.clone(),
-                    MachineTerm::uint64_constant(15),
+                    OldMachineTerm::uint64_constant(15),
                 ),
                 true,
             );
         let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::view_memory(
             MemoryRange::new_wide(
                 bytes,
-                MachineTerm::uint64_constant(0),
-                MachineTerm::uint64_constant(15),
+                OldMachineTerm::uint64_constant(0),
+                OldMachineTerm::uint64_constant(15),
                 1,
             ),
         ));
@@ -296,20 +296,20 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
         let _session = crate::kernel::VerificationSession::enter();
         let bytes = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(988_400)), 1),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(988_400)), 1),
         };
         let cursor = Address::symbolic(Variable(988_402));
-        let remaining = MachineTerm::Variable(Variable(988_403));
-        let advance = MachineTerm::Variable(Variable(988_404));
-        let length = MachineTerm::Variable(Variable(988_410));
-        let prefix = MachineTerm::Variable(Variable(988_411));
+        let remaining = OldMachineTerm::Variable(Variable(988_403));
+        let advance = OldMachineTerm::Variable(Variable(988_404));
+        let length = OldMachineTerm::Variable(Variable(988_410));
+        let prefix = OldMachineTerm::Variable(Variable(988_411));
         let narrow = bytes.offset_by_elements(
-            MachineTerm::subtract(
-                MachineTerm::legacy_cast(
+            OldMachineTerm::subtract(
+                OldMachineTerm::legacy_cast(
                     MachineCastSpelling::UInt32From64,
                     Box::new(prefix.clone()),
                 ),
-                MachineTerm::legacy_cast(
+                OldMachineTerm::legacy_cast(
                     MachineCastSpelling::UInt32From64,
                     Box::new(remaining.clone()),
                 ),
@@ -317,7 +317,7 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
             1,
         );
         let wide = bytes.offset_by_typed_elements(
-            MachineTerm::uint64_subtract(prefix.clone(), remaining.clone()),
+            OldMachineTerm::uint64_subtract(prefix.clone(), remaining.clone()),
             1,
             true,
             true,
@@ -354,7 +354,10 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
                 true,
             )
             .assume_condition(
-                ConditionTerm::uint64_equal(advance.clone(), MachineTerm::uint64_constant(22208)),
+                ConditionTerm::uint64_equal(
+                    advance.clone(),
+                    OldMachineTerm::uint64_constant(22208),
+                ),
                 true,
             )
             .assume_condition(
@@ -365,7 +368,7 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
             facts = facts.assume_condition(
                 ConditionTerm::uint64_less_equal(
                     value.clone(),
-                    MachineTerm::uint64_constant(i32::MAX as u64),
+                    OldMachineTerm::uint64_constant(i32::MAX as u64),
                 ),
                 true,
             );
@@ -380,7 +383,7 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
             );
         }
         let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::view_memory(
-            MemoryRange::new_wide(bytes.clone(), MachineTerm::uint64_constant(0), length, 1)
+            MemoryRange::new_wide(bytes.clone(), OldMachineTerm::uint64_constant(0), length, 1)
                 .with_pointer_carrier(&bytes_value),
         ));
         resources.synchronize_memory_equalities(&facts);
@@ -419,7 +422,7 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
         assert!(!permits(
             &resources,
             &cursor.offset_by_typed_elements(
-                MachineTerm::uint64_constant(1u64 << 32),
+                OldMachineTerm::uint64_constant(1u64 << 32),
                 1,
                 true,
                 true
@@ -452,15 +455,15 @@ fn constant_base_interior_lookup_scales_with_selected_range() {
         let model = Address::symbolic(Variable(950_001));
         let parameter = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(950_002)), 4),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(950_002)), 4),
         };
         let old_read = Address {
             base: parent.base.clone(),
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(950_003)), 4),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(950_003)), 4),
         };
         let cursor = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(950_004)), 4),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(950_004)), 4),
         };
         let prefix = PureFactContext::new()
             .assume_condition(ConditionTerm::address_equal(parameter, parent), true)
@@ -526,15 +529,15 @@ fn modeled_pointer_alias_field_lookup_scales_with_selected_addresses() {
         let model = Address::symbolic(Variable(940_001));
         let parameter = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(940_002)), 4),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(940_002)), 4),
         };
         let old_read = Address {
             base: parent.base.clone(),
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(940_003)), 4),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(940_003)), 4),
         };
         let cursor = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(940_004)), 4),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(940_004)), 4),
         };
         let prefix = PureFactContext::new()
             .assume_condition(ConditionTerm::address_equal(parameter, parent), true)
@@ -654,7 +657,7 @@ fn logical_field_coordinates_keep_symbolic_offsets_without_scanning_aliases() {
     for size in [4u64, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
         let owner = Address::symbolic(Variable(955_930))
-            .offset_by_elements(MachineTerm::Variable(Variable(955_931)), 4);
+            .offset_by_elements(OldMachineTerm::Variable(Variable(955_931)), 4);
         let alias = Address::symbolic(Variable(955_932));
         let mut resources = ResourceContext::new().unchecked_with_fact(ResourceFact::view_memory(
             MemoryRange::new_with_element_width(owner.clone(), 2u32.into(), 4u32.into(), 4),
@@ -920,7 +923,7 @@ fn cold_singleton_return_checks_do_not_enumerate_loaded_pointer_alias_stars() {
         let query = Address::loaded_value(&memory, &field);
         let held = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(9_980_001)), 4),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(9_980_001)), 4),
         };
         let mut facts = PureFactContext::new();
         for index in 0..count {
@@ -938,7 +941,7 @@ fn cold_singleton_return_checks_do_not_enumerate_loaded_pointer_alias_stars() {
             .unchecked_with_fact(ResourceFact::own_memory(range(held.clone(), 4u32.into())));
         let new_owner = ResourceFact::own_memory(range(
             query.clone(),
-            MachineTerm::Variable(Variable(9_980_002)),
+            OldMachineTerm::Variable(Variable(9_980_002)),
         ));
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             let _fast = crate::kernel::search::FastOperationScope::enter(

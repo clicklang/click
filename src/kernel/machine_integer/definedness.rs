@@ -7,7 +7,7 @@
 
 use super::{FORMATS, Operation, comparison::ComparisonOperand, range, representation};
 #[cfg(test)]
-use crate::kernel::MachineTerm;
+use crate::kernel::OldMachineTerm;
 use crate::kernel::{ConditionTerm, IntegerTerm, MachineIntegerType, Proposition};
 
 /// The formats whose definedness facts the kernel files, narrowest first:
@@ -31,7 +31,7 @@ pub(crate) fn integer_bounds_of_definedness(proposition: &Proposition) -> Vec<Pr
         return Vec::new();
     };
     let Some((ty, operation, left, right)) =
-        representation::overflow_operation(condition.native_compat())
+        representation::overflow_operation(condition.old_form())
     else {
         return Vec::new();
     };
@@ -102,7 +102,7 @@ impl OverflowQueryView {
             format,
             operation,
             operands: operands.map(|operand| match operand {
-                crate::kernel::MachineOperandView::Legacy(term) => {
+                crate::kernel::MachineOperandView::Old(term) => {
                     ComparisonOperand::Constant(term.clone())
                 }
                 crate::kernel::MachineOperandView::Shared(_) => {
@@ -235,13 +235,13 @@ pub(crate) fn range_domain_query(proposition: &Proposition) -> Option<OverflowQu
         return None;
     };
     let (format, operation, left, right) =
-        representation::overflow_operation(condition.native_compat())?;
+        representation::overflow_operation(condition.old_form())?;
     OverflowQueryView::from_operands(
         format,
         operation,
         [
-            crate::kernel::MachineOperandView::Legacy(left),
-            crate::kernel::MachineOperandView::Legacy(right),
+            crate::kernel::MachineOperandView::Old(left),
+            crate::kernel::MachineOperandView::Old(right),
         ],
     )
 }
@@ -295,11 +295,11 @@ mod shared_query_tests {
         // (`IntegerTerm::from_machine`), so an operand's word is the one, as
         // written or widened, whose observation in the format gives the
         // operand back.
-        let carrier = |ty: MachineIntegerType, side: &IntegerTerm| -> Option<MachineTerm> {
+        let carrier = |ty: MachineIntegerType, side: &IntegerTerm| -> Option<OldMachineTerm> {
             match side {
                 IntegerTerm::Machine(machine) => {
                     let word = machine.value().clone();
-                    let widened = MachineTerm::Cast {
+                    let widened = OldMachineTerm::Cast {
                         spelling: crate::kernel::MachineCastSpelling::Generic,
                         value: Box::new(word.clone()),
                         from: machine.ty(),
@@ -343,16 +343,16 @@ mod shared_query_tests {
         use crate::kernel::{MachineBinaryOp, Variable};
         let _session = crate::kernel::VerificationSession::enter();
         for format in FORMATS {
-            let variable = MachineTerm::Variable(Variable(982201));
+            let variable = OldMachineTerm::Variable(Variable(982201));
             let words = [
                 variable.clone(),
-                MachineTerm::Binary {
+                OldMachineTerm::Binary {
                     format,
                     op: MachineBinaryOp::Add,
                     left: Box::new(variable.clone()),
                     right: Box::new(variable.clone()),
                 },
-                MachineTerm::Cast {
+                OldMachineTerm::Cast {
                     spelling: crate::kernel::MachineCastSpelling::Generic,
                     from: MachineIntegerType::Int32,
                     to: format,

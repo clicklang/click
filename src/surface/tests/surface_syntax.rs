@@ -1885,7 +1885,7 @@ fn records_checked_surface_forms_for_lowered_propositions() {
     let surface = SyntaxProposition::And(Box::new(left.clone()), Box::new(right.clone()));
     let values = ProgramValueBindings::from([(
         "x".to_string(),
-        ProgramValue::Int32(MachineTerm::Variable(Variable(42))),
+        ProgramValue::Int32(OldMachineTerm::Variable(Variable(42))),
     )]);
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
@@ -1936,13 +1936,13 @@ fn records_checked_surface_forms_for_lowered_propositions() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_15")]
 fn surface_synthesis_qualifies_a_c_local_named_result() {
-    let local = MachineTerm::Variable(Variable(42));
+    let local = OldMachineTerm::Variable(Variable(42));
     let proposition = Proposition::condition_is(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(local.clone()),
-            right: Box::new(MachineTerm::constant(0)),
+            right: Box::new(OldMachineTerm::constant(0)),
         },
         true,
     );
@@ -2075,14 +2075,14 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::read_named(
+            left: Box::new(OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(
                     &(crate::kernel::intern_memory(SymbolicMemory::new())),
                 ),
                 Box::new(owner.clone()),
                 crate::kernel::LoadKind::Int32,
             )),
-            right: Box::new(MachineTerm::constant(0)),
+            right: Box::new(OldMachineTerm::constant(0)),
         },
         true,
     );
@@ -2106,7 +2106,7 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
     ));
     assert_eq!(describe_contract_expression(&left), "owner->len");
 
-    let data_pointer = MachineTerm::read_named(
+    let data_pointer = OldMachineTerm::read_named(
         crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
         Box::new(owner.offset_by_bytes(8)),
         crate::kernel::LoadKind::Int32,
@@ -2119,14 +2119,14 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::read_named(
+            left: Box::new(OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(
                     &(crate::kernel::intern_memory(SymbolicMemory::new())),
                 ),
                 Box::new(first_data_cell),
                 crate::kernel::LoadKind::Int32,
             )),
-            right: Box::new(MachineTerm::constant(0)),
+            right: Box::new(OldMachineTerm::constant(0)),
         },
         true,
     );
@@ -4495,7 +4495,7 @@ fn a_missing_memory_fact_is_reported_as_a_place() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_30")]
 fn memory_ranges_use_fields_or_correctly_scaled_source_elements() {
     use crate::kernel::{
-        Address, AddressBase, AddressOffset, MachineTerm, MemoryRange, OldPointer, ProgramType,
+        Address, AddressBase, AddressOffset, MemoryRange, OldMachineTerm, OldPointer, ProgramType,
     };
     let c_source = "struct cell { int32 a; int32 b; int32 c; }; struct outer { int32 head; struct cell inner; int32 tail; }; int32 read(struct outer* p) { return p->tail; }";
     let functions = syntax::parse_functions(c_source).unwrap();
@@ -4520,8 +4520,8 @@ fn memory_ranges_use_fields_or_correctly_scaled_source_elements() {
     ] {
         let range = MemoryRange::new_with_element_width(
             base.clone(),
-            MachineTerm::constant(low),
-            MachineTerm::constant(high),
+            OldMachineTerm::constant(low),
+            OldMachineTerm::constant(high),
             width,
         );
         assert_eq!(
@@ -5243,8 +5243,8 @@ fn a_conjunct_of_one_source_facts_lowering_finds_that_fact() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(Variable(984_500))),
-            right: Box::new(MachineTerm::constant(1)),
+            left: Box::new(OldMachineTerm::Variable(Variable(984_500))),
+            right: Box::new(OldMachineTerm::constant(1)),
         },
         true,
     );
@@ -5252,8 +5252,8 @@ fn a_conjunct_of_one_source_facts_lowering_finds_that_fact() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: Box::new(MachineTerm::Variable(Variable(984_501))),
-            right: Box::new(MachineTerm::constant(7)),
+            left: Box::new(OldMachineTerm::Variable(Variable(984_501))),
+            right: Box::new(OldMachineTerm::constant(7)),
         },
         true,
     );
@@ -5284,8 +5284,8 @@ fn a_conjunct_of_one_source_facts_lowering_finds_that_fact() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(Variable(984_502))),
-            right: Box::new(MachineTerm::constant(2)),
+            left: Box::new(OldMachineTerm::Variable(Variable(984_502))),
+            right: Box::new(OldMachineTerm::constant(2)),
         },
         true,
     );
@@ -5306,13 +5306,13 @@ fn printed_machine_arithmetic_keeps_exact_transport_premises() {
     for (ty, one, operator, authored) in [
         (
             "int32",
-            ProgramValue::Int32(MachineTerm::constant(1)),
+            ProgramValue::Int32(OldMachineTerm::constant(1)),
             "-",
             "to_integer(hi - 1) < to_integer(hi)",
         ),
         (
             "uint64",
-            ProgramValue::UInt64(MachineTerm::uint64_constant(1)),
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(1)),
             "+",
             "to_integer(hi) < to_integer(hi + 1u64)",
         ),
@@ -5356,11 +5356,11 @@ fn synthesized_signed_difference_preserves_its_type_without_literals() {
         left: Box::new(left),
         right: Box::new(right),
     };
-    let hi = MachineTerm::Variable(Variable(984_600));
-    let lo = MachineTerm::Variable(Variable(984_601));
-    let difference = MachineTerm::subtract_at(MachineIntegerType::Int32, hi.clone(), lo.clone());
+    let hi = OldMachineTerm::Variable(Variable(984_600));
+    let lo = OldMachineTerm::Variable(Variable(984_601));
+    let difference = OldMachineTerm::subtract_at(MachineIntegerType::Int32, hi.clone(), lo.clone());
     let original =
-        Proposition::condition_is(less_equal(MachineTerm::constant(0), difference), true);
+        Proposition::condition_is(less_equal(OldMachineTerm::constant(0), difference), true);
     let state = ExecutionState::new()
         .with_local("hi", ProgramValue::Int32(hi.clone()))
         .with_local("lo", ProgramValue::Int32(lo.clone()));
@@ -5377,11 +5377,11 @@ fn synthesized_signed_difference_preserves_its_type_without_literals() {
     let mut bounds = Vec::new();
     for term in [hi.clone(), lo.clone()] {
         bounds.push(Proposition::condition_is(
-            less_equal(MachineTerm::constant(0), term.clone()),
+            less_equal(OldMachineTerm::constant(0), term.clone()),
             true,
         ));
         bounds.push(Proposition::condition_is(
-            less_equal(term, MachineTerm::constant(100)),
+            less_equal(term, OldMachineTerm::constant(100)),
             true,
         ));
     }
@@ -5405,7 +5405,7 @@ fn synthesized_signed_difference_preserves_its_type_without_literals() {
     };
     let retained = Proposition::condition_is(
         crate::kernel::machine_integer::comparison::retained_arithmetic_comparison(
-            condition.native_compat(),
+            condition.old_form(),
         )
         .unwrap(),
         *truth,
@@ -5622,7 +5622,7 @@ fn local_storage_and_resource_stars_have_round_tripping_spellings() {
             constant: false,
             pointee_constant: false,
             initializer: Some(ProgramExpression::Value(ProgramValue::Int32(
-                MachineTerm::constant(7),
+                OldMachineTerm::constant(7),
             ))),
             zero_fill: None,
             declared_class: None,
@@ -5656,7 +5656,7 @@ fn local_storage_and_resource_stars_have_round_tripping_spellings() {
         .unwrap();
     let values = ProgramValueBindings::from([(
         "i".to_string(),
-        ProgramValue::Int32(MachineTerm::constant(7)),
+        ProgramValue::Int32(OldMachineTerm::constant(7)),
     )]);
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);

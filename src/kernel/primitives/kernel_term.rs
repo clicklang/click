@@ -260,8 +260,8 @@ pub struct KernelImportedScalar {
 
 #[derive(Clone, Debug)]
 enum ImportedScalarSource {
-    Exact(Arc<MachineTerm>),
-    Observed(Arc<MachineTerm>),
+    Exact(Arc<OldMachineTerm>),
+    Observed(Arc<OldMachineTerm>),
     Call {
         argument: KernelCallArgument,
         observed: bool,
@@ -273,7 +273,7 @@ impl KernelImportedScalar {
         self.carrier
     }
 
-    pub(crate) fn value(&self) -> &MachineTerm {
+    pub(crate) fn value(&self) -> &OldMachineTerm {
         match &self.source {
             ImportedScalarSource::Exact(value) | ImportedScalarSource::Observed(value) => value,
             ImportedScalarSource::Call { argument, .. } => {
@@ -282,7 +282,7 @@ impl KernelImportedScalar {
         }
     }
 
-    fn call_input(argument: &KernelCallArgument) -> Option<(ProgramType, &MachineTerm)> {
+    fn call_input(argument: &KernelCallArgument) -> Option<(ProgramType, &OldMachineTerm)> {
         let PureFunctionArgument::Value(value) = argument.value() else {
             return None;
         };
@@ -372,7 +372,7 @@ pub struct KernelWrittenMachine {
 enum WrittenMachineSource {
     Expression {
         identity: u64,
-        value: Arc<MachineTerm>,
+        value: Arc<OldMachineTerm>,
     },
     AddressIndex(SharedMachineIntegerTerm),
 }
@@ -384,7 +384,7 @@ enum WrittenMachineIdentity {
 }
 
 impl KernelWrittenMachine {
-    fn expression(format: MachineIntegerType, value: &MachineTerm) -> Self {
+    fn expression(format: MachineIntegerType, value: &OldMachineTerm) -> Self {
         use std::sync::atomic::{AtomicU64, Ordering};
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let identity = NEXT
@@ -410,7 +410,7 @@ impl KernelWrittenMachine {
         }
     }
 
-    pub(crate) fn value(&self) -> &MachineTerm {
+    pub(crate) fn value(&self) -> &OldMachineTerm {
         match &self.source {
             WrittenMachineSource::Expression { value, .. } => value,
             WrittenMachineSource::AddressIndex(index) => index.structural_value(),
@@ -505,13 +505,13 @@ impl Hash for KernelObservedArgument {
 #[derive(Default)]
 struct MachineLeafCache(std::sync::OnceLock<MachineLeaf>);
 enum MachineLeaf {
-    Native(MachineTerm),
+    Old(OldMachineTerm),
     Application(SharedPureApplication),
 }
 impl MachineLeafCache {
-    fn get_or_init(&self, build: impl FnOnce() -> MachineTerm) -> &MachineTerm {
-        match self.0.get_or_init(|| MachineLeaf::Native(build())) {
-            MachineLeaf::Native(value) => value,
+    fn get_or_init(&self, build: impl FnOnce() -> OldMachineTerm) -> &OldMachineTerm {
+        match self.0.get_or_init(|| MachineLeaf::Old(build())) {
+            MachineLeaf::Old(value) => value,
             MachineLeaf::Application(application) => application.native_call(),
         }
     }
@@ -1494,14 +1494,14 @@ impl KernelTerm {
         format: MachineIntegerType,
         operand: MachineOperandView<'_>,
     ) -> Self {
-        if let MachineOperandView::Legacy(value) = operand
+        if let MachineOperandView::Old(value) = operand
             && let Some(root) = KernelTermImport::default().float_to_machine(format, value)
         {
             return root;
         }
         match operand {
             MachineOperandView::Shared(root) => root.with_machine_observation_type(format),
-            MachineOperandView::Legacy(_) if operand.binary().is_some() => {
+            MachineOperandView::Old(_) if operand.binary().is_some() => {
                 let (operation_format, op, children) = operand.binary().unwrap();
                 Self::machine_binary_shared_as(
                     format,
@@ -1510,7 +1510,7 @@ impl KernelTerm {
                     children.map(|child| Self::retained_machine_operand(operation_format, child)),
                 )
             }
-            MachineOperandView::Legacy(_) if operand.unary().is_some() => {
+            MachineOperandView::Old(_) if operand.unary().is_some() => {
                 let (operation_format, op, child) = operand.unary().unwrap();
                 Self::machine_unary_shared(
                     operation_format,
@@ -1519,7 +1519,7 @@ impl KernelTerm {
                 )
                 .with_machine_observation_type(format)
             }
-            MachineOperandView::Legacy(_) if operand.cast().is_some() => {
+            MachineOperandView::Old(_) if operand.cast().is_some() => {
                 let (encoding, source, destination, child) = operand.cast().unwrap();
                 Self::machine_cast_shared(
                     encoding,
@@ -1529,7 +1529,7 @@ impl KernelTerm {
                 )
                 .with_machine_observation_type(format)
             }
-            MachineOperandView::Legacy(MachineTerm::If {
+            MachineOperandView::Old(OldMachineTerm::If {
                 condition,
                 then_term,
                 else_term,
@@ -1537,13 +1537,11 @@ impl KernelTerm {
                 format,
                 [
                     KernelTermImport::default().condition(condition),
-                    Self::retained_machine_operand(format, MachineOperandView::Legacy(then_term)),
-                    Self::retained_machine_operand(format, MachineOperandView::Legacy(else_term)),
+                    Self::retained_machine_operand(format, MachineOperandView::Old(then_term)),
+                    Self::retained_machine_operand(format, MachineOperandView::Old(else_term)),
                 ],
             ),
-            MachineOperandView::Legacy(value) => {
-                Self::retained_native_machine_operand(format, value)
-            }
+            MachineOperandView::Old(value) => Self::retained_native_machine_operand(format, value),
         }
     }
 
@@ -1552,7 +1550,7 @@ impl KernelTerm {
     /// puts it beside a shared operand in a new operation.
     pub(crate) fn retained_native_machine_operand(
         format: MachineIntegerType,
-        value: &MachineTerm,
+        value: &OldMachineTerm,
     ) -> Self {
         KernelTermImport::default()
             .machine_arithmetic(format, value)
@@ -1600,8 +1598,8 @@ impl KernelTerm {
     pub(crate) fn rewritten_machine_leaf(
         &self,
         format: MachineIntegerType,
-        original: &MachineTerm,
-        rewritten: &MachineTerm,
+        original: &OldMachineTerm,
+        rewritten: &OldMachineTerm,
     ) -> Self {
         if matches!(
             self.node(),
@@ -1614,7 +1612,7 @@ impl KernelTerm {
             return self.clone();
         }
         if matches!(self.node(), KernelTermNode::Call { .. })
-            && let MachineTerm::ClickFunctionApplication { name, arguments } = rewritten
+            && let OldMachineTerm::ClickFunctionApplication { name, arguments } = rewritten
         {
             return KernelTermImport::default().machine_call(
                 format,
@@ -1679,7 +1677,7 @@ impl KernelTerm {
         Self::intern(ty, node)
     }
 
-    fn imported_scalar(ty: ProgramType, value: &MachineTerm) -> Self {
+    fn imported_scalar(ty: ProgramType, value: &OldMachineTerm) -> Self {
         Self::intern(
             KernelType::Program(ty),
             KernelTermNode::ImportedScalar(KernelImportedScalar {
@@ -1821,14 +1819,14 @@ impl KernelTermImport {
                 ProgramValue::Float32(bits) => self.float(KernelFloatType::Float32, bits),
                 ProgramValue::Float64(bits) => self.float(KernelFloatType::Float64, bits),
                 ProgramValue::Bool(word) => match word {
-                    MachineTerm::Constant {
+                    OldMachineTerm::Constant {
                         format: MachineIntegerType::UInt8,
                         bits,
                     } if *bits <= 1 => self.condition(&ConditionTerm::Constant(*bits != 0)),
-                    MachineTerm::Variable(variable) => {
+                    OldMachineTerm::Variable(variable) => {
                         KernelTerm::variable(KernelType::Program(ProgramType::Bool), *variable)
                     }
-                    MachineTerm::BoolCast {
+                    OldMachineTerm::BoolCast {
                         to: MachineIntegerType::UInt8,
                         value,
                     } if !matches!(value.as_ref(), ConditionTerm::Constant(_)) => {
@@ -2107,14 +2105,14 @@ mod tests {
         let value = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
             "opaque_argument".into(),
             vec![PureFunctionArgument::Value(ProgramValue::Int32(
-                MachineTerm::read_named(
+                OldMachineTerm::read_named(
                     ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
                     Box::new(Address::symbolic(Variable(87654328))),
                     LoadKind::Int32,
                 ),
             ))],
         ));
-        let native = MachineTerm::IntegerToMachine {
+        let native = OldMachineTerm::IntegerToMachine {
             value: value.into(),
             destination: format,
         };
@@ -2129,11 +2127,11 @@ mod tests {
     #[test]
     fn observation_storage_shares_casts_but_keeps_opaque_compatibility_boundaries() {
         let format = MachineIntegerType::Int32;
-        let cast = MachineTerm::Cast {
+        let cast = OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             from: MachineIntegerType::Int8,
             to: format,
-            value: Box::new(MachineTerm::Variable(Variable(87654326))),
+            value: Box::new(OldMachineTerm::Variable(Variable(87654326))),
         };
         let term = KernelTermImport::default().machine(format, &cast);
         let shared = SharedMachineIntegerTerm::from_shared(format, term).unwrap();
@@ -2147,7 +2145,7 @@ mod tests {
         assert!(observation.value_reading().is_some());
         let opaque = KernelTerm::imported_scalar(
             format.program_type(),
-            &MachineTerm::Variable(Variable(87654327)),
+            &OldMachineTerm::Variable(Variable(87654327)),
         );
         let parent =
             KernelTerm::arithmetic_binary(format, MachineBinaryOp::Add, [opaque.clone(), opaque])
@@ -2158,7 +2156,7 @@ mod tests {
 
     #[test]
     fn machine_observation_retains_its_format_and_reconstructs_after_source_drop() {
-        let word = MachineTerm::Variable(Variable(87654322));
+        let word = OldMachineTerm::Variable(Variable(87654322));
         let mut observations = Vec::new();
         for format in [
             MachineIntegerType::Int32,
@@ -2190,8 +2188,9 @@ mod tests {
 
     #[test]
     fn checker_bridge_preserves_calls_and_machine_types() {
-        let input =
-            PureFunctionArgument::Value(ProgramValue::UInt32(MachineTerm::Variable(Variable(70))));
+        let input = PureFunctionArgument::Value(ProgramValue::UInt32(OldMachineTerm::Variable(
+            Variable(70),
+        )));
         let call = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
             "foo".into(),
             vec![input],
@@ -2384,7 +2383,7 @@ impl KernelTermExport {
                         crate::instrumentation::record_deterministic_work(1);
                         return Ok(PureFunctionArgument::Value(machine::wrap_exact(
                             format,
-                            MachineTerm::Variable(*variable),
+                            OldMachineTerm::Variable(*variable),
                         )));
                     }
                 }

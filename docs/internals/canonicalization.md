@@ -24,7 +24,7 @@ gets a new value.
 
 Read construction and comparison identity selection have separate APIs:
 
-- `MachineTerm::memory_read(memory, pointer, kind)` constructs the exact
+- `OldMachineTerm::memory_read(memory, pointer, kind)` constructs the exact
   descriptor. It retains the supplied memory state and performs no version
   selection, stored-value lookup, or observation publication.
 - `ScalarReadDescriptor` borrows that exact descriptor. The memory-load

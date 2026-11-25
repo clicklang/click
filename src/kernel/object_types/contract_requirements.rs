@@ -503,7 +503,7 @@ mod tests {
         SpecProposition::Comparison {
             left: variable(CONTRACT_RESULT),
             operator,
-            right: SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(0))),
+            right: SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(0))),
         }
     }
     #[test]

@@ -4,7 +4,7 @@ use crate::kernel::assumptions::{parameter_alias_bucket, parameter_partition_var
 use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
 use crate::kernel::{
     Address, AddressBase, AddressOffset, ConditionTerm, MachineIntegerType, MachineOperandView,
-    MachineTerm, Proposition, Variable,
+    OldMachineTerm, Proposition, Variable,
 };
 use crate::persistent::{PersistentComponents, PersistentMap, PersistentSet};
 use std::collections::BTreeSet;
@@ -42,7 +42,7 @@ struct NumericAddressForest {
 impl NumericAddressConnectivity {
     pub(in crate::kernel) fn record(
         &mut self,
-        endpoints: [(&Key, &MachineTerm); 2],
+        endpoints: [(&Key, &OldMachineTerm); 2],
         has_pointer_alias: impl Fn(&Address) -> bool,
     ) {
         let [left, right] = endpoints.map(|(key, term)| {
@@ -373,7 +373,7 @@ impl WideEqualitySources {
         }
         let operand_key = |operand: MachineOperandView<'_>,
                            admitted: Option<&super::MachineAtom>| {
-            if let MachineOperandView::Legacy(written) = operand
+            if let MachineOperandView::Old(written) = operand
                 && let Some(admitted) = admitted
                 && matches!(admitted.operand_view(), MachineOperandView::Shared(_))
                 && admitted.retains_written(written)

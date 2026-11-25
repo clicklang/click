@@ -193,7 +193,7 @@ mod tests {
     }
 
     fn int(value: u32) -> ProgramValue {
-        ProgramValue::Int32(super::super::MachineTerm::constant(value))
+        ProgramValue::Int32(super::super::OldMachineTerm::constant(value))
     }
 
     const INT: CAccessClass = CAccessClass::Scalar(CScalarClass::Int);
@@ -225,7 +225,7 @@ mod tests {
         Address {
             base: AddressBase::Heap(7),
             offset: AddressOffset::scale_int32(
-                super::super::MachineTerm::Variable(super::super::Variable(variable)),
+                super::super::OldMachineTerm::Variable(super::super::Variable(variable)),
                 4,
             ),
         }

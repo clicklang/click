@@ -15,7 +15,7 @@ use super::{
     ClickError, ClickType, ProgramPointSelector, SurfaceBinder, SyntaxProposition, SyntaxTerm,
     clone_click_proposition_iteratively, proof,
 };
-use crate::kernel::{Address, ConditionTerm, MachineTerm, Proposition, Sort, Variable};
+use crate::kernel::{Address, ConditionTerm, OldMachineTerm, Proposition, Sort, Variable};
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::collections::HashMap;
@@ -90,7 +90,7 @@ impl StoreReadKey {
         else {
             return None;
         };
-        let MachineTerm::MemoryLoad(point, address, LoadKind::UInt32) = left.as_ref() else {
+        let OldMachineTerm::MemoryLoad(point, address, LoadKind::UInt32) = left.as_ref() else {
             return None;
         };
         if address.base != AddressBase::ExternalArgument || !address.offset.is_shallow() {
@@ -985,7 +985,7 @@ impl SurfacePropositionMap {
                     {
                         for (expression, term) in qualified.into_iter().zip([a, b]) {
                             if let Some(expression) = expression
-                                && let MachineTerm::MemoryLoad(_, pointer, _) = term.as_ref()
+                                && let OldMachineTerm::MemoryLoad(_, pointer, _) = term.as_ref()
                                 && !storage
                                     .qualified_load_sources
                                     .contains_key(pointer.as_ref())
@@ -1355,14 +1355,14 @@ mod store_source_tests {
             base: AddressBase::ExternalArgument,
             offset: AddressOffset::Variable(Variable(1)),
         };
-        let read = MachineTerm::read_named(
+        let read = OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(address.clone()),
             LoadKind::UInt32,
         );
         let equation = |word| {
             Arc::new(Proposition::condition_is(
-                ConditionTerm::uint32_equal(read.clone(), MachineTerm::constant(word)),
+                ConditionTerm::uint32_equal(read.clone(), OldMachineTerm::constant(word)),
                 true,
             ))
         };
@@ -1400,7 +1400,7 @@ mod store_source_tests {
             let state = ExecutionState::new().begin_function_entry_memory();
             let memory = state.memory().clone().store(
                 address.clone(),
-                ProgramValue::UInt32(MachineTerm::uint32_constant(7)),
+                ProgramValue::UInt32(OldMachineTerm::uint32_constant(7)),
             );
             state
                 .with_memory(memory)
@@ -1419,8 +1419,8 @@ mod store_source_tests {
         let equation = |point| {
             Arc::new(Proposition::condition_is(
                 ConditionTerm::uint32_equal(
-                    MachineTerm::read_named(point, Box::new(address.clone()), LoadKind::UInt32),
-                    MachineTerm::uint32_constant(7),
+                    OldMachineTerm::read_named(point, Box::new(address.clone()), LoadKind::UInt32),
+                    OldMachineTerm::uint32_constant(7),
                 ),
                 true,
             ))

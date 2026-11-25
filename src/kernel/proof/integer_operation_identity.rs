@@ -87,7 +87,7 @@ mod tests {
     use super::*;
     use crate::kernel::machine_integer::{Operation, representation};
 
-    use crate::kernel::{IntegerTerm, MachineIntegerType, MachineTerm, Variable};
+    use crate::kernel::{IntegerTerm, MachineIntegerType, OldMachineTerm, Variable};
     use MachineIntegerType as Ty;
     use num_bigint::BigInt;
 
@@ -98,7 +98,12 @@ mod tests {
         Proposition::condition_is(ConditionTerm::integer_equal(a, b), true)
     }
 
-    fn operation(ty: Ty, subtract: bool, left: MachineTerm, right: MachineTerm) -> MachineTerm {
+    fn operation(
+        ty: Ty,
+        subtract: bool,
+        left: OldMachineTerm,
+        right: OldMachineTerm,
+    ) -> OldMachineTerm {
         let operation = if subtract {
             Operation::Subtract
         } else {
@@ -115,9 +120,10 @@ mod tests {
         lo: BigInt,
         hi: BigInt,
     ) -> (Vec<Proposition>, Proposition, IntegerTerm) {
-        let left = MachineTerm::Variable(Variable(171_001));
-        let right = MachineTerm::Variable(Variable(171_002));
-        let observe = |value: &MachineTerm| IntegerTerm::from_machine(ty, value.clone()).unwrap();
+        let left = OldMachineTerm::Variable(Variable(171_001));
+        let right = OldMachineTerm::Variable(Variable(171_002));
+        let observe =
+            |value: &OldMachineTerm| IntegerTerm::from_machine(ty, value.clone()).unwrap();
         let value = if subtract {
             IntegerTerm::subtract(observe(&left), observe(&right))
         } else {
@@ -217,8 +223,8 @@ mod tests {
 
     #[test]
     fn integer_operation_identity_refuses_mismatched_operations_types_and_polarity() {
-        let left = MachineTerm::Variable(Variable(171_001));
-        let right = MachineTerm::Variable(Variable(171_002));
+        let left = OldMachineTerm::Variable(Variable(171_001));
+        let right = OldMachineTerm::Variable(Variable(171_002));
         let (premises, goal, value) = inputs(
             Ty::Int32,
             false,

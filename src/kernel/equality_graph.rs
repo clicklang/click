@@ -141,7 +141,7 @@ pub(in crate::kernel) fn byte_product_offsets(
     if left.as_const().is_some() == right.as_const().is_some() {
         return None;
     }
-    let product = MachineTerm::multiply(left.as_ref().clone(), right.as_ref().clone());
+    let product = OldMachineTerm::multiply(left.as_ref().clone(), right.as_ref().clone());
     let imported = crate::kernel::KernelTermImport::default()
         .machine_arithmetic(MachineIntegerType::Int32, &product)?;
     let product =
@@ -151,7 +151,7 @@ pub(in crate::kernel) fn byte_product_offsets(
 }
 
 impl MachineAtom {
-    fn new(ty: crate::kernel::MachineIntegerType, value: MachineTerm) -> Self {
+    fn new(ty: crate::kernel::MachineIntegerType, value: OldMachineTerm) -> Self {
         Self(crate::kernel::SharedMachineIntegerTerm::intern(ty, value))
     }
     pub(in crate::kernel) fn from_operand(
@@ -167,7 +167,7 @@ impl MachineAtom {
         value: crate::kernel::MachineOperandView<'_>,
     ) -> Self {
         match value {
-            crate::kernel::MachineOperandView::Legacy(value) => Self::new(ty, value.clone()),
+            crate::kernel::MachineOperandView::Old(value) => Self::new(ty, value.clone()),
             crate::kernel::MachineOperandView::Shared(root) => Self(
                 crate::kernel::SharedMachineIntegerTerm::observe_shared(
                     ty,
@@ -177,12 +177,12 @@ impl MachineAtom {
             ),
         }
     }
-    pub(in crate::kernel) fn uint64(value: MachineTerm) -> Self {
+    pub(in crate::kernel) fn uint64(value: OldMachineTerm) -> Self {
         Self::new(crate::kernel::MachineIntegerType::UInt64, value)
     }
     /// A 32-bit atom, interned by its word: a `uint32` constant is its
     /// word's `Constant` (rule K1), so the two are one class.
-    pub(in crate::kernel) fn int32(value: MachineTerm) -> Self {
+    pub(in crate::kernel) fn int32(value: OldMachineTerm) -> Self {
         Self::new(
             crate::kernel::MachineIntegerType::Int32,
             value.constant_word32(),
@@ -191,10 +191,10 @@ impl MachineAtom {
     pub(in crate::kernel) fn operand_view(&self) -> crate::kernel::MachineOperandView<'_> {
         self.0.operand_view()
     }
-    pub(in crate::kernel) fn retains_written(&self, term: &MachineTerm) -> bool {
+    pub(in crate::kernel) fn retains_written(&self, term: &OldMachineTerm) -> bool {
         self.0.retained_written_operand() == Some(term)
     }
-    pub(in crate::kernel) fn value(&self) -> &MachineTerm {
+    pub(in crate::kernel) fn value(&self) -> &OldMachineTerm {
         self.0.value()
     }
 }
@@ -520,10 +520,10 @@ pub(in crate::kernel) fn clear_logical_pointer_reads() {
 
 /// The defining load of a producer-retained typed pointer value. The
 /// definition is term metadata, not a hypothesis about the loaded address.
-pub(crate) fn logical_pointer_read_term(value: &Address) -> Option<MachineTerm> {
+pub(crate) fn logical_pointer_read_term(value: &Address) -> Option<OldMachineTerm> {
     if let Some(read) = value.as_loaded_value() {
         return (read.displacement == AddressOffset::Constant(0)).then(|| {
-            crate::kernel::MachineTerm::read_named(
+            crate::kernel::OldMachineTerm::read_named(
                 read.point,
                 read.defining_address,
                 LoadKind::Int32,
@@ -540,7 +540,7 @@ pub(crate) fn logical_pointer_read_term(value: &Address) -> Option<MachineTerm> 
             .map(|(application, _)| application.clone())
     });
     let load = application?.as_loaded_value()?;
-    Some(crate::kernel::MachineTerm::read_named(
+    Some(crate::kernel::OldMachineTerm::read_named(
         ProgramPoint::viewing(&load.defining_memory, &load.point),
         load.defining_address,
         LoadKind::Int32,
@@ -1097,9 +1097,9 @@ impl EqualityGraph {
         use crate::kernel::{
             KernelTerm, KernelTermImport, MachineBinaryOp, MachineOperandView as V,
         };
-        if let V::Legacy(index) = index {
+        if let V::Old(index) = index {
             let index = if successor {
-                MachineTerm::add(index.clone(), 1u32.into())
+                OldMachineTerm::add(index.clone(), 1u32.into())
             } else {
                 index.clone()
             };
@@ -1616,7 +1616,7 @@ impl EqualityGraph {
         let selected = |value: &crate::kernel::SharedMachineIntegerTerm| match value.operand_view()
         {
             crate::kernel::MachineOperandView::Shared(_) => value.clone(),
-            crate::kernel::MachineOperandView::Legacy(term) => {
+            crate::kernel::MachineOperandView::Old(term) => {
                 crate::kernel::SharedMachineIntegerTerm::index(
                     value.ty(),
                     exact_read_comparison_input(term),
@@ -1722,8 +1722,8 @@ impl EqualityGraph {
     /// A false answer is unknown. Integer operators use typed operand classes.
     pub(in crate::kernel) fn are_int32_equal(
         &self,
-        left: &MachineTerm,
-        right: &MachineTerm,
+        left: &OldMachineTerm,
+        right: &OldMachineTerm,
     ) -> bool {
         if left == right {
             return true;
@@ -1751,17 +1751,17 @@ impl EqualityGraph {
         right: crate::kernel::MachineOperandView<'_>,
     ) -> bool {
         use crate::kernel::MachineOperandView as V;
-        if let (V::Legacy(a), V::Legacy(b)) = (left, right) {
+        if let (V::Old(a), V::Old(b)) = (left, right) {
             return self.are_int32_equal(a, b);
         }
         // Fixed-size leaves already have a native spelling. Preserve the
         // direct scalar route without constructing Integer observations or
         // exporting any shared expression.
         let atoms = [left, right].map(|v| match v {
-            V::Legacy(term) => Some(std::borrow::Cow::Borrowed(term)),
+            V::Old(term) => Some(std::borrow::Cow::Borrowed(term)),
             V::Shared(_) => v
                 .literal()
-                .or_else(|| v.variable().copied().map(MachineTerm::Variable))
+                .or_else(|| v.variable().copied().map(OldMachineTerm::Variable))
                 .map(std::borrow::Cow::Owned)
                 .or_else(|| v.read_source()),
         });
@@ -1770,14 +1770,14 @@ impl EqualityGraph {
         }
 
         let written = [left, right].map(|operand| match operand {
-            V::Legacy(term) => Some(exact_read_comparison_input(term)),
+            V::Old(term) => Some(exact_read_comparison_input(term)),
             V::Shared(_) => None,
         });
         let observations = [left, right].map(|operand| match operand {
             V::Shared(_) => Some(crate::kernel::IntegerTerm::Machine(
                 operand.retain(crate::kernel::MachineIntegerType::Int32),
             )),
-            V::Legacy(_) => None,
+            V::Old(_) => None,
         });
         let mut state = self.state.lock().expect("equality graph");
         self.register_expression_operands(
@@ -1787,7 +1787,7 @@ impl EqualityGraph {
             observations.iter().flatten(),
         );
         let ids: [u64; 2] = std::array::from_fn(|i| match [left, right][i] {
-            V::Legacy(_) => state.terms.int32_class(written[i].as_ref().unwrap()),
+            V::Old(_) => state.terms.int32_class(written[i].as_ref().unwrap()),
             V::Shared(root) => state.terms.shared_int32_class(root),
         });
         state.close(Vec::new());
@@ -1797,8 +1797,8 @@ impl EqualityGraph {
     fn register_int32_operands(
         &self,
         state: &mut EqualityGraphState,
-        left: &MachineTerm,
-        right: &MachineTerm,
+        left: &OldMachineTerm,
+        right: &OldMachineTerm,
     ) {
         if terms::has_machine_operands(left) || terms::has_machine_operands(right) {
             self.register_machine_operands(state, left, right);
@@ -1811,14 +1811,14 @@ impl EqualityGraph {
     fn register_machine_operands(
         &self,
         state: &mut EqualityGraphState,
-        left: &MachineTerm,
-        right: &MachineTerm,
+        left: &OldMachineTerm,
+        right: &OldMachineTerm,
     ) {
         self.register_expression_operands(state, [left, right], [], []);
     }
 
     fn expression_pointer_operands<'a>(
-        machine: impl IntoIterator<Item = &'a MachineTerm>,
+        machine: impl IntoIterator<Item = &'a OldMachineTerm>,
         algebraic: impl IntoIterator<Item = &'a AlgebraicTerm>,
         integer: impl IntoIterator<Item = &'a crate::kernel::IntegerTerm>,
         pointer_calls: impl IntoIterator<Item = &'a SharedPureApplication>,
@@ -1826,7 +1826,7 @@ impl EqualityGraph {
     ) -> Vec<Address> {
         enum Work<'a> {
             SharedMachine(&'a crate::kernel::KernelTerm),
-            Machine(&'a MachineTerm),
+            Machine(&'a OldMachineTerm),
             Algebraic(&'a AlgebraicTerm),
             Integer(&'a crate::kernel::IntegerTerm),
             Value(&'a ProgramValue),
@@ -1961,7 +1961,7 @@ impl EqualityGraph {
                             pending.push(Work::SharedMachine(operand))
                         }
                         N::Variable(variable) => {
-                            let leaf = MachineTerm::Variable(*variable);
+                            let leaf = OldMachineTerm::Variable(*variable);
                             if let Some((_, pointer)) =
                                 terms::uint64_read(&leaf).or_else(|| terms::int32_read(&leaf))
                             {
@@ -1969,7 +1969,7 @@ impl EqualityGraph {
                             }
                         }
                         N::MemoryLoad { .. } => {
-                            let MachineTerm::MemoryLoad(_, address, _) =
+                            let OldMachineTerm::MemoryLoad(_, address, _) =
                                 term.machine_read_leaf().expect("read descriptor")
                             else {
                                 unreachable!("read descriptor")
@@ -2001,7 +2001,7 @@ impl EqualityGraph {
                     }
                 }
                 Work::Machine(term) => {
-                    if let MachineTerm::ClickFunctionApplication { arguments, .. } = term {
+                    if let OldMachineTerm::ClickFunctionApplication { arguments, .. } = term {
                         pending.extend(arguments.iter().map(Work::Argument));
                     } else if let Some((op, a, b)) = term.as_binary()
                         && !op.is_float()
@@ -2015,7 +2015,7 @@ impl EqualityGraph {
                         )
                     {
                         pending.push(Work::Machine(value));
-                    } else if let MachineTerm::IntegerToMachine { value, .. } = term {
+                    } else if let OldMachineTerm::IntegerToMachine { value, .. } = term {
                         pending.push(Work::Integer(value));
                     } else if let Some((_, pointer)) =
                         terms::uint64_read(term).or_else(|| terms::int32_read(term))
@@ -2033,7 +2033,7 @@ impl EqualityGraph {
     fn register_expression_operands<'a>(
         &self,
         state: &mut EqualityGraphState,
-        machine: impl IntoIterator<Item = &'a MachineTerm>,
+        machine: impl IntoIterator<Item = &'a OldMachineTerm>,
         algebraic: impl IntoIterator<Item = &'a AlgebraicTerm>,
         integer: impl IntoIterator<Item = &'a crate::kernel::IntegerTerm>,
     ) {
@@ -2059,7 +2059,7 @@ impl EqualityGraph {
     /// class. This is a value identity lookup; the thread ledger grants rights.
     pub(in crate::kernel) fn thread_handle_for_word(
         &self,
-        term: &MachineTerm,
+        term: &OldMachineTerm,
     ) -> Option<crate::kernel::ThreadHandleId> {
         let term = exact_read_comparison_input(term);
         let mut state = self.state.lock().expect("equality graph");
@@ -2069,8 +2069,8 @@ impl EqualityGraph {
 
     pub(in crate::kernel) fn are_uint64_equal(
         &self,
-        left: &MachineTerm,
-        right: &MachineTerm,
+        left: &OldMachineTerm,
+        right: &OldMachineTerm,
     ) -> bool {
         if left == right {
             return true;
@@ -2084,7 +2084,7 @@ impl EqualityGraph {
 
     /// Files `term` as an endpoint of a recorded true 64-bit equality, so
     /// `wide_equation_endpoints_equal_to` finds it from any equal word.
-    pub(in crate::kernel) fn record_wide_equation_endpoint(&self, term: &MachineTerm) {
+    pub(in crate::kernel) fn record_wide_equation_endpoint(&self, term: &OldMachineTerm) {
         let term = exact_read_comparison_input(term);
         let mut state = self.state.lock().expect("equality graph");
         self.register_machine_operands(&mut state, &term, &term);
@@ -2093,7 +2093,10 @@ impl EqualityGraph {
 
     /// The recorded 64-bit equality endpoints the graph proves equal to
     /// `term`: one class lookup, no scan of the recorded facts.
-    fn wide_equation_endpoints_equal_to_written(&self, term: &MachineTerm) -> Vec<MachineTerm> {
+    fn wide_equation_endpoints_equal_to_written(
+        &self,
+        term: &OldMachineTerm,
+    ) -> Vec<OldMachineTerm> {
         let term = exact_read_comparison_input(term);
         let mut state = self.state.lock().expect("equality graph");
         self.register_machine_operands(&mut state, &term, &term);
@@ -2110,10 +2113,10 @@ impl EqualityGraph {
     pub(in crate::kernel) fn wide_equation_endpoints_equal_to(
         &self,
         term: crate::kernel::MachineOperandView<'_>,
-    ) -> Vec<MachineTerm> {
+    ) -> Vec<OldMachineTerm> {
         use crate::kernel::MachineOperandView as V;
         match term {
-            V::Legacy(term) => self.wide_equation_endpoints_equal_to_written(term),
+            V::Old(term) => self.wide_equation_endpoints_equal_to_written(term),
             V::Shared(root) => {
                 let observation = crate::kernel::IntegerTerm::Machine(
                     term.retain(crate::kernel::MachineIntegerType::UInt64),
@@ -2132,7 +2135,7 @@ impl EqualityGraph {
         }
     }
 
-    pub(in crate::kernel) fn uint64_constant(&self, term: &MachineTerm) -> Option<u64> {
+    pub(in crate::kernel) fn uint64_constant(&self, term: &OldMachineTerm) -> Option<u64> {
         let term = exact_read_comparison_input(term);
         let mut state = self.state.lock().expect("equality graph");
         self.register_machine_operands(&mut state, &term, &term);
@@ -2144,7 +2147,7 @@ impl EqualityGraph {
         term: crate::kernel::MachineOperandView<'_>,
     ) -> Option<u64> {
         match term {
-            crate::kernel::MachineOperandView::Legacy(term) => self.uint64_constant(term),
+            crate::kernel::MachineOperandView::Old(term) => self.uint64_constant(term),
             crate::kernel::MachineOperandView::Shared(term) => {
                 let mut state = self.state.lock().expect("equality graph");
                 let node = state.terms.shared_uint64_class(term);
@@ -2162,8 +2165,8 @@ impl EqualityGraph {
         left: &Address,
         right: &Address,
     ) -> (Address, Address) {
-        let a = MachineTerm::integer_address(left.clone());
-        let b = MachineTerm::integer_address(right.clone());
+        let a = OldMachineTerm::integer_address(left.clone());
+        let b = OldMachineTerm::integer_address(right.clone());
         let mut state = self.state.lock().expect("equality graph");
         self.register_machine_operands(&mut state, &a, &b);
         // Register both before selecting: the second registration can close
@@ -2178,8 +2181,8 @@ impl EqualityGraph {
 
     pub(in crate::kernel) fn add_uint64_equality(
         &mut self,
-        left: &MachineTerm,
-        right: &MachineTerm,
+        left: &OldMachineTerm,
+        right: &OldMachineTerm,
     ) -> bool {
         let left = exact_read_comparison_input(left);
         let right = exact_read_comparison_input(right);
@@ -2197,7 +2200,7 @@ impl EqualityGraph {
     /// visits only this term's dependencies; lookup never enumerates a class.
     pub(in crate::kernel) fn signed_int32_interval(
         &self,
-        term: &MachineTerm,
+        term: &OldMachineTerm,
     ) -> Option<(i64, i64)> {
         // See `are_int32_equal`: canonicalize outside the lock.
         let term = exact_read_comparison_input(term);
@@ -2219,7 +2222,7 @@ impl EqualityGraph {
         term: crate::kernel::MachineOperandView<'_>,
     ) -> Option<(i64, i64)> {
         let crate::kernel::MachineOperandView::Shared(term) = term else {
-            let crate::kernel::MachineOperandView::Legacy(term) = term else {
+            let crate::kernel::MachineOperandView::Old(term) = term else {
                 unreachable!()
             };
             return self.signed_int32_interval(term);
@@ -2236,17 +2239,17 @@ impl EqualityGraph {
         right: crate::kernel::MachineOperandView<'_>,
     ) -> bool {
         use crate::kernel::MachineOperandView as V;
-        if let (V::Legacy(left), V::Legacy(right)) = (left, right) {
+        if let (V::Old(left), V::Old(right)) = (left, right) {
             return self.add_int32_equality(left, right);
         }
         // Fixed-size leaves already have a native spelling. Preserve the
         // direct scalar route without constructing Integer observations or
         // exporting any shared expression.
         let atoms = [left, right].map(|v| match v {
-            V::Legacy(term) => Some(std::borrow::Cow::Borrowed(term)),
+            V::Old(term) => Some(std::borrow::Cow::Borrowed(term)),
             V::Shared(_) => v
                 .literal()
-                .or_else(|| v.variable().copied().map(MachineTerm::Variable))
+                .or_else(|| v.variable().copied().map(OldMachineTerm::Variable))
                 .map(std::borrow::Cow::Owned)
                 .or_else(|| v.read_source()),
         });
@@ -2279,8 +2282,8 @@ impl EqualityGraph {
     /// Admit an already established int32 equality in this proof context.
     pub(in crate::kernel) fn add_int32_equality(
         &mut self,
-        left: &MachineTerm,
-        right: &MachineTerm,
+        left: &OldMachineTerm,
+        right: &OldMachineTerm,
     ) -> bool {
         // See `are_int32_equal`: canonicalize outside the lock.
         let left = &exact_read_comparison_input(left);
@@ -2461,12 +2464,12 @@ impl EqualityGraph {
             return false;
         }
         match operands {
-            [V::Legacy(left), V::Legacy(right)] => {
+            [V::Old(left), V::Old(right)] => {
                 self.register_machine_operands(&mut state, left, right)
             }
             _ => {
                 for operand in operands {
-                    if let V::Legacy(term) = operand {
+                    if let V::Old(term) = operand {
                         self.register_machine_operands(&mut state, term, term);
                     }
                 }
@@ -3229,7 +3232,7 @@ impl EqualityGraphState {
 impl EqualityGraph {
     pub(in crate::kernel) fn scalar_constant_class(
         &self,
-        term: &MachineTerm,
+        term: &OldMachineTerm,
     ) -> Option<(u64, crate::kernel::assumptions::SignedConstantResolution)> {
         if !self.state.lock().expect("equality graph").has_scalar_inputs {
             return None;
@@ -3366,7 +3369,7 @@ impl EqualityGraph {
         term: crate::kernel::MachineOperandView<'_>,
     ) -> Option<(u64, crate::kernel::assumptions::SignedConstantResolution)> {
         match term {
-            crate::kernel::MachineOperandView::Legacy(term) => self.scalar_constant_class(term),
+            crate::kernel::MachineOperandView::Old(term) => self.scalar_constant_class(term),
             crate::kernel::MachineOperandView::Shared(term) => {
                 let mut state = self.state.lock().expect("equality graph");
                 let node = state.terms.shared_int32_class(term);
@@ -3384,7 +3387,7 @@ impl EqualityGraph {
     /// filed about it, and a compound term is not looked up. One lookup and
     /// no change to the graph, so a run's work does not depend on what an
     /// earlier query interned.
-    pub(in crate::kernel) fn known_atom_constant(&self, term: &MachineTerm) -> Option<i64> {
+    pub(in crate::kernel) fn known_atom_constant(&self, term: &OldMachineTerm) -> Option<i64> {
         let term = exact_read_comparison_input(term);
         let state = self.state.lock().expect("equality graph");
         if !state.has_scalar_inputs {
@@ -3409,8 +3412,8 @@ impl EqualityGraph {
 /// Select raw read identities without replacing reads by cached values.
 /// Compound expressions retain their written structure: their read leaves
 /// register as applications, and explicit equations supply their values.
-fn exact_read_comparison_input(term: &MachineTerm) -> MachineTerm {
-    if let MachineTerm::MemoryLoad(memory, pointer, kind) = term {
+fn exact_read_comparison_input(term: &OldMachineTerm) -> OldMachineTerm {
+    if let OldMachineTerm::MemoryLoad(memory, pointer, kind) = term {
         if memory.is_exact_read() {
             return crate::kernel::eval::comparison_identity_of_exact_read(memory, pointer, *kind);
         }
@@ -3486,8 +3489,8 @@ mod tests {
                     domain
                         .opaque_coverage_fact(&crate::kernel::MemoryRange::new(
                             at(symbolic(985_100), 0),
-                            MachineTerm::constant(0),
-                            MachineTerm::constant(end),
+                            OldMachineTerm::constant(0),
+                            OldMachineTerm::constant(end),
                         ))
                         .expect("coverage names the opaque domain"),
                 ))
@@ -3533,8 +3536,8 @@ mod tests {
         }
     }
 
-    fn index(id: u64) -> MachineTerm {
-        MachineTerm::Variable(Variable(id))
+    fn index(id: u64) -> OldMachineTerm {
+        OldMachineTerm::Variable(Variable(id))
     }
 
     // Retained zero-displacement spellings may share their base's class.
@@ -3543,7 +3546,7 @@ mod tests {
     fn additive_spelling_alignment_is_bounded_when_its_base_is_equal() {
         let mut graph = EqualityGraph::default();
         let base = Address::symbolic(Variable(999_101));
-        let index = MachineTerm::Variable(Variable(999_102));
+        let index = OldMachineTerm::Variable(Variable(999_102));
         let address = base.offset_by_elements(index, 4);
         assert!(graph.add_equality(&base, &address));
         let unrelated = Address::symbolic(Variable(999_103));
@@ -3607,7 +3610,7 @@ mod tests {
 
     #[test]
     fn a_constant_index_folds_with_its_sign() {
-        let minus_one = AddressOffset::scaled_int32_node(MachineTerm::constant(u32::MAX), 8);
+        let minus_one = AddressOffset::scaled_int32_node(OldMachineTerm::constant(u32::MAX), 8);
         assert_eq!(
             AffineOffset::of(&minus_one),
             Some(AffineOffset::constant(-8))
@@ -3914,10 +3917,13 @@ mod tests {
     #[test]
     fn same_block_pointer_query_does_not_turn_wrapping_index_into_exact_offset() {
         let base = symbolic(11_014);
-        let max = MachineTerm::constant(i32::MAX as u32);
+        let max = OldMachineTerm::constant(i32::MAX as u32);
         let wrapped = at_offset(
             base.clone(),
-            AddressOffset::scale_int32(MachineTerm::add(max.clone(), MachineTerm::constant(1)), 4),
+            AddressOffset::scale_int32(
+                OldMachineTerm::add(max.clone(), OldMachineTerm::constant(1)),
+                4,
+            ),
         );
         let exact_sum = at_offset(
             base,
@@ -4013,7 +4019,7 @@ mod tests {
             memory
                 .memory()
                 .clone()
-                .store(p.clone(), ProgramValue::Int32(MachineTerm::constant(7))),
+                .store(p.clone(), ProgramValue::Int32(OldMachineTerm::constant(7))),
         );
         let from_p = Address::loaded_value(&memory, &p);
         let from_p_again = Address::loaded_value(&memory, &p);
@@ -4038,7 +4044,7 @@ mod tests {
             AddressOffset::Constant(8)
         );
         assert!(from_p.has_symbolic_block());
-        let cell_bits = crate::kernel::MachineTerm::read_named(
+        let cell_bits = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
             p.clone(),
             crate::kernel::LoadKind::Int32,
@@ -4149,7 +4155,7 @@ mod tests {
                 memory
                     .memory()
                     .clone()
-                    .store(p.clone(), ProgramValue::Int32(MachineTerm::constant(7))),
+                    .store(p.clone(), ProgramValue::Int32(OldMachineTerm::constant(7))),
             );
             assert!(!graph.are_equal(&left, &Address::loaded_value(&changed, &q)));
         }
@@ -4163,7 +4169,7 @@ mod tests {
         // A later state where the cell `p` addresses was written.
         let other_memory = crate::kernel::intern_memory(memory.memory().clone().store(
             at(symbolic(41), 0),
-            ProgramValue::Int32(MachineTerm::constant(7)),
+            ProgramValue::Int32(OldMachineTerm::constant(7)),
         ));
         let name = |memory: &crate::kernel::SharedMemory, address: Address| {
             AddressBase::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
@@ -4235,9 +4241,10 @@ mod tests {
         };
         let other = at(symbolic(95_003), 0);
         let before = crate::kernel::SymbolicMemory::new().with_block(AddressBase::Heap(95_001), 16);
-        let after = before
-            .clone()
-            .store(other.clone(), ProgramValue::Int32(MachineTerm::constant(3)));
+        let after = before.clone().store(
+            other.clone(),
+            ProgramValue::Int32(OldMachineTerm::constant(3)),
+        );
         let name = |memory: &crate::kernel::SymbolicMemory| {
             let memory = crate::kernel::intern_memory(memory.clone());
             AddressBase::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
@@ -4264,7 +4271,7 @@ mod tests {
             };
             let (memory, address) =
                 crate::kernel::registered_load_origin_for_variable(variable).unwrap();
-            crate::kernel::MachineTerm::read_named(
+            crate::kernel::OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 address,
                 crate::kernel::LoadKind::Int32,
@@ -4485,7 +4492,7 @@ mod tests {
             &raw.address().offset_by_bytes(24),
             &model.offset_by_bytes(24)
         ));
-        let cell_bits = crate::kernel::MachineTerm::read_named(
+        let cell_bits = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
             address.clone(),
             crate::kernel::LoadKind::Int32,
@@ -4506,7 +4513,7 @@ mod tests {
         ));
         let later = crate::kernel::intern_memory(memory.memory().clone().store(
             address.clone(),
-            ProgramValue::UInt64(MachineTerm::int64_constant(9)),
+            ProgramValue::UInt64(OldMachineTerm::int64_constant(9)),
         ));
         let ProgramValue::Pointer(changed) =
             later
@@ -4544,11 +4551,11 @@ mod tests {
         let cases = [
             (
                 LoadKind::Int32,
-                ProgramValue::Int32(MachineTerm::constant(3)),
+                ProgramValue::Int32(OldMachineTerm::constant(3)),
             ),
             (
                 LoadKind::Bits64,
-                ProgramValue::UInt64(MachineTerm::uint64_constant(3)),
+                ProgramValue::UInt64(OldMachineTerm::uint64_constant(3)),
             ),
         ];
         for (kind, value) in cases {
@@ -4593,7 +4600,7 @@ mod tests {
         let model = Address::symbolic(Variable(51_412));
         let read = |pointer: &Address| {
             crate::kernel::eval::declare_load_access_width(pointer, 4);
-            crate::kernel::canonical_term(&crate::kernel::MachineTerm::read_named(
+            crate::kernel::canonical_term(&crate::kernel::OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 pointer.clone(),
                 crate::kernel::LoadKind::Int32,
@@ -4601,12 +4608,12 @@ mod tests {
         };
         let source = read(&raw.address().offset_by_bytes(24));
         let target = read(&model.offset_by_bytes(24));
-        let expected = MachineTerm::constant(7);
+        let expected = OldMachineTerm::constant(7);
         for read in [&source, &target] {
-            assert!(matches!(read, MachineTerm::MemoryLoad(..)));
+            assert!(matches!(read, OldMachineTerm::MemoryLoad(..)));
             assert_eq!(
                 crate::kernel::eval::scalar_read_observation(
-                    crate::kernel::MachineOperandView::Legacy(read)
+                    crate::kernel::MachineOperandView::Old(read)
                 )
                 .unwrap()
                 .bytes,
@@ -4637,7 +4644,7 @@ mod boolean_cast_dependency_tests {
     fn shared_boolean_cast_pointer_discovery_keeps_native_opacity() {
         use crate::kernel::{KernelTermExport, KernelTermImport, SharedMachineIntegerTerm};
         let _session = crate::kernel::VerificationSession::enter();
-        let native = MachineTerm::bool_cast(
+        let native = OldMachineTerm::bool_cast(
             MachineIntegerType::Int32,
             ConditionTerm::AddressEqual(
                 Box::new(Address::symbolic(Variable(999462))),

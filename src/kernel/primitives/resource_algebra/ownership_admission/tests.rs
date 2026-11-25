@@ -197,7 +197,7 @@ fn checked_output_composition_carries_the_sources_occurrences_and_projections() 
 
 #[test]
 fn certified_symbolic_quantities_use_empty_frame_and_block_boundaries() {
-    let quantity = MachineTerm::Variable(Variable(8_770_099));
+    let quantity = OldMachineTerm::Variable(Variable(8_770_099));
     let facts = PureFactContext::new()
         .assume_condition(ConditionTerm::equal(quantity.clone(), 1u32.into()), true);
     let output = ResourceFact::Own(
@@ -242,8 +242,8 @@ fn certified_symbolic_quantities_use_empty_frame_and_block_boundaries() {
 #[test]
 fn explicit_symbolic_boundary_covers_the_actual_partition_and_stays_branch_local() {
     let _session = crate::kernel::VerificationSession::enter();
-    let n = MachineTerm::Variable(Variable(8_770_210));
-    let m = MachineTerm::Variable(Variable(8_770_211));
+    let n = OldMachineTerm::Variable(Variable(8_770_210));
+    let m = OldMachineTerm::Variable(Variable(8_770_211));
     let span = |a, b| ResourceFact::own_memory(MemoryRange::new_with_element_width(at(0), a, b, 1));
     let left = span(0u32.into(), n.clone());
     let right = span(m.clone(), 16u32.into());
@@ -429,7 +429,7 @@ fn legacy_composition_checks_only_new_ownership_and_keeps_untouched_occurrences(
             ResourceFact::own_memory(MemoryRange::new_with_element_width(
                 at(0),
                 1u32.into(),
-                MachineTerm::Variable(Variable(8_770_999)),
+                OldMachineTerm::Variable(Variable(8_770_999)),
                 1,
             )),
             &facts

@@ -44,24 +44,24 @@ impl IntegerFoldIndexResult {
                 } else {
                     MachineIntegerType::UInt64
                 };
-                let item = MachineTerm::Variable(item);
+                let item = OldMachineTerm::Variable(item);
                 let lower = if kind == KernelFoldIndex::Int32 {
                     condition_for_operand_views(
                         format,
                         R::GreaterEqual,
-                        [V::Legacy(&item), V::Shared(start)],
+                        [V::Old(&item), V::Shared(start)],
                     )
                 } else {
                     condition_for_operand_views(
                         format,
                         R::LessEqual,
-                        [V::Shared(start), V::Legacy(&item)],
+                        [V::Shared(start), V::Old(&item)],
                     )
                 };
                 let upper = condition_for_operand_views(
                     format,
                     R::LessThan,
-                    [V::Legacy(&item), V::Shared(end)],
+                    [V::Old(&item), V::Shared(end)],
                 );
                 (
                     if kind == KernelFoldIndex::Int32 {

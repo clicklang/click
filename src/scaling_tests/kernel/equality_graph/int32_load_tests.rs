@@ -105,7 +105,7 @@ fn raw_read_address_registration_does_not_walk_memory_history() {
             ProgramValue::Int32(0u32.into()),
         );
         let load = |memory: &SymbolicMemory| {
-            MachineTerm::read_named(
+            OldMachineTerm::read_named(
                 ProgramPoint::at(&(intern_memory_ref(memory))),
                 Box::new(field.clone()),
                 crate::kernel::LoadKind::Int32,
@@ -197,7 +197,7 @@ fn zero_index_read_condition_ignores_unrelated_read_predicates() {
         let indexed = load(&memory, &base.offset_by_elements(index.clone(), 4), 4);
         let next = load(
             &memory,
-            &base.offset_by_elements(MachineTerm::add(index.clone(), 1u32.into()), 4),
+            &base.offset_by_elements(OldMachineTerm::add(index.clone(), 1u32.into()), 4),
             4,
         );
         context =
@@ -235,7 +235,7 @@ fn narrow_read_projection_edge_does_not_walk_memory_history() {
             for index in 0..size {
                 history = history.store(
                     address(500_000 + index),
-                    ProgramValue::Int32(MachineTerm::constant(index as u32)),
+                    ProgramValue::Int32(OldMachineTerm::constant(index as u32)),
                 );
             }
             let source = intern_memory(history.clone());
@@ -243,7 +243,7 @@ fn narrow_read_projection_edge_does_not_walk_memory_history() {
             let cell = address(1);
             crate::kernel::reasoning::record_canonical_load_projection(&source, &projected, &cell);
             let read = |memory: &SharedMemory| {
-                MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+                OldMachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
                     memory, &cell, kind, bytes,
                 ))
             };
@@ -284,7 +284,7 @@ fn registering_a_signed_16_or_128_bit_read_costs_what_its_unsigned_read_costs() 
             let _session = crate::kernel::VerificationSession::enter();
             let memory = memory();
             let read = |kind| {
-                MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+                OldMachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
                     &memory,
                     &address(1),
                     kind,
@@ -307,7 +307,7 @@ fn registering_a_signed_16_or_128_bit_read_costs_what_its_unsigned_read_costs() 
                         .add_int32_equality(&var(1), &var(800_000 + index));
                 }
             }
-            let measure = |term: &MachineTerm| {
+            let measure = |term: &OldMachineTerm| {
                 let branch = graph.clone();
                 let mut state = branch.state.lock().expect("equality graph");
                 crate::instrumentation::measure_deterministic_work(|| {
@@ -315,7 +315,7 @@ fn registering_a_signed_16_or_128_bit_read_costs_what_its_unsigned_read_costs() 
                 })
                 .1
             };
-            let written = MachineTerm::machine_integer_cast(from, to, unsigned.clone());
+            let written = OldMachineTerm::machine_integer_cast(from, to, unsigned.clone());
             // Warm the session's read observations, so each sample below is
             // the graph's own work.
             for term in [&unsigned, &signed, &written] {

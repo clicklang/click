@@ -30,7 +30,7 @@ fn retained_delta_and_affine_queries_scale_with_the_selected_dag() {
             assert_eq!(
                 affine_bitvector_difference_constant_views(
                     MachineOperandView::Shared(&root),
-                    MachineOperandView::Legacy(&MachineTerm::constant(0))
+                    MachineOperandView::Old(&OldMachineTerm::constant(0))
                 ),
                 Some(0)
             );

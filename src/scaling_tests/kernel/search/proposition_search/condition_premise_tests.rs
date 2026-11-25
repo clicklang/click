@@ -63,7 +63,7 @@ fn wide_condition_index_construction_charges_its_variable_entries() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(terms.pop().unwrap()),
-            right: Box::new(MachineTerm::constant(0)),
+            right: Box::new(OldMachineTerm::constant(0)),
         };
         let ((context, work), events) = crate::instrumentation::collect(|| {
             crate::instrumentation::measure_deterministic_work(|| {
@@ -113,7 +113,7 @@ fn state_condition_index_builds_once_and_survives_scalar_updates() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(term(20_000 + index as u64)),
-                right: Box::new(MachineTerm::read_named(
+                right: Box::new(OldMachineTerm::read_named(
                     ProgramPoint::at(&memory),
                     Box::new(Address {
                         base: "other".into(),
@@ -151,7 +151,7 @@ fn state_condition_index_builds_once_and_survives_scalar_updates() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(term(90_000)),
-            right: Box::new(MachineTerm::read_named(
+            right: Box::new(OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(Address {
                     base: "other".into(),
@@ -319,7 +319,7 @@ fn arithmetic_candidates_omit_registered_read_definitions() {
         let mut context = PureFactContext::new();
         let mut reads = Vec::new();
         for index in 0..size {
-            let read = MachineTerm::read_named(
+            let read = OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(Address {
                     base: "buffer".into(),
@@ -332,7 +332,7 @@ fn arithmetic_candidates_omit_registered_read_definitions() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(MachineTerm::Variable(variable)),
+                    left: Box::new(OldMachineTerm::Variable(variable)),
                     right: Box::new(load.clone()),
                 },
                 true,
@@ -345,7 +345,7 @@ fn arithmetic_candidates_omit_registered_read_definitions() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(reads[0].0)),
+                left: Box::new(OldMachineTerm::Variable(reads[0].0)),
                 right: Box::new(reads[1].1.clone()),
             },
             true,
@@ -356,7 +356,7 @@ fn arithmetic_candidates_omit_registered_read_definitions() {
                 Int32,
                 Add,
                 Box::new(sum),
-                Box::new(MachineTerm::Variable(*variable)),
+                Box::new(OldMachineTerm::Variable(*variable)),
             )
         });
         let goal = Proposition::condition_is(

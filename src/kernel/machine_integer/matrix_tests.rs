@@ -14,7 +14,7 @@ use crate::kernel::MachineCastSpelling;
 use crate::kernel::binary_node;
 
 use crate::kernel::{
-    ConditionTerm, IntegerTerm, MachineIntegerConstant, MachineIntegerType as Ty, MachineTerm,
+    ConditionTerm, IntegerTerm, MachineIntegerConstant, MachineIntegerType as Ty, OldMachineTerm,
     OverflowOperation, Proposition, SharedMachineIntegerTerm, Variable,
 };
 use num_bigint::BigInt;
@@ -73,17 +73,17 @@ fn samples(ty: Ty) -> Vec<BigInt> {
     values
 }
 
-fn constant(ty: Ty, value: &BigInt) -> MachineTerm {
+fn constant(ty: Ty, value: &BigInt) -> OldMachineTerm {
     range::constant_word(ty, value).unwrap_or_else(|| panic!("{value} is in {ty:?}"))
 }
 
 /// A symbolic value of `ty` whose word is a canonical carrier: a variable
 /// at 32 bits and more, and for a narrow format the conversion of an
 /// `int32` variable, as a narrow value is never a bare unregistered word.
-fn value(ty: Ty, variable: u64) -> MachineTerm {
-    let word = MachineTerm::Variable(Variable(variable));
+fn value(ty: Ty, variable: u64) -> OldMachineTerm {
+    let word = OldMachineTerm::Variable(Variable(variable));
     if ty.format().bits() < 32 {
-        MachineTerm::Cast {
+        OldMachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value: Box::new(word),
             from: Ty::Int32,
@@ -94,7 +94,7 @@ fn value(ty: Ty, variable: u64) -> MachineTerm {
     }
 }
 
-fn observe(ty: Ty, word: MachineTerm) -> IntegerTerm {
+fn observe(ty: Ty, word: OldMachineTerm) -> IntegerTerm {
     IntegerTerm::from_machine(ty, word).expect("every format observes its values")
 }
 
@@ -400,8 +400,8 @@ fn in_range_identity_holds_at_every_format() {
 fn folded_overflow(
     ty: Ty,
     operation: Operation,
-    left: MachineTerm,
-    right: MachineTerm,
+    left: OldMachineTerm,
+    right: OldMachineTerm,
 ) -> ConditionTerm {
     let op = match operation {
         Operation::Add => OverflowOperation::Add,
@@ -499,10 +499,10 @@ fn definedness_is_the_range_of_the_exact_result_at_every_format() {
 fn division_word(
     ty: Ty,
     division: Division,
-    operand: MachineTerm,
-    divisor: MachineTerm,
-) -> Option<MachineTerm> {
-    use MachineTerm as T;
+    operand: OldMachineTerm,
+    divisor: OldMachineTerm,
+) -> Option<OldMachineTerm> {
+    use OldMachineTerm as T;
     let (operand, divisor) = (Box::new(operand), Box::new(divisor));
     let candidates = match division {
         Division::Quotient => [
@@ -802,7 +802,8 @@ fn conversion_preserves_every_value_its_destination_holds() {
             // pair, and bounds its operand in the destination's range.
             let operand = value(source, 172_061);
             let original = observe(source, operand.clone());
-            let converted = MachineTerm::machine_integer_cast(source, destination, operand.clone());
+            let converted =
+                OldMachineTerm::machine_integer_cast(source, destination, operand.clone());
             let Some(observed) = IntegerTerm::from_machine(destination, converted) else {
                 panic!("{source:?} -> {destination:?} is observable");
             };
@@ -906,7 +907,7 @@ fn a_narrow_cast_word_is_the_carrier_of_its_value_at_every_narrow_format() {
                     );
                     // The cast itself folds to the native constant of its
                     // destination, whose bits are the word's low bits.
-                    let cast = MachineTerm::machine_integer_cast(source, destination, operand);
+                    let cast = OldMachineTerm::machine_integer_cast(source, destination, operand);
                     let mask = (1u128 << destination.format().bits()) - 1;
                     assert_eq!(
                         cast.narrow_constant_bits(destination),
@@ -963,7 +964,7 @@ fn a_narrow_widening_into_32_bits_has_its_operand_word_at_every_narrow_format() 
                     .unwrap();
                 assert_eq!(word, carrier, "{source:?} -> {destination:?}: {n}");
                 let folded =
-                    MachineTerm::machine_integer_cast(source, destination, constant(source, &n));
+                    OldMachineTerm::machine_integer_cast(source, destination, constant(source, &n));
                 assert_eq!(
                     folded.constant32(),
                     Some(carrier),
@@ -977,7 +978,7 @@ fn a_narrow_widening_into_32_bits_has_its_operand_word_at_every_narrow_format() 
             let cast = conversion::convert_term(source, destination, operand.clone());
             assert!(matches!(
                 cast,
-                MachineTerm::Cast {
+                OldMachineTerm::Cast {
                     spelling: MachineCastSpelling::Generic,
                     ..
                 }
@@ -985,8 +986,8 @@ fn a_narrow_widening_into_32_bits_has_its_operand_word_at_every_narrow_format() 
             assert_eq!(cast.narrow_widening32_operand(), Some((source, &operand)));
             assert_eq!(cast.clone().into_word32(), cast);
             assert_ne!(
-                MachineTerm::add(cast, MachineTerm::constant(1)),
-                MachineTerm::add(operand, MachineTerm::constant(1)),
+                OldMachineTerm::add(cast, OldMachineTerm::constant(1)),
+                OldMachineTerm::add(operand, OldMachineTerm::constant(1)),
                 "{source:?} -> {destination:?}"
             );
         }
@@ -1074,7 +1075,7 @@ fn the_conversion_table_has_one_term_per_pair_of_formats() {
                 let term = conversion::convert_term(source, destination, operand.clone());
                 assert_eq!(
                     term,
-                    MachineTerm::machine_integer_cast(source, destination, operand),
+                    OldMachineTerm::machine_integer_cast(source, destination, operand),
                     "{source:?} -> {destination:?}"
                 );
             }
@@ -1100,14 +1101,14 @@ fn the_conversion_table_has_one_term_per_pair_of_formats() {
 #[test]
 fn a_division_reads_only_at_its_own_signedness() {
     let (x, four) = (
-        MachineTerm::Variable(Variable(172_071)),
-        MachineTerm::constant(4),
+        OldMachineTerm::Variable(Variable(172_071)),
+        OldMachineTerm::constant(4),
     );
     let signed = binary_node!(Int32, Divide, Box::new(x.clone()), Box::new(four.clone()));
     let unsigned = binary_node!(UInt32, Divide, Box::new(x), Box::new(four));
     assert!(representation::word_division(Ty::UInt32, &signed).is_none());
     assert!(representation::word_division(Ty::Int32, &unsigned).is_none());
-    let machine = |word: MachineTerm, ty: Ty| -> SharedMachineIntegerTerm {
+    let machine = |word: OldMachineTerm, ty: Ty| -> SharedMachineIntegerTerm {
         match IntegerTerm::from_machine(ty, word) {
             Some(IntegerTerm::Machine(machine)) => machine,
             other => panic!("{other:?}"),

@@ -22,17 +22,17 @@ use crate::kernel::{
     FunctionContractClaimKey, FunctionContractClaimTarget, FunctionContractExecutionMode,
     FunctionExecutionCandidates, FunctionOutcome, FunctionSpecification, LoopEarlyExit, LoopEffect,
     LoopEffectCheck, LoopEffectSpan, LoopFinalExitCandidate, LoopInvariantCheck, LoopReturnExit,
-    MachineTerm, MemoryRange, MemorySegment, ProgramExpression, ProgramFunction, ProgramStatement,
-    ProgramType, ProgramValue, ProofObligation, Proposition, PropositionDerivation,
-    PureFactContext, Resource, ResourceAccessMode as KernelResourceAccessMode, ResourceContext,
-    ResourceContextValidityError, ResourceFact, ResourceFamily, ResourceSpec, ResourceStateSource,
-    ResourceTransferRole, Sort, SpecAlgebraicExpression, SpecExpression, SpecPoint,
-    SpecPredicateArgument, SpecProposition, SpecResource, StatementOutcome, SymbolicExecution,
-    SymbolicMemory, Term, TerminationRefusal, Theorem, UnsuitableCallback, Variable,
-    VerifiedLoopRule, VerifiedPureTheorem as KernelVerifiedPureTheorem,
-    contract_refinement_context, int32, loop_invariants_hold_at_entry, program_assign,
-    program_condition_fact_memories, program_declare,
-    program_do_while_with_invariant_and_effect_checks, program_function,
+    MemoryRange, MemorySegment, OldMachineTerm, ProgramExpression, ProgramFunction,
+    ProgramStatement, ProgramType, ProgramValue, ProofObligation, Proposition,
+    PropositionDerivation, PureFactContext, Resource,
+    ResourceAccessMode as KernelResourceAccessMode, ResourceContext, ResourceContextValidityError,
+    ResourceFact, ResourceFamily, ResourceSpec, ResourceStateSource, ResourceTransferRole, Sort,
+    SpecAlgebraicExpression, SpecExpression, SpecPoint, SpecPredicateArgument, SpecProposition,
+    SpecResource, StatementOutcome, SymbolicExecution, SymbolicMemory, Term, TerminationRefusal,
+    Theorem, UnsuitableCallback, Variable, VerifiedLoopRule,
+    VerifiedPureTheorem as KernelVerifiedPureTheorem, contract_refinement_context, int32,
+    loop_invariants_hold_at_entry, program_assign, program_condition_fact_memories,
+    program_declare, program_do_while_with_invariant_and_effect_checks, program_function,
     program_function_contract_refinement_arguments, program_function_entry_state,
     program_function_termination_plan, program_if, program_pointer_offsets_proven_equal_for_effect,
     program_seq, program_while_with_invariant_and_effect_checks, prove_int32_le_antisymmetric,
@@ -3715,7 +3715,7 @@ fn surface_parameter_binding(binding: &crate::kernel::BindingName) -> crate::ker
 fn model_field_variable<'a>(
     value: impl Into<crate::kernel::ResourceFieldValue<'a>>,
 ) -> Option<crate::kernel::Variable> {
-    use crate::kernel::{AlgebraicTermNode, MachineTerm};
+    use crate::kernel::{AlgebraicTermNode, OldMachineTerm};
     match value.into() {
         crate::kernel::ResourceFieldValue::Algebraic(term) => match term.node {
             AlgebraicTermNode::Variable(variable) => Some(variable),
@@ -3728,7 +3728,7 @@ fn model_field_variable<'a>(
             }
         }
         crate::kernel::ResourceFieldValue::Program(
-            crate::kernel::integer_c_value!(MachineTerm::Variable(variable)),
+            crate::kernel::integer_c_value!(OldMachineTerm::Variable(variable)),
         ) => Some(*variable),
         _ => None,
     }
@@ -3863,7 +3863,7 @@ struct RecordedStates {
     read_event_results: crate::persistent::PersistentMap<(usize, usize), RetainedProgramValue>,
     read_event_counts: crate::persistent::PersistentMap<usize, usize>,
     read_event_names: ReadEventNames<ProgramValue>,
-    read_event_scalar_names: ReadEventNames<crate::kernel::MachineTerm>,
+    read_event_scalar_names: ReadEventNames<crate::kernel::OldMachineTerm>,
     read_event_pointer_names: ReadEventNames<crate::kernel::Address>,
     /// The call that produced each algebraic value a call returned, a Rust
     /// enum's: the value is spelled `<region>.result`.
@@ -4359,7 +4359,7 @@ impl RecordedStates {
             crate::instrumentation::record_deterministic_work(1);
             let key = (index, count);
             let retained = RetainedProgramValue::from(value);
-            let value = retained.native_compat();
+            let value = retained.old_form();
             Self::add_read_event_name(&mut self.read_event_names, value, key);
             match value {
                 ProgramValue::Bool(term) | crate::kernel::integer_c_value!(term) => {
@@ -4399,7 +4399,7 @@ impl RecordedStates {
 
     fn read_event_naming_scalar(
         &self,
-        value: &crate::kernel::MachineTerm,
+        value: &crate::kernel::OldMachineTerm,
     ) -> Option<CodeRegionRef> {
         crate::instrumentation::record_deterministic_work(1);
         let &(index, event) = self.read_event_scalar_names.get(value)?.last()?;
@@ -4469,7 +4469,7 @@ impl RecordedStates {
             return self
                 .call_results_at(selector)
                 .and_then(|results| results.get(&index))
-                .map(RetainedProgramValue::native_compat)
+                .map(RetainedProgramValue::old_form)
                 .cloned()
                 .ok_or_else(|| {
                     format!(
@@ -4621,13 +4621,13 @@ impl RecordedStates {
     fn call_result_native(&self, index: &usize) -> Option<&ProgramValue> {
         self.call_results
             .get(index)
-            .map(RetainedProgramValue::native_compat)
+            .map(RetainedProgramValue::old_form)
     }
 
     fn read_event_native(&self, key: &(usize, usize)) -> Option<&ProgramValue> {
         self.read_event_results
             .get(key)
-            .map(RetainedProgramValue::native_compat)
+            .map(RetainedProgramValue::old_form)
     }
 
     fn record_retained_call_result(&mut self, index: usize, value: Option<RetainedProgramValue>) {
@@ -4643,7 +4643,7 @@ impl RecordedStates {
         if let Some(ProgramValue::Parameter(term)) = self
             .call_results
             .get(&index)
-            .map(RetainedProgramValue::native_compat)
+            .map(RetainedProgramValue::old_form)
             && self.algebraic_call_results.get(term.as_ref()) == Some(&index)
         {
             self.algebraic_call_results.remove(term.as_ref());
@@ -4651,14 +4651,14 @@ impl RecordedStates {
         if let Some(ProgramValue::Pointer(pointer)) = self
             .call_results
             .get(&index)
-            .map(RetainedProgramValue::native_compat)
+            .map(RetainedProgramValue::old_form)
             && self.pointer_call_results.get(pointer.address()) == Some(&index)
         {
             self.pointer_call_results.remove(pointer.address());
         }
         self.call_results.remove(&index);
-        if let Some(value) = value.filter(|value| value.native_compat() != &ProgramValue::Void) {
-            let native = value.native_compat();
+        if let Some(value) = value.filter(|value| value.old_form() != &ProgramValue::Void) {
+            let native = value.old_form();
             if let ProgramValue::Bool(term) | crate::kernel::integer_c_value!(term) =
                 native.numeric_value()
             {
@@ -4757,7 +4757,7 @@ impl RecordedStates {
             Some(point) => self.call_results_at(point)?,
             None => &self.call_results,
         };
-        let recorded = results.get(&index)?.native_compat();
+        let recorded = results.get(&index)?.old_form();
         if recorded.program_type() != value.program_type() || recorded != value.native().as_ref() {
             return None;
         }
@@ -4786,7 +4786,7 @@ impl RecordedStates {
                         "{}.result",
                         diagnostics::describe_code_region_ref(&CodeRegionRef::Path(steps))
                     ),
-                    value.native_compat(),
+                    value.old_form(),
                 ))
             })
             .collect()
@@ -4817,7 +4817,7 @@ impl RecordedStates {
 
     fn call_result_naming_integer(
         &self,
-        term: &crate::kernel::MachineTerm,
+        term: &crate::kernel::OldMachineTerm,
     ) -> Option<CodeRegionRef> {
         let fingerprint = crate::kernel::held_term_fingerprint(term);
         let mut key = (fingerprint, 0);
@@ -5118,7 +5118,7 @@ impl RecordedStates {
     /// locals that held a term of this fingerprint, each checked there.
     fn point_naming_integer(
         &self,
-        term: &crate::kernel::MachineTerm,
+        term: &crate::kernel::OldMachineTerm,
     ) -> Option<(
         &ProgramPointSelector,
         &crate::kernel::BindingName,
@@ -5357,7 +5357,7 @@ impl RecordedStates {
     /// [`CELL_POINTS_OFFERED`]. The caller spells the term in each state.
     fn points_holding_cell_integer(
         &self,
-        term: &crate::kernel::MachineTerm,
+        term: &crate::kernel::OldMachineTerm,
     ) -> impl Iterator<Item = (&ProgramPointSelector, &ExecutionState)> {
         let fingerprint = crate::kernel::held_term_fingerprint(term);
         let mut key = (fingerprint, 0);
@@ -8020,8 +8020,8 @@ impl ParameterNaming {
                         .or_insert(index);
                 }
                 ProgramExpression::Value(
-                    value @ (ProgramValue::Float32(MachineTerm::Variable(variable))
-                    | ProgramValue::Float64(MachineTerm::Variable(variable))),
+                    value @ (ProgramValue::Float32(OldMachineTerm::Variable(variable))
+                    | ProgramValue::Float64(OldMachineTerm::Variable(variable))),
                 ) => {
                     float_sources
                         .entry((value.program_type(), *variable))

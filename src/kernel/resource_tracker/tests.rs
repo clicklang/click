@@ -17,7 +17,7 @@ fn at(block: AddressBase, offset: i64) -> Address {
 }
 
 fn one() -> ProgramValue {
-    ProgramValue::Int32(MachineTerm::constant(1))
+    ProgramValue::Int32(OldMachineTerm::constant(1))
 }
 
 fn point(memory: &SymbolicMemory) -> ProgramPoint {
@@ -170,8 +170,8 @@ fn a_call_havoc_carries_a_cell_outside_its_write_set_only() {
     let entry = entry_memory();
     let ranges = vec![MemoryRange::new(
         at(block("global:g"), 0),
-        MachineTerm::constant(0),
-        MachineTerm::constant(4),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(4),
     )];
     let after =
         entry
@@ -218,8 +218,8 @@ fn a_call_havoc_carries_a_block_outside_its_write_set_only() {
     let entry = entry_memory();
     let ranges = vec![MemoryRange::new(
         at(block("global:g"), 0),
-        MachineTerm::constant(0),
-        MachineTerm::constant(4),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(4),
     )];
     let after =
         entry
@@ -283,8 +283,8 @@ fn a_loop_havoc_carries_a_block_outside_its_checked_write_set() {
     let entry = entry_memory().store(at(block("global:h"), 0), one());
     let ranges = vec![MemoryRange::new(
         at(block("global:g"), 0),
-        MachineTerm::constant(0),
-        MachineTerm::constant(4),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(4),
     )];
     let after = entry.clone().with_loop_memory_havoc_preserving_borrows(
         Variable(904),
@@ -686,7 +686,7 @@ fn a_version_mismatch_names_the_resource_and_both_points() {
         .clone()
         .store(at(AddressBase::Symbolic(Variable(80)), 0), one());
     let load = |memory: &SymbolicMemory| {
-        MachineTerm::read_named(
+        OldMachineTerm::read_named(
             ProgramPoint::at(&(intern_memory(memory.clone()))),
             Box::new(cell.clone()),
             crate::kernel::LoadKind::Int32,
@@ -698,7 +698,7 @@ fn a_version_mismatch_names_the_resource_and_both_points() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(load(memory)),
-                right: Box::new(MachineTerm::constant(5)),
+                right: Box::new(OldMachineTerm::constant(5)),
             },
             true,
         )
@@ -724,8 +724,8 @@ fn a_version_mismatch_names_the_resource_and_both_points() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::constant(5)),
-            right: Box::new(MachineTerm::constant(5)),
+            left: Box::new(OldMachineTerm::constant(5)),
+            right: Box::new(OldMachineTerm::constant(5)),
         },
         true,
     );
@@ -778,10 +778,10 @@ mod saved_states {
         ResourceInstance::new(
             InstanceId::from_variable(Variable(identity)),
             "cell".into(),
-            vec![ProgramValue::Int32(MachineTerm::constant(7)).into()].into(),
+            vec![ProgramValue::Int32(OldMachineTerm::constant(7)).into()].into(),
             schema(),
             vec![
-                AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::constant(rank))),
+                AlgebraicValue::Program(ProgramValue::Int32(OldMachineTerm::constant(rank))),
                 AlgebraicValue::Integer(IntegerTerm::constant(num_bigint::BigInt::from(mark))),
             ]
             .into(),
@@ -949,8 +949,8 @@ mod footprints {
     fn bytes(base: Address, count: u32) -> MemoryRange {
         MemoryRange::new_with_element_width(
             base,
-            MachineTerm::constant(0),
-            MachineTerm::constant(count),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(count),
             1,
         )
     }
@@ -1067,12 +1067,12 @@ mod footprints {
 #[test]
 fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
     let cell = at(block("global:g"), 0);
-    let index = MachineTerm::Variable(Variable(0));
+    let index = OldMachineTerm::Variable(Variable(0));
     let written = Address {
         base: block("global:g"),
         offset: AddressOffset::scaled_int32_node(index.clone(), 4),
     };
-    let three = ProgramValue::Int32(MachineTerm::constant(3));
+    let three = ProgramValue::Int32(OldMachineTerm::constant(3));
     let no_facts = PureFactContext::new();
     let before = entry_memory().store(cell.clone(), three.clone());
     let after = before
@@ -1080,13 +1080,13 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
         .without_possible_aliasing_cells(&written, 4, &no_facts)
         .store(
             written.clone(),
-            ProgramValue::Int32(MachineTerm::constant(7)),
+            ProgramValue::Int32(OldMachineTerm::constant(7)),
         );
     assert_eq!(after.known_value(&cell), None, "the store dropped the cell");
     let after = intern_memory(after);
     let index_is_zero = |value| {
         PureFactContext::new().assume_proposition(Proposition::condition_is(
-            ConditionTerm::equal(index.clone(), MachineTerm::constant(0)),
+            ConditionTerm::equal(index.clone(), OldMachineTerm::constant(0)),
             value,
         ))
     };
@@ -1111,7 +1111,7 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
             cell.clone(),
             crate::kernel::ProgramType::Int32,
             index.clone(),
-            MachineTerm::constant(0),
+            OldMachineTerm::constant(0),
             index_is_zero(false),
         ),
     )
@@ -1147,7 +1147,7 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
     assert_eq!(
         cell_value_on_path(&after, &cell, 4, &index_is_zero(true))
             .map(crate::kernel::ExecutionValue::into_native),
-        Some(ProgramValue::Int32(MachineTerm::constant(7)))
+        Some(ProgramValue::Int32(OldMachineTerm::constant(7)))
     );
     assert_eq!(cell_value_on_path(&after, &cell, 4, &no_facts), None);
 }
@@ -1161,7 +1161,7 @@ fn branch_join_preserves_uncached_reads_only_when_every_arm_agrees() {
         let first = before.clone().store(other.clone(), one());
         let second = before
             .clone()
-            .store(other, ProgramValue::Int32(MachineTerm::constant(2)));
+            .store(other, ProgramValue::Int32(OldMachineTerm::constant(2)));
         let joined = first
             .clone()
             .with_interface_memory_havoc(
@@ -1216,9 +1216,10 @@ fn branch_join_identity_retains_inputs_through_read_projection() {
     let other = at(block("global:h"), 0);
     let before = entry_memory();
     let a = before.clone().store(other.clone(), one());
-    let b = before
-        .clone()
-        .store(other.clone(), ProgramValue::Int32(MachineTerm::constant(2)));
+    let b = before.clone().store(
+        other.clone(),
+        ProgramValue::Int32(OldMachineTerm::constant(2)),
+    );
     let unchanged = a
         .clone()
         .with_interface_memory_havoc(
@@ -1229,11 +1230,11 @@ fn branch_join_identity_retains_inputs_through_read_projection() {
         .unwrap();
     let c = a.store(
         cell.clone(),
-        ProgramValue::UInt64(MachineTerm::uint64_constant(9)),
+        ProgramValue::UInt64(OldMachineTerm::uint64_constant(9)),
     );
     let d = b.store(
         cell.clone(),
-        ProgramValue::UInt64(MachineTerm::uint64_constant(10)),
+        ProgramValue::UInt64(OldMachineTerm::uint64_constant(10)),
     );
     let changed = c
         .clone()
@@ -1457,7 +1458,7 @@ fn a_forgotten_observation_retains_only_its_complete_typed_value() {
         assert_eq!(stop, CellWalkStop::Affected);
         assert_eq!(cell.resolved_value(&pointer, LoadKind::Int32), Some(one()));
         let load =
-            |memory| MachineTerm::read_named(memory, Box::new(pointer.clone()), LoadKind::Int32);
+            |memory| OldMachineTerm::read_named(memory, Box::new(pointer.clone()), LoadKind::Int32);
         assert!(
             crate::kernel::explicit_atomic_equality_from_memory_derivations(
                 &load(ProgramPoint::at(&source)),
@@ -1487,7 +1488,7 @@ fn structural_read_dependencies_keep_the_observed_point_and_exact_width() {
         pointer.clone(),
         LoadKind::Int32,
     );
-    let MachineTerm::MemoryLoad(selected, _, _) = &read else {
+    let OldMachineTerm::MemoryLoad(selected, _, _) = &read else {
         panic!("structural read")
     };
     assert_ne!(
@@ -1518,8 +1519,8 @@ fn a_cell_version_point_is_the_same_whichever_point_is_asked_first() {
     let entry = entry_memory();
     let ranges = vec![MemoryRange::new(
         at(block("global:g"), 0),
-        MachineTerm::constant(0),
-        MachineTerm::constant(4),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(4),
     )];
     let after_loop = entry.clone().with_loop_memory_havoc_preserving_borrows(
         Variable(904),
@@ -1557,7 +1558,7 @@ fn retained_boolean_dependencies_keep_read_order_and_opaque_calls() {
     };
     let memory = intern_memory(entry_memory());
     let read = |name| {
-        MachineTerm::read_named(
+        OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(at(block(name), 0)),
             LoadKind::Int32,
@@ -1567,13 +1568,13 @@ fn retained_boolean_dependencies_keep_read_order_and_opaque_calls() {
         condition: Box::new(ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Binary {
+            left: Box::new(OldMachineTerm::Binary {
                 format: MachineIntegerType::Int32,
                 op: crate::kernel::MachineBinaryOp::Add,
                 left: Box::new(read("global:g")),
                 right: Box::new(read("global:h")),
             }),
-            right: Box::new(MachineTerm::constant(0)),
+            right: Box::new(OldMachineTerm::constant(0)),
         }),
         then_condition: Box::new(ConditionTerm::BoolApplication(
             SharedPureApplication::intern(
@@ -1600,7 +1601,7 @@ fn shared_offset_condition_resource_reads_keep_native_right_first_order() {
     let memory = intern_memory(entry_memory());
     let offset = |name| {
         AddressOffset::scaled_int32_node(
-            MachineTerm::read_named(
+            OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(at(block(name), 0)),
                 LoadKind::Int32,
@@ -1630,7 +1631,7 @@ fn raw_pointer_condition_reads_keep_block_and_displacement_order() {
     let memory = intern_memory(entry_memory());
     let offset = |name| {
         AddressOffset::scaled_int32_node(
-            MachineTerm::read_named(
+            OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(at(block(name), 0)),
                 LoadKind::Int32,
@@ -1658,7 +1659,7 @@ fn complete_pointer_conditions_keep_read_order() {
     let memory = intern_memory(entry_memory());
     let offset = |name| {
         AddressOffset::scaled_int32_node(
-            MachineTerm::read_named(
+            OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(at(block(name), 0)),
                 LoadKind::Int32,
@@ -1690,7 +1691,7 @@ fn boolean_reads_report_only_the_one_byte_cell() {
     let pointer = Address {
         base: AddressBase::Symbolic(Variable(999350)),
         offset: AddressOffset::scaled_int32_node(
-            MachineTerm::read_named(
+            OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(at(block("global:g"), 0)),
                 LoadKind::Int32,
@@ -1725,7 +1726,7 @@ fn path_of_stores(start: &ExecutionState, stores: &[(&str, u32)]) -> Vec<Executi
     for (name, value) in stores {
         let memory = state.memory().clone().store(
             at(block(name), 0),
-            ProgramValue::Int32(MachineTerm::constant(*value)),
+            ProgramValue::Int32(OldMachineTerm::constant(*value)),
         );
         state = state.with_memory(memory);
         states.push(state.clone());
@@ -1848,7 +1849,7 @@ fn contract_offset_reads_keep_order_and_distinct_versions() {
     }
     let scaled = |point| {
         AddressOffset::scaled_int32_node(
-            MachineTerm::read_named(point, Box::new(pointer.clone()), LoadKind::Int32),
+            OldMachineTerm::read_named(point, Box::new(pointer.clone()), LoadKind::Int32),
             4,
         )
     };
@@ -2018,7 +2019,7 @@ fn indexed_static_cell_still_stops_at_a_symbolic_store() {
     let array = block("global:g");
     let earlier = entry_memory().store(at(array.clone(), 0), one());
     let symbolic =
-        at(array.clone(), 0).offset_by_int32_elements(MachineTerm::Variable(Variable(935_104)));
+        at(array.clone(), 0).offset_by_int32_elements(OldMachineTerm::Variable(Variable(935_104)));
     let barrier = earlier.store(symbolic, one());
     let after = barrier.clone().store(at(array.clone(), 12), one());
     let named =

@@ -8,10 +8,10 @@ fn retained_index(ty: MachineIntegerType, id: u64) -> SharedMachineIntegerTerm {
     let atom = KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(id));
     let zero = KernelTerm::retained_machine_operand(
         ty,
-        MachineOperandView::Legacy(&if ty == MachineIntegerType::UInt64 {
-            MachineTerm::uint64_constant(0)
+        MachineOperandView::Old(&if ty == MachineIntegerType::UInt64 {
+            OldMachineTerm::uint64_constant(0)
         } else {
-            MachineTerm::constant(0)
+            OldMachineTerm::constant(0)
         }),
     );
     let root = KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [atom, zero]);
@@ -27,12 +27,12 @@ fn wide(value: SharedMachineIntegerTerm, byte_width: i64) -> AddressOffset {
 fn equality(
     value: &SharedMachineIntegerTerm,
     ty: MachineIntegerType,
-    constant: &MachineTerm,
+    constant: &OldMachineTerm,
 ) -> ConditionTerm {
     crate::kernel::machine_integer::comparison::condition_for_operand_views(
         ty,
         CompareRelation::Equal,
-        [value.operand_view(), MachineOperandView::Legacy(constant)],
+        [value.operand_view(), MachineOperandView::Old(constant)],
     )
 }
 
@@ -46,8 +46,8 @@ fn retained_wide_distinctness_uses_full_words_and_preserves_shape_refusals() {
     let right = wide(b.clone(), 4);
     let root = PureFactContext::new();
     let facts = [
-        equality(&a, ty, &MachineTerm::uint64_constant(0)),
-        equality(&b, ty, &MachineTerm::uint64_constant(1 << 32)),
+        equality(&a, ty, &OldMachineTerm::uint64_constant(0)),
+        equality(&b, ty, &OldMachineTerm::uint64_constant(1 << 32)),
     ];
     let context = facts
         .iter()
@@ -94,7 +94,7 @@ fn exact_index_constant_substitution_requires_its_selected_fact_and_fitting_prod
     let _session = VerificationSession::enter();
     let ty = MachineIntegerType::Int32;
     let value = retained_index(ty, 994510);
-    let fact = Proposition::condition_is(equality(&value, ty, &MachineTerm::constant(7)), true);
+    let fact = Proposition::condition_is(equality(&value, ty, &OldMachineTerm::constant(7)), true);
     let parent = PureFactContext::new();
     let context = parent.clone().assume_proposition(fact.clone());
     let pointer = |width| Address {
@@ -105,11 +105,13 @@ fn exact_index_constant_substitution_requires_its_selected_fact_and_fitting_prod
         },
     };
     let address = pointer(4);
-    let native_source =
-        ConditionTerm::equal(value.structural_value().clone(), MachineTerm::constant(7));
+    let native_source = ConditionTerm::equal(
+        value.structural_value().clone(),
+        OldMachineTerm::constant(7),
+    );
     let native_context = parent.clone().assume_condition(native_source, true);
     let false_context = parent.clone().assume_proposition(Proposition::condition_is(
-        equality(&value, ty, &MachineTerm::constant(7)),
+        equality(&value, ty, &OldMachineTerm::constant(7)),
         false,
     ));
     let exports = KernelTermExport::machine_export_count();
@@ -133,18 +135,14 @@ fn exact_index_constant_substitution_requires_its_selected_fact_and_fitting_prod
         pointer_with_exact_index_constants(&address, &false_context),
         address
     );
-    let seven = MachineTerm::constant(7);
+    let seven = OldMachineTerm::constant(7);
     assert!(
-        context.int32_values_known_equal_views(
-            value.operand_view(),
-            MachineOperandView::Legacy(&seven)
-        )
+        context
+            .int32_values_known_equal_views(value.operand_view(), MachineOperandView::Old(&seven))
     );
     assert!(
-        !parent.int32_values_known_equal_views(
-            value.operand_view(),
-            MachineOperandView::Legacy(&seven)
-        )
+        !parent
+            .int32_values_known_equal_views(value.operand_view(), MachineOperandView::Old(&seven))
     );
     assert_eq!(KernelTermExport::machine_export_count(), exports);
 }

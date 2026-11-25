@@ -41,7 +41,7 @@ pub(super) fn apply(
     let value = if let (KernelTermNode::MachineLiteral(a), KernelTermNode::MachineLiteral(b)) =
         (left.node(), right.node())
     {
-        let word = MachineTerm::machine_binary(format, op, a.legacy_term(), b.legacy_term());
+        let word = OldMachineTerm::machine_binary(format, op, a.old_term(), b.old_term());
         KernelTerm::retained_native_machine_operand(format, &word)
     } else {
         KernelTerm::machine_binary_shared(format, op, [left, right])
@@ -60,10 +60,10 @@ pub(super) fn not(format: MachineIntegerType, value: &SpecValue) -> Option<Kerne
     let operand = operand(format, value)?;
     Some(
         if let KernelTermNode::MachineLiteral(literal) = operand.node() {
-            let word = MachineTerm::machine_unary(
+            let word = OldMachineTerm::machine_unary(
                 format,
                 crate::kernel::MachineUnaryOp::BitwiseNot,
-                literal.legacy_term(),
+                literal.old_term(),
             );
             KernelTerm::retained_native_machine_operand(format, &word)
         } else {

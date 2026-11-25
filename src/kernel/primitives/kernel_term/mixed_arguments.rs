@@ -27,20 +27,22 @@ fn mixed_call_arguments_import_structurally_and_keep_exact_native_forms() {
             pointer: ProgramValue::Pointer(pointer),
             element_type: ProgramType::Int32,
         },
-        PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::Constant {
+        PureFunctionArgument::Value(ProgramValue::Bool(OldMachineTerm::Constant {
             format: MachineIntegerType::UInt8,
             bits: 1,
         })),
-        PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::Variable(Variable(1008505)))),
-        PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::bool_cast(
+        PureFunctionArgument::Value(ProgramValue::Bool(OldMachineTerm::Variable(Variable(
+            1008505,
+        )))),
+        PureFunctionArgument::Value(ProgramValue::Bool(OldMachineTerm::bool_cast(
             MachineIntegerType::UInt8,
             ConditionTerm::bool_application("mixed_bool", vec![]),
         ))),
         PureFunctionArgument::Value(ProgramValue::Float64(
-            MachineTerm::ClickFunctionApplication {
+            OldMachineTerm::ClickFunctionApplication {
                 name: "mixed_float".into(),
                 arguments: vec![PureFunctionArgument::Value(ProgramValue::Float32(
-                    MachineTerm::uint32_constant(0x7fc00123),
+                    OldMachineTerm::uint32_constant(0x7fc00123),
                 ))],
             },
         )),
@@ -91,7 +93,7 @@ fn mixed_call_arguments_import_structurally_and_keep_exact_native_forms() {
         format!("{:?}", machine.machine_conversion_leaf().unwrap()),
         format!(
             "{:?}",
-            MachineTerm::ClickFunctionApplication {
+            OldMachineTerm::ClickFunctionApplication {
                 name: "mixed_result".into(),
                 arguments: arguments.clone()
             }
@@ -110,7 +112,7 @@ fn mixed_call_arguments_import_structurally_and_keep_exact_native_forms() {
         format!("{:?}", KernelTermExport::float(&float).unwrap()),
         format!(
             "{:?}",
-            ProgramValue::Float64(MachineTerm::ClickFunctionApplication {
+            ProgramValue::Float64(OldMachineTerm::ClickFunctionApplication {
                 name: "mixed_result".into(),
                 arguments
             })
@@ -122,15 +124,15 @@ fn mixed_call_arguments_import_structurally_and_keep_exact_native_forms() {
 fn noncanonical_boolean_carriers_keep_exact_native_payloads() {
     let _session = crate::kernel::VerificationSession::enter();
     for word in [
-        MachineTerm::Constant {
+        OldMachineTerm::Constant {
             format: MachineIntegerType::UInt8,
             bits: 2,
         },
-        MachineTerm::BoolCast {
+        OldMachineTerm::BoolCast {
             to: MachineIntegerType::UInt16,
             value: Box::new(ConditionTerm::Variable(Variable(1008506))),
         },
-        MachineTerm::BoolCast {
+        OldMachineTerm::BoolCast {
             to: MachineIntegerType::UInt8,
             value: Box::new(ConditionTerm::Constant(true)),
         },
@@ -211,7 +213,7 @@ fn prepared_call_children_do_not_cross_threads_with_equal_session_generations() 
 #[test]
 fn opaque_call_children_borrow_their_producers_exact_argument_slot() {
     let _session = crate::kernel::VerificationSession::enter();
-    let argument = PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::Constant {
+    let argument = PureFunctionArgument::Value(ProgramValue::Bool(OldMachineTerm::Constant {
         format: MachineIntegerType::UInt8,
         bits: 2,
     }));
@@ -296,7 +298,7 @@ fn a_null_array_argument_is_formed_at_no_state() {
 #[test]
 fn opaque_call_observation_borrows_the_written_argument_slot() {
     let _session = crate::kernel::VerificationSession::enter();
-    let native = PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::Constant {
+    let native = PureFunctionArgument::Value(ProgramValue::Bool(OldMachineTerm::Constant {
         format: MachineIntegerType::UInt8,
         bits: 2,
     }));

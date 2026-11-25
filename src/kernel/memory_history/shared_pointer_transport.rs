@@ -214,14 +214,14 @@ mod tests {
         let after = before
             .memory()
             .clone()
-            .store(other, ProgramValue::Int32(MachineTerm::constant(3)));
-        let changed = before
-            .memory()
-            .clone()
-            .store(field.clone(), ProgramValue::Int32(MachineTerm::constant(3)));
+            .store(other, ProgramValue::Int32(OldMachineTerm::constant(3)));
+        let changed = before.memory().clone().store(
+            field.clone(),
+            ProgramValue::Int32(OldMachineTerm::constant(3)),
+        );
         let context = PureFactContext::new();
         for wide in [None, Some(false), Some(true)] {
-            let load = MachineTerm::read_named(
+            let load = OldMachineTerm::read_named(
                 ProgramPoint::at(&before),
                 Box::new(field.clone()),
                 if wide.is_some() {
@@ -286,23 +286,23 @@ mod tests {
             AddressOffset::Add(
                 Box::new(AddressOffset::Add(
                     Box::new(AddressOffset::scaled_int32_node(
-                        MachineTerm::Variable(Variable(1007020)),
+                        OldMachineTerm::Variable(Variable(1007020)),
                         4,
                     )),
                     Box::new(AddressOffset::Constant(2)),
                 )),
                 Box::new(AddressOffset::Constant(3)),
             ),
-            AddressOffset::scaled_int32_node(MachineTerm::constant(u32::MAX), -4),
+            AddressOffset::scaled_int32_node(OldMachineTerm::constant(u32::MAX), -4),
             AddressOffset::Int64Scaled {
                 value: SharedMachineIntegerTerm::index(
                     MachineIntegerType::UInt64,
-                    MachineTerm::Variable(Variable(1007021)),
+                    OldMachineTerm::Variable(Variable(1007021)),
                 ),
                 byte_width: 8,
                 unsigned: true,
             },
-            AddressOffset::scaled_int64_node(MachineTerm::uint64_constant(u64::MAX), 8, true),
+            AddressOffset::scaled_int64_node(OldMachineTerm::uint64_constant(u64::MAX), 8, true),
         ];
         for offset in cases {
             let source = Address {
@@ -334,14 +334,14 @@ mod tests {
         let after = before
             .memory()
             .clone()
-            .store(other, ProgramValue::Int32(MachineTerm::constant(3)));
+            .store(other, ProgramValue::Int32(OldMachineTerm::constant(3)));
         let source = OldPointer::new(
             Address::symbolic(Variable(1007010)),
             ProgramType::VoidPointer,
         )
         .with_bounds(Some(SubobjectBounds {
             start: field.clone(),
-            width: MachineTerm::read_named(
+            width: OldMachineTerm::read_named(
                 ProgramPoint::at(&before),
                 Box::new(field),
                 LoadKind::Int32,
@@ -373,9 +373,9 @@ mod tests {
         let after = before
             .memory()
             .clone()
-            .store(other, ProgramValue::Int32(MachineTerm::constant(3)));
+            .store(other, ProgramValue::Int32(OldMachineTerm::constant(3)));
         let loaded = Arc::new(Address::loaded_value(&before, &field));
-        let base = Address::from_integer_address(MachineTerm::read_named(
+        let base = Address::from_integer_address(OldMachineTerm::read_named(
             ProgramPoint::at(&before),
             Box::new(field),
             LoadKind::Bits64,
@@ -422,10 +422,10 @@ mod tests {
         let after = before
             .memory()
             .clone()
-            .store(other, ProgramValue::Int32(MachineTerm::constant(3)));
+            .store(other, ProgramValue::Int32(OldMachineTerm::constant(3)));
         let loaded = Arc::new(Address::loaded_value(&before, &field));
         let source = OldPointer::new(
-            Address::from_integer_address(MachineTerm::read_named(
+            Address::from_integer_address(OldMachineTerm::read_named(
                 ProgramPoint::at(&before),
                 Box::new(field.clone()),
                 LoadKind::Bits64,

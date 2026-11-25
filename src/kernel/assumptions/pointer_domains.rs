@@ -395,15 +395,15 @@ mod tests {
         let facts = equal(PureFactContext::new(), &returned, &selected);
         let held = MemoryRange::from_pointer_value_wide(
             &selected,
-            MachineTerm::uint64_constant(0),
-            MachineTerm::uint64_constant(1),
+            OldMachineTerm::uint64_constant(0),
+            OldMachineTerm::uint64_constant(1),
             4,
         );
         assert!(facts.access_provenance_match(returned.access_provenance(), &held));
         let outside = MemoryRange::from_pointer_value_wide(
             &selected,
-            MachineTerm::uint64_constant(1 << 32),
-            MachineTerm::uint64_constant((1 << 32) + 1),
+            OldMachineTerm::uint64_constant(1 << 32),
+            OldMachineTerm::uint64_constant((1 << 32) + 1),
             4,
         );
         assert!(!facts.access_provenance_match(returned.access_provenance(), &outside));

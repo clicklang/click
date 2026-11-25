@@ -1075,7 +1075,7 @@ fn loop_entry_branches(
             let Proposition::ConditionIs(condition, _) = fact else {
                 continue;
             };
-            if decided.contains(condition.native_compat()) {
+            if decided.contains(condition.old_form()) {
                 continue;
             }
             let positive = Proposition::condition_is(condition.clone(), true);
@@ -1092,7 +1092,7 @@ fn loop_entry_branches(
             if yes.len() + no.len() != indices.len() {
                 continue;
             }
-            decided.insert((condition.clone()).native_compat().clone());
+            decided.insert((condition.clone()).old_form().clone());
             if yes.is_empty() || no.is_empty() {
                 continue;
             }

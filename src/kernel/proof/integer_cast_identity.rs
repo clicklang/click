@@ -141,7 +141,7 @@ mod tests {
     use super::*;
 
     use crate::kernel::{
-        IntegerTerm, MachineIntegerConstant, MachineIntegerType as Ty, MachineTerm, Variable,
+        IntegerTerm, MachineIntegerConstant, MachineIntegerType as Ty, OldMachineTerm, Variable,
     };
     use num_bigint::BigInt;
 
@@ -149,9 +149,9 @@ mod tests {
         Proposition::condition_is(ConditionTerm::integer_less_equal(a, b), true)
     }
     fn inputs(source: Ty, destination: Ty) -> (Vec<Proposition>, Proposition) {
-        let value = MachineTerm::Variable(Variable(168_001));
+        let value = OldMachineTerm::Variable(Variable(168_001));
         let original = IntegerTerm::from_machine(source, value.clone()).unwrap();
-        let cast = MachineTerm::machine_integer_cast(source, destination, value);
+        let cast = OldMachineTerm::machine_integer_cast(source, destination, value);
         let observed = IntegerTerm::from_machine(destination, cast).unwrap();
         let (lo, hi) = destination.format().bounds();
         (
@@ -217,16 +217,17 @@ mod tests {
 
     #[test]
     fn integer_cast_identity_checks_normalized_nested_conversions() {
-        let variable = MachineTerm::Variable(Variable(168_001));
+        let variable = OldMachineTerm::Variable(Variable(168_001));
         for (source, intermediate, destination) in [
             (Ty::Int32, Ty::UInt32, Ty::UInt16),
             (Ty::UInt32, Ty::Int32, Ty::UInt16),
             (Ty::UInt8, Ty::UInt32, Ty::UInt16),
             (Ty::Int128, Ty::UInt64, Ty::Int32),
         ] {
-            let widened = MachineTerm::machine_integer_cast(source, intermediate, variable.clone());
+            let widened =
+                OldMachineTerm::machine_integer_cast(source, intermediate, variable.clone());
             let narrowed =
-                MachineTerm::machine_integer_cast(intermediate, destination, widened.clone());
+                OldMachineTerm::machine_integer_cast(intermediate, destination, widened.clone());
             let original = IntegerTerm::from_machine(intermediate, widened).unwrap();
             let observed = IntegerTerm::from_machine(destination, narrowed).unwrap();
             let goal = Proposition::condition_is(
@@ -260,8 +261,9 @@ mod tests {
 
         // Widening after a truncation cannot be treated as a direct cast of the
         // pre-truncation value, even if that value fits the final destination.
-        let truncated = MachineTerm::machine_integer_cast(Ty::UInt32, Ty::UInt8, variable.clone());
-        let widened = MachineTerm::machine_integer_cast(Ty::UInt8, Ty::UInt16, truncated);
+        let truncated =
+            OldMachineTerm::machine_integer_cast(Ty::UInt32, Ty::UInt8, variable.clone());
+        let widened = OldMachineTerm::machine_integer_cast(Ty::UInt8, Ty::UInt16, truncated);
         let original = IntegerTerm::from_machine(Ty::UInt32, variable).unwrap();
         let observed = IntegerTerm::from_machine(Ty::UInt16, widened).unwrap();
         let goal = Proposition::condition_is(
@@ -277,7 +279,7 @@ mod tests {
 
     #[test]
     fn integer_cast_identity_checks_unsigned_byte_readback_masks() {
-        let value = MachineTerm::Variable(Variable(168_001));
+        let value = OldMachineTerm::Variable(Variable(168_001));
         let original = IntegerTerm::from_machine(Ty::UInt32, value.clone()).unwrap();
         for destination in [Ty::UInt8, Ty::UInt16] {
             let mask = (1u32 << destination.format().bits()) - 1;
@@ -286,7 +288,7 @@ mod tests {
                     Int32,
                     BitwiseAnd,
                     Box::new(value.clone()),
-                    Box::new(MachineTerm::constant(mask)),
+                    Box::new(OldMachineTerm::constant(mask)),
                 );
                 let observed = IntegerTerm::from_machine(destination, narrowed).unwrap();
                 Proposition::condition_is(
@@ -347,7 +349,7 @@ mod tests {
             assert!(check_rule(bounds, &goal, &premises).is_err());
         }
         let original =
-            IntegerTerm::from_machine(Ty::Int128, MachineTerm::Variable(Variable(168_001)))
+            IntegerTerm::from_machine(Ty::Int128, OldMachineTerm::Variable(Variable(168_001)))
                 .unwrap();
         let (lo, hi) = Ty::Int64.format().bounds();
         for altered in [
@@ -394,16 +396,21 @@ mod tests {
         use crate::kernel::SharedMachineIntegerTerm;
         let (premises, _) = inputs(Ty::Int128, Ty::Int64);
         let original =
-            IntegerTerm::from_machine(Ty::Int128, MachineTerm::Variable(Variable(168_001)))
+            IntegerTerm::from_machine(Ty::Int128, OldMachineTerm::Variable(Variable(168_001)))
                 .unwrap();
         for (ty, source, destination, value) in [
             (
                 Ty::Int32,
                 Ty::Int128,
                 Ty::Int64,
-                MachineTerm::Variable(Variable(168_001)),
+                OldMachineTerm::Variable(Variable(168_001)),
             ),
-            (Ty::Int64, Ty::Int128, Ty::Int64, MachineTerm::constant(1)),
+            (
+                Ty::Int64,
+                Ty::Int128,
+                Ty::Int64,
+                OldMachineTerm::constant(1),
+            ),
             (
                 Ty::Int64,
                 Ty::UInt128,
@@ -418,7 +425,7 @@ mod tests {
         ] {
             let cast = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 ty,
-                MachineTerm::Cast {
+                OldMachineTerm::Cast {
                     spelling: crate::kernel::MachineCastSpelling::Generic,
                     from: source,
                     to: destination,

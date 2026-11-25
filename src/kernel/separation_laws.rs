@@ -8,8 +8,8 @@ pub(crate) fn prove_separation_elements(
     base: OldPointer,
     width: u32,
     format: MachineIntegerType,
-    i: MachineTerm,
-    j: MachineTerm,
+    i: OldMachineTerm,
+    j: OldMachineTerm,
 ) -> Theorem {
     assert!(width > 0, "elements require a nonzero storage width");
     let (unsigned, wide) = match format {
@@ -19,7 +19,7 @@ pub(crate) fn prove_separation_elements(
         _ => panic!("elements indices require int32, int64, or uint64"),
     };
     crate::instrumentation::record_deterministic_work(1);
-    let element = |index: MachineTerm| {
+    let element = |index: OldMachineTerm| {
         let address = base
             .address()
             .offset_by_typed_elements(index, width, unsigned, wide);
@@ -56,8 +56,8 @@ pub(crate) fn prove_separation_distinct_elements(
     base: OldPointer,
     width: u32,
     format: MachineIntegerType,
-    i: MachineTerm,
-    j: MachineTerm,
+    i: OldMachineTerm,
+    j: OldMachineTerm,
 ) -> Theorem {
     assert!(
         width > 0,
@@ -70,7 +70,7 @@ pub(crate) fn prove_separation_distinct_elements(
         _ => panic!("element addresses require int32, int64, or uint64 indices"),
     };
     crate::instrumentation::record_deterministic_work(1);
-    let address = |index: MachineTerm| {
+    let address = |index: OldMachineTerm| {
         base.address()
             .offset_by_typed_elements(index, width, unsigned, wide)
     };
@@ -125,10 +125,10 @@ pub(crate) fn prove_separation_subrange(
     base: OldPointer,
     width: u32,
     format: MachineIntegerType,
-    lo: MachineTerm,
-    hi: MachineTerm,
-    inner_lo: MachineTerm,
-    inner_hi: MachineTerm,
+    lo: OldMachineTerm,
+    hi: OldMachineTerm,
+    inner_lo: OldMachineTerm,
+    inner_hi: OldMachineTerm,
 ) -> Theorem {
     assert!(matches!(
         format,
@@ -178,9 +178,9 @@ pub(crate) fn prove_separation_adjacent_ranges(
     base: OldPointer,
     width: u32,
     format: MachineIntegerType,
-    lo: MachineTerm,
-    mid: MachineTerm,
-    hi: MachineTerm,
+    lo: OldMachineTerm,
+    mid: OldMachineTerm,
+    hi: OldMachineTerm,
     join: bool,
 ) -> Theorem {
     assert!(width > 0);
@@ -238,8 +238,8 @@ pub(crate) fn prove_separation_rebase(
     base: OldPointer,
     width: u32,
     format: MachineIntegerType,
-    lo: MachineTerm,
-    hi: MachineTerm,
+    lo: OldMachineTerm,
+    hi: OldMachineTerm,
 ) -> Theorem {
     assert!(width > 0);
     assert!(matches!(
@@ -249,14 +249,14 @@ pub(crate) fn prove_separation_rebase(
     crate::instrumentation::record_deterministic_work(1);
     let wide = format == MachineIntegerType::UInt64;
     let zero = if wide {
-        MachineTerm::uint64_constant(0)
+        OldMachineTerm::uint64_constant(0)
     } else {
-        MachineTerm::constant(0)
+        OldMachineTerm::constant(0)
     };
     let length = if wide {
-        MachineTerm::uint64_subtract(hi.clone(), lo.clone())
+        OldMachineTerm::uint64_subtract(hi.clone(), lo.clone())
     } else {
-        MachineTerm::subtract(hi.clone(), lo.clone())
+        OldMachineTerm::subtract(hi.clone(), lo.clone())
     };
     let shifted = base
         .clone()
@@ -303,9 +303,9 @@ pub(crate) fn prove_separation_contains_element(
     base: OldPointer,
     width: u32,
     format: MachineIntegerType,
-    lo: MachineTerm,
-    hi: MachineTerm,
-    index: MachineTerm,
+    lo: OldMachineTerm,
+    hi: OldMachineTerm,
+    index: OldMachineTerm,
 ) -> Theorem {
     assert!(width > 0);
     assert!(matches!(

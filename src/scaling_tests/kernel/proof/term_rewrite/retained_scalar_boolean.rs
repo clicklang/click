@@ -7,8 +7,8 @@ fn scalar_machine_predicate_dags_reuse_growing_numeric_prefixes_without_exports(
         let from = Variable(998300);
         let format = MachineIntegerType::Int32;
         let mut number = KernelTerm::variable(KernelType::Program(ProgramType::Int32), from);
-        let zero =
-            KernelTermImport::for_exact_field_inputs().machine(format, &MachineTerm::constant(0));
+        let zero = KernelTermImport::for_exact_field_inputs()
+            .machine(format, &OldMachineTerm::constant(0));
         let mut root = KernelTerm::variable(KernelType::Bool, Variable(998301));
         for _ in 0..size {
             number = KernelTerm::machine_binary_shared(
@@ -24,8 +24,8 @@ fn scalar_machine_predicate_dags_reuse_growing_numeric_prefixes_without_exports(
             root = KernelTerm::boolean_equal_raw([root, predicate]);
         }
         for variable in [from, Variable(998302)] {
-            let source = MachineTerm::Variable(variable);
-            let replacement = MachineTerm::Variable(Variable(998303));
+            let source = OldMachineTerm::Variable(variable);
+            let replacement = OldMachineTerm::Variable(Variable(998303));
             let mut rewrite = TermRewrite::for_bits_checked(&source, &replacement);
             let exports = KernelTermExport::machine_export_count();
             let (actual, work) = crate::instrumentation::measure_deterministic_work(|| {

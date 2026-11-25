@@ -1,6 +1,6 @@
 //! The carrier width of a machine-integer term.
 //!
-//! `MachineTerm` is the one term arena for every C integer and float
+//! `OldMachineTerm` is the one term arena for every C integer and float
 //! value, and it does not record a width. Width is implied: by the operator
 //! family (`Add` is 32-bit, `Binary` carries its 64-bit format), by a
 //! constant's shape, by a load's kind, and by a cast's or conversion's
@@ -170,9 +170,9 @@ pub(crate) fn variable_conflict(first: CarrierWidth, found: CarrierWidth) -> Wid
 fn expect(
     site: &'static str,
     expected: CarrierWidth,
-    term: &MachineTerm,
+    term: &OldMachineTerm,
 ) -> Result<(), WidthMismatch> {
-    if let MachineTerm::Variable(variable) = term {
+    if let OldMachineTerm::Variable(variable) = term {
         return note_variable(*variable, expected);
     }
     match term_width(term)? {
@@ -185,15 +185,15 @@ fn expect(
     }
 }
 
-fn operands(site: &'static str, width: CarrierWidth, terms: &[&MachineTerm]) -> WidthResult {
+fn operands(site: &'static str, width: CarrierWidth, terms: &[&OldMachineTerm]) -> WidthResult {
     for term in terms {
         expect(site, width, term)?;
     }
     Ok(Some(width))
 }
 
-/// The width of a format-carrying operator ([`MachineTerm::Binary`],
-/// [`MachineTerm::Unary`]) other than a 32-bit one: the 64-bit formats,
+/// The width of a format-carrying operator ([`OldMachineTerm::Binary`],
+/// [`OldMachineTerm::Unary`]) other than a 32-bit one: the 64-bit formats,
 /// and the 8- and 16-bit formats' native sign-free operators
 /// (`+ - * & | ^ <<` and `~`, [`is_native_narrow_operator`]). A node at any
 /// other format, or a narrow node of another operator, is malformed, and is
@@ -257,8 +257,8 @@ fn unify(
 /// The carrier width a term implies, `None` where nothing in the term fixes
 /// it (a bare variable, a pointer address, a function application), or the
 /// first place its widths disagree.
-pub(crate) fn term_width(term: &MachineTerm) -> WidthResult {
-    use MachineTerm as T;
+pub(crate) fn term_width(term: &OldMachineTerm) -> WidthResult {
+    use OldMachineTerm as T;
     note_width_read();
     use CarrierWidth::{Bits32, Bits64};
     match term {
@@ -403,8 +403,8 @@ pub(crate) fn term_width(term: &MachineTerm) -> WidthResult {
 /// variable, an application, an `If` or a fold, whose width lives in their
 /// operands). O(1): unlike [`term_width`], it checks no operand, so a hot
 /// path may call it once per interned node.
-pub(crate) fn root_width(term: &MachineTerm) -> Option<CarrierWidth> {
-    use MachineTerm as T;
+pub(crate) fn root_width(term: &OldMachineTerm) -> Option<CarrierWidth> {
+    use OldMachineTerm as T;
     note_width_read();
     use CarrierWidth::{Bits32, Bits64};
     Some(match term {
@@ -540,8 +540,8 @@ pub(crate) fn condition_width_mismatch(condition: &ConditionTerm) -> Option<Widt
         left,
         right,
     } = condition
-        && (matches!(left.as_ref(), MachineTerm::MemoryLoad(..))
-            || matches!(right.as_ref(), MachineTerm::MemoryLoad(..)))
+        && (matches!(left.as_ref(), OldMachineTerm::MemoryLoad(..))
+            || matches!(right.as_ref(), OldMachineTerm::MemoryLoad(..)))
     {
         return term_width(left)
             .and_then(|left| unify("load equation", left, term_width(right)?))

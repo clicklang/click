@@ -9,7 +9,7 @@ pub(crate) use fact_identity::{FactOperand, fact_operand_identity};
 use super::{Relation, identity, range, representation};
 use crate::kernel::{
     ConditionTerm, IntegerComparisonOperator, IntegerTerm, KernelTerm, KernelTermNode,
-    MachineIntegerType, MachineTerm, Proposition, SharedIntegerTerm, SharedMachineIntegerTerm,
+    MachineIntegerType, OldMachineTerm, Proposition, SharedIntegerTerm, SharedMachineIntegerTerm,
 };
 
 /// A written comparison for structural matching. Unlike checking views, this
@@ -29,7 +29,7 @@ pub(crate) fn structural_boolean_comparison_view(
 ) -> Option<StructuralComparisonView<'_>> {
     if let Some((format, relation, operands)) = condition.comparison() {
         let [left, right] = operands.map(|operand| match operand {
-            crate::kernel::MachineOperandView::Legacy(value) => {
+            crate::kernel::MachineOperandView::Old(value) => {
                 Some(ComparisonOperand::Written(value))
             }
             operand => operand
@@ -202,9 +202,9 @@ pub(crate) fn literal_native_comparison_value(condition: &ConditionTerm) -> Opti
     else {
         return None;
     };
-    let conversion_literal = |word: &MachineTerm| {
+    let conversion_literal = |word: &OldMachineTerm| {
         let (destination, value) =
-            crate::kernel::MachineOperandView::Legacy(word).checked_literal_integer_conversion()?;
+            crate::kernel::MachineOperandView::Old(word).checked_literal_integer_conversion()?;
         destination.constant_term(value)
     };
     let left_literal = conversion_literal(left);
@@ -272,7 +272,9 @@ pub(crate) fn retains_int32_match(
 /// Select a native equality over a retained int32 fold or its immediate sum.
 /// Surface raises these operands as explicit Integer observations because
 /// direct machine comparison syntax retains a different comparison node.
-pub(crate) fn native_int32_fold_equality(condition: &ConditionTerm) -> Option<[&MachineTerm; 2]> {
+pub(crate) fn native_int32_fold_equality(
+    condition: &ConditionTerm,
+) -> Option<[&OldMachineTerm; 2]> {
     let ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: crate::kernel::CompareRelation::Equal,
@@ -286,7 +288,7 @@ pub(crate) fn native_int32_fold_equality(condition: &ConditionTerm) -> Option<[&
     let is_fold = |operand: crate::kernel::MachineOperandView<'_>| operand.fold().is_some();
     operands
         .into_iter()
-        .map(crate::kernel::MachineOperandView::Legacy)
+        .map(crate::kernel::MachineOperandView::Old)
         .any(|operand| {
             is_fold(operand)
                 || operand.binary().is_some_and(|(format, operator, terms)| {
@@ -337,7 +339,10 @@ fn retained_comparison_for_operand_views(
         && let [Some(left), Some(right)] = variables
         && left == right
     {
-        [MachineTerm::Variable(left), MachineTerm::Variable(right)]
+        [
+            OldMachineTerm::Variable(left),
+            OldMachineTerm::Variable(right),
+        ]
     } else if format.format().bits() == 64
         && let [Some(left), Some(right)] = operands.map(pointer_address_operand)
         && left == right
@@ -367,8 +372,8 @@ fn retained_comparison_for_operand_views(
 fn retained_compare(
     format: MachineIntegerType,
     relation: crate::kernel::CompareRelation,
-    left: MachineTerm,
-    right: MachineTerm,
+    left: OldMachineTerm,
+    right: OldMachineTerm,
 ) -> ConditionTerm {
     // Native 32-bit comparisons read sign-free words; their format carries
     // the signedness. Keep the same operand representation as exact rewriting.
@@ -411,16 +416,18 @@ pub(crate) fn is_bounded_machine_comparison(condition: &crate::kernel::Condition
         return false;
     }
     use crate::kernel::MachineOperandView as V;
-    let a = bounded_comparison_operand(*format, V::Legacy(left), true);
-    let b = bounded_comparison_operand(*format, V::Legacy(right), true);
+    let a = bounded_comparison_operand(*format, V::Old(left), true);
+    let b = bounded_comparison_operand(*format, V::Old(right), true);
     (a.is_some() || b.is_some())
-        && (a.is_some() || comparison_leaf_operand(V::Legacy(left)).is_some())
-        && (b.is_some() || comparison_leaf_operand(V::Legacy(right)).is_some())
+        && (a.is_some() || comparison_leaf_operand(V::Old(left)).is_some())
+        && (b.is_some() || comparison_leaf_operand(V::Old(right)).is_some())
 }
 
 /// Read one literal/variable leaf without exporting an arithmetic root.
 /// An address word `address(p)` as its comparison atom.
-fn pointer_address_operand(operand: crate::kernel::MachineOperandView<'_>) -> Option<MachineTerm> {
+fn pointer_address_operand(
+    operand: crate::kernel::MachineOperandView<'_>,
+) -> Option<OldMachineTerm> {
     use crate::kernel::MachineOperandView as V;
     match operand {
         V::Shared(root)
@@ -431,15 +438,17 @@ fn pointer_address_operand(operand: crate::kernel::MachineOperandView<'_>) -> Op
         {
             root.machine_conversion_leaf().cloned()
         }
-        V::Legacy(term @ MachineTerm::IntegerAddress(..)) => Some(term.clone()),
+        V::Old(term @ OldMachineTerm::IntegerAddress(..)) => Some(term.clone()),
         _ => None,
     }
 }
 
-fn comparison_leaf_operand(operand: crate::kernel::MachineOperandView<'_>) -> Option<MachineTerm> {
+fn comparison_leaf_operand(
+    operand: crate::kernel::MachineOperandView<'_>,
+) -> Option<OldMachineTerm> {
     operand
         .literal()
-        .or_else(|| operand.variable().copied().map(MachineTerm::Variable))
+        .or_else(|| operand.variable().copied().map(OldMachineTerm::Variable))
 }
 
 /// Read a bounded bitwise, shift, unsigned arithmetic, or word cast operand.
@@ -449,12 +458,12 @@ fn bounded_comparison_operand(
     observation: MachineIntegerType,
     operand: crate::kernel::MachineOperandView<'_>,
     in_conditional: bool,
-) -> Option<MachineTerm> {
+) -> Option<OldMachineTerm> {
     if let Some((format, op @ crate::kernel::MachineUnaryOp::BitwiseNot, child)) = operand.unary()
         && matches!(format.format().bits(), 32 | 64)
     {
         crate::instrumentation::record_deterministic_work(1);
-        return Some(MachineTerm::Unary {
+        return Some(OldMachineTerm::Unary {
             format,
             op,
             operand: Box::new(comparison_leaf_operand(child)?),
@@ -476,7 +485,7 @@ fn bounded_comparison_operand(
                     && crate::kernel::is_sign_cast32(source, destination)))))
     {
         crate::instrumentation::record_deterministic_work(1);
-        return Some(MachineTerm::cast_node(
+        return Some(OldMachineTerm::cast_node(
             spelling,
             source,
             destination,
@@ -543,7 +552,7 @@ fn bounded_comparison_operand(
     } else {
         (format, left, right)
     };
-    Some(MachineTerm::Binary {
+    Some(OldMachineTerm::Binary {
         format,
         op: operator,
         left: Box::new(left),
@@ -554,7 +563,7 @@ fn bounded_comparison_operand(
 /// Read a fixed-size native conditional, including an immediate conditional
 /// in either arm or as an immediate operand of its machine comparison guard.
 /// The inner reader accepts only bounded operands.
-fn conditional_atom(root: &crate::kernel::KernelTerm) -> Option<MachineTerm> {
+fn conditional_atom(root: &crate::kernel::KernelTerm) -> Option<OldMachineTerm> {
     read_conditional_atom(root, |format, operand| {
         conditional_operand_atom(format, operand)
             .or_else(|| read_conditional_atom(operand, conditional_operand_atom))
@@ -564,15 +573,15 @@ fn conditional_atom(root: &crate::kernel::KernelTerm) -> Option<MachineTerm> {
 fn conditional_operand_atom(
     format: MachineIntegerType,
     root: &crate::kernel::KernelTerm,
-) -> Option<MachineTerm> {
+) -> Option<OldMachineTerm> {
     let operand = crate::kernel::MachineOperandView::Shared(root);
     comparison_leaf_operand(operand).or_else(|| bounded_comparison_operand(format, operand, true))
 }
 
 fn read_conditional_atom(
     root: &crate::kernel::KernelTerm,
-    operand: impl Fn(MachineIntegerType, &crate::kernel::KernelTerm) -> Option<MachineTerm>,
-) -> Option<MachineTerm> {
+    operand: impl Fn(MachineIntegerType, &crate::kernel::KernelTerm) -> Option<OldMachineTerm>,
+) -> Option<OldMachineTerm> {
     use crate::kernel::KernelTermNode as N;
     let N::MachineIf { arguments } = root.node() else {
         return None;
@@ -619,7 +628,7 @@ fn read_conditional_atom(
         }
         _ => return None,
     };
-    Some(MachineTerm::If {
+    Some(OldMachineTerm::If {
         condition: Box::new(condition),
         then_term: Box::new(operand(result_format, &arguments[1])?),
         else_term: Box::new(operand(result_format, &arguments[2])?),
@@ -691,7 +700,7 @@ fn condition_for_operand_views_in(
                     | crate::kernel::KernelTermNode::IntegerAddress { .. }
             ) =>
         {
-            V::Legacy(
+            V::Old(
                 root.machine_conversion_leaf()
                     .expect("machine comparison atom"),
             )
@@ -701,8 +710,8 @@ fn condition_for_operand_views_in(
     let atoms = operands.map(|operand| match operand {
         V::Shared(root) => root
             .machine_constant_reading()
-            .map(|literal| literal.legacy_term())
-            .or_else(|| operand.variable().copied().map(MachineTerm::Variable))
+            .map(|literal| literal.old_term())
+            .or_else(|| operand.variable().copied().map(OldMachineTerm::Variable))
             .or_else(|| root.machine_read_leaf().cloned())
             .or_else(|| {
                 // A signedness cast of one variable is still a fixed-size
@@ -723,22 +732,18 @@ fn condition_for_operand_views_in(
                 let crate::kernel::KernelTermNode::Variable(variable) = operand.node() else {
                     return None;
                 };
-                Some(MachineTerm::sign_cast32(
+                Some(OldMachineTerm::sign_cast32(
                     *source,
                     *destination,
-                    MachineTerm::Variable(*variable),
+                    OldMachineTerm::Variable(*variable),
                 ))
             })
             .or_else(|| conditional_atom(root)),
-        V::Legacy(_) => None,
+        V::Old(_) => None,
     });
-    let operands: [V<'_>; 2] = std::array::from_fn(|index| {
-        atoms[index]
-            .as_ref()
-            .map(V::Legacy)
-            .unwrap_or(operands[index])
-    });
-    if let [V::Legacy(left), V::Legacy(right)] = operands {
+    let operands: [V<'_>; 2] =
+        std::array::from_fn(|index| atoms[index].as_ref().map(V::Old).unwrap_or(operands[index]));
+    if let [V::Old(left), V::Old(right)] = operands {
         let condition =
             ConditionTerm::machine_compare(format, relation, left.clone(), right.clone());
         // Only identical or literal operands: a comparison the operands'
@@ -761,17 +766,17 @@ fn condition_for_operand_views_in(
             // its literals were written as UInt64. Retain the word's bits
             // while giving its Integer observation the comparison's sign.
             let literal = match &literal {
-                MachineTerm::Constant { format: source, .. }
+                OldMachineTerm::Constant { format: source, .. }
                     if source.format().bits() == format.format().bits() =>
                 {
-                    MachineTerm::machine_integer_cast(*source, format, literal)
+                    OldMachineTerm::machine_integer_cast(*source, format, literal)
                 }
                 _ => literal,
             };
             IntegerTerm::from_machine(format, literal).expect("typed comparison literal")
         } else {
             IntegerTerm::Machine(match operand {
-                V::Legacy(value) => SharedMachineIntegerTerm::intern(format, value.clone()),
+                V::Old(value) => SharedMachineIntegerTerm::intern(format, value.clone()),
                 V::Shared(root) => SharedMachineIntegerTerm::observe_shared(
                     format,
                     root.with_machine_observation_type(format),
@@ -811,7 +816,7 @@ pub(crate) fn retained_arithmetic_comparison(condition: &ConditionTerm) -> Optio
         return None;
     }
     use crate::kernel::{KernelTerm, MachineBinaryOp as O, MachineOperandView as V};
-    let operands = [V::Legacy(left), V::Legacy(right)];
+    let operands = [V::Old(left), V::Old(right)];
     let roots = operands.map(|operand| {
         operand
             .binary()
@@ -851,20 +856,20 @@ pub(crate) struct NativeComparisonView<'a> {
 #[derive(Clone)]
 pub(crate) enum ComparisonOperand<'a> {
     Observation(SharedMachineIntegerTerm),
-    Constant(MachineTerm),
-    Written(&'a MachineTerm),
+    Constant(OldMachineTerm),
+    Written(&'a OldMachineTerm),
 }
 
 impl ComparisonOperand<'_> {
     pub(crate) fn operand_view(&self) -> crate::kernel::MachineOperandView<'_> {
         match self {
             Self::Observation(machine) => machine.operand_view(),
-            Self::Constant(value) => crate::kernel::MachineOperandView::Legacy(value),
-            Self::Written(value) => crate::kernel::MachineOperandView::Legacy(value),
+            Self::Constant(value) => crate::kernel::MachineOperandView::Old(value),
+            Self::Written(value) => crate::kernel::MachineOperandView::Old(value),
         }
     }
 
-    pub(super) fn boxed_value(&self) -> &MachineTerm {
+    pub(super) fn boxed_value(&self) -> &OldMachineTerm {
         match self {
             Self::Observation(machine) => machine.value(),
             Self::Constant(value) => value,
@@ -894,8 +899,8 @@ impl NativeComparisonView<'_> {
         }
         let same = |format, a: V<'_>, b: V<'_>| match (a, b) {
             (V::Shared(a), V::Shared(b)) => a == b,
-            (V::Legacy(a), V::Legacy(b)) => a == b,
-            (V::Shared(a), V::Legacy(b)) | (V::Legacy(b), V::Shared(a)) => {
+            (V::Old(a), V::Old(b)) => a == b,
+            (V::Shared(a), V::Old(b)) | (V::Old(b), V::Shared(a)) => {
                 KernelTermImport::default()
                     .machine_arithmetic(format, b)
                     .as_ref()
@@ -904,7 +909,7 @@ impl NativeComparisonView<'_> {
         };
         let owned = |view: V<'_>| match view {
             V::Shared(_) => ComparisonOperand::Observation(view.retain(self.format)),
-            V::Legacy(term) => ComparisonOperand::Constant(term.clone()),
+            V::Old(term) => ComparisonOperand::Constant(term.clone()),
         };
         let result = |a, b| NativeComparisonView {
             format: self.format,
@@ -930,7 +935,7 @@ impl NativeComparisonView<'_> {
                 for (kept, other) in [(a, b), (b, a)] {
                     if same(format, kept, partner) {
                         let zero =
-                            ComparisonOperand::Constant(MachineTerm::constant_at32(format, 0));
+                            ComparisonOperand::Constant(OldMachineTerm::constant_at32(format, 0));
                         return Some(if reverse {
                             result(zero, owned(other))
                         } else {
@@ -968,7 +973,7 @@ impl NativeComparisonView<'_> {
                     )
                     .expect("shared widening"),
                 ),
-                crate::kernel::MachineOperandView::Legacy(term) => ComparisonOperand::Constant(
+                crate::kernel::MachineOperandView::Old(term) => ComparisonOperand::Constant(
                     super::conversion::convert_term(self.format, destination, term.clone()),
                 ),
             });
@@ -1207,7 +1212,7 @@ pub(crate) fn reads_wide_integer_observations(proposition: &Proposition) -> bool
     let Proposition::ConditionIs(condition, value) = proposition else {
         return false;
     };
-    comparison_view_at_format(condition.native_compat(), *value)
+    comparison_view_at_format(condition.old_form(), *value)
         .is_some_and(|view| !representation::spells_comparison_natively(view.format))
 }
 
@@ -1393,9 +1398,9 @@ pub(crate) fn comparison_view_through_integer_operations(
 /// has that comparison's readings.
 pub(crate) fn integer_readings_with_promotions(proposition: &Proposition) -> Vec<Proposition> {
     if let Proposition::ConditionIs(condition, value) = proposition {
-        let promoted = narrow_comparison_as_int32(condition.native_compat());
+        let promoted = narrow_comparison_as_int32(condition.old_form());
         let widened = integer_comparisons_of_widenings(
-            promoted.as_ref().unwrap_or(condition.native_compat()),
+            promoted.as_ref().unwrap_or(condition.old_form()),
             *value,
         );
         if !widened.is_empty() {
@@ -1426,7 +1431,7 @@ pub(crate) fn narrow_comparison_as_int32(condition: &ConditionTerm) -> Option<Co
     if format.format().bits() >= 32 {
         return None;
     }
-    let widen = |term: &MachineTerm| {
+    let widen = |term: &OldMachineTerm| {
         super::conversion::convert_term(*format, MachineIntegerType::Int32, term.clone())
     };
     Some(ConditionTerm::machine_compare(
@@ -1477,7 +1482,7 @@ pub(crate) fn narrow_proposition_as_int32(proposition: &Proposition) -> Option<P
     let Proposition::ConditionIs(condition, value) = proposition else {
         return None;
     };
-    narrow_comparison_as_int32(condition.native_compat())
+    narrow_comparison_as_int32(condition.old_form())
         .map(|widened| Proposition::condition_is(widened, *value))
 }
 
@@ -1500,11 +1505,11 @@ fn integer_comparisons_of_widenings(condition: &ConditionTerm, value: bool) -> V
     else {
         return Vec::new();
     };
-    let widening = |side: &MachineTerm| side.narrow_widening32_operand().is_some();
+    let widening = |side: &OldMachineTerm| side.narrow_widening32_operand().is_some();
     if !widening(left) && !widening(right) {
         return Vec::new();
     }
-    let side = |term: &MachineTerm| -> Option<SharedIntegerTerm> {
+    let side = |term: &OldMachineTerm| -> Option<SharedIntegerTerm> {
         if !widening(term) && term.constant32().is_none() {
             return None;
         }
@@ -1550,7 +1555,7 @@ pub(crate) fn integer_observations_of_native_comparison(
     ) {
         return Vec::new();
     }
-    let Some((left, right, types)) = representation::comparison_readings(condition.native_compat())
+    let Some((left, right, types)) = representation::comparison_readings(condition.old_form())
     else {
         return Vec::new();
     };
@@ -1654,7 +1659,7 @@ mod borrowed_comparison_tests {
                 let symbolic = ConditionTerm::Compare {
                     format,
                     relation,
-                    left: Box::new(MachineTerm::Variable(Variable(992597))),
+                    left: Box::new(OldMachineTerm::Variable(Variable(992597))),
                     right: Box::new(right.clone()),
                 };
                 assert_eq!(literal_native_comparison_value(&symbolic), None);
@@ -1680,8 +1685,8 @@ mod borrowed_comparison_tests {
                 let condition = ConditionTerm::Compare {
                     format,
                     relation,
-                    left: Box::new(MachineTerm::Variable(Variable(982412))),
-                    right: Box::new(MachineTerm::Variable(Variable(982413))),
+                    left: Box::new(OldMachineTerm::Variable(Variable(982412))),
+                    right: Box::new(OldMachineTerm::Variable(Variable(982413))),
                 };
                 let ConditionTerm::Compare { left, right, .. } = &condition else {
                     unreachable!()
@@ -1695,7 +1700,7 @@ mod borrowed_comparison_tests {
                     [left.as_ref(), right.as_ref()]
                 };
                 for (operand, written) in view.operands.iter().zip(written) {
-                    let MachineOperandView::Legacy(value) = operand.operand_view() else {
+                    let MachineOperandView::Old(value) = operand.operand_view() else {
                         panic!("borrowed input")
                     };
                     assert!(std::ptr::eq(value, written));

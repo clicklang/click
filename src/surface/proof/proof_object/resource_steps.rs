@@ -1887,7 +1887,7 @@ impl<'a> Proof<'a> {
             else {
                 return Err(self.step_error("the empty fold law must have a range guard"));
             };
-            match self.facts().assumptions().decide(condition.native_compat()) {
+            match self.facts().assumptions().decide(condition.old_form()) {
                 Some(value) => value == *expected,
                 None => {
                     // A written predecessor guard also selects the append

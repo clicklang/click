@@ -7,7 +7,7 @@ fn newly_closed_word32_rewrite_visits_each_shared_node_once() {
         let mut samples = Vec::new();
         for depth in [8usize, 32, 128, 512] {
             let _session = VerificationSession::enter();
-            let variable = MachineTerm::Variable(Variable(992595));
+            let variable = OldMachineTerm::Variable(Variable(992595));
             let replacement =
                 crate::kernel::machine_integer::range::constant_word(format, &9.into()).unwrap();
             let mut root = KernelTermImport::default()
@@ -71,7 +71,7 @@ fn newly_closed_word32_rewrite_ignores_unrelated_facts() {
         let mut baseline = None;
         for unrelated in [0usize, 16, 64, 256] {
             let _session = VerificationSession::enter();
-            let variable = MachineTerm::Variable(Variable(992596));
+            let variable = OldMachineTerm::Variable(Variable(992596));
             let word = |n: i64| {
                 crate::kernel::machine_integer::range::constant_word(format, &n.into()).unwrap()
             };
@@ -165,8 +165,8 @@ fn selected_word32_literal_comparisons_ignore_unrelated_facts() {
                         ConditionTerm::Compare {
                             format,
                             relation: CompareRelation::LessEqual,
-                            left: Box::new(MachineTerm::constant(3)),
-                            right: Box::new(MachineTerm::constant(100)),
+                            left: Box::new(OldMachineTerm::constant(3)),
+                            right: Box::new(OldMachineTerm::constant(100)),
                         }
                     },
                     true
@@ -214,8 +214,8 @@ fn selected_word32_literal_comparisons_scale_with_selected_source() {
                             ConditionTerm::Compare {
                                 format,
                                 relation: CompareRelation::LessEqual,
-                                left: Box::new(MachineTerm::constant(i as u32)),
-                                right: Box::new(MachineTerm::constant(100)),
+                                left: Box::new(OldMachineTerm::constant(i as u32)),
+                                right: Box::new(OldMachineTerm::constant(100)),
                             }
                         },
                         true

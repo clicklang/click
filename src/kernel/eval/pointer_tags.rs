@@ -18,7 +18,7 @@
 
 use super::operators::BitwiseOperation;
 use super::*;
-use crate::kernel::MachineTerm;
+use crate::kernel::OldMachineTerm;
 use crate::kernel::{CompareRelation, MachineIntegerType, MachineOperandView};
 
 #[derive(Clone)]
@@ -93,7 +93,7 @@ pub(in crate::kernel) struct Refuted(pub(in crate::kernel) String);
 fn tag_constant(value: u64) -> crate::kernel::SharedMachineIntegerTerm {
     crate::kernel::SharedMachineIntegerTerm::intern(
         MachineIntegerType::UInt64,
-        MachineTerm::uint64_constant(value),
+        OldMachineTerm::uint64_constant(value),
     )
 }
 
@@ -103,10 +103,10 @@ fn tag_binary(
     right: MachineOperandView<'_>,
 ) -> crate::kernel::SharedMachineIntegerTerm {
     let format = MachineIntegerType::UInt64;
-    if let (MachineOperandView::Legacy(left), MachineOperandView::Legacy(right)) = (left, right) {
+    if let (MachineOperandView::Old(left), MachineOperandView::Old(right)) = (left, right) {
         return crate::kernel::SharedMachineIntegerTerm::intern(
             format,
-            MachineTerm::machine_binary(format, op, left.clone(), right.clone()),
+            OldMachineTerm::machine_binary(format, op, left.clone(), right.clone()),
         );
     }
     let root = crate::kernel::KernelTerm::machine_binary_shared(
@@ -276,9 +276,9 @@ pub(in crate::kernel) fn tag_bound_citing(
         _ => unreachable!("tag bound format"),
     };
     let constant = |value| match format {
-        T::Int32 | T::UInt32 => MachineTerm::constant(value),
-        T::Int64 => MachineTerm::int64_constant(i64::from(value)),
-        T::UInt64 => MachineTerm::uint64_constant(u64::from(value)),
+        T::Int32 | T::UInt32 => OldMachineTerm::constant(value),
+        T::Int64 => OldMachineTerm::int64_constant(i64::from(value)),
+        T::UInt64 => OldMachineTerm::uint64_constant(u64::from(value)),
         _ => unreachable!("tag bound format"),
     };
     // The common order index selects the original premise for this exact
@@ -296,11 +296,11 @@ pub(in crate::kernel) fn tag_bound_citing(
             false
         }
     }
-    if signed && !exact(bounds, V::Legacy(&constant(0)), value, used) {
+    if signed && !exact(bounds, V::Old(&constant(0)), value, used) {
         return None;
     }
     for mask in [1u32, 3, 7] {
-        if exact(bounds, value, V::Legacy(&constant(mask)), used) {
+        if exact(bounds, value, V::Old(&constant(mask)), used) {
             return Some(u64::from(mask));
         }
     }
@@ -324,7 +324,7 @@ fn require(
             tag_condition(
                 CompareRelation::LessThan,
                 form.tag.operand_view(),
-                MachineOperandView::Legacy(&MachineTerm::uint64_constant(alignment)),
+                MachineOperandView::Old(&OldMachineTerm::uint64_constant(alignment)),
             ),
             format!("the tag below {alignment}"),
         ),
@@ -452,7 +452,7 @@ fn form_of_uncached(
     if let Some(value) = term.read_source() {
         for (equal, fact) in assumptions.recorded_uint64_equals(&value) {
             if let Some(form) = form_of(
-                MachineOperandView::Legacy(&equal),
+                MachineOperandView::Old(&equal),
                 assumptions,
                 undecided,
                 used,
@@ -485,13 +485,13 @@ fn form_of_uncached(
     {
         crate::instrumentation::record_deterministic_work(1);
         if term.retain(MachineIntegerType::UInt64)
-            == MachineOperandView::Legacy(&endpoint).retain(MachineIntegerType::UInt64)
+            == MachineOperandView::Old(&endpoint).retain(MachineIntegerType::UInt64)
         {
             continue;
         }
         for (equal, fact) in assumptions.recorded_uint64_equals(&endpoint) {
             if let Some(form) = form_of(
-                MachineOperandView::Legacy(&equal),
+                MachineOperandView::Old(&equal),
                 assumptions,
                 undecided,
                 used,
@@ -516,11 +516,11 @@ fn structural_form_of(
     let leaf = match term {
         MachineOperandView::Shared(root) => root
             .machine_conversion_leaf()
-            .map(MachineOperandView::Legacy)
+            .map(MachineOperandView::Old)
             .unwrap_or(term),
         _ => term,
     };
-    if let MachineOperandView::Legacy(MachineTerm::IntegerAddress(pointer, class)) = leaf {
+    if let MachineOperandView::Old(OldMachineTerm::IntegerAddress(pointer, class)) = leaf {
         return Ok(Some(TaggedAddress {
             pointer: pointer.as_ref().clone(),
             object_class: class.class(),
@@ -613,7 +613,7 @@ fn structural_form_of(
                             tag_binary(
                                 MachineBinaryOp::BitwiseAnd,
                                 form.tag.operand_view(),
-                                MachineOperandView::Legacy(&MachineTerm::uint64_constant(constant)),
+                                MachineOperandView::Old(&OldMachineTerm::uint64_constant(constant)),
                             )
                         },
                     })
@@ -667,11 +667,11 @@ pub(in crate::kernel) fn tagged_address_form_view(
 }
 
 pub(in crate::kernel) fn tagged_address_form(
-    term: &MachineTerm,
+    term: &OldMachineTerm,
     assumptions: &PureFactContext,
     used: &mut UsedFacts,
 ) -> Option<TaggedAddress> {
-    tagged_address_form_view(MachineOperandView::Legacy(term), assumptions, used)
+    tagged_address_form_view(MachineOperandView::Old(term), assumptions, used)
 }
 
 thread_local! {
@@ -724,7 +724,7 @@ pub(in crate::kernel) fn tag_bound(term: MachineOperandView<'_>) -> Option<u64> 
                 Task::Read(term) => {
                     let key = match term {
                         MachineOperandView::Shared(term) => Some(term.id()),
-                        MachineOperandView::Legacy(_) => None,
+                        MachineOperandView::Old(_) => None,
                     };
                     if let Some(key) = key
                         && let Some(bound) = cache.get(&key)
@@ -796,7 +796,7 @@ pub(in crate::kernel) fn masked_tag_value(
     let value = tag_binary(
         MachineBinaryOp::BitwiseAnd,
         form.tag.operand_view(),
-        MachineOperandView::Legacy(&MachineTerm::uint64_constant(mask)),
+        MachineOperandView::Old(&OldMachineTerm::uint64_constant(mask)),
     );
     // A tag read that rewrites to itself makes no progress; deciding it
     // again would only recurse.
@@ -808,14 +808,14 @@ pub(in crate::kernel) fn masked_tag_value(
 /// become obligations; a refuted one is an error. `Ok(None)` means the word
 /// has no recorded pointer origin.
 pub(in crate::kernel) fn cast_tagged_address_to_pointer(
-    term: &MachineTerm,
+    term: &OldMachineTerm,
     assumptions: &PureFactContext,
     obligations: &mut Vec<ProofObligation>,
     target_type: ProgramType,
 ) -> Result<Option<OldPointer>, String> {
     let mut used = UsedFacts::new();
     let form = match form_of(
-        MachineOperandView::Legacy(term),
+        MachineOperandView::Old(term),
         assumptions,
         &mut Undecided::Oblige(obligations),
         &mut used,
@@ -828,7 +828,7 @@ pub(in crate::kernel) fn cast_tagged_address_to_pointer(
     let tag_is_zero = tag_condition(
         CompareRelation::Equal,
         form.tag.operand_view(),
-        MachineOperandView::Legacy(&MachineTerm::uint64_constant(0)),
+        MachineOperandView::Old(&OldMachineTerm::uint64_constant(0)),
     );
     match assumptions.decide(&tag_is_zero) {
         Some(true) => Ok(Some(
@@ -872,7 +872,7 @@ mod exact_word_address_tests {
         let pointer = Address::symbolic(Variable(985_331));
         let memory = SymbolicMemory::new();
         let read = |memory| {
-            MachineTerm::read_named(
+            OldMachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                 Box::new(pointer.clone()),
                 LoadKind::Bits64,
@@ -880,18 +880,19 @@ mod exact_word_address_tests {
         };
         let raw = read(memory.clone());
         let other = read(memory.with_block("other-tag-retained_state", 0));
-        let import = |term: &MachineTerm| {
+        let import = |term: &OldMachineTerm| {
             KernelTermImport::default()
                 .machine_arithmetic(MachineIntegerType::UInt64, term)
                 .unwrap()
         };
         let shared = import(&raw);
         let other = import(&other);
-        let bound = ConditionTerm::uint64_less_equal(raw.clone(), MachineTerm::uint64_constant(3));
+        let bound =
+            ConditionTerm::uint64_less_equal(raw.clone(), OldMachineTerm::uint64_constant(3));
         let context = PureFactContext::new().assume_condition(bound.clone(), true);
         let exports = KernelTermExport::machine_export_count();
         for value in [
-            MachineOperandView::Legacy(&raw),
+            MachineOperandView::Old(&raw),
             MachineOperandView::Shared(&shared),
         ] {
             let mut used = UsedFacts::new();
@@ -920,14 +921,15 @@ mod exact_word_address_tests {
     fn tag_bound_views_preserve_literal_masks_and_unknown_shapes() {
         use crate::kernel::{KernelTermExport, KernelTermImport};
         let _session = crate::kernel::VerificationSession::enter();
-        let variable = || MachineTerm::Variable(Variable(985301));
-        let constant = MachineTerm::uint64_constant;
-        let binary = |format, op, left: MachineTerm, right: MachineTerm| MachineTerm::Binary {
-            format,
-            op,
-            left: left.into(),
-            right: right.into(),
-        };
+        let variable = || OldMachineTerm::Variable(Variable(985301));
+        let constant = OldMachineTerm::uint64_constant;
+        let binary =
+            |format, op, left: OldMachineTerm, right: OldMachineTerm| OldMachineTerm::Binary {
+                format,
+                op,
+                left: left.into(),
+                right: right.into(),
+            };
         let and = |left, right| {
             binary(
                 MachineIntegerType::UInt64,
@@ -1002,7 +1004,7 @@ mod exact_word_address_tests {
                 "shared {native:?}"
             );
             assert_eq!(
-                tag_bound(MachineOperandView::Legacy(&native)),
+                tag_bound(MachineOperandView::Old(&native)),
                 expected,
                 "native {native:?}"
             );
@@ -1021,9 +1023,9 @@ mod exact_word_address_tests {
             .assume_condition(ConditionTerm::pointer_aligned(p.clone(), 8), true)
             .assume_condition(ConditionTerm::pointer_aligned(q.clone(), 8), true);
         let word = |pointer: Address, tag| {
-            MachineTerm::uint64_add(
-                MachineTerm::integer_address(pointer),
-                MachineTerm::uint64_constant(tag),
+            OldMachineTerm::uint64_add(
+                OldMachineTerm::integer_address(pointer),
+                OldMachineTerm::uint64_constant(tag),
             )
         };
         let mut used = UsedFacts::new();
@@ -1064,11 +1066,11 @@ mod exact_word_address_tests {
         let pointer = Address::symbolic(Variable(980120));
         let other = Address::symbolic(Variable(980121));
         let class = CAccessClass::Struct(CStructClass::opaque("node"));
-        let classed = MachineTerm::object_pointer_address(pointer.clone(), Some(class.clone()));
-        let bare = MachineTerm::integer_address(pointer.clone());
+        let classed = OldMachineTerm::object_pointer_address(pointer.clone(), Some(class.clone()));
+        let bare = OldMachineTerm::integer_address(pointer.clone());
         assert_eq!(classed, bare);
         assert_eq!(classed.cmp(&bare), std::cmp::Ordering::Equal);
-        let hash = |term: &MachineTerm| {
+        let hash = |term: &OldMachineTerm| {
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             term.hash(&mut hasher);
             hasher.finish()
@@ -1078,9 +1080,10 @@ mod exact_word_address_tests {
         // query over the bare spelling asks for, in either polarity.
         let stated = ConditionTerm::uint64_equal(
             classed.clone(),
-            MachineTerm::integer_address(other.clone()),
+            OldMachineTerm::integer_address(other.clone()),
         );
-        let asked = ConditionTerm::uint64_equal(bare.clone(), MachineTerm::integer_address(other));
+        let asked =
+            ConditionTerm::uint64_equal(bare.clone(), OldMachineTerm::integer_address(other));
         let assumptions = PureFactContext::new().assume_condition(stated, false);
         assert!(
             crate::kernel::reasoning::path_facts::required_obligation_is_exactly_discharged(
@@ -1089,7 +1092,7 @@ mod exact_word_address_tests {
             )
         );
         // The class is evidence for decoding, and identity never erases it.
-        let MachineTerm::IntegerAddress(_, retained) = &classed else {
+        let OldMachineTerm::IntegerAddress(_, retained) = &classed else {
             panic!("an address term");
         };
         assert_eq!(retained.class(), Some(class));
@@ -1102,11 +1105,11 @@ mod exact_word_address_tests {
         let pointer = Address::symbolic(Variable(980110));
         let class = CAccessClass::Struct(CStructClass::opaque("node"));
         let premise = ConditionTerm::uint64_equal(
-            MachineTerm::uint64_bitwise_and(
-                MachineTerm::object_pointer_address(pointer.clone(), Some(class.clone())),
-                MachineTerm::uint64_constant(7),
+            OldMachineTerm::uint64_bitwise_and(
+                OldMachineTerm::object_pointer_address(pointer.clone(), Some(class.clone())),
+                OldMachineTerm::uint64_constant(7),
             ),
-            MachineTerm::uint64_constant(0),
+            OldMachineTerm::uint64_constant(0),
         );
         let assumptions = PureFactContext::new().assume_condition(premise.clone(), true);
         let (aligned, cited) = assumptions
@@ -1115,12 +1118,15 @@ mod exact_word_address_tests {
         assert!(aligned);
         assert_eq!(cited, Some(Proposition::condition_is(premise, true)));
         for address in [
-            MachineTerm::integer_address(pointer.clone()),
-            MachineTerm::object_pointer_address(pointer.clone(), Some(class.clone())),
+            OldMachineTerm::integer_address(pointer.clone()),
+            OldMachineTerm::object_pointer_address(pointer.clone(), Some(class.clone())),
         ] {
             let tagged = ConditionTerm::uint64_equal(
-                MachineTerm::uint64_bitwise_or(address.clone(), MachineTerm::uint64_constant(1)),
-                MachineTerm::uint64_add(address, MachineTerm::uint64_constant(1)),
+                OldMachineTerm::uint64_bitwise_or(
+                    address.clone(),
+                    OldMachineTerm::uint64_constant(1),
+                ),
+                OldMachineTerm::uint64_add(address, OldMachineTerm::uint64_constant(1)),
             );
             assert_eq!(assumptions.decide(&tagged), Some(true));
         }
@@ -1162,12 +1168,12 @@ mod exact_word_address_tests {
         };
         let address = address.clone();
         let tagged =
-            MachineTerm::uint64_bitwise_or(address.clone(), MachineTerm::uint64_constant(1));
+            OldMachineTerm::uint64_bitwise_or(address.clone(), OldMachineTerm::uint64_constant(1));
         let cleared =
-            MachineTerm::uint64_bitwise_and(tagged.clone(), MachineTerm::uint64_constant(!3));
-        let subtracted = MachineTerm::uint64_subtract(
-            MachineTerm::uint64_add(address.clone(), MachineTerm::uint64_constant(1)),
-            MachineTerm::uint64_constant(1),
+            OldMachineTerm::uint64_bitwise_and(tagged.clone(), OldMachineTerm::uint64_constant(!3));
+        let subtracted = OldMachineTerm::uint64_subtract(
+            OldMachineTerm::uint64_add(address.clone(), OldMachineTerm::uint64_constant(1)),
+            OldMachineTerm::uint64_constant(1),
         );
         for word in [address.clone(), cleared, subtracted] {
             // The numeric decoder recovers only coordinates and object class.
@@ -1197,7 +1203,7 @@ mod exact_word_address_tests {
         assert_eq!(
             assumptions.decide(&ConditionTerm::uint64_equal(
                 address,
-                MachineTerm::integer_address(pointer)
+                OldMachineTerm::integer_address(pointer)
             )),
             Some(true)
         );
@@ -1209,11 +1215,11 @@ mod exact_word_address_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Address::symbolic(Variable(980020));
         let class = CAccessClass::Scalar(CScalarClass::Int);
-        let word = MachineTerm::Variable(Variable(980021));
+        let word = OldMachineTerm::Variable(Variable(980021));
         let premise = Proposition::condition_is(
             ConditionTerm::uint64_equal(
                 word.clone(),
-                MachineTerm::object_pointer_address(pointer.clone(), Some(class.clone())),
+                OldMachineTerm::object_pointer_address(pointer.clone(), Some(class.clone())),
             ),
             true,
         );
@@ -1243,7 +1249,7 @@ mod exact_word_address_tests {
             );
         }
         let bare = cast_tagged_address_to_pointer(
-            &MachineTerm::integer_address(pointer),
+            &OldMachineTerm::integer_address(pointer),
             &PureFactContext::new(),
             &mut obligations,
             ProgramType::Float64Pointer,
@@ -1261,11 +1267,11 @@ mod exact_word_address_tests {
     #[test]
     fn compound_word_address_requires_origin_and_stops_at_cyclic_equations() {
         let _session = crate::kernel::VerificationSession::enter();
-        let expression = MachineTerm::uint64_bitwise_and(
-            MachineTerm::Variable(Variable(980001)),
-            MachineTerm::uint64_constant(!3),
+        let expression = OldMachineTerm::uint64_bitwise_and(
+            OldMachineTerm::Variable(Variable(980001)),
+            OldMachineTerm::uint64_constant(!3),
         );
-        let alias = MachineTerm::Variable(Variable(980002));
+        let alias = OldMachineTerm::Variable(Variable(980002));
         for assumptions in [
             PureFactContext::new(),
             PureFactContext::new()
@@ -1298,11 +1304,11 @@ mod exact_word_address_tests {
         ] {
             for mirrored in [false, true] {
                 let _session = crate::kernel::VerificationSession::enter();
-                let value = MachineTerm::Binary {
+                let value = OldMachineTerm::Binary {
                     format,
                     op: MachineBinaryOp::Add,
-                    left: MachineTerm::Variable(Variable(985321)).into(),
-                    right: MachineTerm::Variable(Variable(985322)).into(),
+                    left: OldMachineTerm::Variable(Variable(985321)).into(),
+                    right: OldMachineTerm::Variable(Variable(985322)).into(),
                 };
                 let constant = |n| {
                     crate::kernel::machine_integer::range::constant_word(
@@ -1327,7 +1333,7 @@ mod exact_word_address_tests {
                     lower = lower.flipped();
                     upper = upper.flipped();
                 }
-                let converted = MachineTerm::legacy_cast(encoding, value.into());
+                let converted = OldMachineTerm::legacy_cast(encoding, value.into());
                 let shared = KernelTermImport::default()
                     .machine_arithmetic(T::UInt64, &converted)
                     .unwrap();
@@ -1350,7 +1356,7 @@ mod exact_word_address_tests {
                         let exports = KernelTermExport::machine_export_count();
                         for view in [
                             MachineOperandView::Shared(&shared),
-                            MachineOperandView::Legacy(&converted),
+                            MachineOperandView::Old(&converted),
                         ] {
                             let mut used = UsedFacts::new();
                             assert_eq!(
@@ -1394,9 +1400,11 @@ mod exact_word_address_tests {
     #[test]
     fn symbolic_tag_bounds_require_nonnegative_and_upper_premises() {
         let _session = crate::kernel::VerificationSession::enter();
-        let tag = MachineTerm::Variable(Variable(980_011));
-        let converted =
-            MachineTerm::legacy_cast(MachineCastSpelling::UInt64FromInt32, Box::new(tag.clone()));
+        let tag = OldMachineTerm::Variable(Variable(980_011));
+        let converted = OldMachineTerm::legacy_cast(
+            MachineCastSpelling::UInt64FromInt32,
+            Box::new(tag.clone()),
+        );
         let lower = ConditionTerm::signed_less_equal(0u32.into(), tag.clone());
         let upper = ConditionTerm::signed_less_equal(tag, 1u32.into());
         for context in [
@@ -1406,7 +1414,7 @@ mod exact_word_address_tests {
         ] {
             assert_eq!(
                 tag_bound_citing(
-                    MachineOperandView::Legacy(&converted),
+                    MachineOperandView::Old(&converted),
                     &context,
                     &mut UsedFacts::new()
                 ),
@@ -1418,11 +1426,12 @@ mod exact_word_address_tests {
             .assume_condition(lower.clone(), true)
             .assume_condition(upper.clone(), true)
             .assume_condition(ConditionTerm::pointer_aligned(pointer.clone(), 8), true);
-        let tagged = MachineTerm::uint64_bitwise_or(
-            MachineTerm::integer_address(pointer.clone()),
+        let tagged = OldMachineTerm::uint64_bitwise_or(
+            OldMachineTerm::integer_address(pointer.clone()),
             converted,
         );
-        let cleared = MachineTerm::uint64_bitwise_and(tagged, MachineTerm::uint64_constant(!3));
+        let cleared =
+            OldMachineTerm::uint64_bitwise_and(tagged, OldMachineTerm::uint64_constant(!3));
         let mut used = UsedFacts::new();
         let form = tagged_address_form(&cleared, &context, &mut used).unwrap();
         assert_eq!(form.pointer, pointer);
@@ -1453,20 +1462,23 @@ mod retained_tag_tests {
         let ty = MachineIntegerType::UInt64;
         let p = Address::symbolic(Variable(986001));
         let q = Address::symbolic(Variable(986002));
-        let x = MachineTerm::Variable(Variable(986003));
-        let y = MachineTerm::Variable(Variable(986004));
-        let opaque = MachineTerm::integer_address(q);
+        let x = OldMachineTerm::Variable(Variable(986003));
+        let y = OldMachineTerm::Variable(Variable(986004));
+        let opaque = OldMachineTerm::integer_address(q);
         let source = Proposition::condition_is(
             ConditionTerm::uint64_equal(
                 x.clone(),
-                MachineTerm::uint64_add(MachineTerm::integer_address(p.clone()), opaque.clone()),
+                OldMachineTerm::uint64_add(
+                    OldMachineTerm::integer_address(p.clone()),
+                    opaque.clone(),
+                ),
             ),
             true,
         );
         let parent = PureFactContext::new().assume_condition(
             ConditionTerm::uint64_equal(
-                MachineTerm::Variable(Variable(986005)),
-                MachineTerm::integer_address(Address::symbolic(Variable(986006))),
+                OldMachineTerm::Variable(Variable(986005)),
+                OldMachineTerm::integer_address(Address::symbolic(Variable(986006))),
             ),
             true,
         );
@@ -1505,7 +1517,7 @@ mod retained_tag_tests {
         );
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         assert_eq!(tags[0], tags[1]);
-        assert_eq!(tags[0].value(), &MachineTerm::uint64_add(opaque, y));
+        assert_eq!(tags[0].value(), &OldMachineTerm::uint64_add(opaque, y));
     }
 
     #[test]
@@ -1514,14 +1526,17 @@ mod retained_tag_tests {
         let ty = MachineIntegerType::UInt64;
         let p = Address::symbolic(Variable(986040));
         let q = Address::symbolic(Variable(986041));
-        let opaque = MachineTerm::integer_address(Address::symbolic(Variable(986042)));
-        let x = MachineTerm::Variable(Variable(986043));
-        let y = MachineTerm::Variable(Variable(986044));
-        let suffix = MachineTerm::Variable(Variable(986045));
+        let opaque = OldMachineTerm::integer_address(Address::symbolic(Variable(986042)));
+        let x = OldMachineTerm::Variable(Variable(986043));
+        let y = OldMachineTerm::Variable(Variable(986044));
+        let suffix = OldMachineTerm::Variable(Variable(986045));
         let source = |word, pointer| {
             ConditionTerm::uint64_equal(
                 word,
-                MachineTerm::uint64_add(MachineTerm::integer_address(pointer), opaque.clone()),
+                OldMachineTerm::uint64_add(
+                    OldMachineTerm::integer_address(pointer),
+                    opaque.clone(),
+                ),
             )
         };
         let equality = ConditionTerm::address_equal(p.clone(), q.clone());
@@ -1529,7 +1544,7 @@ mod retained_tag_tests {
             .assume_condition(source(x.clone(), p), true)
             .assume_condition(source(y.clone(), q), true)
             .assume_condition(equality.clone(), true);
-        let word = |value: MachineTerm| MachineTerm::uint64_add(value, suffix.clone());
+        let word = |value: OldMachineTerm| OldMachineTerm::uint64_add(value, suffix.clone());
         let native = [word(x), word(y)];
         let shared = native.each_ref().map(|value| {
             KernelTermImport::default()
@@ -1543,7 +1558,7 @@ mod retained_tag_tests {
                 context.decide_uint64_equality_extras_views(
                     MachineOperandView::Shared(&shared[0]),
                     if mixed {
-                        MachineOperandView::Legacy(&native[1])
+                        MachineOperandView::Old(&native[1])
                     } else {
                         MachineOperandView::Shared(&shared[1])
                     },
@@ -1564,15 +1579,14 @@ mod retained_tag_tests {
     fn native_word_reads_a_retained_address_equation() {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::UInt64;
-        let word = MachineTerm::Variable(Variable(992580));
+        let word = OldMachineTerm::Variable(Variable(992580));
         let pointer = Address::symbolic(Variable(992581));
-        let tagged = MachineTerm::uint64_add(
-            MachineTerm::integer_address(pointer.clone()),
-            MachineTerm::uint64_constant(1),
+        let tagged = OldMachineTerm::uint64_add(
+            OldMachineTerm::integer_address(pointer.clone()),
+            OldMachineTerm::uint64_constant(1),
         );
-        let roots = [&word, &tagged].map(|value| {
-            KernelTerm::retained_machine_operand(ty, MachineOperandView::Legacy(value))
-        });
+        let roots = [&word, &tagged]
+            .map(|value| KernelTerm::retained_machine_operand(ty, MachineOperandView::Old(value)));
         let source = Proposition::condition_is(
             crate::kernel::machine_integer::comparison::condition_for_operand_views(
                 ty,
@@ -1591,7 +1605,7 @@ mod retained_tag_tests {
         assert!(used.complete);
         assert!(
             tagged_address_form(
-                &MachineTerm::Variable(Variable(992582)),
+                &OldMachineTerm::Variable(Variable(992582)),
                 &context,
                 &mut UsedFacts::new()
             )
@@ -1610,7 +1624,7 @@ mod retained_tag_tests {
         let pointer = Address::symbolic(Variable(986030));
         let memory = SymbolicMemory::new().with_block("tag-cell", 8);
         let read = |memory| {
-            MachineTerm::read_named(
+            OldMachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                 Box::new(cell.clone()),
                 LoadKind::Bits64,
@@ -1621,9 +1635,9 @@ mod retained_tag_tests {
         let source = Proposition::condition_is(
             ConditionTerm::uint64_equal(
                 raw,
-                MachineTerm::uint64_add(
-                    MachineTerm::integer_address(pointer.clone()),
-                    MachineTerm::uint64_constant(1),
+                OldMachineTerm::uint64_add(
+                    OldMachineTerm::integer_address(pointer.clone()),
+                    OldMachineTerm::uint64_constant(1),
                 ),
             ),
             true,
@@ -1634,7 +1648,7 @@ mod retained_tag_tests {
             .unwrap();
         let exports = KernelTermExport::machine_export_count();
         for view in [
-            MachineOperandView::Legacy(&other),
+            MachineOperandView::Old(&other),
             MachineOperandView::Shared(&root),
         ] {
             let mut used = UsedFacts::new();
@@ -1654,14 +1668,14 @@ mod retained_tag_tests {
         let ty = MachineIntegerType::UInt64;
         let p = Address::symbolic(Variable(986010));
         let class = CAccessClass::Scalar(CScalarClass::Int);
-        let address = MachineTerm::object_pointer_address(p.clone(), Some(class.clone()));
+        let address = OldMachineTerm::object_pointer_address(p.clone(), Some(class.clone()));
         let aligned = PureFactContext::new()
             .assume_condition(ConditionTerm::pointer_aligned(p.clone(), 8), true);
         let bare = KernelTerm::retained_machine_operand(
             ty,
-            MachineOperandView::Legacy(&MachineTerm::integer_address(p.clone())),
+            MachineOperandView::Old(&OldMachineTerm::integer_address(p.clone())),
         );
-        let root = KernelTerm::retained_machine_operand(ty, MachineOperandView::Legacy(&address));
+        let root = KernelTerm::retained_machine_operand(ty, MachineOperandView::Old(&address));
         assert_ne!(
             bare, root,
             "numerically equal addresses must retain their own evidence"
@@ -1682,7 +1696,7 @@ mod retained_tag_tests {
             MachineBinaryOp::BitwiseOr,
             MachineBinaryOp::BitwiseAnd,
         ] {
-            let constant = MachineTerm::uint64_constant(if op == MachineBinaryOp::BitwiseAnd {
+            let constant = OldMachineTerm::uint64_constant(if op == MachineBinaryOp::BitwiseAnd {
                 !7
             } else {
                 1
@@ -1692,10 +1706,10 @@ mod retained_tag_tests {
                 op,
                 [
                     root.clone(),
-                    KernelTerm::retained_machine_operand(ty, MachineOperandView::Legacy(&constant)),
+                    KernelTerm::retained_machine_operand(ty, MachineOperandView::Old(&constant)),
                 ],
             );
-            let native = MachineTerm::machine_binary(ty, op, address.clone(), constant);
+            let native = OldMachineTerm::machine_binary(ty, op, address.clone(), constant);
             let expected = tagged_address_form(&native, &aligned, &mut UsedFacts::new()).unwrap();
             let exports = KernelTermExport::machine_export_count();
             let form = tagged_address_form_view(

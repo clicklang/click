@@ -218,11 +218,11 @@ pub(super) fn refresh(id: Id, origin: &ProgramPoint, bytes: u32) {
     });
 }
 
-pub(super) fn produced(read: &MachineTerm, source: &MachineTerm) {
-    let MachineTerm::MemoryLoad(memory, pointer, kind) = read else {
+pub(super) fn produced(read: &OldMachineTerm, source: &OldMachineTerm) {
+    let OldMachineTerm::MemoryLoad(memory, pointer, kind) = read else {
         return;
     };
-    let MachineTerm::MemoryLoad(origin, address, _) = source else {
+    let OldMachineTerm::MemoryLoad(origin, address, _) = source else {
         return;
     };
     if *kind != LoadKind::Bits64 {
@@ -240,8 +240,8 @@ pub(super) fn produced(read: &MachineTerm, source: &MachineTerm) {
     });
 }
 
-pub(super) fn latest(read: &MachineTerm) -> Option<MachineTerm> {
-    let MachineTerm::MemoryLoad(memory, pointer, kind) = read else {
+pub(super) fn latest(read: &OldMachineTerm) -> Option<OldMachineTerm> {
+    let OldMachineTerm::MemoryLoad(memory, pointer, kind) = read else {
         return None;
     };
     let id = existing_at(memory, pointer, *kind)?;
@@ -252,7 +252,7 @@ pub(super) fn latest(read: &MachineTerm) -> Option<MachineTerm> {
             .latest
             .get(&(epoch, id))
             .map(|(memory, pointer)| {
-                crate::kernel::MachineTerm::read_named(memory.clone(), pointer.clone(), *kind)
+                crate::kernel::OldMachineTerm::read_named(memory.clone(), pointer.clone(), *kind)
             })
     })
 }
@@ -374,7 +374,7 @@ mod tests {
         let ExpressionOutcome::Value(ProgramValue::Int32(read)) = path.outcome else {
             panic!("one symbolic word read");
         };
-        let observed = for_operand(MachineOperandView::Legacy(&read)).unwrap();
+        let observed = for_operand(MachineOperandView::Old(&read)).unwrap();
         assert_eq!(observed.point.read_version_id(), entry.program_point_id());
         assert_eq!(observed.origin.and_then(|point| point.id()), origin.id());
     }
@@ -407,40 +407,36 @@ mod tests {
         let _session = VerificationSession::enter();
         let memory = intern_memory(SymbolicMemory::new());
         let pointer = Address::symbolic(Variable(998_709));
-        let untyped = canonical_scalar_read(&crate::kernel::MachineTerm::read_named(
+        let untyped = canonical_scalar_read(&crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
             pointer.clone(),
             LoadKind::Int32,
         ));
         assert_eq!(
-            for_operand(MachineOperandView::Legacy(&untyped))
+            for_operand(MachineOperandView::Old(&untyped))
                 .unwrap()
                 .bytes,
             8
         );
         record_load_access_width(memory.memory(), &pointer, 4);
-        let typed = canonical_scalar_read(&crate::kernel::MachineTerm::read_named(
+        let typed = canonical_scalar_read(&crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
             pointer.clone(),
             LoadKind::Int32,
         ));
         assert_eq!(
-            for_operand(MachineOperandView::Legacy(&typed))
-                .unwrap()
-                .bytes,
+            for_operand(MachineOperandView::Old(&typed)).unwrap().bytes,
             4
         );
         // A genuine wider observation remains conservative when a narrower
         // producer later names the same descriptor.
-        let MachineTerm::MemoryLoad(selected, address, kind) = &typed else {
+        let OldMachineTerm::MemoryLoad(selected, address, kind) = &typed else {
             unreachable!()
         };
         record(selected.shared_memory(), address, *kind, &memory, 8);
         record(selected.shared_memory(), address, *kind, &memory, 4);
         assert_eq!(
-            for_operand(MachineOperandView::Legacy(&typed))
-                .unwrap()
-                .bytes,
+            for_operand(MachineOperandView::Old(&typed)).unwrap().bytes,
             8
         );
     }
@@ -450,15 +446,13 @@ mod tests {
         let _session = VerificationSession::enter();
         let memory = intern_memory(SymbolicMemory::new());
         let pointer = Address::symbolic(Variable(998_707));
-        let read = crate::kernel::MachineTerm::read_named(
+        let read = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
             pointer.clone(),
             LoadKind::Int32,
         );
         assert_eq!(
-            for_operand(MachineOperandView::Legacy(&read))
-                .unwrap()
-                .bytes,
+            for_operand(MachineOperandView::Old(&read)).unwrap().bytes,
             8
         );
         assert!(existing(&memory, &pointer, LoadKind::Int32).is_none());
@@ -467,7 +461,7 @@ mod tests {
             ProgramValue::Int32(1u32.into()),
         ));
         record(&memory, &pointer, LoadKind::Int32, &live, 4);
-        let observed = for_operand(MachineOperandView::Legacy(&read)).unwrap();
+        let observed = for_operand(MachineOperandView::Old(&read)).unwrap();
         assert_eq!(observed.bytes, 4);
         assert_eq!(observed.origin, Some(ProgramPoint::at(&live)));
     }
@@ -478,7 +472,7 @@ mod tests {
             offset: AddressOffset::Constant(0),
         };
         let memory = intern_memory(SymbolicMemory::new().with_block(pointer.base.clone(), 4));
-        let read = crate::kernel::MachineTerm::read_named(
+        let read = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
             pointer.clone(),
             LoadKind::Int32,
@@ -490,10 +484,10 @@ mod tests {
                 offset: AddressOffset::Constant(0),
             },
             0u32.into(),
-            MachineTerm::add_at(
+            OldMachineTerm::add_at(
                 MachineIntegerType::Int32,
                 read.clone(),
-                MachineTerm::Variable(bound),
+                OldMachineTerm::Variable(bound),
             ),
             4,
         );
@@ -583,9 +577,9 @@ mod tests {
         let first_id = record_at(&first, &pointer, kind, &first, 4);
         let second_id = record_at(&second, &pointer, kind, &second, 8);
         assert_ne!(first_id, second_id);
-        let first_read = crate::kernel::MachineTerm::read_named(first, pointer.clone(), kind);
-        let second_read = crate::kernel::MachineTerm::read_named(second, pointer, kind);
-        let observe = |read| for_operand(MachineOperandView::Legacy(read)).unwrap().bytes;
+        let first_read = crate::kernel::OldMachineTerm::read_named(first, pointer.clone(), kind);
+        let second_read = crate::kernel::OldMachineTerm::read_named(second, pointer, kind);
+        let observe = |read| for_operand(MachineOperandView::Old(read)).unwrap().bytes;
         assert_eq!(observe(&first_read), 4);
         assert_eq!(observe(&second_read), 8);
         produced(&first_read, &second_read);
@@ -651,7 +645,7 @@ mod tests {
             .expect("integer read");
             let read =
                 crate::kernel::spec::program_value_bitvector_term(&value).expect("scalar term");
-            let MachineTerm::MemoryLoad(retained_state, address, kind) = &read else {
+            let OldMachineTerm::MemoryLoad(retained_state, address, kind) = &read else {
                 panic!("{ty:?} must retain its read: {read:?}");
             };
             assert_eq!(address.as_ref(), &pointer);
@@ -683,7 +677,7 @@ mod tests {
         );
         let read = canonical_form_of_load(after, destination.clone(), LoadKind::Int32);
         assert!(
-            matches!(&read, MachineTerm::MemoryLoad(_, pointer, LoadKind::Int32) if **pointer == destination)
+            matches!(&read, OldMachineTerm::MemoryLoad(_, pointer, LoadKind::Int32) if **pointer == destination)
         );
         assert_ne!(read, held);
         assert_eq!(read_over_write_value(&read), Some(held));

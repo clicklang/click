@@ -9,8 +9,8 @@ fn shared_pointer_transport_walks_offset_dags_once_beside_unrelated_state() {
         for i in 0..unrelated {
             context = context.assume_condition(
                 ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(1008000 + i)),
-                    MachineTerm::constant(1),
+                    OldMachineTerm::Variable(Variable(1008000 + i)),
+                    OldMachineTerm::constant(1),
                 ),
                 true,
             );
@@ -18,11 +18,11 @@ fn shared_pointer_transport_walks_offset_dags_once_beside_unrelated_state() {
         let after = before
             .memory()
             .clone()
-            .store(other, ProgramValue::Int32(MachineTerm::constant(3)));
+            .store(other, ProgramValue::Int32(OldMachineTerm::constant(3)));
         for size in [16, 64, 256] {
             let index = KernelTermImport::default().machine(
                 MachineIntegerType::Int32,
-                &MachineTerm::read_named(
+                &OldMachineTerm::read_named(
                     ProgramPoint::at(&before),
                     Box::new(field.clone()),
                     LoadKind::Int32,

@@ -21,7 +21,7 @@ use super::representation::{self, Division};
 #[cfg(test)]
 use crate::kernel::binary_node;
 use crate::kernel::{
-    ConditionTerm, IntegerTerm, MachineTerm, Proposition, SharedMachineIntegerTerm,
+    ConditionTerm, IntegerTerm, OldMachineTerm, Proposition, SharedMachineIntegerTerm,
 };
 use crate::kernel::{
     bits32_constant, constant_i64, constant_u32, constant_u64, int64_constant, uint64_constant,
@@ -31,7 +31,7 @@ use num_traits::{One, Signed, ToPrimitive, Zero};
 
 /// The constant a machine word spells, read as unsigned bits: a shift
 /// amount is a count, whatever word carries it.
-fn unsigned_constant(term: &MachineTerm) -> Option<BigInt> {
+fn unsigned_constant(term: &OldMachineTerm) -> Option<BigInt> {
     match term {
         bits32_constant!(value) => Some(BigInt::from(constant_u32(*value))),
         int64_constant!(value) => Some(BigInt::from(constant_i64(*value))),
@@ -44,7 +44,7 @@ fn unsigned_constant(term: &MachineTerm) -> Option<BigInt> {
 /// shifted operand's type (for example a uint64 shifted by an int32 literal).
 pub(crate) fn constant_shift_count(count: crate::kernel::MachineOperandView<'_>) -> Option<u32> {
     let literal = count.literal()?;
-    let MachineTerm::Constant { format, .. } = &literal else {
+    let OldMachineTerm::Constant { format, .. } = &literal else {
         return None;
     };
     format.constant_from_term(&literal)?.to_integer().to_u32()
@@ -132,7 +132,7 @@ mod tests {
     use crate::kernel::MachineBinaryOp;
     use crate::kernel::{MachineIntegerType, Variable};
 
-    fn machine(ty: MachineIntegerType, value: MachineTerm) -> SharedMachineIntegerTerm {
+    fn machine(ty: MachineIntegerType, value: OldMachineTerm) -> SharedMachineIntegerTerm {
         SharedMachineIntegerTerm::intern(ty, value)
     }
 
@@ -156,13 +156,13 @@ mod tests {
         for (ty, word, divisor) in [
             (
                 MachineIntegerType::Int32,
-                MachineTerm::Variable(Variable(173_001)),
-                MachineTerm::constant(8),
+                OldMachineTerm::Variable(Variable(173_001)),
+                OldMachineTerm::constant(8),
             ),
             (
                 MachineIntegerType::Int64,
-                MachineTerm::Variable(Variable(173_001)),
-                MachineTerm::int64_constant(8),
+                OldMachineTerm::Variable(Variable(173_001)),
+                OldMachineTerm::int64_constant(8),
             ),
         ] {
             let operand = IntegerTerm::from_machine(ty, word.clone()).unwrap();
@@ -190,7 +190,7 @@ mod tests {
                         Box::new(word.clone()),
                         Box::new(divisor.clone()),
                     ),
-                    _ => MachineTerm::Binary {
+                    _ => OldMachineTerm::Binary {
                         format: MachineIntegerType::Int64,
                         op: MachineBinaryOp::Remainder,
                         left: Box::new(word.clone()),
@@ -215,13 +215,13 @@ mod tests {
                         Int32,
                         ShiftRight,
                         Box::new(word.clone()),
-                        Box::new(MachineTerm::constant(3)),
+                        Box::new(OldMachineTerm::constant(3)),
                     ),
-                    _ => MachineTerm::Binary {
+                    _ => OldMachineTerm::Binary {
                         format: MachineIntegerType::Int64,
                         op: MachineBinaryOp::ShiftRight,
                         left: Box::new(word.clone()),
-                        right: Box::new(MachineTerm::constant(3)),
+                        right: Box::new(OldMachineTerm::constant(3)),
                     },
                 },
             );
@@ -238,14 +238,14 @@ mod tests {
 
     fn representation_quotient(
         ty: MachineIntegerType,
-        word: MachineTerm,
-        divisor: MachineTerm,
-    ) -> MachineTerm {
+        word: OldMachineTerm,
+        divisor: OldMachineTerm,
+    ) -> OldMachineTerm {
         match ty {
             MachineIntegerType::Int32 => {
                 binary_node!(Int32, Divide, Box::new(word), Box::new(divisor))
             }
-            _ => MachineTerm::Binary {
+            _ => OldMachineTerm::Binary {
                 format: MachineIntegerType::Int64,
                 op: MachineBinaryOp::Divide,
                 left: Box::new(word),
@@ -258,10 +258,10 @@ mod tests {
     fn a_signed_divisor_is_read_at_its_format() {
         // The word `0xfffffff8` is `-8` in `int32`, which bounds nothing,
         // though its unsigned reading is a large positive number.
-        let x = Box::new(MachineTerm::Variable(Variable(173_002)));
+        let x = Box::new(OldMachineTerm::Variable(Variable(173_002)));
         for divisor in [
-            MachineTerm::constant(-8i32 as u32),
-            MachineTerm::constant(0),
+            OldMachineTerm::constant(-8i32 as u32),
+            OldMachineTerm::constant(0),
         ] {
             for word in [
                 binary_node!(Int32, Divide, x.clone(), Box::new(divisor.clone())),
@@ -280,7 +280,7 @@ mod tests {
                     Int32,
                     ShiftRight,
                     x.clone(),
-                    Box::new(MachineTerm::constant(amount)),
+                    Box::new(OldMachineTerm::constant(amount)),
                 ),
             );
             assert_eq!(operation_bound(&value, true), None);

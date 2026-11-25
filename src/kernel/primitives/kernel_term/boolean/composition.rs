@@ -33,7 +33,7 @@ impl KernelTerm {
         if let Some(value) = BooleanOperandView::Shared(&operand).constant() {
             KernelTermImport::default().machine(
                 destination,
-                &MachineTerm::bool_cast(destination, ConditionTerm::Constant(value)),
+                &OldMachineTerm::bool_cast(destination, ConditionTerm::Constant(value)),
             )
         } else {
             Self::bool_cast(destination, operand).expect("Boolean conversion")
@@ -117,7 +117,7 @@ mod tests {
                 assert!(root.is_shared_machine_operand());
                 assert_eq!(
                     KernelTermExport::machine(&root).unwrap(),
-                    MachineTerm::bool_cast(format, value.clone())
+                    OldMachineTerm::bool_cast(format, value.clone())
                 );
             }
         }

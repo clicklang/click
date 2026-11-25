@@ -23,17 +23,15 @@ fn is_word32_equality(goal: &Proposition) -> bool {
     let Proposition::ConditionIs(condition, true) = goal else {
         return false;
     };
-    crate::kernel::machine_integer::comparison::structural_comparison_view(
-        condition.native_compat(),
-    )
-    .is_some_and(|view| {
-        !view.negated
-            && view.relation == CompareRelation::Equal
-            && matches!(
-                view.format,
-                MachineIntegerType::Int32 | MachineIntegerType::UInt32
-            )
-    })
+    crate::kernel::machine_integer::comparison::structural_comparison_view(condition.old_form())
+        .is_some_and(|view| {
+            !view.negated
+                && view.relation == CompareRelation::Equal
+                && matches!(
+                    view.format,
+                    MachineIntegerType::Int32 | MachineIntegerType::UInt32
+                )
+        })
 }
 
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
@@ -2141,13 +2139,13 @@ mod retained_match_policy_tests {
     #[test]
     fn match_equality_keeps_word_planner_policy_in_both_carriers() {
         let _session = crate::kernel::VerificationSession::enter();
-        let native = MachineTerm::AlgebraicMatch {
+        let native = OldMachineTerm::AlgebraicMatch {
             scrutinee: Box::new(crate::kernel::KernelMatch::test_scrutinee(vec![])),
             arms: vec![crate::kernel::AlgebraicBitvectorMatchArm {
                 variant: "Arm".into(),
                 bindings: vec![],
                 binding_names: Default::default(),
-                body: MachineTerm::constant(0),
+                body: OldMachineTerm::constant(0),
             }],
         };
         let observed =
@@ -2163,7 +2161,7 @@ mod retained_match_policy_tests {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(native),
-            right: Box::new(MachineTerm::constant(1)),
+            right: Box::new(OldMachineTerm::constant(1)),
         };
         for condition in [common, written] {
             assert!(is_word32_equality(&Proposition::condition_is(

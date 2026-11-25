@@ -168,12 +168,12 @@ fn raise_arms<'a, T: 'a, D: 'a>(
 }
 
 pub(super) fn raise_machine_match(
-    term: &MachineTerm,
+    term: &OldMachineTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SyntaxTerm> {
-    let MachineTerm::AlgebraicMatch { scrutinee, arms } = term else {
+    let OldMachineTerm::AlgebraicMatch { scrutinee, arms } = term else {
         return None;
     };
     folds::scope(|| {
@@ -211,7 +211,7 @@ mod tests {
     fn shared_declarations_preserve_native_carriers_and_refusals() {
         let _session = crate::kernel::VerificationSession::enter();
         let variable = Variable(991951);
-        let word = MachineTerm::Variable(variable);
+        let word = OldMachineTerm::Variable(variable);
         let carrier = |value: Option<(BindingCarrier, Variable)>| {
             value.map(|(kind, variable)| {
                 (
@@ -230,11 +230,14 @@ mod tests {
             ProgramValue::Float32(word.clone()),
             ProgramValue::Bool(word.clone()),
             ProgramValue::typed_pointer(Address::symbolic(variable), ProgramType::Int32Pointer),
-            ProgramValue::Int32(MachineTerm::constant(0)),
+            ProgramValue::Int32(OldMachineTerm::constant(0)),
         ];
         for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
-            for zero in [MachineTerm::constant(0), MachineTerm::uint32_constant(0)] {
-                values.push(ProgramValue::Bool(MachineTerm::bool_cast(
+            for zero in [
+                OldMachineTerm::constant(0),
+                OldMachineTerm::uint32_constant(0),
+            ] {
+                values.push(ProgramValue::Bool(OldMachineTerm::bool_cast(
                     MachineIntegerType::UInt8,
                     ConditionTerm::bool_not(ConditionTerm::Compare {
                         format,
@@ -246,7 +249,7 @@ mod tests {
             }
         }
         for width in [MachineIntegerType::UInt8, MachineIntegerType::UInt32] {
-            values.push(ProgramValue::Bool(MachineTerm::bool_cast(
+            values.push(ProgramValue::Bool(OldMachineTerm::bool_cast(
                 width,
                 ConditionTerm::Variable(variable),
             )));
@@ -277,7 +280,7 @@ mod tests {
         for (ty, value) in [
             (
                 AlgebraicValueType::Program(ProgramType::Bool),
-                PureFunctionArgument::Value(ProgramValue::Bool(MachineTerm::bool_cast(
+                PureFunctionArgument::Value(ProgramValue::Bool(OldMachineTerm::bool_cast(
                     MachineIntegerType::UInt8,
                     ConditionTerm::Variable(variable),
                 ))),
@@ -291,11 +294,15 @@ mod tests {
             ),
             (
                 AlgebraicValueType::Program(ProgramType::Int32),
-                PureFunctionArgument::Value(ProgramValue::Int32(MachineTerm::Variable(variable))),
+                PureFunctionArgument::Value(ProgramValue::Int32(OldMachineTerm::Variable(
+                    variable,
+                ))),
             ),
             (
                 AlgebraicValueType::Program(ProgramType::UInt64),
-                PureFunctionArgument::Value(ProgramValue::UInt64(MachineTerm::Variable(variable))),
+                PureFunctionArgument::Value(ProgramValue::UInt64(OldMachineTerm::Variable(
+                    variable,
+                ))),
             ),
             (
                 AlgebraicValueType::Integer,
@@ -370,13 +377,13 @@ mod tests {
         };
         let scrutinee = import.argument(&PureFunctionArgument::Algebraic(scrutinee));
         let c = import.argument(&PureFunctionArgument::Value(ProgramValue::Int32(
-            MachineTerm::Variable(id),
+            OldMachineTerm::Variable(id),
         )));
         let integer = import.integer(&IntegerTerm::Variable(id).into());
         let body = IntegerTerm::Add(
             IntegerTerm::Add(
                 IntegerTerm::Variable(id).into(),
-                IntegerTerm::from_machine(MachineIntegerType::Int32, MachineTerm::Variable(id))
+                IntegerTerm::from_machine(MachineIntegerType::Int32, OldMachineTerm::Variable(id))
                     .unwrap()
                     .into(),
             )

@@ -5,8 +5,8 @@ fn wide_call_ranges_are_undecided() {
     let base = Address::symbolic(Variable(984_000));
     let wide = MemoryRange::new_wide(
         base.clone(),
-        MachineTerm::uint64_constant(3),
-        MachineTerm::uint64_constant(1 << 33),
+        OldMachineTerm::uint64_constant(3),
+        OldMachineTerm::uint64_constant(1 << 33),
         1,
     );
     let other = wide.with_base(base.offset_by_bytes(1));
@@ -51,7 +51,7 @@ fn wide_resource_body_loadability_preserves_native_span() {
         vec![].into(),
         schema,
         vec![AlgebraicValue::Program(ProgramValue::UInt64(
-            MachineTerm::uint64_constant(1 << 33),
+            OldMachineTerm::uint64_constant(1 << 33),
         ))]
         .into(),
     )

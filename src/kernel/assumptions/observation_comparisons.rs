@@ -76,7 +76,7 @@ impl ResourceKey {
                             format,
                             ScalarOperandKey::for_format(
                                 format,
-                                crate::kernel::MachineOperandView::Legacy(term),
+                                crate::kernel::MachineOperandView::Old(term),
                             ),
                         );
                     }
@@ -149,16 +149,15 @@ impl PropositionKey {
                     // Give native arithmetic the same existing observation
                     // reading as retained comparisons. This imports each selected
                     // operand once; additive cancellation uses shared children.
-                    let retained = matches!(condition.native_compat(),
+                    let retained = matches!(condition.old_form(),
                         ConditionTerm::Compare { format, relation: CompareRelation::Equal, .. }
                         if format.format().bits() == 32
                     )
-                    .then(|| retained_arithmetic_comparison(condition.native_compat()))
+                    .then(|| retained_arithmetic_comparison(condition.old_form()))
                     .flatten();
-                    if let Some(view) = comparison_view(
-                        retained.as_ref().unwrap_or(condition.native_compat()),
-                        *truth,
-                    ) {
+                    if let Some(view) =
+                        comparison_view(retained.as_ref().unwrap_or(condition.old_form()), *truth)
+                    {
                         let view = view.widened().unwrap_or(view);
                         (Self::Comparison(key(&view)), true)
                     } else {
@@ -273,7 +272,7 @@ pub(in crate::kernel) fn same_comparison(
         crate::kernel::machine_integer::comparison::structural_native_comparison_view(
             condition, truth,
         ),
-        comparison_view(other.native_compat(), *value),
+        comparison_view(other.old_form(), *value),
     ) {
         (Some(left), Some(right)) => key(&left) == key(&right),
         _ => false,
@@ -447,7 +446,7 @@ impl ObservationComparisons {
                     } => Some(ComparisonOperand::Observation(value.clone())),
                     AddressOffset::Constant(bytes) if bytes % 4 == 0 => {
                         i32::try_from(bytes / 4).ok().map(|value| {
-                            ComparisonOperand::Constant(MachineTerm::constant(value as u32))
+                            ComparisonOperand::Constant(OldMachineTerm::constant(value as u32))
                         })
                     }
                     _ => None,
@@ -485,8 +484,8 @@ impl ObservationComparisons {
                     *format,
                     *op,
                     [
-                        MachineOperandView::Legacy(left),
-                        MachineOperandView::Legacy(right),
+                        MachineOperandView::Old(left),
+                        MachineOperandView::Old(right),
                     ],
                     truth,
                 )]
@@ -575,7 +574,7 @@ impl ObservationComparisons {
                 Relation::NotEqual
             },
             operands: operands.map(|operand| match operand {
-                MachineOperandView::Legacy(term) => ComparisonOperand::Written(term),
+                MachineOperandView::Old(term) => ComparisonOperand::Written(term),
                 MachineOperandView::Shared(_) => {
                     ComparisonOperand::Observation(operand.retain(format))
                 }
@@ -618,11 +617,11 @@ mod compound_observation_lookup_tests {
         use crate::kernel::machine_integer::comparison::retained_arithmetic_comparison;
         for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
             let _session = crate::kernel::VerificationSession::enter();
-            let sum = MachineTerm::Binary {
+            let sum = OldMachineTerm::Binary {
                 format,
                 op: MachineBinaryOp::Add,
-                left: MachineTerm::Variable(Variable(991450)).into(),
-                right: MachineTerm::constant_at32(format, 1).into(),
+                left: OldMachineTerm::Variable(Variable(991450)).into(),
+                right: OldMachineTerm::constant_at32(format, 1).into(),
             };
             let fact = |shared, second, truth| {
                 let leaf = |bound, truth| {
@@ -630,7 +629,7 @@ mod compound_observation_lookup_tests {
                         format,
                         CompareRelation::Equal,
                         sum.clone(),
-                        MachineTerm::constant_at32(format, bound),
+                        OldMachineTerm::constant_at32(format, bound),
                     );
                     Proposition::condition_is(
                         if shared {
@@ -665,7 +664,7 @@ mod compound_observation_lookup_tests {
         let ty = MachineIntegerType::Int32;
         let x = KernelTerm::variable(KernelType::Program(ty.program_type()), Variable(991440));
         let root = KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [x.clone(), x]);
-        let zero = MachineTerm::constant(0);
+        let zero = OldMachineTerm::constant(0);
         for truth in [false, true] {
             for width in [4, 8] {
                 let source = ConditionTerm::AddressOffsetEqual(
@@ -684,7 +683,7 @@ mod compound_observation_lookup_tests {
                             ty,
                             [
                                 MachineOperandView::Shared(&root),
-                                MachineOperandView::Legacy(&zero),
+                                MachineOperandView::Old(&zero),
                             ],
                             truth,
                         )
@@ -715,11 +714,11 @@ mod compound_observation_lookup_tests {
         ] {
             for truth in [false, true] {
                 let _session = crate::kernel::VerificationSession::enter();
-                let operand = MachineTerm::Binary {
+                let operand = OldMachineTerm::Binary {
                     format,
                     op: MachineBinaryOp::Add,
-                    left: MachineTerm::Variable(Variable(989101)).into(),
-                    right: MachineTerm::Variable(Variable(989102)).into(),
+                    left: OldMachineTerm::Variable(Variable(989101)).into(),
+                    right: OldMachineTerm::Variable(Variable(989102)).into(),
                 };
                 let bound = crate::kernel::machine_integer::range::constant_word(
                     format,
@@ -738,7 +737,7 @@ mod compound_observation_lookup_tests {
                 let query = condition_for_operand_views(
                     format,
                     CompareRelation::LessThan,
-                    [V::Shared(&root), V::Legacy(&bound)],
+                    [V::Shared(&root), V::Old(&bound)],
                 );
                 let parent = PureFactContext::new();
                 let mut child = parent.clone();
@@ -811,13 +810,13 @@ mod compound_observation_lookup_tests {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
 
         let native = ConditionTerm::equal(
-            MachineTerm::logical_machine_binary(
+            OldMachineTerm::logical_machine_binary(
                 ty,
                 MachineBinaryOp::Multiply,
-                MachineTerm::Variable(Variable(989001)),
-                MachineTerm::Variable(Variable(989002)),
+                OldMachineTerm::Variable(Variable(989001)),
+                OldMachineTerm::Variable(Variable(989002)),
             ),
-            MachineTerm::constant(u32::MAX),
+            OldMachineTerm::constant(u32::MAX),
         );
         let native_guard = guard(native.clone(), false);
         let native_context = PureFactContext::new().assume_proposition(native_guard.clone());
@@ -845,7 +844,7 @@ impl PureFactContext {
         left: MachineOperandView<'_>,
         right: MachineOperandView<'_>,
     ) -> Option<bool> {
-        if let (MachineOperandView::Legacy(a), MachineOperandView::Legacy(b)) = (left, right) {
+        if let (MachineOperandView::Old(a), MachineOperandView::Old(b)) = (left, right) {
             return self.exact_condition_value(&ConditionTerm::equal(a.clone(), b.clone()));
         }
         let mut operands = [left, right].map(|operand| {
@@ -959,7 +958,7 @@ mod resource_relation_tests {
     use super::*;
     use crate::kernel::{Address, LoadKind, OldPointer, ProgramType, Variable};
 
-    fn relation(term: MachineTerm, pointer: OldPointer, separate: bool) -> Proposition {
+    fn relation(term: OldMachineTerm, pointer: OldPointer, separate: bool) -> Proposition {
         let left = Resource::Composite {
             name: "storage".into(),
             arguments: vec![AlgebraicValue::Program(ProgramValue::Pointer(
@@ -971,11 +970,11 @@ mod resource_relation_tests {
             name: "allocation".into(),
             arguments: vec![
                 AlgebraicValue::Program(ProgramValue::Pointer(pointer)),
-                AlgebraicValue::Program(ProgramValue::Int32(MachineTerm::machine_binary(
+                AlgebraicValue::Program(ProgramValue::Int32(OldMachineTerm::machine_binary(
                     MachineIntegerType::Int32,
                     crate::kernel::MachineBinaryOp::Multiply,
                     term,
-                    MachineTerm::constant(4),
+                    OldMachineTerm::constant(4),
                 ))),
             ]
             .into(),
@@ -1008,9 +1007,10 @@ mod resource_relation_tests {
             4,
         );
         let pointer = OldPointer::new(address.clone(), ProgramType::Int32Pointer);
-        let read = |memory, address, kind| MachineTerm::read_named(memory, Box::new(address), kind);
+        let read =
+            |memory, address, kind| OldMachineTerm::read_named(memory, Box::new(address), kind);
         for separate in [false, true] {
-            let named = relation(MachineTerm::Variable(name), pointer.clone(), separate);
+            let named = relation(OldMachineTerm::Variable(name), pointer.clone(), separate);
             let structural = relation(
                 read(ProgramPoint::at(&memory), address.clone(), LoadKind::Int32),
                 pointer.clone(),
@@ -1042,7 +1042,7 @@ mod resource_relation_tests {
                     .clone()
                     .with_provenance(std::sync::Arc::new(address.offset_by_bytes(4)));
                 assert!(!facts.proves_exact(&relation(
-                    MachineTerm::Variable(name),
+                    OldMachineTerm::Variable(name),
                     different_provenance,
                     separate
                 )));
@@ -1051,7 +1051,7 @@ mod resource_relation_tests {
                 // read.
                 let retyped = pointer.clone().with_type(ProgramType::Int8Pointer);
                 assert!(facts.proves_exact(&relation(
-                    MachineTerm::Variable(name),
+                    OldMachineTerm::Variable(name),
                     retyped,
                     separate
                 )));

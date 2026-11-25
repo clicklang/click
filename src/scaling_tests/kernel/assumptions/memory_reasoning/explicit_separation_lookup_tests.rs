@@ -73,8 +73,8 @@ fn wide_separation_lookup_ignores_unrelated_wide_facts() {
     let wide = |base| {
         MemoryRange::new_wide(
             base,
-            MachineTerm::uint64_constant(0),
-            MachineTerm::uint64_constant(8),
+            OldMachineTerm::uint64_constant(0),
+            OldMachineTerm::uint64_constant(8),
             4,
         )
     };
@@ -136,8 +136,8 @@ fn wide_separation_lookup_scales_with_its_related_alias_chain() {
     let wide = |base| {
         MemoryRange::new_wide(
             base,
-            MachineTerm::uint64_constant(0),
-            MachineTerm::uint64_constant(8),
+            OldMachineTerm::uint64_constant(0),
+            OldMachineTerm::uint64_constant(8),
             4,
         )
     };

@@ -2,7 +2,7 @@
 //! The trace is diagnostic only; no recorded text participates in checking.
 
 use crate::kernel::proof::BranchId;
-use crate::kernel::{Address, ConditionTerm, MachineTerm, Proposition, SharedMemory};
+use crate::kernel::{Address, ConditionTerm, OldMachineTerm, Proposition, SharedMemory};
 #[cfg(test)]
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::source::SourcePosition;
@@ -295,7 +295,7 @@ impl ChildArgumentTrace {
             view.render(labels)
         } else if pointer == &Address::null() {
             "0 (null pointer)".into()
-        } else if let Some(MachineTerm::MemoryLoad(memory, address, _)) =
+        } else if let Some(OldMachineTerm::MemoryLoad(memory, address, _)) =
             pointer_definition(pointer)
         {
             format!(
@@ -345,11 +345,11 @@ impl ChildArgumentTrace {
     }
 }
 
-pub(super) fn pointer_definition(pointer: &Address) -> Option<MachineTerm> {
+pub(super) fn pointer_definition(pointer: &Address) -> Option<OldMachineTerm> {
     crate::kernel::logical_pointer_read_term(pointer).or_else(|| {
         let read = pointer.as_loaded_value()?;
         (read.displacement == crate::kernel::AddressOffset::Constant(0)).then(|| {
-            crate::kernel::MachineTerm::read_named(
+            crate::kernel::OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::viewing(&read.defining_memory, &read.point),
                 read.defining_address,
                 crate::kernel::LoadKind::Int32,
@@ -1358,7 +1358,7 @@ mod tests {
         });
     }
 
-    use crate::kernel::{Address, AddressBase, AddressOffset, MachineTerm, SymbolicMemory};
+    use crate::kernel::{Address, AddressBase, AddressOffset, OldMachineTerm, SymbolicMemory};
 
     #[test]
     fn admitted_read_equalities_share_the_fact_printer_and_read_labels() {
@@ -1411,7 +1411,7 @@ mod tests {
         let first = crate::kernel::intern_memory(SymbolicMemory::new());
         let second = crate::kernel::intern_memory(SymbolicMemory::new().store(
             address.clone(),
-            crate::kernel::ProgramValue::Int32(MachineTerm::constant(1)),
+            crate::kernel::ProgramValue::Int32(OldMachineTerm::constant(1)),
         ));
         let a = Address::loaded_value(&first, &address);
         let b = Address::loaded_value(&second, &address);
@@ -1518,19 +1518,19 @@ mod tests {
         let first = SymbolicMemory::new();
         let second = first.clone().store(
             pointer.clone(),
-            ProgramValue::UInt64(MachineTerm::uint64_constant(9)),
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(9)),
         );
         let fact = |memory| {
             Proposition::condition_is(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
-                    left: Box::new(crate::kernel::MachineTerm::read_named(
+                    left: Box::new(crate::kernel::OldMachineTerm::read_named(
                         crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                         pointer.clone(),
                         LoadKind::Bits64,
                     )),
-                    right: Box::new(MachineTerm::uint64_constant(3)),
+                    right: Box::new(OldMachineTerm::uint64_constant(3)),
                 },
                 true,
             )
@@ -1600,7 +1600,7 @@ mod tests {
                 base: AddressBase::ExternalArgument,
                 offset: AddressOffset::Constant(0),
             },
-            bytes: (MachineTerm::constant(1)).into(),
+            bytes: (OldMachineTerm::constant(1)).into(),
             wide: false,
         }
     }
@@ -1684,7 +1684,7 @@ mod tests {
                 ConditionTerm::integer_equal(
                     IntegerTerm::from_machine(
                         MachineIntegerType::UInt32,
-                        MachineTerm::Variable(Variable(981_702)),
+                        OldMachineTerm::Variable(Variable(981_702)),
                     )
                     .unwrap(),
                     IntegerTerm::constant_i64(17),
@@ -1770,7 +1770,7 @@ mod tests {
             offset: AddressOffset::Constant(0),
         };
         let variable =
-            crate::kernel::load_variable_for_term(&crate::kernel::MachineTerm::read_named(
+            crate::kernel::load_variable_for_term(&crate::kernel::OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&memory),
                 pointer.clone(),
                 crate::kernel::LoadKind::Int32,
@@ -1781,8 +1781,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(MachineTerm::Variable(variable)),
-                right: Box::new(crate::kernel::MachineTerm::read_named(
+                left: Box::new(OldMachineTerm::Variable(variable)),
+                right: Box::new(crate::kernel::OldMachineTerm::read_named(
                     crate::kernel::ProgramPoint::at(&memory),
                     pointer,
                     crate::kernel::LoadKind::Int32,

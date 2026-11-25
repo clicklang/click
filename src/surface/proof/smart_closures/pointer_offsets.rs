@@ -20,8 +20,8 @@ impl Index {
     }
     fn literal(self, value: i64) -> E {
         E::ProgramExpression(ProgramExpression::Value(match self {
-            Self::Signed => int32(MachineTerm::constant(value as u32)),
-            Self::Unsigned => crate::kernel::uint64(MachineTerm::uint64_constant(value as u64)),
+            Self::Signed => int32(OldMachineTerm::constant(value as u32)),
+            Self::Unsigned => crate::kernel::uint64(OldMachineTerm::uint64_constant(value as u64)),
         }))
     }
 }

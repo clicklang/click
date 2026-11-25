@@ -66,20 +66,20 @@ mod tests {
         use OverflowOperation::*;
         [Add, Subtract, Multiply, Divide, ShiftLeft]
     }
-    fn values(format: MachineIntegerType) -> Vec<MachineTerm> {
-        let mut values = vec![MachineTerm::Variable(Variable(999201))];
+    fn values(format: MachineIntegerType) -> Vec<OldMachineTerm> {
+        let mut values = vec![OldMachineTerm::Variable(Variable(999201))];
         for value in [0, 1, 31, 32, 63, 64] {
-            values.push(MachineTerm::machine_constant(
+            values.push(OldMachineTerm::machine_constant(
                 MachineIntegerConstant::from_signed(format.format(), value).unwrap(),
             ));
         }
         if let Some(value) = MachineIntegerConstant::from_signed(format.format(), -1) {
-            values.push(MachineTerm::machine_constant(value));
+            values.push(OldMachineTerm::machine_constant(value));
         }
         if format == MachineIntegerType::Int64 {
-            values.push(MachineTerm::legacy_cast(
+            values.push(OldMachineTerm::legacy_cast(
                 MachineCastSpelling::Int64From32,
-                Box::new(MachineTerm::Variable(Variable(999202))),
+                Box::new(OldMachineTerm::Variable(Variable(999202))),
             ));
         }
         values
@@ -133,8 +133,8 @@ mod tests {
                 let source = ConditionTerm::Overflows {
                     format,
                     op: operation,
-                    left: Box::new(MachineTerm::Variable(Variable(999201))),
-                    right: Box::new(MachineTerm::machine_constant(
+                    left: Box::new(OldMachineTerm::Variable(Variable(999201))),
+                    right: Box::new(OldMachineTerm::machine_constant(
                         MachineIntegerConstant::from_signed(format.format(), 0).unwrap(),
                     )),
                 };
@@ -146,7 +146,7 @@ mod tests {
                     ),
                 ] {
                     let root = KernelTermImport::default().condition(&source);
-                    let bits = MachineTerm::machine_constant(
+                    let bits = OldMachineTerm::machine_constant(
                         MachineIntegerConstant::from_signed(format.format(), 1).unwrap(),
                     );
                     let expected =
@@ -193,7 +193,7 @@ mod tests {
             .with_block("overflow-other", 4);
         let after = before.clone().store(
             crate::kernel::SymbolicMemory::global_pointer("overflow-other"),
-            ProgramValue::Int32(MachineTerm::constant(1)),
+            ProgramValue::Int32(OldMachineTerm::constant(1)),
         );
         let memories = [before, after].map(crate::kernel::intern_memory);
         for format in [MachineIntegerType::Int32, MachineIntegerType::Int64] {
@@ -201,7 +201,7 @@ mod tests {
                 let sources = memories.each_ref().map(|memory| ConditionTerm::Overflows {
                     format,
                     op,
-                    left: Box::new(MachineTerm::read_named(
+                    left: Box::new(OldMachineTerm::read_named(
                         ProgramPoint::at(memory),
                         Box::new(crate::kernel::SymbolicMemory::global_pointer(
                             "overflow-read",
@@ -212,13 +212,13 @@ mod tests {
                             LoadKind::Bits64
                         },
                     )),
-                    right: Box::new(MachineTerm::Variable(Variable(999203))),
+                    right: Box::new(OldMachineTerm::Variable(Variable(999203))),
                 });
                 let roots = sources
                     .each_ref()
                     .map(|source| KernelTermImport::default().condition(source));
                 for allowed in [false, true] {
-                    let loads = |_: &MachineTerm, _: &MachineTerm| allowed;
+                    let loads = |_: &OldMachineTerm, _: &OldMachineTerm| allowed;
                     let expected = crate::kernel::assumptions::conditions_equal_with_load_atoms(
                         &sources[0],
                         &sources[1],
@@ -250,11 +250,11 @@ mod tests {
         let source = ConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Add,
-            left: Box::new(MachineTerm::IntegerAddress(
+            left: Box::new(OldMachineTerm::IntegerAddress(
                 Box::new(Address::symbolic(Variable(999210))),
                 AddressObjectClass::NONE,
             )),
-            right: Box::new(MachineTerm::uint64_constant(0)),
+            right: Box::new(OldMachineTerm::uint64_constant(0)),
         };
         for source in [
             source.clone(),

@@ -217,8 +217,8 @@ fn byte_loads_read_each_little_endian_byte_of_a_constant_uint32_cell() {
 fn byte_loads_read_each_little_endian_byte_of_constant_64_bit_cells() {
     let bits = 0x8877_6655_4433_2211_u64;
     for cell in [
-        ProgramValue::UInt64(MachineTerm::uint64_constant(bits)),
-        ProgramValue::Int64(MachineTerm::int64_constant(bits as i64)),
+        ProgramValue::UInt64(OldMachineTerm::uint64_constant(bits)),
+        ProgramValue::Int64(OldMachineTerm::int64_constant(bits as i64)),
     ] {
         let memory = SymbolicMemory::new().store(word(0), cell.clone());
         for offset in 0..8 {
@@ -233,35 +233,35 @@ fn byte_loads_read_each_little_endian_byte_of_constant_64_bit_cells() {
 
 #[test]
 fn byte_loads_of_symbolic_cells_extract_the_shifted_masked_byte() {
-    let value = MachineTerm::Variable(Variable(7301));
+    let value = OldMachineTerm::Variable(Variable(7301));
     let memory = SymbolicMemory::new().store(word(0), ProgramValue::UInt32(value.clone()));
     assert_eq!(
         load_byte(&memory, 2, ProgramType::UInt8, Some(ByteOrder::Little)),
         // A byte view is the byte's native `uint8` term.
-        ExpressionOutcome::Value(ProgramValue::UInt8(MachineTerm::machine_integer_cast(
+        ExpressionOutcome::Value(ProgramValue::UInt8(OldMachineTerm::machine_integer_cast(
             MachineIntegerType::UInt32,
             MachineIntegerType::UInt8,
             binary_node!(
                 UInt32,
                 ShiftRight,
                 Box::new(value.clone()),
-                Box::new(MachineTerm::uint32_constant(16)),
+                Box::new(OldMachineTerm::uint32_constant(16)),
             ),
         )))
     );
 
-    let wide = MachineTerm::Variable(Variable(7302));
+    let wide = OldMachineTerm::Variable(Variable(7302));
     let memory = SymbolicMemory::new().store(word(0), ProgramValue::UInt64(wide.clone()));
     assert_eq!(
         load_byte(&memory, 5, ProgramType::UInt8, Some(ByteOrder::Little)),
-        ExpressionOutcome::Value(ProgramValue::UInt8(MachineTerm::machine_integer_cast(
+        ExpressionOutcome::Value(ProgramValue::UInt8(OldMachineTerm::machine_integer_cast(
             MachineIntegerType::UInt64,
             MachineIntegerType::UInt8,
-            MachineTerm::Binary {
+            OldMachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::ShiftRight,
                 left: Box::new(wide),
-                right: Box::new(MachineTerm::uint64_constant(40))
+                right: Box::new(OldMachineTerm::uint64_constant(40))
             },
         )))
     );
@@ -274,7 +274,7 @@ fn byte_loads_of_symbolic_cells_extract_the_shifted_masked_byte() {
     };
     assert_eq!(
         integer_cell_byte(&cell.value, cell.byte),
-        Some(MachineTerm::narrow_constant(
+        Some(OldMachineTerm::narrow_constant(
             MachineIntegerType::UInt8,
             0xC3
         ))
@@ -294,7 +294,7 @@ fn signed_byte_loads_sign_extend_a_constant_byte_and_refuse_a_symbolic_one() {
     );
     let symbolic = SymbolicMemory::new().store(
         word(0),
-        ProgramValue::UInt32(MachineTerm::Variable(Variable(7303))),
+        ProgramValue::UInt32(OldMachineTerm::Variable(Variable(7303))),
     );
     assert!(is_load_type_mismatch(&load_byte(
         &symbolic,
@@ -321,7 +321,7 @@ fn byte_stores_update_the_containing_uint32_cell_in_place() {
         );
         assert_eq!(
             after.known_value(&word(0)),
-            Some(ProgramValue::UInt32(MachineTerm::constant(expected))),
+            Some(ProgramValue::UInt32(OldMachineTerm::constant(expected))),
             "byte {offset}"
         );
         // The updated cell is the only description of this storage.
@@ -341,12 +341,12 @@ fn byte_stores_update_the_containing_uint64_cell_in_place() {
     for offset in 0..8 {
         let memory = SymbolicMemory::new().store(
             word(0),
-            ProgramValue::UInt64(MachineTerm::uint64_constant(bits)),
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(bits)),
         );
         let after = store_byte(memory, offset, crate::kernel::uint8(0), ByteOrder::Little);
         assert_eq!(
             after.known_value(&word(0)),
-            Some(ProgramValue::UInt64(MachineTerm::uint64_constant(
+            Some(ProgramValue::UInt64(OldMachineTerm::uint64_constant(
                 bits & !(0xFF << (8 * offset))
             ))),
             "byte {offset}"
@@ -356,7 +356,7 @@ fn byte_stores_update_the_containing_uint64_cell_in_place() {
 
 #[test]
 fn byte_stores_into_a_symbolic_uint32_cell_keep_the_other_bytes() {
-    let value = MachineTerm::Variable(Variable(7304));
+    let value = OldMachineTerm::Variable(Variable(7304));
     let memory = SymbolicMemory::new().store(word(0), ProgramValue::UInt32(value.clone()));
     let after = store_byte(memory, 1, crate::kernel::uint8(0x5Au32), ByteOrder::Little);
     assert_eq!(
@@ -368,9 +368,9 @@ fn byte_stores_into_a_symbolic_uint32_cell_keep_the_other_bytes() {
                 Int32,
                 BitwiseAnd,
                 Box::new(value),
-                Box::new(MachineTerm::constant(0xFFFF_00FF)),
+                Box::new(OldMachineTerm::constant(0xFFFF_00FF)),
             )),
-            Box::new(MachineTerm::constant(0x5A00)),
+            Box::new(OldMachineTerm::constant(0x5A00)),
         )))
     );
 }
@@ -447,8 +447,8 @@ fn a_one_byte_cell_is_read_as_its_own_access() {
 #[test]
 fn a_32_bit_read_of_the_other_signedness_is_the_sign_cast_of_the_word() {
     use MachineIntegerType::{Int32, UInt32};
-    let constant = MachineTerm::constant(u32::MAX);
-    let variable = MachineTerm::Variable(Variable(613_101));
+    let constant = OldMachineTerm::constant(u32::MAX);
+    let variable = OldMachineTerm::Variable(Variable(613_101));
     for term in [constant, variable] {
         for (stored, read, cast) in [
             (Int32, Int32, None),
@@ -460,7 +460,7 @@ fn a_32_bit_read_of_the_other_signedness_is_the_sign_cast_of_the_word() {
             let expected = match cast {
                 None => term.clone(),
                 Some((source, destination)) => {
-                    MachineTerm::sign_cast32(source, destination, term.clone())
+                    OldMachineTerm::sign_cast32(source, destination, term.clone())
                 }
             };
             assert_eq!(
@@ -527,10 +527,10 @@ fn character_loads_read_a_one_byte_cell_of_the_other_signedness_as_its_bits() {
             Some(int8(byte as i8))
         );
     }
-    let variable = MachineTerm::Variable(Variable(613_001));
+    let variable = OldMachineTerm::Variable(Variable(613_001));
     assert_eq!(
         ProgramType::UInt8.read_cell(&ProgramValue::Int8(variable.clone())),
-        Some(ProgramValue::UInt8(MachineTerm::machine_integer_cast(
+        Some(ProgramValue::UInt8(OldMachineTerm::machine_integer_cast(
             MachineIntegerType::Int8,
             MachineIntegerType::UInt8,
             variable.clone(),
@@ -552,13 +552,13 @@ fn character_loads_read_a_one_byte_cell_of_the_other_signedness_as_its_bits() {
         (ProgramType::Int8, ProgramValue::bool_constant(true)),
         (
             ProgramType::UInt8,
-            ProgramValue::Float32(MachineTerm::constant(0)),
+            ProgramValue::Float32(OldMachineTerm::constant(0)),
         ),
         (ProgramType::Int16, crate::kernel::uint8(1)),
         (ProgramType::Int32, crate::kernel::int16(1)),
         (
             ProgramType::UInt64,
-            ProgramValue::UInt32(MachineTerm::constant(1)),
+            ProgramValue::UInt32(OldMachineTerm::constant(1)),
         ),
         (ProgramType::UInt16, crate::kernel::int8(1)),
     ] {
@@ -594,7 +594,7 @@ fn integer_loads_read_a_cell_of_the_other_signedness_as_its_bits() {
         );
     }
     for word in [0u32, 1, 0x7FFF_FFFF, 0x8000_0000, 0xFFFF_FFFF] {
-        let bits = MachineTerm::constant(word);
+        let bits = OldMachineTerm::constant(word);
         assert_eq!(
             ProgramType::UInt32.read_cell(&ProgramValue::Int32(bits.clone())),
             Some(uint32(bits.clone()))
@@ -612,22 +612,23 @@ fn integer_loads_read_a_cell_of_the_other_signedness_as_its_bits() {
         u64::MAX,
     ] {
         assert_eq!(
-            ProgramType::UInt64.read_cell(&ProgramValue::Int64(MachineTerm::int64_constant(
+            ProgramType::UInt64.read_cell(&ProgramValue::Int64(OldMachineTerm::int64_constant(
                 word as i64
             ))),
-            Some(ProgramValue::UInt64(MachineTerm::uint64_constant(word)))
+            Some(ProgramValue::UInt64(OldMachineTerm::uint64_constant(word)))
         );
         assert_eq!(
-            ProgramType::Int64.read_cell(&ProgramValue::UInt64(MachineTerm::uint64_constant(word))),
-            Some(ProgramValue::Int64(MachineTerm::int64_constant(
+            ProgramType::Int64
+                .read_cell(&ProgramValue::UInt64(OldMachineTerm::uint64_constant(word))),
+            Some(ProgramValue::Int64(OldMachineTerm::int64_constant(
                 word as i64
             )))
         );
     }
-    let variable = MachineTerm::Variable(Variable(613_002));
+    let variable = OldMachineTerm::Variable(Variable(613_002));
     assert_eq!(
         ProgramType::UInt16.read_cell(&ProgramValue::Int16(variable.clone())),
-        Some(ProgramValue::UInt16(MachineTerm::machine_integer_cast(
+        Some(ProgramValue::UInt16(OldMachineTerm::machine_integer_cast(
             MachineIntegerType::Int16,
             MachineIntegerType::UInt16,
             variable.clone(),

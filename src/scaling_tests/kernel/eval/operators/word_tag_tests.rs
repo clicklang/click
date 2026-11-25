@@ -8,16 +8,16 @@ fn checked_word_tag_addition_ignores_unrelated_facts() {
         let (bits, value) = word();
         let mut context = PureFactContext::new().assume_condition(
             ConditionTerm::uint64_equal(
-                MachineTerm::uint64_bitwise_and(bits, MachineTerm::uint64_constant(1)),
-                MachineTerm::uint64_constant(0),
+                OldMachineTerm::uint64_bitwise_and(bits, OldMachineTerm::uint64_constant(1)),
+                OldMachineTerm::uint64_constant(0),
             ),
             true,
         );
         for index in 0..size {
             context = context.assume_condition(
                 ConditionTerm::uint64_equal(
-                    MachineTerm::Variable(Variable(998_000 + index)),
-                    MachineTerm::uint64_constant(index),
+                    OldMachineTerm::Variable(Variable(998_000 + index)),
+                    OldMachineTerm::uint64_constant(index),
                 ),
                 true,
             );
@@ -26,7 +26,7 @@ fn checked_word_tag_addition_ignores_unrelated_facts() {
             apply_program_add(
                 &ExecutionState::new(),
                 value,
-                ProgramValue::UInt64(MachineTerm::uint64_constant(1)),
+                ProgramValue::UInt64(OldMachineTerm::uint64_constant(1)),
                 None,
                 None,
                 Vec::new().into(),
@@ -50,18 +50,18 @@ fn commuted_word_tag_or_ignores_unrelated_facts() {
     let costs = [4u64, 16, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
         let (_, value) = word();
-        let tag = MachineTerm::Variable(Variable(997_080));
+        let tag = OldMachineTerm::Variable(Variable(997_080));
         let tag_value =
             ProgramValue::UInt64(tag.clone()).complete_word(Address::symbolic(Variable(997_081)));
         let mut context = PureFactContext::new().assume_condition(
-            ConditionTerm::uint64_less_equal(tag, MachineTerm::uint64_constant(1)),
+            ConditionTerm::uint64_less_equal(tag, OldMachineTerm::uint64_constant(1)),
             true,
         );
         for index in 0..size {
             context = context.assume_condition(
                 ConditionTerm::uint64_equal(
-                    MachineTerm::Variable(Variable(998_000 + index)),
-                    MachineTerm::uint64_constant(index),
+                    OldMachineTerm::Variable(Variable(998_000 + index)),
+                    OldMachineTerm::uint64_constant(index),
                 ),
                 true,
             );
@@ -95,32 +95,32 @@ fn commuted_word_tag_or_ignores_unrelated_facts() {
 fn tag_clearing_equations_ignore_unrelated_and_looser_bounds() {
     let costs = [4u64, 16, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
-        let word = MachineTerm::Variable(Variable(997_090));
-        let tag = MachineTerm::Variable(Variable(997_091));
+        let word = OldMachineTerm::Variable(Variable(997_090));
+        let tag = OldMachineTerm::Variable(Variable(997_091));
         let mut context = PureFactContext::new().assume_condition(
-            ConditionTerm::uint64_less_equal(tag.clone(), MachineTerm::uint64_constant(1)),
+            ConditionTerm::uint64_less_equal(tag.clone(), OldMachineTerm::uint64_constant(1)),
             true,
         );
         for index in 0..size {
             context = context
                 .assume_condition(
                     ConditionTerm::uint64_equal(
-                        MachineTerm::Variable(Variable(998_000 + index)),
-                        MachineTerm::uint64_constant(index),
+                        OldMachineTerm::Variable(Variable(998_000 + index)),
+                        OldMachineTerm::uint64_constant(index),
                     ),
                     true,
                 )
                 .assume_condition(
                     ConditionTerm::uint64_less_equal(
                         tag.clone(),
-                        MachineTerm::uint64_constant(index + 8),
+                        OldMachineTerm::uint64_constant(index + 8),
                     ),
                     true,
                 );
         }
-        let masked = MachineTerm::uint64_bitwise_and(
-            MachineTerm::uint64_bitwise_or(word.clone(), tag),
-            MachineTerm::uint64_constant(!3),
+        let masked = OldMachineTerm::uint64_bitwise_and(
+            OldMachineTerm::uint64_bitwise_or(word.clone(), tag),
+            OldMachineTerm::uint64_constant(!3),
         );
         let (equation, work) = crate::instrumentation::measure_deterministic_work(|| {
             bounded_uint64_tag_equation(&masked, &context)
@@ -129,7 +129,7 @@ fn tag_clearing_equations_ignore_unrelated_and_looser_bounds() {
             equation,
             Some(ConditionTerm::uint64_equal(
                 masked,
-                MachineTerm::uint64_bitwise_and(word, MachineTerm::uint64_constant(!3))
+                OldMachineTerm::uint64_bitwise_and(word, OldMachineTerm::uint64_constant(!3))
             ))
         );
         work

@@ -80,8 +80,8 @@ fn indexed_ownership_overlap_keeps_geometry_and_persistent_branches() {
     );
     let native = ResourceFact::own_memory(MemoryRange::new_wide(
         at(1),
-        MachineTerm::uint64_constant(0),
-        MachineTerm::uint64_constant(4),
+        OldMachineTerm::uint64_constant(0),
+        OldMachineTerm::uint64_constant(4),
         1,
     ));
     assert!(
@@ -114,7 +114,7 @@ fn a_query_read_definition_is_registered_in_the_paired_namespace() {
         C_POINTER_BYTE_WIDTH,
         &retained_state,
     );
-    let read = Address::loaded(&MachineTerm::Variable(variable)).unwrap();
+    let read = Address::loaded(&OldMachineTerm::Variable(variable)).unwrap();
     facts.register_pointer_read(&read, &retained_state, &field);
     let _operation = crate::kernel::search::FastOperationScope::enter(
         "ownership through a newly registered read",
@@ -133,7 +133,7 @@ fn incomplete_indexes_refuse_but_cold_maintained_coordinates_decide() {
     let symbolic = ResourceFact::own_memory(MemoryRange::new_with_element_width(
         p.clone(),
         0u32.into(),
-        MachineTerm::Variable(Variable(8_760_000)),
+        OldMachineTerm::Variable(Variable(8_760_000)),
         1,
     ));
     let resources = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(symbolic);
@@ -218,7 +218,7 @@ fn cold_ownership_uses_produced_intervals_without_preparing_a_graph() {
 #[test]
 fn symbolic_boundary_uses_direct_bounds_and_does_not_invent_an_overlap() {
     let p = at(30);
-    let x = MachineTerm::Variable(Variable(8_760_030));
+    let x = OldMachineTerm::Variable(Variable(8_760_030));
     let empty = PureFactContext::new();
     let parent = ResourceContext::new().unchecked_with_fact(owner(p.clone(), 8, 12));
     let query = ResourceFact::own_memory(MemoryRange::new_with_element_width(

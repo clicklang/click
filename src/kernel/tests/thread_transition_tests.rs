@@ -1117,12 +1117,12 @@ fn thread_guarantees_are_withheld_until_join() {
         .unwrap();
     let postcondition = Proposition::condition_is(
         ConditionTerm::equal(
-            MachineTerm::read_named(
+            OldMachineTerm::read_named(
                 ProgramPoint::at(&(intern_memory_ref(spawned.parent().memory()))),
                 Box::new(pointer(0)),
                 crate::kernel::LoadKind::Int32,
             ),
-            MachineTerm::constant(77),
+            OldMachineTerm::constant(77),
         ),
         true,
     );

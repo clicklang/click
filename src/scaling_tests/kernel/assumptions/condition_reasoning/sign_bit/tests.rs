@@ -9,7 +9,7 @@ fn sign_bit_readings_retain_growing_shared_prefixes() {
             KernelType::Program(Ty::UInt32.program_type()),
             Variable(189221),
         );
-        let zero = MachineTerm::constant(0);
+        let zero = OldMachineTerm::constant(0);
         let context = PureFactContext::new();
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -28,7 +28,7 @@ fn sign_bit_readings_retain_growing_shared_prefixes() {
                 let query = condition_for_operand_views(
                     Ty::Int32,
                     R::LessThan,
-                    [View::Shared(&cast), View::Legacy(&zero)],
+                    [View::Shared(&cast), View::Old(&zero)],
                 );
                 assert!(query.names_sign_cast32());
                 let equivalents = context.sign_bit_equivalents(&query).unwrap();

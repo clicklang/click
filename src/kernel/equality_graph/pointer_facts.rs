@@ -63,10 +63,10 @@ impl EqualityGraph {
             crate::instrumentation::record_deterministic_work(1);
             match work {
                 Work::Term(Term::ProgramValue(value)) => {
-                    pending.push(Work::Value(value.native_compat()));
+                    pending.push(Work::Value(value.old_form()));
                 }
                 Work::Term(Term::Algebraic(model)) => {
-                    pending.push(Work::Model(model.native_compat()));
+                    pending.push(Work::Model(model.old_form()));
                 }
                 Work::Model(AlgebraicTerm {
                     node: AlgebraicTermNode::Constructor { fields, .. },

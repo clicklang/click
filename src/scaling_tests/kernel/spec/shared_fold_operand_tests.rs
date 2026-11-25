@@ -46,7 +46,7 @@ fn fold_item_domains_retain_growing_endpoints_at_each_width() {
                 KernelType::Program(format.program_type()),
                 Variable(1003001),
             );
-            let seed = SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0));
+            let seed = SharedIntegerRangeEndpoint::intern(OldMachineTerm::constant(0));
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 for index in 0..size {
@@ -95,8 +95,7 @@ fn fold_item_domains_retain_growing_endpoints_at_each_width() {
                             panic!("positive guard")
                         };
                         let view =
-                            structural_native_comparison_view(condition.native_compat(), true)
-                                .unwrap();
+                            structural_native_comparison_view(condition.old_form(), true).unwrap();
                         assert_eq!(view.format, format);
                         assert_eq!(view.relation, relation);
                         assert_eq!(

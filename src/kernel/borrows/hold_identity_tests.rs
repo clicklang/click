@@ -10,8 +10,8 @@ fn holding_a_scope_mints_a_distinct_ledger_identity() {
     };
     let fact = ResourceFact::own_memory(MemoryRange::new(
         base,
-        MachineTerm::constant(0),
-        MachineTerm::constant(8),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(8),
     ));
     let context = ResourceContext::new().unchecked_with_fact(fact.clone());
     let ledger = BorrowLedger::new();

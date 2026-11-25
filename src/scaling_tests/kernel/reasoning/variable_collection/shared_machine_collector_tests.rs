@@ -108,10 +108,10 @@ fn shared_conversion_collectors_visit_common_integer_payloads_once() {
         }
         let mut importer = KernelTermImport::default();
         let mut root = importer
-            .machine_arithmetic(format, &MachineTerm::constant(0))
+            .machine_arithmetic(format, &OldMachineTerm::constant(0))
             .unwrap();
         for index in 0..size {
-            let conversion = MachineTerm::IntegerToMachine {
+            let conversion = OldMachineTerm::IntegerToMachine {
                 destination: format,
                 value: IntegerTerm::Add(
                     common.clone(),

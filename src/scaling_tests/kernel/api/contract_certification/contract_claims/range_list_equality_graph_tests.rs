@@ -12,8 +12,8 @@ fn certified_range_list_graph_queries_scale_without_fact_index() {
         let range = |value| {
             MemoryRange::new(
                 base.clone(),
-                MachineTerm::add(value, MachineTerm::constant(1)),
-                MachineTerm::constant(16),
+                OldMachineTerm::add(value, OldMachineTerm::constant(1)),
+                OldMachineTerm::constant(16),
             )
         };
         let left = range(var(0));

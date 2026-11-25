@@ -5,9 +5,9 @@ fn subrange_law_does_not_enumerate_the_interval() {
     for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
         let constant = |n| {
             if format == MachineIntegerType::UInt64 {
-                MachineTerm::uint64_constant(n)
+                OldMachineTerm::uint64_constant(n)
             } else {
-                MachineTerm::constant(n as u32)
+                OldMachineTerm::constant(n as u32)
             }
         };
         let costs = [4u64, 64, 4096, 1_000_000].map(|length| {
@@ -47,8 +47,8 @@ fn elements_laws_do_not_walk_the_index_distance() {
             let costs = [4i32, 64, 4096, i32::MAX].map(|distance| {
                 let _session = crate::kernel::VerificationSession::enter();
                 let term = |n: i32| match format {
-                    MachineIntegerType::Int32 => MachineTerm::constant(n as u32),
-                    _ => MachineTerm::int64_constant(i64::from(n)),
+                    MachineIntegerType::Int32 => OldMachineTerm::constant(n as u32),
+                    _ => OldMachineTerm::int64_constant(i64::from(n)),
                 };
                 let base = OldPointer::new(
                     Address::symbolic(Variable(8_390_001)),
@@ -120,7 +120,7 @@ fn conjunction_lowering_visits_written_operands_not_ambient_facts() {
                 Resource::Memory(MemoryRange::new_with_element_width(
                     Address::symbolic(Variable(8_391_000)),
                     0u32.into(),
-                    MachineTerm::Variable(Variable(8_392_000 + i as u64)),
+                    OldMachineTerm::Variable(Variable(8_392_000 + i as u64)),
                     4,
                 ))
             } else {
@@ -199,9 +199,9 @@ fn element_containment_does_not_enumerate_its_interval() {
     for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
         let constant = |n| {
             if format == MachineIntegerType::UInt64 {
-                MachineTerm::uint64_constant(n)
+                OldMachineTerm::uint64_constant(n)
             } else {
-                MachineTerm::constant(n as u32)
+                OldMachineTerm::constant(n as u32)
             }
         };
         let costs = [4u64, 64, 4096, 1_000_000].map(|length| {
@@ -234,9 +234,9 @@ fn rebase_law_does_not_enumerate_its_interval() {
     for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
         let constant = |n| {
             if format == MachineIntegerType::UInt64 {
-                MachineTerm::uint64_constant(n)
+                OldMachineTerm::uint64_constant(n)
             } else {
-                MachineTerm::constant(n as u32)
+                OldMachineTerm::constant(n as u32)
             }
         };
         let costs = [4u64, 64, 4096, 1_000_000].map(|length| {

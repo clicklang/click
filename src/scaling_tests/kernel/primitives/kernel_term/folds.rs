@@ -75,12 +75,13 @@ fn nested_machine_fold_producers_retain_children_without_native_exports() {
     use crate::kernel::ExecutionValue;
     for size in [8, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let zero = ExecutionValue::Native(ProgramValue::Int32(MachineTerm::constant(0)));
-        let end =
-            ExecutionValue::Native(ProgramValue::Int32(MachineTerm::Variable(Variable(981001))));
+        let zero = ExecutionValue::Native(ProgramValue::Int32(OldMachineTerm::constant(0)));
+        let end = ExecutionValue::Native(ProgramValue::Int32(OldMachineTerm::Variable(Variable(
+            981001,
+        ))));
         let before = KernelTermExport::machine_export_count();
         let (value, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let mut value = ExecutionValue::Native(ProgramValue::Int32(MachineTerm::Variable(
+            let mut value = ExecutionValue::Native(ProgramValue::Int32(OldMachineTerm::Variable(
                 Variable(981002),
             )));
             for _ in 0..size {
@@ -119,7 +120,7 @@ fn empty_machine_fold_check_skips_growing_callback() {
         let literal = |bits| {
             KernelTerm::retained_machine_operand(
                 format,
-                MachineOperandView::Legacy(&MachineTerm::constant(bits)),
+                MachineOperandView::Old(&OldMachineTerm::constant(bits)),
             )
         };
         let start = literal(1);
@@ -129,8 +130,8 @@ fn empty_machine_fold_check_skips_growing_callback() {
         for index in 0..unrelated {
             facts = facts.assume_condition(
                 ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(990_000 + index)),
-                    MachineTerm::constant(13),
+                    OldMachineTerm::Variable(Variable(990_000 + index)),
+                    OldMachineTerm::constant(13),
                 ),
                 true,
             );
@@ -163,7 +164,7 @@ fn empty_machine_fold_check_skips_growing_callback() {
             });
             assert_eq!(
                 result.operand_view().literal(),
-                Some(MachineTerm::constant(5))
+                Some(OldMachineTerm::constant(5))
             );
             assert_eq!(KernelTermExport::machine_export_count(), before);
             assert!(
@@ -179,7 +180,7 @@ fn literal_range_projection_check_ignores_trip_count() {
     let _session = crate::kernel::VerificationSession::enter();
     let format = MachineIntegerType::Int32;
     let literal = |value: i32| {
-        KernelTermImport::default().machine(format, &MachineTerm::constant(value as u32))
+        KernelTermImport::default().machine(format, &OldMachineTerm::constant(value as u32))
     };
     let [accumulator, item] = [Variable(981_200), Variable(981_201)];
     let variable = |id| KernelTerm::variable(KernelType::Program(ProgramType::Int32), id);
@@ -189,8 +190,8 @@ fn literal_range_projection_check_ignores_trip_count() {
         for index in 0..unrelated {
             facts = facts.assume_condition(
                 ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(981_300 + index)),
-                    MachineTerm::constant(7),
+                    OldMachineTerm::Variable(Variable(981_300 + index)),
+                    OldMachineTerm::constant(7),
                 ),
                 true,
             );
@@ -236,7 +237,7 @@ fn short_machine_fold_check_visits_shared_callback_once_per_step() {
         let literal = |bits| {
             KernelTerm::retained_machine_operand(
                 format,
-                MachineOperandView::Legacy(&MachineTerm::constant(bits)),
+                MachineOperandView::Old(&OldMachineTerm::constant(bits)),
             )
         };
         let start = literal(0);

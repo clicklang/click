@@ -3,26 +3,23 @@ use crate::kernel::{
     KernelTerm, KernelTermExport, MachineBinaryOp, MachineCastSpelling, VerificationSession,
 };
 
-fn shared(value: &MachineTerm) -> KernelTerm {
-    KernelTerm::retained_machine_operand(
-        MachineIntegerType::Int32,
-        MachineOperandView::Legacy(value),
-    )
+fn shared(value: &OldMachineTerm) -> KernelTerm {
+    KernelTerm::retained_machine_operand(MachineIntegerType::Int32, MachineOperandView::Old(value))
 }
 fn binary(
     format: MachineIntegerType,
     op: MachineBinaryOp,
-    a: MachineTerm,
-    b: MachineTerm,
-) -> MachineTerm {
-    MachineTerm::Binary {
+    a: OldMachineTerm,
+    b: OldMachineTerm,
+) -> OldMachineTerm {
+    OldMachineTerm::Binary {
         format,
         op,
         left: Box::new(a),
         right: Box::new(b),
     }
 }
-fn reads() -> [MachineTerm; 3] {
+fn reads() -> [OldMachineTerm; 3] {
     let pointer = Address {
         base: "retained-retained_state".into(),
         offset: AddressOffset::Constant(0),
@@ -31,7 +28,7 @@ fn reads() -> [MachineTerm; 3] {
         .with_block(pointer.base.clone(), 64)
         .store(
             pointer.clone(),
-            ProgramValue::Int32(MachineTerm::constant(2)),
+            ProgramValue::Int32(OldMachineTerm::constant(2)),
         );
     let other = Address {
         base: pointer.base.clone(),
@@ -39,13 +36,13 @@ fn reads() -> [MachineTerm; 3] {
     };
     let separate = memory
         .clone()
-        .store(other, ProgramValue::Int32(MachineTerm::constant(3)));
+        .store(other, ProgramValue::Int32(OldMachineTerm::constant(3)));
     let overlap = memory.clone().store(
         pointer.clone(),
-        ProgramValue::Int32(MachineTerm::constant(3)),
+        ProgramValue::Int32(OldMachineTerm::constant(3)),
     );
     [memory, separate, overlap].map(|memory| {
-        MachineTerm::read_named(
+        OldMachineTerm::read_named(
             ProgramPoint::unplaced(&(crate::kernel::intern_memory(memory))),
             Box::new(pointer.clone()),
             LoadKind::Int32,
@@ -75,7 +72,7 @@ fn state_indices_preserve_native_syntax_and_frame_limits() {
             MachineBinaryOp::Multiply,
             MachineBinaryOp::BitwiseAnd,
         ] {
-            let left = binary(format, op, before.clone(), MachineTerm::constant(1));
+            let left = binary(format, op, before.clone(), OldMachineTerm::constant(1));
             for (read, allowed) in [
                 (&before, true),
                 (
@@ -84,7 +81,7 @@ fn state_indices_preserve_native_syntax_and_frame_limits() {
                 ),
                 (&overlap, false),
             ] {
-                let right = binary(format, op, read.clone(), MachineTerm::constant(1));
+                let right = binary(format, op, read.clone(), OldMachineTerm::constant(1));
                 assert_eq!(
                     context.bitvector_terms_state_equivalent(&left, &right),
                     allowed,
@@ -99,10 +96,10 @@ fn state_indices_preserve_native_syntax_and_frame_limits() {
                     ),
                     (
                         MachineOperandView::Shared(&a),
-                        MachineOperandView::Legacy(&right),
+                        MachineOperandView::Old(&right),
                     ),
                     (
-                        MachineOperandView::Legacy(&left),
+                        MachineOperandView::Old(&left),
                         MachineOperandView::Shared(&b),
                     ),
                 ] {
@@ -116,16 +113,17 @@ fn state_indices_preserve_native_syntax_and_frame_limits() {
             }
         }
     }
-    let cast = |value| MachineTerm::legacy_cast(MachineCastSpelling::Int64From32, Box::new(value));
+    let cast =
+        |value| OldMachineTerm::legacy_cast(MachineCastSpelling::Int64From32, Box::new(value));
     for (a, b, expected) in [
         (cast(before.clone()), cast(before.clone()), true),
         (cast(before.clone()), cast(separate.clone()), false),
         (
-            MachineTerm::constant(1),
-            MachineTerm::uint32_constant(1),
+            OldMachineTerm::constant(1),
+            OldMachineTerm::uint32_constant(1),
             false,
         ),
-        (MachineTerm::Variable(Variable(994100)), before, false),
+        (OldMachineTerm::Variable(Variable(994100)), before, false),
     ] {
         assert_eq!(context.bitvector_terms_state_equivalent(&a, &b), expected);
         assert_eq!(
@@ -144,11 +142,16 @@ fn state_source_index_matches_retained_signed_and_unsigned_ring_terms() {
     let [before, separate, overlap] = reads();
     for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
         let offsets = [before.clone(), separate.clone(), overlap.clone()].map(|read| {
-            let native = binary(format, MachineBinaryOp::Add, read, MachineTerm::constant(1));
+            let native = binary(
+                format,
+                MachineBinaryOp::Add,
+                read,
+                OldMachineTerm::constant(1),
+            );
             let root = shared(&native);
             assert_eq!(
                 operand_fingerprint(
-                    MachineOperandView::Legacy(&native),
+                    MachineOperandView::Old(&native),
                     OperandFingerprintPolicy::MemoryState(true)
                 ),
                 operand_fingerprint(
@@ -186,7 +189,7 @@ fn cached_state_syntax_never_caches_context_authority() {
         offset: AddressOffset::Variable(Variable(id)),
     });
     let roots = pointers.each_ref().map(|pointer| {
-        shared(&MachineTerm::read_named(
+        shared(&OldMachineTerm::read_named(
             ProgramPoint::unplaced(&memory),
             Box::new(pointer.clone()),
             LoadKind::Int32,

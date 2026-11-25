@@ -197,8 +197,8 @@ fn full_pointer_alias_queries_do_not_walk_unrelated_conditions() {
         for index in 0..size {
             context = context.assume_condition(
                 ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(9_000_000 + index)),
-                    MachineTerm::constant(index as u32),
+                    OldMachineTerm::Variable(Variable(9_000_000 + index)),
+                    OldMachineTerm::constant(index as u32),
                 ),
                 true,
             );
@@ -209,7 +209,7 @@ fn full_pointer_alias_queries_do_not_walk_unrelated_conditions() {
         let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
             context
                 .equality_graph
-                .knows_condition(condition.native_compat(), value)
+                .knows_condition(condition.old_form(), value)
         });
         assert!(proved);
         costs.push(work);
@@ -226,8 +226,8 @@ fn cited_pointer_context_construction_scales_with_selected_conditions() {
         for index in 0..size {
             selected.push(Proposition::condition_is(
                 ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(9_100_000 + index)),
-                    MachineTerm::constant(index as u32),
+                    OldMachineTerm::Variable(Variable(9_100_000 + index)),
+                    OldMachineTerm::constant(index as u32),
                 ),
                 true,
             ));
@@ -364,7 +364,7 @@ fn complete_pointer_read_registration_scales_with_new_definitions() {
         for i in 0..unrelated {
             facts = facts.assume_condition(
                 ConditionTerm::signed_less_than(
-                    MachineTerm::Variable(Variable(988_100 + i)),
+                    OldMachineTerm::Variable(Variable(988_100 + i)),
                     1000u32.into(),
                 ),
                 true,

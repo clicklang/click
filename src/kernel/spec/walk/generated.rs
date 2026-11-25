@@ -98,8 +98,8 @@ impl Gen {
         match self.pick(5) {
             4 => ProgramExpression::Negate(Box::new(ProgramExpression::Variable("n".into()))),
             0 => ProgramExpression::Variable(NAMES[self.pick(6) as usize].into()),
-            1 => ProgramExpression::Value(ProgramValue::Int32(MachineTerm::constant(1))),
-            2 => ProgramExpression::Value(ProgramValue::Int32(MachineTerm::Variable(
+            1 => ProgramExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(1))),
+            2 => ProgramExpression::Value(ProgramValue::Int32(OldMachineTerm::Variable(
                 self.variable(),
             ))),
             _ => ProgramExpression::Load(Box::new(ProgramExpression::Variable("p".into()))),
@@ -108,8 +108,10 @@ impl Gen {
 
     fn expr_leaf(&mut self) -> SpecExpression {
         match self.pick(5) {
-            0 => SpecExpression::Value(ProgramValue::Int32(MachineTerm::constant(7))),
-            1 => SpecExpression::Value(ProgramValue::Int32(MachineTerm::Variable(self.variable()))),
+            0 => SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::constant(7))),
+            1 => SpecExpression::Value(ProgramValue::Int32(OldMachineTerm::Variable(
+                self.variable(),
+            ))),
             2 => SpecExpression::ResourceField {
                 projection: self.projection(),
                 program_type: ProgramType::Int32,
@@ -126,7 +128,7 @@ impl Gen {
             1 => SpecExpression::PointerOffset {
                 pointer: Box::new(parameter),
                 elements: Box::new(SpecExpression::Value(ProgramValue::Int32(
-                    MachineTerm::constant(2),
+                    OldMachineTerm::constant(2),
                 ))),
                 byte_width: 4,
             },

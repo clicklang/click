@@ -8,9 +8,9 @@ use super::*;
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.0s in the parallel gate"]
 fn wide_order_chain_work_follows_the_chain_and_not_unrelated_facts() {
-    let v = |n: u64| MachineTerm::Variable(Variable(996000 + n));
+    let v = |n: u64| OldMachineTerm::Variable(Variable(996000 + n));
     let lt = ConditionTerm::uint64_less_than;
-    let u = MachineTerm::uint64_constant;
+    let u = OldMachineTerm::uint64_constant;
     // A chain of fixed length beside a growing set of unrelated facts,
     // some sharing a literal endpoint with the question.
     let mut beside = Vec::new();
@@ -67,15 +67,18 @@ fn wide_order_chain_work_follows_the_chain_and_not_unrelated_facts() {
 
 #[test]
 fn uint64_constant_order_strengthening_is_sound_at_full_width_and_scales() {
-    let n = MachineTerm::Variable(Variable(998001));
-    let c = MachineTerm::uint64_constant;
+    let n = OldMachineTerm::Variable(Variable(998001));
+    let c = OldMachineTerm::uint64_constant;
     let mut work_counts = Vec::new();
     for size in [8, 32, 128] {
         let mut facts = PureFactContext::new();
         for i in 0..size {
             // Shared endpoints exercise the dangerous constant-index shape.
             facts = facts.assume_condition(
-                ConditionTerm::uint64_less_than(c(0), MachineTerm::Variable(Variable(999000 + i))),
+                ConditionTerm::uint64_less_than(
+                    c(0),
+                    OldMachineTerm::Variable(Variable(999000 + i)),
+                ),
                 true,
             );
         }
@@ -145,11 +148,11 @@ fn uint64_constant_order_strengthening_is_sound_at_full_width_and_scales() {
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn uint64_slice_remainder_bounds_ignore_unrelated_facts() {
-    let length = MachineTerm::Variable(Variable(993001));
-    let midpoint = MachineTerm::Variable(Variable(993002));
-    let difference = MachineTerm::uint64_subtract(length.clone(), midpoint.clone());
+    let length = OldMachineTerm::Variable(Variable(993001));
+    let midpoint = OldMachineTerm::Variable(Variable(993002));
+    let difference = OldMachineTerm::uint64_subtract(length.clone(), midpoint.clone());
     let positive =
-        ConditionTerm::uint64_less_than(MachineTerm::uint64_constant(0), difference.clone());
+        ConditionTerm::uint64_less_than(OldMachineTerm::uint64_constant(0), difference.clone());
     let bounded = ConditionTerm::uint64_less_equal(difference, length.clone());
     let mut work = Vec::new();
     for size in [1, 4, 16, 64] {
@@ -157,8 +160,8 @@ fn uint64_slice_remainder_bounds_ignore_unrelated_facts() {
         for n in 0..size {
             context = context.assume_condition(
                 ConditionTerm::uint64_less_equal(
-                    MachineTerm::Variable(Variable(994000 + n)),
-                    MachineTerm::uint64_constant(100),
+                    OldMachineTerm::Variable(Variable(994000 + n)),
+                    OldMachineTerm::uint64_constant(100),
                 ),
                 true,
             );
@@ -212,10 +215,10 @@ fn uint64_slice_remainder_bounds_ignore_unrelated_facts() {
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn uint64_slice_index_transport_is_sound_and_ignores_unrelated_bounds() {
-    let index = MachineTerm::Variable(Variable(991001));
-    let length = MachineTerm::Variable(Variable(991002));
-    let index_word = MachineTerm::uint32_from_64(index.clone());
-    let length_word = MachineTerm::uint32_from_64(length.clone());
+    let index = OldMachineTerm::Variable(Variable(991001));
+    let length = OldMachineTerm::Variable(Variable(991002));
+    let index_word = OldMachineTerm::uint32_from_64(index.clone());
+    let length_word = OldMachineTerm::uint32_from_64(length.clone());
     let goal = ConditionTerm::signed_less_than(index_word.clone(), length_word);
     let mut work = Vec::new();
     for size in [8, 32, 128] {
@@ -223,8 +226,8 @@ fn uint64_slice_index_transport_is_sound_and_ignores_unrelated_bounds() {
         for n in 0..size {
             context = context.assume_condition(
                 ConditionTerm::uint64_less_equal(
-                    MachineTerm::Variable(Variable(992000 + n)),
-                    MachineTerm::uint64_constant(100),
+                    OldMachineTerm::Variable(Variable(992000 + n)),
+                    OldMachineTerm::uint64_constant(100),
                 ),
                 true,
             );
@@ -237,7 +240,7 @@ fn uint64_slice_index_transport_is_sound_and_ignores_unrelated_bounds() {
             .assume_condition(
                 ConditionTerm::uint64_less_equal(
                     length.clone(),
-                    MachineTerm::uint64_constant(i32::MAX as u64),
+                    OldMachineTerm::uint64_constant(i32::MAX as u64),
                 ),
                 true,
             );
@@ -245,7 +248,7 @@ fn uint64_slice_index_transport_is_sound_and_ignores_unrelated_bounds() {
             assert_eq!(context.decide_small_uint64_index_order(&goal), Some(true));
             assert_eq!(
                 context.decide_small_uint64_index_order(&ConditionTerm::signed_less_equal(
-                    MachineTerm::constant(0),
+                    OldMachineTerm::constant(0),
                     index_word.clone()
                 )),
                 Some(true)
@@ -261,24 +264,24 @@ fn uint64_slice_index_transport_is_sound_and_ignores_unrelated_bounds() {
     );
     assert_eq!(unbounded.decide_small_uint64_index_order(&goal), None);
     let high = unbounded.assume_condition(
-        ConditionTerm::uint64_less_equal(length, MachineTerm::uint64_constant(4294967296)),
+        ConditionTerm::uint64_less_equal(length, OldMachineTerm::uint64_constant(4294967296)),
         true,
     );
     assert_eq!(high.decide_small_uint64_index_order(&goal), None);
     let reversed = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::uint64_less_equal(index.clone(), MachineTerm::uint64_constant(10)),
+            ConditionTerm::uint64_less_equal(index.clone(), OldMachineTerm::uint64_constant(10)),
             true,
         )
         .assume_condition(
             ConditionTerm::uint64_less_equal(
-                MachineTerm::Variable(Variable(991002)),
-                MachineTerm::uint64_constant(10),
+                OldMachineTerm::Variable(Variable(991002)),
+                OldMachineTerm::uint64_constant(10),
             ),
             true,
         )
         .assume_condition(
-            ConditionTerm::uint64_greater_equal(index, MachineTerm::Variable(Variable(991002))),
+            ConditionTerm::uint64_greater_equal(index, OldMachineTerm::Variable(Variable(991002))),
             true,
         );
     assert_eq!(reversed.decide_small_uint64_index_order(&goal), Some(false));
@@ -350,8 +353,8 @@ fn shared_wide_order_walks_scale_with_selected_chain() {
 fn signed_order_views_preserve_native_answers_without_exporting() {
     use crate::kernel::{KernelTermExport, KernelTermImport, SharedMachineIntegerTerm};
     let _session = crate::kernel::VerificationSession::enter();
-    let x = MachineTerm::Variable(Variable(996701));
-    let y = MachineTerm::Variable(Variable(996702));
+    let x = OldMachineTerm::Variable(Variable(996701));
+    let y = OldMachineTerm::Variable(Variable(996702));
     let contexts = [
         PureFactContext::new(),
         PureFactContext::new()
@@ -362,8 +365,8 @@ fn signed_order_views_preserve_native_answers_without_exporting() {
     let values = [
         x.clone(),
         y,
-        MachineTerm::add(x.clone(), 1.into()),
-        MachineTerm::subtract(x, 1.into()),
+        OldMachineTerm::add(x.clone(), 1.into()),
+        OldMachineTerm::subtract(x, 1.into()),
         0.into(),
         12.into(),
     ];
@@ -390,8 +393,8 @@ fn signed_order_views_preserve_native_answers_without_exporting() {
                 ] {
                     let native = facts.decide_signed_order_views(
                         relation,
-                        MachineOperandView::Legacy(left),
-                        MachineOperandView::Legacy(right),
+                        MachineOperandView::Old(left),
+                        MachineOperandView::Old(right),
                     );
                     let exports = KernelTermExport::machine_export_count();
                     let retained = facts.decide_signed_order_views(
@@ -427,7 +430,10 @@ fn signed_order_rules_keep_growing_shared_prefixes() {
                 );
                 let operand = SharedMachineIntegerTerm::from_shared(format, root.clone()).unwrap();
                 facts = facts.assume_condition(
-                    ConditionTerm::equal(MachineTerm::Variable(Variable(996720 + index)), 7.into()),
+                    ConditionTerm::equal(
+                        OldMachineTerm::Variable(Variable(996720 + index)),
+                        7.into(),
+                    ),
                     true,
                 );
                 // Each step changes the context. Reflexive and extreme rules
@@ -443,7 +449,7 @@ fn signed_order_rules_keep_growing_shared_prefixes() {
                 assert_eq!(
                     facts.decide_signed_order_views(
                         CompareRelation::LessEqual,
-                        MachineOperandView::Legacy(&MachineTerm::constant(i32::MIN as u32)),
+                        MachineOperandView::Old(&OldMachineTerm::constant(i32::MIN as u32)),
                         operand.operand_view()
                     ),
                     Some(true)
@@ -466,9 +472,9 @@ fn signed_order_rules_keep_growing_shared_prefixes() {
 fn unsigned_order_views_preserve_native_answers_and_polarity() {
     use crate::kernel::{KernelTermExport, KernelTermImport, SharedMachineIntegerTerm};
     let _session = crate::kernel::VerificationSession::enter();
-    let x = MachineTerm::Variable(Variable(996761));
-    let y = MachineTerm::Variable(Variable(996762));
-    let sum = MachineTerm::add_at(MachineIntegerType::UInt32, x.clone(), 1.into());
+    let x = OldMachineTerm::Variable(Variable(996761));
+    let y = OldMachineTerm::Variable(Variable(996762));
+    let sum = OldMachineTerm::add_at(MachineIntegerType::UInt32, x.clone(), 1.into());
     let facts = PureFactContext::new()
         .assume_condition(
             ConditionTerm::unsigned_greater_than(y.clone(), sum.clone()),
@@ -478,7 +484,7 @@ fn unsigned_order_views_preserve_native_answers_and_polarity() {
             ConditionTerm::unsigned_greater_than(x.clone(), y.clone()),
             false,
         );
-    let values = [x, sum, y, 0.into(), MachineTerm::constant(u32::MAX)];
+    let values = [x, sum, y, 0.into(), OldMachineTerm::constant(u32::MAX)];
     let shared: Vec<_> = values
         .iter()
         .map(|term| {
@@ -495,8 +501,8 @@ fn unsigned_order_views_preserve_native_answers_and_polarity() {
         for (j, right) in values.iter().enumerate() {
             for strict in [true, false] {
                 let native = facts.decide_unsigned32_order_views(
-                    MachineOperandView::Legacy(left),
-                    MachineOperandView::Legacy(right),
+                    MachineOperandView::Old(left),
+                    MachineOperandView::Old(right),
                     strict,
                 );
                 let exports = KernelTermExport::machine_export_count();
@@ -518,11 +524,11 @@ fn shared_successor_transport_uses_ordinary_dispatch_without_export() {
         IntegerTerm, KernelTermExport, KernelTermImport, SharedMachineIntegerTerm,
     };
     let _session = crate::kernel::VerificationSession::enter();
-    let x = MachineTerm::Variable(Variable(996781));
-    let y = MachineTerm::Variable(Variable(996782));
+    let x = OldMachineTerm::Variable(Variable(996781));
+    let y = OldMachineTerm::Variable(Variable(996782));
     let facts = PureFactContext::new()
         .assume_condition(ConditionTerm::signed_less_than(x.clone(), y.clone()), true);
-    let successor = MachineTerm::add(x, 1.into());
+    let successor = OldMachineTerm::add(x, 1.into());
     let shared = SharedMachineIntegerTerm::from_shared(
         MachineIntegerType::Int32,
         KernelTermImport::default()
@@ -556,9 +562,9 @@ fn range_membership_retains_shared_order_path_sources() {
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for level in 0..size {
-                let x = MachineTerm::Variable(Variable(998900 + level * 3));
-                let y = MachineTerm::Variable(Variable(998901 + level * 3));
-                let missing = MachineTerm::Variable(Variable(998902 + level * 3));
+                let x = OldMachineTerm::Variable(Variable(998900 + level * 3));
+                let y = OldMachineTerm::Variable(Variable(998901 + level * 3));
+                let missing = OldMachineTerm::Variable(Variable(998902 + level * 3));
                 root = KernelTerm::machine_binary_shared(
                     ty,
                     MachineBinaryOp::Add,

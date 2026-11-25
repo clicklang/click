@@ -16,11 +16,11 @@ fn let_binding_chains_retain_shared_prefixes_beside_unrelated_locals() {
                 for size in [16, 64, 256] {
                     let _session = VerificationSession::enter();
                     let mut state = ExecutionState::new()
-                        .with_local("x", wrap(MachineTerm::Variable(Variable(992410))));
+                        .with_local("x", wrap(OldMachineTerm::Variable(Variable(992410))));
                     for index in 0..unrelated {
                         state.locals.set(format!("other_{index}"), int32(index));
                     }
-                    let one = || SpecExpression::Value(wrap(MachineTerm::int64_constant(1)));
+                    let one = || SpecExpression::Value(wrap(OldMachineTerm::int64_constant(1)));
                     let expression = if nested_values {
                         let mut value = name("x");
                         for _ in 0..size {

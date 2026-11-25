@@ -483,7 +483,7 @@ impl ResourceContext {
 mod tests {
     use super::*;
 
-    fn range(base: &Address, start: MachineTerm, end: MachineTerm) -> MemoryRange {
+    fn range(base: &Address, start: OldMachineTerm, end: OldMachineTerm) -> MemoryRange {
         MemoryRange::new_with_element_width(base.clone(), start, end, 1)
     }
 
@@ -491,8 +491,8 @@ mod tests {
     fn symbolic_support_selects_exact_footprints_and_checks_selected_bounds() {
         let base = Address::symbolic(Variable(910_000));
         let alias = Address::symbolic(Variable(910_001));
-        let n = MachineTerm::Variable(Variable(910_002));
-        let k = MachineTerm::Variable(Variable(910_003));
+        let n = OldMachineTerm::Variable(Variable(910_002));
+        let k = OldMachineTerm::Variable(Variable(910_003));
         let empty = PureFactContext::new();
         let facts = empty
             .clone()
@@ -509,7 +509,7 @@ mod tests {
         let resources =
             ResourceContext::new_with_equalities(&empty).unchecked_with_fact(held.clone());
         let exact = range(&alias, 0u32.into(), n.clone());
-        let indexed = range(&alias, k.clone(), MachineTerm::add(k, 1u32.into()));
+        let indexed = range(&alias, k.clone(), OldMachineTerm::add(k, 1u32.into()));
         assert_eq!(
             resources.symbolic_range_read_supported(&exact, &facts, None),
             Some(true)
@@ -522,14 +522,21 @@ mod tests {
             resources.symbolic_range_read_supported(&exact, &empty, None),
             None
         );
-        let outside = range(&alias, n.clone(), MachineTerm::add(n.clone(), 1u32.into()));
+        let outside = range(
+            &alias,
+            n.clone(),
+            OldMachineTerm::add(n.clone(), 1u32.into()),
+        );
         assert_eq!(
             resources.symbolic_range_read_supported(&outside, &facts, None),
             Some(false)
         );
         // Distinct symbolic spans cannot be ordered by a hidden candidate scan.
-        let other =
-            ResourceFact::view_memory(range(&base, 0u32.into(), MachineTerm::add(n, 8u32.into())));
+        let other = ResourceFact::view_memory(range(
+            &base,
+            0u32.into(),
+            OldMachineTerm::add(n, 8u32.into()),
+        ));
         let split = resources.clone().unchecked_with_fact(other);
         assert_eq!(
             split.symbolic_range_read_supported(&exact, &facts, None),
@@ -561,8 +568,8 @@ mod tests {
     fn symbolic_byte_read_consumer_preserves_width_bounds_and_authority() {
         let base = Address::symbolic(Variable(962_000));
         let alias = Address::symbolic(Variable(962_001));
-        let n = MachineTerm::Variable(Variable(962_002));
-        let k = MachineTerm::Variable(Variable(962_003));
+        let n = OldMachineTerm::Variable(Variable(962_002));
+        let k = OldMachineTerm::Variable(Variable(962_003));
         let empty = PureFactContext::new();
         let equal = empty.clone().assume_condition(
             ConditionTerm::address_equal(base.clone(), alias.clone()),
@@ -626,7 +633,7 @@ mod tests {
     #[test]
     fn symbolic_supplier_access_modes_remain_separate() {
         let base = Address::symbolic(Variable(930_000));
-        let n = MachineTerm::Variable(Variable(930_001));
+        let n = OldMachineTerm::Variable(Variable(930_001));
         let facts = PureFactContext::new();
         let required = range(&base, 0u32.into(), n);
         let view = ResourceFact::view_memory(required.clone());
@@ -672,8 +679,8 @@ mod tests {
     fn symbolic_footprints_follow_endpoint_equalities_and_state_origins() {
         let slot = Address::symbolic(Variable(940_000));
         let alias = Address::symbolic(Variable(940_001));
-        let n = MachineTerm::Variable(Variable(940_002));
-        let m = MachineTerm::Variable(Variable(940_003));
+        let n = OldMachineTerm::Variable(Variable(940_002));
+        let m = OldMachineTerm::Variable(Variable(940_003));
         let retained_state = crate::kernel::intern_memory(SymbolicMemory::new());
         let loaded = Address::loaded_value(&retained_state, &slot);
         let loaded_alias = Address::loaded_value(&retained_state, &alias);
@@ -689,7 +696,7 @@ mod tests {
         let other = ResourceFact::view_memory(range(
             &loaded,
             0u32.into(),
-            MachineTerm::Variable(Variable(940_004)),
+            OldMachineTerm::Variable(Variable(940_004)),
         ));
         let resources = ResourceContext::new_with_equalities(&empty)
             .unchecked_with_fact(held)
@@ -749,8 +756,8 @@ mod wide_range_reader_tests {
         let alias = Address::symbolic(Variable(985_201));
         let wide = MemoryRange::new_wide(
             base.clone(),
-            MachineTerm::uint64_constant(0),
-            MachineTerm::Variable(Variable(985_202)),
+            OldMachineTerm::uint64_constant(0),
+            OldMachineTerm::Variable(Variable(985_202)),
             1,
         );
         let facts = PureFactContext::new()

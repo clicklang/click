@@ -16,16 +16,14 @@ fn unobserved_read_inspection_is_indexed_and_leaves_no_record() {
                 4,
             );
         }
-        let read = MachineTerm::read_named(
+        let read = OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(pointer.clone()),
             LoadKind::Int32,
         );
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             assert_eq!(
-                for_operand(MachineOperandView::Legacy(&read))
-                    .unwrap()
-                    .bytes,
+                for_operand(MachineOperandView::Old(&read)).unwrap().bytes,
                 8
             );
         });

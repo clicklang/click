@@ -30,8 +30,8 @@ fn caller_state(pointer: &Address) -> ExecutionState {
     let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own(
         Resource::Memory(MemoryRange::new(
             pointer.clone(),
-            MachineTerm::constant(0),
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(1),
         )),
     ));
     ExecutionState::new()

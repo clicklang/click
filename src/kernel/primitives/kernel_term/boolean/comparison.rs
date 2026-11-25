@@ -103,7 +103,7 @@ impl KernelTerm {
                 for (address, other) in [(views[0], views[1]), (views[1], views[0])] {
                     if other.uint64_constant() == Some(0)
                         && let MachineOperandView::Shared(root) = address
-                        && let Some(MachineTerm::IntegerAddress(pointer, _)) =
+                        && let Some(OldMachineTerm::IntegerAddress(pointer, _)) =
                             root.machine_conversion_leaf()
                     {
                         return native(ConditionTerm::address_equal(
@@ -126,16 +126,16 @@ impl KernelTerm {
                         return native(ConditionTerm::Compare {
                             format: T::Int64,
                             relation,
-                            left: Box::new(MachineTerm::Binary {
+                            left: Box::new(OldMachineTerm::Binary {
                                 format: T::UInt64,
                                 op: MachineBinaryOp::BitwiseAnd,
-                                left: Box::new(MachineTerm::IntegerAddress(
+                                left: Box::new(OldMachineTerm::IntegerAddress(
                                     Box::new(pointer.clone()),
                                     crate::kernel::AddressObjectClass::NONE,
                                 )),
-                                right: Box::new(MachineTerm::uint64_constant(alignment - 1)),
+                                right: Box::new(OldMachineTerm::uint64_constant(alignment - 1)),
                             }),
-                            right: Box::new(MachineTerm::uint64_constant(0)),
+                            right: Box::new(OldMachineTerm::uint64_constant(0)),
                         });
                     }
                 }
@@ -160,9 +160,9 @@ mod tests {
     fn retained_comparison_constructors_match_native_reductions() {
         let _session = crate::kernel::VerificationSession::enter();
         for format in crate::kernel::machine_integer::FORMATS {
-            let variable = MachineTerm::Variable(Variable(971_100));
+            let variable = OldMachineTerm::Variable(Variable(971_100));
             let constant = |value| {
-                MachineTerm::machine_constant(
+                OldMachineTerm::machine_constant(
                     MachineIntegerConstant::from_signed(format.format(), value).unwrap(),
                 )
             };
@@ -170,7 +170,7 @@ mod tests {
                 variable.clone(),
                 constant(0),
                 constant(1),
-                MachineTerm::Binary {
+                OldMachineTerm::Binary {
                     format,
                     op: MachineBinaryOp::BitwiseAnd,
                     left: Box::new(variable),
@@ -211,19 +211,19 @@ mod tests {
     #[test]
     fn retained_comparison_constructors_preserve_address_and_mask_rules() {
         let _session = crate::kernel::VerificationSession::enter();
-        let address = MachineTerm::IntegerAddress(
+        let address = OldMachineTerm::IntegerAddress(
             Box::new(Address::symbolic(Variable(971_103))),
             crate::kernel::AddressObjectClass::NONE,
         );
         let values = [
             address.clone(),
-            MachineTerm::uint64_constant(0),
-            MachineTerm::uint64_constant(u64::MAX),
-            MachineTerm::Binary {
+            OldMachineTerm::uint64_constant(0),
+            OldMachineTerm::uint64_constant(u64::MAX),
+            OldMachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::BitwiseAnd,
                 left: Box::new(address),
-                right: Box::new(MachineTerm::uint64_constant(7)),
+                right: Box::new(OldMachineTerm::uint64_constant(7)),
             },
         ];
         for format in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
@@ -263,19 +263,19 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let variable = Variable(971_101);
         for format in crate::kernel::machine_integer::FORMATS {
-            let zero = MachineTerm::machine_constant(
+            let zero = OldMachineTerm::machine_constant(
                 MachineIntegerConstant::from_signed(format.format(), 0).unwrap(),
             );
-            let one = MachineTerm::machine_constant(
+            let one = OldMachineTerm::machine_constant(
                 MachineIntegerConstant::from_signed(format.format(), 1).unwrap(),
             );
             let term = if format.format().bits() == 128 {
-                MachineTerm::Variable(variable)
+                OldMachineTerm::Variable(variable)
             } else {
-                MachineTerm::Binary {
+                OldMachineTerm::Binary {
                     format,
                     op: MachineBinaryOp::Add,
-                    left: Box::new(MachineTerm::Variable(variable)),
+                    left: Box::new(OldMachineTerm::Variable(variable)),
                     right: Box::new(zero.clone()),
                 }
             };

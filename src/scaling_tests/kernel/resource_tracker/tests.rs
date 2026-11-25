@@ -33,7 +33,7 @@ fn branch_join_read_query_does_not_scan_unrelated_cached_cells() {
         let first = before.clone().store(at(block("global:h"), 0), one());
         let second = before.clone().store(
             at(block("global:h"), 0),
-            ProgramValue::Int32(MachineTerm::constant(2)),
+            ProgramValue::Int32(OldMachineTerm::constant(2)),
         );
         let joined = first
             .clone()
@@ -85,11 +85,11 @@ fn branch_join_nested_naming_work_tracks_new_branches() {
     for index in 0..32 {
         let left = memory.clone().store(
             at(block("global:h"), 0),
-            ProgramValue::Int32(MachineTerm::constant(index * 2)),
+            ProgramValue::Int32(OldMachineTerm::constant(index * 2)),
         );
         let right = memory.clone().store(
             at(block("global:h"), 0),
-            ProgramValue::Int32(MachineTerm::constant(index * 2 + 1)),
+            ProgramValue::Int32(OldMachineTerm::constant(index * 2 + 1)),
         );
         memory = left
             .clone()
@@ -175,7 +175,7 @@ fn retained_cell_stops_scale_with_new_steps_and_ignore_other_names() {
             for i in 0..size {
                 memory = memory.clone().store(
                     at(block("local:f:i"), 0),
-                    ProgramValue::Int32(MachineTerm::constant(i)),
+                    ProgramValue::Int32(OldMachineTerm::constant(i)),
                 );
                 let here = point(&memory);
                 assert_eq!(
@@ -431,13 +431,13 @@ fn shared_pointer_resource_read_collection_visits_each_node_once() {
         let _session = crate::kernel::VerificationSession::enter();
         let address = Address::symbolic(crate::kernel::Variable(1081601));
         let memory = intern_memory(SymbolicMemory::new().store(address.clone(), one()));
-        let read = MachineTerm::read_named(
+        let read = OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(address),
             crate::kernel::LoadKind::Int32,
         );
         let mut root =
-            KernelTerm::retained_machine_operand(MachineIntegerType::Int32, V::Legacy(&read));
+            KernelTerm::retained_machine_operand(MachineIntegerType::Int32, V::Old(&read));
         for _ in 0..size {
             root = KernelTerm::machine_binary_shared(
                 MachineIntegerType::Int32,
@@ -478,12 +478,12 @@ fn shared_conditional_guard_reads_keep_state_identity_in_linear_work() {
         let pointer = at(block("global:g"), 0);
         crate::kernel::eval::record_load_access_width(memory.memory(), &pointer, 4);
         let guard = ConditionTerm::equal(
-            MachineTerm::read_named(
+            OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(pointer.clone()),
                 LoadKind::Int32,
             ),
-            MachineTerm::constant(0),
+            OldMachineTerm::constant(0),
         );
         let guard = KernelTermImport::default().condition(&guard);
         let mut root =

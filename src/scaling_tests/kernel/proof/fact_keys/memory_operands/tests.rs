@@ -46,8 +46,8 @@ fn conditional_state_keys_reuse_growing_shared_arms() {
             for index in 0..size {
                 let guard =
                     crate::kernel::KernelTermImport::default().condition(&ConditionTerm::equal(
-                        MachineTerm::Variable(Variable(998222 + index as u64)),
-                        MachineTerm::constant(0),
+                        OldMachineTerm::Variable(Variable(998222 + index as u64)),
+                        OldMachineTerm::constant(0),
                     ));
                 root = KernelTerm::machine_if_shared(format, [guard, root.clone(), root.clone()]);
                 let key = operand(V::Shared(&root));

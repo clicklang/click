@@ -497,9 +497,9 @@ pub(super) fn apply_witness_tactic(
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn comparison_condition(
-    actual: MachineTerm,
+    actual: OldMachineTerm,
     operator: ComparisonOperator,
-    expected: MachineTerm,
+    expected: OldMachineTerm,
     unsigned: bool,
 ) -> Option<(ConditionTerm, bool)> {
     match operator {

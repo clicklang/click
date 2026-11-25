@@ -45,7 +45,7 @@ fn evaluated_sequence_handoffs_keep_growing_dags_without_exports() {
 }
 #[test]
 fn pure_sequence_lowering_and_checking_scale_with_selected_elements() {
-    for member in [int32(7), uint64(MachineTerm::uint64_constant(u64::MAX))] {
+    for member in [int32(7), uint64(OldMachineTerm::uint64_constant(u64::MAX))] {
         let mut previous = None;
         for size in [8, 32, 128] {
             let _session = VerificationSession::enter();
@@ -94,8 +94,8 @@ fn pure_membership_visits_only_the_selected_sequence() {
     for (member, nonmember) in [
         (int32(7), int32(8)),
         (
-            uint64(MachineTerm::uint64_constant(u64::MAX)),
-            uint64(MachineTerm::uint64_constant(u64::MAX - 1)),
+            uint64(OldMachineTerm::uint64_constant(u64::MAX)),
+            uint64(OldMachineTerm::uint64_constant(u64::MAX - 1)),
         ),
     ] {
         let mut previous = None;
@@ -137,8 +137,8 @@ fn pure_membership_visits_only_the_selected_sequence() {
             let ambient = (0..size).fold(PureFactContext::new(), |facts, n| {
                 facts.assume_condition(
                     ConditionTerm::equal(
-                        MachineTerm::Variable(Variable(1000 + n as u64)),
-                        MachineTerm::constant(0),
+                        OldMachineTerm::Variable(Variable(1000 + n as u64)),
+                        OldMachineTerm::constant(0),
                     ),
                     true,
                 )

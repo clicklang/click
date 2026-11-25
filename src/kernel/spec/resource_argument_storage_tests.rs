@@ -39,10 +39,10 @@ fn resource_argument_evaluation_keeps_the_existing_program_producer() {
 fn resource_argument_arrays_keep_native_identity_order_hash_and_debug() {
     use std::hash::{Hash, Hasher};
     let _session = crate::kernel::VerificationSession::enter();
-    let word = MachineTerm::Variable(Variable(10993602));
+    let word = OldMachineTerm::Variable(Variable(10993602));
     let call = |argument| {
         AlgebraicValue::Program(ProgramValue::UInt32(
-            MachineTerm::ClickFunctionApplication {
+            OldMachineTerm::ClickFunctionApplication {
                 name: "argument_input".into(),
                 arguments: vec![argument],
             },
@@ -55,11 +55,11 @@ fn resource_argument_arrays_keep_native_identity_order_hash_and_debug() {
         call(PureFunctionArgument::SharedMachine(
             SharedMachineIntegerTerm::intern(MachineIntegerType::UInt32, word),
         )),
-        AlgebraicValue::Program(ProgramValue::Bool(MachineTerm::constant(2))),
-        AlgebraicValue::Program(ProgramValue::Float32(MachineTerm::uint32_constant(
+        AlgebraicValue::Program(ProgramValue::Bool(OldMachineTerm::constant(2))),
+        AlgebraicValue::Program(ProgramValue::Float32(OldMachineTerm::uint32_constant(
             0x7fc00123,
         ))),
-        AlgebraicValue::Program(ProgramValue::Float64(MachineTerm::uint64_constant(
+        AlgebraicValue::Program(ProgramValue::Float64(OldMachineTerm::uint64_constant(
             0x8000000000000000,
         ))),
         AlgebraicValue::Integer(IntegerTerm::Variable(Variable(10993603))),

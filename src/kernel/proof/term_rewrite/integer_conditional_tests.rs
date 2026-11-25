@@ -1,5 +1,5 @@
 //! The Integer conditional, `IntegerTerm::If`, mirrors the machine
-//! `MachineTerm::If`: built without a decided condition or equal arms,
+//! `OldMachineTerm::If`: built without a decided condition or equal arms,
 //! and reduced to one arm by a rewrite that decides its condition.
 
 use super::*;
@@ -13,8 +13,8 @@ fn is_zero(id: u64) -> ConditionTerm {
     ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::Equal,
-        left: Box::new(MachineTerm::Variable(Variable(id))),
-        right: Box::new(MachineTerm::constant(0)),
+        left: Box::new(OldMachineTerm::Variable(Variable(id))),
+        right: Box::new(OldMachineTerm::constant(0)),
     }
 }
 
@@ -30,7 +30,7 @@ fn retained_fold_literal_machine_guards_match_native_rewrites() {
     let renamings = BTreeMap::new();
     for format in crate::kernel::machine_integer::FORMATS {
         let literal = |value| {
-            Box::new(MachineTerm::machine_constant(
+            Box::new(OldMachineTerm::machine_constant(
                 MachineIntegerConstant::from_signed(format.format(), value).unwrap(),
             ))
         };
@@ -126,8 +126,8 @@ fn integer_conditional_is_built_only_when_undecided_with_distinct_arms() {
 #[test]
 fn integer_conditional_is_one_arm_once_a_rewrite_decides_its_condition() {
     let conditional = IntegerTerm::if_then_else(is_zero(7), successor(1), integer(2));
-    let variable = MachineTerm::Variable(Variable(7));
-    let (zero, one) = (MachineTerm::constant(0), MachineTerm::constant(1));
+    let variable = OldMachineTerm::Variable(Variable(7));
+    let (zero, one) = (OldMachineTerm::constant(0), OldMachineTerm::constant(1));
     assert_eq!(
         TermRewrite::for_bits(&variable, &zero).integer(&conditional),
         successor(1)

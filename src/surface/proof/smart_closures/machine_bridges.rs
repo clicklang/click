@@ -313,7 +313,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         if crate::kernel::PureFactContext::new()
-            .widened_unsigned_sum_bound_premises(condition.native_compat())
+            .widened_unsigned_sum_bound_premises(condition.old_form())
             .is_none()
             || signed_intervals::has_retained_read_source(surface)
             || premises
@@ -342,7 +342,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 view.fixed_state.recorded_states,
             );
             let query = crate::kernel::machine_integer::comparison::comparison_view(
-                condition.native_compat(),
+                condition.old_form(),
                 true,
             )
             .expect("recognized widened sum comparison");
@@ -411,7 +411,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let upper = Proposition::condition_is(
             ConditionTerm::uint64_less_equal(
                 value.as_ref().clone(),
-                MachineTerm::uint64_constant(0),
+                OldMachineTerm::uint64_constant(0),
             ),
             true,
         );

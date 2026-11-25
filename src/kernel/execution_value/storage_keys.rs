@@ -14,13 +14,13 @@ pub(in crate::kernel) struct BooleanStorageKey(BooleanKeyKind);
 // constructor, so a raw Word can never alias a projected Cast.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 enum BooleanKeyKind {
-    Word(MachineTerm),
+    Word(OldMachineTerm),
     Cast(MachineIntegerType, ConditionStorageKey),
 }
 impl BooleanStorageKey {
-    pub(super) fn native(word: &MachineTerm) -> Self {
+    pub(super) fn native(word: &OldMachineTerm) -> Self {
         Self(match word {
-            MachineTerm::BoolCast { to, value } => {
+            OldMachineTerm::BoolCast { to, value } => {
                 BooleanKeyKind::Cast(*to, ConditionStorageKey::native(value))
             }
             _ => BooleanKeyKind::Word(word.clone()),
@@ -30,7 +30,7 @@ impl BooleanStorageKey {
         if root.ty() == &KernelType::Program(ProgramType::Bool) {
             return match root.node() {
                 KernelTermNode::Variable(v) => {
-                    Self(BooleanKeyKind::Word(MachineTerm::Variable(*v)))
+                    Self(BooleanKeyKind::Word(OldMachineTerm::Variable(*v)))
                 }
                 KernelTermNode::ImportedScalar(input) => Self::native(input.value()),
                 KernelTermNode::ObservedArgument(_) | KernelTermNode::CallArgument(_) => {
@@ -46,7 +46,7 @@ impl BooleanStorageKey {
         }
         Self(
             if let Some(value) = BooleanOperandView::Shared(root).constant() {
-                BooleanKeyKind::Word(MachineTerm::bool_cast(
+                BooleanKeyKind::Word(OldMachineTerm::bool_cast(
                     MachineIntegerType::UInt8,
                     ConditionTerm::Constant(value),
                 ))
@@ -78,7 +78,7 @@ impl Ord for BooleanStorageKey {
     }
 }
 
-// Native MachineTerm variant order, shared by both family projections. The
+// Native OldMachineTerm variant order, shared by both family projections. The
 // exhaustive match forces a review when a new opaque word variant is added.
 const PURE_APPLICATION_RANK: u8 = 6;
 const CLICK_APPLICATION_RANK: u8 = 7;
@@ -87,27 +87,27 @@ const FLOAT32_BINARY_RANK: u8 = 14;
 const FLOAT64_NEGATE_RANK: u8 = 15;
 const FLOAT64_BINARY_RANK: u8 = 16;
 const BOOL_CAST_RANK: u8 = 17;
-fn native_machine_rank(value: &MachineTerm) -> u8 {
+fn native_machine_rank(value: &OldMachineTerm) -> u8 {
     match value {
-        MachineTerm::Constant { .. } => 0,
-        MachineTerm::Variable(_) => 1,
-        MachineTerm::Binary { .. } => 2,
-        MachineTerm::Unary { .. } => 3,
-        MachineTerm::If { .. } => 4,
-        MachineTerm::RangeFold { .. } => 5,
-        MachineTerm::PureFunctionApplication { .. } => PURE_APPLICATION_RANK,
-        MachineTerm::ClickFunctionApplication { .. } => CLICK_APPLICATION_RANK,
-        MachineTerm::AlgebraicMatch { .. } => 8,
-        MachineTerm::MemoryLoad(..) => 9,
-        MachineTerm::IntegerAddress(..) => 10,
-        MachineTerm::IntegerToMachine { .. } => 11,
-        MachineTerm::Cast { .. } => 12,
-        MachineTerm::Float32Negate(_) => FLOAT32_NEGATE_RANK,
-        MachineTerm::Float32Binary { .. } => FLOAT32_BINARY_RANK,
-        MachineTerm::Float64Negate(_) => FLOAT64_NEGATE_RANK,
-        MachineTerm::Float64Binary { .. } => FLOAT64_BINARY_RANK,
-        MachineTerm::BoolCast { .. } => BOOL_CAST_RANK,
-        MachineTerm::ThreadHandle(_) => 18,
+        OldMachineTerm::Constant { .. } => 0,
+        OldMachineTerm::Variable(_) => 1,
+        OldMachineTerm::Binary { .. } => 2,
+        OldMachineTerm::Unary { .. } => 3,
+        OldMachineTerm::If { .. } => 4,
+        OldMachineTerm::RangeFold { .. } => 5,
+        OldMachineTerm::PureFunctionApplication { .. } => PURE_APPLICATION_RANK,
+        OldMachineTerm::ClickFunctionApplication { .. } => CLICK_APPLICATION_RANK,
+        OldMachineTerm::AlgebraicMatch { .. } => 8,
+        OldMachineTerm::MemoryLoad(..) => 9,
+        OldMachineTerm::IntegerAddress(..) => 10,
+        OldMachineTerm::IntegerToMachine { .. } => 11,
+        OldMachineTerm::Cast { .. } => 12,
+        OldMachineTerm::Float32Negate(_) => FLOAT32_NEGATE_RANK,
+        OldMachineTerm::Float32Binary { .. } => FLOAT32_BINARY_RANK,
+        OldMachineTerm::Float64Negate(_) => FLOAT64_NEGATE_RANK,
+        OldMachineTerm::Float64Binary { .. } => FLOAT64_BINARY_RANK,
+        OldMachineTerm::BoolCast { .. } => BOOL_CAST_RANK,
+        OldMachineTerm::ThreadHandle(_) => 18,
     }
 }
 

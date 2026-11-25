@@ -69,8 +69,8 @@ fn owned_frontier_context(
 fn prior_child(context: ResourceContext, head: &ResourceFact) -> ResourceContext {
     let child = ResourceFact::own_memory(MemoryRange::new(
         Address::symbolic(Variable(881_000)),
-        MachineTerm::constant(0),
-        MachineTerm::constant(1),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(1),
     ));
     context
         .without_exact_representation(head)
@@ -128,8 +128,8 @@ fn fixture() -> (
     let sibling = PureFactContext::new()
         .assume_condition(
             ConditionTerm::equal(
-                MachineTerm::Variable(Variable(882_000)),
-                MachineTerm::Variable(Variable(882_001)),
+                OldMachineTerm::Variable(Variable(882_000)),
+                OldMachineTerm::Variable(Variable(882_001)),
             ),
             true,
         )
@@ -232,8 +232,8 @@ fn coverage_context(
 fn coverage_piece(id: u64, start: u32, end: u32) -> ResourceFact {
     ResourceFact::own_memory(MemoryRange::new(
         Address::symbolic(Variable(id)),
-        MachineTerm::constant(start),
-        MachineTerm::constant(end),
+        OldMachineTerm::constant(start),
+        OldMachineTerm::constant(end),
     ))
 }
 
@@ -339,16 +339,16 @@ fn resource_satisfaction_uses_transitive_addresses_without_restoring_consumed_ow
     assert!(!residual.satisfies_fact(&coverage_piece(881_002, 1, 4), &facts));
     let alias = Address::symbolic(Variable(881_002));
     let shifted = ResourceFact::own_memory(MemoryRange::new(
-        alias.offset_by_elements(MachineTerm::constant(1), 4),
-        MachineTerm::constant(0),
-        MachineTerm::constant(2),
+        alias.offset_by_elements(OldMachineTerm::constant(1), 4),
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(2),
     ));
     assert!(residual.satisfies_fact(&shifted, &facts));
     let bytes = |end| {
         ResourceFact::own_memory(MemoryRange::new_with_element_width(
             alias.clone(),
-            MachineTerm::constant(4),
-            MachineTerm::constant(end),
+            OldMachineTerm::constant(4),
+            OldMachineTerm::constant(end),
             1,
         ))
     };
@@ -470,7 +470,7 @@ fn checked_composite_projection_keeps_the_point_of_a_bound_read() {
     .expect("the viewed body expands at the recorded point");
     assert!(children.iter().any(|child| {
         child.memory_range().is_some_and(|range| {
-            matches!(range.end(), MachineTerm::MemoryLoad(at, address, LoadKind::Int32)
+            matches!(range.end(), OldMachineTerm::MemoryLoad(at, address, LoadKind::Int32)
                 if **address == slot && at.read_version_id() == point.id())
         })
     }));

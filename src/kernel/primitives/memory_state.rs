@@ -32,7 +32,7 @@ enum HavocIdentityTask {
     Text(&'static str),
     Pointer(Address),
     PointerOffset(AddressOffset),
-    Bitvector(MachineTerm),
+    Bitvector(OldMachineTerm),
     Condition(ConditionTerm),
     FloatCondition {
         condition: FloatCondition,
@@ -167,8 +167,8 @@ fn push_havoc_binary(
     identity: &mut String,
     tasks: &mut Vec<HavocIdentityTask>,
     tag: &'static str,
-    left: MachineTerm,
-    right: MachineTerm,
+    left: OldMachineTerm,
+    right: OldMachineTerm,
 ) {
     identity.push_str(tag);
     identity.push('(');
@@ -184,8 +184,8 @@ fn push_havoc_comparison(
     identity: &mut String,
     tasks: &mut Vec<HavocIdentityTask>,
     op: BitvectorComparisonOp,
-    left: MachineTerm,
-    right: MachineTerm,
+    left: OldMachineTerm,
+    right: OldMachineTerm,
 ) {
     use CompareRelation as R;
     use MachineIntegerType as Ty;
@@ -247,7 +247,7 @@ fn havoc_range_identity(range: &MemoryRange) -> String {
         }),
         vec![
             HavocIdentityTask::Text(")"),
-            HavocIdentityTask::Bitvector(MachineTerm::constant(range.element_width())),
+            HavocIdentityTask::Bitvector(OldMachineTerm::constant(range.element_width())),
             HavocIdentityTask::Text(","),
             HavocIdentityTask::Bitvector(end.clone()),
             HavocIdentityTask::Text(","),
@@ -330,10 +330,10 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
             HavocIdentityTask::Bitvector(term) => {
                 crate::instrumentation::record_deterministic_work(1);
                 match term {
-                    MachineTerm::ThreadHandle(id) => {
+                    OldMachineTerm::ThreadHandle(id) => {
                         let _ = write!(identity, "thread-handle:{id:?};");
                     }
-                    MachineTerm::Cast {
+                    OldMachineTerm::Cast {
                         spelling: MachineCastSpelling::Generic,
                         value,
                         from: source,
@@ -360,7 +360,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                     uint64_constant!(value) => {
                         let _ = write!(identity, "tu64c{value};", value = constant_u64(value));
                     }
-                    MachineTerm::Variable(variable) => {
+                    OldMachineTerm::Variable(variable) => {
                         if !push_registered_load(
                             &mut identity,
                             &mut tasks,
@@ -414,17 +414,17 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::Bitvector(value.as_ref().clone()));
                     }
-                    MachineTerm::Float32Negate(value) => {
+                    OldMachineTerm::Float32Negate(value) => {
                         identity.push_str("tf32n(");
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::Bitvector(value.as_ref().clone()));
                     }
-                    MachineTerm::Float64Negate(value) => {
+                    OldMachineTerm::Float64Negate(value) => {
                         identity.push_str("tf64n(");
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::Bitvector(value.as_ref().clone()));
                     }
-                    MachineTerm::Float32Binary {
+                    OldMachineTerm::Float32Binary {
                         operator,
                         left,
                         right,
@@ -437,7 +437,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         };
                         push_havoc_binary(&mut identity, &mut tasks, tag, *left, *right);
                     }
-                    MachineTerm::Float64Binary {
+                    OldMachineTerm::Float64Binary {
                         operator,
                         left,
                         right,
@@ -492,7 +492,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         *value.clone(),
                         *value,
                     ),
-                    MachineTerm::Unary {
+                    OldMachineTerm::Unary {
                         format,
                         op: MachineUnaryOp::BitwiseNot,
                         operand,
@@ -504,7 +504,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::Bitvector(*operand));
                     }
-                    MachineTerm::Binary {
+                    OldMachineTerm::Binary {
                         format,
                         op,
                         left,
@@ -516,12 +516,12 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         *left,
                         *right,
                     ),
-                    MachineTerm::BoolCast { to, value } => {
+                    OldMachineTerm::BoolCast { to, value } => {
                         let _ = write!(identity, "tbcast{to:?}(");
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::Condition(*value));
                     }
-                    MachineTerm::If {
+                    OldMachineTerm::If {
                         condition,
                         then_term,
                         else_term,
@@ -534,7 +534,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         tasks.push(HavocIdentityTask::Text(","));
                         tasks.push(HavocIdentityTask::Condition(*condition));
                     }
-                    MachineTerm::RangeFold {
+                    OldMachineTerm::RangeFold {
                         start,
                         end,
                         initial,
@@ -552,7 +552,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         tasks.push(HavocIdentityTask::Text(","));
                         tasks.push(HavocIdentityTask::Bitvector(*start));
                     }
-                    MachineTerm::PureFunctionApplication { name, arguments } => {
+                    OldMachineTerm::PureFunctionApplication { name, arguments } => {
                         identity.push_str("tp(");
                         write_havoc_string(&mut identity, "n", &name);
                         tasks.push(HavocIdentityTask::Text(")"));
@@ -563,20 +563,20 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                             }
                         }
                     }
-                    MachineTerm::ClickFunctionApplication { .. }
-                    | MachineTerm::AlgebraicMatch { .. }
-                    | MachineTerm::IntegerToMachine { .. } => {
+                    OldMachineTerm::ClickFunctionApplication { .. }
+                    | OldMachineTerm::AlgebraicMatch { .. }
+                    | OldMachineTerm::IntegerToMachine { .. } => {
                         use std::hash::{Hash, Hasher};
                         let mut hasher = std::collections::hash_map::DefaultHasher::new();
                         term.hash(&mut hasher);
                         let _ = write!(identity, "click:{:x};", hasher.finish());
                     }
-                    MachineTerm::MemoryLoad(_, pointer, kind) => {
+                    OldMachineTerm::MemoryLoad(_, pointer, kind) => {
                         let _ = write!(identity, "load:{kind:?}(");
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::Pointer(pointer.into()));
                     }
-                    MachineTerm::IntegerAddress(pointer, _) => {
+                    OldMachineTerm::IntegerAddress(pointer, _) => {
                         identity.push_str("address(");
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::Pointer(*pointer));
@@ -727,9 +727,9 @@ mod call_havoc_local_retention_tests {
         };
         let before = SymbolicMemory::new()
             .with_block(block.clone(), 16)
-            .store(at(0), ProgramValue::Int32(MachineTerm::constant(7)))
-            .store(at(8), ProgramValue::Int32(MachineTerm::constant(1)))
-            .store(at(12), ProgramValue::Int32(MachineTerm::constant(9)));
+            .store(at(0), ProgramValue::Int32(OldMachineTerm::constant(7)))
+            .store(at(8), ProgramValue::Int32(OldMachineTerm::constant(1)))
+            .store(at(12), ProgramValue::Int32(OldMachineTerm::constant(9)));
         let range = MemoryRange::new_with_element_width(at(8), 0u32.into(), 4u32.into(), 1);
         let facts = PureFactContext::new();
         let after = before.clone().with_call_memory_havoc(
@@ -753,7 +753,7 @@ mod call_havoc_local_retention_tests {
         ));
         let stale = after
             .clone()
-            .store(at(8), ProgramValue::Int32(MachineTerm::constant(1)));
+            .store(at(8), ProgramValue::Int32(OldMachineTerm::constant(1)));
         assert!(!stale.matches_call_memory_havoc_result(
             &before,
             std::slice::from_ref(&range),
@@ -770,7 +770,7 @@ mod call_havoc_local_retention_tests {
         };
         let before = SymbolicMemory::new()
             .with_block(at(0).base.clone(), 16)
-            .store(at(0), ProgramValue::Int32(MachineTerm::constant(7)));
+            .store(at(0), ProgramValue::Int32(OldMachineTerm::constant(7)));
         let range = MemoryRange::new_with_element_width(at(0), 0u32.into(), 16u32.into(), 1);
         let facts = PureFactContext::new();
         let after = before.clone().with_call_memory_havoc(
@@ -784,7 +784,7 @@ mod call_havoc_local_retention_tests {
         assert!(!after.has_initialized_bytes_at(&at(8), 4));
         let named = after.clone().materialize_named_cell(
             at(0),
-            ProgramValue::Int32(MachineTerm::Variable(Variable(944_016))),
+            ProgramValue::Int32(OldMachineTerm::Variable(Variable(944_016))),
         );
         assert!(
             named.known_value(&at(0)).is_none(),
@@ -793,7 +793,7 @@ mod call_havoc_local_retention_tests {
         assert!(named.has_initialized_bytes_at(&at(0), 4));
         let fresh = after
             .clone()
-            .materialize_named_cell(at(8), ProgramValue::Int32(MachineTerm::constant(1)));
+            .materialize_named_cell(at(8), ProgramValue::Int32(OldMachineTerm::constant(1)));
         assert!(fresh.known_value(&at(8)).is_none());
         let mut forged = after.clone();
         std::sync::Arc::make_mut(&mut forged.heap)
@@ -834,7 +834,7 @@ mod call_havoc_local_retention_tests {
                 vec![(
                     pointer.clone(),
                     ProgramType::Int32,
-                    ProgramValue::Int32(MachineTerm::constant(1)),
+                    ProgramValue::Int32(OldMachineTerm::constant(1)),
                 )],
             );
         let range =
@@ -866,7 +866,7 @@ mod call_havoc_local_retention_tests {
             .with_block(pointer.base.clone(), 4)
             .store(
                 pointer.clone(),
-                ProgramValue::Int32(MachineTerm::constant(7)),
+                ProgramValue::Int32(OldMachineTerm::constant(7)),
             );
         let facts = PureFactContext::new().assume_condition(
             ConditionTerm::address_equal(alias.clone(), pointer.offset_by_bytes(1)),
@@ -889,7 +889,7 @@ mod call_havoc_local_retention_tests {
         ));
         assert!(
             !after
-                .store(pointer, ProgramValue::Int32(MachineTerm::constant(7)))
+                .store(pointer, ProgramValue::Int32(OldMachineTerm::constant(7)))
                 .matches_call_memory_havoc_result(
                     &before,
                     std::slice::from_ref(&range),
@@ -911,8 +911,8 @@ mod call_havoc_local_retention_tests {
         };
         let assumed_alias_range = MemoryRange::new(
             symbolic.clone(),
-            MachineTerm::constant(0),
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(1),
         );
         let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
             ConditionTerm::address_equal(symbolic, local.clone()),
@@ -923,10 +923,10 @@ mod call_havoc_local_retention_tests {
                 base: AddressBase::ExternalArgument,
                 offset: AddressOffset::Constant(0),
             },
-            MachineTerm::constant(0),
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(1),
         );
-        let value = ProgramValue::Int32(MachineTerm::constant(41));
+        let value = ProgramValue::Int32(OldMachineTerm::constant(41));
         let before = SymbolicMemory::new()
             .with_block(local.base.clone(), 4)
             .store(local.clone(), value.clone());
@@ -988,7 +988,7 @@ mod call_havoc_union_view_tests {
             (
                 pointer.clone(),
                 ProgramType::Int32,
-                ProgramValue::Int32(MachineTerm::constant(value)),
+                ProgramValue::Int32(OldMachineTerm::constant(value)),
             )
         };
         let before = SymbolicMemory::new()
@@ -997,8 +997,8 @@ mod call_havoc_union_view_tests {
             .store_union_views(sibling.clone(), 8, vec![view(&sibling, 5)]);
         let range = MemoryRange::new_with_element_width(
             written.clone(),
-            MachineTerm::constant(0),
-            MachineTerm::constant(4),
+            OldMachineTerm::constant(0),
+            OldMachineTerm::constant(4),
             1,
         );
         let assumptions = PureFactContext::new();
@@ -1011,7 +1011,7 @@ mod call_havoc_union_view_tests {
         assert_eq!(after.known_union_value(&written, ProgramType::Int32), None);
         assert_eq!(
             after.known_union_value(&sibling, ProgramType::Int32),
-            Some(ProgramValue::Int32(MachineTerm::constant(5)))
+            Some(ProgramValue::Int32(OldMachineTerm::constant(5)))
         );
         assert!(after.matches_call_memory_havoc_result(
             &before,
@@ -1023,7 +1023,7 @@ mod call_havoc_union_view_tests {
         let mut stale = after.clone();
         std::sync::Arc::make_mut(&mut stale.union_cells).insert(
             (written.clone(), ProgramType::Int32),
-            ProgramValue::Int32(MachineTerm::constant(3)).into(),
+            ProgramValue::Int32(OldMachineTerm::constant(3)).into(),
         );
         assert!(!stale.matches_call_memory_havoc_result(
             &before,
@@ -1042,7 +1042,7 @@ mod forget_cached_values_tests {
         (
             pointer.clone(),
             ProgramType::Int32,
-            ProgramValue::Int32(MachineTerm::constant(value)),
+            ProgramValue::Int32(OldMachineTerm::constant(value)),
         )
     }
 
@@ -1086,7 +1086,7 @@ mod forget_cached_values_tests {
         assert_eq!(after.known_union_value(&written, ProgramType::Int32), None);
         assert_eq!(
             after.known_union_value(&preserved, ProgramType::Int32),
-            Some(ProgramValue::Int32(MachineTerm::constant(5)))
+            Some(ProgramValue::Int32(OldMachineTerm::constant(5)))
         );
     }
 
@@ -1180,7 +1180,7 @@ mod forget_cached_values_tests {
         // Eight bytes at 0 contain the four at 4, and miss the four at 8.
         let wide = memory.clone().store(
             at(0),
-            ProgramValue::Int64(MachineTerm::int64_constant(1 << 40)),
+            ProgramValue::Int64(OldMachineTerm::int64_constant(1 << 40)),
         );
         assert!(!wide.is_zeroed_heap_address(&at(4), 4, &facts));
         assert!(wide.is_zeroed_heap_address(&at(8), 4, &facts));
@@ -1188,7 +1188,10 @@ mod forget_cached_values_tests {
         // from it by any constant.
         let symbolic = Address {
             base: base.base.clone(),
-            offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(944_105)), 4),
+            offset: AddressOffset::scaled_int32_node(
+                OldMachineTerm::Variable(Variable(944_105)),
+                4,
+            ),
         };
         assert!(memory.is_zeroed_heap_address(&symbolic, 4, &facts));
         assert!(!narrow.is_zeroed_heap_address(&symbolic, 4, &facts));
@@ -1227,12 +1230,12 @@ mod forget_cached_values_tests {
 mod havoc_identity_tests {
     use super::*;
 
-    fn nested_term(depth: usize, tail: u32) -> MachineTerm {
-        (0..depth).fold(MachineTerm::constant(tail), |term, _| {
+    fn nested_term(depth: usize, tail: u32) -> OldMachineTerm {
+        (0..depth).fold(OldMachineTerm::constant(tail), |term, _| {
             binary_node!(
                 Int32,
                 Add,
-                Box::new(MachineTerm::constant(0)),
+                Box::new(OldMachineTerm::constant(0)),
                 Box::new(term)
             )
         })
@@ -1245,7 +1248,7 @@ mod havoc_identity_tests {
                 offset: AddressOffset::Constant(0),
             },
             nested_term(depth, tail),
-            MachineTerm::constant(1_024),
+            OldMachineTerm::constant(1_024),
         )
     }
 
@@ -1265,8 +1268,8 @@ mod havoc_identity_tests {
                     base: block,
                     offset: AddressOffset::Constant(0),
                 },
-                MachineTerm::constant(0),
-                MachineTerm::constant(1),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::constant(1),
             );
             memory_havoc_write_set_identity(&[range])
         });
@@ -1356,7 +1359,7 @@ fn memory_havoc_write_set_fingerprint(mutable_ranges: &[MemoryRange]) -> u32 {
 pub(crate) fn resource_context_has_symbolic_range_read(
     resources: &ResourceContext,
     base: &Address,
-    bytes: &MachineTerm,
+    bytes: &OldMachineTerm,
     assumptions: &PureFactContext,
 ) -> bool {
     let footprint =
@@ -2169,7 +2172,7 @@ fn held_address_base(binding: &LocalBinding) -> Option<&AddressBase> {
 }
 
 /// The numeric value of a scalar of integer or truth type.
-fn held_integer_term(binding: &LocalBinding) -> Option<&MachineTerm> {
+fn held_integer_term(binding: &LocalBinding) -> Option<&OldMachineTerm> {
     let LocalBinding::Object { value, .. } = binding else {
         return None;
     };
@@ -2227,24 +2230,24 @@ fn held_fingerprint(binding: &LocalBinding) -> Option<u64> {
         .or_else(|| held_algebraic_value(binding).and_then(held_algebraic_fingerprint))
 }
 
-fn held_term_atom(term: &MachineTerm, hasher: &mut impl std::hash::Hasher) {
+fn held_term_atom(term: &OldMachineTerm, hasher: &mut impl std::hash::Hasher) {
     use std::hash::Hash;
     std::mem::discriminant(term).hash(hasher);
     // One variant spells every constant, so its format is part of the
     // fingerprint, as the operators' is.
-    if let MachineTerm::Constant { format, .. } = term {
+    if let OldMachineTerm::Constant { format, .. } = term {
         format.hash(hasher);
     }
     // So is a conversion's spelling: one variant spells every conversion.
-    if let MachineTerm::Cast { spelling, .. } = term {
+    if let OldMachineTerm::Cast { spelling, .. } = term {
         spelling.hash(hasher);
     }
     match term {
-        MachineTerm::ThreadHandle(id) => id.hash(hasher),
-        MachineTerm::Variable(variable) => variable.hash(hasher),
+        OldMachineTerm::ThreadHandle(id) => id.hash(hasher),
+        OldMachineTerm::Variable(variable) => variable.hash(hasher),
         bits32_constant!(value) => constant_u32(*value).hash(hasher),
-        MachineTerm::Binary { format, op, .. } => (format, op).hash(hasher),
-        MachineTerm::Unary { format, op, .. } => (format, op).hash(hasher),
+        OldMachineTerm::Binary { format, op, .. } => (format, op).hash(hasher),
+        OldMachineTerm::Unary { format, op, .. } => (format, op).hash(hasher),
         _ => {}
     }
 }
@@ -2254,7 +2257,7 @@ fn held_term_atom(term: &MachineTerm, hasher: &mut impl std::hash::Hasher) {
 /// format and operator, and the same of a binary node's two
 /// operands. Equal terms share a fingerprint; a lookup compares the terms
 /// it finds, so a shared fingerprint costs only a comparison.
-pub(crate) fn held_term_fingerprint(term: &MachineTerm) -> u64 {
+pub(crate) fn held_term_fingerprint(term: &OldMachineTerm) -> u64 {
     use std::hash::Hasher;
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     held_term_atom(term, &mut hasher);
@@ -2280,14 +2283,14 @@ fn held_kernel_term_fingerprint(term: &KernelTerm) -> Option<u64> {
     }
     fn atom(term: &KernelTerm, hash: &mut impl Hasher) -> Option<()> {
         use KernelTermNode as N;
-        let zero = || Box::new(MachineTerm::constant(0));
+        let zero = || Box::new(OldMachineTerm::constant(0));
         let shape = match term.node() {
-            N::ThreadHandle(id) => MachineTerm::ThreadHandle(*id),
-            N::MachineLiteral(value) => value.legacy_term(),
-            N::Variable(value) => MachineTerm::Variable(*value),
+            N::ThreadHandle(id) => OldMachineTerm::ThreadHandle(*id),
+            N::MachineLiteral(value) => value.old_term(),
+            N::Variable(value) => OldMachineTerm::Variable(*value),
             N::MachineBinary {
                 format, operator, ..
-            } => MachineTerm::Binary {
+            } => OldMachineTerm::Binary {
                 format: *format,
                 op: *operator,
                 left: zero(),
@@ -2295,7 +2298,7 @@ fn held_kernel_term_fingerprint(term: &KernelTerm) -> Option<u64> {
             },
             N::MachineUnary {
                 format, operator, ..
-            } => MachineTerm::Unary {
+            } => OldMachineTerm::Unary {
                 format: *format,
                 op: *operator,
                 operand: zero(),
@@ -2305,20 +2308,20 @@ fn held_kernel_term_fingerprint(term: &KernelTerm) -> Option<u64> {
                 source,
                 destination,
                 ..
-            } => MachineTerm::cast_node(*encoding, *source, *destination, *zero()),
-            N::BoolCast { destination, .. } => MachineTerm::BoolCast {
+            } => OldMachineTerm::cast_node(*encoding, *source, *destination, *zero()),
+            N::BoolCast { destination, .. } => OldMachineTerm::BoolCast {
                 to: *destination,
                 value: Box::new(ConditionTerm::Constant(false)),
             },
-            N::IntegerToMachine { destination, .. } => MachineTerm::IntegerToMachine {
+            N::IntegerToMachine { destination, .. } => OldMachineTerm::IntegerToMachine {
                 destination: *destination,
                 value: IntegerTerm::constant_i64(0).into(),
             },
-            N::Call { .. } => MachineTerm::ClickFunctionApplication {
+            N::Call { .. } => OldMachineTerm::ClickFunctionApplication {
                 name: String::new(),
                 arguments: Vec::new(),
             },
-            N::MachineIf { .. } => MachineTerm::If {
+            N::MachineIf { .. } => OldMachineTerm::If {
                 condition: Box::new(ConditionTerm::Constant(false)),
                 then_term: zero(),
                 else_term: zero(),
@@ -2489,7 +2492,7 @@ impl LocalEnvironment {
     /// fingerprint, and each is compared with `term`.
     pub(crate) fn names_holding_integer<'a, 't>(
         &'a self,
-        term: &'t MachineTerm,
+        term: &'t OldMachineTerm,
     ) -> impl Iterator<Item = &'a BindingName> + use<'a, 't> {
         self.names_holding_integer_matching(Some(held_term_fingerprint(term)), move |held| {
             if let Some(root) = held.shared() {
@@ -2623,7 +2626,7 @@ impl LocalEnvironment {
     pub(crate) fn changed_integer_holdings<'a>(
         &'a self,
         earlier: Option<&'a Self>,
-    ) -> Vec<(&'a BindingName, &'a MachineTerm)> {
+    ) -> Vec<(&'a BindingName, &'a OldMachineTerm)> {
         let changed = |name: &'a BindingName,
                        now: Option<&'a LocalBinding>,
                        before: Option<&LocalBinding>| {
@@ -2684,7 +2687,11 @@ impl LocalEnvironment {
     }
 
     /// Whether the scalar object `name` holds exactly `term`.
-    pub(crate) fn holds_integer(&self, name: impl Into<BindingName>, term: &MachineTerm) -> bool {
+    pub(crate) fn holds_integer(
+        &self,
+        name: impl Into<BindingName>,
+        term: &OldMachineTerm,
+    ) -> bool {
         let name = self.resolve_binding(&name.into());
         self.bindings.get(&name).and_then(held_integer_term) == Some(term)
     }
@@ -2800,7 +2807,7 @@ impl MemoryBlock {
 
     /// The block's byte count. A comparison whose width matters reads it
     /// through [`Self::allocation_size`].
-    pub fn size(&self) -> &MachineTerm {
+    pub fn size(&self) -> &OldMachineTerm {
         self.size.bytes()
     }
 
@@ -3603,8 +3610,8 @@ fn borrow_preserving_havoc_keeps_cell(
             byte_width != 0
                 && ledger.has_indexed_memory_overlap(&MemoryRange::new_with_element_width(
                     pointer.clone(),
-                    MachineTerm::constant(0),
-                    MachineTerm::constant(byte_width),
+                    OldMachineTerm::constant(0),
+                    OldMachineTerm::constant(byte_width),
                     1,
                 ))
         })
@@ -3630,8 +3637,8 @@ fn borrow_preserving_havoc_keeps_run(
     };
     let whole = MemoryRange::new_with_element_width(
         run.base().clone(),
-        MachineTerm::constant(0),
-        MachineTerm::constant(
+        OldMachineTerm::constant(0),
+        OldMachineTerm::constant(
             (run.count().saturating_sub(1))
                 .saturating_mul(run.element_width())
                 .saturating_add(run.value_width()),
@@ -4690,7 +4697,7 @@ impl SymbolicMemory {
     pub(in crate::kernel) fn retire_contract_heap_allocation_claim(
         mut self,
         base: &Address,
-        bytes: &MachineTerm,
+        bytes: &OldMachineTerm,
         assumptions: &PureFactContext,
     ) -> Self {
         let prior = intern_derivation_base(&mut self);
@@ -5495,7 +5502,7 @@ impl SymbolicMemory {
             };
             let Some(prefixes) = prefixes
                 .into_iter()
-                .map(MachineTerm::as_const)
+                .map(OldMachineTerm::as_const)
                 .collect::<Option<Vec<_>>>()
             else {
                 continue;
@@ -5507,7 +5514,7 @@ impl SymbolicMemory {
                 zeroed_allocations.remove(base);
                 zeroed_prefix_allocations.insert(
                     base.clone(),
-                    MachineTerm::constant(
+                    OldMachineTerm::constant(
                         prefixes.into_iter().min().expect("nonempty interface arms"),
                     ),
                 );
@@ -6468,7 +6475,7 @@ impl SymbolicMemory {
                         && offset % i64::from(element_type.byte_width()) == 0
                         && self
                             .block_size(&pointer.base)
-                            .and_then(MachineTerm::as_const)
+                            .and_then(OldMachineTerm::as_const)
                             .is_some_and(|size| {
                                 offset
                                     .checked_add(i64::from(bytes))
@@ -6481,7 +6488,10 @@ impl SymbolicMemory {
             || !self.run_can_stand_for_cells_at(base)
             || (fresh
                 && (base.offset != AddressOffset::Constant(0)
-                    || self.block_size(&base.base).and_then(MachineTerm::as_const) != Some(bytes)
+                    || self
+                        .block_size(&base.base)
+                        .and_then(OldMachineTerm::as_const)
+                        != Some(bytes)
                     || AliasCandidates::only_block(&base.base)
                         .entries(self.cells.concrete())
                         .next()
@@ -6509,7 +6519,7 @@ impl SymbolicMemory {
                     && (pointer.offset != AddressOffset::Constant(0)
                         || self
                             .block_size(&pointer.base)
-                            .and_then(MachineTerm::as_const)
+                            .and_then(OldMachineTerm::as_const)
                             != Some(bytes)))
             {
                 return Err(RuntimeError::FunctionContract(
@@ -6750,7 +6760,10 @@ impl SymbolicMemory {
             || (fresh
                 && (!base.base.is_local_block()
                     || base.offset != AddressOffset::Constant(0)
-                    || self.block_size(&base.base).and_then(MachineTerm::as_const) != Some(bytes)
+                    || self
+                        .block_size(&base.base)
+                        .and_then(OldMachineTerm::as_const)
+                        != Some(bytes)
                     || self.cells.runs_in_block(&base.base).next().is_some()
                     || AliasCandidates::only_block(&base.base)
                         .entries(self.cells.concrete())
@@ -7404,7 +7417,7 @@ impl SymbolicMemory {
     pub(crate) fn changed_cell_integers<'a>(
         &'a self,
         earlier: Option<&'a Self>,
-    ) -> Vec<&'a MachineTerm> {
+    ) -> Vec<&'a OldMachineTerm> {
         self.cells
             .changed_concrete_cells(earlier.map(|earlier| earlier.cells.as_ref()))
             .into_iter()
@@ -8795,7 +8808,7 @@ impl SymbolicMemory {
             .is_some_and(MemoryBlock::is_read_only)
     }
 
-    pub(in crate::kernel) fn block_size(&self, block: &AddressBase) -> Option<&MachineTerm> {
+    pub(in crate::kernel) fn block_size(&self, block: &AddressBase) -> Option<&OldMachineTerm> {
         self.blocks.get(block).map(MemoryBlock::size)
     }
 
@@ -8901,7 +8914,7 @@ impl SymbolicMemory {
         site: &ProgramPoint,
         pointer: &Address,
     ) -> ProgramValue {
-        int32(crate::kernel::MachineTerm::read_named(
+        int32(crate::kernel::OldMachineTerm::read_named(
             self.legacy_read_point(site),
             pointer.clone(),
             LoadKind::Int32,
@@ -8909,14 +8922,14 @@ impl SymbolicMemory {
     }
 
     /// A signed byte read: the two's-complement conversion of the byte's
-    /// one unsigned read ([`MachineTerm::memory_read`]).
+    /// one unsigned read ([`OldMachineTerm::memory_read`]).
     #[cfg_attr(test, track_caller)]
     pub(in crate::kernel) fn symbolic_int8_load(
         &self,
         site: &ProgramPoint,
         pointer: &Address,
     ) -> ProgramValue {
-        int8(MachineTerm::read_named(
+        int8(OldMachineTerm::read_named(
             self.legacy_read_point(site),
             pointer.clone(),
             LoadKind::Int8,
@@ -8929,7 +8942,7 @@ impl SymbolicMemory {
         site: &ProgramPoint,
         pointer: &Address,
     ) -> ProgramValue {
-        int16(crate::kernel::MachineTerm::read_named(
+        int16(crate::kernel::OldMachineTerm::read_named(
             self.legacy_read_point(site),
             pointer.clone(),
             LoadKind::Int16,
@@ -8942,7 +8955,7 @@ impl SymbolicMemory {
         site: &ProgramPoint,
         pointer: &Address,
     ) -> ProgramValue {
-        uint8(crate::kernel::MachineTerm::read_named(
+        uint8(crate::kernel::OldMachineTerm::read_named(
             self.legacy_read_point(site),
             pointer.clone(),
             LoadKind::UInt8,
@@ -8955,7 +8968,7 @@ impl SymbolicMemory {
         site: &ProgramPoint,
         pointer: &Address,
     ) -> ProgramValue {
-        uint16(crate::kernel::MachineTerm::read_named(
+        uint16(crate::kernel::OldMachineTerm::read_named(
             self.legacy_read_point(site),
             pointer.clone(),
             LoadKind::UInt16,
@@ -8968,7 +8981,7 @@ impl SymbolicMemory {
         site: &ProgramPoint,
         pointer: &Address,
     ) -> ProgramValue {
-        uint32(crate::kernel::MachineTerm::read_named(
+        uint32(crate::kernel::OldMachineTerm::read_named(
             self.legacy_read_point(site),
             pointer.clone(),
             LoadKind::UInt32,
@@ -8981,7 +8994,7 @@ impl SymbolicMemory {
         site: &ProgramPoint,
         pointer: &Address,
     ) -> ProgramValue {
-        ProgramValue::Int64(crate::kernel::MachineTerm::read_named(
+        ProgramValue::Int64(crate::kernel::OldMachineTerm::read_named(
             self.legacy_read_point(site),
             pointer.clone(),
             LoadKind::Bits64,
@@ -9010,7 +9023,7 @@ impl SymbolicMemory {
         site: &ProgramPoint,
         pointer: &Address,
     ) -> ProgramValue {
-        ProgramValue::UInt64(crate::kernel::MachineTerm::read_named(
+        ProgramValue::UInt64(crate::kernel::OldMachineTerm::read_named(
             self.legacy_read_point(site),
             pointer.clone(),
             LoadKind::Bits64,
@@ -9026,7 +9039,7 @@ impl SymbolicMemory {
         if ty.format().bits() != 128 {
             return None;
         }
-        let load = crate::kernel::MachineTerm::read_named(
+        let load = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::unplaced(&(crate::kernel::intern_memory(self.clone()))),
             pointer.clone(),
             LoadKind::of_type(ty.program_type())?,
@@ -9039,7 +9052,7 @@ impl SymbolicMemory {
     }
 
     pub(in crate::kernel) fn symbolic_float32_load(&self, pointer: &Address) -> ProgramValue {
-        ProgramValue::Float32(crate::kernel::MachineTerm::read_named(
+        ProgramValue::Float32(crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::unplaced(&(crate::kernel::intern_memory(self.clone()))),
             pointer.clone(),
             LoadKind::Float32,
@@ -9047,7 +9060,7 @@ impl SymbolicMemory {
     }
 
     pub(in crate::kernel) fn symbolic_float64_load(&self, pointer: &Address) -> ProgramValue {
-        ProgramValue::Float64(crate::kernel::MachineTerm::read_named(
+        ProgramValue::Float64(crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::unplaced(&(crate::kernel::intern_memory(self.clone()))),
             pointer.clone(),
             LoadKind::Float64,
@@ -9086,7 +9099,7 @@ impl SymbolicMemory {
         value_type: ProgramType,
     ) -> ProgramValue {
         let retained_state = crate::kernel::intern_memory(self.clone());
-        let value = Address::loaded(&crate::kernel::MachineTerm::read_named(
+        let value = Address::loaded(&crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::read_at_optional(&retained_state, site),
             pointer.clone(),
             LoadKind::Int32,
@@ -9706,7 +9719,7 @@ impl ExecutionState {
                 .ok_or("batch import requires the creation ledger")?
                 .import_observable_contract_population_quantity(
                     description,
-                    &MachineTerm::constant(total),
+                    &OldMachineTerm::constant(total),
                 )
                 .map_err(|refusal| format!("batch population import refused: {refusal}"))?;
             let mut next = self.clone();
@@ -9750,7 +9763,7 @@ impl ExecutionState {
             .creation
             .as_ref()
             .ok_or("batch import requires the creation ledger")?
-            .import_observable_contract_population_quantity(description, quantity.native_compat())
+            .import_observable_contract_population_quantity(description, quantity.old_form())
             .map_err(|refusal| format!("batch population import refused: {refusal}"))?;
         let mut next = self.clone();
         Arc::make_mut(&mut next.population_effects).creation = Some(events);
@@ -9879,7 +9892,7 @@ impl ExecutionState {
         selected: &ResourceFact,
         definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
-    ) -> Result<(ResourceContext, Vec<MachineTerm>), String> {
+    ) -> Result<(ResourceContext, Vec<OldMachineTerm>), String> {
         self.authority_wrapper_fact_projection(selected, definition, assumptions, true)
     }
 
@@ -9890,7 +9903,7 @@ impl ExecutionState {
         selected: &ResourceFact,
         definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
-    ) -> Result<(ResourceContext, Vec<MachineTerm>), String> {
+    ) -> Result<(ResourceContext, Vec<OldMachineTerm>), String> {
         self.authority_wrapper_fact_projection(selected, definition, assumptions, false)
     }
 
@@ -9900,7 +9913,7 @@ impl ExecutionState {
         definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
         require_folded: bool,
-    ) -> Result<(ResourceContext, Vec<MachineTerm>), String> {
+    ) -> Result<(ResourceContext, Vec<OldMachineTerm>), String> {
         let (children, count) =
             self.authority_wrapper_body(selected, definition, assumptions, require_folded)?;
         // Retire the head before composing its body. Its ownership observations
@@ -9929,7 +9942,7 @@ impl ExecutionState {
         selected: &ResourceFact,
         definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
-    ) -> Result<(Vec<ResourceFact>, Vec<MachineTerm>), String> {
+    ) -> Result<(Vec<ResourceFact>, Vec<OldMachineTerm>), String> {
         self.authority_wrapper_body(selected, definition, assumptions, true)
     }
 
@@ -9953,7 +9966,7 @@ impl ExecutionState {
         selected: &ResourceFact,
         definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
-    ) -> Result<Vec<MachineTerm>, String> {
+    ) -> Result<Vec<OldMachineTerm>, String> {
         let (_, count) = self.authority_wrapper_body(selected, definition, assumptions, false)?;
         Ok(count)
     }
@@ -9964,7 +9977,7 @@ impl ExecutionState {
         definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
         require_folded: bool,
-    ) -> Result<(Vec<ResourceFact>, Vec<MachineTerm>), String> {
+    ) -> Result<(Vec<ResourceFact>, Vec<OldMachineTerm>), String> {
         let (children, descriptions) =
             self.authority_wrapper_candidates(selected, definition, assumptions, require_folded)?;
         let counts = self.authority_counts_for_descriptions(descriptions)?;
@@ -9976,7 +9989,7 @@ impl ExecutionState {
     pub(in crate::kernel) fn returned_authority_counts(
         &self,
         authorities: &[ResourceFact],
-    ) -> Result<Vec<MachineTerm>, String> {
+    ) -> Result<Vec<OldMachineTerm>, String> {
         let descriptions = authorities
             .iter()
             .map(|fact| match fact.resource() {
@@ -9990,7 +10003,7 @@ impl ExecutionState {
     fn authority_counts_for_descriptions(
         &self,
         descriptions: Vec<ResourceDescription>,
-    ) -> Result<Vec<MachineTerm>, String> {
+    ) -> Result<Vec<OldMachineTerm>, String> {
         let mut counts = Vec::with_capacity(descriptions.len());
         for description in descriptions {
             let Some([crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(pointer))]) =
@@ -10018,20 +10031,20 @@ impl ExecutionState {
                     .ok_or("Requires a current authority count")?;
                 if let Some((produce, quantity)) = imported.combined_delta() {
                     if produce {
-                        MachineTerm::add(imported.entry_count, quantity)
+                        OldMachineTerm::add(imported.entry_count, quantity)
                     } else {
-                        MachineTerm::subtract(imported.entry_count, quantity)
+                        OldMachineTerm::subtract(imported.entry_count, quantity)
                     }
                 } else {
                     match imported.delta.cmp(&0) {
                         std::cmp::Ordering::Equal => imported.entry_count,
-                        std::cmp::Ordering::Greater => MachineTerm::add(
+                        std::cmp::Ordering::Greater => OldMachineTerm::add(
                             imported.entry_count,
-                            MachineTerm::constant(imported.delta.unsigned_abs()),
+                            OldMachineTerm::constant(imported.delta.unsigned_abs()),
                         ),
-                        std::cmp::Ordering::Less => MachineTerm::subtract(
+                        std::cmp::Ordering::Less => OldMachineTerm::subtract(
                             imported.entry_count,
-                            MachineTerm::constant(imported.delta.unsigned_abs()),
+                            OldMachineTerm::constant(imported.delta.unsigned_abs()),
                         ),
                     }
                 }
@@ -10156,7 +10169,7 @@ impl ExecutionState {
         selected: &ResourceFact,
         definition: &super::super::CompositeResourceDefinition,
         assumptions: &PureFactContext,
-    ) -> Result<Vec<(ResourceDescription, Option<MachineTerm>)>, String> {
+    ) -> Result<Vec<(ResourceDescription, Option<OldMachineTerm>)>, String> {
         if !self.resources.contains_exact_representation(selected) {
             return Err("Requires the declared owned control resource".into());
         }
@@ -10250,7 +10263,7 @@ impl ExecutionState {
             }
             components.push((
                 description.clone(),
-                Some(crate::kernel::MachineTerm::read_named(
+                Some(crate::kernel::OldMachineTerm::read_named(
                     ProgramPoint::unplaced(&(intern_memory_ref(&self.memory))),
                     anchor.clone(),
                     LoadKind::Int32,
@@ -10703,7 +10716,7 @@ impl ExecutionState {
                 && !assumptions.proves_memory_loadable_for_memory_resolution(
                     &self.memory,
                     &base,
-                    &MachineTerm::constant(bytes),
+                    &OldMachineTerm::constant(bytes),
                 )
             {
                 return Err("member private memory exceeds live storage".into());
@@ -10755,7 +10768,7 @@ impl ExecutionState {
                 &anchor.base,
                 &description,
                 produce,
-                quantity.native_compat(),
+                quantity.old_form(),
                 assumptions,
             )
         } else {
@@ -10763,7 +10776,7 @@ impl ExecutionState {
                 &anchor.base,
                 &description,
                 produce,
-                quantity.native_compat(),
+                quantity.old_form(),
                 assumptions,
             )
         };
@@ -11520,7 +11533,7 @@ impl ExecutionState {
         // The candidates are the scalar locals bound to the variable, found
         // through the held-term index; each must still hold it in current
         // memory at its slot's start. The first such slot answers.
-        let term = MachineTerm::Variable(variable);
+        let term = OldMachineTerm::Variable(variable);
         let mut held = None;
         for name in self.locals.names_holding_integer(&term) {
             if crate::instrumentation::deadline_exceeded() {
@@ -11981,7 +11994,7 @@ mod contract_retirement_tests {
         assert!(memory.has_initialized_bytes_at(&aliases[0], 4));
         let retired = memory.retire_contract_heap_allocation_claim(
             &base,
-            &MachineTerm::constant(4),
+            &OldMachineTerm::constant(4),
             &assumptions,
         );
         for alias in &aliases {
@@ -12013,7 +12026,7 @@ mod union_store_tests {
             .store_union(
                 base.clone(),
                 ProgramType::Int32,
-                ProgramValue::Int32(MachineTerm::constant(0x51)),
+                ProgramValue::Int32(OldMachineTerm::constant(0x51)),
             );
         assert_eq!(
             memory.known_union_value(&base, ProgramType::UInt8),
@@ -12022,7 +12035,7 @@ mod union_store_tests {
         );
         assert_eq!(
             memory.known_union_value(&base, ProgramType::Int32),
-            Some(ProgramValue::Int32(MachineTerm::constant(0x51))),
+            Some(ProgramValue::Int32(OldMachineTerm::constant(0x51))),
         );
     }
 }
@@ -12289,7 +12302,7 @@ mod initialization_record_tests {
             Address::symbolic(Variable(924_041)),
             Address {
                 base: AddressBase::ExternalArgument,
-                offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(924_042)), 4),
+                offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(924_042)), 4),
             },
         ] {
             for seeded in [false, true] {
@@ -12354,7 +12367,7 @@ mod initialization_record_tests {
     fn unplaced(block: &str) -> Address {
         Address {
             base: AddressBase::from(block),
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(924_001)), 4),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(924_001)), 4),
         }
     }
 
@@ -12363,11 +12376,11 @@ mod initialization_record_tests {
             .with_block(block, 8)
             .store(
                 element(block, 0),
-                ProgramValue::Int32(MachineTerm::constant(5)),
+                ProgramValue::Int32(OldMachineTerm::constant(5)),
             )
             .store(
                 element(block, 1),
-                ProgramValue::Int32(MachineTerm::constant(5)),
+                ProgramValue::Int32(OldMachineTerm::constant(5)),
             )
     }
 
@@ -12390,7 +12403,7 @@ mod initialization_record_tests {
         // The store the forgetting precedes only initializes more.
         let stored = forgotten.store(
             unplaced(block),
-            ProgramValue::Int32(MachineTerm::constant(7)),
+            ProgramValue::Int32(OldMachineTerm::constant(7)),
         );
         assert!(stored.has_initialized_bytes_at(&element(block, 0), 8));
     }
@@ -12416,7 +12429,7 @@ mod initialization_record_tests {
         let forgotten = forgotten_pair(block);
         let first_only = SymbolicMemory::new().with_block(block, 8).store(
             element(block, 0),
-            ProgramValue::Int32(MachineTerm::constant(5)),
+            ProgramValue::Int32(OldMachineTerm::constant(5)),
         );
         let arms = [&forgotten, &first_only];
         let joined = forgotten
@@ -12436,7 +12449,7 @@ mod initialization_record_tests {
     /// `count` int32s (`stride` 4), its zero contents seeded as constant runs
     /// with no initialization recorded, so only the runs say it was written.
     fn zero_runs(block: &str, count: u32, stride: u32) -> SymbolicMemory {
-        let zero = ProgramValue::Int32(MachineTerm::constant(0));
+        let zero = ProgramValue::Int32(OldMachineTerm::constant(0));
         let runs = (0..stride / 4)
             .map(|field| ConstantRun {
                 offset: 4 * field,
@@ -12485,7 +12498,7 @@ mod initialization_record_tests {
     fn an_element_index_the_facts_bound_reads_a_covering_run() {
         let block = "local:record-index";
         let forgotten = forgotten_pair(block);
-        let index = MachineTerm::Variable(Variable(924_004));
+        let index = OldMachineTerm::Variable(Variable(924_004));
         let read = Address {
             base: AddressBase::from(block),
             offset: AddressOffset::scale_int32(index.clone(), 4),
@@ -12493,11 +12506,11 @@ mod initialization_record_tests {
         let bounded = |high: u32| {
             PureFactContext::new()
                 .assume_condition(
-                    ConditionTerm::signed_less_equal(MachineTerm::constant(0), index.clone()),
+                    ConditionTerm::signed_less_equal(OldMachineTerm::constant(0), index.clone()),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::signed_less_equal(index.clone(), MachineTerm::constant(high)),
+                    ConditionTerm::signed_less_equal(index.clone(), OldMachineTerm::constant(high)),
                     true,
                 )
         };
@@ -12506,14 +12519,14 @@ mod initialization_record_tests {
         assert!(!forgotten.has_initialized_bytes_under(&read, 4, &PureFactContext::new()));
     }
 
-    fn index_between(index: &MachineTerm, low: u32, high: u32) -> PureFactContext {
+    fn index_between(index: &OldMachineTerm, low: u32, high: u32) -> PureFactContext {
         PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_less_equal(MachineTerm::constant(low), index.clone()),
+                ConditionTerm::signed_less_equal(OldMachineTerm::constant(low), index.clone()),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_equal(index.clone(), MachineTerm::constant(high)),
+                ConditionTerm::signed_less_equal(index.clone(), OldMachineTerm::constant(high)),
                 true,
             )
     }
@@ -12526,7 +12539,7 @@ mod initialization_record_tests {
         let block = "local:record-cells";
         let written = written_pair(block);
         assert!(!written.has_initialized_bytes_at(&element(block, 0), 8));
-        let index = MachineTerm::Variable(Variable(924_007));
+        let index = OldMachineTerm::Variable(Variable(924_007));
         let read = Address {
             base: AddressBase::from(block),
             offset: AddressOffset::scale_int32(index.clone(), 4),
@@ -12537,11 +12550,11 @@ mod initialization_record_tests {
             .with_block(block, 12)
             .store(
                 element(block, 0),
-                ProgramValue::Int32(MachineTerm::constant(5)),
+                ProgramValue::Int32(OldMachineTerm::constant(5)),
             )
             .store(
                 element(block, 2),
-                ProgramValue::Int32(MachineTerm::constant(5)),
+                ProgramValue::Int32(OldMachineTerm::constant(5)),
             );
         assert!(!gap.has_initialized_bytes_under(&read, 4, &index_between(&index, 0, 2)));
         assert!(gap.has_initialized_bytes_under(&read, 4, &index_between(&index, 2, 2)));
@@ -12622,11 +12635,11 @@ mod local_variable_spelling_tests {
 
     #[test]
     fn held_term_index_agrees_with_a_scan_of_the_bindings() {
-        let x = MachineTerm::Variable(Variable(971_020));
-        let y = MachineTerm::Variable(Variable(971_021));
+        let x = OldMachineTerm::Variable(Variable(971_020));
+        let y = OldMachineTerm::Variable(Variable(971_021));
         // Terms that share a fingerprint (same root and operand roots) but
         // differ deeper, beside equal terms held by several locals.
-        let deep = |term: MachineTerm| {
+        let deep = |term: OldMachineTerm| {
             binary_node!(
                 Int32,
                 Add,
@@ -12636,7 +12649,7 @@ mod local_variable_spelling_tests {
                     Box::new(term),
                     Box::new(x.clone())
                 )),
-                Box::new(MachineTerm::constant(1)),
+                Box::new(OldMachineTerm::constant(1)),
             )
         };
         let terms = [
@@ -12644,7 +12657,7 @@ mod local_variable_spelling_tests {
             y.clone(),
             deep(x.clone()),
             deep(y.clone()),
-            MachineTerm::constant(7),
+            OldMachineTerm::constant(7),
         ];
         let mut state = ExecutionState::new();
         for step in 0..60usize {
@@ -12675,7 +12688,7 @@ mod local_variable_spelling_tests {
         }
     }
 
-    fn held_integer_term_of(value: &StoredExecutionValue) -> Option<&MachineTerm> {
+    fn held_integer_term_of(value: &StoredExecutionValue) -> Option<&OldMachineTerm> {
         match value.native_payload()?.numeric_value() {
             crate::kernel::integer_c_value!(term) | ProgramValue::Bool(term) => Some(term),
             _ => None,
@@ -12685,7 +12698,7 @@ mod local_variable_spelling_tests {
     #[test]
     fn local_variable_spelling_uses_current_memory_and_stable_slot_order() {
         let variable = Variable(971_010);
-        let value = ProgramValue::UInt64(MachineTerm::Variable(variable));
+        let value = ProgramValue::UInt64(OldMachineTerm::Variable(variable));
         let state = scalar(
             scalar(ExecutionState::new(), "z", value.clone()),
             "a",
@@ -12706,7 +12719,7 @@ mod local_variable_spelling_tests {
         );
         let state = state.clone().with_memory(state.memory().clone().store(
             SymbolicMemory::local_pointer("a"),
-            ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(0)),
         ));
         assert_eq!(
             state
@@ -12723,7 +12736,7 @@ mod local_variable_spelling_tests {
         );
         let state = state.clone().with_memory(state.memory().clone().store(
             SymbolicMemory::local_pointer("z"),
-            ProgramValue::UInt64(MachineTerm::uint64_constant(0)),
+            ProgramValue::UInt64(OldMachineTerm::uint64_constant(0)),
         ));
         assert_eq!(
             state

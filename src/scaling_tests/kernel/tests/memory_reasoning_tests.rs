@@ -11,7 +11,7 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 fn checked_loadability_ignores_unrelated_free_history() {
     let external = |id| Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(id)), 4),
+        offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(id)), 4),
     };
     let heap = |id| Address {
         base: AddressBase::Heap(id),
@@ -154,7 +154,7 @@ fn unaddressable_scalar_owners_do_not_restate_observable_memory_frames() {
 fn memory_range_endpoint_graph_matching_scales_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let variable = |id| MachineTerm::Variable(Variable(42_000 + id));
+        let variable = |id| OldMachineTerm::Variable(Variable(42_000 + id));
         let mut assumptions = PureFactContext::new();
         for index in 0..size {
             assumptions = assumptions.assume_condition(
@@ -165,8 +165,8 @@ fn memory_range_endpoint_graph_matching_scales_without_fact_index() {
         let resource = |index| {
             Resource::Memory(MemoryRange::new(
                 Address::symbolic(Variable(43_000)),
-                MachineTerm::constant(0),
-                MachineTerm::add(variable(index), MachineTerm::constant(1)),
+                OldMachineTerm::constant(0),
+                OldMachineTerm::add(variable(index), OldMachineTerm::constant(1)),
             ))
         };
         let left = resource(0);
@@ -204,13 +204,13 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
     let view = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: storage.clone(),
-        bytes: (MachineTerm::constant(4)).into(),
+        bytes: (OldMachineTerm::constant(4)).into(),
         wide: false,
     };
     let goal = Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: result.clone(),
-        bytes: (MachineTerm::constant(4)).into(),
+        bytes: (OldMachineTerm::constant(4)).into(),
         wide: false,
     };
     assert!(!crate::kernel::search::ProofSearch::proves(
@@ -232,7 +232,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
                     base: format!("unrelated-view-{index}").into(),
                     offset: AddressOffset::Constant(0),
                 },
-                bytes: (MachineTerm::constant(4)).into(),
+                bytes: (OldMachineTerm::constant(4)).into(),
                 wide: false,
             });
         }
@@ -245,7 +245,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
             &Proposition::MemoryLoadable {
                 memory: memory.clone(),
                 base: result.offset_by_bytes(4),
-                bytes: (MachineTerm::constant(4)).into(),
+                bytes: (OldMachineTerm::constant(4)).into(),
                 wide: false,
             }
         ));
@@ -267,7 +267,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
         .assume_proposition(Proposition::MemoryLoadable {
             memory: before,
             base: local,
-            bytes: (MachineTerm::constant(4)).into(),
+            bytes: (OldMachineTerm::constant(4)).into(),
             wide: false,
         });
     assert!(!crate::kernel::search::ProofSearch::proves(
@@ -275,7 +275,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
         &Proposition::MemoryLoadable {
             memory: after,
             base: result,
-            bytes: (MachineTerm::constant(4)).into(),
+            bytes: (OldMachineTerm::constant(4)).into(),
             wide: false,
         }
     ));
@@ -295,7 +295,7 @@ fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
                 PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
                     memory: memory.clone(),
                     base: target.clone(),
-                    bytes: (MachineTerm::constant(8)).into(),
+                    bytes: (OldMachineTerm::constant(8)).into(),
                     wide: false,
                 });
             for index in 0..size {
@@ -305,7 +305,7 @@ fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
                         base: target.base.clone(),
                         offset: AddressOffset::Constant(index as i64),
                     },
-                    bytes: (MachineTerm::constant(4)).into(),
+                    bytes: (OldMachineTerm::constant(4)).into(),
                     wide: false,
                 });
             }
@@ -315,7 +315,7 @@ fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
                     &Proposition::MemoryLoadable {
                         memory: memory.clone(),
                         base: target.clone(),
-                        bytes: (MachineTerm::constant(4)).into(),
+                        bytes: (OldMachineTerm::constant(4)).into(),
                         wide: false,
                     },
                 )
@@ -337,7 +337,7 @@ fn composition_store_separation_uses_checked_aliases_without_scanning_other_owne
 
     let parameter = |id| Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(id)), 4),
+        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 4),
     };
     let write_base = parameter(95_001);
     let read = parameter(95_002);
@@ -415,20 +415,22 @@ fn load_equality_resolves_through_stored_cell_chains_of_any_length() {
         base: "chain".into(),
         offset: AddressOffset::Constant(0),
     };
-    let cell = |index: usize| base.offset_by_elements(MachineTerm::constant(index as u32), 4);
+    let cell = |index: usize| base.offset_by_elements(OldMachineTerm::constant(index as u32), 4);
     let mut samples = Vec::new();
     for length in [32usize, 64, 96, 128] {
-        let mut memory = SymbolicMemory::new()
-            .store(cell(length), ProgramValue::Int32(MachineTerm::constant(42)));
+        let mut memory = SymbolicMemory::new().store(
+            cell(length),
+            ProgramValue::Int32(OldMachineTerm::constant(42)),
+        );
         for index in (0..length).rev() {
-            let next = MachineTerm::read_named(
+            let next = OldMachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                 Box::new(cell(index + 1)),
                 crate::kernel::LoadKind::Int32,
             );
             memory = SymbolicMemory::new().store(cell(index), ProgramValue::Int32(next));
         }
-        let load = MachineTerm::read_named(
+        let load = OldMachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
             Box::new(cell(0)),
             crate::kernel::LoadKind::Int32,
@@ -436,7 +438,7 @@ fn load_equality_resolves_through_stored_cell_chains_of_any_length() {
         let (proven, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::reasoning::bitvector_terms_proven_equal_for_memory_resolution(
                 &load,
-                &MachineTerm::constant(42),
+                &OldMachineTerm::constant(42),
                 &PureFactContext::new(),
             )
         });
@@ -461,7 +463,7 @@ fn shifted_constant_view_spans_match_without_ambient_search() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = SymbolicMemory::new();
     let base = Address::symbolic(Variable(9_319_000));
-    let index = MachineTerm::Variable(Variable(9_319_001));
+    let index = OldMachineTerm::Variable(Variable(9_319_001));
     let count = |length| {
         binary_node!(
             Int32,
@@ -470,12 +472,12 @@ fn shifted_constant_view_spans_match_without_ambient_search() {
                 Int32,
                 Add,
                 Box::new(index.clone()),
-                Box::new(MachineTerm::constant(length)),
+                Box::new(OldMachineTerm::constant(length)),
             )),
             Box::new(index.clone()),
         )
     };
-    let source = |bytes: MachineTerm| Proposition::MemoryLoadable {
+    let source = |bytes: OldMachineTerm| Proposition::MemoryLoadable {
         memory: memory.clone(),
         base: base.clone(),
         bytes: (bytes).into(),
@@ -489,7 +491,7 @@ fn shifted_constant_view_spans_match_without_ambient_search() {
                 Int32,
                 Multiply,
                 Box::new(count(4)),
-                Box::new(MachineTerm::constant(width)),
+                Box::new(OldMachineTerm::constant(width)),
             )
         };
         let mut costs = Vec::new();
@@ -498,14 +500,14 @@ fn shifted_constant_view_spans_match_without_ambient_search() {
             for offset in 0..size {
                 context = context.assume_condition(
                     ConditionTerm::equal(
-                        MachineTerm::Variable(Variable(9_319_100 + offset)),
-                        MachineTerm::constant(offset as u32),
+                        OldMachineTerm::Variable(Variable(9_319_100 + offset)),
+                        OldMachineTerm::constant(offset as u32),
                     ),
                     true,
                 );
             }
             let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
-                context.proves_memory_loadable(&memory, &base, &MachineTerm::constant(4 * width))
+                context.proves_memory_loadable(&memory, &base, &OldMachineTerm::constant(4 * width))
             });
             assert!(proved);
             costs.push(work);
@@ -515,43 +517,43 @@ fn shifted_constant_view_spans_match_without_ambient_search() {
         assert!(!context.proves_memory_loadable(
             &memory,
             &base,
-            &MachineTerm::constant(4 * width + 1),
+            &OldMachineTerm::constant(4 * width + 1),
         ));
         assert!(!context.proves_memory_loadable(
             &memory,
             &Address::symbolic(Variable(9_319_002)),
-            &MachineTerm::constant(4 * width),
+            &OldMachineTerm::constant(4 * width),
         ));
     }
     assert!(!PureFactContext::new().proves_memory_loadable(
         &memory,
         &base,
-        &MachineTerm::constant(4),
+        &OldMachineTerm::constant(4),
     ));
     let wrapped = binary_node!(
         Int32,
         Multiply,
         Box::new(count(0x4000_0000)),
-        Box::new(MachineTerm::constant(4)),
+        Box::new(OldMachineTerm::constant(4)),
     );
     assert!(
         !PureFactContext::new()
             .assume_proposition(source(wrapped))
-            .proves_memory_loadable(&memory, &base, &MachineTerm::constant(4))
+            .proves_memory_loadable(&memory, &base, &OldMachineTerm::constant(4))
     );
 }
 
 #[test]
 fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
-    let native = MachineTerm::Variable(Variable(983_110));
-    let alias = MachineTerm::Variable(Variable(983_111));
-    let last = |n| MachineTerm::uint64_subtract(n, MachineTerm::uint64_constant(1));
+    let native = OldMachineTerm::Variable(Variable(983_110));
+    let alias = OldMachineTerm::Variable(Variable(983_111));
+    let last = |n| OldMachineTerm::uint64_subtract(n, OldMachineTerm::uint64_constant(1));
     let wide = |n| AddressOffset::scaled_int64_node(n, 4, true);
-    let projected = MachineTerm::uint32_from_64(last(native.clone()));
+    let projected = OldMachineTerm::uint32_from_64(last(native.clone()));
     let query = wide(last(alias.clone()));
     let bound = ConditionTerm::uint64_less_equal(
         last(native.clone()),
-        MachineTerm::uint64_constant(1_073_741_822),
+        OldMachineTerm::uint64_constant(1_073_741_822),
     );
     let equality = ConditionTerm::uint64_equal(alias.clone(), native.clone());
     let project = |facts: &PureFactContext| {
@@ -562,15 +564,17 @@ fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
     assert_eq!(project(&bounded), None);
     let equal_only = PureFactContext::new().assume_condition(equality.clone(), true);
     assert_eq!(project(&equal_only), None);
-    let low_bound =
-        ConditionTerm::signed_less_equal(projected.clone(), MachineTerm::constant(1_073_741_822));
+    let low_bound = ConditionTerm::signed_less_equal(
+        projected.clone(),
+        OldMachineTerm::constant(1_073_741_822),
+    );
     assert_eq!(
         project(&equal_only.clone().assume_condition(low_bound, true)),
         None
     );
     let signed_bound = ConditionTerm::int64_signed_less_equal(
         last(native.clone()),
-        MachineTerm::int64_constant(1_073_741_822),
+        OldMachineTerm::int64_constant(1_073_741_822),
     );
     assert_eq!(
         project(&equal_only.clone().assume_condition(signed_bound, true)),
@@ -583,8 +587,8 @@ fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
         for i in 0..count {
             facts = facts.assume_condition(
                 ConditionTerm::uint64_less_equal(
-                    MachineTerm::Variable(Variable(984_000 + i)),
-                    MachineTerm::uint64_constant(7),
+                    OldMachineTerm::Variable(Variable(984_000 + i)),
+                    OldMachineTerm::uint64_constant(7),
                 ),
                 true,
             );
@@ -610,7 +614,7 @@ fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
     );
     for value in [0, 1_073_741_823, 1u64 << 32, u64::MAX] {
         let actual = value.wrapping_sub(1);
-        let offset = wide(last(MachineTerm::uint64_constant(value)));
+        let offset = wide(last(OldMachineTerm::uint64_constant(value)));
         let answer = crate::kernel::reasoning::element_index_from_offset_with_facts(
             &offset,
             4,
@@ -620,7 +624,7 @@ fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
             answer,
             i32::try_from(actual)
                 .ok()
-                .map(|x| MachineTerm::constant(x as u32))
+                .map(|x| OldMachineTerm::constant(x as u32))
         );
     }
 }
@@ -1014,9 +1018,9 @@ fn one_owned_member_does_not_trigger_store_alias_reasoning() {
 
     let base = Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(99_700)), 4),
+        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(99_700)), 4),
     };
-    let index = MachineTerm::Variable(Variable(99_701));
+    let index = OldMachineTerm::Variable(Variable(99_701));
     let write = base.offset_by_bytes(12);
     let read = base.offset_by_int32_elements(index.clone());
     let mut samples = Vec::new();
@@ -1048,7 +1052,7 @@ fn one_owned_member_does_not_trigger_store_alias_reasoning() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
-                    left: Box::new(MachineTerm::Variable(Variable(100_000 + unrelated))),
+                    left: Box::new(OldMachineTerm::Variable(Variable(100_000 + unrelated))),
                     right: Box::new(1000.into()),
                 },
                 true,
@@ -1083,7 +1087,7 @@ fn fixed_overlapping_ranges_ignore_unrelated_separation_facts() {
         let _session = crate::kernel::VerificationSession::enter();
         let base = Address {
             base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(MachineTerm::Variable(Variable(9_893_000)), 4),
+            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(9_893_000)), 4),
         };
         let outer = MemoryRange::new(base.clone(), 0u32.into(), 6u32.into());
         let inner = MemoryRange::new(base, 2u32.into(), 4u32.into());
@@ -1092,14 +1096,14 @@ fn fixed_overlapping_ranges_ignore_unrelated_separation_facts() {
             let a = Address {
                 base: AddressBase::ExternalArgument,
                 offset: AddressOffset::scale_int32(
-                    MachineTerm::Variable(Variable(9_894_000 + index * 2)),
+                    OldMachineTerm::Variable(Variable(9_894_000 + index * 2)),
                     4,
                 ),
             };
             let b = Address {
                 base: AddressBase::ExternalArgument,
                 offset: AddressOffset::scale_int32(
-                    MachineTerm::Variable(Variable(9_894_001 + index * 2)),
+                    OldMachineTerm::Variable(Variable(9_894_001 + index * 2)),
                     4,
                 ),
             };

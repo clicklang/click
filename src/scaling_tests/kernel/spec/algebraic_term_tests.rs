@@ -33,14 +33,14 @@ fn int32_match_comparison_keeps_shared_constructor_payloads() {
                     "None",
                     &[],
                     KernelTermImport::default()
-                        .machine(MachineIntegerType::Int32, &MachineTerm::constant(7)),
+                        .machine(MachineIntegerType::Int32, &OldMachineTerm::constant(7)),
                     &Default::default(),
                 ),
                 KernelMatchArm::import(
                     &mut KernelTermImport::default(),
                     "Some",
                     &[AlgebraicValue::Program(ProgramValue::Int32(
-                        MachineTerm::Variable(Variable(999764)),
+                        OldMachineTerm::Variable(Variable(999764)),
                     ))],
                     KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(999764)),
                     &Default::default(),

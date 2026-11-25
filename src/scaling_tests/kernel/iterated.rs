@@ -96,7 +96,7 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                 if unfold_clause && axis == "range premises" {
                     for premise in 0..count {
                         let var = Variable(9_990_000);
-                        let index = MachineTerm::Variable(var);
+                        let index = OldMachineTerm::Variable(var);
                         let lower = ConditionTerm::signed_less_equal(1u32.into(), index.clone());
                         let upper = ConditionTerm::signed_less_than(
                             index.clone(),
@@ -128,7 +128,7 @@ fn iterated_exposure_preserves_the_frame_without_admission_or_normalization() {
                     // Whole-clause unfolding's explicit whole-range premise: a selected
                     // element's known value alone does not prove every guard.
                     let var = Variable(9_990_000);
-                    let index = MachineTerm::Variable(var);
+                    let index = OldMachineTerm::Variable(var);
                     let lower = ConditionTerm::signed_less_equal(0u32.into(), index.clone());
                     let upper = ConditionTerm::signed_less_than(index.clone(), 4u32.into());
                     let hypotheses = facts

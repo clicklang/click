@@ -401,7 +401,7 @@ mod tests {
             unreachable!()
         };
         let bits =
-            MachineTerm::object_pointer_address(source.address().clone(), source.object_class());
+            OldMachineTerm::object_pointer_address(source.address().clone(), source.object_class());
         let decoded = super::super::eval::pointer_tags::cast_tagged_address_to_pointer(
             &bits,
             &PureFactContext::new(),

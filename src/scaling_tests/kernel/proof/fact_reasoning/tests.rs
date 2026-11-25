@@ -18,8 +18,8 @@ fn quantified_single_match_does_not_check_the_whole_alpha_bucket() {
                 Sort::ProgramInt32,
                 Proposition::condition_is(
                     ConditionTerm::equal(
-                        MachineTerm::Variable(Variable(1)),
-                        MachineTerm::Variable(Variable(2)),
+                        OldMachineTerm::Variable(Variable(1)),
+                        OldMachineTerm::Variable(Variable(2)),
                     ),
                     true,
                 ),
@@ -56,8 +56,8 @@ fn quantified_nested_matching_work_is_linear_and_context_indexed() {
     let nested = |depth: usize, base: u64| {
         let mut p = Proposition::condition_is(
             ConditionTerm::equal(
-                MachineTerm::Variable(Variable(base)),
-                MachineTerm::constant(0),
+                OldMachineTerm::Variable(Variable(base)),
+                OldMachineTerm::constant(0),
             ),
             true,
         );
@@ -91,8 +91,8 @@ fn quantified_nested_matching_work_is_linear_and_context_indexed() {
                 Sort::ProgramInt32,
                 Proposition::condition_is(
                     ConditionTerm::equal(
-                        MachineTerm::Variable(Variable(9000)),
-                        MachineTerm::constant(index as u32 + 1),
+                        OldMachineTerm::Variable(Variable(9000)),
+                        OldMachineTerm::constant(index as u32 + 1),
                     ),
                     true,
                 ),
@@ -124,10 +124,10 @@ fn machine_affine_equality_work_is_linear_in_the_sum() {
     let mut costs = Vec::new();
     for size in [16u64, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let variable = |index: u64| MachineTerm::Variable(Variable(97_000 + index));
+        let variable = |index: u64| OldMachineTerm::Variable(Variable(97_000 + index));
         let sum = |order: &mut dyn Iterator<Item = u64>| {
             let first = variable(order.next().unwrap());
-            order.fold(first, |sum, index| MachineTerm::Binary {
+            order.fold(first, |sum, index| OldMachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Add,
                 left: Box::new(sum),

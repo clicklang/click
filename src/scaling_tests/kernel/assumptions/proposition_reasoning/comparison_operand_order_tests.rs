@@ -4,14 +4,16 @@ use super::*;
 
 #[test]
 fn rejecting_comparison_bound_ignores_unrelated_getter_payload() {
-    let x = MachineTerm::Variable(Variable(9_991_011));
-    let y = MachineTerm::Variable(Variable(9_991_012));
+    let x = OldMachineTerm::Variable(Variable(9_991_011));
+    let y = OldMachineTerm::Variable(Variable(9_991_012));
     for mirrored in [false, true] {
         let mut baseline = None;
         for size in [4, 16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
-            let fact =
-                ConditionTerm::signed_less_equal(getter(size), MachineTerm::constant(2147483646));
+            let fact = ConditionTerm::signed_less_equal(
+                getter(size),
+                OldMachineTerm::constant(2147483646),
+            );
             let goal = if mirrored {
                 ConditionTerm::signed_greater_equal(y.clone(), x.clone())
             } else {

@@ -452,7 +452,7 @@ fn algebraic_sides(
             Some((left, right))
         }
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => {
-            Some((left.native_compat(), right.native_compat()))
+            Some((left.old_form(), right.old_form()))
         }
         _ => None,
     }
@@ -965,9 +965,9 @@ theorem black_color_is_black(color: Color) {
 
     #[test]
     fn native_rewrite_operands_survive_integer_source_expansion() {
-        let used = MachineTerm::Variable(Variable(920_001));
-        let capacity = MachineTerm::Variable(Variable(920_002));
-        let slots = MachineTerm::Variable(Variable(920_003));
+        let used = OldMachineTerm::Variable(Variable(920_001));
+        let capacity = OldMachineTerm::Variable(Variable(920_002));
+        let slots = OldMachineTerm::Variable(Variable(920_003));
         let kernel = Proposition::condition_is(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,

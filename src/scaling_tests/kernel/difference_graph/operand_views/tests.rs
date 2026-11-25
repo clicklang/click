@@ -16,16 +16,13 @@ fn graph_overflow_queries_visit_shared_dag_nodes_once() {
             );
         }
         let operand = SharedMachineIntegerTerm::from_shared(ty, root).unwrap();
-        let zero = MachineTerm::constant(0);
-        let query = OverflowQueryView::from_operands(
-            ty,
-            Op::Add,
-            [operand.operand_view(), V::Legacy(&zero)],
-        )
-        .unwrap();
+        let zero = OldMachineTerm::constant(0);
+        let query =
+            OverflowQueryView::from_operands(ty, Op::Add, [operand.operand_view(), V::Old(&zero)])
+                .unwrap();
         let mut graph = DifferenceGraph::new();
         graph.assume_condition(
-            &ConditionTerm::equal(MachineTerm::Variable(variable), zero),
+            &ConditionTerm::equal(OldMachineTerm::Variable(variable), zero),
             true,
         );
         let before = KernelTermExport::machine_export_count();
@@ -64,7 +61,7 @@ fn check_changing_context_prefixes(bounded: bool) {
             .unwrap();
         let mut graph = DifferenceGraph::new();
         if bounded {
-            let base = MachineTerm::Variable(Variable(998301));
+            let base = OldMachineTerm::Variable(Variable(998301));
             graph.assume_condition(
                 &ConditionTerm::signed_less_equal(0u32.into(), base.clone()),
                 true,
@@ -81,7 +78,7 @@ fn check_changing_context_prefixes(bounded: bool) {
                 );
                 graph.assume_condition(
                     &ConditionTerm::equal(
-                        MachineTerm::Variable(Variable(998400 + i as u64)),
+                        OldMachineTerm::Variable(Variable(998400 + i as u64)),
                         (i as u32).into(),
                     ),
                     true,

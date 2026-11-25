@@ -4,7 +4,7 @@ use super::*;
 fn specification_subtraction_widens_coordinates_and_retains_pointer_provenance() {
     let external = |variable| Address {
         base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
+        offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(variable)), 4),
     };
     let left = external(32_000);
     let right = external(32_001);
@@ -31,9 +31,9 @@ fn specification_subtraction_widens_coordinates_and_retains_pointer_provenance()
     assert_eq!(paths.len(), 1);
     assert_eq!(
         paths[0].value.clone().into_native(),
-        ProgramValue::Int64(MachineTerm::int64_subtract(
-            MachineTerm::int64_from_32(MachineTerm::Variable(Variable(32_001))),
-            MachineTerm::int64_from_32(MachineTerm::Variable(Variable(32_000))),
+        ProgramValue::Int64(OldMachineTerm::int64_subtract(
+            OldMachineTerm::int64_from_32(OldMachineTerm::Variable(Variable(32_001))),
+            OldMachineTerm::int64_from_32(OldMachineTerm::Variable(Variable(32_000))),
         ))
     );
     assert!(paths[0].facts.contains(&ExecutionPureFact::condition(

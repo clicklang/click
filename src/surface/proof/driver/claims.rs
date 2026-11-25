@@ -4116,8 +4116,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                         continue;
                                     }
                                     if let Proposition::ConditionIs(condition, value) = proposition
-                                        && assumptions.decide(condition.native_compat())
-                                            == Some(!*value)
+                                        && assumptions.decide(condition.old_form()) == Some(!*value)
                                     {
                                         refuted.push(obligation.clone());
                                         continue;
@@ -6762,8 +6761,8 @@ mod tests {
 
     #[test]
     fn inconsistent_context_is_not_sibling_path_evidence() {
-        let left = MachineTerm::Variable(Variable(1));
-        let right = MachineTerm::Variable(Variable(2));
+        let left = OldMachineTerm::Variable(Variable(1));
+        let right = OldMachineTerm::Variable(Variable(2));
         let assumptions = PureFactContext::new()
             .assume_proposition(Proposition::condition_is(
                 ConditionTerm::Compare {
@@ -6808,8 +6807,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: Box::new(MachineTerm::Variable(Variable(2))),
-                right: Box::new(MachineTerm::constant(10)),
+                left: Box::new(OldMachineTerm::Variable(Variable(2))),
+                right: Box::new(OldMachineTerm::constant(10)),
             },
             true,
         );
@@ -6824,8 +6823,8 @@ mod tests {
         let condition = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: Box::new(MachineTerm::Variable(Variable(1))),
-            right: Box::new(MachineTerm::constant(10)),
+            left: Box::new(OldMachineTerm::Variable(Variable(1))),
+            right: Box::new(OldMachineTerm::constant(10)),
         };
         let assumptions = PureFactContext::new()
             .assume_proposition(Proposition::condition_is(condition.clone(), false));

@@ -170,7 +170,7 @@ pub(super) fn record(
 mod tests {
     use super::*;
     use crate::kernel::{
-        CompareRelation, ConditionTerm, MachineIntegerType, MachineTerm, Variable,
+        CompareRelation, ConditionTerm, MachineIntegerType, OldMachineTerm, Variable,
     };
 
     fn compare(relation: CompareRelation, value: bool) -> KernelProposition {
@@ -178,8 +178,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation,
-                left: Box::new(MachineTerm::Variable(Variable(7))),
-                right: Box::new(MachineTerm::constant(10)),
+                left: Box::new(OldMachineTerm::Variable(Variable(7))),
+                right: Box::new(OldMachineTerm::constant(10)),
             },
             value,
         )

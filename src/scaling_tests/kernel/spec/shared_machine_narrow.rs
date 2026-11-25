@@ -8,7 +8,7 @@ fn annotated_narrow_chains_retain_operands_without_exports() {
             for size in [16, 64, 256] {
                 let _session = VerificationSession::enter();
                 let mut root = input(
-                    &format.value_from_term(MachineTerm::Variable(Variable(995465))),
+                    &format.value_from_term(OldMachineTerm::Variable(Variable(995465))),
                     true,
                 );
                 let right = root.clone();

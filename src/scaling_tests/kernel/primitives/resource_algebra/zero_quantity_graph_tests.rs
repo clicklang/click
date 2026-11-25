@@ -9,11 +9,14 @@ fn quantity_query_work_is_indexed_over_separately_retained_units() {
     let assumptions = PureFactContext::new();
     let samples = [16_u32, 64, 256, 1024].map(|size| {
         let context = ResourceContext::new()
-            .unchecked_with_facts((0..size).map(|_| required(MachineTerm::constant(1))));
+            .unchecked_with_facts((0..size).map(|_| required(OldMachineTerm::constant(1))));
         let ((), work) = crate::persistent::measure_persistent_work(|| {
-            assert!(context.satisfies_fact(&required(MachineTerm::constant(size)), &assumptions));
             assert!(
-                !context.satisfies_fact(&required(MachineTerm::constant(size + 1)), &assumptions)
+                context.satisfies_fact(&required(OldMachineTerm::constant(size)), &assumptions)
+            );
+            assert!(
+                !context
+                    .satisfies_fact(&required(OldMachineTerm::constant(size + 1)), &assumptions)
             );
         });
         work
@@ -34,7 +37,7 @@ fn zero_ownership_graph_queries_scale_without_fact_index() {
                 context.assume_condition(ConditionTerm::equal(var(index), var(index + 1)), true);
         }
         context = context.assume_condition(
-            ConditionTerm::equal(var(size), MachineTerm::constant(0)),
+            ConditionTerm::equal(var(size), OldMachineTerm::constant(0)),
             true,
         );
         let empty = ResourceContext::new();
@@ -53,15 +56,15 @@ fn zero_ownership_graph_queries_scale_without_fact_index() {
 #[test]
 fn merged_unit_consumption_is_flat_in_unrelated_resources() {
     let assumptions = PureFactContext::new();
-    let one = required(MachineTerm::constant(1));
-    let two = required(MachineTerm::constant(2));
+    let one = required(OldMachineTerm::constant(1));
+    let two = required(OldMachineTerm::constant(2));
     let unrelated = |index: u32| {
         ResourceFact::own_quantity(
             Resource::Composite {
                 name: format!("unrelated-{index}"),
                 arguments: Vec::new().into(),
             },
-            MachineTerm::constant(1),
+            OldMachineTerm::constant(1),
         )
     };
     let samples = [16_u32, 64, 256, 1024].map(|size| {

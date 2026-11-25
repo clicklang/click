@@ -237,7 +237,7 @@ fn mixed_integer_descriptor_identity_survives_handle_drop_without_exports() {
     let make_observation = |format| {
         IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             format,
-            MachineTerm::Variable(variable),
+            OldMachineTerm::Variable(variable),
         ))
     };
     let mut measured = Vec::new();
@@ -317,7 +317,7 @@ fn mixed_integer_descriptor_identity_survives_handle_drop_without_exports() {
 fn stored_machine_quantity_reads_the_cached_word_without_export() {
     let _session = crate::kernel::VerificationSession::enter();
     let format = MachineIntegerType::Int32;
-    let mut root = KernelTermImport::default().machine(format, &MachineTerm::constant(1));
+    let mut root = KernelTermImport::default().machine(format, &OldMachineTerm::constant(1));
     let mut symbolic =
         KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(998990));
     for depth in 1..=16 {

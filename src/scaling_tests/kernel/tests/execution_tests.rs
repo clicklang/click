@@ -86,8 +86,8 @@ fn verified_loop_rule_selection_is_flat_in_unrelated_ambient_facts() {
         for index in 0..size as u32 {
             assumptions = assumptions.assume_condition(
                 ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(u64::from(500_000 + index))),
-                    MachineTerm::constant(index),
+                    OldMachineTerm::Variable(Variable(u64::from(500_000 + index))),
+                    OldMachineTerm::constant(index),
                 ),
                 true,
             );
@@ -115,7 +115,7 @@ fn verified_loop_rule_selection_is_flat_in_unrelated_ambient_facts() {
 #[test]
 fn invariant_back_edge_context_extension_scales_with_members_not_ambient_facts() {
     let state =
-        ExecutionState::new().with_local("i", int32(MachineTerm::Variable(Variable(912_346))));
+        ExecutionState::new().with_local("i", int32(OldMachineTerm::Variable(Variable(912_346))));
     let mut samples = Vec::new();
     for size in [8usize, 16, 32] {
         let checks = (0..size)
@@ -264,8 +264,8 @@ fn statement_theorems_do_not_list_the_context_they_executed_under() {
         for index in 0..size {
             assumptions = assumptions.assume_condition(
                 ConditionTerm::equal(
-                    MachineTerm::Variable(Variable(1_910_000 + u64::from(index))),
-                    MachineTerm::constant(index),
+                    OldMachineTerm::Variable(Variable(1_910_000 + u64::from(index))),
+                    OldMachineTerm::constant(index),
                 ),
                 true,
             );
@@ -400,7 +400,7 @@ fn loop_freshness_ignores_unrelated_live_state() {
                 for index in 0..size {
                     state = state.with_local(
                         format!("unrelated_{index}"),
-                        int32(MachineTerm::Variable(Variable(base + index))),
+                        int32(OldMachineTerm::Variable(Variable(base + index))),
                     );
                 }
             }

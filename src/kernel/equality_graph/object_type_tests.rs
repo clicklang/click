@@ -62,8 +62,8 @@ fn model_source(pointer: &Address, condition: bool) -> Proposition {
 #[test]
 fn integer_address_word_aliases_do_not_supply_an_object_type() {
     let _session = VerificationSession::enter();
-    let a = MachineTerm::Variable(Variable(880_010));
-    let b = MachineTerm::Variable(Variable(880_011));
+    let a = OldMachineTerm::Variable(Variable(880_010));
+    let b = OldMachineTerm::Variable(Variable(880_011));
     let p = Address::from_integer_address(a.clone());
     let q = Address::from_integer_address(b.clone());
     let context = PureFactContext::new()
@@ -71,8 +71,8 @@ fn integer_address_word_aliases_do_not_supply_an_object_type() {
         .assume_condition(ConditionTerm::uint64_equal(a, b), true);
     assert!(can_type(&context, &p));
     assert!(context.equality_graph.are_uint64_equal(
-        &MachineTerm::IntegerAddress(Box::new(p), AddressObjectClass::NONE),
-        &MachineTerm::IntegerAddress(Box::new(q.clone()), AddressObjectClass::NONE),
+        &OldMachineTerm::IntegerAddress(Box::new(p), AddressObjectClass::NONE),
+        &OldMachineTerm::IntegerAddress(Box::new(q.clone()), AddressObjectClass::NONE),
     ));
     assert!(!can_type(&context, &q));
 }
@@ -164,7 +164,7 @@ fn goals_alternatives_and_weak_cast_metadata_do_not_admit_type_evidence() {
     let context = PureFactContext::new();
     context
         .equality_graph
-        .are_algebraic_equal(a.native_compat(), b.native_compat());
+        .are_algebraic_equal(a.old_form(), b.old_form());
     assert!(!can_type(&context, &p));
     let alternatives = context.clone().assume_proposition(Proposition::Or(
         Box::new(model),
