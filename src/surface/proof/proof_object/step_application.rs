@@ -462,10 +462,7 @@ impl<'a> Proof<'a> {
                     return (RoundTrip::Unraised, String::new(), String::new());
                 };
                 let raised = crate::surface::printing::source_click_proposition(&surface);
-                let lowered =
-                    crate::surface::proof::execution_planning::without_open_obligation_probe(
-                        || self.lower_surface_proposition_direct(&surface, "raise-lower audit"),
-                    );
+                let lowered = self.lower_proposition_spelling(&surface);
                 match lowered {
                     Err(_) => (RoundTrip::Unlowered, raised, String::new()),
                     Ok(lowered) => match audit::classify(original, &lowered) {

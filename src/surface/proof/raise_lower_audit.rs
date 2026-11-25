@@ -672,6 +672,25 @@ int32 short_sum(int32 seed) {
     }
 
     #[test]
+    fn a_rewritten_guarded_constructor_match_round_trips() {
+        let lines = round_trips(
+            "algebraic_match_bound_guards.md",
+            include_str!("../../../mdtests/algebraic_match_bound_guards.md"),
+        );
+        let rewritten_matches = lines
+            .iter()
+            .filter(|(_, original)| original.contains("match NumberInput::Hold(true, 7)"))
+            .collect::<Vec<_>>();
+        assert!(!rewritten_matches.is_empty(), "{lines:#?}");
+        assert!(
+            rewritten_matches
+                .iter()
+                .all(|(outcome, _)| outcome == "same"),
+            "{rewritten_matches:#?}"
+        );
+    }
+
+    #[test]
     fn copied_parameter_pointer_definedness_round_trips() {
         let fixture = crate::cli::parse_mdtest(
             std::path::Path::new("copied_parameter_pointer_definedness_round_trips.md"),
