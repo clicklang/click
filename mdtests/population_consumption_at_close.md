@@ -67,26 +67,29 @@ uint32 contribute_early(struct counter* p) {
         unfold(remaining(p));
         step();
         have to_integer(p->value) == (3 - to_integer(count(remaining(p)))) by {
-            have 0 <= (to_integer(old(p->value)) + 1) by {
-                close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
-                        at(function.entry, 3); at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p))))); };
-            }
-            have (to_integer(old(p->value)) + 1) <= 4294967295 by {
-                close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
-                        at(function.entry, 1); at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p))))); };
-            }
-            have to_integer(p->value) == (to_integer(old(p->value)) + 1) by {
-                close() using { 0 <= (to_integer(old(p->value)) + 1); (to_integer(old(p->value)) + 1) <= 4294967295; };
+            have to_integer(p->value) == to_integer(old(p->value)) + 1 by {
+                have to_integer(old(p->value)) <= 3 by {
+                    rewrite(to_integer(old(p->value)), 3 - to_integer(old(count(remaining(p)))));
+                    close();
+                }
+                have to_integer(old(p->value)) + 1 <= 4 by {
+                    apply(click::integer::add_le(to_integer(old(p->value)), 3, 1, 1));
+                    close();
+                }
+                have to_integer(old(p->value)) + 1 <= 4294967295 by {
+                    apply(click::integer::le_transitive(to_integer(old(p->value)) + 1, 4, 4294967295));
+                }
+                apply(click::integer::uint32_add_to_integer(old(p->value), 1u32));
+                have p->value == old(p->value) + 1u32;
+                rewrite(p->value, old(p->value) + 1u32);
+                close();
             }
             have -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) by {
                 close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
                         at(function.entry, 1); };
             }
             have (to_integer(old(count(remaining(p)))) - 1) <= 2147483647 by {
-                close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
-                        at(function.entry, 3); };
+                apply(click::integer::le_transitive(to_integer(old(count(remaining(p)))) - 1, 3, 2147483647));
             }
             have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
                 close() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
@@ -114,8 +117,7 @@ uint32 contribute_early(struct counter* p) {
                     at(function.entry, 1); };
         }
         have (to_integer(old(count(remaining(p)))) - 1) <= 2147483647 by {
-            close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
-                    at(function.entry, 3); };
+            apply(click::integer::le_transitive(to_integer(old(count(remaining(p)))) - 1, 3, 2147483647));
         }
         have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
             close() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
@@ -156,26 +158,29 @@ uint32 contribute_nested(struct counter* p) {
         unfold(remaining(p));
         step();
         have to_integer(p->value) == (3 - to_integer(count(remaining(p)))) by {
-            have 0 <= (to_integer(old(p->value)) + 1) by {
-                close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
-                        at(function.entry, 3); at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p))))); };
-            }
-            have (to_integer(old(p->value)) + 1) <= 4294967295 by {
-                close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
-                        at(function.entry, 1); at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p))))); };
-            }
-            have to_integer(p->value) == (to_integer(old(p->value)) + 1) by {
-                close() using { 0 <= (to_integer(old(p->value)) + 1); (to_integer(old(p->value)) + 1) <= 4294967295; };
+            have to_integer(p->value) == to_integer(old(p->value)) + 1 by {
+                have to_integer(old(p->value)) <= 3 by {
+                    rewrite(to_integer(old(p->value)), 3 - to_integer(old(count(remaining(p)))));
+                    close();
+                }
+                have to_integer(old(p->value)) + 1 <= 4 by {
+                    apply(click::integer::add_le(to_integer(old(p->value)), 3, 1, 1));
+                    close();
+                }
+                have to_integer(old(p->value)) + 1 <= 4294967295 by {
+                    apply(click::integer::le_transitive(to_integer(old(p->value)) + 1, 4, 4294967295));
+                }
+                apply(click::integer::uint32_add_to_integer(old(p->value), 1u32));
+                have p->value == old(p->value) + 1u32;
+                rewrite(p->value, old(p->value) + 1u32);
+                close();
             }
             have -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) by {
                 close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
                         at(function.entry, 1); };
             }
             have (to_integer(old(count(remaining(p)))) - 1) <= 2147483647 by {
-                close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
-                        at(function.entry, 3); };
+                apply(click::integer::le_transitive(to_integer(old(count(remaining(p)))) - 1, 3, 2147483647));
             }
             have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
                 close() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
@@ -202,8 +207,7 @@ uint32 contribute_nested(struct counter* p) {
                             at(function.entry, 1); };
                 }
                 have (to_integer(old(count(remaining(p)))) - 1) <= 2147483647 by {
-                    close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
-                            at(function.entry, 3); };
+                    apply(click::integer::le_transitive(to_integer(old(count(remaining(p)))) - 1, 3, 2147483647));
                 }
                 have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
                     close() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
@@ -218,8 +222,7 @@ uint32 contribute_nested(struct counter* p) {
                             at(function.entry, 1); };
                 }
                 have (to_integer(old(count(remaining(p)))) - 1) <= 2147483647 by {
-                    close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
-                            at(function.entry, 3); };
+                    apply(click::integer::le_transitive(to_integer(old(count(remaining(p)))) - 1, 3, 2147483647));
                 }
                 have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
                     close() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
@@ -267,26 +270,29 @@ uint32 contribute_branch(struct counter* p, int32 report) {
         unfold(remaining(p));
         step();
         have to_integer(p->value) == (3 - to_integer(count(remaining(p)))) by {
-            have 0 <= (to_integer(old(p->value)) + 1) by {
-                close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
-                        at(function.entry, 3); at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p))))); };
-            }
-            have (to_integer(old(p->value)) + 1) <= 4294967295 by {
-                close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
-                        at(function.entry, 1); at(function.entry, to_integer(p->value)) == at(function.entry, (3 -
-                        to_integer(count(remaining(p))))); };
-            }
-            have to_integer(p->value) == (to_integer(old(p->value)) + 1) by {
-                close() using { 0 <= (to_integer(old(p->value)) + 1); (to_integer(old(p->value)) + 1) <= 4294967295; };
+            have to_integer(p->value) == to_integer(old(p->value)) + 1 by {
+                have to_integer(old(p->value)) <= 3 by {
+                    rewrite(to_integer(old(p->value)), 3 - to_integer(old(count(remaining(p)))));
+                    close();
+                }
+                have to_integer(old(p->value)) + 1 <= 4 by {
+                    apply(click::integer::add_le(to_integer(old(p->value)), 3, 1, 1));
+                    close();
+                }
+                have to_integer(old(p->value)) + 1 <= 4294967295 by {
+                    apply(click::integer::le_transitive(to_integer(old(p->value)) + 1, 4, 4294967295));
+                }
+                apply(click::integer::uint32_add_to_integer(old(p->value), 1u32));
+                have p->value == old(p->value) + 1u32;
+                rewrite(p->value, old(p->value) + 1u32);
+                close();
             }
             have -2147483648 <= (to_integer(old(count(remaining(p)))) - 1) by {
                 close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) >=
                         at(function.entry, 1); };
             }
             have (to_integer(old(count(remaining(p)))) - 1) <= 2147483647 by {
-                close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
-                        at(function.entry, 3); };
+                apply(click::integer::le_transitive(to_integer(old(count(remaining(p)))) - 1, 3, 2147483647));
             }
             have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
                 close() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
@@ -316,8 +322,7 @@ uint32 contribute_branch(struct counter* p, int32 report) {
                         at(function.entry, 1); };
             }
             have (to_integer(old(count(remaining(p)))) - 1) <= 2147483647 by {
-                close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
-                        at(function.entry, 3); };
+                apply(click::integer::le_transitive(to_integer(old(count(remaining(p)))) - 1, 3, 2147483647));
             }
             have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
                 close() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
@@ -343,8 +348,7 @@ uint32 contribute_branch(struct counter* p, int32 report) {
                         at(function.entry, 1); };
             }
             have (to_integer(old(count(remaining(p)))) - 1) <= 2147483647 by {
-                close() using { at(function.entry, (to_integer(count(remaining(p))) - 1)) <=
-                        at(function.entry, 3); };
+                apply(click::integer::le_transitive(to_integer(old(count(remaining(p)))) - 1, 3, 2147483647));
             }
             have to_integer(count(remaining(p))) == (to_integer(old(count(remaining(p)))) - 1) by {
                 close() using { -2147483648 <= (to_integer(old(count(remaining(p)))) - 1); (to_integer(old(count(remaining(p)))) - 1) <= 2147483647; };
