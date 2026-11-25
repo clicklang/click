@@ -1123,6 +1123,7 @@ step is still checked.
 | `all { P => { ... } Q => { ... } }` | control | Expansion output | Prove each conjunct. | [Reference](#conjunctions) |
 | `outcomes { returned => { ... } threw => { ... } }` | control | Specialized | Prove each returned or exceptional outcome. | [Reference](#execution-outcomes) |
 | `close() using { P; ... }` | smart | Specialized | Close one goal from written premises only. | [Reference](#simplification-with-selected-premises) |
+| `close() using bounds { P; ... }` | simple | Expansion output | Check a float bound or signed product range bound from exact citations. | [Reference](#checked-bounds) |
 | `check_termination_local("f")` | simple | Expansion output | Establish the generated local descent classification. | [Reference](#termination-checks) |
 | `check_termination_component("f", mode)` | simple | Expansion output | Classify a generated recursive component using established premises. | [Reference](#termination-checks) |
 | `check_termination_callbacks()` | simple | Expansion output | Classify callback safety using established strict return premises. | [Reference](#termination-checks) |
@@ -1501,6 +1502,17 @@ chosen operations; expansion prints its proof steps, and profiling reports
 search plus leaves.
 
 **Checked examples:** [`solve_postconditions.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_postconditions.md)
+
+### Checked bounds
+
+**Form:** `close() using bounds { P; ... }`
+
+Check one floating-point bound or a signed product range bound. Each cited
+premise must already be available. The checker matches the goal and those
+premises against fixed rules for rounded bounds, float interval operations
+and finiteness, or a signed product constrained by a quotient guard. Expansion
+uses this form when it selects one of those rules. Replay checks the explicit
+premises and does no proof search.
 
 ### Simplification with selected premises
 

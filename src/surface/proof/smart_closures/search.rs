@@ -3738,14 +3738,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         let step = if proof.goal().is_some_and(|goal| {
             use crate::kernel::proof::arithmetic_special::{
-                checks_selected_float_bounds, positive_divisor_product_guards,
+                checks_selected_float_bounds, checks_signed_product_guards,
             };
             checks_selected_float_bounds(goal, requirements)
-                || [false, true].into_iter().any(|swap| {
-                    positive_divisor_product_guards(goal, swap).as_deref() == Some(requirements)
-                })
+                || checks_signed_product_guards(goal, requirements)
         }) {
-            ProofStep::NormalizeUsing(surfaces)
+            ProofStep::CloseBounds(surfaces)
         } else {
             ProofStep::CompatibilityNormalize(Some(surfaces))
         };
@@ -4534,7 +4532,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             let step = if checks_selected_float_bounds(bound, std::slice::from_ref(previous_bound))
             {
-                ProofStep::NormalizeUsing(vec![previous])
+                ProofStep::CloseBounds(vec![previous])
             } else {
                 ProofStep::CompatibilityNormalize(Some(vec![previous]))
             };
@@ -4554,7 +4552,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let step = if proof.goal().is_some_and(|goal| {
             checks_selected_float_bounds(goal, std::slice::from_ref(previous_bound))
         }) {
-            ProofStep::NormalizeUsing(vec![previous])
+            ProofStep::CloseBounds(vec![previous])
         } else {
             ProofStep::CompatibilityNormalize(Some(vec![previous]))
         };
@@ -4571,11 +4569,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_bounded_arithmetic_closure");
         use crate::kernel::proof::arithmetic_special::{
-            checks_selected_float_bounds, float_compound_bound_operand, float_finiteness_source,
-            float_zero_product_premise, is_float_bound, positive_divisor_product_guards,
-            promoted_right_shift_bound, shift_count_mask_requirements, shifted_one_bounds,
-            signed_max_shift_count_bound, signed_product_guard_candidates,
-            signed_quotient_bridge_requirement, signed_shift_bound_mask_identity,
+            checks_selected_float_bounds, checks_signed_product_guards,
+            float_compound_bound_operand, float_finiteness_source, float_zero_product_premise,
+            is_float_bound, positive_divisor_product_guards, promoted_right_shift_bound,
+            shift_count_mask_requirements, shifted_one_bounds, signed_max_shift_count_bound,
+            signed_product_guard_candidates, signed_quotient_bridge_requirement,
+            signed_shift_bound_mask_identity,
         };
         let Some(goal) = search_input.goal() else {
             return Ok(None);
@@ -4793,8 +4792,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let Some(surfaces) = surfaces else {
                 continue;
             };
-            let step = if checks_selected_float_bounds(goal, &premises) {
-                ProofStep::NormalizeUsing(surfaces)
+            let step = if checks_selected_float_bounds(goal, &premises)
+                || checks_signed_product_guards(goal, &premises)
+            {
+                ProofStep::CloseBounds(surfaces)
             } else {
                 ProofStep::CompatibilityNormalize(Some(surfaces))
             };
@@ -13617,9 +13618,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         None
     }
 
-    /// Use only selected viewability and condition premises. A fixed
-    /// descriptor can normalize its containment directly. A computed range
-    /// first proves its endpoint comparisons with selected arithmetic.
+    /// Use only selected viewability and condition premises. Prove the
+    /// endpoint comparisons separately and apply the range containment law.
     fn try_selected_viewability_containment(
         search_input: &Proof<'a>,
         surfaces: &[SyntaxProposition],
@@ -13632,16 +13632,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return None;
         };
-        let conditions = surfaces
-            .iter()
-            .filter(|surface| {
-                matches!(
-                    search_input.lower_cited_surface_proposition(surface, "view premise"),
-                    Ok(Proposition::ConditionIs(..))
-                )
-            })
-            .cloned()
-            .collect::<Vec<_>>();
         let child = ResourceSubject::Memory(target_segment.clone());
         for source in surfaces {
             let mut descriptor = source;
@@ -13693,10 +13683,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 child: child.clone(),
             };
             let prepared = (|| {
+                // A fixed byte span can cross element widths, where the
+                // element-range theorem below does not apply.
                 let scope = view_proof.driver().open_have(containment.clone()).ok()?;
-                if let Ok(closed) = scope
-                    .driver()
-                    .apply_step(ProofStep::NormalizeUsing(conditions.clone()))
+                if scope.goal().is_some_and(normalizes_context_free)
+                    && let Ok(closed) = scope.driver().apply_step(ProofStep::Known)
                 {
                     return closed.join().ok();
                 }
@@ -14081,6 +14072,18 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Some(closed);
         }
         if typed_first && let Some(closed) = try_typed_derivation() {
+            return Some(closed);
+        }
+        if (crate::kernel::proof::arithmetic_special::checks_selected_float_bounds(
+            goal,
+            &restricted,
+        ) || crate::kernel::proof::arithmetic_special::checks_signed_product_guards(
+            goal,
+            &restricted,
+        )) && let Ok(closed) = proof
+            .driver()
+            .apply_step(ProofStep::CloseBounds(surfaces.to_vec()))
+        {
             return Some(closed);
         }
         if crate::kernel::proof::fact_reasoning::is_single_normalization_condition(goal)

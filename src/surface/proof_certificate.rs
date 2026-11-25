@@ -120,6 +120,7 @@ pub enum ProofStep {
     },
     CheckTerminationCallbacks,
     Known,
+    CloseBounds(Vec<SyntaxProposition>),
     Normalize,
     NormalizeUsing(Vec<SyntaxProposition>),
     /// A compatibility check used in verification. It has no expansion spelling.
@@ -797,6 +798,7 @@ impl ProofStep {
                 premises: premises.clone(),
             },
             ProofTactic::Known => Self::Known,
+            ProofTactic::CloseBounds(premises) => Self::CloseBounds(premises.clone()),
             ProofTactic::Normalize => Self::Normalize,
             ProofTactic::NormalizeUsing(premises) => Self::NormalizeUsing(premises.clone()),
             ProofTactic::CompatibilityNormalize(premises) => {
@@ -989,6 +991,7 @@ impl ProofStep {
                 premises: premises.clone(),
             },
             Self::Known => ProofTactic::Known,
+            Self::CloseBounds(premises) => ProofTactic::CloseBounds(premises.clone()),
             Self::Normalize => ProofTactic::Normalize,
             Self::NormalizeUsing(premises) => ProofTactic::NormalizeUsing(premises.clone()),
             Self::CompatibilityNormalize(premises) => {
@@ -1243,7 +1246,7 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         ProofStep::CheckTerminationLocal(_)
         | ProofStep::CheckTerminationComponent { .. }
         | ProofStep::CheckTerminationCallbacks => TacticClass::Simple(SimpleTactic::Termination),
-        ProofStep::Known => TacticClass::Simple(SimpleTactic::Known),
+        ProofStep::Known | ProofStep::CloseBounds(_) => TacticClass::Simple(SimpleTactic::Known),
         ProofStep::Normalize
         | ProofStep::NormalizeUsing(_)
         | ProofStep::CompatibilityNormalize(_) => TacticClass::Simple(SimpleTactic::Normalize),

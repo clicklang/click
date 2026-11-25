@@ -964,7 +964,7 @@ int32 identity(int32 x) {
     }
 
     #[test]
-    fn check_normalize_removal_rejects_written_generated_and_compatibility_steps() {
+    fn check_normalize_removal_replays_checked_bounds_and_rejects_legacy_proofs() {
         let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("mdtests/arithmetic_expression_float_bound_composition.md");
         let check = |path: &Path, claim: &str| {
@@ -1300,6 +1300,12 @@ theorem rounded_uint64_cast(x: uint64) {
     requires x <= 1024u64;
     ensures (x as float) <= float32_from_bits(0x44800000) by close();
 }
+theorem unchecked_cast_bound(x: uint64) {
+    requires x <= 2048u64;
+    ensures (x as float) <= float32_from_bits(0x44800000) by {
+        close() using bounds { x <= 1024u64; };
+    }
+}
 "#,
         )
         .unwrap();
@@ -1317,10 +1323,28 @@ theorem rounded_uint64_cast(x: uint64) {
             nan.contains("unproved obligation: `isfinite(float32_from_bits(0x7fc00000))`"),
             "{nan}"
         );
-        let generated = check(&infinity, "rounded_uint64_cast.ensures_0").unwrap_err();
+        let rounded = check(&infinity, "rounded_uint64_cast.ensures_0").unwrap();
+        let (cast_proof, _) = rounded.split_once("theorem unchecked_cast_bound").unwrap();
+        assert!(cast_proof.contains("close() using bounds"), "{rounded}");
+        let returning =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("mdtests/close_with_checked_bounds.md");
+        let expanded = check(&returning, "return_cast.ensures_0").unwrap();
+        let (return_proof, _) = expanded.split_once("theorem rounded_upper").unwrap();
+        assert!(return_proof.contains("close() using bounds"), "{expanded}");
+        let missing = check(&infinity, "unchecked_cast_bound.ensures_0").unwrap_err();
+        assert!(missing.contains("not exactly available"), "{missing}");
+
+        let range = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/viewable_restrict_transport_expansion.md");
+        let expanded = check(&range, "first.contract").unwrap();
         assert!(
-            generated.contains("Expanded proof still contains normalize()"),
-            "{generated}"
+            expanded.contains("separation::viewable_restrict"),
+            "{expanded}"
+        );
+        let expanded = check(&range, "cross_width.ensures_0").unwrap();
+        assert!(
+            expanded.contains("separation::viewable_restrict"),
+            "{expanded}"
         );
 
         let guard_spellings = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

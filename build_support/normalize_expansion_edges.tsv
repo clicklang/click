@@ -32,16 +32,12 @@ src/surface/proof/smart_closures/integer_composition.rs	mixed	::run_scope	Compat
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_normalization_closure	CompatibilityNormalize	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::prove_operation_identities	CompatibilityNormalize	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	CompatibilityNormalize	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	NormalizeUsing	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	try_normalize_after_arithmetic_bounds	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_bound_chain	CompatibilityNormalize	2
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_bound_chain	NormalizeUsing	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_goal_conditional_normalization	CompatibilityNormalize	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_goal_conditional_normalization	apply_normalization_closure	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_normalize_after_arithmetic_bounds	CompatibilityNormalize	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_normalize_after_arithmetic_bounds	NormalizeUsing	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_restricted_solve_closure_before_arithmetic	apply_normalization_closure	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_selected_viewability_containment	NormalizeUsing	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_signed_interval_using	CompatibilityNormalize	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	apply_normalization_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_typed_atomic_solve_from_selected_premises	Normalize	1

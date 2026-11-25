@@ -12318,6 +12318,12 @@ impl Parser {
                 let start = self.position - 1;
                 self.expect_empty_tactic_args(&name)?;
                 if self.peek_ident() == Some("using") {
+                    if matches!(self.peek_next(), Some(Token::Ident(rule)) if rule == "bounds") {
+                        self.position += 2;
+                        let premises = self.parse_premise_block()?;
+                        self.skip_redundant_semicolon();
+                        return Ok(ProofTactic::CloseBounds(premises));
+                    }
                     let premises = self.parse_exact_premises()?;
                     self.skip_redundant_semicolon();
                     return Ok(ProofTactic::SolveUsing(ProofSolveUsing { premises }));
@@ -12949,6 +12955,10 @@ impl Parser {
 
     fn parse_exact_premises(&mut self) -> Result<Vec<SyntaxProposition>, ClickError> {
         self.expect_ident_spelling("using")?;
+        self.parse_premise_block()
+    }
+
+    fn parse_premise_block(&mut self) -> Result<Vec<SyntaxProposition>, ClickError> {
         self.expect(Token::LBrace)?;
         let mut premises = Vec::new();
         while self.peek() != Some(&Token::RBrace) {
@@ -19870,6 +19880,7 @@ mod tactic_classification_tests {
         ("transport", "transport(x == 1, y == 1);"),
         ("instantiate", "instantiate(F, 1);"),
         ("close-using", "close() using { x == 1; };"),
+        ("close-bounds", "close() using bounds { x <= 1; };"),
         ("check-termination-local", "check_termination_local(\"f\");"),
         (
             "check-termination-component",

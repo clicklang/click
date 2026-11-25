@@ -3536,6 +3536,35 @@ fn load_equality_chain_across_a_call_expands_and_replays() {
 }
 
 #[test]
+fn selected_bounds_and_cross_width_viewability_expand_and_replay() {
+    let source = r#"
+        theorem cast_bound(x: uint64) {
+            requires x <= 1024u64;
+            ensures (x as float) <= float32_from_bits(0x44800000) by close();
+        }
+        theorem cross_width(p: int32[]) {
+            requires viewable(p[0..1]);
+            ensures viewable((p as (uint8 *))[0..4]) by {
+                close() using { viewable(p[0..1]); };
+            }
+        }
+    "#;
+    for (label, expected) in [
+        ("cast_bound.ensures_0", "close() using bounds"),
+        ("cross_width.ensures_0", "separation::viewable_restrict"),
+    ] {
+        let expanded = expand_c_claim_source_by_label(source, &[], label)
+            .unwrap_or_else(|error| panic!("{label}: {}", error.message()));
+        assert!(expanded.contains(expected), "{expanded}");
+        assert!(!expanded.contains("normalize()"), "{expanded}");
+        crate::surface::check_audit_claim(label, true, || {
+            verify_c_sources(&expanded, &[]).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+}
+
+#[test]
 fn specification_pointer_load_equality_expands_to_known() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/egraph_resource_pointer_load_alias.md");

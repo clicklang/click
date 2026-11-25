@@ -1564,6 +1564,10 @@ id = "tactic-form.close-using"
 path = "reference/tactics/index.md#proposition-reasoning"
 
 [[item]]
+id = "tactic-form.close-bounds"
+path = "reference/tactics/index.md#checked-bounds"
+
+[[item]]
 id = "cli.verify.command"
 path = "reference/cli/verify.md#click-verify-command"
 

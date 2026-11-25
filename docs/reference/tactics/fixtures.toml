@@ -213,6 +213,11 @@ path = "mdtests/solve_closes_one_goal.md"
 needle = "close() using {"
 
 [[form]]
+id = "close-bounds"
+path = "mdtests/close_with_checked_bounds.md"
+needle = "close() using bounds {"
+
+[[form]]
 id = "release-view"
 path = "mdtests/explicit_produced_view.md"
 needle = "release_view(*p);"

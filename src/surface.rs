@@ -6389,6 +6389,7 @@ pub enum ProofTactic {
     CheckTerminationCallbacks,
     Close,
     Known,
+    CloseBounds(Vec<SyntaxProposition>),
     Normalize,
     NormalizeUsing(Vec<SyntaxProposition>),
     /// A compatibility check used in verification. It has no expansion spelling.
@@ -6835,6 +6836,11 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "smart",
     },
     PublicTacticForm {
+        id: "close-bounds",
+        syntax: "close() using bounds",
+        class: "simple",
+    },
+    PublicTacticForm {
         id: "check-termination-local",
         syntax: "check_termination_local(",
         class: "simple",
@@ -6982,7 +6988,7 @@ impl ProofTactic {
             Self::CheckTerminationLocal(_)
             | Self::CheckTerminationComponent { .. }
             | Self::CheckTerminationCallbacks => TacticClass::Simple(SimpleTactic::Termination),
-            Self::Known => TacticClass::Simple(SimpleTactic::Known),
+            Self::Known | Self::CloseBounds(_) => TacticClass::Simple(SimpleTactic::Known),
             Self::Normalize | Self::NormalizeUsing(_) | Self::CompatibilityNormalize(_) => {
                 TacticClass::Simple(SimpleTactic::Normalize)
             }

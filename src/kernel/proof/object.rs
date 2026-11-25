@@ -1383,6 +1383,28 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         Ok(opened)
     }
 
+    pub(crate) fn apply_close_bounds(&self, premises: &[Proposition]) -> Result<Self, String> {
+        let (goal, facts) = self
+            .focused_proposition()
+            .ok_or("checked bounds require a proposition goal")?;
+        if !super::arithmetic_special::checks_selected_float_bounds(goal.proposition(), premises)
+            && !super::arithmetic_special::checks_signed_product_guards(
+                goal.proposition(),
+                premises,
+            )
+        {
+            return Err(
+                "the cited bounds do not establish the goal by a checked bound rule".into(),
+            );
+        }
+        for (index, premise) in premises.iter().enumerate() {
+            if !super::fact_reasoning::listed_condition_available(premise, facts) {
+                return Err(format!("selected bound {index} is not exactly available"));
+            }
+        }
+        Ok(self.closed_focused())
+    }
+
     pub(crate) fn apply_normalize_using(
         &self,
         premises: &[Proposition],
@@ -2991,6 +3013,54 @@ mod tests {
                 },
             ),
         )
+    }
+
+    #[test]
+    fn checked_product_bounds_use_exact_citations_as_fact_sets_grow() {
+        use crate::instrumentation::measure_deterministic_work;
+        use crate::kernel::{ConditionTerm, IntegerTerm, MachineIntegerType, VerificationSession};
+        let _session = VerificationSession::enter();
+        let observe = |value| {
+            IntegerTerm::from_machine(MachineIntegerType::Int32, MachineTerm::Variable(value))
+                .unwrap()
+        };
+        let x = Variable(10);
+        let y = Variable(11);
+        let goal = Proposition::condition_is(
+            ConditionTerm::integer_greater_equal(
+                IntegerTerm::multiply(observe(x), observe(y)),
+                IntegerTerm::constant_i64(i64::from(i32::MIN)),
+            ),
+            true,
+        );
+        let cited = super::super::arithmetic_special::positive_divisor_product_guards(&goal, false)
+            .expect("signed product with positive divisor");
+        let mut baseline = None;
+        for size in [0, 32, 256] {
+            let mut facts = PureFactStore::from_ordered(&cited);
+            for n in 0..size {
+                // Grow the orders mentioning x as well as the unrelated fact set.
+                for lhs in [x, Variable(1_000 + n)] {
+                    facts = facts.with_fact(Proposition::condition_is(
+                        ConditionTerm::integer_less_than(
+                            observe(lhs),
+                            observe(Variable(2_000 + n)),
+                        ),
+                        true,
+                    ));
+                }
+            }
+            let proof = known_computation_proof(goal.clone(), facts);
+            let (checked, work) = measure_deterministic_work(|| proof.apply_close_bounds(&cited));
+            assert!(checked.is_ok());
+            assert_eq!(work, *baseline.get_or_insert(work), "fact count {size}");
+            assert!(proof.apply_close_bounds(&cited[..1]).is_err());
+        }
+        let proof = known_computation_proof(goal, PureFactStore::from_ordered(&cited[..1]));
+        assert!(matches!(
+            proof.apply_close_bounds(&cited),
+            Err(message) if message.contains("not exactly available")
+        ));
     }
 
     #[test]
