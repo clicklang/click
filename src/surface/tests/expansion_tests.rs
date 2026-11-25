@@ -23261,6 +23261,33 @@ fn loop_maintain_instantiation_expands_and_replays() {
     .expect("the expanded proof should replay with the instantiated fact");
 }
 
+#[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_68")]
+fn outcome_instantiation_expands_and_closes_without_search() {
+    let (source, sources) = mdtest_sources("mdtests/instantiate_at_function_exit.md");
+    let sources = crate::cli::source_refs(&sources);
+    let label = "at_exit.contract";
+    // Close the three contract bookkeeping goals after the last proposition.
+    let explicit = source
+        .replace("step_until(function.exit);", "step();")
+        .trim_end()
+        .strip_suffix('}')
+        .unwrap()
+        .to_owned()
+        + "    close();\n    close();\n    close();\n}\n";
+    for source in [
+        explicit,
+        expand_c_claim_source_by_label(&source, &sources, label)
+            .expect("a bare outcome instantiation should expand"),
+    ] {
+        assert_eq!(source.matches("instantiate(").count(), 2, "{source}");
+        crate::surface::without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&source, &sources).map_err(|error| error.to_string())
+        })
+        .expect("both outcome instantiations should replay without search");
+    }
+}
+
 /// A loop phase written in a grouped proof's `loop` tactic is a claim of its
 /// own: its label, and a line of its proof, select just that phase, and the
 /// expansion replaces only the phase's `by` clause with its checked
@@ -26767,6 +26794,7 @@ test_batches! {
         outcome_predecessor_bound_solve_expands_to_arithmetic_steps,
         loop_preservation_case_after_step_expands_in_place,
         loop_maintain_instantiation_expands_and_replays,
+        outcome_instantiation_expands_and_closes_without_search,
     ],
     expansion_batch_69: [
         loop_preservation_case_before_step_expands_in_place,
