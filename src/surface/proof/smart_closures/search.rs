@@ -7496,9 +7496,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(source) = premises.next() else {
             return Ok(None);
         };
-        // The source is itself one of the available equalities. The shared
-        // planner checks and minimizes the list, and returns the checked
-        // transport in the exact form recorded for expansion.
+        // The source is itself one of the available equalities. Use the
+        // selected facts to construct an ordinary proof.
         Self::try_fixed_state_fact_transport(
             search_input,
             &source,
@@ -12178,21 +12177,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         if !proof.focused_discharged() {
             let conclusion = plan.conclusion?;
-            let closed = Self::try_ordinary_fact_transport(
+            proof = Self::try_ordinary_fact_transport(
                 &proof,
                 &conclusion.source,
                 &conclusion.target,
                 &conclusion.premises,
             )
             .ok()?
-            .filter(Proof::focused_discharged);
-            proof = match closed {
-                Some(closed) => closed,
-                None => proof
-                    .driver()
-                    .try_generated_linear_script(&conclusion.fallback)
-                    .ok()??,
-            };
+            .filter(Proof::focused_discharged)?;
         }
         for (parent, introduced) in openings.into_iter().rev() {
             proof = parent.finish_generated_intro(&introduced, proof).ok()?;
@@ -12220,6 +12212,65 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             )?
         {
             return Ok(Some(proof));
+        }
+        // A single named footprint whose exit is current can state the
+        // equality directly. Older footprints use the ordinary chain below.
+        if search_input.surface_goal() == Some(target)
+            && let Some(separation) =
+                single_statement_preservation_premise(source, target, premises)
+            && let Some(execution) = search_input.execution()
+            && let Some(Proposition::ResourceSeparate { left, .. }) = attempt::candidate_outcome(
+                search_input.lower_surface_proposition_direct(&separation, "transport separation"),
+            )?
+            && let crate::kernel::Resource::Footprint(footprint) = left.as_ref()
+            && crate::kernel::MemoryStateIdentity::of(&footprint.after)
+                == crate::kernel::MemoryStateIdentity::of(execution.core.state.memory())
+            && footprint
+                .after_resources
+                .shares_storage_with(execution.core.state.resources())
+            && let Some(proof) = attempt::candidate_outcome(
+                search_input
+                    .driver()
+                    .apply_step(ProofStep::Preserve(separation)),
+            )?
+        {
+            return Ok(Some(proof));
+        }
+        if let Some((steps, narrow_range)) = viewability_restriction_steps(source, target, premises)
+            && let Some(target_fact) = attempt::candidate_outcome(
+                search_input.lower_surface_proposition_direct(target, "transport target"),
+            )?
+        {
+            let same_state = match (&source_fact, &target_fact) {
+                (
+                    Proposition::MemoryLoadable {
+                        memory: left,
+                        wide: false,
+                        ..
+                    },
+                    Proposition::MemoryLoadable {
+                        memory: right,
+                        wide: false,
+                        ..
+                    },
+                ) if narrow_range => left == right,
+                (
+                    Proposition::ResourceViewable { memory: left, .. }
+                    | Proposition::MemoryLoadable { memory: left, .. },
+                    Proposition::ResourceViewable { memory: right, .. }
+                    | Proposition::MemoryLoadable { memory: right, .. },
+                ) if !narrow_range => left == right,
+                _ => false,
+            };
+            if same_state
+                && let Some(proof) = attempt::candidate_outcome(
+                    search_input
+                        .driver()
+                        .apply_ordinary_transport_steps(target, steps),
+                )?
+            {
+                return Ok(Some(proof));
+            }
         }
         let separations = premises
             .iter()

@@ -3266,51 +3266,6 @@ impl<'a> Proof<'a> {
         })
     }
 
-    pub(super) fn apply_compatibility_fact_transport(
-        &self,
-        source: &SyntaxProposition,
-        target: &SyntaxProposition,
-        premises: &[SyntaxProposition],
-    ) -> Result<CheckedFocusedTransition, ClickError> {
-        match self.context.as_ref() {
-            ProofContext::FixedState(context) => self.apply_fixed_state_fact_transport(
-                source,
-                target,
-                premises,
-                &FixedStateOperationView::from_fixed_state(context),
-            ),
-            // A focused branch function-outcome goal transports result-aware facts
-            // through the same fixed-state checker, reading its data from the goal.
-            ProofContext::Execution(_) if self.focused_outcome_data().is_some() => {
-                let view = self
-                    .outcome_fixed_state_view()
-                    .expect("a focused outcome judgment resolves its fixed-state view");
-                self.apply_fixed_state_fact_transport(source, target, premises, &view)
-            }
-            // A nested `have` at an execution frontier is a proposition
-            // judgment borrowing that outcome's fixed-state environment. Keep
-            // goal-local binder substitutions (`intro` variables) on the
-            // fixed-state operation instead of routing through the outer execution
-            // transport, which has no proposition-goal bindings.
-            ProofContext::Execution(_) if self.goal().is_some() => {
-                let view = self
-                    .execution_proposition_fixed_state_view()
-                    .ok_or_else(|| {
-                        self.step_error(
-                            "transport frame check requires a fixed-state proposition proof",
-                        )
-                    })?;
-                self.apply_fixed_state_fact_transport(source, target, premises, &view)
-            }
-            ProofContext::Execution(context) => {
-                self.apply_execution_fact_transport(source, target, premises, context)
-            }
-            ProofContext::Pure(_) => {
-                Err(self.step_error("fact transport requires a recorded execution state"))
-            }
-        }
-    }
-
     /// The surface spellings recorded for this context's kernel facts.
     ///
     /// One place, so a diagnostic that wants to name a fact the way the proof
@@ -3384,191 +3339,50 @@ impl<'a> Proof<'a> {
         }
     }
 
-    pub(super) fn apply_fixed_state_fact_transport(
+    /// Explain why the written source cannot frame the target. The frame
+    /// analysis is diagnostic only and never advances this proof.
+    pub(in crate::surface::proof) fn execution_fact_transport_refusal(
         &self,
         source: &SyntaxProposition,
         target: &SyntaxProposition,
-        premises: &[SyntaxProposition],
-        view: &FixedStateOperationView<'_>,
-    ) -> Result<CheckedFocusedTransition, ClickError> {
-        let (source, target, premises) = if premises.is_empty() {
-            (source.clone(), target.clone(), premises.to_vec())
-        } else {
-            (
-                self.substitute_fixed_state_locals_in_proposition(source)?,
-                self.substitute_fixed_state_locals_in_proposition(target)?,
-                premises
-                    .iter()
-                    .map(|premise| self.substitute_fixed_state_locals_in_proposition(premise))
-                    .collect::<Result<Vec<_>, _>>()?,
-            )
-        };
-        let checked = check_fixed_state_fact_transport(
-            &source,
-            &target,
-            &premises,
-            view.claim_label,
-            view.tactic_index,
-            self.facts(),
-            view.effect_facts,
-            view.parameter_binding,
-            view.fixed_state,
-            view.surface_propositions,
-            view.spec_definitions,
-        )
-        .map_err(|error| self.attach_transport_check_error(error))?;
-        let mut facts = self.facts().clone();
-        let added_facts = if facts.contains(&checked.target) {
-            Vec::new()
-        } else {
-            vec![checked.target.clone()]
-        };
-        let checked_facts = vec![checked.source, checked.target.clone()];
-        facts = facts.with_kernel_checked_fact(checked.target);
-        // A focused branch outcome goal records the checker-owned source and target
-        // lowerings atomically with its fact successor; the drain no longer
-        // has to re-record them into a caller-owned map for this path.
-        if let Some(Obligation::FunctionOutcome(goal)) = self.focused_obligation() {
-            let mut updated = goal.clone();
-            let mut data = (*updated.data).clone();
-            data.surface_propositions
-                .record_lowering(&source, &checked_facts[0])?;
-            data.surface_propositions
-                .record_lowering(&target, &checked_facts[1])?;
-            updated.data = Arc::new(data);
-            let branch_state = &self.focused_branch().expect("focused branch exists").state;
-            // The transport above already established this exact target.
-            // Retain its proposition judgment under the pre-transport facts,
-            // as a completed `have` does, so subsequent return folds consume
-            // the derivation rather than treating its conclusion as a new
-            // ambient assumption. Close the operation directly from its
-            // completed transport judgment.
-            let transport_root = KernelProofObject::root(
-                self.state().locals().clone(),
-                OpenBranch::surface_proposition_at_outcome(
-                    branch_state.clone(),
-                    goal.data.clone(),
-                    checked_facts[1].clone(),
-                    target.clone(),
-                ),
-            );
-            let completion = transport_root
-                .publish_checked_result(self.state().locals().clone(), None, Vec::new(), Vec::new())
-                .map_err(|_| self.step_error("checked transport lost its proposition judgment"))?
-                .completed_proposition()
+    ) -> Option<ClickError> {
+        let diagnose = || {
+            let view = self
+                .outcome_fixed_state_view()
+                .or_else(|| self.execution_fixed_state_view())
                 .ok_or_else(|| {
-                    self.step_error("checked transport did not close its proposition")
+                    self.step_error("fact transport requires a recorded execution state")
                 })?;
-            let mut execution = branch_state
-                .execution
+            let source = self.substitute_fixed_state_locals_in_proposition(source)?;
+            let target = self.substitute_fixed_state_locals_in_proposition(target)?;
+            let checked_call_events = self
+                .execution()
+                .filter(|_| self.goal().is_none() && self.focused_outcome_data().is_none())
+                .map(|execution| {
+                    execution
+                        .core
+                        .register_current_call_views(self.facts().assumptions());
+                    execution.core.checked_call_events()
+                });
+            let _checked_call_event_scope = checked_call_events
                 .as_ref()
-                .ok_or_else(|| self.step_error("return transport lost its execution evidence"))?
-                .as_ref()
-                .clone();
-            execution
-                .core
-                .record_return_proposition(goal.path_index, completion, self.facts())
-                .map_err(|message| self.step_error(message))?;
-            let state = BranchState {
-                facts,
-                execution: Some(Arc::new(execution)),
-            };
-            return Ok(CheckedFocusedTransition::replacing(
-                self.state().locals().clone(),
-                Some(OpenBranch::function_outcome(updated, state)),
-                added_facts,
-                checked_facts,
-            ));
-        }
-        let complete = self.goal().is_some_and(|goal| facts.contains(goal));
-        let mut locals = self.state().locals().clone();
-        if matches!(self.context.as_ref(), ProofContext::FixedState(_))
-            || self.focused_outcome_data().is_some()
-        {
-            let mut spelled = locals.checked_lowerings.clone();
-            if spelled.record_lowering(&source, &checked_facts[0]).is_ok()
-                && spelled.record_lowering(&target, &checked_facts[1]).is_ok()
-            {
-                locals.checked_lowerings = spelled;
-            }
-        }
-        Ok(self.checked_fact_transition(locals, facts, complete, added_facts, checked_facts))
-    }
-
-    pub(super) fn apply_execution_fact_transport(
-        &self,
-        source: &SyntaxProposition,
-        target: &SyntaxProposition,
-        premises: &[SyntaxProposition],
-        context: &ExecutionProofContext<'a>,
-    ) -> Result<CheckedFocusedTransition, ClickError> {
-        // Resolve only the named operands, as other proposition operations
-        // do. Model-match pointers are proof bindings, not C local names.
-        let source = self.substitute_fixed_state_locals_in_proposition(source)?;
-        let target = self.substitute_fixed_state_locals_in_proposition(target)?;
-        let premises = premises
-            .iter()
-            .map(|premise| self.substitute_fixed_state_locals_in_proposition(premise))
-            .collect::<Result<Vec<_>, _>>()?;
-        // A nested proposition proof stated at this frontier may transport
-        // facts as well; the successor below preserves the goal's kind.
-        let mut execution = self
-            .execution()
-            .cloned()
-            .ok_or_else(|| self.step_error("execution-frontier proof lost its semantic state"))?;
-        let proof_facts = self.facts();
-        execution
-            .core
-            .register_current_call_views(proof_facts.assumptions());
-        let checked_call_events = execution.core.checked_call_events();
-        let _checked_call_event_scope =
-            crate::kernel::CheckedCallEventScope::start_registering_views(&checked_call_events);
-        let pre_state = context
-            .old_reference_state(&execution.core.frontier, &execution.core.state)
-            .clone();
-        let checked = check_fixed_state_fact_transport(
-            &source,
-            &target,
-            &premises,
-            context.claim_label,
-            context.tactic_index,
-            self.facts(),
-            &execution.core.effect_facts,
-            context.parameter_binding(),
-            FixedStateFrame::new(
-                &pre_state,
-                &execution.core.state,
-                None,
-                &execution.presentation.recorded_states,
-            ),
-            &execution.presentation.surface_propositions,
-            context.spec_definitions,
-        )
-        .map_err(|error| self.attach_transport_check_error(error))?;
-        execution
-            .presentation
-            .surface_propositions
-            .record_lowering(&source, &checked.source)?;
-        execution
-            .presentation
-            .surface_propositions
-            .record_lowering(&target, &checked.target)?;
-        let mut facts = self.facts().clone();
-        let added_facts = if facts.contains(&checked.target) {
-            Vec::new()
-        } else {
-            vec![checked.target.clone()]
+                .map(crate::kernel::CheckedCallEventScope::start_registering_views);
+            check_fixed_state_fact_transport(
+                &source,
+                &target,
+                std::slice::from_ref(&source),
+                view.claim_label,
+                view.tactic_index,
+                self.facts(),
+                view.effect_facts,
+                view.parameter_binding,
+                view.fixed_state,
+                view.surface_propositions,
+                view.spec_definitions,
+            )
+            .map_err(|error| self.attach_transport_check_error(error))
         };
-        let checked_facts = vec![checked.source, checked.target.clone()];
-        facts = facts.with_kernel_checked_fact(checked.target);
-        let complete = self.goal().is_some_and(|goal| facts.contains(goal));
-        Ok(self.checked_execution_transition(
-            facts,
-            complete,
-            execution,
-            added_facts,
-            checked_facts,
-        ))
+        diagnose().err()
     }
 }
 
