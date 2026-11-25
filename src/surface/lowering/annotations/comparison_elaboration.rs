@@ -35,8 +35,10 @@ impl AnnotationLowerer<'_> {
         if operator == ComparisonOperator::In {
             return comparison(ComparisonKind::Sequence);
         }
-        let left_is_integer = self.contract_expression_is_integer(left, environment);
-        let right_is_integer = self.contract_expression_is_integer(right, environment);
+        let left_is_integer =
+            self.contract_expression_is_integer(left, &TypingEnvironment::of(environment));
+        let right_is_integer =
+            self.contract_expression_is_integer(right, &TypingEnvironment::of(environment));
         let left_is_integer = left_is_integer
             || (right_is_integer && matches!(left, SyntaxTerm::AlgebraicMatch { .. }));
         let right_is_integer = right_is_integer
