@@ -8760,6 +8760,11 @@ fn synthesize_surface_pointer_expression_routes(
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SyntaxTerm> {
     let _frame = SurfaceSynthesisFrame::enter("pointer-expression")?;
+    // A call's prepared parameter object is `R.parameter(name)`, which
+    // lowers to the object's address as an aggregate local does.
+    if let Some(object) = prepared_parameter_object(pointer) {
+        return Some(object);
+    }
     if pointer.offset == AddressOffset::Constant(0)
         && let Some((name, pointer_type)) =
             crate::surface::proof_diagnostics::render::c_library_pointer_name(pointer)
