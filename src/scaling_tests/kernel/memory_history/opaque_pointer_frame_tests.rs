@@ -143,6 +143,8 @@ fn complete_read_domains_use_numeric_storage_classes_without_scanning_other_clas
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn copied_pointer_frames_ignore_unrelated_separations() {
     let costs = [16u64, 64, 256, 1024].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
@@ -273,6 +275,8 @@ fn sibling_pointer_reads_stop_before_unrelated_shared_history() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.6s in the parallel gate"]
 fn packed_word_transport_visits_only_the_selected_word_and_delta() {
     let samples = [4u32, 16, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();

@@ -110,6 +110,8 @@ fn direct_operands_are_read_without_capture_locals() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn nested_enum_match_keeps_the_projection_until_its_last_test() {
     use crate::languages::rust::schema::RustExport;
     use crate::surface::ProgramVerificationSession;

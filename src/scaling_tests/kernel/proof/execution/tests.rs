@@ -393,6 +393,8 @@ fn return_proposition_context_validation_scales_with_introductions() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.1s in the parallel gate"]
 fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
     use crate::kernel::{ResourceFieldSchema, ResourceFieldType, ResourceInstance, Variable};
     let schema = ResourceFieldSchema::new(vec![(

@@ -1429,6 +1429,8 @@ fn memory_separation_candidates_ignore_unrelated_propositions() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 4.8s in the parallel gate"]
 fn explicit_range_alias_bounds_stay_on_the_shallow_candidate_path() {
     let left_base = Address {
         base: "shallow-left".into(),

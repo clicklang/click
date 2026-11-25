@@ -312,6 +312,8 @@ fn library_syntax_errors_name_the_module_file_and_line() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn standard_library_cache_preserves_all_declarations() {
     let fresh = load_standard_library(CLICK_LIBRARY_MODULES).unwrap();
     assert_eq!(standard_library().unwrap(), &fresh);
@@ -363,6 +365,8 @@ fn proved_theorems_during(verify: impl FnOnce()) -> Vec<String> {
 /// A verification applies library theorems as dependency declarations and
 /// proves only its own theorems, however large the library grows.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn verification_does_not_reprove_the_standard_library() {
     let proved = proved_theorems_during(|| {
         let result = verify_click_theorems(
@@ -386,6 +390,8 @@ fn verification_does_not_reprove_the_standard_library() {
 /// proof, so a C proof that cites a library theorem needing that authority
 /// checks exactly the cited theorem, not the rest of the library.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn certification_checks_only_the_cited_library_theorem() {
     let c_source = "int32 keep(int32 value, int32 bound) { return value; }";
     let click_source = r#"import click::integer;

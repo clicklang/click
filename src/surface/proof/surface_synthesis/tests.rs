@@ -4226,6 +4226,8 @@ fn pointee_layout_spells_a_field_load_at_its_byte_offset() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn mathematical_constant_goals_keep_structure_and_type() {
     use crate::kernel::IntegerTerm;
     let c = IntegerTerm::constant_i64;
@@ -4296,6 +4298,8 @@ fn mathematical_constant_goals_keep_structure_and_type() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn unified_terms_round_trip_nested_calls_and_mixed_integer_arguments() {
     let declarations = "function positive(x: int32) -> Bool { x > 0 } function foo(x: int32) -> Integer { to_integer(x) } function foo_wide(x: int64) -> Integer { to_integer(x) } function bar(x: Integer) -> Integer { x + 1 }";
     for expression in [
@@ -4710,6 +4714,8 @@ fn check_local_read_versions(value_type: ProgramType, disjoint_type: ProgramType
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn ordinary_indexed_integer_read_work_is_bounded_as_path_grows() {
     check_local_read_work(ProgramType::Int8, ProgramType::UInt8);
     check_local_read_work(ProgramType::Int16, ProgramType::UInt16);
@@ -5206,6 +5212,8 @@ fn shared_arithmetic_raising_does_not_export_operand_trees() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn common_machine_calls_round_trip_source_with_nested_arguments_and_casts() {
     check_common_machine_call_formats(&[
         (MachineIntegerType::Int32, "int32"),
@@ -6750,6 +6758,8 @@ fn numeric_float_cast_syntax_keeps_pointer_targets_and_c_style_refusals() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn common_float_conversions_round_trip_existing_casts() {
     use crate::kernel::KernelFloatType;
     let _session = crate::kernel::VerificationSession::enter();
@@ -7668,6 +7678,8 @@ fn closed_machine_order_lowering_preserves_relations_and_truth_checking() {
 /// Parsed arithmetic, checked rewriting, and the ordinary speller retain one
 /// exact form after a substitution exposes literal operands.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn machine_arithmetic_round_trips_after_checked_rewrite() {
     use crate::kernel::MachineIntegerType as T;
     use crate::kernel::proof::PureFactStore;
@@ -7810,6 +7822,8 @@ fn assert_narrow_comparison_round_trip(
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.2s in the parallel gate"]
 fn narrow_comparisons_round_trip_after_checked_rewrite() {
     use crate::kernel::MachineIntegerType as T;
     use crate::kernel::proof::PureFactStore;
@@ -7862,6 +7876,8 @@ fn narrow_comparisons_round_trip_after_checked_rewrite() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn narrow_comparison_literals_preserve_format_polarity_and_builtin_truth() {
     use crate::kernel::MachineIntegerType as T;
     for (format, spelling) in [
@@ -8049,6 +8065,8 @@ fn check_int64_literal_comparison_round_trips(values: &[i64]) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn negative_int64_comparisons_round_trip_after_rewrite() {
     check_int64_literal_comparison_round_trips(&[-10, -1]);
 }
@@ -8245,6 +8263,8 @@ impl<'a> ConditionalRoundTrip<'a> {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn closed_uint32_order_guard_conditionals_round_trip_after_rewrite() {
     check_comparison_guard_conditional_round_trips(
         crate::kernel::MachineIntegerType::UInt32,
@@ -8255,6 +8275,8 @@ fn closed_uint32_order_guard_conditionals_round_trip_after_rewrite() {
     );
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn closed_int64_order_guard_conditionals_round_trip_after_rewrite() {
     check_comparison_guard_conditional_round_trips(
         crate::kernel::MachineIntegerType::Int64,
@@ -8265,6 +8287,8 @@ fn closed_int64_order_guard_conditionals_round_trip_after_rewrite() {
     );
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn closed_uint64_order_guard_conditionals_round_trip_after_rewrite() {
     check_comparison_guard_conditional_round_trips(
         crate::kernel::MachineIntegerType::UInt64,
@@ -8276,6 +8300,8 @@ fn closed_uint64_order_guard_conditionals_round_trip_after_rewrite() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn symbolic_order_guard_conditionals_round_trip_after_rewrite() {
     use crate::kernel::MachineIntegerType as T;
     for (format, spelling) in [
@@ -8295,6 +8321,8 @@ fn symbolic_order_guard_conditionals_round_trip_after_rewrite() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn closed_wide_equality_guard_conditionals_round_trip_after_rewrite() {
     use crate::kernel::MachineIntegerType as T;
     for (format, spelling) in [(T::Int64, "int64"), (T::UInt64, "uint64")] {
@@ -8320,6 +8348,8 @@ fn closed_unsigned_equality_guards_keep_high_bit_literals() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.2s in the parallel gate"]
 fn symbolic_equality_guard_conditionals_round_trip_after_rewrite() {
     use crate::kernel::MachineIntegerType as T;
     for (format, spelling) in [
@@ -8343,6 +8373,8 @@ fn symbolic_equality_guard_conditionals_round_trip_after_rewrite() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn symbolic_unsigned_equality_guards_keep_high_bit_literals() {
     for op in ["==", "!="] {
         for guard in [
@@ -8363,6 +8395,8 @@ fn symbolic_unsigned_equality_guards_keep_high_bit_literals() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.4s in the parallel gate"]
 fn boolean_equality_guards_round_trip_after_rewrite() {
     use MachineIntegerType as T;
     for (format, spelling) in [
@@ -8398,6 +8432,8 @@ fn boolean_equality_guards_round_trip_after_rewrite() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn boolean_variable_guard_conditionals_round_trip_after_rewrite() {
     use crate::kernel::MachineIntegerType as T;
     for (format, spelling) in [
@@ -8415,6 +8451,8 @@ fn boolean_variable_guard_conditionals_round_trip_after_rewrite() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn reflexive_guard_conditionals_round_trip_after_rewrite() {
     use crate::kernel::MachineIntegerType as T;
     for (format, spelling) in [
@@ -8594,6 +8632,8 @@ fn bitwise_round_trip_operands(spelling: &str) -> [String; 4] {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.2s in the parallel gate"]
 fn nested_machine_conditionals_round_trip_after_rewrite() {
     use MachineIntegerType as T;
     for (format, spelling) in [
@@ -8625,6 +8665,8 @@ fn nested_machine_conditionals_round_trip_after_rewrite() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.3s in the parallel gate"]
 fn bitwise_arm_conditionals_round_trip_after_rewrite() {
     use crate::kernel::MachineIntegerType as T;
     for (format, spelling) in [
@@ -8647,6 +8689,8 @@ fn bitwise_arm_conditionals_round_trip_after_rewrite() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 4.4s in the parallel gate"]
 fn bitwise_guard_conditionals_round_trip_after_rewrite() {
     use crate::kernel::MachineIntegerType as T;
     for (format, spelling) in [
@@ -8675,6 +8719,8 @@ fn bitwise_guard_conditionals_round_trip_after_rewrite() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn intrinsically_decided_bitwise_guards_retain_their_conditionals() {
     use crate::kernel::MachineIntegerType as T;
     for (format, spelling) in [
@@ -8743,6 +8789,8 @@ fn intrinsically_decided_bitwise_guards_retain_their_conditionals() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn mixed_format_integer_comparisons_of_bitwise_values_round_trip() {
     use crate::kernel::MachineIntegerType as T;
     for (format, spelling) in [
@@ -8832,6 +8880,8 @@ fn mixed_format_integer_comparisons_of_bitwise_values_round_trip() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn closed_word32_equality_guards_with_selected_literal_arms_round_trip() {
     use crate::kernel::MachineIntegerType as T;
     for (format, spelling) in [(T::Int32, "int32"), (T::UInt32, "uint32")] {
@@ -8846,6 +8896,8 @@ fn closed_word32_equality_guards_with_selected_literal_arms_round_trip() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.7s in the parallel gate"]
 fn fixed_right_shifts_in_conditionals_round_trip_after_rewrite() {
     use crate::kernel::MachineIntegerType as T;
     for (format, spelling, max_count) in [
@@ -8873,6 +8925,8 @@ fn fixed_right_shifts_in_conditionals_round_trip_after_rewrite() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.6s in the parallel gate"]
 fn fixed_unsigned_left_shifts_in_conditionals_round_trip_after_rewrite() {
     use crate::kernel::MachineIntegerType as T;
     for (format, spelling, max_count) in [(T::UInt32, "uint32", 31), (T::UInt64, "uint64", 63)] {
@@ -8895,6 +8949,8 @@ fn fixed_unsigned_left_shifts_in_conditionals_round_trip_after_rewrite() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.4s in the parallel gate"]
 fn variable_shift_counts_in_conditionals_round_trip_after_rewrite() {
     use MachineIntegerType as T;
     for (format, spelling, operator) in [
@@ -8928,6 +8984,8 @@ fn variable_shift_counts_in_conditionals_round_trip_after_rewrite() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.6s in the parallel gate"]
 fn signed_variable_arithmetic_in_conditionals_round_trips_after_rewrite() {
     use MachineIntegerType as T;
     for (format, spelling) in [(T::Int32, "int32"), (T::Int64, "int64")] {
@@ -8954,6 +9012,8 @@ fn signed_variable_arithmetic_in_conditionals_round_trips_after_rewrite() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.0s in the parallel gate"]
 fn wrapping_add_subtract_in_conditionals_round_trip_after_rewrite() {
     use crate::kernel::MachineIntegerType as T;
     for (format, spelling, boundary) in [
@@ -8982,6 +9042,8 @@ fn wrapping_add_subtract_in_conditionals_round_trip_after_rewrite() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.7s in the parallel gate"]
 fn two_variable_unsigned_arithmetic_in_conditionals_round_trips_after_rewrite() {
     use crate::kernel::MachineIntegerType as T;
     for (format, spelling) in [(T::UInt32, "uint32"), (T::UInt64, "uint64")] {
@@ -9008,6 +9070,8 @@ fn two_variable_unsigned_arithmetic_in_conditionals_round_trips_after_rewrite() 
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.8s in the parallel gate"]
 fn variable_divisors_in_conditionals_round_trip_after_rewrite() {
     use MachineIntegerType as T;
     for (format, spelling) in [(T::UInt32, "uint32"), (T::UInt64, "uint64")] {
@@ -9037,6 +9101,8 @@ fn variable_divisors_in_conditionals_round_trip_after_rewrite() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.9s in the parallel gate"]
 fn literal_divisors_in_conditionals_round_trip_after_rewrite() {
     use crate::kernel::MachineIntegerType as T;
     for (format, spelling, boundary) in [
@@ -9065,6 +9131,8 @@ fn literal_divisors_in_conditionals_round_trip_after_rewrite() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.9s in the parallel gate"]
 fn signed_literal_divisors_in_conditionals_round_trip_after_rewrite() {
     use crate::kernel::MachineIntegerType as T;
     for (format, spelling) in [(T::Int32, "int32"), (T::Int64, "int64")] {
@@ -9089,6 +9157,8 @@ fn signed_literal_divisors_in_conditionals_round_trip_after_rewrite() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.0s in the parallel gate"]
 fn wrapping_product_in_conditionals_round_trip_after_rewrite() {
     use crate::kernel::MachineIntegerType as T;
     for (format, spelling, boundary) in [
@@ -9243,6 +9313,8 @@ fn call_capture_names_the_selected_result_at_its_declared_type() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.1s in the parallel gate"]
 fn widening_casts_in_conditionals_round_trip_after_rewrite() {
     use MachineIntegerType as T;
     for (destination, spelling) in [(T::Int64, "int64"), (T::UInt64, "uint64")] {
@@ -9275,6 +9347,8 @@ fn widening_casts_in_conditionals_round_trip_after_rewrite() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn signedness_casts_in_conditionals_round_trip_after_rewrite() {
     use MachineIntegerType as T;
     for (source, destination, spelling) in [
@@ -9310,6 +9384,8 @@ fn signedness_casts_in_conditionals_round_trip_after_rewrite() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn low_word_casts_in_conditionals_round_trip_after_rewrite() {
     use MachineIntegerType as T;
     for (destination, spelling) in [(T::Int32, "int32"), (T::UInt32, "uint32")] {
@@ -9407,6 +9483,8 @@ fn identical_word_comparisons_keep_their_comparison_through_lowering() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.1s in the parallel gate"]
 fn pure_machine_conditional_operands_round_trip_after_rewrite() {
     use MachineIntegerType as T;
     for (format, spelling) in [

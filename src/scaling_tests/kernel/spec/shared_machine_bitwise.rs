@@ -74,6 +74,8 @@ fn retained_xor_normalizes_only_its_selected_component_without_exports() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.3s in the parallel gate"]
 fn retained_tag_facts_use_constant_work_in_growing_contexts() {
     let mut samples = Vec::new();
     for size in [16u64, 64, 256] {

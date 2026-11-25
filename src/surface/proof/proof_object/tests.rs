@@ -4101,6 +4101,8 @@ fn surface_rewrite_retains_structural_successor_and_scales() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.2s in the parallel gate"]
 fn apply_fact_uses_selected_implication_and_alpha_equivalent_antecedent() {
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
@@ -7247,6 +7249,8 @@ fn fixed_state_single_premise_arithmetic_solves_retain_indexed_theorem_steps() {
 /// definedness goal is the `int32_defined` rule, and a negated premise names
 /// its operands. One small context keeps them in the gate.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn fixed_state_definedness_and_negated_premise_solves_keep_ordinary_proofs() {
     check_fixed_state_single_premise_arithmetic_solves(
         &LOCAL_PROOF_FACT_SIZES[..1],
@@ -14178,6 +14182,8 @@ fn fixed_state_source_failure_is_only_a_miss_at_an_explicit_search_boundary() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn outcome_haves_and_folds_share_facts_and_keep_sibling_resources_isolated() {
     let click_file = crate::surface::parse(
         r#"
@@ -14677,6 +14683,8 @@ fn fixed_state_transport_retains_checked_spellings_for_rewrite() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn fixed_state_instantiation_retains_checked_spellings_for_rewrite() {
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);

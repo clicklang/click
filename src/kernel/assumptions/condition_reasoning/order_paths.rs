@@ -3873,6 +3873,8 @@ mod exact_order_path_tests {
     /// An order chain of fixed length beside many unrelated order facts:
     /// the walk follows the chain's edges only.
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.8s in the parallel gate"]
     fn exact_order_path_ignores_unrelated_order_facts() {
         let _session = crate::kernel::VerificationSession::enter();
         let work_beside = |unrelated: u64| {

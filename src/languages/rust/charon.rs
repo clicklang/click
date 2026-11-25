@@ -4327,6 +4327,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 2.5s in the parallel gate"]
     fn charon_plain_record_loop_starts_each_pass_with_fresh_storage() {
         let artifact = include_bytes!(
             "../../../design/charon-trial/plain-record-loop/.click/captures/loop/loop.rs.ullbc"
@@ -4490,6 +4492,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.3s in the parallel gate"]
     fn charon_storage_restart_cannot_erase_a_drop_record() {
         let mut export = decode(
             include_bytes!(
@@ -4870,6 +4874,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn charon_shared_iteration_rejects_uninitialized_state() {
         // An iterator moves as a plain value, its fields; a move from a
         // consumed iterator is the compiler's to reject, as it is for a
@@ -5210,6 +5216,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn charon_array_unsize_metadata_has_bounded_work_across_lengths() {
         let export = decode(NESTED_ARTIFACT, "nested.rs", NESTED_SOURCE).unwrap();
         let prepared = super::super::import::prepared_for_test(export).unwrap();

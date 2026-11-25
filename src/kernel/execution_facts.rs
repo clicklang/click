@@ -1084,6 +1084,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn context_blocks_preserve_order_isolation_and_share_fact_objects() {
         for size in [16, 64, 256, 1024] {
             let root = (0..size).fold(PureFactContext::new(), |context, index| {

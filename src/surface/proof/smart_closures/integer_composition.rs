@@ -1793,6 +1793,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn integer_composition_keeps_algebraic_arguments_and_integer_aliases() {
         let source = r#"
             function weight(xs: List<int32>) -> Integer { 0 }
@@ -2026,6 +2028,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.4s in the parallel gate"]
     fn an_argument_domain_cites_its_established_bounds_once() {
         // `defined(hi - 1)` asks for `to_integer(hi) - 1 >= -2147483648`;
         // the composition proved it as `-2147483648 <= ...`. The domain

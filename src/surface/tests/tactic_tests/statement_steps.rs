@@ -26,7 +26,8 @@ fn pure_proofs_use_rewrite_instead_of_transport_using() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_00")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn proof_step_supports_explicit_preservation() {
     let c_source = r#"
             int32 set_second_return_first(int32 p[2]) {
@@ -967,7 +968,8 @@ fn execute_step_omits_materialized_mixed_state_transport() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_04")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn execute_step_omits_materialization_transport_across_statements() {
     let c_source = r#"
             int32 replace_first_then_touch_other(int32 p[2], int32 q[1]) {
@@ -1274,7 +1276,8 @@ fn synthesizes_dynamically_indexed_pointer_offset_equality() {
 /// (`memcmp`'s per-byte `defined` requirement, from the caller's viewed
 /// range) proves it by the implicit `solve` and records no hidden derivation.
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_05")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn bare_step_proves_an_open_obligation_by_implicit_solve() {
     let c_source = r#"
             int32 compare_self(uint8 bytes[]) {
@@ -1301,6 +1304,8 @@ fn bare_step_proves_an_open_obligation_by_implicit_solve() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.7s in the parallel gate"]
 fn explicit_preservation_keeps_a_tagged_pointer_after_a_join() {
     // Both arms store the pointer decoded from the tag, as in rbtree
     // insertion. Preserve that joined observation across the tag write.
@@ -1492,7 +1497,6 @@ test_batches! {
     file: "statement_steps.rs",
     marker: "statement_steps_batch_",
     statement_steps_batch_00: [
-        proof_step_supports_explicit_preservation,
         explicit_preservation_can_use_a_derived_source,
         smart_step_starts_each_source_tactic_with_an_empty_step_delta,
         simple_statement_transition_does_not_transport_facts_automatically,
@@ -1516,14 +1520,12 @@ test_batches! {
         execute_step_omits_materialized_mixed_state_transport,
     ],
     statement_steps_batch_04: [
-        execute_step_omits_materialization_transport_across_statements,
         execute_step_expands_call_assign_fact_from_internal_state,
         synthesizes_loaded_pointer_equality_as_pointer_comparison,
         synthesizes_a_reassigned_pointer_parameter_at_entry,
     ],
     statement_steps_batch_05: [
         synthesizes_dynamically_indexed_pointer_offset_equality,
-        bare_step_proves_an_open_obligation_by_implicit_solve,
         prepared_call_cannot_use_its_postcondition_to_prove_its_precondition,
         prepared_call_refuses_an_unproved_omitted_requirement,
     ],

@@ -185,6 +185,8 @@ fn library_name_spelling_queries_do_not_walk_unrelated_source() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn typed_equality_certificate_steps_ignore_unrelated_parameters() {
     let fixture = crate::cli::parse_mdtest(
         std::path::Path::new("mdtests/unsigned_integer_equality_chain_keeps_its_reading.md"),

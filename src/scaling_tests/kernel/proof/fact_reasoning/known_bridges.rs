@@ -69,6 +69,8 @@ fn exact_float_bounds_check_only_the_input_endpoint() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.2s in the parallel gate"]
 fn signed_product_bound_checks_only_the_exact_guards() {
     let _session = VerificationSession::enter();
     let ty = MachineIntegerType::Int32;
@@ -113,6 +115,8 @@ fn signed_product_bound_checks_only_the_exact_guards() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.4s in the parallel gate"]
 fn shift_definedness_bridges_read_only_the_exact_count_bounds() {
     use crate::kernel::machine_integer::{
         comparison::condition_for_operand_views, range::constant_word,

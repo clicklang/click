@@ -5237,6 +5237,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn integer_context_preserves_unbounded_arithmetic_and_rejects_machine_claims() {
         for source in [
             "theorem check() { ensures (4294967296 + 4294967296 : Integer) == 8589934592 by close(); }",

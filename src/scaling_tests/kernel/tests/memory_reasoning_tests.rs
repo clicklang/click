@@ -151,6 +151,8 @@ fn unaddressable_scalar_owners_do_not_restate_observable_memory_frames() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn memory_range_endpoint_graph_matching_scales_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let _session = crate::kernel::VerificationSession::enter();
@@ -542,6 +544,8 @@ fn shifted_constant_view_spans_match_without_ambient_search() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
     let native = MachineTerm::Variable(Variable(983_110));
     let alias = MachineTerm::Variable(Variable(983_111));
@@ -815,6 +819,8 @@ fn written_store_separation_and_alias_refusal_ignore_unrelated_objects() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.8s in the parallel gate"]
 fn stated_pointer_separation_lookup_visits_only_its_anchor_index() {
     for cross_block in [false, true] {
         let pointer = |id, right| Address {
@@ -939,6 +945,8 @@ fn kept_frame_class_lookup_adds_only_selected_physical_coverage() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn rechecked_kept_frame_checks_selected_equality_without_rebuilding_foreign_inputs() {
     let pointer = |id| Address::symbolic(Variable(id));
     let queried = pointer(954_001);

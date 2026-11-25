@@ -92,6 +92,8 @@ fn commuted_word_tag_or_ignores_unrelated_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn tag_clearing_equations_ignore_unrelated_and_looser_bounds() {
     let costs = [4u64, 16, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();

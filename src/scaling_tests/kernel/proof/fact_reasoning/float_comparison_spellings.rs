@@ -1,4 +1,6 @@
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.1s in the parallel gate"]
 fn mirrored_float_spellings_use_exact_indexes_and_preserve_nan_polarity() {
     let left = MachineTerm::Variable(Variable(991701));
     let right = MachineTerm::Variable(Variable(991702));

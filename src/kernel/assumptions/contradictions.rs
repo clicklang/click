@@ -542,6 +542,8 @@ mod tests {
     /// facts agrees with the reference scan of the same facts, and with an
     /// index rebuilt from them.
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 2.2s in the parallel gate"]
     fn the_incremental_index_agrees_with_the_reference_scan() {
         let _session = crate::kernel::VerificationSession::enter();
         let mut contradictory = 0usize;
@@ -666,6 +668,8 @@ mod tests {
     /// added fact files under a bounded number of keys, however many facts
     /// the context holds.
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.3s in the parallel gate"]
     fn one_added_fact_and_the_query_cost_the_same_beside_any_number_of_facts() {
         let _session = crate::kernel::VerificationSession::enter();
         let work_at = |size: u64| {

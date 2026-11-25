@@ -4161,6 +4161,8 @@ mod progress_tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn execute_refuses_to_split_an_already_selected_path_condition() {
         let click_file = crate::surface::parse(
             r#"

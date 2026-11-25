@@ -3405,6 +3405,8 @@ fn owned_range_validity_is_linear_in_stated_aliases_of_its_base() {
     }
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.1s in the parallel gate"]
 fn checked_child_read_definitions_scale_with_exchanges_not_ambient_facts() {
     let (instance, mut definition, state) = recursive_child_fixture();
     let arm = &mut definition.matched.as_mut().unwrap().arms[1];
@@ -3946,6 +3948,8 @@ fn memory_split_origin_ignores_incident_bounds() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.8s in the parallel gate"]
 fn explicit_constant_fold_stops_at_a_gap_and_joins_mixed_width_pieces() {
     let mut curves = Vec::new();
     for (complete, native) in [(false, false), (true, false), (false, true), (true, true)] {
@@ -4050,6 +4054,8 @@ fn explicit_constant_fold_stops_at_a_gap_and_joins_mixed_width_pieces() {
 /// A native-width fold has fixed input and a fixed early gap. Later disjoint
 /// fragments cannot help; fixture/index construction is outside the measurement.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn native_fold_rejection_ignores_fragments_beyond_a_gap() {
     let mut curves = Vec::new();
     for case in ["gap", "owner", "joined"] {
@@ -4140,6 +4146,8 @@ fn native_fold_rejection_ignores_fragments_beyond_a_gap() {
 
 /// A non-consuming ownership check must not enumerate candidates after a gap.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.1s in the parallel gate"]
 fn native_ownership_query_stops_at_a_fixed_gap() {
     constant_ownership_query_stops_at_a_fixed_gap(true);
 }
@@ -4221,6 +4229,8 @@ fn constant_ownership_query_stops_at_a_fixed_gap(native: bool) {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn native_ownership_query_scales_with_selected_pieces() {
     constant_ownership_query_scales_with_selected_pieces(true);
 }
@@ -4287,6 +4297,8 @@ fn constant_query_range(p: Address, start: u64, end: u64, native: bool) -> Memor
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.6s in the parallel gate"]
 fn native_symbolic_partition_ignores_unrelated_fragments() {
     for case in ["joined", "gap", "view", "ambiguous", "provenance"] {
         let mut samples = Vec::new();
@@ -4370,6 +4382,8 @@ fn native_symbolic_partition_ignores_unrelated_fragments() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.2s in the parallel gate"]
 fn symbolic_fold_consumption_ignores_unselected_fragments() {
     let mut curves = Vec::new();
     for case in ["gap", "owner", "joined"] {
@@ -4474,6 +4488,8 @@ fn symbolic_fold_consumption_ignores_unselected_fragments() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.2s in the parallel gate"]
 fn symbolic_offset_fold_stops_at_first_gap() {
     let mut curves = Vec::new();
     for case in ["gap", "owner", "joined"] {
@@ -4579,6 +4595,8 @@ fn symbolic_offset_fold_stops_at_first_gap() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.3s in the parallel gate"]
 fn symbolic_fold_does_not_scan_incident_order_bounds() {
     let mut curves = Vec::new();
     for case in ["gap", "owner", "joined", "rebased"] {
@@ -4692,6 +4710,8 @@ fn symbolic_fold_does_not_scan_incident_order_bounds() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.1s in the parallel gate"]
 fn symbolic_consumption_scales_with_selected_pieces() {
     let mut samples = Vec::new();
     for count in [4u32, 16, 64, 256] {
@@ -4751,6 +4771,8 @@ fn symbolic_consumption_scales_with_selected_pieces() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn symbolic_ownership_query_does_not_scan_incident_order_bounds() {
     let mut curves = Vec::new();
     for case in ["gap", "owner", "joined", "rebased"] {
@@ -4847,6 +4869,8 @@ fn symbolic_ownership_query_does_not_scan_incident_order_bounds() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.7s in the parallel gate"]
 fn symbolic_ownership_query_scales_with_selected_pieces() {
     let mut samples = Vec::new();
     for count in [4u32, 16, 64, 256] {

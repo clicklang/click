@@ -7,6 +7,8 @@ fn shared_order_reflexivity_keeps_zero_addend_prefixes_shared() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn unresolved_shared_order_keeps_zero_addend_prefixes_shared() {
     check_zero_prefixes(true, false);
 }
@@ -17,6 +19,8 @@ fn shared_order_reuses_cancelled_prefixes() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn unresolved_shared_order_reuses_cancelled_prefixes() {
     check_zero_prefixes(true, true);
 }

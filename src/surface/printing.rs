@@ -2006,6 +2006,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn array_field_read_through_an_erased_pointer_keeps_its_element_type() {
         let read = SyntaxTerm::Index(
             Box::new(SyntaxTerm::Field {

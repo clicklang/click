@@ -157,6 +157,8 @@ fn solve_retains_recorded_load_address_equality_premises() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn native_view_prefix_retains_only_its_order_path() {
     let mut samples = Vec::new();
     for count in [32, 64, 128, 256] {

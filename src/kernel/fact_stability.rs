@@ -181,6 +181,8 @@ mod tests {
     use crate::kernel::{ConditionTerm, MachineTerm, Variable};
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn a_proposition_lowered_without_consulting_facts_is_stable() {
         let c = "int32 id(int32 x) { return x; }";
         let click = r#"verifying "f.c";

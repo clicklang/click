@@ -48,6 +48,8 @@ fn certification_of_algebraic_witness_ignores_unrelated_quantifiers() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn conditional_universal_certification_ignores_unrelated_facts() {
     let mut samples = Vec::new();
     for size in [32, 64, 128, 256] {

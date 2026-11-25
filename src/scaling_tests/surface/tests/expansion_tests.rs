@@ -5,6 +5,8 @@
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn selected_pure_expansion_does_not_check_unrelated_proof_bodies() {
     let selected = "theorem selected(x: int32) { ensures x == x by { normalize(); } }\n";
     expand_c_claim_source_by_label(selected, &[], "selected.ensures_0").unwrap();

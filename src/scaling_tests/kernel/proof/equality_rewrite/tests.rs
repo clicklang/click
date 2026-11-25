@@ -6,6 +6,8 @@ use super::*;
 use crate::kernel::CompareRelation;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.1s in the parallel gate"]
 fn pointer_rewrite_integer_reads_preserves_state_kind_and_scales() {
     for same_block in [false, true] {
         let mut samples = Vec::new();
@@ -826,6 +828,8 @@ fn rewrite_integer_application_endpoint_keeps_byte_state_and_ignores_its_content
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn checked_integer_rewrite_is_exact_and_ignores_unrelated_facts() {
     let x: SharedIntegerTerm = IntegerTerm::var(Variable(187_001)).into();
     let y: SharedIntegerTerm = IntegerTerm::var(Variable(187_002)).into();
@@ -1043,6 +1047,8 @@ fn pointer_read_chain_rewrites_scale_with_selected_definitions() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn pointer_read_chain_rewrites_share_hits_and_misses() {
     for native in [false, true] {
         for hit in [false, true] {

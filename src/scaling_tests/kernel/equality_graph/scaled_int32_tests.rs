@@ -97,6 +97,8 @@ fn learning_a_literal_does_not_revisit_unrelated_boolean_parents() {
 /// facts, and unrelated offset aliases grow, and work bounded by the affected
 /// parents as aliases of the byte offset itself grow.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn a_byte_product_merge_is_keyed_and_ignores_unrelated_products() {
     let mut unrelated_samples = Vec::new();
     let mut related_samples = Vec::new();

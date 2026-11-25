@@ -1,4 +1,6 @@
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn memory_order_queries_scale_across_growing_prefixes_and_fact_contexts() {
     let mut samples = Vec::new();
     for size in [16, 64, 256] {
@@ -50,6 +52,8 @@ fn memory_order_queries_scale_across_growing_prefixes_and_fact_contexts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn shared_read_order_bucket_ignores_unrelated_addresses() {
     let mut samples = Vec::new();
     for unrelated in [0usize, 32, 128, 512] {

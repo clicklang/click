@@ -1,6 +1,8 @@
 // Deterministic scaling tests for condition matching in memory resolution.
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn exact_memory_condition_matches_ignore_other_facts() {
     let var = |id| MachineTerm::Variable(Variable(id));
     let condition = |kind, left, right| match kind {
@@ -49,6 +51,8 @@ fn exact_memory_condition_matches_ignore_other_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn symmetric_memory_condition_matches_ignore_other_facts() {
     use CompareRelation::*;
     use MachineIntegerType::*;
@@ -294,6 +298,8 @@ fn unsigned_memory_condition_matches_ignore_unrelated_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn compound_load_condition_hits_and_misses_ignore_other_facts() {
     for unsigned in [false, true] {
         for related in [false, true] {

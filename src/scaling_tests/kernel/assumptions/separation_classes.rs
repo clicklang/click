@@ -1,6 +1,8 @@
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn separation_class_lookup_visits_only_the_selected_payload() {
     for aliases in [false, true] {
         for size in [16u64, 64, 256] {

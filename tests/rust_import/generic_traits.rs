@@ -7,6 +7,8 @@ const SIDECAR: &str = include_str!("../../design/charon-trial/generic-traits/sha
 // type. Each implementation refines its instance's interface, and a call
 // through a bound or `dyn` of an instance assumes it.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.4s in the parallel gate"]
 fn charon_generic_trait_instances_refine_their_interfaces() {
     let p = Project::from_fixture("design/charon-trial/generic-traits");
     fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();
@@ -125,6 +127,8 @@ const STATE_SIDECAR: &str = include_str!("../../design/charon-trial/generic-stat
 // packs a `Wrap<u32>` into the instance's object, `Holder::object<u32>`, with
 // the definitions read at `u32`.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.8s in the parallel gate"]
 fn charon_generic_object_state_is_verified_once_for_every_type() {
     let p = Project::from_fixture("design/charon-trial/generic-state");
     fs::write(p.root.join("borrow.click"), STATE_SIDECAR).unwrap();
@@ -191,6 +195,8 @@ const IMPL_SIDECAR: &str = include_str!("../../design/charon-trial/generic-impls
 // type. A call at a scalar type calls that instance, whose contract is the
 // generic one at its types.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.8s in the parallel gate"]
 fn charon_generic_implementations_are_verified_once_for_every_type() {
     let p = Project::from_fixture("design/charon-trial/generic-impls");
     fs::write(p.root.join("borrow.click"), IMPL_SIDECAR).unwrap();
@@ -240,6 +246,8 @@ const STRUCT_SIDECAR: &str = include_str!("../../design/charon-trial/generic-str
 // methods, are verified once with `T` abstract, and calls at `i32`, `u8` and
 // `u32` use their contracts at the instances' own layouts.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.9s in the parallel gate"]
 fn charon_generic_struct_fields_are_verified_once_for_every_type() {
     let p = Project::from_fixture("design/charon-trial/generic-structs");
     fs::write(p.root.join("borrow.click"), STRUCT_SIDECAR).unwrap();
@@ -391,6 +399,8 @@ const RESOURCE_SIDECAR: &str =
 // a use names: `set_and_get` calls the instances at `u32` and holds the
 // instance each call produces under its own `after`.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.6s in the parallel gate"]
 fn charon_generic_resources_are_checked_once_and_used_at_each_type() {
     let p = Project::from_fixture("design/charon-trial/generic-resources");
     fs::write(p.root.join("borrow.click"), RESOURCE_SIDECAR).unwrap();
@@ -427,6 +437,8 @@ const STRUCT_VALUE_SIDECAR: &str =
 // its contract compares the struct values whole: every field of one equal to
 // the same field of the other. A struct's value is never its first field's.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 4.1s in the parallel gate"]
 fn charon_generic_calls_at_a_copy_struct_compare_whole_struct_values() {
     let p = Project::from_fixture("design/charon-trial/generic-struct-values");
     fs::write(p.root.join("borrow.click"), STRUCT_VALUE_SIDECAR).unwrap();

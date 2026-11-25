@@ -4097,6 +4097,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 2.5s in the parallel gate"]
     fn compound_read_rewrite_work_is_local_to_selected_expressions() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Address {

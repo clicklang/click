@@ -86,6 +86,8 @@ fn charon_scalar_slice_length_checks_declaration_and_instantiated_element() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn charon_scalar_array_length_metadata_has_bounded_shape_and_proof_work() {
     use crate::kernel::ProgramStatement;
     fn nodes(statement: &ProgramStatement) -> usize {

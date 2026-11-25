@@ -11,6 +11,8 @@
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.7s in the parallel gate"]
 fn partial_borrow_refold_ignores_unselected_siblings() {
     let (proof, sources) =
         super::expansion_tests::mdtest_sources("mdtests/refold_one_piece_of_a_borrow.md");
@@ -863,6 +865,8 @@ fn band(work: usize) -> usize {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 9.5s in the parallel gate"]
 fn repeated_stores_ignore_numeric_address_aliases_without_cached_cells() {
     #[derive(Clone, Copy, PartialEq)]
     enum OtherEquality {
@@ -1040,16 +1044,22 @@ fn assert_flat_across(
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn repeated_calls_cost_the_same_at_every_position() {
     assert_no_drift("many_calls", many_calls, 12);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.4s in the parallel gate"]
 fn calls_beside_owned_objects_cost_the_same_at_every_position() {
     assert_no_drift("objects_and_calls", objects_and_calls, 12);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 4.9s in the parallel gate"]
 fn ordered_index_stores_cost_the_same_at_every_position() {
     // A store's cost climbs with the stores within about 32 positions of it
     // and then holds: a bounded window, run past so the steady-rise rule
@@ -1058,6 +1068,8 @@ fn ordered_index_stores_cost_the_same_at_every_position() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.3s in the parallel gate"]
 fn checked_indexed_store_skips_a_separately_owned_array() {
     let work = [2, 8, 16].map(|size| {
         [false, true].map(|ordered| {
@@ -1096,6 +1108,8 @@ fn checked_indexed_store_skips_a_separately_owned_array() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn pointer_field_links_cost_the_same_at_every_position() {
     assert_no_drift("deep_chain", deep_chain, 12);
 }
@@ -1153,6 +1167,8 @@ fn legacy_walk_queries(operation: impl FnOnce()) -> usize {
 /// cost the same at every position, and an object the program point indexes
 /// name never reaches the legacy walk.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn fresh_reads_after_same_object_stores_cost_the_same_at_every_position() {
     for (name, shape) in [
         ("fresh_struct_fields", fresh_struct_fields as fn(usize) -> _),
@@ -1173,6 +1189,8 @@ fn fresh_reads_after_same_object_stores_cost_the_same_at_every_position() {
 /// must not drift; once its reads have indexed versions, the second
 /// assertion fails, and this test joins the one above.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn known_legacy_fresh_reads_through_a_loaded_pointer_cost_the_same_at_every_position() {
     let name = "fresh_fields_through_a_loaded_pointer";
     let mut drifting = Vec::new();
@@ -1191,26 +1209,36 @@ fn known_legacy_fresh_reads_through_a_loaded_pointer_cost_the_same_at_every_posi
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.2s in the parallel gate"]
 fn calls_to_distinct_callees_cost_the_same_at_every_position() {
     assert_no_drift("many_callees", many_callees, 12);
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn a_call_ignores_unrelated_facts() {
     assert_flat_across("unrelated_facts", unrelated_facts, [1, 3], "touch(data);");
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn a_call_ignores_aliases_of_an_owned_object() {
     assert_flat_across("aliases", aliases, [1, 3], "touch(data);");
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn a_call_ignores_unrelated_owned_objects() {
     assert_flat_across("many_objects", many_objects, [1, 3], "touch(data);");
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 8.2s in the parallel gate"]
 fn repeated_writing_calls_ignore_unrelated_folded_owners() {
     let check = |owners, calls, distinct_families| {
         let fixture = |owners| {
@@ -1284,6 +1312,8 @@ void caller(int32* scratch, {parameters}) {{
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.6s in the parallel gate"]
 fn inline_stores_ignore_unrelated_owned_parameter_runs() {
     let samples = [4, 8, 16, 32].map(|owners| {
         let parameters = (0..owners)
@@ -1328,6 +1358,8 @@ void caller(int32* scratch, {parameters}) {{
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.1s in the parallel gate"]
 fn modular_call_reservation_ignores_unrelated_caller_state() {
     use crate::instrumentation::VerificationEvent;
 
@@ -1378,6 +1410,8 @@ fn modular_call_reservation_ignores_unrelated_caller_state() {
 // Splitting a caller's owner must not enumerate the other parameter owners
 // that happen to share its external-argument memory block.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 4.7s in the parallel gate"]
 fn a_partial_borrow_call_ignores_unrelated_owned_objects() {
     use crate::instrumentation::VerificationEvent as Event;
     let samples = [1_usize, 8, 64].map(|size| {
@@ -1435,6 +1469,8 @@ fn a_partial_borrow_call_ignores_unrelated_owned_objects() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 5.5s in the parallel gate"]
 fn a_branch_arm_step_ignores_earlier_branches() {
     // The first branch has a literal accumulator; later ones have symbolic
     // bounds. Compare more sizes to distinguish that fixed shape change
@@ -1464,6 +1500,8 @@ fn a_branch_arm_step_ignores_earlier_branches() {
 /// the objects a proof holds, where renormalizing at every `unfold` grew with
 /// their square. Normalization is uncharged, so step work cannot see it.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.8s in the parallel gate"]
 fn unfolding_one_object_does_not_renormalize_every_held_object() {
     let visited = [8, 32].map(|n| {
         crate::kernel::take_whole_normalization_facts();
@@ -1479,6 +1517,8 @@ fn unfolding_one_object_does_not_renormalize_every_held_object() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn heap_object_stores_and_releases_cost_the_same_at_every_position() {
     assert_no_drift("heap_objects", heap_objects, 12);
 }
@@ -1488,6 +1528,8 @@ fn heap_object_stores_and_releases_cost_the_same_at_every_position() {
 /// every earlier loop's facts. Five loops, because the first clause's own
 /// warm-up hides a drift among only three.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 5.1s in the parallel gate"]
 fn sequential_loop_clauses_cost_the_same_at_every_position() {
     let loops = run(loops, 5).loops;
     assert!(
@@ -1499,6 +1541,8 @@ fn sequential_loop_clauses_cost_the_same_at_every_position() {
 /// Later loop clauses reuse the function's parameter index and annotation
 /// metadata even when the signature contains many unrelated pointers.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn later_loop_clauses_ignore_unreferenced_parameters() {
     let work = [4, 16, 48].map(|count| {
         let result = run(
@@ -1765,6 +1809,8 @@ void caller({params}) {{
 /// second increment is about twice the first when the entry is linear and
 /// four times it when the entry is quadratic.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 5.3s in the parallel gate"]
 fn entry_setup_is_linear_in_owned_parameters() {
     let samples = owned_parameter_entry_work([16, 32, 64]);
     let linear = |samples: &[(usize, usize); 3]| {
@@ -1900,6 +1946,8 @@ fn saved_iterated_base_ignores_aliases_states_and_unrelated_resources() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.7s in the parallel gate"]
 fn named_unfold_beside_views_scales_with_the_opened_delta() {
     let mut totals = Vec::new();
     for count in [4, 8, 16] {
@@ -1937,6 +1985,8 @@ fn named_unfold_beside_views_scales_with_the_opened_delta() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.4s in the parallel gate"]
 fn named_unfold_and_refold_witness_ignore_unrelated_facts() {
     let work = [8, 32, 128].map(|count| {
         let unrelated = lines(count, |i| format!("requires n != {i};"));

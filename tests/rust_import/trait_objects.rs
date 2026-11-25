@@ -247,6 +247,8 @@ fn charon_inline_match_over_a_held_resource_field_refines_itself() {
 // object, and its unpack returns a new instance the caller's `owns` binder
 // takes at its exit.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 5.7s in the parallel gate"]
 fn charon_trait_functions_are_defined_from_a_held_resource() {
     let p = Project::from_fixture("design/charon-trial/resource-state");
     fs::write(p.root.join("borrow.click"), RESOURCE_SIDECAR).unwrap();

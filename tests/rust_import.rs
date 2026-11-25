@@ -6,6 +6,8 @@ use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn rust_integer_literal_documentation_preserves_contextual_types() {
     let source = include_str!("fixtures/rust-verification/integer_literals.click");
     let sources = [("literals.rs", "")];
@@ -646,6 +648,8 @@ fn charon_array_loops_bind_their_variable_without_an_option() {
 /// proof's `word` is the live one, and `ordered.statement(3).local(word)` or
 /// `ordered.local(5)` names the second wherever both are written.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.4s in the parallel gate"]
 fn charon_repeated_source_names_are_distinct_declarations() {
     let p = charon_iteration_project();
     let prepared = p.prepared().unwrap();
@@ -811,6 +815,8 @@ fn charon_fields_project() -> Project {
     p
 }
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn charon_shared_reference_signature_mismatch_displays_constness() {
     let p = charon_fields_project();
     let prepared = p.prepared().unwrap();
@@ -2595,6 +2601,8 @@ fn rust_boolean_return_and_local_initialization_verify() {
 /// conversion is the only way a Rust program reads a cell at the other
 /// signedness.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn rust_a_u32_cell_read_as_i32_is_its_sign_cast() {
     let p = Project::new(
         "pub fn read_signed(value: &u32) -> i32 { *value as i32 }\n\
@@ -2639,6 +2647,8 @@ fn rust_execute_splits_a_sign_cast_order_as_a_signed_comparison() {
 /// stored through `&mut u32`, read back and returned as that number, and a
 /// refusal prints it in its own type, not as the negative `int32` reading.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn rust_a_u32_constant_above_i32_max_is_stated_stored_and_read_as_itself() {
     let p = Project::new(
         "pub fn literal() -> u32 { 4000000000 }\n\
@@ -2670,6 +2680,8 @@ fn rust_a_u32_constant_above_i32_max_is_stated_stored_and_read_as_itself() {
 /// stated, used to prove the `u32` result and its `i32` reading, and a
 /// refusal prints it in its own type, not as `== -1`.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.2s in the parallel gate"]
 fn rust_a_u32_equality_above_i32_max_is_stated_used_and_printed_as_itself() {
     let p = Project::new(
         "pub fn read(value: &u32) -> u32 { *value }\n\
@@ -3112,6 +3124,8 @@ fn rust_enums_project() -> Project {
 /// `step()` refuses at a `match` whose variant is open, naming the proof
 /// `match` that splits it.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.7s in the parallel gate"]
 fn rust_enum_claims_are_checked_and_step_names_the_match_split() {
     let p = rust_enums_project();
     let prepared = p.prepared().unwrap();
@@ -3190,6 +3204,8 @@ fn signed_match_project() -> Project {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.3s in the parallel gate"]
 fn rust_enum_signed_match_arithmetic_verifies() {
     let p = signed_match_project();
     let prepared = p.prepared().unwrap();
@@ -3198,6 +3214,8 @@ fn rust_enum_signed_match_arithmetic_verifies() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.7s in the parallel gate"]
 fn rust_enum_signed_match_wrong_arm_reports_unsuccessful_search() {
     let p = signed_match_project();
     let prepared = p.prepared().unwrap();
@@ -3212,6 +3230,8 @@ fn rust_enum_signed_match_wrong_arm_reports_unsuccessful_search() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.1s in the parallel gate"]
 fn rust_enum_signed_match_explicit_split_verifies() {
     let p = signed_match_project();
     let prepared = p.prepared().unwrap();
@@ -3308,6 +3328,8 @@ fn rust_unsigned_arithmetic_and_expansion_verify() {
 /// crate function meeting it by a refinement theorem that names the function
 /// as a value, and a callback under it.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.1s in the parallel gate"]
 fn rust_sidecar_contract_declarations_verify() {
     let p = Project::from_fixture("design/charon-trial/function-pointers");
     let sidecar = include_str!("fixtures/rust-verification/contract_declarations.click");
@@ -3325,6 +3347,8 @@ const BOX_SIDECAR: &str = include_str!("../design/charon-trial/boxes/boxed.click
 /// or an option of one, also moves out of a function and into another with
 /// its allocation, which the function it moves into frees.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 4.0s in the parallel gate"]
 fn charon_boxes_allocate_read_write_and_free_their_struct() {
     let p = Project::from_fixture("design/charon-trial/boxes");
     fs::write(p.root.join("borrow.click"), BOX_SIDECAR).unwrap();
@@ -3410,6 +3434,8 @@ fn charon_boxes_allocate_read_write_and_free_their_struct() {
 /// no number Click knows: at `boxed::Cell` it is 4, so a resource that says
 /// it is 8 cannot be folded there.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.7s in the parallel gate"]
 fn charon_generic_resource_owns_a_value_of_any_type_in_its_allocation() {
     let p = Project::from_fixture("design/charon-trial/boxes");
     fs::write(p.root.join("borrow.click"), BOX_SIDECAR).unwrap();
@@ -3495,6 +3521,8 @@ fn boxed::read(b: Box<boxed::Cell>) -> u32 {
 /// The read computes the returned value before freeing the box. Its
 /// region keeps that value available on both sides of the cleanup.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.3s in the parallel gate"]
 fn charon_return_expression_result_survives_cleanup() {
     let p = Project::from_fixture("design/charon-trial/boxes");
     fs::write(p.root.join("borrow.click"), BOX_SIDECAR).unwrap();
@@ -3541,6 +3569,8 @@ const OPTION_BOX_SIDECAR: &str = include_str!("../design/charon-trial/option-box
 // An `Option<Box<R>>` is the box's address or null: `Some` and `None` make
 // it, a `match` reads its payload, and its drop frees a `Some`.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.9s in the parallel gate"]
 fn charon_option_boxes_match_and_drop_their_box() {
     let p = Project::from_fixture("design/charon-trial/option-boxes");
     fs::write(p.root.join("borrow.click"), OPTION_BOX_SIDECAR).unwrap();
@@ -3581,6 +3611,8 @@ const OPTION_VALUE_SIDECAR: &str =
 // `match` on a call's result splits the option it returned. Two `?`s in one
 // function each return `None` through the same tail.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 6.9s in the parallel gate"]
 fn charon_option_values_read_as_click_options() {
     let p = Project::from_fixture("design/charon-trial/option-values");
     fs::write(p.root.join("borrow.click"), OPTION_VALUE_SIDECAR).unwrap();
@@ -3687,6 +3719,8 @@ const RESULT_VALUE_SIDECAR: &str =
 // a call step: its result is no local, and a proof names it by its call,
 // `call(f, j).result`, counting the function's calls of `f`.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn charon_a_nested_call_result_is_named_by_its_call() {
     let p = Project::from_fixture("design/charon-trial/result-values");
     fs::write(p.root.join("borrow.click"), RESULT_VALUE_SIDECAR).unwrap();
@@ -3759,6 +3793,8 @@ fn unwrap_value(x: u32) -> u32 { ensures result == x; } by {
 // `Err` unchanged or reads `Ok`'s payload, in generic code too. `unwrap` and
 // `expect` require `Ok`, and `unwrap_or` is the library's.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.5s in the parallel gate"]
 fn charon_result_values_read_as_click_results() {
     let p = Project::from_fixture("design/charon-trial/result-values");
     fs::write(p.root.join("borrow.click"), RESULT_VALUE_SIDECAR).unwrap();
@@ -3830,6 +3866,8 @@ const RESULT_ERROR_SIDECAR: &str =
 // equates two constructors: a clash refutes its antecedent, one variant
 // equates the fields.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 4.6s in the parallel gate"]
 fn charon_result_errors_carry_a_crate_enum() {
     let p = Project::from_fixture("design/charon-trial/result-errors");
     fs::write(p.root.join("borrow.click"), RESULT_ERROR_SIDECAR).unwrap();
@@ -3877,6 +3915,8 @@ fn charon_result_errors_carry_a_crate_enum() {
 // `From::from` is the identity; a `Result` of another type is refused by
 // name.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.1s in the parallel gate"]
 fn rust_result_refuses_error_conversion_and_unsupported_payloads() {
     for (source, message) in [
         (
@@ -3902,6 +3942,8 @@ const OPTION_REF_SIDECAR: &str = include_str!("../design/charon-trial/option-ref
 // in memory: a caller reads the value a callee wrote through `&mut`, never the
 // one it held before the call.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.6s in the parallel gate"]
 fn charon_option_references_read_and_write_through_borrows() {
     let p = Project::from_fixture("design/charon-trial/option-refs");
     fs::write(p.root.join("borrow.click"), OPTION_REF_SIDECAR).unwrap();
@@ -3973,6 +4015,8 @@ const HELD_VALUE_SIDECAR: &str = include_str!("../design/charon-trial/held-value
 // (and, for `returned`, the value `make` returned, `<region>.result`); a
 // claim the facts do not give fails.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 4.8s in the parallel gate"]
 fn charon_held_value_locals_are_spelled_by_name() {
     let p = Project::from_fixture("design/charon-trial/held-values");
     fs::write(p.root.join("borrow.click"), HELD_VALUE_SIDECAR).unwrap();
@@ -4007,6 +4051,8 @@ const BOOL_FLAG_SIDECAR: &str = include_str!("../design/charon-trial/bool-flags/
 // `found implies t == 8u32` holds on the pass whose guard says `!found`,
 // with no step of its own. A false claim about the flag is still refused.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.2s in the parallel gate"]
 fn charon_bool_flag_claims_meet_their_tests() {
     let p = Project::from_fixture("design/charon-trial/bool-flags");
     fs::write(p.root.join("borrow.click"), BOOL_FLAG_SIDECAR).unwrap();
@@ -4030,6 +4076,8 @@ const PROGRAM_BINDING_SIDECAR: &str =
 // language-named forms, `rust(name)` and `c(name)`, are refused with that
 // replacement.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.9s in the parallel gate"]
 fn charon_program_bindings_are_written_program_name() {
     let p = Project::from_fixture("design/charon-trial/program-bindings");
     fs::write(p.root.join("borrow.click"), PROGRAM_BINDING_SIDECAR).unwrap();
@@ -4059,6 +4107,8 @@ fn charon_program_bindings_are_written_program_name() {
 // `at(<iteration entry>, local) + 1u32`, a spelling a proof can write, never
 // the compiler temporary that holds it (`__rust_mir_N`).
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.9s in the parallel gate"]
 fn charon_refused_loop_member_names_no_compiler_temporary() {
     let p = Project::from_fixture("design/charon-trial/program-bindings");
     let doubled = PROGRAM_BINDING_SIDECAR.replacen(
@@ -4086,6 +4136,8 @@ const VEC_VALUE_SIDECAR: &str = include_str!("../design/charon-trial/vec-values/
 // drop has no effect. Each claim mutated false is refused, and `v[0]` without
 // the caller showing the vector is nonempty is refused as Rust's panic.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 7.3s in the parallel gate"]
 fn charon_vec_values_read_as_the_library_vec() {
     let p = Project::from_fixture("design/charon-trial/vec-values");
     fs::write(p.root.join("borrow.click"), VEC_VALUE_SIDECAR).unwrap();
@@ -4136,6 +4188,8 @@ const STR_VIEWS_SIDECAR: &str = include_str!("fixtures/rust-verification/str-vie
 // contracts are reported as assumptions. A claim about a length the calls do
 // not give fails.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.2s in the parallel gate"]
 fn charon_str_views_read_as_byte_slices() {
     let p = Project::from_fixture("tests/fixtures/rust-verification/str-views");
     fs::write(p.root.join("borrow.click"), STR_VIEWS_SIDECAR).unwrap();
@@ -4176,6 +4230,8 @@ const OPTION_TAKE_SIDECAR: &str = include_str!("../design/charon-trial/option-ta
 // of a scalar, and through a reference: a claim that the option kept its
 // value, or that the result lost it, fails.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 4.2s in the parallel gate"]
 fn charon_option_take_moves_out_and_leaves_none() {
     let p = Project::from_fixture("design/charon-trial/option-take");
     fs::write(p.root.join("borrow.click"), OPTION_TAKE_SIDECAR).unwrap();
@@ -4248,6 +4304,8 @@ const BOX_FIELD_SIDECAR: &str = include_str!("../design/charon-trial/box-fields/
 // there. False claims fail, and a field the function does not own cannot be
 // taken.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.0s in the parallel gate"]
 fn charon_box_fields_take_and_assign_through_self() {
     let p = Project::from_fixture("design/charon-trial/box-fields");
     fs::write(p.root.join("borrow.click"), BOX_FIELD_SIDECAR).unwrap();
@@ -4323,6 +4381,8 @@ fn assert_recursive_drop_refused(
 /// `None` from an empty stack and otherwise frees the head node, whose
 /// fields it moved out, so `round_trip` returns what it pushed.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.3s in the parallel gate"]
 fn charon_recursive_drop_frees_every_node() {
     let prepared = recursive_drop_prepared();
     let (session, _) =
@@ -4354,6 +4414,8 @@ fn charon_recursive_drop_frees_every_node() {
 /// The glue frees each node, which only an owned allocation allows, and its
 /// recursion is ranked by the list it consumes.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.5s in the parallel gate"]
 fn charon_recursive_drop_glue_needs_ownership_and_a_measure() {
     let prepared = recursive_drop_prepared();
     assert_recursive_drop_refused(
@@ -4372,6 +4434,8 @@ fn charon_recursive_drop_glue_needs_ownership_and_a_measure() {
 
 /// `push`, `pop` and `round_trip` refuse claims the stack does not meet.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.8s in the parallel gate"]
 fn charon_stack_refuses_false_push_pop_and_round_trip_claims() {
     let prepared = recursive_drop_prepared();
     for (head, before, after, expected) in [
@@ -4420,6 +4484,8 @@ fn generic_stack_prepared() -> click::languages::rust::PreparedRustImport {
 /// `Node<T>` and `Stack<T>`, are verified once for every `T`, over a
 /// `nodes<T>` resource holding a `List<T>`; `round_trip` uses them at `u32`.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 6.2s in the parallel gate"]
 fn charon_generic_stack_verifies_once_for_every_type() {
     let prepared = generic_stack_prepared();
     ProgramVerificationSession::new_program_prepared(GENERIC_STACK_SIDECAR, &prepared)
@@ -4431,6 +4497,8 @@ fn charon_generic_stack_verifies_once_for_every_type() {
 /// its proof reaches by `statement(i).call(0)`, and a statement the function
 /// does not have is refused.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.9s in the parallel gate"]
 fn charon_rust_statements_as_written_name_their_calls() {
     let prepared = generic_stack_prepared();
     let proof = "    step_until(statement(2).call(0).entry);";
@@ -4454,6 +4522,8 @@ fn charon_rust_statements_as_written_name_their_calls() {
 
 /// A `push` that claims the old list is kept is refused.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.5s in the parallel gate"]
 fn charon_generic_stack_refuses_a_push_that_keeps_the_old_list() {
     let prepared = generic_stack_prepared();
     let before = "ensures after.values == List::Cons(value, old(before.values));";
@@ -4498,6 +4568,8 @@ fn charon_generic_container_verifies_through_a_dyn_container() {
 /// interface's `Integer` clauses give is refused as no refinement, and a
 /// caller claiming the container lost its list is refused.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.6s in the parallel gate"]
 fn charon_generic_container_refuses_a_stronger_put_and_a_false_caller() {
     let prepared = generic_container_prepared();
     for (before, after, expected) in [
@@ -4530,6 +4602,8 @@ fn charon_generic_container_refuses_a_stronger_put_and_a_false_caller() {
 /// `owns p.len; fact p.len == size;` on a `Pair<u32>`, is covered by the
 /// field's segment, which counts eight-byte elements.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.4s in the parallel gate"]
 fn charon_resource_fact_reads_a_usize_field_of_a_generic_instance() {
     let p = Project::isolated(
         "pub struct Pair<T> { pub value: T, pub len: usize }\npub fn pair_len(p: &Pair<u32>) -> usize { p.len }\n",
@@ -4553,6 +4627,8 @@ fn charon_resource_fact_reads_a_usize_field_of_a_generic_instance() {
 /// list its contract consumes from the caller; a caller that never received
 /// one cannot drop the struct.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.5s in the parallel gate"]
 fn charon_struct_local_drop_needs_the_resource_its_glue_consumes() {
     let p = Project::new(
         "pub struct Node { value: u32, next: Option<Box<Node>> }\npub struct Stack { head: Option<Box<Node>> }\npub fn made(x: u32) -> u32 { let _s = Stack { head: None }; x }\n",
@@ -4585,6 +4661,8 @@ fn charon_struct_local_drop_needs_the_resource_its_glue_consumes() {
 /// A box moves into and out of a function by value; a reference to one,
 /// or to an option of one, is refused at import.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.3s in the parallel gate"]
 fn charon_references_to_boxes_are_refused() {
     for source in [
         "pub struct Cell { value: u32 }\npub fn read(b: &Box<Cell>) -> u32 { b.value }\n",
@@ -4836,6 +4914,8 @@ const SLICES_SIDECAR: &str = include_str!("../examples/rust-slices/bytes.click")
 /// specification arithmetic, as arithmetic on a pointer parameter does:
 /// `right == left + mid` is pointer arithmetic on the split's two halves.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn a_rust_pointer_local_keeps_its_c_meaning_in_arithmetic() {
     let p = gate_fixtures::project("split", include_str!("../examples/rust-split-at/split.rs"));
     let sidecar = "verifying \"borrow.rs\";\n\
@@ -5662,6 +5742,8 @@ fn rust_fixed_array_indices_reject_panics_before_narrowing() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn rust_fixed_array_access_requires_memory_authority() {
     for (source, signature, resources) in [
         (
@@ -6534,6 +6616,8 @@ fn rust_empty_slice_iterator_needs_no_read_authority() {
 // its arms are split as the function's implicit tail splits them. Both used
 // to stop the loop: the first with an internal error.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 6.2s in the parallel gate"]
 fn rust_match_in_a_loop_body_is_split_by_the_implicit_preservation() {
     let p = gate_fixtures::project(
         "match-in-loop",
@@ -7446,6 +7530,8 @@ mod gate_fixtures;
 /// so the call needs only the authority the callee's contract names, and the
 /// caller sees the callee's write through both the child and the parent.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 5.0s in the parallel gate"]
 fn rust_reborrow_stays_live_across_a_call() {
     let source =
         include_str!("../design/charon-trial/gate-fixtures/reference-across-call/borrow.rs");
@@ -7715,6 +7801,8 @@ fn countdown_project() -> Project {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn rust_recursive_countdown_ranks_checked_temporaries() {
     let p = countdown_project();
     let prepared = p.prepared().unwrap();
@@ -7916,6 +8004,8 @@ fn rust_methods_resolve_by_the_receivers_type() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.7s in the parallel gate"]
 fn rust_slice_local_lengths_follow_a_recorded_point() {
     let p = Project::new(
         r#"
@@ -7979,6 +8069,8 @@ fn scalar(words: &[u32], view_len: usize) -> usize {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.7s in the parallel gate"]
 fn rust_slice_parameter_length_and_source_parameter_are_distinct() {
     let p = Project::new(
         "pub fn byte_count(bytes: &[u8], bytes_len: usize) -> usize { bytes.len() + bytes_len }
@@ -8036,6 +8128,8 @@ fn rust_slice_values_sidecar(claims: &str) -> String {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 6.2s in the parallel gate"]
 fn rust_slice_values_read_with_rust_methods() {
     let prepared = rust_slice_values_import();
     let accepted = rust_slice_values_sidecar(

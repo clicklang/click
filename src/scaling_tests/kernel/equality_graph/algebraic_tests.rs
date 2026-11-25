@@ -64,6 +64,8 @@ fn algebraic_closure_lookup_does_not_scan_unrelated_models() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn scalar_conflict_queries_and_selected_merges_skip_ambient_facts() {
     let _session = crate::kernel::VerificationSession::enter();
     let ty = model_type(

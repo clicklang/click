@@ -543,6 +543,8 @@ fn wide_heap_range(identity: u64, count: &MachineTerm) -> MemoryRange {
 /// the target's count. Finding the target's range and forming the pointer
 /// against its 64-bit size must not visit the unrelated ones.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn one_store_into_a_64_bit_heap_block_is_logarithmic_in_unrelated_64_bit_allocations() {
     let mut samples = Vec::new();
     for size in [16, 64, 256] {
@@ -1503,6 +1505,8 @@ fn measured_kept_members() -> [ResourceFact; 2] {
 /// proven distinct from the parameters' block, and views, which keep nothing
 /// -- add no work to the producer or to its checker.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn a_call_records_kept_members_without_visiting_unrelated_residual_resources() {
     let mut produced = Vec::new();
     let mut checked = Vec::new();
@@ -1749,6 +1753,8 @@ fn symbolic_range_membership_ignores_unrelated_index_bounds() {
 /// bounds other indices have against the same `end` are edges below `end`,
 /// which an upward order walk through it does not read.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.8s in the parallel gate"]
 fn wide_range_membership_ignores_unrelated_index_bounds() {
     let mut samples = Vec::new();
     for size in [64, 128, 256, 512] {
@@ -1852,6 +1858,8 @@ fn a_kept_range_base_equality_is_proved_once_per_fact_set() {
 /// is visited: a call havoc lending an arena state asks this about every
 /// arena field on every walk across it.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.1s in the parallel gate"]
 fn an_aliased_field_inside_a_range_is_not_searched_for_a_separation() {
     const OBJECT: u64 = 5_000_000;
     const ALIAS: u64 = 5_100_000;
@@ -1911,6 +1919,8 @@ fn extending_a_cloned_context_leaves_the_original_propositions() {
 /// `x < 4` walks up from `x` and must not read the bounds that only share
 /// `n`, so its work is the same at every size.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn wide_order_walk_ignores_uint64_bounds_of_other_indices() {
     let variable = |id: u64| MachineTerm::Variable(Variable(97_600 + id));
     let (x, n) = (variable(0), variable(1));
@@ -2078,6 +2088,8 @@ fn wide_shifted_suffix_coverage_ignores_unrelated_bounds() {
 // Observer transport must use the exact equality index, even with many
 // unrelated facts and a later state containing an unrelated write.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.3s in the parallel gate"]
 fn wide_range_observer_transport_ignores_unrelated_equalities() {
     for same_value_class in [false, true] {
         let mut samples = Vec::new();

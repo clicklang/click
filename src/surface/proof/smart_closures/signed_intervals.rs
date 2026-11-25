@@ -1833,6 +1833,8 @@ mod tests {
             .unwrap_or_else(|e| panic!("{}\n{expanded}", e.message()));
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.6s in the parallel gate"]
     fn signed_interval_addition_expands_ordinary() {
         check(
             "x: int32, y: int32",
@@ -1841,6 +1843,8 @@ mod tests {
         );
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.8s in the parallel gate"]
     fn signed_interval_product_expands_ordinary() {
         check(
             "x: int32",
@@ -1853,6 +1857,8 @@ mod tests {
         check("x: int32", "", "(x & 255) <= 255");
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.2s in the parallel gate"]
     fn native_interval_observations_survive_fresh_replay() {
         check(
             "x: int32",
@@ -1928,6 +1934,8 @@ mod tests {
         assert!(failures.is_empty(), "{failures:?}");
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 2.0s in the parallel gate"]
     fn signed_interval_migration_rejects_missing_evidence_and_undefined_operations() {
         for source in [
             "theorem rejected(x: int32,y: int32) {requires 0<=x; requires x<=10; requires 0<=y; requires y<=10; ensures defined(x+y) by {close() using {0<=x;0<=y;};}}",
@@ -1977,6 +1985,8 @@ by {step(); have defined(pool->capacity - 1) by close();}
             .unwrap_or_else(|e| panic!("{}\n{expanded}", e.message()));
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.1s in the parallel gate"]
     fn signed_definedness_32_expands_ordinary() {
         check(
             "x: int32, y: int32",
@@ -1985,6 +1995,8 @@ by {step(); have defined(pool->capacity - 1) by close();}
         );
     }
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.0s in the parallel gate"]
     fn signed_definedness_64_expands_ordinary() {
         check(
             "x: int64, y: int64",

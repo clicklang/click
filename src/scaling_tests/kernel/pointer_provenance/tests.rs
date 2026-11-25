@@ -132,6 +132,8 @@ fn pointer_integer_round_trips_ignore_unrelated_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn packed_word_contract_lookup_and_scope_ignore_unrelated_words() {
     let _session = VerificationSession::enter();
     let value = |id| OldPointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer);
@@ -187,6 +189,8 @@ fn packed_word_contract_lookup_and_scope_ignore_unrelated_words() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn recent_pointer_read_origin_avoids_older_alias_histories() {
     use crate::kernel::primitives::{CallKeptOwnership, CallKeptRanges};
     let mut samples = Vec::new();

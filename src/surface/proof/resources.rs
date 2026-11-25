@@ -5694,6 +5694,8 @@ mod v11_resource_dependency_tests {
     use super::*;
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.1s in the parallel gate"]
     fn authority_body_read_projection_retires_only_its_owned_observations() {
         let source = r#"import click::integer;
 

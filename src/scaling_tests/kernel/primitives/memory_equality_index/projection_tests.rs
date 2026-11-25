@@ -5,6 +5,8 @@
 use super::*;
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.9s in the parallel gate"]
 fn projection_context_attachment_does_not_scan_unrelated_facts() {
     let mut samples = Vec::new();
     for size in [16, 64, 256, 1024] {

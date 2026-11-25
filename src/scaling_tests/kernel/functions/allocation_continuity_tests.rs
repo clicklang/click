@@ -265,6 +265,8 @@ fn uint64_allocation_size_graph_queries_scale_without_fact_index() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.2s in the parallel gate"]
 fn allocation_companion_alias_lookup_ignores_unrelated_storage_and_alias_stars() {
     for hit in [false, true] {
         let mut work = Vec::new();

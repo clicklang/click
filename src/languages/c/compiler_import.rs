@@ -2260,6 +2260,8 @@ mod tests {
     /// relative to the unit root, and the sidecar names the source by its own
     /// relative path.
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn project_unit_loads_an_external_root_offline() {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         let root = fs::canonicalize(std::env::temp_dir())
@@ -2450,6 +2452,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn linux_gcc_import_verifies_offline_after_relocation() {
         struct CopiedFixture(PathBuf);
         impl Drop for CopiedFixture {

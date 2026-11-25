@@ -3404,6 +3404,8 @@ mod checked_proposition_index_tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.3s in the parallel gate"]
     fn outcome_selection_work_is_independent_of_ambient_fact_count() {
         let selected_route = route(71_020, true);
         let paths = vec![

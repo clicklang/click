@@ -27,6 +27,8 @@ fn native_observation_queries_use_the_selected_fact_index() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn filing_an_integer_reading_through_an_operation_visits_only_its_own_bounds() {
     // Filing the Integer reading of a native guard, and the second bound of
     // a signed definedness fact, looks up only those facts' own bounds,
@@ -69,6 +71,8 @@ fn filing_an_integer_reading_through_an_operation_visits_only_its_own_bounds() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn filing_a_quantified_integer_antecedent_visits_only_its_own_bounds() {
     // Filing a quantified fact whose antecedent reads through an in-range
     // sum looks up only that sum's range bound, however many unrelated facts

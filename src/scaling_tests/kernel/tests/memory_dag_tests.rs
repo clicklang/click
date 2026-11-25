@@ -466,6 +466,8 @@ fn named_state_alias_equality_does_not_depend_on_sibling_observation_origins() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn kept_range_lookup_follows_exact_aliases_without_scanning_unrelated_members() {
     let input = |name| Address {
         base: AddressBase::ExternalArgument,
@@ -1194,6 +1196,8 @@ fn preliminary_byte_gap_uses_only_stated_endpoint_order() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.8s in the parallel gate"]
 fn indexed_byte_separation_ignores_unrelated_external_ranges() {
     let pointer = |id| Address {
         base: AddressBase::ExternalArgument,

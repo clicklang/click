@@ -649,6 +649,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 2.7s in the parallel gate"]
     fn retained_shift_bounds_expand_and_replay_without_search() {
         for (premise, goal) in [
             ("(v >> 32) != 0u64", "4294967296u64 <= v"),
@@ -684,6 +686,8 @@ theorem shift_bound(v: uint64) {{
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn listed_narrowed_length_equalities_expand_to_explicit_rewrites() {
         let source = r#"
 import click::c::stdio;
@@ -755,21 +759,29 @@ theorem identity(x: {ty}) {{
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.1s in the parallel gate"]
     fn listed_premises_prove_signed_add_identity() {
         check_listed_operation_identity("int32", "x < 2147483647", "x + 1");
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.1s in the parallel gate"]
     fn listed_premises_prove_signed_subtract_identity() {
         check_listed_operation_identity("int32", "x > -2147483648", "x - 1");
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.9s in the parallel gate"]
     fn listed_premises_prove_unsigned_add_identity() {
         check_listed_operation_identity("uint64", "x < 18446744073709551615u64", "x + 1u64");
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.0s in the parallel gate"]
     fn listed_premises_prove_unsigned_subtract_identity() {
         check_listed_operation_identity("uint64", "x > 0u64", "x - 1u64");
     }
@@ -780,6 +792,8 @@ theorem identity(x: {ty}) {{
     /// an explicit product-lower-bound library application. The expansion
     /// retains the identity separately and replays with no search.
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.8s in the parallel gate"]
     fn solve_plans_a_product_identity_from_its_operand_ranges() {
         let source = r#"
 theorem product_identity(a: uint16, b: uint16) {
@@ -814,6 +828,8 @@ theorem product_identity(a: uint16, b: uint16) {
     /// the `signed_int32` certificate had the step. The expansion replays
     /// with no search.
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 1.1s in the parallel gate"]
     fn solve_makes_a_bound_strict_by_a_disequality_at_every_format() {
         for ty in ["int64", "Integer"] {
             let source = format!(
@@ -851,6 +867,8 @@ theorem strict(a: {ty}, b: {ty}) {{
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn solve_proves_an_equality_operation_identity_once() {
         // Each bound of the split equality is proved inside its own `have`,
         // which drops the identities proved there, so proving them per bound

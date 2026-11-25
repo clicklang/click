@@ -138,7 +138,8 @@ fn check_rewritten_integer_division_goal(quotient: bool) {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_02")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn rewritten_remainder_goals_synthesize_through_both() {
     check_rewritten_integer_division_goal(false);
 }
@@ -193,7 +194,8 @@ fn conditional_quotient_claim_keeps_its_domain_in_expansion() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_03")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn integer_certificate_keeps_negative_observation_bounds_when_adding() {
     let source = r#"theorem zero_add_bound(q: int64) {
  requires -9223372036854775808 <= to_integer(q);
@@ -1302,7 +1304,8 @@ fn fixed_state_have_certifies_a_post_call_fact_across_a_later_store() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_10")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.0s in the parallel gate"]
 fn grouped_outcome_solve_splits_an_unfold_active_conjunction_ensure() {
     // The final `solve` certifies `ordered_pair(pair)` while `unfold` is
     // active, so the kernel goal is already the body conjunction while the
@@ -1430,13 +1433,11 @@ test_batches! {
         integer_rewrite_reaches_nested_native_uint64_bounds,
     ],
     control_batch_02: [
-        rewritten_remainder_goals_synthesize_through_both,
         rewritten_quotient_goals_synthesize_through_both,
         conditional_quotient_claim_reuses_its_checked_domain,
         conditional_quotient_claim_keeps_its_domain_in_expansion,
     ],
     control_batch_03: [
-        integer_certificate_keeps_negative_observation_bounds_when_adding,
         both_and_proves_exact_conjuncts_and_rejects_incomplete_arms,
         both_and_outcome_expands_and_rechecks,
     ],
@@ -1480,7 +1481,6 @@ test_batches! {
         step_certificate_rejects_a_loop_step_with_an_unplanned_phase,
         smart_have_splits_an_unfolded_predicate_conjunction_goal,
         fixed_state_have_certifies_a_post_call_fact_across_a_later_store,
-        grouped_outcome_solve_splits_an_unfold_active_conjunction_ensure,
     ],
     control_batch_11: [
         parses_execute_until_assignment_and_preserves_same_spelled_labels,

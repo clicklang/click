@@ -169,6 +169,8 @@ fn shared_tagged_word_certificates_preserve_bounds_without_exports() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 2.3s in the parallel gate"]
 fn intrinsic_alignment_known_work_ignores_other_blocks_and_related_facts() {
     let mut samples = Vec::new();
     for size in [8, 32, 128, 512] {

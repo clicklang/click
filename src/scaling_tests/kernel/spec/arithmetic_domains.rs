@@ -310,6 +310,8 @@ fn wide_logical_product_keeps_operands_when_equalities_grow() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn complete_arithmetic_domain_checks_ignore_related_alias_stars() {
     for established in [false, true] {
         let mut costs = Vec::new();

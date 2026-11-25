@@ -1312,7 +1312,8 @@ fn parses_and_prints_solve_using_premise_lists() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_09")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 4.7s in the parallel gate"]
 fn signed_compound_expansion_uses_ordinary_operations_and_rejects_false_goal() {
     let source = r#"
         theorem signed_compound_certificate(n: int32) {
@@ -1394,7 +1395,8 @@ fn float_reflexive_smart_expansion_replays_as_known() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_11")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.0s in the parallel gate"]
 fn signed_arithmetic_smart_planner_expands_to_ordinary_proof() {
     let source = r#"
         theorem signed_smart_double(n: int32) {
@@ -1431,7 +1433,8 @@ fn signed_arithmetic_smart_planner_expands_to_ordinary_proof() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_12")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn signed_arithmetic_using_requires_every_needed_exact_premise() {
     let source = r#"
         theorem signed_missing_explicit_premise(n: int32) {
@@ -1522,7 +1525,8 @@ fn integer_arithmetic_using_rejects_an_unavailable_irrelevant_extra() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_13")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn signed_arithmetic_smart_planner_preserves_explicit_definedness() {
     let source = r#"
         theorem defined_addition(a: int32, b: int32) {
@@ -3585,7 +3589,8 @@ fn loop_diverges_round_trips_through_expansion() {
 /// The marker withholds whole-function termination evidence even when the
 /// function ranks some of its loops.
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_26")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn a_diverges_function_never_yields_termination_evidence() {
     let c_source = r#"
             int32 drain_then_wait(int32 n, int32 x) {
@@ -4060,7 +4065,8 @@ fn a_reference_parameter_does_not_match_a_c_pointer() {
 /// Two different clauses that return overlapping memory are refused where
 /// the contract is set up, naming both places, with or without a proof.
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_29")]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn a_contract_cannot_return_overlapping_places() {
     let c_source = "struct cell { int32 value; int32 other; }; \
         int32 get(struct cell* p) { return p->value; }";
@@ -5464,21 +5470,15 @@ test_batches! {
         rejects_removed_fold_tactic_syntax,
         parses_and_prints_solve_using_premise_lists,
     ],
-    surface_syntax_batch_09: [
-        signed_compound_expansion_uses_ordinary_operations_and_rejects_false_goal,
-    ],
     surface_syntax_batch_11: [
         float_reflexive_smart_expansion_replays_as_known,
-        signed_arithmetic_smart_planner_expands_to_ordinary_proof,
     ],
     surface_syntax_batch_12: [
-        signed_arithmetic_using_requires_every_needed_exact_premise,
         integer_arithmetic_uses_checked_unified_certificate_without_replanning,
         integer_arithmetic_using_proves_a_chain_longer_than_three_premises,
         integer_arithmetic_using_rejects_an_unavailable_irrelevant_extra,
     ],
     surface_syntax_batch_13: [
-        signed_arithmetic_smart_planner_preserves_explicit_definedness,
         verifies_pure_theorem_definition,
         pure_bare_apply_builds_a_checked_proof_object_certificate,
         pure_solve_exposes_explicit_arithmetic_steps,
@@ -5558,7 +5558,6 @@ test_batches! {
         diverges_must_follow_throws_in_a_signature,
         external_contracts_accept_diverges_and_still_reject_decreases,
         loop_diverges_round_trips_through_expansion,
-        a_diverges_function_never_yields_termination_evidence,
     ],
     surface_syntax_batch_27: [
         parses_built_in_expressions_on_either_comparison_side,
@@ -5574,7 +5573,6 @@ test_batches! {
         a_reference_parameter_does_not_match_a_c_pointer,
     ],
     surface_syntax_batch_29: [
-        a_contract_cannot_return_overlapping_places,
         a_hidden_record_needs_its_child_declared_first,
         a_rust_sidecar_compares_a_bitwise_operand_without_parentheses,
         a_rust_sidecar_states_its_signature_in_rust_syntax,

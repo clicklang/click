@@ -1909,6 +1909,8 @@ fn charon_adler2_small_partition_rejects_false_metadata() {
 
 // The original scalar tail needs safe A/B updates and actual remaining progress.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.8s in the parallel gate"]
 fn charon_adler2_scalar_tail_bounds_verify() {
     click::surface::verify_c_sources(TAIL_BOUNDS, &[]).unwrap();
 }
@@ -2506,6 +2508,8 @@ fn charon_adler2_helpers_from_rejects_wrong_mathematical_bytes() {
 // The bridge cannot equate a truncating signed observation with an unbounded
 // native count. The selected count and pointer lemmas require the signed limit.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.5s in the parallel gate"]
 fn adler_bounded_native_count_observations_verify() {
     click::surface::verify_c_sources(BOUNDED_COUNT, &[]).unwrap();
     let changed = BOUNDED_COUNT.replacen(" requires count <= 2147483647u64;", "", 1);

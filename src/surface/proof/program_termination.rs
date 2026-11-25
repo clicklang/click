@@ -279,6 +279,8 @@ mod tests {
     const SOURCE: &str = "verifying \"termination.c\"; int32 leaf() { ensures result == 7; } int32 caller() { ensures result == 7; }";
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn targeted_proofs_check_termination_for_their_selected_bodies() {
         let sources = [("termination.c", C)];
         let inputs = ProgramInputs::Bundle(sources.to_vec());
@@ -313,6 +315,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn explicit_termination_uses_ordinary_have_and_solve() {
         let source = format!(
             r#"{SOURCE}
@@ -346,6 +350,8 @@ termination by {{
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn a_quantified_value_does_not_capture_a_quoted_function_label() {
         let source = format!(
             r#"{SOURCE}
@@ -359,6 +365,8 @@ termination by {{
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.6s in the parallel gate"]
     fn expansion_replays_without_implicit_termination_solving() {
         let inputs = ProgramInputs::Bundle(vec![("termination.c", C)]);
         let expansion = crate::surface::expand_claim_by_label(
@@ -396,6 +404,8 @@ termination by {{
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.5s in the parallel gate"]
     fn ordinary_termination_trace_has_source_spellings_and_locations() {
         let inputs = ProgramInputs::Bundle(vec![("termination.c", C)]);
         let expansion = crate::surface::expand_claim_by_label(

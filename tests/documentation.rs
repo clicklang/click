@@ -460,6 +460,8 @@ fn inventory_ids(prefix: &str) -> BTreeSet<String> {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.7s in the parallel gate"]
 fn inventory_entries_are_unique_and_resolve() {
     let docs = root().join("docs");
     let mut ids = BTreeSet::new();
@@ -600,6 +602,8 @@ fn every_page_has_structural_markdown_and_navigation() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn local_markdown_links_resolve() {
     let docs = root().join("docs");
     let canonical_docs = docs.canonicalize().expect("canonical docs directory");
@@ -1839,6 +1843,8 @@ fn canonical_documentation_terms_have_no_retired_aliases() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn implementation_uses_canonical_form_and_load_variable_terms() {
     let repository = root();
     let mut files = Vec::new();

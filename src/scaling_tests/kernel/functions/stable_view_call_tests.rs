@@ -192,6 +192,8 @@ fn verified_call_borrow_requirement_building_does_not_visit_live_borrows() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.6s in the parallel gate"]
 fn local_storage_classification_stops_at_a_fixed_ownership_gap() {
     let mut curves = Vec::new();
     for case in ["implicit", "gap", "owner", "joined"] {
@@ -319,6 +321,8 @@ fn local_storage_classification_stops_at_a_fixed_ownership_gap() {
 /// A read-only call borrows one complete owner and returns it unchanged.
 /// Increasing the disjoint caller frame must not increase completion work.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn returning_one_borrowed_owner_does_not_rebuild_its_memory_block() {
     let mut curves = Vec::new();
     for count in [4u32, 16, 64, 256] {

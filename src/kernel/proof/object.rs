@@ -3016,6 +3016,8 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "fast-gate"))]
+    #[ignore = "nightly: 0.7s in the parallel gate"]
     fn checked_product_bounds_use_exact_citations_as_fact_sets_grow() {
         use crate::instrumentation::measure_deterministic_work;
         use crate::kernel::{ConditionTerm, IntegerTerm, MachineIntegerType, VerificationSession};

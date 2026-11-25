@@ -13476,6 +13476,8 @@ fn c_out_of_range_integer_constants_convert_modulo_the_destination_width() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 1.0s in the parallel gate"]
 fn signed_byte_proof_expansion_preserves_memory_and_negative_values() {
     let c = "int read(signed char *p) { return p[1] + 1; }";
     let proof = "verifying \"byte.c\"; int read(signed char *p) { views p[0..2]; ensures result == p[1] + 1; }";
@@ -13534,6 +13536,8 @@ fn anonymous_struct_typedef_reuses_field_validation() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.5s in the parallel gate"]
 fn anonymous_struct_local_proof_expands_and_reverifies() {
     let c = "typedef struct { int __val[2]; } __fsid_t; int use_local(void) { __fsid_t a = {{3, 7}}; __fsid_t b = a; b.__val[0] = 11; return a.__val[0] + b.__val[0] + b.__val[1]; }";
     let proof = "verifying \"anonymous.c\"; int use_local() { ensures result == 21; }";
@@ -13774,6 +13778,8 @@ fn c_restrict_pointer_qualifiers_preserve_pointer_types_without_alias_facts() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn c_leaf_memory_proof_expands_and_reverifies() {
     let c = "__attribute__((__nothrow__, __leaf__)) int set(int *p) { *p = 7; return *p; }";
     let proof = "verifying \"leaf.c\"; int set(int *p) { owns p[0..1]; ensures p[0] == 7; ensures result == 7; }";
@@ -13866,6 +13872,8 @@ fn c_union_pointer_member_preserves_pointee_constness() {
 }
 
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.7s in the parallel gate"]
 fn c_const_pointer_fields_alias_proof_expands_and_reverifies() {
     let c = "struct holder { const int *value; }; int update(struct holder *h, int *p) { *p = 7; return h->value[0]; }";
     let proof = "verifying \"fields.c\"; int update(struct holder *h, int *p) { views h->value; owns p[0..1]; requires h->value == p; ensures result == 7; }";
@@ -14219,6 +14227,8 @@ fn c_gnu_word_mode_rejects_other_modes_and_noninteger_objects() {
 // System headers may declare va_list APIs unrelated to the selected body. The
 // declaration-only type must survive aliases without granting a usable ABI.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn c_unused_builtin_va_list_prototypes_do_not_block_ordinary_bodies() {
     let source = "typedef __builtin_va_list A; typedef A B; \
                   int unrelated(B args); int identity(int x) { return x; }";

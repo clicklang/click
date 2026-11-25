@@ -6,6 +6,8 @@ const SIDECAR: &str = include_str!("../../design/charon-trial/signed-arithmetic/
 /// verify; each owes Rust's panic checks: a nonzero divisor, no `MIN / -1`
 /// or `MIN % -1`, and no negation of `MIN`.
 #[test]
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: 3.6s in the parallel gate"]
 fn charon_signed_arithmetic_verifies_with_its_panic_checks() {
     let p = Project::from_fixture("design/charon-trial/signed-arithmetic");
     fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();
