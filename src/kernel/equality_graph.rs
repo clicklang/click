@@ -3075,6 +3075,7 @@ impl EqualityGraphState {
     fn close(&mut self, mut equalities: Vec<(Address, Address)>) -> bool {
         let mut changed = false;
         loop {
+            equalities.extend(self.terms.take_pointer_address_merges());
             equalities.extend(self.terms.take_pointer_value_merges().into_iter().map(
                 |(left, right)| {
                     (

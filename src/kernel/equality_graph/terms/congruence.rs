@@ -1791,6 +1791,28 @@ impl TermClasses {
         self.root(a) == self.root(b)
     }
 
+    /// Join the components of two complete pointer values already known
+    /// equal: their provenance and bounds here, and their addresses in the
+    /// block layer, as `EqualityGraph::add_pointer_equality` does for a
+    /// stated equality.
+    pub(super) fn join_pointer_components(
+        &mut self,
+        a: &crate::kernel::Pointer,
+        b: &crate::kernel::Pointer,
+        pending: &mut PendingUnions,
+    ) {
+        crate::instrumentation::record_deterministic_work(1);
+        let roots = (
+            self.provenance_node(a.provenance()),
+            self.provenance_node(b.provenance()),
+        );
+        let bounds = (self.bounds_node(a), self.bounds_node(b));
+        pending.push(roots);
+        pending.push(bounds);
+        self.pointer_address_merges
+            .push_back((a.address().clone(), b.address().clone()));
+    }
+
     pub(super) fn retain_pointer_value(&mut self, node: u64, value: crate::kernel::Pointer) {
         let root = self.root(node);
         let value = self
