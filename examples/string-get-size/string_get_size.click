@@ -233,6 +233,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     } else {
                         step();
                     }
+                    have __base as uint64 != 0u64 by { close() using { 1000u32 <= __base; }; }
                     mark div;
                     apply(kilo_divide(at(head, blk_size), at(div, __base)));
                     step_until(loop.back_edge);
@@ -303,6 +304,8 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                 initialize by close();
                 maintain by {
                     have i <= 8;
+                    apply(integer::int32_nonnegative_add_within_max_is_defined(i, 1));
+                    apply(integer::int32_add_to_integer(i, 1));
                     mark head;
                     step();
                     step();
@@ -314,6 +317,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     } else {
                         step();
                     }
+                    have __base as uint64 != 0u64 by { close() using { 1000u32 <= __base; }; }
                     mark div;
                     apply(kilo_divide(at(head, size), at(div, __base)));
                     step_until(loop.back_edge);
@@ -333,10 +337,19 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                             contradiction();
                         }
                     }
-                    have i == at(loop(1).entry, i) + 1 implies to_integer(size) * 1000 <= 18446744073709551615;
+                    have i == at(loop(1).entry, i) + 1 implies to_integer(size) * 1000 <= 18446744073709551615 by {
+                        intro() {
+                            close() using { to_integer(at(head, size) / at(div, __base) as uint64) * 1000 <= to_integer(at(head, size)); };
+                        }
+                    }
                     have i == at(loop(1).entry, i) + 2 implies to_integer(size) * 1000000 <= 18446744073709551615 by {
                         intro() {
-                            have at(head, i) == at(loop(1).entry, i) + 1;
+                            have at(head, i) == at(loop(1).entry, i) + 1 by {
+                                close() using {
+                                    i == at(loop(1).entry, i) + 2;
+                                    to_integer(at(head, i) + 1) == to_integer(at(head, i)) + 1;
+                                };
+                            }
                             have to_integer(at(head, size)) * 1000 <= 18446744073709551615 by { close(); }
                             have to_integer(size) * 1000000 <= 18446744073709551615 by { close() using {
                                 to_integer(at(head, size) / at(div, __base) as uint64) * 1000 <= to_integer(at(head, size));
@@ -347,7 +360,12 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     }
                     have i == at(loop(1).entry, i) + 3 implies to_integer(size) * 1000000000 <= 18446744073709551615 by {
                         intro() {
-                            have at(head, i) == at(loop(1).entry, i) + 2;
+                            have at(head, i) == at(loop(1).entry, i) + 2 by {
+                                close() using {
+                                    i == at(loop(1).entry, i) + 3;
+                                    to_integer(at(head, i) + 1) == to_integer(at(head, i)) + 1;
+                                };
+                            }
                             have to_integer(at(head, size)) * 1000000 <= 18446744073709551615 by { close(); }
                             have to_integer(size) * 1000000000 <= 18446744073709551615 by { close() using {
                                 to_integer(at(head, size) / at(div, __base) as uint64) * 1000 <= to_integer(at(head, size));
@@ -358,7 +376,12 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     }
                     have i == at(loop(1).entry, i) + 4 implies to_integer(size) * 1000000000000 <= 18446744073709551615 by {
                         intro() {
-                            have at(head, i) == at(loop(1).entry, i) + 3;
+                            have at(head, i) == at(loop(1).entry, i) + 3 by {
+                                close() using {
+                                    i == at(loop(1).entry, i) + 4;
+                                    to_integer(at(head, i) + 1) == to_integer(at(head, i)) + 1;
+                                };
+                            }
                             have to_integer(at(head, size)) * 1000000000 <= 18446744073709551615 by { close(); }
                             have to_integer(size) * 1000000000000 <= 18446744073709551615 by { close() using {
                                 to_integer(at(head, size) / at(div, __base) as uint64) * 1000 <= to_integer(at(head, size));
@@ -402,6 +425,8 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                 initialize by close();
                 maintain by {
                     have i <= 14;
+                    apply(integer::int32_nonnegative_add_within_max_is_defined(i, 1));
+                    apply(integer::int32_add_to_integer(i, 1));
                     mark head;
                     if (units & 1u32) == 1u32 {
                         if 1024u64 <= size {

@@ -6,6 +6,9 @@ use std::sync::Arc;
 
 pub(super) struct BranchInterfaceJoinInputs<'a, 'proof> {
     pub(super) sibling_states: &'a [&'a ExecutionState; 2],
+    pub(super) arm_endpoints: [&'a ExecutionState; 2],
+    pub(super) split_state: &'a ExecutionState,
+    pub(super) other_abstraction: Option<&'a ExecutionState>,
     pub(super) recorded_states: &'a RecordedStates,
     pub(super) proof: &'a Proof<'proof>,
     pub(super) entry_facts: &'a PureFactStore,
@@ -275,6 +278,13 @@ pub(super) fn apply_branch_interface_with_proof_facts(
         }
     }
     abstract_state = abstract_state.with_resource_context(exported_resources.clone());
+    // An observation at the abstract successor names the same point in both
+    // arms, even when their concrete memory histories ended at different points.
+    abstract_state.prepare_interface_join_point(
+        join_inputs.arm_endpoints,
+        join_inputs.split_state,
+        join_inputs.other_abstraction,
+    );
     let interface_records = execution.presentation.recorded_states.for_branch_interface(
         join_inputs.recorded_states,
         target,

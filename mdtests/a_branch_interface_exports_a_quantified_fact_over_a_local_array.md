@@ -1,7 +1,9 @@
 # A branch interface exports a quantified fact over a local array
 
 Both arms prove `forall k < 2 { tmp[k] != 0 }` over the local `char tmp[4]`,
-and the join exports it. Each arm checks an interface fact by lowering it as a
+and the join exports it together with the prefix's definedness. The two arms
+end at different program points. The definedness fact uses the common successor
+point. Each arm checks an interface fact by lowering it as a
 `have` of the same text in that arm lowers: `tmp[k]` reads one byte, the
 array's element type, and the quantifier is the one a `have` binds. The
 interface used to read the local array as `int32` elements and number its
@@ -31,15 +33,19 @@ int32 b(int32 j) {
     step();
     branch ensuring {
         fact forall (k: uint64) { 0u64 <= k and k < 2u64 implies tmp[k] != 0u8 };
+        fact forall (k: uint64) { 0u64 <= k and k < 2u64 implies defined(tmp[k]) };
     } {
         true => {
             step();
             have forall (k: uint64) { 0u64 <= k and k < 2u64 implies tmp[k] != 0u8 } by { enumerate(); }
+            have forall (k: uint64) { 0u64 <= k and k < 2u64 implies defined(tmp[k]) } by { enumerate(); }
         }
         false => {
             have forall (k: uint64) { 0u64 <= k and k < 2u64 implies tmp[k] != 0u8 } by { enumerate(); }
+            have forall (k: uint64) { 0u64 <= k and k < 2u64 implies defined(tmp[k]) } by { enumerate(); }
         }
     }
+    instantiate(forall (k: uint64) { 0u64 <= k and k < 2u64 implies defined(tmp[k]) }, 0u64);
 }
 ```
 
