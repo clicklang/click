@@ -30,7 +30,15 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                 }
             }
             unfold(before);
+            have separate(memory(root->rb_node), memory(old->__rb_parent_color)) by { close(); }
+            mark before_parent_store;
             step_until(function.exit);
+            have separate(statement(0).statement(1).footprint, memory(old->__rb_parent_color)) by {
+                close() using { at(before_parent_store, separate(memory(root->rb_node), memory(old->__rb_parent_color))); };
+            }
+            have old->__rb_parent_color == at(before_parent_store, old->__rb_parent_color) by {
+                preserve(memory(old->__rb_parent_color), statement(0).statement(1));
+            }
             let after = fold(ctx_at(new, root), { model: Context::Top });
             close();
         },
@@ -51,7 +59,15 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
             have separate(memory(parent->rb_left), memory(identity->__rb_parent_color)) by {
                 rewrite(parent, identity); close();
             }
+            have separate(memory(parent->rb_left), memory(old->__rb_parent_color)) by { close(); }
+            mark before_parent_store;
             step_until(function.exit);
+            have separate(statement(0).statement(0).statement(0).footprint, memory(old->__rb_parent_color)) by {
+                close() using { at(before_parent_store, separate(memory(parent->rb_left), memory(old->__rb_parent_color))); };
+            }
+            have old->__rb_parent_color == at(before_parent_store, old->__rb_parent_color) by {
+                preserve(memory(old->__rb_parent_color), statement(0).statement(0).statement(0));
+            }
             have separate(statement(0).statement(0).statement(0).footprint, memory(identity->__rb_parent_color)) by close();
             have identity->__rb_parent_color == at(before_link_write, identity->__rb_parent_color) by {
                 preserve(memory(identity->__rb_parent_color), statement(0).statement(0).statement(0));
@@ -96,7 +112,15 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                     have separate(memory(parent->rb_right), memory(identity->__rb_parent_color)) by {
                         rewrite(parent, identity); close();
                     }
+                    have separate(memory(parent->rb_right), memory(old->__rb_parent_color)) by { close(); }
+                    mark before_parent_store;
                     step_until(function.exit);
+                    have separate(statement(0).statement(0).statement(1).footprint, memory(old->__rb_parent_color)) by {
+                        close() using { at(before_parent_store, separate(memory(parent->rb_right), memory(old->__rb_parent_color))); };
+                    }
+                    have old->__rb_parent_color == at(before_parent_store, old->__rb_parent_color) by {
+                        preserve(memory(old->__rb_parent_color), statement(0).statement(0).statement(1));
+                    }
                     have separate(statement(0).statement(0).statement(1).footprint, memory(identity->__rb_parent_color)) by close();
                     have identity->__rb_parent_color == at(before_link_write, identity->__rb_parent_color) by {
                         preserve(memory(identity->__rb_parent_color), statement(0).statement(0).statement(1));
@@ -131,7 +155,15 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                     have separate(memory(parent->rb_right), memory(identity->__rb_parent_color)) by {
                         rewrite(parent, identity); close();
                     }
+                    have separate(memory(parent->rb_right), memory(old->__rb_parent_color)) by { close(); }
+                    mark before_parent_store;
                     step_until(function.exit);
+                    have separate(statement(0).statement(0).statement(1).footprint, memory(old->__rb_parent_color)) by {
+                        close() using { at(before_parent_store, separate(memory(parent->rb_right), memory(old->__rb_parent_color))); };
+                    }
+                    have old->__rb_parent_color == at(before_parent_store, old->__rb_parent_color) by {
+                        preserve(memory(old->__rb_parent_color), statement(0).statement(0).statement(1));
+                    }
                     have separate(statement(0).statement(0).statement(1).footprint, memory(identity->__rb_parent_color)) by close();
                     have identity->__rb_parent_color == at(before_link_write, identity->__rb_parent_color) by {
                         preserve(memory(identity->__rb_parent_color), statement(0).statement(0).statement(1));
