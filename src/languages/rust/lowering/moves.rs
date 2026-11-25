@@ -586,8 +586,9 @@ pub(super) fn lower(
                     .functions
                     .get(function.as_str())
                     .ok_or("missing MIR call definition")?;
-                let (prefix, arguments_values) = cx.prepared_arguments(function, arguments)?;
+                let (prefix, mut arguments_values) = cx.prepared_arguments(function, arguments)?;
                 let mut indices = BTreeSet::new();
+                let mut moved_results = Vec::new();
                 let mut previous_index = None;
                 let mut aggregate_steps = Vec::new();
                 for argument in owned_arguments {
@@ -607,6 +608,15 @@ pub(super) fn lower(
                             if !argument.moved {
                                 check_copyable(cx, &argument.record)?;
                             }
+                            // A drop operand is already the call's prepared
+                            // object; any other local is copied into one.
+                            if !cx
+                                .binding(local)?
+                                .local_id()
+                                .is_some_and(LocalBindingId::is_prepared_argument)
+                            {
+                                moved_results.push((argument.index, argument.record.clone()));
+                            }
                         }
                         (
                             Some(E::CallResult {
@@ -625,6 +635,7 @@ pub(super) fn lower(
                                 }) =>
                         {
                             aggregate_steps.push(*call);
+                            moved_results.push((argument.index, argument.record.clone()));
                         }
                         _ => return Err("owned call metadata disagrees with operand".into()),
                     }
@@ -634,6 +645,58 @@ pub(super) fn lower(
                 }) {
                     return Err("owned call operand lacks transfer metadata".into());
                 }
+                // A by-value record argument that is not already the call's
+                // prepared object (a call result, or a local other than a drop
+                // operand) is copied into one, a region of its own before the
+                // call, so the call receives the initialized object, as Rust
+                // moves or copies it.
+                let mut binding = program_skip();
+                let mut prepared = Vec::new();
+                for (index, record) in moved_results {
+                    let layout = cx
+                        .layouts
+                        .get(record.as_str())
+                        .ok_or("missing moved record layout")?
+                        .to_kernel_aggregate_layout();
+                    // Prepared objects made here are numbered from the top of
+                    // the ordinal range, by block and argument, apart from the
+                    // drop operands numbered by their MIR sites.
+                    let ordinal = u32::try_from(block)
+                        .ok()
+                        .and_then(|block| block.checked_mul(64))
+                        .and_then(|base| base.checked_add(u32::try_from(index).ok()?))
+                        .filter(|_| index < 64)
+                        .map(|key| u32::MAX - key)
+                        .ok_or("too many Rust call blocks or arguments")?;
+                    let id = match &callee.parameters[index].name {
+                        MirLocalId::Source(parameter) => {
+                            LocalBindingId::prepared_argument_for(owner.clone(), ordinal, parameter)
+                        }
+                        _ => LocalBindingId::prepared_argument(owner.clone(), ordinal),
+                    };
+                    id.initialize_struct_name(&record);
+                    let object = BindingName::from(id);
+                    binding = program_seq(
+                        binding,
+                        program_seq(
+                            crate::kernel::program_allocate_aggregate_destination(
+                                object.clone(),
+                                layout.clone(),
+                            ),
+                            crate::kernel::program_copy_aggregate(
+                                crate::kernel::program_expression::variable(object.clone()),
+                                arguments_values[index].clone(),
+                                layout,
+                            ),
+                        ),
+                    );
+                    arguments_values[index] = crate::kernel::program_expression::cast(
+                        crate::kernel::program_expression::variable(object.clone()),
+                        ProgramType::UInt8Pointer,
+                    );
+                    prepared.push(object);
+                }
+                let prefix = program_seq(prefix, binding);
                 let call = if let Some(step) = result {
                     // A call step: its successor reads the result as the
                     // value of the expression that holds the call.
@@ -696,13 +759,13 @@ pub(super) fn lower(
                 } else {
                     return Err("missing Rust call destination for a non-scalar result".into());
                 };
-                let call = if aggregate_steps.is_empty() {
+                let call = if aggregate_steps.is_empty() && prepared.is_empty() {
                     call
                 } else {
                     program_seq(
                         call,
                         ProgramStatement::EndAutomaticLifetimes {
-                            names: Vec::new(),
+                            names: prepared,
                             steps: aggregate_steps,
                         },
                     )

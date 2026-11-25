@@ -5797,6 +5797,8 @@ fn prove_symbolic_program_function_execution_paths_with_contract_resources(
     prepare_contract_resources: bool,
 ) -> SymbolicExecution {
     let defer_conditional_resource_effect = function_has_conditional_resource_effect(&function);
+    let (state, arguments) =
+        super::functions::prepare_external_aggregate_arguments(&state, &function, arguments);
     let paths = match execute_program_function_paths_with_contract_resources(
         &state,
         &function,

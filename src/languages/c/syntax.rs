@@ -15946,10 +15946,12 @@ impl Parser {
         function_name: &str,
         arguments: Vec<CExpression>,
     ) -> Result<(Vec<CStatement>, Vec<CExpression>, Vec<BindingName>), CSyntaxError> {
-        let by_value = self
-            .function_declaration_for_call(function_name)
-            .map(|function| {
-                function
+        // With a prototype, its by-value struct parameters; without one (an
+        // undeclared callee), the argument's own type decides, and the object
+        // has no parameter name to carry.
+        let by_value: Vec<Option<(String, Option<String>)>> =
+            match self.function_declaration_for_call(function_name) {
+                Some(function) => function
                     .parameters
                     .iter()
                     .map(|parameter| {
@@ -15962,12 +15964,19 @@ impl Parser {
                         };
                         parameter
                             .is_struct_value()
-                            .then(|| parameter.struct_name.clone().zip(spelling))
+                            .then(|| parameter.struct_name.clone())
                             .flatten()
+                            .map(|struct_name| (struct_name, spelling))
                     })
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
+                    .collect(),
+                None => arguments
+                    .iter()
+                    .map(|argument| {
+                        self.struct_value_argument_name(argument)
+                            .map(|struct_name| (struct_name, None))
+                    })
+                    .collect(),
+            };
         if by_value.iter().all(Option::is_none) {
             return Ok((Vec::new(), arguments, Vec::new()));
         }
@@ -15991,10 +16000,11 @@ impl Parser {
             })?;
             let ordinal = self.next_local_binding;
             self.next_local_binding = ordinal.checked_add(1).expect("binding ordinal fits u32");
-            let name: BindingName =
-                LocalBindingId::prepared_argument_for(owner, ordinal, &parameter)
-                    .with_scope_depth(self.scopes.len() as u32)
-                    .into();
+            let id = match &parameter {
+                Some(parameter) => LocalBindingId::prepared_argument_for(owner, ordinal, parameter),
+                None => LocalBindingId::prepared_argument(owner, ordinal),
+            };
+            let name: BindingName = id.with_scope_depth(self.scopes.len() as u32).into();
             self.variable_types
                 .insert(name.clone(), record_value_type(&layout));
             self.variable_structs
@@ -16018,6 +16028,17 @@ impl Parser {
             prepared.push(name);
         }
         Ok((prefix, lowered, prepared))
+    }
+
+    /// The struct an argument passes by value, when it is a struct value:
+    /// what an undeclared callee receives it as.
+    fn struct_value_argument_name(&self, argument: &CExpression) -> Option<String> {
+        match argument {
+            CExpression::Variable(name) => self.variable_struct_values.get(name).cloned(),
+            CExpression::AggregateAddress { struct_name, .. } => Some(struct_name.clone()),
+            CExpression::StepResult { .. } => self.aggregate_struct_name(argument),
+            _ => None,
+        }
     }
 
     /// Ends the parameter objects [`Self::prepare_by_value_arguments`]
