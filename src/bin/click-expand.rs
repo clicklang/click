@@ -1062,14 +1062,70 @@ int32 identity(int32 x) {
         let nonzero = directory.path().join("nonzero.click");
         fs::write(
             &nonzero,
-            r#"theorem nonzero(x: uint64) {
+            r#"theorem unsigned_nonzero(x: uint64) {
     requires 0u64 < x;
     ensures x != 0u64 by close();
+}
+theorem signed_nonzero(x: int64) {
+    requires x > 0i64;
+    ensures 0i64 != x by close();
 }
 "#,
         )
         .unwrap();
-        let generated = check(&nonzero, "nonzero.ensures_0").unwrap_err();
+        for claim in ["unsigned_nonzero.ensures_0", "signed_nonzero.ensures_0"] {
+            let expanded = check(&nonzero, claim).unwrap();
+            for step in ["rewrite(", "contradiction("] {
+                assert!(expanded.contains(step), "{claim}: {expanded}");
+            }
+        }
+
+        let strict_scale = directory.path().join("strict_scale.click");
+        fs::write(
+            &strict_scale,
+            r#"theorem strict_double_product(x: double) {
+    requires x > float64_from_bits(0xc024000000000000u64);
+    ensures x * float64_from_bits(0x4000000000000000u64)
+        >= float64_from_bits(0xc034000000000000u64) by close();
+}
+theorem strict_float_quotient(x: float) {
+    requires x < float32_from_bits(0x41200000);
+    ensures x / float32_from_bits(0xc0000000) >= float32_from_bits(0xc0a00000) by close();
+}
+"#,
+        )
+        .unwrap();
+        for (claim, weakening, scaling) in [
+            (
+                "strict_double_product.ensures_0",
+                "float64_lt_to_le",
+                "float64_scale_right_lower",
+            ),
+            (
+                "strict_float_quotient.ensures_0",
+                "float32_lt_to_le",
+                "float32_divide_negative_lower",
+            ),
+        ] {
+            let expanded = check(&strict_scale, claim).unwrap();
+            assert!(
+                expanded.contains(weakening) && expanded.contains(scaling),
+                "{claim}: {expanded}"
+            );
+        }
+
+        let strict_sum = directory.path().join("strict_sum.click");
+        fs::write(
+            &strict_sum,
+            r#"theorem strict_sum(x: double) {
+    requires x > float64_from_bits(0xc024000000000000u64);
+    ensures x + float64_from_bits(0x4000000000000000u64)
+        >= float64_from_bits(0xc020000000000000u64) by close();
+}
+"#,
+        )
+        .unwrap();
+        let generated = check(&strict_sum, "strict_sum.ensures_0").unwrap_err();
         assert!(
             generated.contains("Expanded proof still contains normalize()"),
             "{generated}"
