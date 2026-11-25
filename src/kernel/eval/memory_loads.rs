@@ -5865,11 +5865,7 @@ pub(in crate::kernel) fn canonical_scalar_read(bits: &MachineTerm) -> MachineTer
         };
         // Preserve master's intrinsic byte/halfword width on cache hits.
         if let Some(bytes) = descriptor.narrow_bytes() {
-            scalar_reads::record_comparison_observation(
-                &identity,
-                descriptor.memory(),
-                Some(bytes),
-            );
+            scalar_reads::record_comparison_observation(&identity, descriptor.point(), Some(bytes));
             read_observations::produced(identity.as_legacy_read(), bits);
             return identity.into_legacy_read();
         }
@@ -5885,7 +5881,7 @@ pub(in crate::kernel) fn canonical_scalar_read(bits: &MachineTerm) -> MachineTer
         }
     }
     let (identity, observed_bytes) = scalar_reads::select_comparison_identity(descriptor);
-    scalar_reads::record_comparison_observation(&identity, descriptor.memory(), observed_bytes);
+    scalar_reads::record_comparison_observation(&identity, descriptor.point(), observed_bytes);
     read_observations::produced(identity.as_legacy_read(), bits);
     SCALAR_READ_IDENTITY_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();

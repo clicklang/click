@@ -158,11 +158,6 @@ const BASELINE: &[(&str, Form, usize)] = &[
     ("src/kernel/equality_graph.rs", Form::UnplacedPoint, 2),
     ("src/kernel/equality_graph/terms.rs", Form::UnplacedPoint, 1),
     ("src/kernel/eval/memory_loads.rs", Form::UnplacedPoint, 8),
-    (
-        "src/kernel/eval/memory_loads/read_observations.rs",
-        Form::UnplacedPoint,
-        5,
-    ),
     ("src/kernel/memory_history.rs", Form::UnplacedPoint, 3),
     ("src/kernel/primitives.rs", Form::UnplacedPoint, 1),
     (
