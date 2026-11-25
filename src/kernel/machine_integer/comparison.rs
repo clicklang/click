@@ -190,47 +190,8 @@ pub(crate) fn native_comparison_of_integer_observation(
     native_comparison_view(condition, value)?.boxed_condition()
 }
 
-/// The constant a closed machine term evaluates to: a literal, or an
-/// operation or conversion over closed operands, evaluated by the operator's
-/// own folding constructor, so it means exactly what building the term from
-/// those literals means. A term with any other node (a variable, a read, a
-/// call, a conditional), or whose constructor does not fold (a division by
-/// zero, an out-of-range shift), is not closed. One visit per node of the term,
-/// which is the condition's own input; nothing else is read.
-fn closed_machine_constant(term: &MachineTerm) -> Option<MachineTerm> {
-    crate::instrumentation::record_deterministic_work(1);
-    let folded = match term {
-        MachineTerm::Constant { .. } => return Some(term.clone()),
-        MachineTerm::Binary {
-            op,
-            format,
-            left,
-            right,
-        } => MachineTerm::machine_binary(
-            *format,
-            *op,
-            closed_machine_constant(left)?,
-            closed_machine_constant(right)?,
-        ),
-        MachineTerm::Unary {
-            format,
-            op,
-            operand,
-        } => MachineTerm::machine_unary(*format, *op, closed_machine_constant(operand)?),
-        MachineTerm::Cast {
-            value, from, to, ..
-        } => MachineTerm::machine_integer_cast(*from, *to, closed_machine_constant(value)?),
-        _ => return None,
-    };
-    matches!(folded, MachineTerm::Constant { .. }).then_some(folded)
-}
-
-/// Check two closed native operands without rewriting the stored comparison
-/// or reading ambient facts: each operand is a literal, or an operation over
-/// literals that its own constructor folds (`closed_machine_constant`). A
-/// rewrite rebuilds a retained comparison without folding its operands, so
-/// `1u64 == (1u32 | 0u32) as uint64` is decided here. Symbolic operands are
-/// refused.
+/// Check two literal native operands without rewriting the stored comparison
+/// or reading ambient facts. Symbolic operands are refused at their roots.
 pub(crate) fn literal_native_comparison_value(condition: &ConditionTerm) -> Option<bool> {
     let ConditionTerm::Compare {
         format,
@@ -246,8 +207,8 @@ pub(crate) fn literal_native_comparison_value(condition: &ConditionTerm) -> Opti
             crate::kernel::MachineOperandView::Legacy(word).checked_literal_integer_conversion()?;
         destination.constant_term(value)
     };
-    let left_literal = conversion_literal(left).or_else(|| closed_machine_constant(left));
-    let right_literal = conversion_literal(right).or_else(|| closed_machine_constant(right));
+    let left_literal = conversion_literal(left);
+    let right_literal = conversion_literal(right);
     let left = left_literal.as_ref().unwrap_or(left);
     let right = right_literal.as_ref().unwrap_or(right);
     // Wide equality reads no sign and is filed at `int64` whatever its
@@ -1644,63 +1605,6 @@ mod borrowed_comparison_tests {
     }
 
     use crate::kernel::{CompareRelation as R, MachineOperandView, Variable};
-
-    /// A rewrite rebuilds a retained comparison without folding its
-    /// operands. A closed operand tree is still decided, through each
-    /// operator's own folding constructor; a symbolic leaf, a division by
-    /// zero or a variable anywhere leaves it undecided.
-    #[test]
-    fn closed_operand_trees_are_decided_by_their_folding_constructors() {
-        use crate::kernel::{MachineBinaryOp, MachineCastSpelling};
-        let unfolded_or = MachineTerm::Cast {
-            spelling: MachineCastSpelling::Generic,
-            value: Box::new(MachineTerm::Binary {
-                op: MachineBinaryOp::BitwiseOr,
-                format: MachineIntegerType::Int32,
-                left: Box::new(MachineTerm::constant(1)),
-                right: Box::new(MachineTerm::constant(0)),
-            }),
-            from: MachineIntegerType::UInt32,
-            to: MachineIntegerType::UInt64,
-        };
-        let compare = |relation, left: &MachineTerm, right: &MachineTerm| ConditionTerm::Compare {
-            format: MachineIntegerType::Int64,
-            relation,
-            left: Box::new(left.clone()),
-            right: Box::new(right.clone()),
-        };
-        let one = MachineTerm::uint64_constant(1);
-        let two = MachineTerm::uint64_constant(2);
-        assert_eq!(
-            literal_native_comparison_value(&compare(R::Equal, &one, &unfolded_or)),
-            Some(true)
-        );
-        assert_eq!(
-            literal_native_comparison_value(&compare(R::Equal, &two, &unfolded_or)),
-            Some(false)
-        );
-        let divide_by_zero = MachineTerm::Binary {
-            op: MachineBinaryOp::Divide,
-            format: MachineIntegerType::Int32,
-            left: Box::new(MachineTerm::constant(1)),
-            right: Box::new(MachineTerm::constant(0)),
-        };
-        let symbolic = MachineTerm::Binary {
-            op: MachineBinaryOp::BitwiseOr,
-            format: MachineIntegerType::Int32,
-            left: Box::new(MachineTerm::Variable(Variable(999_801))),
-            right: Box::new(MachineTerm::constant(0)),
-        };
-        for operand in [divide_by_zero, symbolic] {
-            let condition = ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: R::Equal,
-                left: Box::new(MachineTerm::constant(1)),
-                right: Box::new(operand),
-            };
-            assert_eq!(literal_native_comparison_value(&condition), None);
-        }
-    }
 
     #[test]
     fn literal_native_orders_are_builtin_truths_without_ambient_facts() {
