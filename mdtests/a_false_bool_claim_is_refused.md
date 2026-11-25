@@ -9,11 +9,11 @@ function positive(x: int32) -> Bool { x > 0 }
 theorem minus_one_is_positive() {
     ensures positive(-1) by {
         unfold(positive(-1));
-        normalize();
+        close();
     }
 }
 ```
 
 ```expect
-fail: `normalize` goal did not normalize to true
+fail: could not establish `(if -1 > 0 { true } else { false }) == true`
 ```

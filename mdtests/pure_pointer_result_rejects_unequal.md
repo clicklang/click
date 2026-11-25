@@ -4,9 +4,9 @@
 function identity(p: int32*) -> int32* { p }
 theorem unequal(p: int32*, q: int32*) {
     requires p != q;
-    ensures identity(p) == q by { unfold(identity(p)); normalize(); }
+    ensures identity(p) == q by { unfold(identity(p)); close(); }
 }
 ```
 ```expect
-fail: goal did not normalize to true
+fail: could not establish `p == q`
 ```

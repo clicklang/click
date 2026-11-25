@@ -21125,7 +21125,7 @@ fn conditional_algebraic_universal_expands_and_reverifies() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_71")]
-fn normalize_using_ambient_pointer_equality_expands_and_rechecks() {
+fn ambient_pointer_equality_expands_and_rechecks() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/normalize_using_ambient_pointer_equality.md");
     let text = std::fs::read_to_string(&path).expect("read ambient equality fixture");
@@ -21136,12 +21136,15 @@ fn normalize_using_ambient_pointer_equality_expands_and_rechecks() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     let source = fixture.click_source.as_deref().expect("Click source");
-    verify_c_sources(source, &c_sources).expect("ambient graph should close normalization");
-    let position = expansion::position_at_offset(source, source.find("normalize() using").unwrap());
-    let expanded = expand_c_tactic_source_at(source, &c_sources, position.line, position.column)
+    verify_c_sources(source, &c_sources).expect("ambient pointer equality should verify");
+    let claim = "pointer_transitivity.ensures_0";
+    let expanded = expand_c_claim_source_by_label(source, &c_sources, claim)
         .expect("ambient equality should expand");
-    assert!(expanded.contains("normalize() using"), "{expanded}");
-    verify_c_sources(&expanded, &c_sources).expect("expanded equality should recheck");
+    assert!(!expanded.contains("normalize("), "{expanded}");
+    without_proof_search_for_claim(claim, || {
+        verify_c_sources(&expanded, &c_sources).map_err(|error| error.report())
+    })
+    .expect("expanded proof should pass checked replay");
     let missing = expanded.replace("b == c implies", "b == b implies");
     assert!(
         verify_c_sources(&missing, &c_sources).is_err(),
@@ -21151,7 +21154,7 @@ fn normalize_using_ambient_pointer_equality_expands_and_rechecks() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_72")]
-fn normalize_using_c_pointer_equality_expands_and_rechecks() {
+fn c_pointer_equality_expands_and_rechecks() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/normalize_using_c_pointer_equality.md");
     let text = std::fs::read_to_string(&path).expect("read C pointer equality fixture");
@@ -21163,18 +21166,22 @@ fn normalize_using_c_pointer_equality_expands_and_rechecks() {
         .collect::<Vec<_>>();
     let source = fixture.click_source.as_deref().expect("Click source");
     verify_c_sources(source, &c_sources).expect("C pointer transitivity should verify");
-    let expanded = expand_c_claim_source(source, &c_sources, "keep", ContractProofClaim::Ensure(0))
+    let claim = "keep.contract";
+    let expanded = expand_c_claim_source_by_label(source, &c_sources, claim)
         .expect("C pointer transitivity should expand");
-    assert!(expanded.contains("normalize() using"), "{expanded}");
-    verify_c_sources(&expanded, &c_sources).expect("expanded C pointer equality should recheck");
+    assert!(!expanded.contains("normalize("), "{expanded}");
+    without_proof_search_for_claim(claim, || {
+        verify_c_sources(&expanded, &c_sources).map_err(|error| error.report())
+    })
+    .expect("expanded proof should pass checked replay");
     for missing in ["requires a == b;", "requires b == c;"] {
         assert!(verify_c_sources(&expanded.replace(missing, ""), &c_sources).is_err());
     }
     let reversed = source.replace("ensures a == c;", "ensures c == a;");
     verify_c_sources(&reversed, &c_sources).expect("symmetric transitivity should verify");
-    let derived = source.replace("using { }", "using { a == c; }");
+    let derived = source.replacen("close();", "close() using { a == c; };", 1);
     verify_c_sources(&derived, &c_sources).expect("a cited pointer congruence is known");
-    let unavailable = source.replace("using { }", "using { a != c; }");
+    let unavailable = source.replacen("close();", "close() using { a != c; };", 1);
     assert!(verify_c_sources(&unavailable, &c_sources).is_err());
     let false_goal = source.replace("ensures a == c;", "ensures a != c;");
     assert!(verify_c_sources(&false_goal, &c_sources).is_err());
@@ -21182,7 +21189,7 @@ fn normalize_using_c_pointer_equality_expands_and_rechecks() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_72")]
-fn normalize_using_pointer_addition_expands_and_rechecks() {
+fn pointer_addition_expands_and_rechecks() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/normalize_using_pointer_addition.md");
     let text = std::fs::read_to_string(&path).expect("read pointer addition fixture");
@@ -21194,10 +21201,14 @@ fn normalize_using_pointer_addition_expands_and_rechecks() {
         .collect::<Vec<_>>();
     let source = fixture.click_source.as_deref().expect("Click source");
     verify_c_sources(source, &c_sources).expect("pointer addition congruence should verify");
-    let expanded = expand_c_claim_source(source, &c_sources, "keep", ContractProofClaim::Ensure(0))
+    let claim = "keep.contract";
+    let expanded = expand_c_claim_source_by_label(source, &c_sources, claim)
         .expect("pointer addition congruence should expand");
-    assert!(expanded.contains("normalize() using"), "{expanded}");
-    verify_c_sources(&expanded, &c_sources).expect("expanded pointer addition should recheck");
+    assert!(!expanded.contains("normalize("), "{expanded}");
+    without_proof_search_for_claim(claim, || {
+        verify_c_sources(&expanded, &c_sources).map_err(|error| error.report())
+    })
+    .expect("expanded proof should pass checked replay");
     assert!(verify_c_sources(&expanded.replace("requires a == b;", ""), &c_sources).is_err());
     assert!(verify_c_sources(&expanded.replace("b + 1;", "b + 2;"), &c_sources).is_err());
 }
@@ -21259,7 +21270,7 @@ fn graph_conditions_expand_and_recheck_without_normalize() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_72")]
-fn normalize_using_int32_equality_expands_and_rechecks() {
+fn int32_equality_expands_and_rechecks() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/normalize_using_int32_equality.md");
     let text = std::fs::read_to_string(&path).expect("read int32 equality fixture");
@@ -21271,10 +21282,14 @@ fn normalize_using_int32_equality_expands_and_rechecks() {
         .collect::<Vec<_>>();
     let source = fixture.click_source.as_deref().expect("Click source");
     verify_c_sources(source, &c_sources).expect("int32 transitivity and guards should verify");
-    let expanded = expand_c_claim_source(source, &c_sources, "keep", ContractProofClaim::Ensure(0))
+    let claim = "keep.contract";
+    let expanded = expand_c_claim_source_by_label(source, &c_sources, claim)
         .expect("int32 transitivity should expand");
-    assert!(expanded.contains("normalize() using"), "{expanded}");
-    verify_c_sources(&expanded, &c_sources).expect("expanded int32 equality should recheck");
+    assert!(!expanded.contains("normalize("), "{expanded}");
+    without_proof_search_for_claim(claim, || {
+        verify_c_sources(&expanded, &c_sources).map_err(|error| error.report())
+    })
+    .expect("expanded proof should pass checked replay");
     let (keep, _) = expanded
         .split_once("theorem choose")
         .expect("choose retained");
@@ -21293,10 +21308,10 @@ fn normalize_using_int32_equality_expands_and_rechecks() {
         )
         .is_err()
     );
-    let derived = source.replacen("using { }", "using { a == c; }", 1);
+    let derived = source.replacen("close();", "close() using { a == c; };", 1);
     assert_ne!(derived, source);
     verify_c_sources(&derived, &c_sources).expect("a cited int32 congruence is known");
-    let unavailable = source.replacen("using { }", "using { a != c; }", 1);
+    let unavailable = source.replacen("close();", "close() using { a != c; };", 1);
     assert!(verify_c_sources(&unavailable, &c_sources).is_err());
     let (_, choose) = source.split_once("theorem choose").unwrap();
     let choose = format!("theorem choose{choose}");
@@ -21330,17 +21345,15 @@ fn restricted_solve_does_not_borrow_the_ambient_equality_graph() {
             );
             let selected = omitted.replace("using { a == b; }", "using { a == b; b == c; }");
             verify_c_sources(&selected, &[]).expect("the selected graph establishes transitivity");
-            // The simple tactic deliberately has broader ambient semantics.
-            let ambient = omitted.replace("close() using", "normalize() using");
-            verify_c_sources(&ambient, &[])
-                .expect("explicit normalization may use the ambient graph");
+            let ambient = omitted.replace("close() using { a == b; }", "close();");
+            verify_c_sources(&ambient, &[]).expect("ordinary closure may use the ambient graph");
         }
     }
 }
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_73")]
-fn normalize_using_scaled_int32_expands_and_rechecks() {
+fn scaled_int32_expands_and_rechecks() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/normalize_using_scaled_int32.md");
     let text = std::fs::read_to_string(&path).unwrap();
@@ -21352,10 +21365,14 @@ fn normalize_using_scaled_int32_expands_and_rechecks() {
         .collect::<Vec<_>>();
     let source = fixture.click_source.as_deref().unwrap();
     verify_c_sources(source, &c_sources).expect("scaled indices and literal should verify");
-    let expanded = expand_c_claim_source(source, &c_sources, "keep", ContractProofClaim::Ensure(0))
+    let claim = "keep.contract";
+    let expanded = expand_c_claim_source_by_label(source, &c_sources, claim)
         .expect("scaled equality should expand");
-    assert!(expanded.contains("normalize() using"));
-    verify_c_sources(&expanded, &c_sources).expect("expanded proof should recheck");
+    assert!(!expanded.contains("normalize("), "{expanded}");
+    without_proof_search_for_claim(claim, || {
+        verify_c_sources(&expanded, &c_sources).map_err(|error| error.report())
+    })
+    .expect("expanded proof should pass checked replay");
     let (keep, _) = expanded.split_once("theorem choose").unwrap();
     for missing in ["requires i == j;", "requires j == k;"] {
         let changed = keep.replace(missing, "");
@@ -21365,14 +21382,14 @@ fn normalize_using_scaled_int32_expands_and_rechecks() {
     let false_goal = source.replace("ensures p + i == p + k;", "ensures p + i != p + k;");
     assert_ne!(false_goal, source);
     assert!(verify_c_sources(&false_goal, &c_sources).is_err());
-    let restricted = source.replacen("normalize() using { }", "close() using { i == j; }", 1);
+    let restricted = source.replacen("close()", "close() using { i == j; }", 1);
     assert_ne!(restricted, source);
     assert!(verify_c_sources(&restricted, &c_sources).is_err());
 }
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_73")]
-fn normalize_using_int32_addition_expands_and_rechecks_without_proving_definedness() {
+fn int32_addition_expands_and_rechecks_without_proving_definedness() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/normalize_using_int32_addition.md");
     let text = std::fs::read_to_string(&path).unwrap();
@@ -21384,10 +21401,14 @@ fn normalize_using_int32_addition_expands_and_rechecks_without_proving_definedne
         .collect::<Vec<_>>();
     let source = fixture.click_source.as_deref().unwrap();
     verify_c_sources(source, &c_sources).expect("addition and offset congruence should verify");
-    let expanded = expand_c_claim_source(source, &c_sources, "keep", ContractProofClaim::Ensure(0))
+    let claim = "keep.contract";
+    let expanded = expand_c_claim_source_by_label(source, &c_sources, claim)
         .expect("addition congruence should expand");
-    assert!(expanded.contains("normalize() using"));
-    verify_c_sources(&expanded, &c_sources).expect("expanded proof should recheck");
+    assert!(!expanded.contains("normalize("), "{expanded}");
+    without_proof_search_for_claim(claim, || {
+        verify_c_sources(&expanded, &c_sources).map_err(|error| error.report())
+    })
+    .expect("expanded proof should pass checked replay");
     let (keep, _) = expanded.split_once("theorem offsets").unwrap();
     let missing = keep.replace("requires a == b;", "");
     assert_ne!(missing, keep);
@@ -21399,7 +21420,7 @@ fn normalize_using_int32_addition_expands_and_rechecks_without_proving_definedne
     assert_ne!(false_goal, source);
     assert!(verify_c_sources(&false_goal, &c_sources).is_err());
     let restricted = source.replacen(
-        "normalize() using { }",
+        "close()",
         "close() using { defined(a + c); defined(b + c); }",
         1,
     );
@@ -21409,7 +21430,7 @@ fn normalize_using_int32_addition_expands_and_rechecks_without_proving_definedne
         theorem overflow(a: int32, b: int32) {
             requires a == b;
             requires a == 2147483647;
-            ensures defined(b + 1) by { normalize() using { } }
+            ensures defined(b + 1) by { close(); }
         }
     "#;
     assert!(
@@ -21421,7 +21442,7 @@ fn normalize_using_int32_addition_expands_and_rechecks_without_proving_definedne
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
-fn normalize_using_int32_loads_expands_and_rechecks() {
+fn int32_loads_expands_and_rechecks() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/normalize_using_int32_loads.md");
     let fixture =
@@ -21433,10 +21454,14 @@ fn normalize_using_int32_loads_expands_and_rechecks() {
         .collect::<Vec<_>>();
     let source = fixture.click_source.as_deref().unwrap();
     verify_c_sources(source, &c_sources).expect("same-state int32 loads should verify");
-    let expanded = expand_c_claim_source(source, &c_sources, "keep", ContractProofClaim::Ensure(0))
+    let claim = "keep.contract";
+    let expanded = expand_c_claim_source_by_label(source, &c_sources, claim)
         .expect("load congruence should expand");
-    assert!(expanded.contains("normalize() using"));
-    verify_c_sources(&expanded, &c_sources).expect("expanded loads should recheck");
+    assert!(!expanded.contains("normalize("), "{expanded}");
+    without_proof_search_for_claim(claim, || {
+        verify_c_sources(&expanded, &c_sources).map_err(|error| error.report())
+    })
+    .expect("expanded proof should pass checked replay");
     let (keep, _) = expanded.split_once("theorem same_read").unwrap();
     let missing = keep.replace("requires i == j;", "");
     assert_ne!(missing, keep);
@@ -21445,7 +21470,7 @@ fn normalize_using_int32_loads_expands_and_rechecks() {
     assert_ne!(false_goal, source);
     assert!(verify_c_sources(&false_goal, &c_sources).is_err());
     let restricted = source.replacen(
-        "normalize() using { }",
+        "close()",
         "close() using { 0 <= i; i < n; 0 <= j; j < n; }",
         1,
     );
@@ -26731,18 +26756,18 @@ test_batches! {
         loop_initialization_duplicate_clauses_keep_distinct_bodies,
         a_consumed_arm_instance_equation_is_cited_at_entry_after_its_unfold,
         conditional_algebraic_universal_expands_and_reverifies,
-        normalize_using_ambient_pointer_equality_expands_and_rechecks,
+        ambient_pointer_equality_expands_and_rechecks,
     ],
     expansion_batch_72: [
-        normalize_using_c_pointer_equality_expands_and_rechecks,
-        normalize_using_pointer_addition_expands_and_rechecks,
+        c_pointer_equality_expands_and_rechecks,
+        pointer_addition_expands_and_rechecks,
         graph_conditions_expand_and_recheck_without_normalize,
-        normalize_using_int32_equality_expands_and_rechecks,
+        int32_equality_expands_and_rechecks,
     ],
     expansion_batch_73: [
         restricted_solve_does_not_borrow_the_ambient_equality_graph,
-        normalize_using_scaled_int32_expands_and_rechecks,
-        normalize_using_int32_addition_expands_and_rechecks_without_proving_definedness,
+        scaled_int32_expands_and_rechecks,
+        int32_addition_expands_and_rechecks_without_proving_definedness,
         authority_callback_count_refinement_expands_every_smart_site,
     ],
     expansion_batch_74: [

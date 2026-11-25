@@ -37,7 +37,19 @@ int32 probe(int32 *left, int32 *visited, int32 n, int32 cur) {
     have contains(memory(visited[0..n]), memory(visited[cur..cur + 1])) by {
         apply(separation::contains_subrange(visited, 0, n, cur, cur + 1));
     }
-    have contains(memory(visited[cur..cur + 1]), memory((visited + cur)[0..1])) by { normalize(); }
+    have contains(memory(visited[cur..cur + 1]), memory((visited + cur)[0..1])) by {
+        have 0 <= to_integer(cur) by { close(); }
+        have cur <= ((cur + 1) as int32) by { close() using { 0 <= cur; cur < n; }; }
+        have contains(memory(visited[cur..cur + 1]), memory((visited + cur)[0..(cur + 1) - cur])) by {
+            apply(separation::contains_rebase(visited, cur, cur + 1));
+        }
+        have 1 <= ((cur + 1) - cur) by { close() using { 0 <= cur; cur < n; }; }
+        have contains(memory((visited + cur)[0..(cur + 1) - cur]), memory((visited + cur)[0..1])) by {
+            apply(separation::contains_subrange(visited + cur, 0, (cur + 1) - cur, 0, 1));
+        }
+        apply(separation::contains_trans(memory(visited[cur..cur + 1]),
+            memory((visited + cur)[0..(cur + 1) - cur]), memory((visited + cur)[0..1])));
+    }
     have contains(memory(visited[0..n]), memory((visited + cur)[0..1])) by {
         apply(separation::contains_trans(memory(visited[0..n]), memory(visited[cur..cur + 1]), memory((visited + cur)[0..1])));
     }

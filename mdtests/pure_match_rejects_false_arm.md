@@ -6,11 +6,11 @@ theorem false_case(item: Item) {
     ensures item == Item::Empty by {
         match item {
             Item::Empty => { close(); },
-            Item::Value(value) => { normalize(); },
+            Item::Value(value) => { close(); },
         }
     }
 }
 ```
 ```expect
-fail: `normalize` goal did not normalize to true
+fail: could not establish `item == Item::Empty()`
 ```

@@ -1,4 +1,4 @@
-# Normalization uses ambient equalities between C pointer parameters
+# Transitive equality between C pointer parameters
 
 C pointer parameters use offsets in a shared block. Their explicitly assumed
 whole-offset equalities participate in the trusted graph's transitive closure.
@@ -16,7 +16,7 @@ void keep(int32* a, int32* b, int32* c) {
     ensures a == c;
 } by {
     step_until(function.exit);
-    normalize() using { };
+    close();
 }
 ```
 

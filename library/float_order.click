@@ -469,3 +469,32 @@ axiom float32_divide_negative_upper(divisor: float, x: float, bound: float) {
     requires divisor < float32_from_bits(0);
     ensures x / divisor <= bound / divisor;
 }
+
+// The same rounded order laws apply at double precision.
+axiom float64_divide_positive_lower(divisor: double, x: double, bound: double) {
+    requires x >= bound;
+    requires isfinite(divisor);
+    requires float64_from_bits(0u64) < divisor;
+    ensures x / divisor >= bound / divisor;
+}
+
+axiom float64_divide_positive_upper(divisor: double, x: double, bound: double) {
+    requires x <= bound;
+    requires isfinite(divisor);
+    requires float64_from_bits(0u64) < divisor;
+    ensures x / divisor <= bound / divisor;
+}
+
+axiom float64_divide_negative_lower(divisor: double, x: double, bound: double) {
+    requires x <= bound;
+    requires isfinite(divisor);
+    requires divisor < float64_from_bits(0u64);
+    ensures x / divisor >= bound / divisor;
+}
+
+axiom float64_divide_negative_upper(divisor: double, x: double, bound: double) {
+    requires x >= bound;
+    requires isfinite(divisor);
+    requires divisor < float64_from_bits(0u64);
+    ensures x / divisor <= bound / divisor;
+}

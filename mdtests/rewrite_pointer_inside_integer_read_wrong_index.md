@@ -8,11 +8,11 @@ theorem wrong_byte(p: const uint8*, bytes: uint8[], n: uint64) {
  requires p == bytes + n;
  ensures to_integer(p[0] as int32) == to_integer((bytes + n)[1] as int32) by {
   rewrite(p, bytes + n);
-  normalize();
+  close();
  }
 }
 ```
 
 ```expect
-fail: `normalize` goal did not normalize to true
+fail: could not establish `to_integer(((bytes + n)[0] as int32)) == to_integer(((bytes + n)[1] as int32))`
 ```

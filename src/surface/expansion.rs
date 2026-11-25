@@ -534,7 +534,7 @@ pub fn expand_project_claim_source_by_label(
     let compiler_imported = matches!(inputs, ProgramInputs::Program(_));
     let claim_label = &*resolve_source_claim_label(&file, claim_label);
     for theorem in file.theorem_definitions() {
-        if !file.theorem_is_selected(theorem.name()) {
+        if !file.theorem_is_selected(theorem) {
             continue;
         }
         if let Some(index) = theorem.ensure_index_by_label(claim_label) {
@@ -1418,7 +1418,7 @@ pub(in crate::surface) fn verification_target_at_file(
     let tokens = proof_source_tokens(click_source, &file.source_spans().implicit_proofs)?;
     let declarations = DeclarationSources::new(&tokens);
     for theorem in file.theorem_definitions() {
-        if !file.theorem_is_selected(theorem.name()) {
+        if !file.theorem_is_selected(theorem) {
             continue;
         }
         let source = declarations.theorem(theorem)?;
@@ -4295,7 +4295,7 @@ fn claim_source_regions(
         });
     }
     for theorem in file.theorem_definitions() {
-        if !file.theorem_is_selected(theorem.name()) {
+        if !file.theorem_is_selected(theorem) {
             continue;
         }
         let Ok(source) = declarations.theorem(theorem) else {
@@ -4671,7 +4671,7 @@ fn source_tactic_entries_with_tokens(
     let declarations = DeclarationSources::new(tokens);
     for theorem in file.theorem_definitions() {
         // An axiom has no proof to expand.
-        if theorem.is_axiom() || !file.theorem_is_selected(theorem.name()) {
+        if theorem.is_axiom() || !file.theorem_is_selected(theorem) {
             continue;
         }
         let source = declarations.theorem(theorem)?;
@@ -5489,7 +5489,7 @@ fn tactic_source_offsets(
             .collect());
     }
     for theorem in file.theorem_definitions() {
-        if !file.theorem_is_selected(theorem.name()) {
+        if !file.theorem_is_selected(theorem) {
             continue;
         }
         for (ensure_index, ensure) in theorem.ensures().iter().enumerate() {

@@ -2,10 +2,10 @@
 
 ```click
 theorem subtract_distinct(n: uint64, m: uint64) {
-    ensures n - m == 0u64 by normalize();
+    ensures n - m == 0u64 by close();
 }
 ```
 
 ```expect
-fail: goal did not normalize to true
+fail: could not establish `(to_integer(n) - to_integer(m)) == to_integer(0u64)`
 ```

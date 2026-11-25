@@ -60,7 +60,19 @@ void keep_positive_flag(int32 p[], int32 i, int32 j, int32 n) {
     requires (if p[j] > 0 { 1 } else { 0 }) == 1;
     ensures (if p[j] > 0 { 1 } else { 0 }) == 1;
 } by {
-    have contains(memory(p[i..i + 1]), memory((p + i)[0..1])) by { normalize(); }
+    have contains(memory(p[i..i + 1]), memory((p + i)[0..1])) by {
+        have 0 <= to_integer(i) by { close(); }
+        have i <= ((i + 1) as int32) by { close() using { 0 <= i; i < n; }; }
+        have contains(memory(p[i..i + 1]), memory((p + i)[0..(i + 1) - i])) by {
+            apply(separation::contains_rebase(p, i, i + 1));
+        }
+        have 1 <= ((i + 1) - i) by { close() using { 0 <= i; i < n; }; }
+        have contains(memory((p + i)[0..(i + 1) - i]), memory((p + i)[0..1])) by {
+            apply(separation::contains_subrange(p + i, 0, (i + 1) - i, 0, 1));
+        }
+        apply(separation::contains_trans(memory(p[i..i + 1]),
+            memory((p + i)[0..(i + 1) - i]), memory((p + i)[0..1])));
+    }
     have contains(memory(p[j..j + 1]), memory(p[j..j + 1])) by {
         apply(separation::contains_refl(memory(p[j..j + 1])));
     }
@@ -110,7 +122,19 @@ void keep_reversed_condition(int32 p[], int32 i, int32 j, int32 n) {
     requires (if 0 < p[j] { 1 } else { 0 }) == 1;
     ensures (if 0 < p[j] { 1 } else { 0 }) == 1;
 } by {
-    have contains(memory(p[i..i + 1]), memory((p + i)[0..1])) by { normalize(); }
+    have contains(memory(p[i..i + 1]), memory((p + i)[0..1])) by {
+        have 0 <= to_integer(i) by { close(); }
+        have i <= ((i + 1) as int32) by { close() using { 0 <= i; i < n; }; }
+        have contains(memory(p[i..i + 1]), memory((p + i)[0..(i + 1) - i])) by {
+            apply(separation::contains_rebase(p, i, i + 1));
+        }
+        have 1 <= ((i + 1) - i) by { close() using { 0 <= i; i < n; }; }
+        have contains(memory((p + i)[0..(i + 1) - i]), memory((p + i)[0..1])) by {
+            apply(separation::contains_subrange(p + i, 0, (i + 1) - i, 0, 1));
+        }
+        apply(separation::contains_trans(memory(p[i..i + 1]),
+            memory((p + i)[0..(i + 1) - i]), memory((p + i)[0..1])));
+    }
     have contains(memory(p[j..j + 1]), memory(p[j..j + 1])) by {
         apply(separation::contains_refl(memory(p[j..j + 1])));
     }

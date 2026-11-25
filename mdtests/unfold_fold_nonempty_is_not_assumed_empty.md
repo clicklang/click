@@ -9,11 +9,11 @@ theorem false_empty_tally(lo: int32, hi: int32) {
     requires lo < hi;
     ensures tally(lo, hi) == 0 by {
         unfold(tally(lo, hi));
-        normalize();
+        close();
     }
 }
 ```
 
 ```expect
-fail: `normalize` goal did not normalize to true
+fail: could not establish `((tally(lo, (hi - 1)) + 1) : Integer) == 0`
 ```

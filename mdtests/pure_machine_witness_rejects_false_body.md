@@ -5,11 +5,11 @@ theorem wrong_sum(n: int32) {
     requires 0 <= n and n <= 100;
     ensures exists (a: int32, b: int32) { a + b == n } by {
         witness(n, 1);
-        normalize();
+        close();
     }
 }
 ```
 
 ```expect
-fail: did not normalize to true
+fail: could not establish `(to_integer(n) + to_integer(1)) == to_integer(n)`
 ```

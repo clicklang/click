@@ -9,11 +9,11 @@ verifying "write.c";
 void write_cell(int *p) { owns *p; } by {
     step();
     have separate(statement(0).footprint, memory(*p)) by {
-        normalize() using {};
+        close() using {};
     }
 }
 ```
 
 ```expect
-fail: goal did not normalize to true
+fail: `close() using` could not prove the current goal from only its listed premises
 ```

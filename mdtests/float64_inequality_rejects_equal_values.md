@@ -2,10 +2,10 @@
 
 ```click
 theorem float64_one_differs() {
-    ensures float64_from_bits(0x3ff0000000000000) != float64_from_bits(0x3ff0000000000000) by { normalize(); }
+    ensures float64_from_bits(0x3ff0000000000000) != float64_from_bits(0x3ff0000000000000) by { close(); }
 }
 ```
 
 ```expect
-fail: goal did not normalize to true
+fail: could not establish `float64_from_bits(0x3ff0000000000000u64) != float64_from_bits(0x3ff0000000000000u64)`
 ```

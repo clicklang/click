@@ -8,10 +8,10 @@ does not normalize without a positive divisor.
 theorem missing_divisor_guard(n: int32, d: int32) {
     requires 0 <= n;
     requires n != -2147483648 or d != -1;
-    ensures n / d <= n by { normalize() using { 0 <= n; }; }
+    ensures n / d <= n by { close() using { 0 <= n; }; }
 }
 ```
 
 ```expect
-fail: `normalize using` goal did not normalize to true using the listed conditions
+fail: `close() using` could not prove the current goal from only its listed premises
 ```

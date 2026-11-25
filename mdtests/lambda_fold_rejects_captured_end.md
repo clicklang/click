@@ -15,11 +15,11 @@ theorem not_a_predecessor_call(lo: uint64, hi: uint64) {
     requires hi < 18446744073709551615u64;
     ensures captured_end(lo, hi + 1u64) == captured_end(lo, hi) + to_integer(hi) by {
         unfold(captured_end(lo, hi + 1u64));
-        normalize();
+        close();
     }
 }
 ```
 
 ```expect
-fail: `normalize` goal did not normalize to true
+fail: could not establish `((let step = (|acc: Integer, k: uint64| -> Integer { (acc + to_integer(((hi + 1u64) as uint64))) }); (lo..((hi + 1u64) as uint64)).fold(0, step)) : Integer) == (captured_end(lo, hi) + to_integer(hi))`
 ```

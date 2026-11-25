@@ -132,10 +132,12 @@ void mark(int32 *next, int32 *visited) {
                     close();
                 }
                 have 0 <= at(entry, next[k]) by {
-                    close() using { at(entry, next[k]) == 0; };
+                    rewrite(at(entry, next[k]), 0);
+                    close();
                 }
                 have at(entry, next[k]) < 1 by {
-                    close() using { at(entry, next[k]) == 0; };
+                    rewrite(at(entry, next[k]), 0);
+                    close();
                 }
                 close();
             }

@@ -4698,12 +4698,12 @@ pub(crate) enum FloatScaleOperation {
     DivideNegative,
 }
 
-/// Rounded float32 multiplication by a positive finite literal or division
-/// by a nonzero finite literal.
+/// Rounded division by a nonzero finite literal, or float32 multiplication
+/// by a positive finite literal.
 pub(crate) fn float_scale_bound_weakening(
     source: &Proposition,
     goal: &Proposition,
-) -> Option<(FloatBoundWeakening, u32, FloatScaleOperation)> {
+) -> Option<(FloatBoundWeakening, u64, FloatScaleOperation)> {
     let input = float_bound(source)?;
     let result = float_bound(goal)?;
     let (_, operation) = float_literal_operation(result.operand)?;
@@ -4718,22 +4718,23 @@ pub(crate) fn float_scale_bound_weakening(
     };
     use crate::kernel::FloatBinaryOperator::{Divide, Multiply};
     let scale = match (operator, literal_on_left, increasing) {
-        (Multiply, true, true) => FloatScaleOperation::MultiplyLeft,
-        (Multiply, false, true) => FloatScaleOperation::MultiplyRight,
+        (Multiply, true, true) if result.format == KernelFloatType::Float32 => {
+            FloatScaleOperation::MultiplyLeft
+        }
+        (Multiply, false, true) if result.format == KernelFloatType::Float32 => {
+            FloatScaleOperation::MultiplyRight
+        }
         (Divide, false, true) => FloatScaleOperation::DividePositive,
         (Divide, false, false) => FloatScaleOperation::DivideNegative,
         _ => return None,
     };
-    if result.format != KernelFloatType::Float32
-        || input.strict
-        || !float_bound_weakens(source, goal)
-    {
+    if input.strict || !float_bound_weakens(source, goal) {
         return None;
     }
     let (endpoint, strict) = operation.apply(result.format, input.endpoint, false);
     Some((
         FloatBoundWeakening::from_goal(goal, endpoint, strict)?,
-        literal as u32,
+        literal,
         scale,
     ))
 }

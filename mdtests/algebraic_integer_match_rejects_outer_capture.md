@@ -12,11 +12,11 @@ theorem wrong(b: Box, other: Box, n: Integer, m: Integer, ambient: Integer) {
         unfold(shadow(b, other, ambient));
         rewrite(b, Box::Box(n));
         rewrite(other, Box::Box(m));
-        normalize();
+        close();
     }
 }
 ```
 
 ```expect
-fail: `normalize` goal did not normalize to true
+fail: could not establish `match Box::Box(n) { Box::Box(n) => match Box::Box(m) { Box::Box(n) => Box::Box(n) } } == Box::Box(n)`
 ```

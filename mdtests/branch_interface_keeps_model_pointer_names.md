@@ -46,15 +46,26 @@ void put(struct Node *p, struct Node *q, int32 x, uint64 stamp) {
         branch ensuring { fact child->tag == address(id) + stamp; } {
             true => {
                 step();
-                have child->tag == address(id) + stamp;
+                have child->tag == address(id) + stamp by {
+                    rewrite(at(region(6).entry, address(id) + stamp), at(region(6).entry, child->tag));
+                    rewrite(at(function.entry, p->next), at(function.entry, q));
+                    normalize() using {};
+                }
             }
             false => {
                 step();
-                have child->tag == address(id) + stamp;
+                have child->tag == address(id) + stamp by {
+                    rewrite(at(region(7).entry, address(id) + stamp), at(region(7).entry, child->tag));
+                    rewrite(at(function.entry, p->next), at(function.entry, q));
+                    normalize() using {};
+                }
             }
         }
         mark joined;
-        have at(joined, child->tag) - stamp == address(id);
+        have at(joined, child->tag) - stamp == address(id) by {
+            rewrite(at(joined, child->tag), address(id) + stamp);
+            normalize() using {};
+        }
         step_until(function.exit); close();
     }, }
 }

@@ -7,10 +7,10 @@ bound.
 ```click
 theorem too_weak(b: uint8) {
     requires 40u8 <= b;
-    ensures 48u8 <= b by { normalize() using { 40u8 <= b; }; }
+    ensures 48u8 <= b by { close() using { 40u8 <= b; }; }
 }
 ```
 
 ```expect
-fail: `normalize using` goal did not normalize to true using the listed conditions
+fail: `close() using` could not prove the current goal from only its listed premises
 ```

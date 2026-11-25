@@ -4,11 +4,11 @@
 theorem negated_comparison(x: double) {
     requires not (x > float64_from_bits(0x3ff0000000000000));
     ensures -x >= float64_from_bits(0xbff0000000000000) by {
-        normalize() using { not (x > float64_from_bits(0x3ff0000000000000)); };
+        close() using { not (x > float64_from_bits(0x3ff0000000000000)); };
     }
 }
 ```
 
 ```expect
-fail: goal did not normalize to true
+fail: `close() using` could not prove the current goal from only its listed premises
 ```
