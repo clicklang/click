@@ -2853,9 +2853,11 @@ fn integer_carrier_in_bitvector(term: &MachineTerm, variable: Variable) -> bool 
     if !crate::kernel::is_load_variable(load) {
         return false;
     }
-    let Some((memory, pointer)) = crate::kernel::eval::registered_load_for_variable(load) else {
+    let Some((registered, pointer)) = crate::kernel::eval::registered_load_point_for_variable(load)
+    else {
         return true;
     };
+    let memory = registered.shared_memory().clone();
     if pointer_offset_contains_registered_load(&pointer.offset) {
         return true;
     }
@@ -2875,8 +2877,11 @@ fn integer_carrier_in_bitvector(term: &MachineTerm, variable: Variable) -> bool 
     let Some(kind) = crate::kernel::eval::registered_load_kind_for_variable(load) else {
         return true;
     };
-    let selected_load =
-        crate::kernel::MachineTerm::read_named(ProgramPoint::unplaced(&memory), pointer, kind);
+    let selected_load = crate::kernel::MachineTerm::read_named(
+        ProgramPoint::viewing(&memory, &registered),
+        pointer,
+        kind,
+    );
     let mut pointer_variables = BTreeSet::new();
     collect_bitvector_integer_variables(&selected_load, &mut pointer_variables);
     if pointer_variables.contains(&variable) {
