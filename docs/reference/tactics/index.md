@@ -2350,8 +2350,9 @@ field and must match the constructed equality.
 
 For `defined(read)`, the separated resource must be the complete typed cell.
 The tactic looks up the exact `defined(read)` fact at the footprint's entry
-and constructs it at the exit. The footprint supplies both points; the
-separated cell supplies the address. Missing old definedness is a local refusal,
+and constructs it at the exit. At a checked function return, it can carry
+the fact through a recorded cleanup that retires a distinct automatic object.
+The separated cell supplies the address. Missing old definedness is a local refusal,
 not a request to search memory history. This rule preserves definedness; it
 does not establish initialization from ownership or value equality alone.
 
