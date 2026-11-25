@@ -1,16 +1,11 @@
-# an omitted proof carries the sweep's prefix count across the endpoint store
+# The sweep's prefix count survives the endpoint store
 
-This uses the same C and counting invariant as
-`sweep_maintains_a_zero_unmarked_count.md`, but leaves the prefix-preservation
-proof omitted. Its
-state transport closure proposes the iteration-entry fact as the source and
-asks the same checked transport, which reaches the checked fold read frame:
 `unmarked(visited, 0, i)` reads only `visited[0..i]`, and the store writes
-`visited[i]`, at the prefix's end. The fold read frame answers the same for
-every caller, so no new search is involved; `click expand` rewrites this
-omitted proof into that explicit transport, and the expansion re-verifies.
+`visited[i]`, at the prefix's end. Pointwise preservation and the imported
+`unmarked_frame` lemma carry the count across the store. The C mdtest
+expansion test checks that the resulting proof replays with that import.
 
-```c filename=sweep_prefix_survives_its_endpoint_store_by_solve.c
+```c filename=sweep_prefix_survives_its_endpoint_store.c
 void sweep(int32 visited[], int32 n) {
     for (int32 i = 0; i < n; i++) {
         visited[i] = 1;
@@ -19,7 +14,7 @@ void sweep(int32 visited[], int32 n) {
 ```
 
 ```click
-verifying "sweep_prefix_survives_its_endpoint_store_by_solve.c";
+verifying "sweep_prefix_survives_its_endpoint_store.c";
 
 import "unmarked_count_lemmas.click";
 

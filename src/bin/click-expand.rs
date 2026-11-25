@@ -786,13 +786,17 @@ mod tests {
     fn c_mdtest_expansion_sees_an_imported_local_module() {
         // `unmarked` is declared only in the imported `unmarked_count_lemmas.click`.
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("mdtests/sweep_prefix_survives_its_endpoint_store_by_solve.md");
+            .join("mdtests/sweep_prefix_survives_its_endpoint_store.md");
         let arguments = parse_arguments(
             ["--claim", "sweep.contract", path.to_str().unwrap()].map(str::to_string),
         )
         .unwrap();
         let expanded = run(&arguments).expect("expand and reverify an importing C mdtest");
-        assert!(expanded.contains("transport("), "{expanded}");
+        assert!(
+            expanded.contains("preserve(memory(visited[k])"),
+            "{expanded}"
+        );
+        assert!(expanded.contains("unmarked_frame("), "{expanded}");
     }
 
     #[test]

@@ -23,9 +23,9 @@ module comment states the soundness argument in full.
 Checked summaries (step 1) and the explicit framing rule (step 2) have landed.
 The written proof in `mdtests/sweep_maintains_a_zero_unmarked_count.md` now uses
 pointwise separation and preservation followed by the existing `unmarked_frame`
-lemma, as part of retiring legacy transport. Its omitted-proof companion,
-`mdtests/sweep_prefix_survives_its_endpoint_store_by_solve.md`, retains coverage
-of the fold read frame. Automatic reuse of an unchanged application (step 3)
+lemma. Its companion, `mdtests/sweep_prefix_survives_its_endpoint_store.md`,
+checks that expansion and replay resolve the imported lemma. Automatic reuse
+of an unchanged application (step 3)
 is not started and not authorized; its requirements are below.
 
 An "arrays agree on `[lo, hi)`" relation that pure functions could consume,
@@ -108,11 +108,9 @@ where the assumption-free whole-block rule already proves the block untouched.
 The rule records nothing on the edge and caches nothing: each answer is a
 checked derivation of one query, never an assumption-free name. Old facts stay
 facts about their states; the framed application equality is the bridge.
-Because the rule is a checked simple step that answers the same for every
-caller, a smart tactic composing the checked transport reaches it too: `close()`
-closes
-`mdtests/sweep_prefix_survives_its_endpoint_store_by_solve.md`, and
-`click expand` rewrites it into the explicit transport.
+The sweep example checks the same read range using pointwise `preserve` and
+the existing `unmarked_frame` lemma. `click expand` rechecks that proof
+against the imported lemma.
 
 ## Automatic reuse is not implemented
 
@@ -141,7 +139,7 @@ nested folds, and recursion each need separate evidence from real proofs.
   `src/scaling_tests/surface/tests/scaling_tests.rs`.
 - The `mdtests/fold_read_transport_*.md` fixtures (positive and refused
   forms), `mdtests/sweep_maintains_a_zero_unmarked_count.md`,
-  `mdtests/sweep_prefix_survives_its_endpoint_store_by_solve.md`, and the `mdtests/array_fact_does_not_survive_*.md` attacks,
+  `mdtests/sweep_prefix_survives_its_endpoint_store.md`, and the `mdtests/array_fact_does_not_survive_*.md` attacks,
   which state a fact reading a cell the step may write and are refused by
   both the whole-block version and the fold read frame.
 

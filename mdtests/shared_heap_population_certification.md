@@ -220,7 +220,18 @@ void parent_attach(struct parent* p, struct child* kid) {
     ensures kid->payload == old(kid->payload);
 } by {
     step_until(function.exit);
-    let link = fold(parent(p), { link: ParentLink::Linked(kid) });
+    let link = fold(parent(p), { link: ParentLink::Linked(kid) }) {
+        requires defined(p->kid) by {
+            close();
+        }
+        requires p->kid == kid by {
+            rewrite(kid, at(region(1).entry, p->kid));
+            close();
+        }
+        requires kid != 0 by {
+            close();
+        }
+    }
     close();
 }
 

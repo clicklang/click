@@ -16,8 +16,9 @@ The prefix is preserved by ordinary proof steps. For each `k < i`,
 `preserve` establishes its equality with the iteration-entry read. The existing
 `unmarked_frame` lemma turns these cell equalities into equality of the prefix
 counts. Rewriting then reuses the entry invariant. The enlarged prefix after
-`i++` still needs the fold's append law, which `unfold` opens. The omitted-proof
-companion remains `sweep_prefix_survives_its_endpoint_store_by_solve.md`.
+`i++` still needs the fold's append law, which `unfold` opens. The companion
+`sweep_prefix_survives_its_endpoint_store.md` also checks expansion
+with the imported lemma.
 
 ```c filename=sweep_maintains_a_zero_unmarked_count.c
 void sweep(int32 visited[], int32 n) {
