@@ -3,14 +3,14 @@
 The companion of `a_distinct_symbolic_cell_survives_a_store.md` applies the
 same separation and preservation rules at function exit.
 
-```c filename=a_transport_using_after_execution_carries_a_distinct_cell.c
+```c filename=explicit_preservation_after_execution_carries_a_distinct_cell.c
 void mark_one(int32 a[], int32 n, int32 i, int32 m) {
     a[i] = 1;
 }
 ```
 
 ```click
-verifying "a_transport_using_after_execution_carries_a_distinct_cell.c";
+verifying "explicit_preservation_after_execution_carries_a_distinct_cell.c";
 
 void mark_one(int32 a[], int32 n, int32 i, int32 m) {
     requires 0 <= i;
