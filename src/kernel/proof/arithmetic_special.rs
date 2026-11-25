@@ -3651,6 +3651,35 @@ pub(super) fn exact_float_bound_source(goal: &Proposition, strict: bool) -> Opti
     float_bound_proposition(operand.format(), operand, endpoint, lower, strict)
 }
 
+/// The strict bound at a neighbouring float implies this inclusive bound.
+pub(super) fn adjacent_float_bound_sources(goal: &Proposition) -> [Option<Proposition>; 2] {
+    let Some(bound) = float_bound(goal) else {
+        return [None, None];
+    };
+    if bound.strict {
+        return [None, None];
+    }
+    let neighbour = FloatBound {
+        lower: !bound.lower,
+        strict: true,
+        ..bound
+    };
+    let Some(endpoint) = neighbour.inclusive_endpoint() else {
+        return [None, None];
+    };
+    let sign = float_sign_bit(bound.format);
+    let source = |endpoint| {
+        float_bound_proposition(bound.format, bound.operand, endpoint, bound.lower, true)
+    };
+    [
+        source(endpoint),
+        // The two zeros bound exactly the same ordered values.
+        (endpoint & !sign == 0)
+            .then(|| source(endpoint ^ sign))
+            .flatten(),
+    ]
+}
+
 /// The monotone operations for which one selected bound suffices.
 #[derive(Clone, Copy)]
 enum FloatBoundOperation {
@@ -4514,25 +4543,48 @@ impl<'a> FloatPairBound<'a> {
 /// The ordinary addition and subtraction laws take non-strict comparisons.
 pub(crate) fn float_pair_bound_weakening(
     goal: &Proposition,
-    [first, second]: &[Proposition; 2],
-) -> Option<(FloatBoundWeakening, bool)> {
+    bounds: &[Proposition; 2],
+) -> Option<(FloatBoundWeakening, bool, [Option<Proposition>; 2])> {
     use crate::kernel::FloatBinaryOperator::{Add, Subtract};
     let pair = FloatPairBound::new(goal)?;
-    if !matches!(pair.operator, Add | Subtract)
-        || float_bound(first)?.strict
-        || float_bound(second)?.strict
-    {
+    if !matches!(pair.operator, Add | Subtract) {
         return None;
     }
-    let endpoint = crate::kernel::primitives::float_binary_bits_at(
-        pair.goal.format,
-        pair.operand_endpoint(0, first)?,
-        pair.operand_endpoint(1, second)?,
-        pair.operator,
-    );
+    let adjacent = [
+        pair.operand_endpoint(0, &bounds[0])?,
+        pair.operand_endpoint(1, &bounds[1])?,
+    ];
+    let [first, second] = bounds.each_ref().map(float_bound);
+    let [first, second] = [first?, second?];
+    let original = [first.endpoint, second.endpoint];
+    let plan_at = |[left, right]: [u64; 2]| {
+        let endpoint = crate::kernel::primitives::float_binary_bits_at(
+            pair.goal.format,
+            left,
+            right,
+            pair.operator,
+        );
+        FloatBoundWeakening::from_goal(goal, endpoint, false)
+    };
+    let subtract = pair.operator == Subtract;
+    if let Some(plan) = plan_at(original) {
+        return Some((plan, subtract, [None, None]));
+    }
+    let plan = plan_at(adjacent)?;
+    let tightened = |bound: FloatBound<'_>, endpoint: u64| {
+        (endpoint != bound.endpoint)
+            .then(|| {
+                float_bound_proposition(bound.format, bound.operand, endpoint, bound.lower, false)
+            })
+            .flatten()
+    };
     Some((
-        FloatBoundWeakening::from_goal(goal, endpoint, false)?,
-        pair.operator == Subtract,
+        plan,
+        subtract,
+        [
+            tightened(first, adjacent[0]),
+            tightened(second, adjacent[1]),
+        ],
     ))
 }
 
@@ -4554,10 +4606,7 @@ pub(crate) fn float_literal_sum_or_difference_bound(
     else {
         return None;
     };
-    if input.strict
-        || !same_float_operand(input.operand, operand)
-        || !float_bound_weakens(source, goal)
-    {
+    if !same_float_operand(input.operand, operand) || !float_bound_weakens(source, goal) {
         return None;
     }
     let (endpoint, strict) = operation.apply(result.format, input.endpoint, false);
@@ -4704,7 +4753,7 @@ pub(crate) enum FloatScaleOperation {
 pub(crate) fn float_scale_bound_weakening(
     source: &Proposition,
     goal: &Proposition,
-) -> Option<(FloatBoundWeakening, u64, FloatScaleOperation, bool)> {
+) -> Option<(FloatBoundWeakening, u64, FloatScaleOperation)> {
     let input = float_bound(source)?;
     let result = float_bound(goal)?;
     let (_, operation) = float_literal_operation(result.operand)?;
@@ -4735,7 +4784,6 @@ pub(crate) fn float_scale_bound_weakening(
         FloatBoundWeakening::from_goal(goal, endpoint, strict)?,
         literal,
         scale,
-        input.strict,
     ))
 }
 

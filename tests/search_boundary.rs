@@ -1038,6 +1038,28 @@ fn active_memory_borrow_presence_cannot_scan_ledger_history_or_indices() {
 use boundary::proof_search_boundary;
 
 #[test]
+fn new_legacy_normalization_references_are_rejected() {
+    for source in [
+        "fn expand() { emit(ProofStep::Normalize); }",
+        "fn expand() { emit(ProofStep::NormalizeUsing(premises)); }",
+        "fn expand() { emit(ProofStep::CompatibilityNormalize(None)); }",
+        "use ProofStep::Normalize as Legacy; fn expand() { emit(Legacy); }",
+        "fn expand() { convert!(ProofTactic::Normalize); }",
+        "fn expand(p: P) { p.apply_normalize(); }",
+        "fn expand(p: P) { ProofSearch::apply_normalization_closure(p, None); }",
+    ] {
+        let file = syn::parse_file(source).unwrap();
+        let errors = proof_search_boundary::check("src/new_expansion.rs", &file).unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .any(|message| message.contains("legacy normalization reference")),
+            "{source}: {errors:?}"
+        );
+    }
+}
+
+#[test]
 fn new_operation_search_edges_are_rejected_even_through_aliases_and_macros() {
     for source in [
         "fn step(p: P) { ProofSearch::try_solve_closure(p); }",

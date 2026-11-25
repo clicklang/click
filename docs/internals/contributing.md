@@ -165,6 +165,13 @@ The default workflow is:
 7. Run focused tests and report them; PR CI and the merge queue run the full
    `scripts/check.sh` gate for code changes.
 
+Expand new proofs through checked steps. The build inventories references to
+legacy normalization in `build_support/normalize_expansion_edges.tsv`, and
+required PR and merge-queue checks allow its counts only to decrease. When
+replacing an existing route, remove its inventory row or lower its count.
+Use `click expand --check-normalize-removal --claim` to check that the
+replacement replays without compatibility normalization.
+
 The feature playbook is the detailed checklist.
 
 ## Where new concepts belong

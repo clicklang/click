@@ -1122,10 +1122,81 @@ theorem strict_float_quotient(x: float) {
     ensures x + float64_from_bits(0x4000000000000000u64)
         >= float64_from_bits(0xc020000000000000u64) by close();
 }
+theorem mixed_sum(x: float, y: float) {
+    requires x < float32_from_bits(0x3f800000);
+    requires y <= float32_from_bits(0x40000000);
+    ensures x + y <= float32_from_bits(0x40400000) by close();
+}
+theorem two_strict_bounds(x: double, y: double) {
+    requires x > float64_from_bits(0xc024000000000000u64);
+    requires y > float64_from_bits(0x4000000000000000u64);
+    ensures x + y >= float64_from_bits(0xc020000000000000u64) by close();
+}
+theorem adjacent_needed(x: float, y: float) {
+    requires x > float32_from_bits(0x3f800000);
+    requires y >= float32_from_bits(0);
+    ensures x + y > float32_from_bits(0x3f800000) by close();
+}
+theorem rounding_can_merge(x: float) {
+    requires x > float32_from_bits(0);
+    ensures x + float32_from_bits(0x3f800000) > float32_from_bits(0x3f800000) by close();
+}
 "#,
         )
         .unwrap();
-        let generated = check(&strict_sum, "strict_sum.ensures_0").unwrap_err();
+        for (claim, weakening, addition, weakened_bounds) in [
+            (
+                "strict_sum.ensures_0",
+                "float64_lt_to_le",
+                "float64_add_lower",
+                1,
+            ),
+            (
+                "mixed_sum.ensures_0",
+                "float32_lt_to_le",
+                "float32_add_upper",
+                1,
+            ),
+            (
+                "two_strict_bounds.ensures_0",
+                "float64_lt_to_le",
+                "float64_add_lower",
+                2,
+            ),
+        ] {
+            let expanded = check(&strict_sum, claim).unwrap();
+            assert_eq!(
+                expanded.matches(weakening).count(),
+                weakened_bounds,
+                "{claim}: {expanded}"
+            );
+            assert!(expanded.contains(addition), "{claim}: {expanded}");
+        }
+        let adjacent = check(&strict_sum, "adjacent_needed.ensures_0").unwrap();
+        assert!(adjacent.contains("0x3f800001"), "{adjacent}");
+        assert!(adjacent.contains("float32_add_lower"), "{adjacent}");
+        let rounded = check(&strict_sum, "rounding_can_merge.ensures_0").unwrap_err();
+        assert!(rounded.contains("unsuccessful search"), "{rounded}");
+
+        let strict_cast = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/float_addition_with_strict_input_bounds.md");
+        let expanded = check(&strict_cast, "cast_sum.ensures_0").unwrap();
+        for name in ["float64_add_lower", "float64_add_upper"] {
+            assert!(expanded.contains(name), "{expanded}");
+        }
+
+        let strict_square = directory.path().join("strict_square.click");
+        fs::write(
+            &strict_square,
+            r#"theorem strict_square(x: double) {
+    requires x > float64_from_bits(0x3ff0000000000000u64);
+    requires x < float64_from_bits(0x4000000000000000u64);
+    ensures x * x <= float64_from_bits(0x4010000000000000u64) by close();
+}
+"#,
+        )
+        .unwrap();
+        let generated = check(&strict_square, "strict_square.ensures_0").unwrap_err();
         assert!(
             generated.contains("Expanded proof still contains normalize()"),
             "{generated}"
