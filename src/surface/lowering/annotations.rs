@@ -234,6 +234,8 @@ fn fixed_measure_state(expression: &SyntaxTerm) -> Option<FixedMeasureState> {
 }
 
 mod comparison_elaboration;
+mod typing_environment;
+use typing_environment::TypingEnvironment;
 #[cfg(test)]
 mod tests;
 
@@ -4568,7 +4570,7 @@ impl AnnotationLowerer<'_> {
             // nonnegativity is the conversion's own law. Any other algebraic
             // value has no order the ranking members can compare.
             if let Some(ClickType::Algebraic(value_type)) =
-                self.contract_expression_click_type(expression, &context)
+                self.contract_expression_click_type(expression, &TypingEnvironment::of(&context))
             {
                 if value_type.name() != "Nat" || !value_type.arguments().is_empty() {
                     return Err(ClickError::new(format!(
@@ -4602,7 +4604,7 @@ impl AnnotationLowerer<'_> {
             // Integer carrier, by the same rule that picks the carrier for an
             // invariant's operand. Its two obligations are the same two, built
             // over `Integer`.
-            if self.contract_expression_is_integer(expression, &context) {
+            if self.contract_expression_is_integer(expression, &TypingEnvironment::of(&context)) {
                 let lowered = self
                     .lower_contract_integer_to_spec(expression, &context)
                     .map_err(|message| {
@@ -4690,7 +4692,7 @@ impl AnnotationLowerer<'_> {
         // The carrier is chosen exactly as the loop slot chooses it: an
         // `Integer`-typed measure lowers into the Integer carrier and owes the
         // same two obligations there.
-        if self.contract_expression_is_integer(expression, context) {
+        if self.contract_expression_is_integer(expression, &TypingEnvironment::of(context)) {
             let lowered = self
                 .lower_contract_integer_to_spec(expression, context)
                 .map_err(|message| {
@@ -4964,8 +4966,11 @@ impl AnnotationLowerer<'_> {
                 value,
                 body,
             } => {
-                if self.contract_expression_click_type_in_scope(value, environment, &mut Vec::new())
-                    == Some(ClickType::Proposition)
+                if self.contract_expression_click_type_in_scope(
+                    value,
+                    &TypingEnvironment::of(environment),
+                    &mut Vec::new(),
+                ) == Some(ClickType::Proposition)
                 {
                     let substituted = substitute_contract_expression(
                         body,
@@ -4980,7 +4985,10 @@ impl AnnotationLowerer<'_> {
                 body_environment.array_refs.remove(name);
                 if *click_type == Some(ClickType::Integer)
                     || (click_type.is_none()
-                        && self.contract_expression_is_integer(value, environment))
+                        && self.contract_expression_is_integer(
+                            value,
+                            &TypingEnvironment::of(environment),
+                        ))
                 {
                     let value = self.lower_contract_integer_to_spec(value, environment)?;
                     body_environment.integer_values.insert(name.clone(), value);
@@ -5007,7 +5015,7 @@ impl AnnotationLowerer<'_> {
             }
             _ if self.contract_expression_click_type_in_scope(
                 expression,
-                environment,
+                &TypingEnvironment::of(environment),
                 &mut Vec::new(),
             ) == Some(ClickType::Program(InterfaceType::Bool)) =>
             {
@@ -5881,7 +5889,7 @@ impl AnnotationLowerer<'_> {
     fn contract_expression_is_integer(
         &self,
         expression: &SyntaxTerm,
-        environment: &SpecElaborationContext,
+        typing: &TypingEnvironment<'_>,
     ) -> bool {
         let mut depth = 0;
         let mut current = expression;
@@ -5895,7 +5903,7 @@ impl AnnotationLowerer<'_> {
         if depth > 128 && matches!(current, SyntaxTerm::IntegerLiteral(_)) {
             return false;
         }
-        self.contract_expression_click_type(expression, environment)
+        self.contract_expression_click_type(expression, typing)
             .is_some_and(|click_type| click_type == ClickType::Integer)
     }
 
@@ -5908,9 +5916,9 @@ impl AnnotationLowerer<'_> {
     fn contract_expression_click_type(
         &self,
         expression: &SyntaxTerm,
-        environment: &SpecElaborationContext,
+        typing: &TypingEnvironment<'_>,
     ) -> Option<ClickType> {
-        self.contract_expression_click_type_in_scope(expression, environment, &mut Vec::new())
+        self.contract_expression_click_type_in_scope(expression, typing, &mut Vec::new())
     }
 
     /// Whether a range's endpoints make its item a `uint64`: one endpoint
@@ -5923,7 +5931,7 @@ impl AnnotationLowerer<'_> {
     ) -> bool {
         [start, end].into_iter().any(|bound| {
             matches!(
-                self.contract_expression_click_type(bound, environment),
+                self.contract_expression_click_type(bound, &TypingEnvironment::of(environment)),
                 Some(ClickType::Program(InterfaceType::UInt64(_)))
             ) || matches!(bound, SyntaxTerm::ProgramExpression(ProgramExpression::Variable(name))
                     if self.c_variable_type(name) == Some(ProgramType::UInt64))
@@ -5968,7 +5976,7 @@ impl AnnotationLowerer<'_> {
     fn contract_expression_click_type_in_scope(
         &self,
         expression: &SyntaxTerm,
-        environment: &SpecElaborationContext,
+        typing: &TypingEnvironment<'_>,
         lexical_bindings: &mut Vec<(SurfaceBinder, Option<ClickType>)>,
     ) -> Option<ClickType> {
         if let Some(id) = expression.generated_binder() {
@@ -5979,7 +5987,7 @@ impl AnnotationLowerer<'_> {
             {
                 return ty.clone();
             }
-            return environment.binding_click_type(&id);
+            return typing.binding_click_type(&id);
         }
 
         match expression {
@@ -5989,7 +5997,7 @@ impl AnnotationLowerer<'_> {
                 parameters, result, ..
             } => Some(lambdas::signature(parameters, result)),
             SyntaxTerm::Apply { function, .. } => match self
-                .contract_expression_click_type_in_scope(function, environment, lexical_bindings)?
+                .contract_expression_click_type_in_scope(function, typing, lexical_bindings)?
             {
                 ClickType::Function { result, .. } => Some(*result),
                 _ => None,
@@ -6005,7 +6013,7 @@ impl AnnotationLowerer<'_> {
                 {
                     click_type.clone()
                 } else {
-                    environment.binding_click_type(name)
+                    typing.binding_click_type(name)
                 }
             }
             SyntaxTerm::AlgebraicVariable { algebraic_type, .. }
@@ -6017,20 +6025,14 @@ impl AnnotationLowerer<'_> {
             | SyntaxTerm::Exact(inner)
             | SyntaxTerm::At {
                 expression: inner, ..
-            } => self.contract_expression_click_type_in_scope(inner, environment, lexical_bindings),
+            } => self.contract_expression_click_type_in_scope(inner, typing, lexical_bindings),
             SyntaxTerm::Add(left, right)
             | SyntaxTerm::Subtract(left, right)
             | SyntaxTerm::Multiply(left, right) => {
-                let left = self.contract_expression_click_type_in_scope(
-                    left,
-                    environment,
-                    lexical_bindings,
-                );
-                let right = self.contract_expression_click_type_in_scope(
-                    right,
-                    environment,
-                    lexical_bindings,
-                );
+                let left =
+                    self.contract_expression_click_type_in_scope(left, typing, lexical_bindings);
+                let right =
+                    self.contract_expression_click_type_in_scope(right, typing, lexical_bindings);
                 if left == Some(ClickType::Integer) || right == Some(ClickType::Integer) {
                     Some(ClickType::Integer)
                 } else {
@@ -6051,23 +6053,14 @@ impl AnnotationLowerer<'_> {
                 // `to_integer(...)` makes the accumulator mathematical.  A
                 // fold's result follows the accumulator/body type; the
                 // endpoint type only selects the item carrier in the body.
-                let start_type = self.contract_expression_click_type_in_scope(
-                    start,
-                    environment,
-                    lexical_bindings,
-                );
-                let end_type = self.contract_expression_click_type_in_scope(
-                    end,
-                    environment,
-                    lexical_bindings,
-                );
+                let start_type =
+                    self.contract_expression_click_type_in_scope(start, typing, lexical_bindings);
+                let end_type =
+                    self.contract_expression_click_type_in_scope(end, typing, lexical_bindings);
                 let integer_index =
                     start_type == Some(ClickType::Integer) || end_type == Some(ClickType::Integer);
-                let initial_type = self.contract_expression_click_type_in_scope(
-                    initial,
-                    environment,
-                    lexical_bindings,
-                );
+                let initial_type =
+                    self.contract_expression_click_type_in_scope(initial, typing, lexical_bindings);
                 let lexical_len = lexical_bindings.len();
                 let accumulator_type = initial_type.clone();
                 lexical_bindings.push((accumulator.clone(), accumulator_type));
@@ -6079,11 +6072,8 @@ impl AnnotationLowerer<'_> {
                         Some(ClickType::Program(InterfaceType::Int32))
                     },
                 ));
-                let body_type = self.contract_expression_click_type_in_scope(
-                    body,
-                    environment,
-                    lexical_bindings,
-                );
+                let body_type =
+                    self.contract_expression_click_type_in_scope(body, typing, lexical_bindings);
                 lexical_bindings.truncate(lexical_len);
                 if initial_type == Some(ClickType::Integer) || body_type == Some(ClickType::Integer)
                 {
@@ -6102,7 +6092,7 @@ impl AnnotationLowerer<'_> {
                 {
                     click_type.clone()
                 } else {
-                    environment.binding_click_type(name)
+                    typing.binding_click_type(name)
                 }
             }
             SyntaxTerm::ProgramBinding(name) => lexical_bindings
@@ -6110,7 +6100,7 @@ impl AnnotationLowerer<'_> {
                 .rev()
                 .find_map(|(binding, click_type)| (binding == name).then(|| click_type.clone()))
                 .flatten()
-                .or_else(|| environment.program_binding_click_type(name)),
+                .or_else(|| typing.program_binding_click_type(name)),
             SyntaxTerm::Let {
                 name,
                 click_type: Some(ClickType::Integer),
@@ -6118,11 +6108,8 @@ impl AnnotationLowerer<'_> {
                 body,
             } => {
                 lexical_bindings.push((name.clone(), Some(ClickType::Integer)));
-                let body_type = self.contract_expression_click_type_in_scope(
-                    body,
-                    environment,
-                    lexical_bindings,
-                );
+                let body_type =
+                    self.contract_expression_click_type_in_scope(body, typing, lexical_bindings);
                 lexical_bindings.pop();
                 body_type
             }
@@ -6132,27 +6119,17 @@ impl AnnotationLowerer<'_> {
                 value,
                 body,
             } => {
-                let value_type = self.contract_expression_click_type_in_scope(
-                    value,
-                    environment,
-                    lexical_bindings,
-                );
+                let value_type =
+                    self.contract_expression_click_type_in_scope(value, typing, lexical_bindings);
                 lexical_bindings.push((name.clone(), value_type));
-                let body_type = self.contract_expression_click_type_in_scope(
-                    body,
-                    environment,
-                    lexical_bindings,
-                );
+                let body_type =
+                    self.contract_expression_click_type_in_scope(body, typing, lexical_bindings);
                 lexical_bindings.pop();
                 body_type
             }
             SyntaxTerm::AlgebraicMatch { scrutinee, arms } => {
                 let Some(ClickType::Algebraic(application)) = self
-                    .contract_expression_click_type_in_scope(
-                        scrutinee,
-                        environment,
-                        lexical_bindings,
-                    )
+                    .contract_expression_click_type_in_scope(scrutinee, typing, lexical_bindings)
                 else {
                     return None;
                 };
@@ -6184,7 +6161,7 @@ impl AnnotationLowerer<'_> {
                     }
                     let arm_type = self.contract_expression_click_type_in_scope(
                         &arm.body,
-                        environment,
+                        typing,
                         lexical_bindings,
                     );
                     lexical_bindings.truncate(lexical_len);
@@ -6226,12 +6203,12 @@ impl AnnotationLowerer<'_> {
             } => {
                 let then_type = self.contract_expression_click_type_in_scope(
                     then_branch,
-                    environment,
+                    typing,
                     lexical_bindings,
                 );
                 let else_type = self.contract_expression_click_type_in_scope(
                     else_branch,
-                    environment,
+                    typing,
                     lexical_bindings,
                 );
                 let integer_or_numeral = |branch_type: &Option<ClickType>, branch| {
@@ -6489,7 +6466,9 @@ impl AnnotationLowerer<'_> {
             SyntaxTerm::Call { name, arguments } if name == "to_integer" => {
                 let argument = integer_conversion_argument(name, arguments)?;
                 // An Integer is its own exact value.
-                if self.contract_expression_is_integer(argument, environment) {
+                if self
+                    .contract_expression_is_integer(argument, &TypingEnvironment::of(environment))
+                {
                     return self.lower_contract_integer_to_spec(argument, environment);
                 }
                 if let Ok(nat) = self.lower_contract_algebraic_to_spec(argument, environment)
@@ -6732,7 +6711,9 @@ impl AnnotationLowerer<'_> {
                 click_type: click_type @ (None | Some(ClickType::Program(_))),
                 value,
                 body,
-            } if !self.contract_expression_is_integer(value, environment) => {
+            } if !self
+                .contract_expression_is_integer(value, &TypingEnvironment::of(environment)) =>
+            {
                 let value = typed_let_program_value(
                     self.lower_contract_expression_to_spec(value, environment)?,
                     click_type.as_ref(),
@@ -6955,7 +6936,7 @@ impl AnnotationLowerer<'_> {
                             && pointee_struct.is_none()
                             && *integer_mode != crate::kernel::IntegerCastMode::PointerCoercion
                             && !matches!(
-                                self.contract_expression_click_type(operand, environment),
+                                self.contract_expression_click_type(operand, &TypingEnvironment::of(environment)),
                                 Some(ClickType::Program(
                                     InterfaceType::Int64(_) | InterfaceType::UInt64(_)
                                 ))
@@ -7303,7 +7284,7 @@ impl AnnotationLowerer<'_> {
                 ..
             } => {
                 if let Some(ClickType::Program(interface_type)) =
-                    self.contract_expression_click_type(base, environment)
+                    self.contract_expression_click_type(base, &TypingEnvironment::of(environment))
                     && !interface_type.is_pointer()
                 {
                     return Err(format!(
@@ -7427,7 +7408,9 @@ impl AnnotationLowerer<'_> {
             } => self.lower_at_expression_to_spec(selector, expression, environment),
             SyntaxTerm::Exact(place) => self.lower_exact_read_to_spec(place, environment),
             SyntaxTerm::Negate(expression) => {
-                if self.contract_expression_is_integer(expression, environment) {
+                if self
+                    .contract_expression_is_integer(expression, &TypingEnvironment::of(environment))
+                {
                     return Err(
                         "an Integer expression must be lowered as a comparison operand".to_string(),
                     );
@@ -7723,7 +7706,8 @@ impl AnnotationLowerer<'_> {
                     return self.lower_contract_expression_to_spec(body, &body_environment);
                 }
                 if matches!(click_type, Some(ClickType::Integer))
-                    || self.contract_expression_is_integer(value, environment)
+                    || self
+                        .contract_expression_is_integer(value, &TypingEnvironment::of(environment))
                 {
                     return Err(
                         "an Integer let expression must be lowered as a comparison operand"
@@ -8216,7 +8200,10 @@ impl AnnotationLowerer<'_> {
                 body_environment.array_refs.remove(name);
                 if *click_type == Some(ClickType::Integer)
                     || (click_type.is_none()
-                        && self.contract_expression_is_integer(value, environment))
+                        && self.contract_expression_is_integer(
+                            value,
+                            &TypingEnvironment::of(environment),
+                        ))
                 {
                     let value = self.lower_contract_integer_to_spec(value, environment)?;
                     body_environment.integer_values.insert(name.clone(), value);
@@ -8675,7 +8662,11 @@ impl AnnotationLowerer<'_> {
         match expected {
             ClickType::Resource => Ok(Some(ClickType::Resource)),
             ClickType::Function { .. } => self
-                .contract_expression_click_type_in_scope(argument, environment, &mut Vec::new())
+                .contract_expression_click_type_in_scope(
+                    argument,
+                    &TypingEnvironment::of(environment),
+                    &mut Vec::new(),
+                )
                 .map(Some)
                 .ok_or_else(|| "callback argument needs a concrete lambda".into()),
             ClickType::Proposition => Err("proposition parameters are not supported yet".into()),
@@ -10678,7 +10669,7 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> bool {
         if matches!(
-            self.contract_expression_click_type(operand, environment),
+            self.contract_expression_click_type(operand, &TypingEnvironment::of(environment)),
             Some(ClickType::Program(InterfaceType::VoidPointer))
         ) {
             return true;
@@ -10739,7 +10730,9 @@ impl AnnotationLowerer<'_> {
                     _ => None,
                 }
             }
-            _ => match self.contract_expression_click_type(operand, environment) {
+            _ => match self
+                .contract_expression_click_type(operand, &TypingEnvironment::of(environment))
+            {
                 Some(ClickType::Program(operand_type)) => {
                     pointee_less_pointer_spelling(operand_type.to_kernel_type())
                 }
@@ -10777,7 +10770,7 @@ impl AnnotationLowerer<'_> {
             ProgramExpression::Variable(name @ crate::kernel::BindingName::Named(_)) => match self
                 .contract_expression_click_type(
                     &SyntaxTerm::ProgramExpression(operand.clone()),
-                    environment,
+                    &TypingEnvironment::of(environment),
                 ) {
                 Some(ClickType::Program(operand_type)) => {
                     pointee_less_pointer_spelling(operand_type.to_kernel_type())
