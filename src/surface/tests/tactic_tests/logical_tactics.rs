@@ -3336,28 +3336,28 @@ fn pure_witness_captures_declaration_aliases_and_reverifies_expansion() {
             theorem captured(p: {ty}) {{
                 let saved{annotation} = p;
                 ensures forall (p: {ty}) {{ exists (q: {ty}) {{ q == saved }} }} by {{
-                    intro() {
+                    intro() {{
                         witness(saved);
                         close();
-                    }
+                    }}
                 }}
             }}
             theorem shadow_alias(p: {ty}) {{
                 let saved{annotation} = p;
                 ensures forall (saved: {ty}) {{ exists (q: {ty}) {{ q == saved }} }} by {{
-                    intro() {
+                    intro() {{
                         witness(saved);
                         close();
-                    }
+                    }}
                 }}
             }}
             theorem nested(p: {ty}) {{
                 let saved{annotation} = p;
                 ensures forall (p: {ty}) {{ exists (saved: {ty}) {{ saved == p }} }} by {{
-                    intro() {
+                    intro() {{
                         witness(p);
                         close();
-                    }
+                    }}
                 }}
             }}
         "#
