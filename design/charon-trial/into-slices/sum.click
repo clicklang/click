@@ -12,7 +12,8 @@ fn sum(bytes: &[u8]) -> i32 {
     step_until(region(9).entry);
     have 0 <= ((bytes.len() as uint32) as int32) by { close(); }
     have viewable(bytes[0..((bytes.len() as uint32) as int32)]) by {
-        transport(at(function.entry, viewable(bytes[0..((bytes.len() as uint32) as int32)])), viewable(bytes[0..((bytes.len() as uint32) as int32)]));
+        observe(bytes[0..((bytes.len() as uint32) as int32)]);
+        close();
     }
     have prefix(bytes, (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining)) == 0 by {
         unfold(prefix(bytes, (((bytes.len() as uint32) as int32) - __rust_iter_3_5_remaining))); close();
