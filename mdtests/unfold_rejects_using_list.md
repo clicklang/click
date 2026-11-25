@@ -14,7 +14,7 @@ theorem icount_empty(p: int32[], lo: int32, hi: int32) {
         unfold(icount(p, lo, hi)) using {
             hi <= lo;
         };
-        normalize();
+        close();
     }
 }
 ```

@@ -34,7 +34,7 @@ int classify(int x) {
             step();
             have result == classified(x) by {
                 unfold(classified(x));
-                normalize() using { x == 0; };
+                close() using { x == 0; };
             }
             close();
         }
@@ -43,7 +43,7 @@ int classify(int x) {
     step();
     have result == classified(x) by {
         unfold(classified(x));
-        normalize() using { not(x == 0); };
+        close() using { not(x == 0); };
     }
     close();
 }

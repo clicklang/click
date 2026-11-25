@@ -10,7 +10,7 @@ theorem obtain_with_a_mirrored_body(n: int32) {
     requires exists (k: int32) { k < n };
     ensures n == n by {
         let m = obtain(exists (m: int32) { n > m });
-        normalize();
+        close();
     }
 }
 ```

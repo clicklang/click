@@ -1,7 +1,7 @@
 # A tactic other than a closer after a closed goal names what closed it
 
-Only `known`, `solve`, and `normalize` may follow a tactic that already
-closed a `have`'s goal. Here `color_bit(Color::Red) == 0` is established
+Only a closer such as `close()` may follow a tactic that already closed a
+`have`'s goal. Here `color_bit(Color::Red) == 0` is established
 first, so unfolding `red_bit_value()` in the second body leaves exactly that
 fact and closes the goal at once; the `rewrite` after it has no goal to
 rewrite, and the refusal names the `unfold` rather than reporting a failed
@@ -34,7 +34,7 @@ int32 red_bit(int32 n) {
 } by {
     have color_bit(Color::Red) == 0 by {
         unfold(color_bit(Color::Red));
-        normalize();
+        close();
     }
     have red_bit_value() == 0 by {
         unfold(red_bit_value());

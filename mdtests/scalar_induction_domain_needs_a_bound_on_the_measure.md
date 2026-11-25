@@ -12,7 +12,7 @@ theorem domain_from_a_chain(n: int32, m: int32) {
     requires m <= n;
     ensures n == n by {
         let ih = induct(n);
-        normalize();
+        close();
     }
 }
 ```

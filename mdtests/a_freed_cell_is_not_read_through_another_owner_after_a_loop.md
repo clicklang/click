@@ -71,7 +71,7 @@ int32 f(struct holder* h, struct holder* g) {
             mark before_second_store;
             step();
             have separate(loop(0).statement(2).footprint, memory(h->ptr)) by {
-                normalize() using { separate(memory(h->ptr), memory(g->ptr)); };
+                close() using { separate(memory(h->ptr), memory(g->ptr)); };
             }
             have h->ptr == at(before_second_store, h->ptr) by {
                 preserve(memory(h->ptr), loop(0).statement(2));
