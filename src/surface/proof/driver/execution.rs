@@ -1197,22 +1197,12 @@ fn apply_frontier_source_tactic<'a>(
     } else if let ProofTactic::ApplyTheorem(application) = &indexed.tactic {
         apply_written_theorem(&proof, application)?
     } else if let ProofTactic::Transport { source, target } = &indexed.tactic {
-        match crate::kernel::search::ProofSearch::try_execution_fact_transport_or_refusal(
-            &(proof),
+        crate::kernel::search::ProofSearch::apply_written_fact_transport(
+            &proof,
             source,
             target,
-        )? {
-            Ok(transported) => transported,
-            Err(source_refusal) => {
-                crate::kernel::search::ProofSearch::apply_planned_fact_transport(
-                    &proof,
-                    source,
-                    target,
-                    indexed.index,
-                    source_refusal.as_ref(),
-                )?
-            }
-        }
+            indexed.index,
+        )?
     } else if let Some(have) = frontier_have(&indexed.tactic) {
         let nested = proof.driver().open_source_have(have)?;
         let goal = nested.goal().cloned();

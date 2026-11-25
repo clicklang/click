@@ -1,12 +1,8 @@
 # A false bare `transport` after execution is refused as at a frontier
 
-A bare `transport(source, target)` at function exit, after
-`step_until(function.exit)`, is planned exactly as it is between execution steps: its source alone is tried as the premise, then the
-premise planner selects frame evidence. When nothing carries a false target,
-the refusal is the source-only one, which names the store to `a[i]` between
-the two states, the same refusal
-`a_false_transport_in_a_branch_arm_is_refused_as_on_the_main_line.md` expects
-before execution.
+A bare `transport` at function exit uses the same proof search as at a
+statement frontier. A reflexive equality supplies no proof of the target
+value.
 
 ```c filename=a_false_bare_transport_after_execution_is_refused_as_at_a_frontier.c
 void mark_one(int32 a[], int32 n, int32 i, int32 m) {
@@ -36,5 +32,5 @@ void mark_one(int32 a[], int32 n, int32 i, int32 m) {
 ```
 
 ```expect
-fail: `transport` found no frame evidence carrying its source fact to the target's state
+fail: `transport` found no checked proof from its source
 ```

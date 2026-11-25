@@ -9032,7 +9032,7 @@ fn marked_constant_store_transport_expands_to_known_fact_lookup() {
     assert!(
         error
             .message()
-            .contains("found no frame evidence carrying its source fact to the target's state")
+            .contains("found no checked proof from its source")
             && error.message().contains("owner->value == 11")
             && error
                 .message()

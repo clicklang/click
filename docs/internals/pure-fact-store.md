@@ -177,7 +177,7 @@ retain their own evidence.
 | --- | --- | --- |
 | `PureFactStore` | Available propositions, order indexes, freshness, maintained reasoning, and successors constructed by checked proof operations. Used directly by ordinary callers and proof state. | `kernel/proof/facts.rs`, `kernel/proof/branches.rs`, `kernel/proof/object.rs`, `kernel/proof/execution.rs` |
 | `PureFactList` | Raw occurrence order, duplicates, ordinal selection, order-sensitive equality, and explicit scope restriction. Declaration/origin alignment, fixed-state requirement selection, and statement-local ordered inputs require these semantics. | `surface/pure_fact_list.rs`, `surface/source_registry.rs`, `surface/proof/language_context.rs` |
-| `PureFactContext` | Maintained reasoning component, borrowed by equality/order, memory, and resource primitives. Standalone constructors create explicitly selected assumption scopes, such as implication guards and quantified premises; they are not a second cache for a retained store. | `kernel/assumptions.rs`, `kernel/proof/fact_reasoning.rs`, `kernel/quantified_frame.rs` |
+| `PureFactContext` | Maintained reasoning component, borrowed by equality/order, memory, and resource primitives. Standalone constructors create explicitly selected assumption scopes, such as implication guards and quantified premises; they are not a second cache for a retained store. | `kernel/assumptions.rs`, `kernel/proof/fact_reasoning.rs` |
 
 `PropositionSource::fact_store` is the ordinary storage projection. Retained
 sources, references, and `Arc` values return their persistent store without

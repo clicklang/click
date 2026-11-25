@@ -287,30 +287,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_execution_fact_transport");
-        Ok(
-            crate::kernel::search::ProofSearch::try_execution_fact_transport_or_refusal(
-                search_input,
-                source,
-                target,
-            )?
-            .ok(),
-        )
-    }
-
-    /// The bounded source-local form of mid-execution fact transport, as
-    /// [`Self::try_execution_fact_transport`], keeping the refusal of its
-    /// last candidate: the frame check with the source as its
-    /// only premise. A bare `transport` whose premise planner then fails
-    /// reports that refusal, which names what the frame could not carry
-    /// (`fact_transport_planning_failure`). Keeping it costs nothing: the
-    /// check already ran.
-    pub(in crate::surface::proof) fn try_execution_fact_transport_or_refusal(
-        search_input: &Proof<'a>,
-        source: &SyntaxProposition,
-        target: &SyntaxProposition,
-    ) -> Result<Result<Proof<'a>, Option<ClickError>>, ClickError> {
-        #[cfg(test)]
-        crate::kernel::search::record_discovery("try_execution_fact_transport_or_refusal");
         if crate::instrumentation::replay_forbids_discovery("fact transport search") {
             return Err(search_input.step_error("fact transport discovery needs explicit premises"));
         }
@@ -331,35 +307,100 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if execution.core.frontier.is_at_function_exit()
             && search_input.focused_outcome_data().is_none()
         {
-            return Ok(Err(None));
+            return Ok(None);
         }
-        match Self::fact_transport_candidate_search(
-            search_input,
-            source,
-            target,
-            std::iter::once(source.clone()),
-        ) {
-            Ok(Some(proof)) => Ok(Ok(proof)),
-            Ok(None) if !crate::instrumentation::deadline_exceeded() => {
-                let refusal = search_input.execution_fact_transport_refusal(source, target);
-                if let Err(error) = check_verification_deadline() {
-                    search_input.record_certification_failure_trace(search_input.claim_label(), 0);
-                    return Err(search_input.attach_step_diagnostic(refusal.unwrap_or(error)));
-                }
-                Ok(Err(refusal))
+        Ok(
+            attempt::candidate_outcome(Self::fact_transport_candidate_search(
+                search_input,
+                source,
+                target,
+                [source.clone()],
+            ))?
+            .flatten(),
+        )
+    }
+
+    /// Written transport uses the same source-local candidates as other
+    /// search. Its remaining routes must also construct an ordinary proof.
+    pub(in crate::surface::proof) fn apply_written_fact_transport(
+        search_input: &Proof<'a>,
+        source: &SyntaxProposition,
+        target: &SyntaxProposition,
+        tactic_index: usize,
+    ) -> Result<Proof<'a>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("apply_written_fact_transport");
+        let attempt = || {
+            if let Some(proof) = Self::try_execution_fact_transport(search_input, source, target)? {
+                return Ok(proof);
             }
-            Err(error) if crate::instrumentation::deadline_exceeded() => {
-                search_input.record_certification_failure_trace(search_input.claim_label(), 0);
-                Err(search_input.attach_step_diagnostic(error))
+
+            if search_input.focused_outcome_data().is_none()
+                && search_input
+                    .execution()
+                    .is_some_and(|execution| execution.core.frontier.is_at_function_exit())
+            {
+                return Err(search_input.step_error("`transport` requires a current statement frontier after at least one execution step"));
             }
-            Ok(None) => {
-                search_input.record_certification_failure_trace(search_input.claim_label(), 0);
-                Err(search_input.attach_step_diagnostic(
-                    search_input.step_error("fact transport stopped at its work limit"),
-                ))
+            let view = search_input
+                .outcome_fixed_state_view()
+                .or_else(|| search_input.execution_fixed_state_view())
+                .ok_or_else(|| {
+                    search_input.step_error("`transport` requires a recorded execution state")
+                })?;
+            let checked_source =
+                search_input.lower_surface_proposition_direct(source, "`transport` source")?;
+            if crate::kernel::search::ProofSearch::derive_proposition(
+                search_input.facts().assumptions(),
+                &checked_source,
+            )
+            .is_none()
+            {
+                return Err(search_input
+                    .step_error("`transport` requires a source derivable from its ambient facts"));
             }
-            Err(_) => Ok(Err(None)),
-        }
+            let checked_target =
+                search_input.lower_surface_proposition_direct(target, "`transport` target")?;
+            if let Some(proof) = Self::try_ordinary_fact_transport(
+                search_input,
+                source,
+                target,
+                std::slice::from_ref(source),
+            )? {
+                return Ok(proof);
+            }
+
+            if let Some(name) = [source, target]
+                .into_iter()
+                .find_map(surface_predicate_call_name)
+            {
+                return Err(search_input.step_error(format!(
+                    "`transport` cannot frame opaque predicate `{name}` across C execution because its memory footprint is hidden; unfold the selected application, such as `unfold({name}(args));`, before execution and transport its unfolded definition"
+                )));
+            }
+
+            use crate::surface::proof_diagnostics::render;
+            let _typed = render::TypedNotationScope::enter();
+            let mut labels = render::MemoryStateLabels::with_state(
+                view.parameter_binding,
+                view.fixed_state.state,
+            );
+            let checked_source = render::render_proposition_labeled(&checked_source, &mut labels);
+            let checked_target = render::render_proposition_labeled(&checked_target, &mut labels);
+            let written_source = crate::surface::printing::source_click_proposition(source);
+            let written_target = crate::surface::printing::source_click_proposition(target);
+            Err(ClickError::new(format!(
+                "`{}` tactic {tactic_index}: `transport` found no checked proof from its source\n  source (holds): {written_source}\n  target (wanted): {written_target}\n  checked source (holds): {checked_source}\n  checked target (wanted): {checked_target}{}\n  use `have` to state supporting facts, `preserve` across named footprints, and `rewrite` to relate the reads",
+                search_input.claim_label(),
+                labels.trace_legend(),
+            ))
+            .with_proof_refusal(crate::surface::ProofRefusal::UnsuccessfulSearch)
+            .with_report_labels(labels))
+        };
+        attempt().map_err(|error| {
+            search_input.record_certification_failure_trace(search_input.claim_label(), 0);
+            search_input.attach_step_diagnostic(error)
+        })
     }
 
     /// Search for an ordinary proof from explicitly selected facts.
@@ -426,5 +467,39 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             &selected,
             &source_fact,
         )
+    }
+}
+
+fn surface_predicate_call_name(proposition: &SyntaxProposition) -> Option<&str> {
+    match proposition {
+        SyntaxProposition::Value(_) => None,
+        SyntaxProposition::PredicateCall { name, .. } => Some(name),
+        SyntaxProposition::At { proposition, .. }
+        | SyntaxProposition::Not(proposition)
+        | SyntaxProposition::ForAll {
+            body: proposition, ..
+        }
+        | SyntaxProposition::Exists {
+            body: proposition, ..
+        }
+        | SyntaxProposition::RangeAll {
+            body: proposition, ..
+        }
+        | SyntaxProposition::RangeAny {
+            body: proposition, ..
+        } => surface_predicate_call_name(proposition),
+        SyntaxProposition::And(left, right)
+        | SyntaxProposition::Or(left, right)
+        | SyntaxProposition::Implies(left, right) => {
+            surface_predicate_call_name(left).or_else(|| surface_predicate_call_name(right))
+        }
+        SyntaxProposition::Comparison { .. }
+        | SyntaxProposition::FloatClassification { .. }
+        | SyntaxProposition::Separate { .. }
+        | SyntaxProposition::ResourceViewable { .. }
+        | SyntaxProposition::Contains { .. }
+        | SyntaxProposition::Loadable { .. }
+        | SyntaxProposition::Defined { .. }
+        | SyntaxProposition::IsA { .. } => None,
     }
 }

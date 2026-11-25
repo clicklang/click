@@ -5064,12 +5064,9 @@ pub(super) fn finish_ordered_proof<'a>(
                                     // retain its checked lowerings.
                                     let prepared = evolving.with_outcome_store_consequences()?;
                                     let before = prepared.checkpoint();
-                                    let transported = match crate::kernel::search::ProofSearch::try_execution_fact_transport_or_refusal(&prepared, source, target)? {
-                                        Ok(transported) => Ok(transported),
-                                        Err(source_refusal) => crate::kernel::search::ProofSearch::apply_planned_fact_transport(
-                                            &prepared, source, target, *tactic_index, source_refusal.as_ref(),
-                                        ),
-                                    }
+                                    let transported = crate::kernel::search::ProofSearch::apply_written_fact_transport(
+                                        &prepared, source, target, *tactic_index,
+                                    )
                                     .inspect_err(|_| {
                                         prepared.record_certification_failure_trace(
                                             &proof_label,
@@ -5088,8 +5085,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                         "`{proof_label}` path {path_index}, tactic {tactic_index}: the typed outcome goal for this path is unavailable"
                                     )));
                                 };
-                                // Ordinary `have` publication retains its target;
-                                // the legacy transport transition retains both ends.
+                                // The ordinary proof retains the target and may also
+                                // record its checked source.
                                 match checked_facts.as_slice() {
                                     [checked_source, checked_target] => {
                                         outcome_surface_propositions

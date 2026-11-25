@@ -1,10 +1,8 @@
-# A bare `transport` refusal names the leaf its frame could not carry
+# A bare `transport` refuses an overwritten quantified fact
 
-`dst[3] = 0` overwrites one of the cells `memset` set to `7`, so the claim
-that all four still hold `7` is false and the bare `transport` is refused.
-The refusal names the typed validity fact the frame could not carry, its two states, and the
-store to `dst[3]` among the effects between them. It ends by calling the
-refusal a search miss and naming the `using` form that writes the evidence.
+The store to `dst[3]` changes a byte set by `memset`. Bare transport
+reports the historical source and the current target when it cannot construct
+a proof of the full range.
 
 ```c filename=fill.c
 #include <string.h>
@@ -28,9 +26,5 @@ void fill(uint8* dst) {
 ```
 
 ```expect
-fail: quantified frame: a leaf was not carried: a read in it was not shown unchanged between its two states by the steps between them and this context's facts
-  leaf it had: at(statement(0).exit, defined(dst[k]))
-  leaf it wanted: defined(dst[k])
-  this is the refusal with the source as the only premise, which is all a bare `transport` cites
-  this is a search miss, not a refusal; use `have` to state the facts that carry the source, `preserve` to prove unchanged reads across named footprints, and `rewrite` to relate those reads
+fail: `transport` found no checked proof from its source
 ```
