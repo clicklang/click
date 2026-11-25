@@ -136,8 +136,10 @@ void *fill_range(void *argument) {
                                 apply(separation::separate_elements(at(before_write, job->output), k, at(before_write, index)));
                             }
                             have separate(loop(0).statement(0).footprint, at(before_write, memory(job->output[k]))) by {
-                                normalize() using {
-                                    separate(at(before_write, memory(job->output[k])), at(before_write, memory(job->output[index])));
+                                apply(separation::separate_symm(at(before_write, memory(job->output[k])),
+                                    at(before_write, memory(job->output[index]))));
+                                close() using {
+                                    separate(at(before_write, memory(job->output[index])), at(before_write, memory(job->output[k])));
                                 };
                             }
                             have load<int32>(at(before_write, &job->output[k])) == at(before_write, job->output[k]) by {
