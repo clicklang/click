@@ -1331,6 +1331,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ProofTactic::CompatibilityNormalize(_) => {
             line(output, &prefix, COMPATIBILITY_NORMALIZATION)
         }
+        ProofTactic::CloseBounds(premises) => write_selected_bounds(output, premises, indent),
         ProofTactic::Normalize => line(output, &prefix, "normalize();"),
         ProofTactic::NormalizeUsing(premises) => {
             write_using_premises(output, "normalize()", premises, indent)
@@ -1465,6 +1466,13 @@ fn write_proof(output: &mut String, proof: &SourceProof, indent: usize) {
     write_tactics(output, tactics, indent + 1);
     output.push_str(&"    ".repeat(indent));
     output.push('}');
+}
+
+fn write_selected_bounds(output: &mut String, premises: &[SyntaxProposition], indent: usize) {
+    let prefix = "    ".repeat(indent);
+    line(output, &prefix, "close() using bounds {");
+    write_premise_list(output, premises, indent + 1);
+    line(output, &prefix, "};");
 }
 
 fn write_using_premises(
