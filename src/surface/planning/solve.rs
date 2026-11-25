@@ -35,15 +35,15 @@ pub(in crate::surface) fn plan_context_free_closer(goal: &Proposition) -> Option
 #[cfg(test)]
 pub(in crate::surface) fn plan_explicit_equality_rewrites_from(
     goal: &Proposition,
-    premises: &[(Proposition, ClickProposition)],
+    premises: &[(Proposition, SurfaceProposition)],
     available: &[Proposition],
     is_available: &impl Fn(&Proposition) -> bool,
     closer: &impl Fn(&Proposition) -> Option<Vec<ProofTactic>>,
 ) -> Option<Vec<ProofTactic>> {
     fn reverse_equality(
         kernel: &Proposition,
-        surface: &ClickProposition,
-    ) -> Option<(Proposition, ClickProposition)> {
+        surface: &SurfaceProposition,
+    ) -> Option<(Proposition, SurfaceProposition)> {
         let kernel = match kernel {
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((
@@ -122,7 +122,7 @@ pub(in crate::surface) fn plan_explicit_equality_rewrites_from(
             }
             _ => return None,
         };
-        let ClickProposition::Comparison {
+        let SurfaceProposition::Comparison {
             left,
             operator: ComparisonOperator::Equal,
             right,
@@ -132,7 +132,7 @@ pub(in crate::surface) fn plan_explicit_equality_rewrites_from(
         };
         Some((
             kernel,
-            ClickProposition::Comparison {
+            SurfaceProposition::Comparison {
                 left: right.clone(),
                 operator: ComparisonOperator::Equal,
                 right: left.clone(),
@@ -142,7 +142,7 @@ pub(in crate::surface) fn plan_explicit_equality_rewrites_from(
 
     fn search(
         current: Proposition,
-        premises: &[(Proposition, ClickProposition)],
+        premises: &[(Proposition, SurfaceProposition)],
         available: &[Proposition],
         used: &mut [bool],
         tactics: &mut Vec<ProofTactic>,

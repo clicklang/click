@@ -1375,8 +1375,12 @@ fn tactic_inventory_matches_canonical_surface_names() {
         .next()
         .expect("end of tactic_name function");
     let mut names = BTreeSet::new();
-    for segment in body.split("=> \"").skip(1) {
-        if let Some(name) = segment.split('"').next() {
+    for arm in body.split("=>").skip(1) {
+        let value = arm.trim_start().trim_start_matches('{').trim_start();
+        if let Some((name, _)) = value
+            .strip_prefix('"')
+            .and_then(|value| value.split_once('"'))
+        {
             names.insert(name.to_string());
         }
     }
@@ -1420,7 +1424,6 @@ fn tactic_form_inventory_is_bidirectional() {
             "normalize-using" => surface == "`normalize() using { P; ... }`",
             "arithmetic-using" => surface == "`close() using { P; ... }`",
             "transport" => surface == "`transport(P, Q)`",
-            "transport-using" => surface == "`transport(P, Q) using { R; ... }`",
             "instantiate" => surface == format!("`{}`", form.syntax),
             "intro" => surface == "`intro() { ... }`",
             "close" | "solve" => surface == format!("`{}`", form.syntax),

@@ -27,7 +27,7 @@ fn nested_loop_clauses_bound(current_loop_clauses: &[StructuralClause]) -> bool 
 pub(in crate::surface::proof) fn execute_frontier_local_loop(
     expansion_capture: Option<&mut ExpansionCapture>,
     loop_template: &StructuralClause,
-    proof_locals: &BinderMap<ContractExpression>,
+    proof_locals: &BinderMap<SurfaceTerm>,
     entry_facts: &PureFactStore,
     execution: &mut ExecutionProofState,
     proof_context: &ExecutionProofContext<'_>,
@@ -403,7 +403,7 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
                     &execution.core.state,
                     Some(&execution.presentation.recorded_states),
                 )
-                .map(|condition| ClickProposition::Not(Box::new(condition)))
+                .map(|condition| SurfaceProposition::Not(Box::new(condition)))
             })
             .transpose()?,
         _ => None,

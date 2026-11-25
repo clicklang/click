@@ -1579,11 +1579,6 @@ int32 check(struct link* node) {
                 "does not return a C value",
             ),
             (
-                "loop_preserve_bare_instantiate_names_repair.md",
-                "unsupported",
-                "move the operation into `have proposition by { ... }`",
-            ),
-            (
                 "named_contract_rejects_unheld_link_read.md",
                 "contract error",
                 "could not address resource clause",
@@ -1751,7 +1746,7 @@ int32 check(struct link* node) {
         fs::remove_dir_all(directory).unwrap();
     }
 
-    /// A refused `transport using` prints its own legend. The trace keeps
+    /// A refused `transport` prints its own legend. The trace keeps
     /// that numbering, so the proof refusal's goal names the states and
     /// values the refusal defined; its cell walks print one per line; and a
     /// field of a named pointer prints as that name plus its offset.
@@ -1773,9 +1768,7 @@ void recolor(struct rb_node* gparent) {
     step();
     have parent->__rb_parent_color == at(before_store, parent->__rb_parent_color) by {
         transport(at(before_store, parent->__rb_parent_color) == at(before_store, parent->__rb_parent_color),
-                  parent->__rb_parent_color == at(before_store, parent->__rb_parent_color)) using {
-            parent == gparent->rb_left;
-        };
+                  parent->__rb_parent_color == at(before_store, parent->__rb_parent_color));
     }
     step_until(function.exit);
 }
@@ -1802,10 +1795,8 @@ void recolor(struct rb_node* gparent) {
             .split_once("\n  checked target (wanted)\n  ")
             .and_then(|(_, rest)| rest.lines().next())
             .unwrap_or_else(|| panic!("{report}"));
-        assert!(
-            report.contains(&format!("\nrequired evidence: {target}\n")),
-            "{report}"
-        );
+        assert!(target.contains("read<Bits64>(state#"), "{report}");
+        assert!(report.contains("steps through: *parent = 1"), "{report}");
         assert!(report.contains("\n    address: value#"), "{report}");
         assert!(report.contains("= gparent + 16 bytes"), "{report}");
         assert!(!report.contains("\n  width\n"), "{report}");

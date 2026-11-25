@@ -648,7 +648,7 @@ theorem aligned_parent_word_from_bit(p: void*, bit: int32) {
             have 1 <= bit by { close() using { 0 <= bit; not(bit == 0); }; }
             have bit == 1 by { close() using { 1 <= bit; bit <= 1; }; }
             rewrite(bit, 1);
-            close() using { aligned(p, 8); };
+            normalize() using { aligned(p, 8); };
         }
     }
 }

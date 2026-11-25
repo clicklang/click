@@ -8,11 +8,11 @@
 ```click
 theorem below_top(value: uint64) {
     ensures value <= 18446744073709551614u64 by {
-        normalize();
+        close();
     }
 }
 ```
 
 ```expect
-fail: did not normalize to true
+fail: could not establish `value <= 18446744073709551614u64`
 ```

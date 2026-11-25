@@ -2,10 +2,10 @@
 
 ```click
 theorem wider(p: int32*) {
-    ensures contains(memory(p[0..1]), memory(((p as (void *)) as (uint64 *))[0..1])) by { normalize(); }
+    ensures contains(memory(p[0..1]), memory(((p as (void *)) as (uint64 *))[0..1])) by { close(); }
 }
 ```
 
 ```expect
-fail: did not normalize to true
+fail: could not establish `contains(memory(p[0..1]), memory(((p as (void *)) as (uint64 *))[0..1]))`
 ```

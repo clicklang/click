@@ -33,7 +33,8 @@ skill is the procedure for applying them.
    queries as module-level specification functions and prefer selective
    imports in examples. Use shared specification modules for helpers whose
    meaning is language-independent (principle 7). Prove any helper
-   theorems the interface declares.
+   theorems used to derive guarantees. A pure theorem without a proof in an
+   interface is a published guarantee the consumer assumes.
 2. Map the call to the contract in the front end's name table, and nothing
    else. No front-end rewrite of what the library does.
 3. Add the inventory item, the library reference entry and the trust row.

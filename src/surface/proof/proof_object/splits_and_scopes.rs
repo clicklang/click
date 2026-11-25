@@ -7,12 +7,12 @@ use crate::kernel::{
 };
 
 pub(in crate::surface::proof) struct CheckedBothSurfaceChild {
-    surface: Option<ClickProposition>,
+    surface: Option<SurfaceProposition>,
     introductions: Option<crate::kernel::LoweringIntroductions>,
 }
 
 impl<'a> Proof<'a> {
-    fn recorded_surface_matches(&self, surface: &ClickProposition, target: &Proposition) -> bool {
+    fn recorded_surface_matches(&self, surface: &SurfaceProposition, target: &Proposition) -> bool {
         let matches = |map: &SurfacePropositionMap| {
             map.available_kernel_matching(surface, |kernel| {
                 crate::kernel::proof::propositions_are_alpha_equal(kernel, target)
@@ -36,7 +36,7 @@ impl<'a> Proof<'a> {
     /// Surface body whose lowering is exactly the guarded consequent.
     fn recorded_guard_surface_child(
         &self,
-        surface: &ClickProposition,
+        surface: &SurfaceProposition,
         target: &Proposition,
         recorded: &BothChildPresentation,
     ) -> Option<CheckedBothSurfaceChild> {
@@ -67,7 +67,7 @@ impl<'a> Proof<'a> {
         let antecedent = antecedent?;
 
         match surface {
-            ClickProposition::Implies(surface_antecedent, _) => {
+            SurfaceProposition::Implies(surface_antecedent, _) => {
                 let lowered = self
                     .lower_surface_proposition(surface_antecedent, "`all` guard antecedent")
                     .ok()?;
@@ -155,7 +155,7 @@ impl<'a> Proof<'a> {
                 self.step_error("`all` presentation correspondence requires a kernel conjunction")
             );
         };
-        if matches!(surface, ClickProposition::Defined { .. }) {
+        if matches!(surface, SurfaceProposition::Defined { .. }) {
             // `defined` names this entire ordinary domain. Its children are
             // the kernel conjunction's propositions, not source operands.
             return Ok(self.bundle_member_surface_children());
@@ -439,9 +439,9 @@ impl<'a> Proof<'a> {
 
     fn checked_whole_surface_child(
         &self,
-        surface: &ClickProposition,
+        surface: &SurfaceProposition,
         kernel_children: [&Proposition; 2],
-    ) -> Result<[Option<ClickProposition>; 2], ClickError> {
+    ) -> Result<[Option<SurfaceProposition>; 2], ClickError> {
         let lowered =
             match self.lower_surface_proposition(surface, "`all` presentation conjunction") {
                 Ok(lowered) => lowered,
@@ -577,7 +577,7 @@ impl<'a> Proof<'a> {
     /// instance; the join accepts only derivations that pass through it.
     pub(in crate::surface::proof) fn split_focused_cases(
         &self,
-        disjunction: ClickProposition,
+        disjunction: SurfaceProposition,
     ) -> Result<(Self, SplitId, [BranchId; 2]), ClickError> {
         let kernel = self.lower_surface_proposition(&disjunction, "`cases` disjunction")?;
         // The trace shows the disjunct each arm assumes.
@@ -633,10 +633,10 @@ impl<'a> Proof<'a> {
     /// fact beforehand.
     pub(in crate::surface::proof) fn split_focused_if(
         &self,
-        condition: ClickProposition,
+        condition: SurfaceProposition,
     ) -> Result<(Self, SplitId, [BranchId; 2]), ClickError> {
         let then_fact = self.lower_surface_proposition(&condition, "proof `if` condition")?;
-        let else_surface = ClickProposition::Not(Box::new(condition.clone()));
+        let else_surface = SurfaceProposition::Not(Box::new(condition.clone()));
         let else_fact = self.lower_surface_proposition(&else_surface, "proof `if` negation")?;
         let traced_arms = crate::surface::proof_trace::enabled_for(self.claim_label())
             .then(|| [vec![then_fact.clone()], vec![else_fact.clone()]]);
@@ -677,7 +677,7 @@ impl<'a> Proof<'a> {
     /// independently checked on each sibling.
     pub(in crate::surface::proof) fn split_focused_execution_if(
         &self,
-        condition: ClickProposition,
+        condition: SurfaceProposition,
     ) -> Result<(Self, ExecutionProofCaseSplit<'a>), ClickError> {
         self.split_focused_execution_if_with_surface_condition(condition.clone(), condition)
     }
@@ -688,10 +688,10 @@ impl<'a> Proof<'a> {
     /// either arm executes instead of changing it after history is recorded.
     fn split_focused_execution_if_with_surface_condition(
         &self,
-        condition: ClickProposition,
-        surface_condition: ClickProposition,
+        condition: SurfaceProposition,
+        surface_condition: SurfaceProposition,
     ) -> Result<(Self, ExecutionProofCaseSplit<'a>), ClickError> {
-        let else_surface = ClickProposition::Not(Box::new(condition.clone()));
+        let else_surface = SurfaceProposition::Not(Box::new(condition.clone()));
         self.split_focused_execution_case_partition(
             [condition.clone(), else_surface],
             None,
@@ -706,9 +706,9 @@ impl<'a> Proof<'a> {
     /// disjunction of the earlier arms, split again inside the left arm.
     pub(in crate::surface::proof) fn split_focused_execution_disjunction(
         &self,
-        disjunction: ClickProposition,
+        disjunction: SurfaceProposition,
     ) -> Result<(Self, ExecutionProofCaseSplit<'a>), ClickError> {
-        let ClickProposition::Or(left, right) = &disjunction else {
+        let SurfaceProposition::Or(left, right) = &disjunction else {
             return Err(self.step_error(format!(
                 "`cases` requires a disjunction, got `{}`",
                 crate::surface::diagnostics::describe_click_proposition(&disjunction)
@@ -737,7 +737,7 @@ impl<'a> Proof<'a> {
     /// requires their disjunction as an available fact.
     fn split_focused_execution_case_partition(
         &self,
-        arm_surfaces: [ClickProposition; 2],
+        arm_surfaces: [SurfaceProposition; 2],
         arm_facts: Option<[Proposition; 2]>,
         case_condition: ProofCaseCondition,
         tactic: &str,
@@ -758,43 +758,44 @@ impl<'a> Proof<'a> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             unreachable!("an execution frontier has an execution context")
         };
-        let arm_presentation = |surface_fact: ClickProposition, fact: &Proposition, value: bool| {
-            let mut presentation = parent_execution.presentation.clone();
-            presentation
-                .surface_propositions
-                .record_lowering(&surface_fact, fact)?;
-            // An `if` records the polarity of its condition; each `cases`
-            // arm records that its own disjunct holds, which stays true
-            // where the disjuncts overlap.
-            let (case_surface, case_value) = match &case_condition {
-                ProofCaseCondition::If(condition) => (condition.clone(), value),
-                ProofCaseCondition::Cases(_) => (surface_fact.clone(), true),
+        let arm_presentation =
+            |surface_fact: SurfaceProposition, fact: &Proposition, value: bool| {
+                let mut presentation = parent_execution.presentation.clone();
+                presentation
+                    .surface_propositions
+                    .record_lowering(&surface_fact, fact)?;
+                // An `if` records the polarity of its condition; each `cases`
+                // arm records that its own disjunct holds, which stays true
+                // where the disjuncts overlap.
+                let (case_surface, case_value) = match &case_condition {
+                    ProofCaseCondition::If(condition) => (condition.clone(), value),
+                    ProofCaseCondition::Cases(_) => (surface_fact.clone(), true),
+                };
+                presentation.case_assumptions.push(CaseAssumption {
+                    tactic_index: context.tactic_index,
+                    condition: match &case_condition {
+                        ProofCaseCondition::If(_) => then_surface.clone(),
+                        ProofCaseCondition::Cases(_) => surface_fact.clone(),
+                    },
+                    value: match &case_condition {
+                        ProofCaseCondition::If(_) => value,
+                        ProofCaseCondition::Cases(_) => true,
+                    },
+                    fact: Some(fact.clone()),
+                    match_arm: None,
+                });
+                // Record this checked case before its body opens nested cases.
+                // Returned paths then share the already ordered prefix instead
+                // of rebuilding every nested decision at each terminal join.
+                presentation.branch_decisions.push(ExecutionBranchDecision {
+                    fingerprint: std::sync::OnceLock::from(ExecutionBranchDecisions::key(
+                        &case_surface,
+                    )),
+                    condition: case_surface,
+                    value: case_value,
+                });
+                Ok(presentation)
             };
-            presentation.case_assumptions.push(CaseAssumption {
-                tactic_index: context.tactic_index,
-                condition: match &case_condition {
-                    ProofCaseCondition::If(_) => then_surface.clone(),
-                    ProofCaseCondition::Cases(_) => surface_fact.clone(),
-                },
-                value: match &case_condition {
-                    ProofCaseCondition::If(_) => value,
-                    ProofCaseCondition::Cases(_) => true,
-                },
-                fact: Some(fact.clone()),
-                match_arm: None,
-            });
-            // Record this checked case before its body opens nested cases.
-            // Returned paths then share the already ordered prefix instead
-            // of rebuilding every nested decision at each terminal join.
-            presentation.branch_decisions.push(ExecutionBranchDecision {
-                fingerprint: std::sync::OnceLock::from(ExecutionBranchDecisions::key(
-                    &case_surface,
-                )),
-                condition: case_surface,
-                value: case_value,
-            });
-            Ok(presentation)
-        };
         let presentations = [
             arm_presentation(then_surface.clone(), &then_fact, true)?,
             arm_presentation(else_surface, &else_fact, false)?,
@@ -877,7 +878,7 @@ impl<'a> Proof<'a> {
         marker: &ProofCheckpoint<'a>,
         split: SplitId,
         ids: [BranchId; 2],
-        condition: ClickProposition,
+        condition: SurfaceProposition,
     ) -> Result<Self, ClickError> {
         self.join_focused_branch(marker, split, ids, |left, right| ProofStep::If {
             condition,
@@ -897,7 +898,7 @@ impl<'a> Proof<'a> {
         marker: &ProofCheckpoint<'a>,
         split: SplitId,
         ids: [BranchId; 2],
-        disjunction: ClickProposition,
+        disjunction: SurfaceProposition,
     ) -> Result<Self, ClickError> {
         self.join_focused_branch(marker, split, ids, |left, right| ProofStep::Cases {
             disjunction,
@@ -1021,7 +1022,7 @@ impl<'a> Proof<'a> {
     /// facts and publishes only the goal its completed body actually proved.
     pub(in crate::surface::proof) fn begin_loop_entry_goal(
         &self,
-        proposition: ClickProposition,
+        proposition: SurfaceProposition,
         obligation: &crate::kernel::ProofObligation,
     ) -> Result<ProofScope<'a>, ClickError> {
         let mut kernel = obligation.proposition();
@@ -1042,7 +1043,7 @@ impl<'a> Proof<'a> {
         // a theorem application must use a source spelling of the judgment
         // it actually checked. Build it from this declaration's endpoints
         // and validate it against the producer's exact obligation.
-        if let ClickProposition::Loadable { segment } = &body_surface
+        if let SurfaceProposition::Loadable { segment } = &body_surface
             && let Some((_, start, end)) = segment.surface_range()
             && let Some((
                 ConditionTerm::Compare {
@@ -1059,21 +1060,21 @@ impl<'a> Proof<'a> {
             // name that term, rather than introduce a new subtraction node.
             let starts_at_zero = matches!(
                 start,
-                ContractExpression::ProgramExpression(ProgramExpression::Value(
+                SurfaceTerm::ProgramExpression(ProgramExpression::Value(
                     ProgramValue::Int32(int32_constant!(0))
                         | ProgramValue::UInt32(uint32_constant!(0))
                         | ProgramValue::Int64(int64_constant!(0))
                         | ProgramValue::UInt64(uint64_constant!(0))
                 ))
-            ) || matches!(start, ContractExpression::IntegerLiteral(value) if value == "0");
-            let candidate = ClickProposition::Comparison {
+            ) || matches!(start, SurfaceTerm::IntegerLiteral(value) if value == "0");
+            let candidate = SurfaceProposition::Comparison {
                 left: if starts_at_zero {
                     end.clone()
                 } else {
-                    ContractExpression::Subtract(Box::new(end.clone()), Box::new(start.clone()))
+                    SurfaceTerm::Subtract(Box::new(end.clone()), Box::new(start.clone()))
                 },
                 operator: ComparisonOperator::LessEqual,
-                right: ContractExpression::ProgramExpression(ProgramExpression::Value(
+                right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(
                     ProgramValue::UInt64(MachineTerm::uint64_constant(constant_u64(*limit))),
                 )),
             };
@@ -1105,8 +1106,7 @@ impl<'a> Proof<'a> {
     /// their proofs; the driver handles them at the original frontier.
     pub(in crate::surface::proof) fn begin_have(
         &self,
-        proposition: ClickProposition,
-        observe_goal: bool,
+        proposition: SurfaceProposition,
         observed_spelling: bool,
     ) -> Result<ProofScope<'a>, ClickError> {
         #[cfg(test)]
@@ -1140,30 +1140,24 @@ impl<'a> Proof<'a> {
         // context. Its written proof establishes separation from selected
         // evidence; the direct held-resource observation below is independent.
         let at_frontier = matches!(self.focused_obligation(), Some(Obligation::Frontier(_)));
-        // A single written transport is already the selected proof of this
-        // goal. Do not search for an alternative separation or copy the
-        // effect history before that explicit operation can run.
-        let mut body_facts = self.facts().clone();
-        if observe_goal {
-            let resource_unfolded = self
-                .execution()
-                .is_some_and(|execution| execution.presentation.resource_unfolded);
-            // The current partition can answer a selected owned-field query
-            // directly. Try it before general reasoning over older compositions:
-            // those may require expensive state/range transport even though
-            // both current owners already establish this goal.
-            let held_facts = if let Some(execution) = self.execution() {
-                self.facts()
-                    .with_selected_held_resource_separation(&body_kernel, &execution.core.state)
-            } else {
-                self.facts().clone()
-            };
-            body_facts = if !at_frontier || resource_unfolded {
-                held_facts.with_selected_resource_separation(&body_kernel)
-            } else {
-                held_facts
-            };
-        }
+        let resource_unfolded = self
+            .execution()
+            .is_some_and(|execution| execution.presentation.resource_unfolded);
+        // The current partition can answer a selected owned-field query
+        // directly. Try it before general reasoning over older compositions:
+        // those may require expensive state/range transport even though
+        // both current owners already establish this goal.
+        let held_facts = if let Some(execution) = self.execution() {
+            self.facts()
+                .with_selected_held_resource_separation(&body_kernel, &execution.core.state)
+        } else {
+            self.facts().clone()
+        };
+        let body_facts = if !at_frontier || resource_unfolded {
+            held_facts.with_selected_resource_separation(&body_kernel)
+        } else {
+            held_facts
+        };
         let body_execution = self.branch_execution().cloned();
         // Outcome certification must see the assumptions that preceded this
         // scope, not the facts its checked premise-selection operations just

@@ -518,7 +518,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
 /// and match arms). Calls have their own declaration checks; qualified C
 /// objects are resolved by the source-aware parser rather than this scope.
 fn validate_contract_proposition_names(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     variables: &BinderMap<InterfaceType>,
     program_objects: &BTreeSet<String>,
     clause: &str,
@@ -669,7 +669,7 @@ fn resource_names_one_place_at_entry_and_exit(resource: &ResourceClause) -> bool
             .into_iter()
             .all(program_expression_reads_no_memory)
     };
-    let fixed_expression = |expression: &ContractExpression| {
+    let fixed_expression = |expression: &SurfaceTerm| {
         contract_expression_as_program_expression(expression)
             .is_some_and(|expression| program_expression_reads_no_memory(&expression))
     };
@@ -732,7 +732,7 @@ pub(in crate::surface) fn program_expression_reads_no_memory(
 }
 
 fn validate_contract_applications_in_proposition(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     contracts: &BinderMap<InterfaceType>,
     variables: &BinderMap<InterfaceType>,
     click_functions: &BinderMap<ClickFunctionType>,
@@ -741,9 +741,9 @@ fn validate_contract_applications_in_proposition(
     let mut pending = vec![(proposition, variables)];
     while let Some((proposition, variables)) = pending.pop() {
         match proposition {
-            ClickProposition::And(left, right)
-            | ClickProposition::Or(left, right)
-            | ClickProposition::Implies(left, right) => {
+            SurfaceProposition::And(left, right)
+            | SurfaceProposition::Or(left, right)
+            | SurfaceProposition::Implies(left, right) => {
                 pending.push((right, variables));
                 pending.push((left, variables));
             }
@@ -762,15 +762,15 @@ fn validate_contract_applications_in_proposition(
 }
 
 fn validate_contract_applications_in_proposition_one(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     contracts: &BinderMap<InterfaceType>,
     variables: &BinderMap<InterfaceType>,
     click_functions: &BinderMap<ClickFunctionType>,
     context: &str,
 ) -> Result<(), ClickError> {
     match proposition {
-        ClickProposition::Value(_) => Ok(()),
-        ClickProposition::PredicateCall { name, arguments } => {
+        SurfaceProposition::Value(_) => Ok(()),
+        SurfaceProposition::PredicateCall { name, arguments } => {
             if name == "held" {
                 let [mutex] = arguments.as_slice() else {
                     return Err(ClickError::new(format!(
@@ -862,9 +862,9 @@ fn validate_contract_applications_in_proposition_one(
             }
             Ok(())
         }
-        ClickProposition::And(left, right)
-        | ClickProposition::Or(left, right)
-        | ClickProposition::Implies(left, right) => {
+        SurfaceProposition::And(left, right)
+        | SurfaceProposition::Or(left, right)
+        | SurfaceProposition::Implies(left, right) => {
             validate_contract_applications_in_proposition(
                 left,
                 contracts,
@@ -880,8 +880,8 @@ fn validate_contract_applications_in_proposition_one(
                 context,
             )
         }
-        ClickProposition::Not(body)
-        | ClickProposition::At {
+        SurfaceProposition::Not(body)
+        | SurfaceProposition::At {
             proposition: body, ..
         } => validate_contract_applications_in_proposition(
             body,
@@ -890,13 +890,13 @@ fn validate_contract_applications_in_proposition_one(
             click_functions,
             context,
         ),
-        ClickProposition::ForAll {
+        SurfaceProposition::ForAll {
             click_type: interface_type,
             name,
             body,
             ..
         }
-        | ClickProposition::Exists {
+        | SurfaceProposition::Exists {
             click_type: interface_type,
             name,
             body,
@@ -931,8 +931,8 @@ fn validate_contract_applications_in_proposition_one(
                 context,
             )
         }
-        ClickProposition::RangeAll { item, body, .. }
-        | ClickProposition::RangeAny { item, body, .. } => {
+        SurfaceProposition::RangeAll { item, body, .. }
+        | SurfaceProposition::RangeAny { item, body, .. } => {
             let mut variables = variables.clone();
             variables.insert(item.clone(), InterfaceType::Int32);
             validate_contract_applications_in_proposition(
@@ -943,14 +943,14 @@ fn validate_contract_applications_in_proposition_one(
                 context,
             )
         }
-        ClickProposition::Comparison { .. }
-        | ClickProposition::FloatClassification { .. }
-        | ClickProposition::Separate { .. }
-        | ClickProposition::ResourceViewable { .. }
-        | ClickProposition::Contains { .. }
-        | ClickProposition::Loadable { .. }
-        | ClickProposition::Defined { .. }
-        | ClickProposition::IsA { .. } => Ok(()),
+        SurfaceProposition::Comparison { .. }
+        | SurfaceProposition::FloatClassification { .. }
+        | SurfaceProposition::Separate { .. }
+        | SurfaceProposition::ResourceViewable { .. }
+        | SurfaceProposition::Contains { .. }
+        | SurfaceProposition::Loadable { .. }
+        | SurfaceProposition::Defined { .. }
+        | SurfaceProposition::IsA { .. } => Ok(()),
     }
 }
 
@@ -978,31 +978,31 @@ pub(in crate::surface) fn theorem_resource_conclusion_refusal(theorem_name: &str
 }
 
 fn reject_held_outside_execution(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     context: &str,
 ) -> Result<(), ClickError> {
     let mut pending = vec![proposition];
     while let Some(current) = pending.pop() {
         match current {
-            ClickProposition::PredicateCall { name, .. } if name == "held" => {
+            SurfaceProposition::PredicateCall { name, .. } if name == "held" => {
                 return Err(ClickError::new(format!(
                     "`held` describes the current execution path and cannot appear in {context}"
                 )));
             }
-            ClickProposition::And(left, right)
-            | ClickProposition::Or(left, right)
-            | ClickProposition::Implies(left, right) => {
+            SurfaceProposition::And(left, right)
+            | SurfaceProposition::Or(left, right)
+            | SurfaceProposition::Implies(left, right) => {
                 pending.push(left);
                 pending.push(right);
             }
-            ClickProposition::Not(body)
-            | ClickProposition::At {
+            SurfaceProposition::Not(body)
+            | SurfaceProposition::At {
                 proposition: body, ..
             }
-            | ClickProposition::ForAll { body, .. }
-            | ClickProposition::Exists { body, .. }
-            | ClickProposition::RangeAll { body, .. }
-            | ClickProposition::RangeAny { body, .. } => pending.push(body),
+            | SurfaceProposition::ForAll { body, .. }
+            | SurfaceProposition::Exists { body, .. }
+            | SurfaceProposition::RangeAll { body, .. }
+            | SurfaceProposition::RangeAny { body, .. } => pending.push(body),
             _ => {}
         }
     }
@@ -1413,7 +1413,7 @@ fn validate_iterated_resource_clauses(
                 )));
             }
         }
-        if let ClickProposition::Comparison { left, right, .. } = clause_guard {
+        if let SurfaceProposition::Comparison { left, right, .. } = clause_guard {
             for side in [left, right] {
                 let Some(ty) =
                     infer_contract_expression_type(side, &scoped, click_function_types, &context)?
@@ -1433,11 +1433,11 @@ fn validate_iterated_resource_clauses(
         // as the bounded fact `forall k. range implies guard` and ask the
         // same read-authority check a body fact gets. A guard over a cell the
         // body does not own could change while the resource is folded.
-        let guard_fact = ClickProposition::ForAll {
+        let guard_fact = SurfaceProposition::ForAll {
             click_type: ClickType::Program(InterfaceType::Int32),
             name: index.to_string().into(),
             written_name: None,
-            body: Box::new(ClickProposition::Implies(
+            body: Box::new(SurfaceProposition::Implies(
                 Box::new(clause.range.clone()),
                 Box::new(clause_guard.clone()),
             )),
@@ -1567,8 +1567,8 @@ struct ResourceFactReadAuthorityAnalysis {
 fn validate_resource_fact_memory_read_authority(
     definition: &ResourceDefinition,
     composite_body: &CompositeResourceBody,
-    fact: &ClickProposition,
-    prior_facts: &[&ClickProposition],
+    fact: &SurfaceProposition,
+    prior_facts: &[&SurfaceProposition],
     predicate_definitions: &BTreeMap<&str, &PredicateDefinition>,
     click_function_definitions: &BTreeMap<&str, &ClickFunctionDefinition>,
     spec_definitions: SpecDefinitions<'_>,
@@ -1630,9 +1630,7 @@ fn validate_resource_fact_memory_read_authority(
         .map(|(name, _, _)| {
             (
                 name.clone(),
-                ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                    (name.clone()).into(),
-                )),
+                SurfaceTerm::ProgramExpression(ProgramExpression::Variable((name.clone()).into())),
             )
         })
         .collect();
@@ -1730,7 +1728,7 @@ fn validate_resource_fact_memory_read_authority(
 }
 
 fn collect_resource_fact_scalar_assumptions_from_proposition(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     predicate_definitions: &BTreeMap<&str, &PredicateDefinition>,
     contract_environment: ContractEnvironment<'_>,
     at: &crate::kernel::ProgramPoint,
@@ -1740,12 +1738,12 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
     resource_name: &str,
 ) -> Result<(), ClickError> {
     match proposition {
-        ClickProposition::Value(_) => Ok(()),
-        ClickProposition::Comparison { .. }
-        | ClickProposition::FloatClassification { .. }
-        | ClickProposition::Loadable { .. }
-        | ClickProposition::Defined { .. }
-        | ClickProposition::IsA { .. } => {
+        SurfaceProposition::Value(_) => Ok(()),
+        SurfaceProposition::Comparison { .. }
+        | SurfaceProposition::FloatClassification { .. }
+        | SurfaceProposition::Loadable { .. }
+        | SurfaceProposition::Defined { .. }
+        | SurfaceProposition::IsA { .. } => {
             let source = describe_click_proposition(proposition);
             let state = ExecutionState::at_point(at);
             if let Ok(proposition) =
@@ -1764,7 +1762,7 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
             }
             Ok(())
         }
-        ClickProposition::At { proposition, .. } => {
+        SurfaceProposition::At { proposition, .. } => {
             collect_resource_fact_scalar_assumptions_from_proposition(
                 proposition,
                 predicate_definitions,
@@ -1776,10 +1774,10 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
                 resource_name,
             )
         }
-        ClickProposition::Separate { .. }
-        | ClickProposition::ResourceViewable { .. }
-        | ClickProposition::Contains { .. } => Ok(()),
-        ClickProposition::And(left, right) => {
+        SurfaceProposition::Separate { .. }
+        | SurfaceProposition::ResourceViewable { .. }
+        | SurfaceProposition::Contains { .. } => Ok(()),
+        SurfaceProposition::And(left, right) => {
             collect_resource_fact_scalar_assumptions_from_proposition(
                 left,
                 predicate_definitions,
@@ -1801,7 +1799,7 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
                 resource_name,
             )
         }
-        ClickProposition::PredicateCall { name, arguments } => {
+        SurfaceProposition::PredicateCall { name, arguments } => {
             let Some(definition) = predicate_definitions.get(name.as_str()) else {
                 return Ok(());
             };
@@ -1831,13 +1829,13 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
             visited_predicates.pop();
             result
         }
-        ClickProposition::Or(_, _)
-        | ClickProposition::Not(_)
-        | ClickProposition::Implies(_, _)
-        | ClickProposition::ForAll { .. }
-        | ClickProposition::Exists { .. }
-        | ClickProposition::RangeAll { .. }
-        | ClickProposition::RangeAny { .. } => Ok(()),
+        SurfaceProposition::Or(_, _)
+        | SurfaceProposition::Not(_)
+        | SurfaceProposition::Implies(_, _)
+        | SurfaceProposition::ForAll { .. }
+        | SurfaceProposition::Exists { .. }
+        | SurfaceProposition::RangeAll { .. }
+        | SurfaceProposition::RangeAny { .. } => Ok(()),
     }
 }
 
@@ -1853,7 +1851,7 @@ struct ResourceFunctionReadEffects {
 }
 
 fn collect_resource_fact_reads_from_proposition(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     predicate_definitions: &BTreeMap<&str, &PredicateDefinition>,
     click_function_definitions: &BTreeMap<&str, &ClickFunctionDefinition>,
     visited_predicates: &mut Vec<String>,
@@ -1862,7 +1860,7 @@ fn collect_resource_fact_reads_from_proposition(
     resource_name: &str,
 ) -> Result<(), ClickError> {
     match proposition {
-        ClickProposition::Value(expression) => {
+        SurfaceProposition::Value(expression) => {
             collect_resource_fact_reads_from_contract_expression(
                 expression,
                 predicate_definitions,
@@ -1874,7 +1872,7 @@ fn collect_resource_fact_reads_from_proposition(
             )
         }
 
-        ClickProposition::Comparison { left, right, .. } => {
+        SurfaceProposition::Comparison { left, right, .. } => {
             collect_resource_fact_reads_from_contract_expression(
                 left,
                 predicate_definitions,
@@ -1894,7 +1892,7 @@ fn collect_resource_fact_reads_from_proposition(
                 resource_name,
             )
         }
-        ClickProposition::FloatClassification { expression, .. } => {
+        SurfaceProposition::FloatClassification { expression, .. } => {
             collect_resource_fact_reads_from_contract_expression(
                 expression,
                 predicate_definitions,
@@ -1905,7 +1903,7 @@ fn collect_resource_fact_reads_from_proposition(
                 resource_name,
             )
         }
-        ClickProposition::Separate { left, right } => {
+        SurfaceProposition::Separate { left, right } => {
             collect_resource_fact_reads_from_resource_subject(
                 left,
                 predicate_definitions,
@@ -1925,7 +1923,7 @@ fn collect_resource_fact_reads_from_proposition(
                 resource_name,
             )
         }
-        ClickProposition::ResourceViewable { resource } => {
+        SurfaceProposition::ResourceViewable { resource } => {
             collect_resource_fact_reads_from_resource_subject(
                 resource,
                 predicate_definitions,
@@ -1936,7 +1934,7 @@ fn collect_resource_fact_reads_from_proposition(
                 resource_name,
             )
         }
-        ClickProposition::Contains { parent, child } => {
+        SurfaceProposition::Contains { parent, child } => {
             collect_resource_fact_reads_from_resource_subject(
                 parent,
                 predicate_definitions,
@@ -1956,7 +1954,7 @@ fn collect_resource_fact_reads_from_proposition(
                 resource_name,
             )
         }
-        ClickProposition::Loadable { segment } => {
+        SurfaceProposition::Loadable { segment } => {
             collect_resource_fact_reads_from_contract_segment(
                 segment,
                 predicate_definitions,
@@ -1967,8 +1965,8 @@ fn collect_resource_fact_reads_from_proposition(
                 resource_name,
             )
         }
-        ClickProposition::Defined { expression }
-        | ClickProposition::IsA {
+        SurfaceProposition::Defined { expression }
+        | SurfaceProposition::IsA {
             pointer: expression,
             ..
         } => collect_resource_fact_reads_from_contract_expression(
@@ -1980,7 +1978,7 @@ fn collect_resource_fact_reads_from_proposition(
             reads,
             resource_name,
         ),
-        ClickProposition::At { proposition, .. } => collect_resource_fact_reads_from_proposition(
+        SurfaceProposition::At { proposition, .. } => collect_resource_fact_reads_from_proposition(
             proposition,
             predicate_definitions,
             click_function_definitions,
@@ -1989,9 +1987,9 @@ fn collect_resource_fact_reads_from_proposition(
             reads,
             resource_name,
         ),
-        ClickProposition::And(left, right)
-        | ClickProposition::Or(left, right)
-        | ClickProposition::Implies(left, right) => {
+        SurfaceProposition::And(left, right)
+        | SurfaceProposition::Or(left, right)
+        | SurfaceProposition::Implies(left, right) => {
             collect_resource_fact_reads_from_proposition(
                 left,
                 predicate_definitions,
@@ -2011,7 +2009,7 @@ fn collect_resource_fact_reads_from_proposition(
                 resource_name,
             )
         }
-        ClickProposition::Not(body) | ClickProposition::Exists { body, .. } => {
+        SurfaceProposition::Not(body) | SurfaceProposition::Exists { body, .. } => {
             collect_resource_fact_reads_from_proposition(
                 body,
                 predicate_definitions,
@@ -2022,13 +2020,13 @@ fn collect_resource_fact_reads_from_proposition(
                 resource_name,
             )
         }
-        ClickProposition::ForAll {
+        SurfaceProposition::ForAll {
             click_type,
             name,
             body,
             ..
         } => {
-            if let ClickProposition::Implies(antecedent, consequent) = body.as_ref() {
+            if let SurfaceProposition::Implies(antecedent, consequent) = body.as_ref() {
                 collect_resource_fact_reads_from_proposition(
                     antecedent,
                     predicate_definitions,
@@ -2068,7 +2066,7 @@ fn collect_resource_fact_reads_from_proposition(
                 )
             }
         }
-        ClickProposition::RangeAll {
+        SurfaceProposition::RangeAll {
             start,
             end,
             item,
@@ -2120,7 +2118,7 @@ fn collect_resource_fact_reads_from_proposition(
             }
             Ok(())
         }
-        ClickProposition::RangeAny {
+        SurfaceProposition::RangeAny {
             start, end, body, ..
         } => {
             collect_resource_fact_reads_from_contract_expression(
@@ -2151,7 +2149,7 @@ fn collect_resource_fact_reads_from_proposition(
                 resource_name,
             )
         }
-        ClickProposition::PredicateCall { name, arguments } => {
+        SurfaceProposition::PredicateCall { name, arguments } => {
             for argument in arguments {
                 collect_resource_fact_reads_from_contract_expression(
                     argument,
@@ -2199,25 +2197,25 @@ fn collect_resource_fact_reads_from_proposition(
 /// none: `k < len` over `k: uint64` confines `k` to `0u64..len`. The upper
 /// bound must still come from the guard.
 fn quantified_index_interval(
-    body: &ClickProposition,
+    body: &SurfaceProposition,
     name: &SurfaceBinder,
     binder_type: &ClickType,
 ) -> Option<(ProgramExpression, ProgramExpression)> {
-    let ClickProposition::Implies(antecedent, _) = body else {
+    let SurfaceProposition::Implies(antecedent, _) = body else {
         return None;
     };
     fn visit(
-        proposition: &ClickProposition,
+        proposition: &SurfaceProposition,
         name: &SurfaceBinder,
         lower: &mut Option<ProgramExpression>,
         upper: &mut Option<ProgramExpression>,
     ) {
         match proposition {
-            ClickProposition::And(left, right) => {
+            SurfaceProposition::And(left, right) => {
                 visit(left, name, lower, upper);
                 visit(right, name, lower, upper);
             }
-            ClickProposition::Comparison {
+            SurfaceProposition::Comparison {
                 left,
                 operator,
                 right,
@@ -2225,9 +2223,9 @@ fn quantified_index_interval(
                 // A comparison of two exact observations bounds the index as
                 // the native comparison of the observed values does:
                 // `to_integer(k) < to_integer(len + 1u64)` is `k < len + 1u64`.
-                fn observed(expression: &ContractExpression) -> Option<&ContractExpression> {
+                fn observed(expression: &SurfaceTerm) -> Option<&SurfaceTerm> {
                     match expression {
-                        ContractExpression::Call { name, arguments } if name == "to_integer" => {
+                        SurfaceTerm::Call { name, arguments } if name == "to_integer" => {
                             match arguments.as_slice() {
                                 [argument] => Some(argument),
                                 _ => None,
@@ -2240,9 +2238,8 @@ fn quantified_index_interval(
                     (Some(left), Some(right)) => (left, right),
                     _ => (left, right),
                 };
-                let variable = ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                    name.kernel_name(),
-                ));
+                let variable =
+                    SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name.kernel_name()));
                 match operator {
                     ComparisonOperator::LessEqual if right == &variable => {
                         *lower = contract_expression_as_program_expression(left);
@@ -2292,7 +2289,7 @@ fn collect_resource_fact_reads_from_contract_segment(
 ) -> Result<(), ClickError> {
     for expression in [&segment.base, &segment.start, &segment.end] {
         collect_resource_fact_reads_from_contract_expression(
-            &ContractExpression::ProgramExpression(expression.clone()),
+            &SurfaceTerm::ProgramExpression(expression.clone()),
             predicate_definitions,
             click_function_definitions,
             visited_predicates,
@@ -2389,7 +2386,7 @@ fn collect_resource_fact_reads_from_resource_subject(
 }
 
 fn collect_resource_fact_reads_from_contract_expression(
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     predicate_definitions: &BTreeMap<&str, &PredicateDefinition>,
     click_function_definitions: &BTreeMap<&str, &ClickFunctionDefinition>,
     visited_predicates: &mut Vec<String>,
@@ -2398,45 +2395,39 @@ fn collect_resource_fact_reads_from_contract_expression(
     resource_name: &str,
 ) -> Result<(), ClickError> {
     match expression {
-        ContractExpression::IntegerContext(value) => {
-            collect_resource_fact_reads_from_contract_expression(
-                value,
-                predicate_definitions,
-                click_function_definitions,
-                visited_predicates,
-                visited_functions,
-                reads,
-                resource_name,
-            )
-        }
+        SurfaceTerm::IntegerContext(value) => collect_resource_fact_reads_from_contract_expression(
+            value,
+            predicate_definitions,
+            click_function_definitions,
+            visited_predicates,
+            visited_functions,
+            reads,
+            resource_name,
+        ),
 
-        ContractExpression::Proposition(proposition) => {
-            collect_resource_fact_reads_from_proposition(
-                proposition,
-                predicate_definitions,
-                click_function_definitions,
-                visited_predicates,
-                visited_functions,
-                reads,
-                resource_name,
-            )
-        }
-        ContractExpression::Resource(_) => Ok(()),
-        ContractExpression::RegionResult(_)
-        | ContractExpression::RegionAllocation(_)
-        | ContractExpression::RegionParameter { .. } => Ok(()),
-        ContractExpression::Lambda { body, .. } => {
-            collect_resource_fact_reads_from_contract_expression(
-                body,
-                predicate_definitions,
-                click_function_definitions,
-                visited_predicates,
-                visited_functions,
-                reads,
-                resource_name,
-            )
-        }
-        ContractExpression::Apply {
+        SurfaceTerm::Proposition(proposition) => collect_resource_fact_reads_from_proposition(
+            proposition,
+            predicate_definitions,
+            click_function_definitions,
+            visited_predicates,
+            visited_functions,
+            reads,
+            resource_name,
+        ),
+        SurfaceTerm::Resource(_) => Ok(()),
+        SurfaceTerm::RegionResult(_)
+        | SurfaceTerm::RegionAllocation(_)
+        | SurfaceTerm::RegionParameter { .. } => Ok(()),
+        SurfaceTerm::Lambda { body, .. } => collect_resource_fact_reads_from_contract_expression(
+            body,
+            predicate_definitions,
+            click_function_definitions,
+            visited_predicates,
+            visited_functions,
+            reads,
+            resource_name,
+        ),
+        SurfaceTerm::Apply {
             function,
             arguments,
         } => {
@@ -2463,24 +2454,22 @@ fn collect_resource_fact_reads_from_contract_expression(
             Ok(())
         }
 
-        ContractExpression::IntegerLiteral(_) => Ok(()),
-        ContractExpression::CUnary { operand: inner, .. }
-        | ContractExpression::MemoryLoad { pointer: inner, .. }
-        | ContractExpression::Negate(inner) => {
-            collect_resource_fact_reads_from_contract_expression(
-                inner,
-                predicate_definitions,
-                click_function_definitions,
-                visited_predicates,
-                visited_functions,
-                reads,
-                resource_name,
-            )
-        }
-        ContractExpression::ResourceField(_)
-        | ContractExpression::AlgebraicVariable { .. }
-        | ContractExpression::Binding(_) => Ok(()),
-        ContractExpression::AlgebraicConstructor { arguments, .. } => {
+        SurfaceTerm::IntegerLiteral(_) => Ok(()),
+        SurfaceTerm::CUnary { operand: inner, .. }
+        | SurfaceTerm::MemoryLoad { pointer: inner, .. }
+        | SurfaceTerm::Negate(inner) => collect_resource_fact_reads_from_contract_expression(
+            inner,
+            predicate_definitions,
+            click_function_definitions,
+            visited_predicates,
+            visited_functions,
+            reads,
+            resource_name,
+        ),
+        SurfaceTerm::ResourceField(_)
+        | SurfaceTerm::AlgebraicVariable { .. }
+        | SurfaceTerm::Binding(_) => Ok(()),
+        SurfaceTerm::AlgebraicConstructor { arguments, .. } => {
             for argument in arguments {
                 collect_resource_fact_reads_from_contract_expression(
                     argument,
@@ -2494,7 +2483,7 @@ fn collect_resource_fact_reads_from_contract_expression(
             }
             Ok(())
         }
-        ContractExpression::AlgebraicMatch { scrutinee, arms } => {
+        SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
             collect_resource_fact_reads_from_contract_expression(
                 scrutinee,
                 predicate_definitions,
@@ -2517,7 +2506,7 @@ fn collect_resource_fact_reads_from_contract_expression(
             }
             Ok(())
         }
-        ContractExpression::SequenceLiteral(elements) => {
+        SurfaceTerm::SequenceLiteral(elements) => {
             for element in elements {
                 collect_resource_fact_reads_from_contract_expression(
                     element,
@@ -2531,7 +2520,7 @@ fn collect_resource_fact_reads_from_contract_expression(
             }
             Ok(())
         }
-        ContractExpression::SequenceConcat(left, right) => {
+        SurfaceTerm::SequenceConcat(left, right) => {
             collect_resource_fact_reads_from_contract_expression(
                 left,
                 predicate_definitions,
@@ -2551,30 +2540,30 @@ fn collect_resource_fact_reads_from_contract_expression(
                 resource_name,
             )
         }
-        ContractExpression::QualifiedC {
+        SurfaceTerm::QualifiedC {
             lowered: expression,
             ..
         }
-        | ContractExpression::ProgramExpression(expression)
-        | ContractExpression::Field {
+        | SurfaceTerm::ProgramExpression(expression)
+        | SurfaceTerm::Field {
             lowered: expression,
             ..
         } => {
             collect_resource_fact_reads_from_program_expression(expression, reads);
             Ok(())
         }
-        ContractExpression::ProgramBinding(_) => Ok(()),
-        ContractExpression::ResourceWildcard => Err(ClickError::new(format!(
+        SurfaceTerm::ProgramBinding(_) => Ok(()),
+        SurfaceTerm::ResourceWildcard => Err(ClickError::new(format!(
             "`_` is only valid inside a `count(...)` resource pattern in resource `{resource_name}`"
         ))),
-        ContractExpression::ResourceCount(resource) => {
+        SurfaceTerm::ResourceCount(resource) => {
             let ResourceClause::Declared { arguments, .. } = resource.as_ref() else {
                 return Err(ClickError::new(format!(
                     "`count(...)` inside resource `{resource_name}` expects a declared resource"
                 )));
             };
             for argument in arguments {
-                if !matches!(argument, ContractExpression::ResourceWildcard) {
+                if !matches!(argument, SurfaceTerm::ResourceWildcard) {
                     collect_resource_fact_reads_from_contract_expression(
                         argument,
                         predicate_definitions,
@@ -2588,27 +2577,27 @@ fn collect_resource_fact_reads_from_contract_expression(
             }
             Ok(())
         }
-        ContractExpression::Old(_) => Err(ClickError::new(format!(
+        SurfaceTerm::Old(_) => Err(ClickError::new(format!(
             "`old(...)` is not available inside resource `{resource_name}` fact"
         ))),
-        ContractExpression::At { .. } => Err(ClickError::new(format!(
+        SurfaceTerm::At { .. } => Err(ClickError::new(format!(
             "`at(...)` is not available inside resource `{resource_name}` fact"
         ))),
-        ContractExpression::Exact(_) => Err(ClickError::new(format!(
+        SurfaceTerm::Exact(_) => Err(ClickError::new(format!(
             "`exact(...)` is not available inside resource `{resource_name}` fact"
         ))),
-        ContractExpression::Add(left, right)
-        | ContractExpression::Subtract(left, right)
-        | ContractExpression::Multiply(left, right)
-        | ContractExpression::Divide(left, right)
-        | ContractExpression::Remainder(left, right)
-        | ContractExpression::ShiftLeft(left, right)
-        | ContractExpression::RustShiftLeft(left, right)
-        | ContractExpression::ShiftRight(left, right)
-        | ContractExpression::RustShiftRight(left, right)
-        | ContractExpression::BitwiseAnd(left, right)
-        | ContractExpression::BitwiseOr(left, right)
-        | ContractExpression::BitwiseXor(left, right) => {
+        SurfaceTerm::Add(left, right)
+        | SurfaceTerm::Subtract(left, right)
+        | SurfaceTerm::Multiply(left, right)
+        | SurfaceTerm::Divide(left, right)
+        | SurfaceTerm::Remainder(left, right)
+        | SurfaceTerm::ShiftLeft(left, right)
+        | SurfaceTerm::RustShiftLeft(left, right)
+        | SurfaceTerm::ShiftRight(left, right)
+        | SurfaceTerm::RustShiftRight(left, right)
+        | SurfaceTerm::BitwiseAnd(left, right)
+        | SurfaceTerm::BitwiseOr(left, right)
+        | SurfaceTerm::BitwiseXor(left, right) => {
             collect_resource_fact_reads_from_contract_expression(
                 left,
                 predicate_definitions,
@@ -2628,7 +2617,7 @@ fn collect_resource_fact_reads_from_contract_expression(
                 resource_name,
             )
         }
-        ContractExpression::BitwiseNot(expression) => {
+        SurfaceTerm::BitwiseNot(expression) => {
             collect_resource_fact_reads_from_contract_expression(
                 expression,
                 predicate_definitions,
@@ -2639,7 +2628,7 @@ fn collect_resource_fact_reads_from_contract_expression(
                 resource_name,
             )
         }
-        ContractExpression::Index(base, index) => {
+        SurfaceTerm::Index(base, index) => {
             collect_resource_fact_reads_from_contract_expression(
                 base,
                 predicate_definitions,
@@ -2679,7 +2668,7 @@ fn collect_resource_fact_reads_from_contract_expression(
             });
             Ok(())
         }
-        ContractExpression::If {
+        SurfaceTerm::If {
             condition,
             then_branch,
             else_branch,
@@ -2712,7 +2701,7 @@ fn collect_resource_fact_reads_from_contract_expression(
                 resource_name,
             )
         }
-        ContractExpression::RangeFold {
+        SurfaceTerm::RangeFold {
             start,
             end,
             initial,
@@ -2756,7 +2745,7 @@ fn collect_resource_fact_reads_from_contract_expression(
                 resource_name,
             )
         }
-        ContractExpression::Let { value, body, .. } => {
+        SurfaceTerm::Let { value, body, .. } => {
             collect_resource_fact_reads_from_contract_expression(
                 value,
                 predicate_definitions,
@@ -2776,7 +2765,7 @@ fn collect_resource_fact_reads_from_contract_expression(
                 resource_name,
             )
         }
-        ContractExpression::ArrayIndex { base, .. } => {
+        SurfaceTerm::ArrayIndex { base, .. } => {
             collect_resource_fact_reads_from_contract_expression(
                 base,
                 predicate_definitions,
@@ -2788,7 +2777,7 @@ fn collect_resource_fact_reads_from_contract_expression(
             )?;
             Ok(())
         }
-        ContractExpression::MethodCall {
+        SurfaceTerm::MethodCall {
             receiver,
             arguments,
             ..
@@ -2806,7 +2795,7 @@ fn collect_resource_fact_reads_from_contract_expression(
             }
             Ok(())
         }
-        ContractExpression::Call { name, arguments } => {
+        SurfaceTerm::Call { name, arguments } => {
             for argument in arguments {
                 collect_resource_fact_reads_from_contract_expression(
                     argument,
@@ -3226,7 +3215,7 @@ fn symbolic_segment_covers_range(
     let state = ExecutionState::at_point(at);
     let evaluate = |expression: &ProgramExpression| {
         crate::surface::proof::evaluate_fixed_state_expression_through_kernel(
-            &ContractExpression::ProgramExpression(expression.clone()),
+            &SurfaceTerm::ProgramExpression(expression.clone()),
             &PureFactContext::new(),
             contract_environment,
             FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
@@ -3274,7 +3263,7 @@ fn symbolic_segment_covers_index(
     let state = ExecutionState::at_point(at);
     let evaluate = |expression: &ProgramExpression| {
         crate::surface::proof::evaluate_fixed_state_expression_through_kernel(
-            &ContractExpression::ProgramExpression(expression.clone()),
+            &SurfaceTerm::ProgramExpression(expression.clone()),
             &PureFactContext::new(),
             contract_environment,
             FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
@@ -3460,9 +3449,9 @@ mod read_authority_tests {
             uninitialized: false,
             state,
             surface: ContractSegmentSurface::Range {
-                base: ContractExpression::ProgramExpression(base.clone()),
-                start: ContractExpression::ProgramExpression(start.clone()),
-                end: ContractExpression::ProgramExpression(end.clone()),
+                base: SurfaceTerm::ProgramExpression(base.clone()),
+                start: SurfaceTerm::ProgramExpression(start.clone()),
+                end: SurfaceTerm::ProgramExpression(end.clone()),
             },
             base,
             start,
@@ -3722,10 +3711,9 @@ mod resource_function_composition_tests {
             .map(|definition| (definition.name(), definition))
             .collect();
         for depth in [16, 64, 256] {
-            let mut expression =
-                ContractExpression::ProgramExpression(ProgramExpression::Value(int32(0)));
+            let mut expression = SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(0)));
             for _ in 0..depth {
-                expression = ContractExpression::Call {
+                expression = SurfaceTerm::Call {
                     name: "identity".into(),
                     arguments: vec![expression],
                 };

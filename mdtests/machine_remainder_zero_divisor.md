@@ -6,10 +6,10 @@ it is the opaque total remainder, which is not below the divisor. So
 
 ```click
 theorem tail_bounds(n: uint64, size: uint64) {
-    ensures n % size < size by normalize();
+    ensures n % size < size by close();
 }
 ```
 
 ```expect
-fail: `normalize` goal did not normalize to true
+fail: could not establish `(n % size) < size`
 ```

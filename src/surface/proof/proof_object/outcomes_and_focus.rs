@@ -836,7 +836,7 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn begin_contract_claim(
         &self,
         goal: &crate::kernel::ContractClaimGoal,
-        surface: &ClickProposition,
+        surface: &SurfaceProposition,
     ) -> Result<Self, ClickError> {
         #[cfg(test)]
         let _operation = crate::kernel::search::FastOperationScope::enter("begin_contract_claim");
@@ -955,11 +955,6 @@ impl<'a> Proof<'a> {
         let checked = execution.core.frontier.execution().ok_or_else(|| {
             self.step_error("outcome goals require execution to have reached function exit")
         })?;
-        let call_edges = execution
-            .presentation
-            .call_outcome_edges
-            .as_ref()
-            .filter(|edges| edges.len() == checked.paths().len());
         let branch_state = &self.focused_branch().expect("focused branch exists").state;
         let frontier_state = branch_state.execution.clone();
 
@@ -1143,18 +1138,7 @@ impl<'a> Proof<'a> {
                             match_arms: outcome_evidence.match_arms,
                             case_obligations: outcome_evidence.case_obligations,
                             checked_haves: outcome_evidence.checked_haves,
-                            call_routes: if outcome_evidence.call_routes.is_empty() {
-                                call_edges
-                                    .map(|edges| {
-                                        vec![CallOutcomeEdge::from_payloads(
-                                            edges[path_index],
-                                            &execution.presentation.terminal_call_payloads,
-                                        )]
-                                    })
-                                    .unwrap_or_default()
-                            } else {
-                                outcome_evidence.call_routes
-                            },
+                            call_routes: outcome_evidence.call_routes,
                         },
                     )),
                 ),

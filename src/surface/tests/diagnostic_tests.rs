@@ -721,7 +721,7 @@ fn concise_error_context_preserves_click_binder_colons() {
 fn concise_reason_keeps_list_entries_and_definitions_whole() {
     assert_eq!(
         concise_reason_lines(
-            "`f.contract` tactic 2: `transport using` found no frame evidence\n  \
+            "`f.contract` tactic 2: transport frame check found no frame evidence\n  \
              source (holds): x == x\n  cell walks:\n    \
              address: value#2; width: 8 bytes; stop: state#3: step not proved separate\n  \
              state#3 = loop effect: may write [p[0..1]]\n  \
@@ -729,7 +729,7 @@ fn concise_reason_keeps_list_entries_and_definitions_whole() {
         ),
         [
             (false, "`f.contract` tactic 2"),
-            (false, "`transport using` found no frame evidence"),
+            (false, "transport frame check found no frame evidence"),
             (false, "source (holds)"),
             (false, "x == x"),
             (false, "cell walks:"),
@@ -2048,9 +2048,9 @@ fn unfolded_algebraic_field_keeps_its_captured_model() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_12")]
 fn unheld_field_without_a_checked_consumption_does_not_invent_one() {
-    let proposition = ClickProposition::Comparison {
+    let proposition = SurfaceProposition::Comparison {
         operator: ComparisonOperator::Equal,
-        left: ContractExpression::ResourceField(ResourceFieldAccess {
+        left: SurfaceTerm::ResourceField(ResourceFieldAccess {
             owner: "absent".into(),
             resource_name: "cell".into(),
             identity: InstanceId::from_variable(Variable(999)).into(),
@@ -2059,9 +2059,7 @@ fn unheld_field_without_a_checked_consumption_does_not_invent_one() {
             field_index: 0,
             click_type: Some(ClickType::Program(InterfaceType::Int32)),
         }),
-        right: ContractExpression::ProgramExpression(ProgramExpression::Value(
-            crate::kernel::int32(0),
-        )),
+        right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(crate::kernel::int32(0))),
     };
     let message = crate::surface::diagnostics::describe_consumed_instance_field_read(
         &proposition,
@@ -3861,45 +3859,39 @@ fn known_transport_trace_retains_its_written_source_occurrence() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_20")]
 fn a_trace_marks_searched_steps_and_their_chosen_arguments() {
-    for (suffix, elided) in [("", true), (" using { at(saved, p[0] == 7); }", false)] {
-        let source = format!(
-            r#"verifying "f.c";
-            void f(int32 *p) {{ owns p[0]; requires p[0] == 7; ensures true; }} by {{
-                step(); mark saved;
-                transport(at(saved, p[0] == 7), p[0] == 7){suffix};
-                step_until(function.exit); close();
-            }}
-        "#
+    let source = format!(
+        r#"verifying "f.c";
+        void f(int32 *p) {{ owns p[0]; requires p[0] == 7; ensures true; }} by {{
+            step(); mark saved;
+            transport(at(saved, p[0] == 7), p[0] == 7);
+            step_until(function.exit); close();
+        }}
+    "#
+    );
+    with_proof_trace("f", || {
+        verify_c_sources(
+            &source,
+            &[("f.c", "void f(int32 *p) { int32 y = 0; return; }")],
+        )
+        .expect("identity transport should verify");
+        let trace = accepted_proof_trace(&|_, _| None, &|_, _, _| None, &|_, _, _| false, None)
+            .expect("accepted transport retains its trace");
+        let chosen = "chosen: transport(";
+        assert!(!trace.contains(chosen), "{trace}");
+        assert!(
+            trace.contains("tactic 3: step (from `step_until`)"),
+            "{trace}"
         );
-        with_proof_trace("f", || {
-            verify_c_sources(
-                &source,
-                &[("f.c", "void f(int32 *p) { int32 y = 0; return; }")],
-            )
-            .expect("identity transport should verify");
-            let trace = accepted_proof_trace(&|_, _| None, &|_, _, _| None, &|_, _, _| false, None)
-                .expect("accepted transport retains its trace");
-            let chosen = "chosen: transport(at(saved, p[0] == 7), p[0] == 7) using {";
-            assert!(!trace.contains(chosen), "{trace}");
-            assert!(
-                trace.contains("tactic 3: step (from `step_until`)"),
-                "{trace}"
-            );
-            assert!(
-                trace.contains("have true (from `implicit tail`)"),
-                "{trace}"
-            );
-            // Bare transport expands to an ordinary have; explicit legacy
-            // transport retains its written node. Both retain the source path.
-            assert!(trace.contains("tactic 0: step\n"), "{trace}");
-            let expected = if elided {
-                "tactic 2: have p[0] == 7 (from `transport`)\n"
-            } else {
-                "tactic 2: transport\n"
-            };
-            assert!(trace.contains(expected), "{trace}");
-        });
-    }
+        assert!(
+            trace.contains("have true (from `implicit tail`)"),
+            "{trace}"
+        );
+        assert!(trace.contains("tactic 0: step\n"), "{trace}");
+        assert!(
+            trace.contains("tactic 2: have p[0] == 7 (from `transport`)\n"),
+            "{trace}"
+        );
+    });
     let source = r#"verifying "f.c";
         theorem le_trans(a: int32, b: int32, c: int32) {
             requires a <= b;
@@ -3928,66 +3920,51 @@ fn rejected_transport_prints_checked_reads_and_retains_prefix() {
     let stores = (1..10).map(|i| format!("p[{i}] = 9; ")).collect::<String>();
     let c = format!("void f(int32 *p) {{ {stores} p[0] = 9; return; }}");
     let steps = "step(); ".repeat(9);
-    for transport in [
-        "transport(at(stored, p[0] == 7), p[0] == 7) using { at(stored, p[0] == 7); };",
-        "transport(at(stored, p[0] == 7), p[0] == 7);",
-    ] {
-        let source = format!(
-            r#"verifying "f.c";
-            void f(int32 *p) {{ owns p[0..10]; requires p[0] == 7; ensures true; }} by {{
-                {steps} mark stored; step();
-                {transport}
-                step_until(function.exit); close();
-            }}
-        "#
+    let source = format!(
+        r#"verifying "f.c";
+        void f(int32 *p) {{ owns p[0..10]; requires p[0] == 7; ensures true; }} by {{
+            {steps} mark stored; step();
+            transport(at(stored, p[0] == 7), p[0] == 7);
+            step_until(function.exit); close();
+        }}
+    "#
+    );
+    with_proof_trace("f", || {
+        let error = verify_c_sources(&source, &[("f.c", c.as_str())])
+            .expect_err("a write invalidates the transported value");
+        let message = error.message();
+        assert!(
+            message.contains("`transport` found no frame evidence"),
+            "{message}"
         );
-        with_proof_trace("f", || {
-            let error = verify_c_sources(&source, &[("f.c", c.as_str())])
-                .expect_err("a write invalidates the transported value");
-            let message = error.message();
-            // The bare form reports the refusal of its source-only check,
-            // which names the effects between the two states, as `using` does.
-            if transport.contains("using") {
-                assert!(
-                    message.contains("`transport using` found no frame evidence"),
-                    "{message}"
-                );
-            } else {
-                assert!(
-                    message.contains("`transport` found no frame evidence"),
-                    "{message}"
-                );
-                assert!(
-                    message.contains("this is the refusal with the source as the only premise"),
-                    "{message}"
-                );
-            }
-            assert!(message.contains("at this frontier (10):"), "{message}");
-            assert!(message.contains("checked source (holds):"), "{message}");
-            assert!(message.contains("checked target (wanted):"), "{message}");
-            assert!(message.contains("read<Bits32>"), "{message}");
-            assert!(message.contains("state#"), "{message}");
-            // The target names the read of the overwritten cell, not the
-            // value the store left there.
-            assert!(
-                message.contains("checked target (wanted): int32 =(read<Bits32>"),
-                "{message}"
-            );
-            assert!(
-                !message.contains("additional effect facts omitted"),
-                "{message}"
-            );
-            let trace = accepted_proof_trace(&|_, _| None, &|_, _, _| None, &|_, _, _| false, None)
-                .expect("the rejected written transport retains its checked prefix");
-            assert!(
-                trace.contains("checked prefix; certification failed"),
-                "{trace}"
-            );
-            assert!(trace.contains("steps through: p[1] = 9"), "{trace}");
-            assert!(trace.contains("steps through: p[0] = 9"), "{trace}");
-            assert!(!trace.contains("transport using"), "{trace}");
-        });
-    }
+        assert!(
+            message.contains("this is the refusal with the source as the only premise"),
+            "{message}"
+        );
+        assert!(message.contains("at this frontier (10):"), "{message}");
+        assert!(message.contains("checked source (holds):"), "{message}");
+        assert!(message.contains("checked target (wanted):"), "{message}");
+        assert!(message.contains("read<Bits32>"), "{message}");
+        assert!(message.contains("state#"), "{message}");
+        // The target names the read of the overwritten cell, not the
+        // value the store left there.
+        assert!(
+            message.contains("checked target (wanted): int32 =(read<Bits32>"),
+            "{message}"
+        );
+        assert!(
+            !message.contains("additional effect facts omitted"),
+            "{message}"
+        );
+        let trace = accepted_proof_trace(&|_, _| None, &|_, _, _| None, &|_, _, _| false, None)
+            .expect("the rejected written transport retains its checked prefix");
+        assert!(
+            trace.contains("checked prefix; certification failed"),
+            "{trace}"
+        );
+        assert!(trace.contains("steps through: p[1] = 9"), "{trace}");
+        assert!(trace.contains("steps through: p[0] = 9"), "{trace}");
+    });
 }
 
 #[test]
@@ -4028,48 +4005,6 @@ fn failed_normalize_using_retains_actual_wide_read_resolution() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_21")]
-fn rejected_loop_transport_premise_uses_shared_exact_diagnostic() {
-    let c = "void f(int32 *p, int32 *q) { while (1) { p[0] = 9; break; } return; }";
-    let source = r#"verifying "f.c";
-        void f(int32 *p, int32 *q) {
-            owns p[0]; requires p[0] == 7; ensures true;
-        } by {
-            loop {
-                invariant true;
-                initialize by { normalize(); }
-                maintain by {
-                    mark before_write; step();
-                    transport(at(before_write, p[0] == 7), p[0] == 7) using {
-                        separate(memory(p[0]), memory(q[0]));
-                    };
-                }
-            }
-            step_until(function.exit); close();
-        }
-    "#;
-    with_proof_trace("f", || {
-        let error =
-            verify_c_sources(source, &[("f.c", c)]).expect_err("the arbitrary q may alias p");
-        let message = error.message();
-        assert!(message.contains("required transport premise:"), "{message}");
-        assert!(!message.contains("available resource facts"), "{message}");
-        let trace = error
-            .trace_context_report()
-            .expect("a rejected premise retains its checked prefix");
-        assert!(trace.contains("required transport premise:"), "{trace}");
-        assert!(trace.contains("steps through: p[0] = 9"), "{trace}");
-        assert!(trace.contains("p"), "{trace}");
-        assert!(trace.contains("q"), "{trace}");
-        let premise = trace
-            .lines()
-            .find(|line| line.contains("required transport premise:"))
-            .unwrap();
-        assert!(!premise.contains("…"), "{premise}");
-    });
-}
-
-#[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_21")]
 fn rejected_wide_transport_shows_actual_walk_stop_and_prefix() {
     let c = "void f(uint64 *p) { p[0] = 9; int32 y = 0; return; }";
     let source = r#"verifying "f.c";
@@ -4077,9 +4012,7 @@ fn rejected_wide_transport_shows_actual_walk_stop_and_prefix() {
             owns p[0]; requires p[0] == 7u64; ensures true;
         } by {
             mark before_write; step();
-            transport(at(before_write, p[0] == 7u64), p[0] == 7u64) using {
-                at(before_write, p[0] == 7u64);
-            };
+            transport(at(before_write, p[0] == 7u64), p[0] == 7u64);
             step_until(function.exit); normalize();
         }
     "#;
@@ -4221,69 +4154,6 @@ fn budget_stopped_transport_retains_its_checked_loop_prefix() {
             .expect("attach the checked predecessor even on a budget error");
         assert!(trace.contains("steps through: *p = 9"), "{trace}");
     });
-}
-
-#[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_22")]
-fn budget_stopped_known_transport_retains_its_checked_prefix_and_completed_fact() {
-    use crate::instrumentation::{TacticWorkLimits, collect_tactic_work, with_tactic_work_limits};
-    let source = r#"verifying "f.c";
-        void f(int32 **p, int32 **q) {
-            owns p[0]; owns q[0]; ensures p[0] == old(p[0]);
-        } by {
-            step_until(function.exit);
-            transport(old(p[0]) == old(p[0]), p[0] == old(p[0])) using {
-                separate(memory(p[0]), memory(q[0]));
-            };
-            close();
-        }
-    "#;
-    let c = [("f.c", "void f(int32 **p, int32 **q) { *q = *p; }")];
-    let (result, work) = collect_tactic_work(|| verify_c_sources(source, &c));
-    result.expect("the transport is valid with its ordinary work allowance");
-    let transport_work = work
-        .iter()
-        .find(|sample| sample.tactic.tactic_name == "transport")
-        .expect("the explicit transport is measured")
-        .work;
-    assert!(transport_work > 0, "{work:?}");
-    // This pointer copy completes even at a zero simple budget. Exercise
-    // exhaustion at the start and end of the following explicit transport,
-    // without assuming a fixed cost or changing the production allowance.
-    for limit in [0, transport_work - 1] {
-        with_proof_trace("f", || {
-            let error = with_tactic_work_limits(
-                TacticWorkLimits {
-                    simple: limit,
-                    ..TacticWorkLimits::default()
-                },
-                || verify_c_sources(source, &c),
-            )
-            .expect_err("the explicit transport exhausts its work allowance");
-            assert!(
-                error.message().contains("tactic `transport`"),
-                "{}",
-                error.message()
-            );
-            let report = error.concise_report();
-            assert!(report.starts_with("internal error:"), "{report}");
-            let trace = error
-                .trace_context_report()
-                .expect("a stopped explicit transport retains the checked predecessor");
-            assert!(trace.contains("steps through: *q = "), "{trace}");
-            if limit != 0 {
-                let failed = trace
-                    .split("proof refusal:")
-                    .nth(1)
-                    .expect("failure context");
-                // Exhaustion happens after the ordinary proof completed.
-                // Its fact survives in the failure context; no legacy
-                // transport node is needed to retain that checked prefix.
-                assert!(failed.contains("value#1 = value#1 is true"), "{trace}");
-                assert!(trace.contains("pointer read at state#"), "{trace}");
-            }
-        });
-    }
 }
 
 #[test]
@@ -4691,13 +4561,11 @@ test_batches! {
         failed_normalize_using_retains_actual_wide_read_resolution,
     ],
     diagnostic_batch_21: [
-        rejected_loop_transport_premise_uses_shared_exact_diagnostic,
         rejected_wide_transport_shows_actual_walk_stop_and_prefix,
         have_failure_trace_retains_checked_call_prefix,
         budget_stopped_transport_retains_its_checked_loop_prefix,
     ],
     diagnostic_batch_22: [
-        budget_stopped_known_transport_retains_its_checked_prefix_and_completed_fact,
         callback_refinement_hint_with_produced_resource_is_a_checked_proof,
         failed_branch_interface_retains_its_arm_and_written_requirement,
         a_uint32_equality_above_int32_max_prints_in_its_own_type,

@@ -30,9 +30,9 @@ const ESTABLISHED_LIMIT: usize = 4;
 /// What was being lowered, in the spelling the user wrote.
 pub(in crate::surface::proof) enum StatedForm<'a> {
     /// A written proposition: an `ensures` or `requires` clause, a `have` goal.
-    Proposition(&'a ClickProposition),
+    Proposition(&'a SurfaceProposition),
     /// A written contract expression: a witness value, a theorem argument.
-    Expression(&'a ContractExpression),
+    Expression(&'a SurfaceTerm),
     /// A written C fragment: a segment bound, a resource quantity.
     ProgramExpression(&'a ProgramExpression),
 }
@@ -155,7 +155,7 @@ impl<'a> StatedSite<'a> {
 
     /// One kernel proposition as the user would write it, when reconstruction
     /// can name every value it mentions.
-    fn spell_proposition(&self, proposition: &Proposition) -> Option<ClickProposition> {
+    fn spell_proposition(&self, proposition: &Proposition) -> Option<SurfaceProposition> {
         let (parameters, arguments) = self.naming();
         synthesize_surface_proposition(
             proposition,
@@ -293,21 +293,17 @@ struct Cell {
 /// zero-based `(p + (hi - 1))[0..1]`, whose index has been folded into the
 /// base; splitting that add back out is what turns the message's subterm into
 /// the `p[hi - 1]` the reader wrote.
-fn loadable_cell(surface: Option<&ClickProposition>) -> Option<Cell> {
-    let ClickProposition::Loadable { segment } = surface? else {
+fn loadable_cell(surface: Option<&SurfaceProposition>) -> Option<Cell> {
+    let SurfaceProposition::Loadable { segment } = surface? else {
         return None;
     };
     let (base, start, _) = segment.surface_range()?;
     if constant_index(start) == Some(0)
-        && let ContractExpression::ProgramExpression(ProgramExpression::Add(pointer, index)) = base
+        && let SurfaceTerm::ProgramExpression(ProgramExpression::Add(pointer, index)) = base
     {
         return Some(Cell {
-            base: spelled_alone(&ContractExpression::ProgramExpression(
-                pointer.as_ref().clone(),
-            )),
-            index: spelled_alone(&ContractExpression::ProgramExpression(
-                index.as_ref().clone(),
-            )),
+            base: spelled_alone(&SurfaceTerm::ProgramExpression(pointer.as_ref().clone())),
+            index: spelled_alone(&SurfaceTerm::ProgramExpression(index.as_ref().clone())),
         });
     }
     Some(Cell {
@@ -317,8 +313,8 @@ fn loadable_cell(surface: Option<&ClickProposition>) -> Option<Cell> {
 }
 
 /// The constant an index expression is, when it is one.
-fn constant_index(expression: &ContractExpression) -> Option<u32> {
-    let ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(term))) =
+fn constant_index(expression: &SurfaceTerm) -> Option<u32> {
+    let SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(term))) =
         expression
     else {
         return None;
@@ -331,7 +327,7 @@ fn constant_index(expression: &ContractExpression) -> Option<u32> {
 ///
 /// The printer parenthesizes because it composes; a subterm named on its own in
 /// a sentence does not, and `hi - 1` is what the reader wrote.
-fn spelled_alone(expression: &ContractExpression) -> String {
+fn spelled_alone(expression: &SurfaceTerm) -> String {
     let rendered = crate::surface::diagnostics::describe_contract_expression(expression);
     let Some(inner) = rendered
         .strip_prefix('(')
@@ -826,8 +822,8 @@ struct WrittenRangeFold {
 /// The first range fold written in the stated form, if it contains one.
 fn written_range_fold(form: &StatedForm<'_>) -> Option<WrittenRangeFold> {
     let mut fold = None;
-    let mut take_first_fold = |expression: &ContractExpression| {
-        if fold.is_none() && matches!(expression, ContractExpression::RangeFold { .. }) {
+    let mut take_first_fold = |expression: &SurfaceTerm| {
+        if fold.is_none() && matches!(expression, SurfaceTerm::RangeFold { .. }) {
             fold = Some(expression.clone());
         }
     };
@@ -841,14 +837,14 @@ fn written_range_fold(form: &StatedForm<'_>) -> Option<WrittenRangeFold> {
         StatedForm::ProgramExpression(_) => {}
     }
     let expression = fold?;
-    let ContractExpression::RangeFold { item, body, .. } = &expression else {
+    let SurfaceTerm::RangeFold { item, body, .. } = &expression else {
         return None;
     };
     let mut reads = Vec::new();
     walk_written_expressions(body, &mut |inner| {
         if matches!(
             inner,
-            ContractExpression::ArrayIndex { .. } | ContractExpression::Index(_, _)
+            SurfaceTerm::ArrayIndex { .. } | SurfaceTerm::Index(_, _)
         ) {
             reads.push(spelled_alone(inner));
         }
@@ -868,20 +864,20 @@ fn written_range_fold(form: &StatedForm<'_>) -> Option<WrittenRangeFold> {
 /// Every variant is listed, so a new one is a compile error here rather than
 /// a subterm a diagnostic silently walks past.
 pub(in crate::surface) fn walk_written_expressions(
-    expression: &ContractExpression,
-    visit: &mut impl FnMut(&ContractExpression),
+    expression: &SurfaceTerm,
+    visit: &mut impl FnMut(&SurfaceTerm),
 ) {
     visit(expression);
-    let mut children: Vec<&ContractExpression> = Vec::new();
+    let mut children: Vec<&SurfaceTerm> = Vec::new();
     match expression {
-        ContractExpression::IntegerContext(value) => children.push(value),
+        SurfaceTerm::IntegerContext(value) => children.push(value),
 
-        ContractExpression::Proposition(proposition) => {
+        SurfaceTerm::Proposition(proposition) => {
             walk_written_expressions_in_proposition(proposition, visit)
         }
-        ContractExpression::Resource(_) => {}
-        ContractExpression::Lambda { .. } => {}
-        ContractExpression::Apply {
+        SurfaceTerm::Resource(_) => {}
+        SurfaceTerm::Lambda { .. } => {}
+        SurfaceTerm::Apply {
             function,
             arguments,
         } => {
@@ -889,33 +885,33 @@ pub(in crate::surface) fn walk_written_expressions(
             children.extend(arguments);
         }
 
-        ContractExpression::IntegerLiteral(_)
-        | ContractExpression::ResourceField(_)
-        | ContractExpression::AlgebraicVariable { .. }
-        | ContractExpression::Binding(_)
-        | ContractExpression::QualifiedC { .. }
-        | ContractExpression::ProgramExpression(_)
-        | ContractExpression::ProgramBinding(_)
-        | ContractExpression::RegionResult(_)
-        | ContractExpression::RegionAllocation(_)
-        | ContractExpression::RegionParameter { .. }
-        | ContractExpression::ResourceWildcard
-        | ContractExpression::ResourceCount(_) => {}
-        ContractExpression::CUnary { operand: inner, .. }
-        | ContractExpression::MemoryLoad { pointer: inner, .. }
-        | ContractExpression::Negate(inner)
-        | ContractExpression::BitwiseNot(inner)
-        | ContractExpression::Old(inner)
-        | ContractExpression::Exact(inner)
-        | ContractExpression::At {
+        SurfaceTerm::IntegerLiteral(_)
+        | SurfaceTerm::ResourceField(_)
+        | SurfaceTerm::AlgebraicVariable { .. }
+        | SurfaceTerm::Binding(_)
+        | SurfaceTerm::QualifiedC { .. }
+        | SurfaceTerm::ProgramExpression(_)
+        | SurfaceTerm::ProgramBinding(_)
+        | SurfaceTerm::RegionResult(_)
+        | SurfaceTerm::RegionAllocation(_)
+        | SurfaceTerm::RegionParameter { .. }
+        | SurfaceTerm::ResourceWildcard
+        | SurfaceTerm::ResourceCount(_) => {}
+        SurfaceTerm::CUnary { operand: inner, .. }
+        | SurfaceTerm::MemoryLoad { pointer: inner, .. }
+        | SurfaceTerm::Negate(inner)
+        | SurfaceTerm::BitwiseNot(inner)
+        | SurfaceTerm::Old(inner)
+        | SurfaceTerm::Exact(inner)
+        | SurfaceTerm::At {
             expression: inner, ..
         }
-        | ContractExpression::Field { base: inner, .. }
-        | ContractExpression::ArrayIndex { base: inner, .. } => children.push(inner),
-        ContractExpression::AlgebraicConstructor { arguments, .. }
-        | ContractExpression::SequenceLiteral(arguments)
-        | ContractExpression::Call { arguments, .. } => children.extend(arguments),
-        ContractExpression::MethodCall {
+        | SurfaceTerm::Field { base: inner, .. }
+        | SurfaceTerm::ArrayIndex { base: inner, .. } => children.push(inner),
+        SurfaceTerm::AlgebraicConstructor { arguments, .. }
+        | SurfaceTerm::SequenceLiteral(arguments)
+        | SurfaceTerm::Call { arguments, .. } => children.extend(arguments),
+        SurfaceTerm::MethodCall {
             receiver,
             arguments,
             ..
@@ -923,28 +919,28 @@ pub(in crate::surface) fn walk_written_expressions(
             children.push(receiver);
             children.extend(arguments);
         }
-        ContractExpression::AlgebraicMatch { scrutinee, arms } => {
+        SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
             children.push(scrutinee);
             children.extend(arms.iter().map(|arm| &arm.body));
         }
-        ContractExpression::SequenceConcat(left, right)
-        | ContractExpression::Add(left, right)
-        | ContractExpression::Subtract(left, right)
-        | ContractExpression::Multiply(left, right)
-        | ContractExpression::Divide(left, right)
-        | ContractExpression::Remainder(left, right)
-        | ContractExpression::ShiftLeft(left, right)
-        | ContractExpression::RustShiftLeft(left, right)
-        | ContractExpression::ShiftRight(left, right)
-        | ContractExpression::RustShiftRight(left, right)
-        | ContractExpression::BitwiseAnd(left, right)
-        | ContractExpression::BitwiseOr(left, right)
-        | ContractExpression::BitwiseXor(left, right)
-        | ContractExpression::Index(left, right) => {
+        SurfaceTerm::SequenceConcat(left, right)
+        | SurfaceTerm::Add(left, right)
+        | SurfaceTerm::Subtract(left, right)
+        | SurfaceTerm::Multiply(left, right)
+        | SurfaceTerm::Divide(left, right)
+        | SurfaceTerm::Remainder(left, right)
+        | SurfaceTerm::ShiftLeft(left, right)
+        | SurfaceTerm::RustShiftLeft(left, right)
+        | SurfaceTerm::ShiftRight(left, right)
+        | SurfaceTerm::RustShiftRight(left, right)
+        | SurfaceTerm::BitwiseAnd(left, right)
+        | SurfaceTerm::BitwiseOr(left, right)
+        | SurfaceTerm::BitwiseXor(left, right)
+        | SurfaceTerm::Index(left, right) => {
             children.push(left);
             children.push(right);
         }
-        ContractExpression::If {
+        SurfaceTerm::If {
             condition,
             then_branch,
             else_branch,
@@ -953,7 +949,7 @@ pub(in crate::surface) fn walk_written_expressions(
             children.push(then_branch);
             children.push(else_branch);
         }
-        ContractExpression::RangeFold {
+        SurfaceTerm::RangeFold {
             start,
             end,
             initial,
@@ -965,7 +961,7 @@ pub(in crate::surface) fn walk_written_expressions(
             children.push(initial);
             children.push(body);
         }
-        ContractExpression::Let { value, body, .. } => {
+        SurfaceTerm::Let { value, body, .. } => {
             children.push(value);
             children.push(body);
         }
@@ -980,53 +976,53 @@ pub(in crate::surface) fn walk_written_expressions(
 /// A resource subject and a memory segment are written in C fragments, which
 /// carry no fold and no `Integer` read, so they are leaves here.
 pub(in crate::surface) fn walk_written_expressions_in_proposition(
-    proposition: &ClickProposition,
-    visit: &mut impl FnMut(&ContractExpression),
+    proposition: &SurfaceProposition,
+    visit: &mut impl FnMut(&SurfaceTerm),
 ) {
     match proposition {
-        ClickProposition::Value(expression) => walk_written_expressions(expression, visit),
-        ClickProposition::Comparison { left, right, .. } => {
+        SurfaceProposition::Value(expression) => walk_written_expressions(expression, visit),
+        SurfaceProposition::Comparison { left, right, .. } => {
             walk_written_expressions(left, visit);
             walk_written_expressions(right, visit);
         }
-        ClickProposition::FloatClassification { expression, .. }
-        | ClickProposition::Defined { expression }
-        | ClickProposition::IsA {
+        SurfaceProposition::FloatClassification { expression, .. }
+        | SurfaceProposition::Defined { expression }
+        | SurfaceProposition::IsA {
             pointer: expression,
             ..
         } => walk_written_expressions(expression, visit),
-        ClickProposition::At { proposition, .. }
-        | ClickProposition::Not(proposition)
-        | ClickProposition::ForAll {
+        SurfaceProposition::At { proposition, .. }
+        | SurfaceProposition::Not(proposition)
+        | SurfaceProposition::ForAll {
             body: proposition, ..
         }
-        | ClickProposition::Exists {
+        | SurfaceProposition::Exists {
             body: proposition, ..
         } => walk_written_expressions_in_proposition(proposition, visit),
-        ClickProposition::And(left, right)
-        | ClickProposition::Or(left, right)
-        | ClickProposition::Implies(left, right) => {
+        SurfaceProposition::And(left, right)
+        | SurfaceProposition::Or(left, right)
+        | SurfaceProposition::Implies(left, right) => {
             walk_written_expressions_in_proposition(left, visit);
             walk_written_expressions_in_proposition(right, visit);
         }
-        ClickProposition::RangeAll {
+        SurfaceProposition::RangeAll {
             start, end, body, ..
         }
-        | ClickProposition::RangeAny {
+        | SurfaceProposition::RangeAny {
             start, end, body, ..
         } => {
             walk_written_expressions(start, visit);
             walk_written_expressions(end, visit);
             walk_written_expressions_in_proposition(body, visit);
         }
-        ClickProposition::PredicateCall { arguments, .. } => {
+        SurfaceProposition::PredicateCall { arguments, .. } => {
             for argument in arguments {
                 walk_written_expressions(argument, visit);
             }
         }
-        ClickProposition::Separate { .. }
-        | ClickProposition::ResourceViewable { .. }
-        | ClickProposition::Contains { .. }
-        | ClickProposition::Loadable { .. } => {}
+        SurfaceProposition::Separate { .. }
+        | SurfaceProposition::ResourceViewable { .. }
+        | SurfaceProposition::Contains { .. }
+        | SurfaceProposition::Loadable { .. } => {}
     }
 }

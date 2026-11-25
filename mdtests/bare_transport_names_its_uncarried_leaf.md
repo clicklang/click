@@ -2,9 +2,7 @@
 
 `dst[3] = 0` overwrites one of the cells `memset` set to `7`, so the claim
 that all four still hold `7` is false and the bare `transport` is refused.
-A bare `transport` cites only its source, and its refusal is the one the
-same transport gets with its source listed in `using`: the
-quantified frame's refusal, naming the typed validity fact it could not carry, its two states, and the
+The refusal names the typed validity fact the frame could not carry, its two states, and the
 store to `dst[3]` among the effects between them. It ends by calling the
 refusal a search miss and naming the `using` form that writes the evidence.
 

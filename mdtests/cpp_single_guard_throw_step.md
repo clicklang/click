@@ -75,16 +75,14 @@ int32 single_guard_step(int32& value, bool should_throw) {
     step();
     step();
     outcomes {
-        returned => { step_until(function.exit); }
+        returned => {
+            step_until(function.exit);
+            close();
+        }
         threw(error) => {
             have error == 7 by close();
             step_until(function.exit);
-        }
-    }
-    outcomes {
-        returned => { close(); }
-        threw(saved_error) => {
-            have saved_error == 7 by close();
+            have error == 7 by close();
             close();
         }
     }

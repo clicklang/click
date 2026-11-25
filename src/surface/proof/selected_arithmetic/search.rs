@@ -60,12 +60,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 format,
             } => {
                 let exact = if *subtract {
-                    ContractExpression::Subtract(
-                        Box::new(to_integer(left)),
-                        Box::new(to_integer(right)),
-                    )
+                    SurfaceTerm::Subtract(Box::new(to_integer(left)), Box::new(to_integer(right)))
                 } else {
-                    ContractExpression::Add(Box::new(to_integer(left)), Box::new(to_integer(right)))
+                    SurfaceTerm::Add(Box::new(to_integer(left)), Box::new(to_integer(right)))
                 };
                 let (minimum, maximum) = format.bounds();
                 let (minimum, maximum) = (minimum.to_string(), maximum.to_string());
@@ -122,7 +119,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     // on, is stated first.
                     let mut ranged = proof.clone();
                     for operand in [left, right] {
-                        if matches!(to_integer(operand), ContractExpression::IntegerLiteral(_)) {
+                        if matches!(to_integer(operand), SurfaceTerm::IntegerLiteral(_)) {
                             continue;
                         }
                         for bound in [
@@ -157,7 +154,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     };
                     // The complete native domain must be an explicit fact
                     // before its observation becomes a theorem argument.
-                    let domain = ClickProposition::Defined {
+                    let domain = SurfaceProposition::Defined {
                         expression: operation.clone(),
                     };
                     let scope = next.driver().open_have(domain)?;
@@ -209,7 +206,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// `intro()` adds when it opens the goal's refutation.
     pub(in crate::surface::proof) fn disequality_goal_equality(
         search_input: &Proof<'a>,
-    ) -> Option<(Proposition, ClickProposition)> {
+    ) -> Option<(Proposition, SurfaceProposition)> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("disequality_goal_equality");
         let kernel = match search_input.goal()? {
@@ -247,19 +244,19 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             _ => return None,
         };
         let surface = match search_input.surface_goal()? {
-            ClickProposition::Comparison {
+            SurfaceProposition::Comparison {
                 left,
                 operator: ComparisonOperator::NotEqual,
                 right,
-            } => ClickProposition::Comparison {
+            } => SurfaceProposition::Comparison {
                 left: left.clone(),
                 operator: ComparisonOperator::Equal,
                 right: right.clone(),
             },
-            ClickProposition::Not(inner)
+            SurfaceProposition::Not(inner)
                 if matches!(
                     inner.as_ref(),
-                    ClickProposition::Comparison {
+                    SurfaceProposition::Comparison {
                         operator: ComparisonOperator::Equal,
                         ..
                     }
@@ -276,7 +273,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// has the requested disequality as a fact.
     pub(in crate::surface::proof) fn disequality_by_refutation(
         search_input: &Proof<'a>,
-        premises: &[ClickProposition],
+        premises: &[SurfaceProposition],
     ) -> Option<Result<Proof<'a>, ClickError>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("disequality_by_refutation");
@@ -288,7 +285,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let (split_proof, split, ids) = search_input.split_focused_if(equality.clone())?;
             let marker = split_proof.checkpoint();
             let equal_arm = split_proof.focus_branch(ids[0])?;
-            let falsehood = ClickProposition::Value(crate::surface::bool_literal(false));
+            let falsehood = SurfaceProposition::Value(crate::surface::bool_literal(false));
             let refuted_scope = equal_arm.driver().open_have(falsehood.clone())?;
             let refuted = refuted_scope
                 .driver()
@@ -313,7 +310,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_disequality_by_selected_refutation");
-        let Some((_, ClickProposition::Comparison { left, right, .. })) =
+        let Some((_, SurfaceProposition::Comparison { left, right, .. })) =
             crate::kernel::search::ProofSearch::disequality_goal_equality(search_input)
         else {
             return Ok(None);
@@ -407,7 +404,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             search_input,
             &candidates,
         ));
-        let mut seen: Vec<ContractExpression> = Vec::new();
+        let mut seen: Vec<SurfaceTerm> = Vec::new();
         while let Some(operation) = operations.pop() {
             crate::instrumentation::record_deterministic_work(1);
             if seen.contains(&operation) {
@@ -415,25 +412,19 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             seen.push(operation.clone());
             let (left, right, subtract) = match &operation {
-                ContractExpression::Add(left, right) => (left, right, false),
-                ContractExpression::Subtract(left, right) => (left, right, true),
+                SurfaceTerm::Add(left, right) => (left, right, false),
+                SurfaceTerm::Subtract(left, right) => (left, right, true),
                 _ => continue,
             };
             for operand in [left.as_ref(), right.as_ref()] {
-                if matches!(
-                    operand,
-                    ContractExpression::Add(..) | ContractExpression::Subtract(..)
-                ) {
+                if matches!(operand, SurfaceTerm::Add(..) | SurfaceTerm::Subtract(..)) {
                     operations.push(operand.clone());
                 }
             }
             let exact = if subtract {
-                ContractExpression::Subtract(
-                    Box::new(to_integer(left)),
-                    Box::new(to_integer(right)),
-                )
+                SurfaceTerm::Subtract(Box::new(to_integer(left)), Box::new(to_integer(right)))
             } else {
-                ContractExpression::Add(Box::new(to_integer(left)), Box::new(to_integer(right)))
+                SurfaceTerm::Add(Box::new(to_integer(left)), Box::new(to_integer(right)))
             };
             // The operation's own format, from its lowered observation: one
             // rule at every width.
@@ -576,7 +567,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 },
                 true,
             )),
-            Some(ClickProposition::Comparison { left, right, .. }),
+            Some(SurfaceProposition::Comparison { left, right, .. }),
         ) = (
             search_input.goal().and_then(Proposition::condition_native),
             search_input.surface_goal(),
@@ -617,7 +608,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // bounds would repeat that search for each bound.
         if !plain_32_bit
             && is_word32_equality(goal)
-            && let ClickProposition::Comparison { left, right, .. } = surface_goal
+            && let SurfaceProposition::Comparison { left, right, .. } = surface_goal
             && !writes_sum_or_difference(left, right)
         {
             return Ok(None);
@@ -639,7 +630,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // fact rather than folding to `true`.
         let observed =
             super::smart_closures::observed_native_surface_comparison(goal, surface_goal);
-        let ClickProposition::Comparison {
+        let SurfaceProposition::Comparison {
             left,
             operator: ComparisonOperator::Equal,
             right,
@@ -815,7 +806,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     .is_some_and(|reverse| equality_rewrite_applies(goal, &reverse))
         };
         equalities.sort_by_cached_key(|equality| !applies(equality));
-        let forms = |kernel: Proposition, surface: ClickProposition| {
+        let forms = |kernel: Proposition, surface: SurfaceProposition| {
             let mut forms = oriented_forms(kernel.clone(), surface.clone());
             if matches!(closers, RewriteClosers::GoalLocal { .. })
                 && forms
@@ -836,7 +827,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             forms
         };
-        let mut candidates: Vec<Vec<(Proposition, ClickProposition)>> = Vec::new();
+        let mut candidates: Vec<Vec<(Proposition, SurfaceProposition)>> = Vec::new();
         for equality in &equalities {
             check_verification_deadline()?;
             if candidates.len() >= REWRITE_EQUALITIES {
@@ -888,7 +879,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// says what may close a rewritten goal.
     pub(in crate::surface::proof) fn try_premise_equality_chain_closure(
         search_input: &Proof<'a>,
-        premise_pairs: &[(Proposition, ClickProposition)],
+        premise_pairs: &[(Proposition, SurfaceProposition)],
         closers: RewriteClosers<'_>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
@@ -946,8 +937,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // and the fact oriented `application == value`.
         let mut equations: Vec<(
             crate::kernel::AlgebraicTerm,
-            ContractExpression,
-            ClickProposition,
+            SurfaceTerm,
+            SurfaceProposition,
         )> = Vec::new();
         for equality in &equalities {
             check_verification_deadline()?;
@@ -969,7 +960,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .and_then(|mut spelled| spelled.pop()) else {
                 continue;
             };
-            let ClickProposition::Comparison {
+            let SurfaceProposition::Comparison {
                 left: written_left,
                 operator: ComparisonOperator::Equal,
                 right: written_right,
@@ -982,7 +973,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             } else {
                 (left, written_right, written_left)
             };
-            let oriented = ClickProposition::Comparison {
+            let oriented = SurfaceProposition::Comparison {
                 left: application.clone(),
                 operator: ComparisonOperator::Equal,
                 right: value_written,
@@ -995,7 +986,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 if value != other || first == second {
                     continue;
                 }
-                let joined = ClickProposition::Comparison {
+                let joined = SurfaceProposition::Comparison {
                     left: first.clone(),
                     operator: ComparisonOperator::Equal,
                     right: second.clone(),
@@ -1051,8 +1042,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // Each fact as written, and the constructor each connected equation
         // names a value as, with that equation oriented `C(...) == value`.
         let mut spelled = Vec::new();
-        let mut constructors: Vec<(ContractExpression, ContractExpression, ClickProposition)> =
-            Vec::new();
+        let mut constructors: Vec<(SurfaceTerm, SurfaceTerm, SurfaceProposition)> = Vec::new();
         for equality in &equalities {
             check_verification_deadline()?;
             let Some((kernel, fact)) = crate::kernel::search::ProofSearch::resolve_solve_premises(
@@ -1075,15 +1065,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 }
                 _ => fact,
             };
-            if let ClickProposition::Comparison {
+            if let SurfaceProposition::Comparison {
                 left,
                 operator: ComparisonOperator::Equal,
                 right,
             } = &fact
             {
-                let built = |side: &ContractExpression| {
-                    matches!(side, ContractExpression::AlgebraicConstructor { .. })
-                };
+                let built =
+                    |side: &SurfaceTerm| matches!(side, SurfaceTerm::AlgebraicConstructor { .. });
                 if built(left) != built(right) && constructors.len() < CONSTRUCTOR_EQUATIONS {
                     let (application, value) = if built(left) {
                         (left, right)
@@ -1093,7 +1082,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     constructors.push((
                         value.clone(),
                         application.clone(),
-                        ClickProposition::Comparison {
+                        SurfaceProposition::Comparison {
                             left: application.clone(),
                             operator: ComparisonOperator::Equal,
                             right: value.clone(),
@@ -1111,7 +1100,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let mut tried = 0;
         for fact in &spelled {
             check_verification_deadline()?;
-            let ClickProposition::Comparison {
+            let SurfaceProposition::Comparison {
                 left,
                 operator: ComparisonOperator::Equal,
                 right,
@@ -1120,11 +1109,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 continue;
             };
             let (call, value_side, call_left) = match (left, right) {
-                (ContractExpression::Call { .. }, value) => (left, value, true),
-                (value, ContractExpression::Call { .. }) => (right, value, false),
+                (SurfaceTerm::Call { .. }, value) => (left, value, true),
+                (value, SurfaceTerm::Call { .. }) => (right, value, false),
                 _ => continue,
             };
-            let (ContractExpression::Call { name, arguments }, Some(value)) =
+            let (SurfaceTerm::Call { name, arguments }, Some(value)) =
                 (call, definition_end_value(value_side))
             else {
                 continue;
@@ -1162,11 +1151,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 )
                 .collect::<Vec<_>>();
             if !rewrites.is_empty() {
-                let restated_call = ContractExpression::Call {
+                let restated_call = SurfaceTerm::Call {
                     name: name.clone(),
                     arguments: restated.clone(),
                 };
-                let restated_fact = ClickProposition::Comparison {
+                let restated_fact = SurfaceProposition::Comparison {
                     left: if call_left {
                         restated_call.clone()
                     } else {
@@ -1239,16 +1228,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(super) fn read_definition_condition(
         search_input: &Proof<'a>,
         plan: &DefinitionPlan,
-        surface_goal: &ClickProposition,
+        surface_goal: &SurfaceProposition,
         name: &str,
-        arguments: &[ContractExpression],
-        fact: ClickProposition,
+        arguments: &[SurfaceTerm],
+        fact: SurfaceProposition,
         call_left: bool,
         truth: bool,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("read_definition_condition");
-        let ClickProposition::Comparison { left, right, .. } = &fact else {
+        let SurfaceProposition::Comparison { left, right, .. } = &fact else {
             return Ok(None);
         };
         let call = if call_left { left } else { right };
@@ -1260,9 +1249,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             // A `bool` fact is refuted by its negation, which lowers to the
             // exact opposite polarity `contradiction` reads.
             differs: if truth {
-                ClickProposition::Not(Box::new(fact.clone()))
+                SurfaceProposition::Not(Box::new(fact.clone()))
             } else {
-                ClickProposition::Comparison {
+                SurfaceProposition::Comparison {
                     left: if call_left {
                         call.clone()
                     } else {
@@ -1298,7 +1287,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             &(else_branch),
             plan,
             &refutation,
-            &[ClickProposition::Not(Box::new(surface_goal.clone()))],
+            &[SurfaceProposition::Not(Box::new(surface_goal.clone()))],
         )?
         else {
             return Ok(None);
@@ -1319,8 +1308,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn definition_condition_plan(
         search_input: &Proof<'a>,
-        body: &ContractExpression,
-        environment: &BinderMap<ContractExpression>,
+        body: &SurfaceTerm,
+        environment: &BinderMap<SurfaceTerm>,
         goal: &DefinitionGoal<'_>,
         value: i128,
         leaves: &mut usize,
@@ -1330,7 +1319,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("definition_condition_plan");
         match body {
-            ContractExpression::If {
+            SurfaceTerm::If {
                 condition,
                 then_branch,
                 else_branch,
@@ -1384,8 +1373,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     else_plan: Box::new(else_plan),
                 })
             }
-            ContractExpression::AlgebraicMatch { scrutinee, arms } => {
-                let ContractExpression::AlgebraicConstructor {
+            SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
+                let SurfaceTerm::AlgebraicConstructor {
                     variant, arguments, ..
                 } = substitute_contract_expression(scrutinee, environment).ok()?
                 else {
@@ -1408,7 +1397,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     unfolds,
                 )
             }
-            ContractExpression::Call { name, arguments } if unfolds.len() < DEFINITION_UNFOLDS => {
+            SurfaceTerm::Call { name, arguments } if unfolds.len() < DEFINITION_UNFOLDS => {
                 let definition = search_input.spec_functions().get(name)?;
                 if definition.parameters().len() != arguments.len() {
                     return None;
@@ -1457,7 +1446,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         plan: &DefinitionPlan,
         refutation: &DefinitionRefutation,
-        taken: &[ClickProposition],
+        taken: &[SurfaceProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("refute_definition_ends");
@@ -1474,8 +1463,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         match plan {
             DefinitionPlan::End { unfolds, value } => {
                 let refuted = (|| {
-                    let equation = ClickProposition::Comparison {
-                        left: ContractExpression::Call {
+                    let equation = SurfaceProposition::Comparison {
+                        left: SurfaceTerm::Call {
                             name: refutation.application.name.clone(),
                             arguments: refutation.application.arguments.clone(),
                         },
@@ -1569,7 +1558,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     return Ok(None);
                 };
                 let mut else_taken = taken.to_vec();
-                else_taken.push(ClickProposition::Not(Box::new(condition.clone())));
+                else_taken.push(SurfaceProposition::Not(Box::new(condition.clone())));
                 let Ok(else_branch) = then_done.focus_branch(ids[1]) else {
                     return Ok(None);
                 };
@@ -1598,7 +1587,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// `REWRITE_ATTEMPTS` rewrites.
     pub(super) fn rewrite_search(
         search_input: &Proof<'a>,
-        candidates: &[Vec<(Proposition, ClickProposition)>],
+        candidates: &[Vec<(Proposition, SurfaceProposition)>],
         used: &mut Vec<bool>,
         depth: usize,
         seen: &mut std::collections::BTreeMap<RewriteGoalKey, usize>,
@@ -1789,7 +1778,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// arithmetic alone.
     pub(in crate::surface::proof) fn prove_stated_fact(
         search_input: &Proof<'a>,
-        fact: &ClickProposition,
+        fact: &SurfaceProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("prove_stated_fact");
@@ -1810,28 +1799,25 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_definedness_by_bounds");
-        let Some(ClickProposition::Defined { expression }) = search_input.surface_goal() else {
+        let Some(SurfaceProposition::Defined { expression }) = search_input.surface_goal() else {
             return Ok(None);
         };
         let (left, right, subtract) = match expression {
-            ContractExpression::Add(left, right) => (left, right, false),
-            ContractExpression::Subtract(left, right) => (left, right, true),
+            SurfaceTerm::Add(left, right) => (left, right, false),
+            SurfaceTerm::Subtract(left, right) => (left, right, true),
             _ => return Ok(None),
         };
         let exact = if subtract {
-            ContractExpression::Subtract(Box::new(to_integer(left)), Box::new(to_integer(right)))
+            SurfaceTerm::Subtract(Box::new(to_integer(left)), Box::new(to_integer(right)))
         } else {
-            ContractExpression::Add(Box::new(to_integer(left)), Box::new(to_integer(right)))
+            SurfaceTerm::Add(Box::new(to_integer(left)), Box::new(to_integer(right)))
         };
         // An operand that is itself an operation must be defined too; prove
         // that first so the goal is complete once the outer one is.
         let mut base = search_input.clone();
         for operand in [left.as_ref(), right.as_ref()] {
-            if matches!(
-                operand,
-                ContractExpression::Add(..) | ContractExpression::Subtract(..)
-            ) {
-                let defined = ClickProposition::Defined {
+            if matches!(operand, SurfaceTerm::Add(..) | SurfaceTerm::Subtract(..)) {
+                let defined = SurfaceProposition::Defined {
                     expression: operand.clone(),
                 };
                 if let Some(next) =
@@ -1840,7 +1826,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     base = next;
                 }
             } else {
-                let defined = ClickProposition::Defined {
+                let defined = SurfaceProposition::Defined {
                     expression: operand.clone(),
                 };
                 let kernel =
@@ -1860,14 +1846,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // range (`machine_integer::definedness`).
         for ty in crate::kernel::machine_integer::definedness::defined_formats() {
             let (minimum, maximum) = crate::kernel::machine_integer::range::range(ty);
-            let lower = ClickProposition::Comparison {
+            let lower = SurfaceProposition::Comparison {
                 left: exact.clone(),
                 operator: ComparisonOperator::GreaterEqual,
-                right: ContractExpression::IntegerLiteral(minimum.to_string()),
+                right: SurfaceTerm::IntegerLiteral(minimum.to_string()),
             };
             let upper = relate(
                 exact.clone(),
-                ContractExpression::IntegerLiteral(maximum.to_string()),
+                SurfaceTerm::IntegerLiteral(maximum.to_string()),
                 Relation::LessEqual,
             );
             let Some(bounded) =
@@ -1950,11 +1936,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let mut base = search_input.clone();
         let mut stated = false;
         for side in [&lower, &upper] {
-            if matches!(
-                side,
-                ContractExpression::Add(..) | ContractExpression::Subtract(..)
-            ) {
-                let defined = ClickProposition::Defined {
+            if matches!(side, SurfaceTerm::Add(..) | SurfaceTerm::Subtract(..)) {
+                let defined = SurfaceProposition::Defined {
                     expression: side.clone(),
                 };
                 if let Some(next) =
@@ -1984,33 +1967,29 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn defined_operations(
         search_input: &Proof<'a>,
         candidates: &[Proposition],
-    ) -> Vec<ContractExpression> {
+    ) -> Vec<SurfaceTerm> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("defined_operations");
-        fn operation(surface: ClickProposition) -> Option<ContractExpression> {
+        fn operation(surface: SurfaceProposition) -> Option<SurfaceTerm> {
             match surface {
-                ClickProposition::Defined { expression } => match expression {
-                    ContractExpression::Add(..) | ContractExpression::Subtract(..) => {
-                        Some(expression)
-                    }
+                SurfaceProposition::Defined { expression } => match expression {
+                    SurfaceTerm::Add(..) | SurfaceTerm::Subtract(..) => Some(expression),
                     _ => None,
                 },
-                ClickProposition::At {
+                SurfaceProposition::At {
                     selector,
                     proposition,
                 } => {
                     let anchor = |expression| {
-                        Box::new(ContractExpression::At {
+                        Box::new(SurfaceTerm::At {
                             selector: selector.clone(),
                             expression,
                         })
                     };
                     match operation(*proposition)? {
-                        ContractExpression::Add(a, b) => {
-                            Some(ContractExpression::Add(anchor(a), anchor(b)))
-                        }
-                        ContractExpression::Subtract(a, b) => {
-                            Some(ContractExpression::Subtract(anchor(a), anchor(b)))
+                        SurfaceTerm::Add(a, b) => Some(SurfaceTerm::Add(anchor(a), anchor(b))),
+                        SurfaceTerm::Subtract(a, b) => {
+                            Some(SurfaceTerm::Subtract(anchor(a), anchor(b)))
                         }
                         _ => None,
                     }
@@ -2062,7 +2041,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("carried_machine_facts");
         let mut carried = Vec::new();
-        let mut ranged: Vec<ContractExpression> = Vec::new();
+        let mut ranged: Vec<SurfaceTerm> = Vec::new();
         for candidate in candidates {
             // A 64-bit equality is not carried: rewriting by it serves an
             // `Integer` claim without reading both types' ranges into every
@@ -2108,7 +2087,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             });
             if let Some((minimum, maximum)) = order.range() {
                 for value in [lower, upper] {
-                    if matches!(to_integer(&value), ContractExpression::IntegerLiteral(_))
+                    if matches!(to_integer(&value), SurfaceTerm::IntegerLiteral(_))
                         || ranged.contains(&value)
                     {
                         continue;

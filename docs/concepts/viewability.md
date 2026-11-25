@@ -236,7 +236,7 @@ range is refused rather than read as a negative span, and a range reaching
 past `b` is refused with the order fact it was missing:
 
 ```text
-`transport using` cannot narrow `viewable(v[lo..hi])` to `viewable(v[lo..k])`:
+Bare `transport` cannot narrow `viewable(v[lo..hi])` to `viewable(v[lo..k])`:
 narrowing a viewable range needs `k <= hi`, which is not an available fact
 ```
 

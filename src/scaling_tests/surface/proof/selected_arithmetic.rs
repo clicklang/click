@@ -10,8 +10,7 @@ fn failed_integer_bridge_does_not_construct_unused_facts() {
     let mut samples = Vec::new();
     for size in [4, 16, 64] {
         let value = MachineTerm::Variable(Variable(910_001));
-        let written =
-            ContractExpression::ProgramExpression(ProgramExpression::Variable("x".into()));
+        let written = SurfaceTerm::ProgramExpression(ProgramExpression::Variable("x".into()));
         let mut facts = Vec::new();
         let mut surfaces = SurfacePropositionMap::default();
         for index in 0..size {
@@ -26,7 +25,7 @@ fn failed_integer_bridge_does_not_construct_unused_facts() {
             );
             let surface = relate(
                 written.clone(),
-                ContractExpression::ProgramExpression(ProgramExpression::Value(int32(100 + index))),
+                SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(100 + index))),
                 Relation::Less,
             );
             surfaces.record_lowering(&surface, &fact).unwrap();
@@ -49,7 +48,7 @@ fn failed_integer_bridge_does_not_construct_unused_facts() {
         // `to_integer(x) + 1` is Integer arithmetic, so the goals stay Integer
         // claims: `to_integer(x) <= -1` alone would be the native `x <= -1`,
         // which plain selected-premise arithmetic decides with no bridge.
-        let successor = ContractExpression::Add(
+        let successor = SurfaceTerm::Add(
             Box::new(to_integer(&written)),
             Box::new(integer_literal("1")),
         );
@@ -131,9 +130,8 @@ fn disequality_refutation_work_ignores_unrelated_facts() {
             MachineTerm::Variable(Variable(911_002)),
             MachineTerm::Variable(Variable(911_003)),
         );
-        let written = |name: &str| {
-            ContractExpression::ProgramExpression(ProgramExpression::Variable(name.into()))
-        };
+        let written =
+            |name: &str| SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name.into()));
         let mut surfaces = SurfacePropositionMap::default();
         let order = Proposition::condition_is(
             ConditionTerm::Compare {
@@ -162,7 +160,7 @@ fn disequality_refutation_work_ignores_unrelated_facts() {
             );
             let surface = relate(
                 written("y"),
-                ContractExpression::ProgramExpression(ProgramExpression::Value(int32(100 + index))),
+                SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(100 + index))),
                 Relation::Less,
             );
             surfaces.record_lowering(&surface, &fact).unwrap();
@@ -186,7 +184,7 @@ fn disequality_refutation_work_ignores_unrelated_facts() {
         let functions = ClickFunctionEnvironment::new(&[]);
         let theorems = TheoremEnvironment::with_standard_library(&[]).unwrap();
         let definitions = SpecDefinitions::new(&predicates, &functions);
-        let surface_goal = ClickProposition::Comparison {
+        let surface_goal = SurfaceProposition::Comparison {
             left: written("k"),
             operator: ComparisonOperator::NotEqual,
             right: written("j"),

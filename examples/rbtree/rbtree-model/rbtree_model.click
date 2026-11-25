@@ -75,9 +75,34 @@ theorem rb_member_is_inorder_membership(tree: RbTree, target: struct rb_node*) {
                 rewrite(rb_member(left, target), list::contains(rb_inorder(left), target));
                 rewrite(rb_member(right, target), list::contains(rb_inorder(right), target));
                 if node == target {
-                    normalize() using { node == target; };
+                    have (if node == target { true } else {
+                        if list::contains(rb_inorder(left), target) { true }
+                        else { list::contains(rb_inorder(right), target) }
+                    }) == true by close();
+                    rewrite((if node == target { true } else {
+                        if list::contains(rb_inorder(left), target) { true }
+                        else { list::contains(rb_inorder(right), target) }
+                    }), true);
+                    have (if node == target { true } else { list::contains(rb_inorder(right), target) })
+                        == true by close();
+                    rewrite((if node == target { true } else { list::contains(rb_inorder(right), target) }), true);
+                    close();
                 } else {
-                    normalize() using { not(node == target); };
+                    have (if node == target { true } else {
+                        if list::contains(rb_inorder(left), target) { true }
+                        else { list::contains(rb_inorder(right), target) }
+                    }) == (if list::contains(rb_inorder(left), target) { true }
+                        else { list::contains(rb_inorder(right), target) }) by close();
+                    rewrite((if node == target { true } else {
+                        if list::contains(rb_inorder(left), target) { true }
+                        else { list::contains(rb_inorder(right), target) }
+                    }), (if list::contains(rb_inorder(left), target) { true }
+                        else { list::contains(rb_inorder(right), target) }));
+                    have (if node == target { true } else { list::contains(rb_inorder(right), target) })
+                        == list::contains(rb_inorder(right), target) by close();
+                    rewrite((if node == target { true } else { list::contains(rb_inorder(right), target) }),
+                        list::contains(rb_inorder(right), target));
+                    close();
                 }
             }
         }
@@ -2978,8 +3003,10 @@ theorem ctx_rb_concat(inner: Context, outer: Context, bh: Nat, focus_color: Colo
                             boundary_bh, boundary_color) != 1 by {
                             unfold(ctx_rb_between(Context::Top, bh, focus_color,
                                 boundary_bh, boundary_color));
-                            normalize() using { bh == boundary_bh;
-                                not(focus_color == boundary_color); };
+                            rewrite(bh, boundary_bh);
+                            have (if focus_color == boundary_color { 1 } else { 0 }) == 0 by close();
+                            rewrite((if focus_color == boundary_color { 1 } else { 0 }), 0);
+                            close();
                         }
                         contradiction(ctx_rb_between(Context::Top, bh, focus_color,
                             boundary_bh, boundary_color) == 1);
@@ -2989,7 +3016,13 @@ theorem ctx_rb_concat(inner: Context, outer: Context, bh: Nat, focus_color: Colo
                         boundary_bh, boundary_color) != 1 by {
                         unfold(ctx_rb_between(Context::Top, bh, focus_color,
                             boundary_bh, boundary_color));
-                        normalize() using { not(bh == boundary_bh); };
+                        have (if bh == boundary_bh {
+                            if focus_color == boundary_color { 1 } else { 0 }
+                        } else { 0 }) == 0 by close();
+                        rewrite((if bh == boundary_bh {
+                            if focus_color == boundary_color { 1 } else { 0 }
+                        } else { 0 }), 0);
+                        close();
                     }
                     contradiction(ctx_rb_between(Context::Top, bh, focus_color,
                         boundary_bh, boundary_color) == 1);
@@ -3005,11 +3038,25 @@ theorem ctx_rb_concat(inner: Context, outer: Context, bh: Nat, focus_color: Colo
                                     boundary_bh, boundary_color) by {
                                 unfold(ctx_rb_between(Context::Left(id, parent, color, sibling, up),
                                     bh, focus_color, boundary_bh, boundary_color));
-                                normalize() using {
-                                    is_rb(sibling) == 1;
-                                    bh == black_height(sibling);
-                                    node_color_ok(color, focus_color, rb_color(sibling)) == 1;
-                                };
+                                have (if node_color_ok(color, focus_color, rb_color(sibling)) == 1 {
+                                    ctx_rb_between(up, frame_black_height(color, bh), color, boundary_bh, boundary_color)
+                                } else { 0 }) == ctx_rb_between(up, frame_black_height(color, bh), color, boundary_bh, boundary_color) by close();
+                                rewrite((if node_color_ok(color, focus_color, rb_color(sibling)) == 1 {
+                                    ctx_rb_between(up, frame_black_height(color, bh), color, boundary_bh, boundary_color)
+                                } else { 0 }), ctx_rb_between(up, frame_black_height(color, bh), color, boundary_bh, boundary_color));
+                                have (if bh == black_height(sibling) {
+                                    ctx_rb_between(up, frame_black_height(color, bh), color, boundary_bh, boundary_color)
+                                } else { 0 }) == ctx_rb_between(up, frame_black_height(color, bh), color, boundary_bh, boundary_color) by close();
+                                rewrite((if bh == black_height(sibling) {
+                                    ctx_rb_between(up, frame_black_height(color, bh), color, boundary_bh, boundary_color)
+                                } else { 0 }), ctx_rb_between(up, frame_black_height(color, bh), color, boundary_bh, boundary_color));
+                                have (if is_rb(sibling) == 1 {
+                                    ctx_rb_between(up, frame_black_height(color, bh), color, boundary_bh, boundary_color)
+                                } else { 0 }) == ctx_rb_between(up, frame_black_height(color, bh), color, boundary_bh, boundary_color) by close();
+                                rewrite((if is_rb(sibling) == 1 {
+                                    ctx_rb_between(up, frame_black_height(color, bh), color, boundary_bh, boundary_color)
+                                } else { 0 }), ctx_rb_between(up, frame_black_height(color, bh), color, boundary_bh, boundary_color));
+                                close();
                             }
                             have ctx_rb_between(up, frame_black_height(color, bh), color,
                                 boundary_bh, boundary_color) == 1 by {
@@ -3029,11 +3076,17 @@ theorem ctx_rb_concat(inner: Context, outer: Context, bh: Nat, focus_color: Colo
                                 bh, focus_color, boundary_bh, boundary_color) != 1 by {
                                 unfold(ctx_rb_between(Context::Left(id, parent, color, sibling, up),
                                     bh, focus_color, boundary_bh, boundary_color));
-                                normalize() using {
-                                    is_rb(sibling) == 1;
-                                    bh == black_height(sibling);
-                                    not(node_color_ok(color, focus_color, rb_color(sibling)) == 1);
-                                };
+                                rewrite(is_rb(sibling), 1);
+                                rewrite(black_height(sibling), bh);
+                                have (if node_color_ok(color, focus_color, rb_color(sibling)) == 1 {
+                                    ctx_rb_between(up, frame_black_height(color, bh), color,
+                                        boundary_bh, boundary_color)
+                                } else { 0 }) == 0 by close();
+                                rewrite((if node_color_ok(color, focus_color, rb_color(sibling)) == 1 {
+                                    ctx_rb_between(up, frame_black_height(color, bh), color,
+                                        boundary_bh, boundary_color)
+                                } else { 0 }), 0);
+                                close();
                             }
                             contradiction(ctx_rb_between(Context::Left(id, parent, color, sibling, up),
                                 bh, focus_color, boundary_bh, boundary_color) == 1);
@@ -3043,7 +3096,20 @@ theorem ctx_rb_concat(inner: Context, outer: Context, bh: Nat, focus_color: Colo
                             bh, focus_color, boundary_bh, boundary_color) != 1 by {
                             unfold(ctx_rb_between(Context::Left(id, parent, color, sibling, up),
                                 bh, focus_color, boundary_bh, boundary_color));
-                            normalize() using { is_rb(sibling) == 1; not(bh == black_height(sibling)); };
+                            rewrite(is_rb(sibling), 1);
+                            have (if bh == black_height(sibling) {
+                                if node_color_ok(color, focus_color, rb_color(sibling)) == 1 {
+                                    ctx_rb_between(up, frame_black_height(color, bh), color,
+                                        boundary_bh, boundary_color)
+                                } else { 0 }
+                            } else { 0 }) == 0 by close();
+                            rewrite((if bh == black_height(sibling) {
+                                if node_color_ok(color, focus_color, rb_color(sibling)) == 1 {
+                                    ctx_rb_between(up, frame_black_height(color, bh), color,
+                                        boundary_bh, boundary_color)
+                                } else { 0 }
+                            } else { 0 }), 0);
+                            close();
                         }
                         contradiction(ctx_rb_between(Context::Left(id, parent, color, sibling, up),
                             bh, focus_color, boundary_bh, boundary_color) == 1);
@@ -3053,7 +3119,23 @@ theorem ctx_rb_concat(inner: Context, outer: Context, bh: Nat, focus_color: Colo
                         bh, focus_color, boundary_bh, boundary_color) != 1 by {
                         unfold(ctx_rb_between(Context::Left(id, parent, color, sibling, up),
                             bh, focus_color, boundary_bh, boundary_color));
-                        normalize() using { not(is_rb(sibling) == 1); };
+                        have (if is_rb(sibling) == 1 {
+                            if bh == black_height(sibling) {
+                                if node_color_ok(color, focus_color, rb_color(sibling)) == 1 {
+                                    ctx_rb_between(up, frame_black_height(color, bh), color,
+                                        boundary_bh, boundary_color)
+                                } else { 0 }
+                            } else { 0 }
+                        } else { 0 }) == 0 by close();
+                        rewrite((if is_rb(sibling) == 1 {
+                            if bh == black_height(sibling) {
+                                if node_color_ok(color, focus_color, rb_color(sibling)) == 1 {
+                                    ctx_rb_between(up, frame_black_height(color, bh), color,
+                                        boundary_bh, boundary_color)
+                                } else { 0 }
+                            } else { 0 }
+                        } else { 0 }), 0);
+                        close();
                     }
                     contradiction(ctx_rb_between(Context::Left(id, parent, color, sibling, up),
                         bh, focus_color, boundary_bh, boundary_color) == 1);
@@ -3069,11 +3151,25 @@ theorem ctx_rb_concat(inner: Context, outer: Context, bh: Nat, focus_color: Colo
                                     boundary_bh, boundary_color) by {
                                 unfold(ctx_rb_between(Context::Right(id, parent, color, sibling, up),
                                     bh, focus_color, boundary_bh, boundary_color));
-                                normalize() using {
-                                    is_rb(sibling) == 1;
-                                    black_height(sibling) == bh;
-                                    node_color_ok(color, rb_color(sibling), focus_color) == 1;
-                                };
+                                have (if node_color_ok(color, rb_color(sibling), focus_color) == 1 {
+                                    ctx_rb_between(up, frame_black_height(color, bh), color, boundary_bh, boundary_color)
+                                } else { 0 }) == ctx_rb_between(up, frame_black_height(color, bh), color, boundary_bh, boundary_color) by close();
+                                rewrite((if node_color_ok(color, rb_color(sibling), focus_color) == 1 {
+                                    ctx_rb_between(up, frame_black_height(color, bh), color, boundary_bh, boundary_color)
+                                } else { 0 }), ctx_rb_between(up, frame_black_height(color, bh), color, boundary_bh, boundary_color));
+                                have (if black_height(sibling) == bh {
+                                    ctx_rb_between(up, frame_black_height(color, bh), color, boundary_bh, boundary_color)
+                                } else { 0 }) == ctx_rb_between(up, frame_black_height(color, bh), color, boundary_bh, boundary_color) by close();
+                                rewrite((if black_height(sibling) == bh {
+                                    ctx_rb_between(up, frame_black_height(color, bh), color, boundary_bh, boundary_color)
+                                } else { 0 }), ctx_rb_between(up, frame_black_height(color, bh), color, boundary_bh, boundary_color));
+                                have (if is_rb(sibling) == 1 {
+                                    ctx_rb_between(up, frame_black_height(color, bh), color, boundary_bh, boundary_color)
+                                } else { 0 }) == ctx_rb_between(up, frame_black_height(color, bh), color, boundary_bh, boundary_color) by close();
+                                rewrite((if is_rb(sibling) == 1 {
+                                    ctx_rb_between(up, frame_black_height(color, bh), color, boundary_bh, boundary_color)
+                                } else { 0 }), ctx_rb_between(up, frame_black_height(color, bh), color, boundary_bh, boundary_color));
+                                close();
                             }
                             have ctx_rb_between(up, frame_black_height(color, bh), color,
                                 boundary_bh, boundary_color) == 1 by {
@@ -3093,11 +3189,17 @@ theorem ctx_rb_concat(inner: Context, outer: Context, bh: Nat, focus_color: Colo
                                 bh, focus_color, boundary_bh, boundary_color) != 1 by {
                                 unfold(ctx_rb_between(Context::Right(id, parent, color, sibling, up),
                                     bh, focus_color, boundary_bh, boundary_color));
-                                normalize() using {
-                                    is_rb(sibling) == 1;
-                                    black_height(sibling) == bh;
-                                    not(node_color_ok(color, rb_color(sibling), focus_color) == 1);
-                                };
+                                rewrite(is_rb(sibling), 1);
+                                rewrite(black_height(sibling), bh);
+                                have (if node_color_ok(color, rb_color(sibling), focus_color) == 1 {
+                                    ctx_rb_between(up, frame_black_height(color, bh), color,
+                                        boundary_bh, boundary_color)
+                                } else { 0 }) == 0 by close();
+                                rewrite((if node_color_ok(color, rb_color(sibling), focus_color) == 1 {
+                                    ctx_rb_between(up, frame_black_height(color, bh), color,
+                                        boundary_bh, boundary_color)
+                                } else { 0 }), 0);
+                                close();
                             }
                             contradiction(ctx_rb_between(Context::Right(id, parent, color, sibling, up),
                                 bh, focus_color, boundary_bh, boundary_color) == 1);
@@ -3107,7 +3209,20 @@ theorem ctx_rb_concat(inner: Context, outer: Context, bh: Nat, focus_color: Colo
                             bh, focus_color, boundary_bh, boundary_color) != 1 by {
                             unfold(ctx_rb_between(Context::Right(id, parent, color, sibling, up),
                                 bh, focus_color, boundary_bh, boundary_color));
-                            normalize() using { is_rb(sibling) == 1; not(black_height(sibling) == bh); };
+                            rewrite(is_rb(sibling), 1);
+                            have (if black_height(sibling) == bh {
+                                if node_color_ok(color, rb_color(sibling), focus_color) == 1 {
+                                    ctx_rb_between(up, frame_black_height(color, bh), color,
+                                        boundary_bh, boundary_color)
+                                } else { 0 }
+                            } else { 0 }) == 0 by close();
+                            rewrite((if black_height(sibling) == bh {
+                                if node_color_ok(color, rb_color(sibling), focus_color) == 1 {
+                                    ctx_rb_between(up, frame_black_height(color, bh), color,
+                                        boundary_bh, boundary_color)
+                                } else { 0 }
+                            } else { 0 }), 0);
+                            close();
                         }
                         contradiction(ctx_rb_between(Context::Right(id, parent, color, sibling, up),
                             bh, focus_color, boundary_bh, boundary_color) == 1);
@@ -3117,7 +3232,23 @@ theorem ctx_rb_concat(inner: Context, outer: Context, bh: Nat, focus_color: Colo
                         bh, focus_color, boundary_bh, boundary_color) != 1 by {
                         unfold(ctx_rb_between(Context::Right(id, parent, color, sibling, up),
                             bh, focus_color, boundary_bh, boundary_color));
-                        normalize() using { not(is_rb(sibling) == 1); };
+                        have (if is_rb(sibling) == 1 {
+                            if black_height(sibling) == bh {
+                                if node_color_ok(color, rb_color(sibling), focus_color) == 1 {
+                                    ctx_rb_between(up, frame_black_height(color, bh), color,
+                                        boundary_bh, boundary_color)
+                                } else { 0 }
+                            } else { 0 }
+                        } else { 0 }) == 0 by close();
+                        rewrite((if is_rb(sibling) == 1 {
+                            if black_height(sibling) == bh {
+                                if node_color_ok(color, rb_color(sibling), focus_color) == 1 {
+                                    ctx_rb_between(up, frame_black_height(color, bh), color,
+                                        boundary_bh, boundary_color)
+                                } else { 0 }
+                            } else { 0 }
+                        } else { 0 }), 0);
+                        close();
                     }
                     contradiction(ctx_rb_between(Context::Right(id, parent, color, sibling, up),
                         bh, focus_color, boundary_bh, boundary_color) == 1);

@@ -164,8 +164,8 @@ needle = "normalize();"
 
 [[form]]
 id = "normalize-using"
-path = "mdtests/normalize_using_pointer_addition.md"
-needle = "normalize() using { };"
+path = "mdtests/uint64_int32_exact_index_alias.md"
+needle = "normalize() using { to_integer(wide) == to_integer(index); };"
 
 [[form]]
 id = "intro"
@@ -201,11 +201,6 @@ needle = "rewrite(x, y);"
 id = "transport"
 path = "mdtests/known_value_transport_expansion.md"
 needle = "transport(at(statement(0).entry, *q) == 7, *q == 7);"
-
-[[form]]
-id = "transport-using"
-path = "src/surface/tests/tactic_tests/control_and_certificates.rs"
-needle = "transport(old(p[0]) == 0, p[0] == 0) using {"
 
 [[form]]
 id = "instantiate"

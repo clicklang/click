@@ -2375,8 +2375,7 @@ fn scalar_induction_keeps_integer_parameters_and_their_guards() {
         without_implicit_solve_for_claim("carry_seed_returns_the_same_integer.ensures_0", || {
             verify_click_theorems(&guarded_family).map_err(|error| error.report())
         })
-        .err()
-        .expect("cold replay must require the instantiated guard");
+        .expect_err("cold replay must require the instantiated guard");
     assert!(
         error.to_string().contains("induction hypothesis"),
         "{error}"
@@ -11774,7 +11773,6 @@ fn literal_constructor_field_disequality_expands_to_known() {
 #[test]
 fn computed_sequence_negations_expand_to_known() {
     let (source, _) = mdtest_sources("mdtests/sequence_literals.md");
-    let source = source.replace("[0, 1] != [1, 0] by close()", "[0, 1] != [1, 0] by close()");
     for (theorem, next_theorem) in [
         (
             "sequence_order_is_observable",
@@ -14295,10 +14293,10 @@ fn execution_branch_arm_terminal_proof_if_stays_on_one_proof() {
             Some(ProofTactic::Branch(outer))
                 if outer.then_tactics.iter().any(|tactic| matches!(
                     tactic,
-                    ProofTactic::If(inner) if inner.condition == ClickProposition::Comparison {
-                        left: ContractExpression::ProgramExpression(ProgramExpression::Variable(("x".to_string()).into())),
+                    ProofTactic::If(inner) if inner.condition == SurfaceProposition::Comparison {
+                        left: SurfaceTerm::ProgramExpression(ProgramExpression::Variable(("x".to_string()).into())),
                         operator: ComparisonOperator::GreaterEqual,
-                        right: ContractExpression::IntegerLiteral("0".into()),
+                        right: SurfaceTerm::IntegerLiteral("0".into()),
                     }
                 ))
         ),
@@ -14406,7 +14404,7 @@ fn branch_interface_retains_its_checked_abstract_join() {
                 ..
             ] if matches!(
                 branch.ensuring.as_deref(),
-                Some([ProofAssertion::Fact(ClickProposition::Comparison {
+                Some([ProofAssertion::Fact(SurfaceProposition::Comparison {
                     operator: ComparisonOperator::GreaterEqual,
                     ..
                 })])
@@ -14709,7 +14707,7 @@ fn branch_join_retains_a_bare_theorem_application_in_its_continuation() {
                 ..
             ] if matches!(
                     branch.ensuring.as_deref(),
-                    Some([ProofAssertion::Fact(ClickProposition::Comparison {
+                    Some([ProofAssertion::Fact(SurfaceProposition::Comparison {
                         operator: ComparisonOperator::LessThan,
                         ..
                     })])
@@ -14781,7 +14779,7 @@ fn branch_join_retains_a_bare_fact_transport_in_its_continuation() {
                 ..
             ] if matches!(
                     branch.ensuring.as_deref(),
-                    Some([ProofAssertion::Fact(ClickProposition::Comparison {
+                    Some([ProofAssertion::Fact(SurfaceProposition::Comparison {
                         operator: ComparisonOperator::LessThan,
                         ..
                     })])
@@ -14873,11 +14871,11 @@ fn branch_join_retains_a_nested_have_in_its_continuation() {
             ] if matches!(
                     branch.ensuring.as_deref(),
                     Some([
-                        ProofAssertion::Fact(ClickProposition::Comparison {
+                        ProofAssertion::Fact(SurfaceProposition::Comparison {
                             operator: ComparisonOperator::GreaterThan,
                             ..
                         }),
-                        ProofAssertion::Fact(ClickProposition::Comparison {
+                        ProofAssertion::Fact(SurfaceProposition::Comparison {
                             operator: ComparisonOperator::LessThan,
                             ..
                         }),
@@ -14959,11 +14957,11 @@ fn branch_join_retains_linear_execute_on_its_common_successor() {
             ] if matches!(
                     branch.ensuring.as_deref(),
                     Some([
-                        ProofAssertion::Fact(ClickProposition::Comparison {
+                        ProofAssertion::Fact(SurfaceProposition::Comparison {
                             operator: ComparisonOperator::GreaterThan,
                             ..
                         }),
-                        ProofAssertion::Fact(ClickProposition::Comparison {
+                        ProofAssertion::Fact(SurfaceProposition::Comparison {
                             operator: ComparisonOperator::LessThan,
                             ..
                         }),
@@ -21125,7 +21123,7 @@ fn conditional_algebraic_universal_expands_and_reverifies() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_71")]
-fn normalize_using_ambient_pointer_equality_expands_and_rechecks() {
+fn ambient_pointer_equality_expands_and_rechecks() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/normalize_using_ambient_pointer_equality.md");
     let text = std::fs::read_to_string(&path).expect("read ambient equality fixture");
@@ -21136,12 +21134,15 @@ fn normalize_using_ambient_pointer_equality_expands_and_rechecks() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     let source = fixture.click_source.as_deref().expect("Click source");
-    verify_c_sources(source, &c_sources).expect("ambient graph should close normalization");
-    let position = expansion::position_at_offset(source, source.find("normalize() using").unwrap());
-    let expanded = expand_c_tactic_source_at(source, &c_sources, position.line, position.column)
+    verify_c_sources(source, &c_sources).expect("ambient pointer equality should verify");
+    let claim = "pointer_transitivity.ensures_0";
+    let expanded = expand_c_claim_source_by_label(source, &c_sources, claim)
         .expect("ambient equality should expand");
-    assert!(expanded.contains("normalize() using"), "{expanded}");
-    verify_c_sources(&expanded, &c_sources).expect("expanded equality should recheck");
+    assert!(!expanded.contains("normalize("), "{expanded}");
+    without_proof_search_for_claim(claim, || {
+        verify_c_sources(&expanded, &c_sources).map_err(|error| error.report())
+    })
+    .expect("expanded proof should pass checked replay");
     let missing = expanded.replace("b == c implies", "b == b implies");
     assert!(
         verify_c_sources(&missing, &c_sources).is_err(),
@@ -21151,7 +21152,7 @@ fn normalize_using_ambient_pointer_equality_expands_and_rechecks() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_72")]
-fn normalize_using_c_pointer_equality_expands_and_rechecks() {
+fn c_pointer_equality_expands_and_rechecks() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/normalize_using_c_pointer_equality.md");
     let text = std::fs::read_to_string(&path).expect("read C pointer equality fixture");
@@ -21163,18 +21164,22 @@ fn normalize_using_c_pointer_equality_expands_and_rechecks() {
         .collect::<Vec<_>>();
     let source = fixture.click_source.as_deref().expect("Click source");
     verify_c_sources(source, &c_sources).expect("C pointer transitivity should verify");
-    let expanded = expand_c_claim_source(source, &c_sources, "keep", ContractProofClaim::Ensure(0))
+    let claim = "keep.contract";
+    let expanded = expand_c_claim_source_by_label(source, &c_sources, claim)
         .expect("C pointer transitivity should expand");
-    assert!(expanded.contains("normalize() using"), "{expanded}");
-    verify_c_sources(&expanded, &c_sources).expect("expanded C pointer equality should recheck");
+    assert!(!expanded.contains("normalize("), "{expanded}");
+    without_proof_search_for_claim(claim, || {
+        verify_c_sources(&expanded, &c_sources).map_err(|error| error.report())
+    })
+    .expect("expanded proof should pass checked replay");
     for missing in ["requires a == b;", "requires b == c;"] {
         assert!(verify_c_sources(&expanded.replace(missing, ""), &c_sources).is_err());
     }
     let reversed = source.replace("ensures a == c;", "ensures c == a;");
     verify_c_sources(&reversed, &c_sources).expect("symmetric transitivity should verify");
-    let derived = source.replace("using { }", "using { a == c; }");
+    let derived = source.replacen("close();", "close() using { a == c; };", 1);
     verify_c_sources(&derived, &c_sources).expect("a cited pointer congruence is known");
-    let unavailable = source.replace("using { }", "using { a != c; }");
+    let unavailable = source.replacen("close();", "close() using { a != c; };", 1);
     assert!(verify_c_sources(&unavailable, &c_sources).is_err());
     let false_goal = source.replace("ensures a == c;", "ensures a != c;");
     assert!(verify_c_sources(&false_goal, &c_sources).is_err());
@@ -21182,7 +21187,7 @@ fn normalize_using_c_pointer_equality_expands_and_rechecks() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_72")]
-fn normalize_using_pointer_addition_expands_and_rechecks() {
+fn pointer_addition_expands_and_rechecks() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/normalize_using_pointer_addition.md");
     let text = std::fs::read_to_string(&path).expect("read pointer addition fixture");
@@ -21194,10 +21199,14 @@ fn normalize_using_pointer_addition_expands_and_rechecks() {
         .collect::<Vec<_>>();
     let source = fixture.click_source.as_deref().expect("Click source");
     verify_c_sources(source, &c_sources).expect("pointer addition congruence should verify");
-    let expanded = expand_c_claim_source(source, &c_sources, "keep", ContractProofClaim::Ensure(0))
+    let claim = "keep.contract";
+    let expanded = expand_c_claim_source_by_label(source, &c_sources, claim)
         .expect("pointer addition congruence should expand");
-    assert!(expanded.contains("normalize() using"), "{expanded}");
-    verify_c_sources(&expanded, &c_sources).expect("expanded pointer addition should recheck");
+    assert!(!expanded.contains("normalize("), "{expanded}");
+    without_proof_search_for_claim(claim, || {
+        verify_c_sources(&expanded, &c_sources).map_err(|error| error.report())
+    })
+    .expect("expanded proof should pass checked replay");
     assert!(verify_c_sources(&expanded.replace("requires a == b;", ""), &c_sources).is_err());
     assert!(verify_c_sources(&expanded.replace("b + 1;", "b + 2;"), &c_sources).is_err());
 }
@@ -21259,7 +21268,7 @@ fn graph_conditions_expand_and_recheck_without_normalize() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_72")]
-fn normalize_using_int32_equality_expands_and_rechecks() {
+fn int32_equality_expands_and_rechecks() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/normalize_using_int32_equality.md");
     let text = std::fs::read_to_string(&path).expect("read int32 equality fixture");
@@ -21271,10 +21280,14 @@ fn normalize_using_int32_equality_expands_and_rechecks() {
         .collect::<Vec<_>>();
     let source = fixture.click_source.as_deref().expect("Click source");
     verify_c_sources(source, &c_sources).expect("int32 transitivity and guards should verify");
-    let expanded = expand_c_claim_source(source, &c_sources, "keep", ContractProofClaim::Ensure(0))
+    let claim = "keep.contract";
+    let expanded = expand_c_claim_source_by_label(source, &c_sources, claim)
         .expect("int32 transitivity should expand");
-    assert!(expanded.contains("normalize() using"), "{expanded}");
-    verify_c_sources(&expanded, &c_sources).expect("expanded int32 equality should recheck");
+    assert!(!expanded.contains("normalize("), "{expanded}");
+    without_proof_search_for_claim(claim, || {
+        verify_c_sources(&expanded, &c_sources).map_err(|error| error.report())
+    })
+    .expect("expanded proof should pass checked replay");
     let (keep, _) = expanded
         .split_once("theorem choose")
         .expect("choose retained");
@@ -21293,10 +21306,10 @@ fn normalize_using_int32_equality_expands_and_rechecks() {
         )
         .is_err()
     );
-    let derived = source.replacen("using { }", "using { a == c; }", 1);
+    let derived = source.replacen("close();", "close() using { a == c; };", 1);
     assert_ne!(derived, source);
     verify_c_sources(&derived, &c_sources).expect("a cited int32 congruence is known");
-    let unavailable = source.replacen("using { }", "using { a != c; }", 1);
+    let unavailable = source.replacen("close();", "close() using { a != c; };", 1);
     assert!(verify_c_sources(&unavailable, &c_sources).is_err());
     let (_, choose) = source.split_once("theorem choose").unwrap();
     let choose = format!("theorem choose{choose}");
@@ -21330,17 +21343,15 @@ fn restricted_solve_does_not_borrow_the_ambient_equality_graph() {
             );
             let selected = omitted.replace("using { a == b; }", "using { a == b; b == c; }");
             verify_c_sources(&selected, &[]).expect("the selected graph establishes transitivity");
-            // The simple tactic deliberately has broader ambient semantics.
-            let ambient = omitted.replace("close() using", "normalize() using");
-            verify_c_sources(&ambient, &[])
-                .expect("explicit normalization may use the ambient graph");
+            let ambient = omitted.replace("close() using { a == b; }", "close();");
+            verify_c_sources(&ambient, &[]).expect("ordinary closure may use the ambient graph");
         }
     }
 }
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_73")]
-fn normalize_using_scaled_int32_expands_and_rechecks() {
+fn scaled_int32_expands_and_rechecks() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/normalize_using_scaled_int32.md");
     let text = std::fs::read_to_string(&path).unwrap();
@@ -21352,10 +21363,14 @@ fn normalize_using_scaled_int32_expands_and_rechecks() {
         .collect::<Vec<_>>();
     let source = fixture.click_source.as_deref().unwrap();
     verify_c_sources(source, &c_sources).expect("scaled indices and literal should verify");
-    let expanded = expand_c_claim_source(source, &c_sources, "keep", ContractProofClaim::Ensure(0))
+    let claim = "keep.contract";
+    let expanded = expand_c_claim_source_by_label(source, &c_sources, claim)
         .expect("scaled equality should expand");
-    assert!(expanded.contains("normalize() using"));
-    verify_c_sources(&expanded, &c_sources).expect("expanded proof should recheck");
+    assert!(!expanded.contains("normalize("), "{expanded}");
+    without_proof_search_for_claim(claim, || {
+        verify_c_sources(&expanded, &c_sources).map_err(|error| error.report())
+    })
+    .expect("expanded proof should pass checked replay");
     let (keep, _) = expanded.split_once("theorem choose").unwrap();
     for missing in ["requires i == j;", "requires j == k;"] {
         let changed = keep.replace(missing, "");
@@ -21365,14 +21380,14 @@ fn normalize_using_scaled_int32_expands_and_rechecks() {
     let false_goal = source.replace("ensures p + i == p + k;", "ensures p + i != p + k;");
     assert_ne!(false_goal, source);
     assert!(verify_c_sources(&false_goal, &c_sources).is_err());
-    let restricted = source.replacen("normalize() using { }", "close() using { i == j; }", 1);
+    let restricted = source.replacen("close()", "close() using { i == j; }", 1);
     assert_ne!(restricted, source);
     assert!(verify_c_sources(&restricted, &c_sources).is_err());
 }
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_73")]
-fn normalize_using_int32_addition_expands_and_rechecks_without_proving_definedness() {
+fn int32_addition_expands_and_rechecks_without_proving_definedness() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/normalize_using_int32_addition.md");
     let text = std::fs::read_to_string(&path).unwrap();
@@ -21384,10 +21399,14 @@ fn normalize_using_int32_addition_expands_and_rechecks_without_proving_definedne
         .collect::<Vec<_>>();
     let source = fixture.click_source.as_deref().unwrap();
     verify_c_sources(source, &c_sources).expect("addition and offset congruence should verify");
-    let expanded = expand_c_claim_source(source, &c_sources, "keep", ContractProofClaim::Ensure(0))
+    let claim = "keep.contract";
+    let expanded = expand_c_claim_source_by_label(source, &c_sources, claim)
         .expect("addition congruence should expand");
-    assert!(expanded.contains("normalize() using"));
-    verify_c_sources(&expanded, &c_sources).expect("expanded proof should recheck");
+    assert!(!expanded.contains("normalize("), "{expanded}");
+    without_proof_search_for_claim(claim, || {
+        verify_c_sources(&expanded, &c_sources).map_err(|error| error.report())
+    })
+    .expect("expanded proof should pass checked replay");
     let (keep, _) = expanded.split_once("theorem offsets").unwrap();
     let missing = keep.replace("requires a == b;", "");
     assert_ne!(missing, keep);
@@ -21399,7 +21418,7 @@ fn normalize_using_int32_addition_expands_and_rechecks_without_proving_definedne
     assert_ne!(false_goal, source);
     assert!(verify_c_sources(&false_goal, &c_sources).is_err());
     let restricted = source.replacen(
-        "normalize() using { }",
+        "close()",
         "close() using { defined(a + c); defined(b + c); }",
         1,
     );
@@ -21409,7 +21428,7 @@ fn normalize_using_int32_addition_expands_and_rechecks_without_proving_definedne
         theorem overflow(a: int32, b: int32) {
             requires a == b;
             requires a == 2147483647;
-            ensures defined(b + 1) by { normalize() using { } }
+            ensures defined(b + 1) by { close(); }
         }
     "#;
     assert!(
@@ -21421,7 +21440,7 @@ fn normalize_using_int32_addition_expands_and_rechecks_without_proving_definedne
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
-fn normalize_using_int32_loads_expands_and_rechecks() {
+fn int32_loads_expands_and_rechecks() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/normalize_using_int32_loads.md");
     let fixture =
@@ -21433,10 +21452,14 @@ fn normalize_using_int32_loads_expands_and_rechecks() {
         .collect::<Vec<_>>();
     let source = fixture.click_source.as_deref().unwrap();
     verify_c_sources(source, &c_sources).expect("same-state int32 loads should verify");
-    let expanded = expand_c_claim_source(source, &c_sources, "keep", ContractProofClaim::Ensure(0))
+    let claim = "keep.contract";
+    let expanded = expand_c_claim_source_by_label(source, &c_sources, claim)
         .expect("load congruence should expand");
-    assert!(expanded.contains("normalize() using"));
-    verify_c_sources(&expanded, &c_sources).expect("expanded loads should recheck");
+    assert!(!expanded.contains("normalize("), "{expanded}");
+    without_proof_search_for_claim(claim, || {
+        verify_c_sources(&expanded, &c_sources).map_err(|error| error.report())
+    })
+    .expect("expanded proof should pass checked replay");
     let (keep, _) = expanded.split_once("theorem same_read").unwrap();
     let missing = keep.replace("requires i == j;", "");
     assert_ne!(missing, keep);
@@ -21445,7 +21468,7 @@ fn normalize_using_int32_loads_expands_and_rechecks() {
     assert_ne!(false_goal, source);
     assert!(verify_c_sources(&false_goal, &c_sources).is_err());
     let restricted = source.replacen(
-        "normalize() using { }",
+        "close()",
         "close() using { 0 <= i; i < n; 0 <= j; j < n; }",
         1,
     );
@@ -22033,24 +22056,23 @@ fn throwing_call_forks_expand_and_reverify_in_every_position() {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
-#[ignore = "nightly: live and exit-time call payload expansion and replay"]
+#[ignore = "nightly: call payload expansion and replay"]
 fn call_outcome_payload_bindings_expand_and_replay() {
     let (source, owned_sources) = mdtest_sources("mdtests/outcomes_payload_bindings.md");
     let sources = crate::cli::source_refs(&owned_sources);
-    for label in ["live.contract", "deferred.contract"] {
-        let expanded = expand_c_claim_source_by_label(&source, &sources, label)
-            .unwrap_or_else(|error| panic!("{label}: {error}"));
-        assert_eq!(
-            expanded.matches("returned(value) =>").count(),
-            2,
-            "{expanded}"
-        );
-        assert_eq!(expanded.matches("threw(error) =>").count(), 2, "{expanded}");
-        crate::surface::without_implicit_solve_for_claim(label, || {
-            verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
-        })
-        .unwrap_or_else(|error| panic!("{label}: {error}\n{expanded}"));
-    }
+    let label = "live.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+        .unwrap_or_else(|error| panic!("{label}: {error}"));
+    assert_eq!(
+        expanded.matches("returned(value) =>").count(),
+        1,
+        "{expanded}"
+    );
+    assert_eq!(expanded.matches("threw(error) =>").count(), 1, "{expanded}");
+    crate::surface::without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
+    })
+    .unwrap_or_else(|error| panic!("{label}: {error}\n{expanded}"));
     for offset in source
         .match_indices("have value == 5")
         .map(|(offset, _)| offset)
@@ -22663,6 +22685,68 @@ fn exceptional_claim_label_expands_grouped_outcomes_fixture() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_77")]
+fn terminal_throwing_call_requires_a_frontier_split_and_expands() {
+    let (source, owned_sources) = mdtest_sources("mdtests/exceptional_terminal_call.md");
+    let sources = crate::cli::source_refs(&owned_sources);
+    let written_step = format!("{source} by {{ step(); }}");
+    let error = verify_c_sources(&written_step, &sources)
+        .expect_err("a linear step cannot take both call successors");
+    assert!(error.message().contains("which may throw"), "{error}");
+    assert!(error.message().contains("Write `outcomes"), "{error}");
+
+    let (indirect_source, indirect_sources) =
+        mdtest_sources("mdtests/exceptional_named_contract.md");
+    let indirect_sources = crate::cli::source_refs(&indirect_sources);
+    for (source, sources, label) in [
+        (&source, &sources, "caller.contract"),
+        (&indirect_source, &indirect_sources, "apply.contract"),
+    ] {
+        let expanded = expand_c_claim_source_by_label(source, sources, label)
+            .expect("the implicit tail can split the terminal call");
+        let name = label.strip_suffix(".contract").unwrap();
+        let caller = expanded.split_once(&format!("int32 {name}(")).unwrap().1;
+        let (_, body) = caller.split_once("} by {").unwrap();
+        assert!(body.trim_start().starts_with("outcomes {"), "{expanded}");
+        crate::surface::without_implicit_solve_for_claim(label, || {
+            verify_c_sources(&expanded, sources).map_err(|error| error.to_string())
+        })
+        .expect("the generated frontier split replays without search");
+    }
+}
+
+#[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_77")]
+fn call_outcomes_expand_and_replay_only_at_the_frontier() {
+    let (source, sources) = mdtest_sources("mdtests/outcomes_payload_bindings.md");
+    let sources = crate::cli::source_refs(&sources);
+    let label = "live.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+        .expect("payload proofs should expand in their original call arms");
+    assert_eq!(expanded.matches("outcomes {").count(), 1, "{expanded}");
+    crate::surface::without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
+    })
+    .expect("the expanded payload proof should replay without search");
+
+    let prefix = source.trim_end().strip_suffix('}').unwrap();
+    let late = "outcomes { returned => { close(); } threw(error) => { close(); } }";
+    for suffix in [
+        late.to_owned(),
+        format!("if result == 6 {{ {late} }} else {{ close(); }}"),
+    ] {
+        let written = format!("{prefix} {suffix} }}");
+        let error = verify_c_sources(&written, &sources).expect_err("the call already ran");
+        assert!(
+            error
+                .message()
+                .contains("`outcomes` requires a maybe-throwing call at the execution frontier"),
+            "{error}"
+        );
+    }
+}
+
+#[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_77")]
 fn exceptional_claim_label_expands_routed_throw_fixture() {
     check_exceptional_claim_label_expansion("outcomes_routes_a_throw_that_leaves_the_function");
 }
@@ -23155,6 +23239,23 @@ fn loop_maintain_expansion_preserves_pointer_arm_binding() {
     assert!(expanded.contains("Tree::Node(id) =>"), "{expanded}");
     assert!(expanded.contains("maintain by {"), "{expanded}");
     verify_c_sources(&expanded, &sources).expect("the expanded proof checks");
+}
+
+#[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_68")]
+fn loop_maintain_instantiation_expands_and_replays() {
+    let (source, sources) = mdtest_sources("mdtests/loop_decreases_index_ordered_walk.md");
+    let sources = crate::cli::source_refs(&sources);
+    let label = "walk.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+        .expect("the loop proof with bare instantiation should expand");
+    let maintain = expanded.split_once("maintain by {").unwrap().1;
+    let before_step = maintain.split_once("step()").unwrap().0;
+    assert!(before_step.contains("instantiate(forall"), "{expanded}");
+    crate::surface::without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
+    })
+    .expect("the expanded proof should replay with the instantiated fact");
 }
 
 /// A loop phase written in a grouped proof's `loop` tactic is a claim of its
@@ -26659,6 +26760,7 @@ test_batches! {
         unfolded_conjunction_have_solve_expands_and_rechecks,
         outcome_predecessor_bound_solve_expands_to_arithmetic_steps,
         loop_preservation_case_after_step_expands_in_place,
+        loop_maintain_instantiation_expands_and_replays,
     ],
     expansion_batch_69: [
         loop_preservation_case_before_step_expands_in_place,
@@ -26670,18 +26772,18 @@ test_batches! {
         loop_initialization_duplicate_clauses_keep_distinct_bodies,
         a_consumed_arm_instance_equation_is_cited_at_entry_after_its_unfold,
         conditional_algebraic_universal_expands_and_reverifies,
-        normalize_using_ambient_pointer_equality_expands_and_rechecks,
+        ambient_pointer_equality_expands_and_rechecks,
     ],
     expansion_batch_72: [
-        normalize_using_c_pointer_equality_expands_and_rechecks,
-        normalize_using_pointer_addition_expands_and_rechecks,
+        c_pointer_equality_expands_and_rechecks,
+        pointer_addition_expands_and_rechecks,
         graph_conditions_expand_and_recheck_without_normalize,
-        normalize_using_int32_equality_expands_and_rechecks,
+        int32_equality_expands_and_rechecks,
     ],
     expansion_batch_73: [
         restricted_solve_does_not_borrow_the_ambient_equality_graph,
-        normalize_using_scaled_int32_expands_and_rechecks,
-        normalize_using_int32_addition_expands_and_rechecks_without_proving_definedness,
+        scaled_int32_expands_and_rechecks,
+        int32_addition_expands_and_rechecks_without_proving_definedness,
         authority_callback_count_refinement_expands_every_smart_site,
     ],
     expansion_batch_74: [
@@ -26703,6 +26805,8 @@ test_batches! {
     expansion_batch_77: [
         exceptional_claim_label_expands_two_throwing_calls_fixture,
         exceptional_claim_label_expands_grouped_outcomes_fixture,
+        terminal_throwing_call_requires_a_frontier_split_and_expands,
+        call_outcomes_expand_and_replay_only_at_the_frontier,
         exceptional_claim_label_expands_routed_throw_fixture,
         exceptional_claim_labels_preserve_names_and_covering_proofs_in_projects,
     ],

@@ -158,7 +158,7 @@ theorem certification consumes checks that theorem once. A proved library
 theorem is trusted to the extent that the check of its proof is; a kernel
 standard theorem is trusted to the extent that its builder is.
 
-The library also declares 132 `axiom`s, which are trusted, not proved.
+The library also declares 140 `axiom`s, which are trusted, not proved.
 Seven are the laws of the primitive type `Vec<T>` in
 `library/rust/vec.click`, which relate its bodyless operations `vec::len`,
 `vec::get`, `vec::push` and `vec::set`
@@ -228,14 +228,14 @@ in the inputs, and for a lower bound they rule out negative infinity.
 Neither case admits a sum of infinities of opposite sign. Each sum rounds
 at the law's stated precision.
 The float32 scaling axioms multiply both sides of an ordered comparison
-by one finite positive factor and round both products at float32 precision.
-The library gives separate laws for the two operand orders.
-A positive finite factor excludes both zero-times-infinity and
-infinity-times-zero.
+by one finite nonzero factor and round both products at float32 precision.
+Positive factors preserve order and negative factors reverse it. The library
+gives separate laws for the two operand orders.
 
 The rounded division axioms require a finite nonzero divisor. A positive
 one preserves non-strict order and a negative one reverses it. The ordered
-numerator premise excludes NaN. Both quotients round at float32 precision.
+numerator premise excludes NaN. The quotients round at their respective
+float32 or float64 precision.
 
 The rounded subtraction axioms preserve order in the first operand and
 reverse order in the second. The finite endpoints exclude same-sign
@@ -295,6 +295,7 @@ proved. Each family is an assumption in the same sense:
 | Family | Reported as | What is assumed | Where it is stated |
 | --- | --- | --- | --- |
 | Your `extern` contracts | `extern` | Each `extern` block a sidecar declares | Your sidecars |
+| Interface theorem exports | `loaded interface theorems` | The conclusions of each proofless pure theorem whenever its premises hold | A loaded `*.interface.click` file |
 | C library | `C library` | `memcpy`, `memcmp`, `memset` and `strlen` meet their contracts | `library/c/string.interface.click` |
 | C library objects | `C library` | A linked library-provided scalar or pointer object has a stable value of its declared type | The C object's declaration in an imported `*.interface.click` |
 | Allocator | `allocator` | `malloc`, `calloc`, `realloc` and `free` behave as the kernel's allocation model: a fresh block or null, released once | Built in, as a language primitive: the C front end and the kernel (`allocation` resource), documented in [heap allocation](../reference/language/c.md#heap-allocation) |

@@ -9,11 +9,11 @@ import click::integer;
 theorem misstated_constant(bytes: uint8[], prefix: uint64, total: uint64) {
     requires to_integer(total) == to_integer(prefix) + 2;
     ensures (bytes + prefix) + 3 == bytes + total by {
-        normalize() using { to_integer(total) == to_integer(prefix) + 2; };
+        close() using { to_integer(total) == to_integer(prefix) + 2; };
     }
 }
 ```
 
 ```expect
-fail: goal did not normalize to true using the listed conditions
+fail: `close() using` could not prove the current goal from only its listed premises
 ```

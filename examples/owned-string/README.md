@@ -50,8 +50,7 @@ is Click proof bookkeeping around the unchanged C call sequence, not a source
 adaptation.
 
 The sidecar mixes concise smart proofs with expanded exact certificates. Read
-the short accessor proofs first. Long `step()`, `transport ... using`,
-and named theorem applications are checked proof artifacts retained for
+the short accessor proofs first. Long `step()` sequences and named theorem applications are checked proof artifacts retained for
 predictable performance and expansion coverage; ordinary authoring should
 begin with the corresponding smart tactic and expand only after profiling.
 

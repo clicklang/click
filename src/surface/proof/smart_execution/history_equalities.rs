@@ -7,13 +7,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// an ordinary have. The final equality checks the goal's actual points.
     pub(in crate::surface::proof) fn try_indexed_read_preservation(
         search_input: &Proof<'a>,
-        target: &ClickProposition,
+        target: &SurfaceProposition,
         point_limit: usize,
         derive_separation: bool,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_indexed_read_preservation");
-        let ClickProposition::Comparison {
+        let SurfaceProposition::Comparison {
             left,
             operator: ComparisonOperator::Equal,
             right,
@@ -25,19 +25,19 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let (current, returned) = match (left, right) {
             (
                 current,
-                ContractExpression::Old(saved)
-                | ContractExpression::At {
+                SurfaceTerm::Old(saved)
+                | SurfaceTerm::At {
                     expression: saved, ..
                 },
             )
             | (
-                ContractExpression::Old(saved)
-                | ContractExpression::At {
+                SurfaceTerm::Old(saved)
+                | SurfaceTerm::At {
                     expression: saved, ..
                 },
                 current,
             ) if current == saved.as_ref() => (current, false),
-            (_, ContractExpression::Old(read))
+            (_, SurfaceTerm::Old(read))
                 if outcome && crate::surface::proposition_names_result(target) =>
             {
                 (read.as_ref(), true)
@@ -54,8 +54,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         let records = view.fixed_state.recorded_states;
         let kept = ResourceSubject::SavedMemory {
-            base: ContractExpression::ProgramExpression(*base),
-            start: ContractExpression::ProgramExpression(*index),
+            base: SurfaceTerm::ProgramExpression(*base),
+            start: SurfaceTerm::ProgramExpression(*index),
             end: None,
         };
         let have = |proposition, step| ProofStep::Have {
@@ -98,18 +98,18 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if !footprint.complete || footprint.members.is_empty() {
                 continue;
             }
-            let separation = ClickProposition::Separate {
+            let separation = SurfaceProposition::Separate {
                 left: ResourceSubject::Footprint(region.clone()),
                 right: kept.clone(),
             };
-            let at = |kind| ContractExpression::At {
+            let at = |kind| SurfaceTerm::At {
                 selector: ProgramPointSelector::ProgramPoint(ProgramPointRef {
                     region: region.clone(),
                     kind,
                 }),
                 expression: Box::new(current.clone()),
             };
-            let equality = ClickProposition::Comparison {
+            let equality = SurfaceProposition::Comparison {
                 left: at(ProgramPointKind::Exit),
                 operator: ComparisonOperator::Equal,
                 right: at(ProgramPointKind::Entry),
@@ -174,7 +174,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         written: &Resource,
         kept: &ResourceSubject,
-        footprint_separation: &ClickProposition,
+        footprint_separation: &SurfaceProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_distinct_indexed_store_separation");
@@ -239,7 +239,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
-        let separation = ClickProposition::Separate {
+        let separation = SurfaceProposition::Separate {
             left: ResourceSubject::SavedMemory {
                 base: base.clone(),
                 start: write_index.clone(),
@@ -247,13 +247,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             },
             right: kept.clone(),
         };
-        let compare = |left: &ContractExpression, operator, right: &ContractExpression| {
-            ClickProposition::Comparison {
+        let compare =
+            |left: &SurfaceTerm, operator, right: &SurfaceTerm| SurfaceProposition::Comparison {
                 left: left.clone(),
                 operator,
                 right: right.clone(),
-            }
-        };
+            };
         let distinct = compare(read_index, ComparisonOperator::NotEqual, &write_index);
         let separate_elements = ProofCertificate::from_steps(vec![ProofStep::ApplyTheoremUsing {
             application: TheoremApplication {
@@ -306,9 +305,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// A strict comparison refutes equality of the two selected indices.
     fn try_index_disequality_from_order(
         search_input: &Proof<'a>,
-        distinct: &ClickProposition,
-        equality: ClickProposition,
-        orders: [ClickProposition; 2],
+        distinct: &SurfaceProposition,
+        equality: SurfaceProposition,
+        orders: [SurfaceProposition; 2],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_index_disequality_from_order");
@@ -328,7 +327,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             };
             let equal_case = ProofCertificate::from_steps(vec![
                 ProofStep::Have {
-                    proposition: ClickProposition::Not(Box::new(order.clone())),
+                    proposition: SurfaceProposition::Not(Box::new(order.clone())),
                     proof: Box::new(refute_order.clone()),
                 },
                 ProofStep::Contradiction(order),
@@ -342,9 +341,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }])
             .expect("ordinary index disequality");
             let checked = || {
-                let scope = proof
-                    .driver()
-                    .open_have_with_goal_observations(distinct.clone(), true)?;
+                let scope = proof.driver().open_have_as_written(distinct.clone())?;
                 scope
                     .driver()
                     .try_authoritative_linear_script(&proof_steps.to_proof_tactics())?
@@ -364,7 +361,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         footprint: &crate::kernel::RegionFootprint,
         kept: &ResourceSubject,
-        footprint_separation: &ClickProposition,
+        footprint_separation: &SurfaceProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_memory_footprint_separation");
@@ -393,7 +390,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             else {
                 return Ok(None);
             };
-            let separation = ClickProposition::Separate {
+            let separation = SurfaceProposition::Separate {
                 left: written,
                 right: kept.clone(),
             };
@@ -427,20 +424,20 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// so use the byte extent of the load selected by the checked goal.
     pub(in crate::surface::proof) fn try_anchored_field_preservation(
         search_input: &Proof<'a>,
-        target: &ClickProposition,
+        target: &SurfaceProposition,
         address: &crate::kernel::Address,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_anchored_field_preservation");
-        let ClickProposition::Comparison {
+        let SurfaceProposition::Comparison {
             left:
-                ContractExpression::At {
+                SurfaceTerm::At {
                     selector: ProgramPointSelector::ProgramPoint(left),
                     expression: left_read,
                 },
             operator: ComparisonOperator::Equal,
             right:
-                ContractExpression::At {
+                SurfaceTerm::At {
                     selector: ProgramPointSelector::ProgramPoint(right),
                     expression: right_read,
                 },
@@ -450,7 +447,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         if left.region != right.region
             || left_read != right_read
-            || !matches!(left_read.as_ref(), ContractExpression::Field { .. })
+            || !matches!(left_read.as_ref(), SurfaceTerm::Field { .. })
         {
             return Ok(None);
         }
@@ -484,7 +481,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         ) else {
             return Ok(None);
         };
-        let separation = ClickProposition::Separate {
+        let separation = SurfaceProposition::Separate {
             left: ResourceSubject::Footprint(exit.region.clone()),
             right: kept.clone(),
         };
@@ -493,11 +490,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
-        let at = |point: &ProgramPointRef| ContractExpression::At {
+        let at = |point: &ProgramPointRef| SurfaceTerm::At {
             selector: ProgramPointSelector::ProgramPoint(point.clone()),
             expression: left_read.clone(),
         };
-        let equality = ClickProposition::Comparison {
+        let equality = SurfaceProposition::Comparison {
             left: at(exit),
             operator: ComparisonOperator::Equal,
             right: at(entry),
@@ -519,17 +516,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// Supply containment for separation restriction from the introduced
     /// bounds or the reflexive containment law.
     pub(in crate::surface::proof) fn indexed_containment_step(
-        goal: &ClickProposition,
+        goal: &SurfaceProposition,
     ) -> Option<ProofStep> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("indexed_containment_step");
-        let ClickProposition::Contains { parent, child } = goal else {
+        let SurfaceProposition::Contains { parent, child } = goal else {
             return None;
         };
         if parent == child {
             return Some(ProofStep::ApplyTheorem(TheoremApplication {
                 name: "click::separation::contains_refl".into(),
-                arguments: vec![ContractExpression::Resource(Box::new(parent.clone()))],
+                arguments: vec![SurfaceTerm::Resource(Box::new(parent.clone()))],
             }));
         }
         let ResourceSubject::SavedMemory {
@@ -558,12 +555,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 arguments: vec![base.clone(), lo.clone(), hi.clone(), index.clone()],
             },
             premises: vec![
-                ClickProposition::Comparison {
+                SurfaceProposition::Comparison {
                     left: lo.clone(),
                     operator: ComparisonOperator::LessEqual,
                     right: index.clone(),
                 },
-                ClickProposition::Comparison {
+                SurfaceProposition::Comparison {
                     left: index.clone(),
                     operator: ComparisonOperator::LessThan,
                     right: hi.clone(),
@@ -577,8 +574,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// replay neither enumerates facts nor follows memory history.
     pub(in crate::surface::proof) fn try_recorded_footprint_preservation(
         search_input: &Proof<'a>,
-        source: &ClickProposition,
-        target: &ClickProposition,
+        source: &SurfaceProposition,
+        target: &SurfaceProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_recorded_footprint_preservation");
@@ -617,8 +614,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
 
     pub(in crate::surface::proof) fn try_history_indexed_equalities(
         search_input: &Proof<'a>,
-        source: &ClickProposition,
-        target: &ClickProposition,
+        source: &SurfaceProposition,
+        target: &SurfaceProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_history_indexed_equalities");
@@ -627,10 +624,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(None);
         }
-        let ClickProposition::Comparison {
+        let SurfaceProposition::Comparison {
             left: read,
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::Old(old),
+            right: SurfaceTerm::Old(old),
         } = target
         else {
             return Ok(None);
@@ -669,11 +666,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if records.get(&exit).is_none() {
                 continue;
             }
-            let at = |selector| ContractExpression::At {
+            let at = |selector| SurfaceTerm::At {
                 selector,
                 expression: Box::new(read.clone()),
             };
-            let equality = ClickProposition::Comparison {
+            let equality = SurfaceProposition::Comparison {
                 left: at(exit),
                 operator: ComparisonOperator::Equal,
                 right: at(selector.clone()),
@@ -681,9 +678,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             // Expose the selected endpoint terms to ordinary equality reasoning.
             // No premise or memory history is reconstructed during replay.
             let candidate = (|| {
-                let scope = proof
-                    .driver()
-                    .open_have_with_goal_observations(equality, true)?;
+                let scope = proof.driver().open_have_as_written(equality)?;
                 scope.driver().apply_step(ProofStep::Known)?.join()
             })();
             if let Some(unchanged) = attempt::candidate_outcome(candidate)? {
@@ -698,8 +693,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// the final `known` checks that this equality actually closes the result.
     fn try_returned_index_preservation(
         search_input: &Proof<'a>,
-        target: &ClickProposition,
-        read: &ContractExpression,
+        target: &SurfaceProposition,
+        read: &SurfaceTerm,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_returned_index_preservation");
@@ -709,8 +704,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let kept = ResourceSubject::SavedMemory {
-            base: ContractExpression::ProgramExpression(*base),
-            start: ContractExpression::ProgramExpression(*index),
+            base: SurfaceTerm::ProgramExpression(*base),
+            start: SurfaceTerm::ProgramExpression(*index),
             end: None,
         };
         let (Some(view), Some(spellings)) = (
@@ -744,7 +739,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if !recorded.complete || recorded.members.len() != 1 {
                 continue;
             }
-            let footprint = ClickProposition::Separate {
+            let footprint = SurfaceProposition::Separate {
                 left: ResourceSubject::Footprint(region.clone()),
                 right: kept.clone(),
             };
@@ -777,10 +772,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 let Some(mut surface) = spellings.recorded_requirement_surface(candidate) else {
                     continue;
                 };
-                while let ClickProposition::At { proposition, .. } = surface {
+                while let SurfaceProposition::At { proposition, .. } = surface {
                     surface = proposition;
                 }
-                let ClickProposition::Separate {
+                let SurfaceProposition::Separate {
                     left: left_surface,
                     right: right_surface,
                 } = surface
@@ -798,18 +793,18 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 } else {
                     continue;
                 };
-                let separation = ClickProposition::Separate {
+                let separation = SurfaceProposition::Separate {
                     left: covering.clone(),
                     right: kept.clone(),
                 };
-                let at = |kind| ContractExpression::At {
+                let at = |kind| SurfaceTerm::At {
                     selector: ProgramPointSelector::ProgramPoint(ProgramPointRef {
                         region: region.clone(),
                         kind,
                     }),
                     expression: Box::new(read.clone()),
                 };
-                let equality = ClickProposition::Comparison {
+                let equality = SurfaceProposition::Comparison {
                     left: at(ProgramPointKind::Exit),
                     operator: ComparisonOperator::Equal,
                     right: at(ProgramPointKind::Entry),

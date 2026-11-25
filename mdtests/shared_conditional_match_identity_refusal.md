@@ -15,11 +15,11 @@ theorem identity(x: Payload, a: int32, b: int32) {
     ensures joined(x, a) == joined(x, b) by {
         unfold(joined(x, a));
         unfold(joined(x, b));
-        normalize();
+        close();
     }
 }
 ```
 
 ```expect
-fail: `normalize` goal did not normalize to true
+fail: could not establish `((if flag(x) == 1 { match x { Payload::Item(n) => n, Payload::Empty() => a } } else { 0 }) as int32) == ((if flag(x) == 1 { match x { Payload::Item(n) => n, Payload::Empty() => b } } else { 0 }) as int32)`
 ```

@@ -24,7 +24,7 @@ void keep(const uint8* p, int32 i) {
    unfold(h);
    have defined(i + 4) by { close() using { 0 <= i; i <= 22200; }; }
    have defined(i + 3) by { close() using { 0 <= i; i <= 22200; }; }
-   have (q + i) + 4 == q + (i + 4) by { normalize() using { defined(i + 3); }; }
+   have (q + i) + 4 == q + (i + 4) by { close() using { defined(i + 3); }; }
    let h = fold(Cell(p, i), { model: Link::Node(q) });
   },
  }
@@ -33,5 +33,5 @@ void keep(const uint8* p, int32 i) {
 ```
 
 ```expect
-fail: did not normalize
+fail: `close() using` could not prove the current goal from only its listed premises
 ```

@@ -367,6 +367,40 @@ int32 short_sum(int32 seed) {
         }
     }
 
+    #[test]
+    fn native_equalities_over_retained_folds_raise_as_integer_observations() {
+        let text = include_str!("../../../mdtests/pure_short_int32_range_folds_keep_structure.md");
+        let fixture = crate::cli::parse_mdtest(
+            std::path::Path::new("pure_short_int32_range_folds_keep_structure.md"),
+            text,
+        )
+        .unwrap();
+        let source = fixture.click_source.as_deref().unwrap();
+        let lines = capture(|| {
+            crate::surface::verify_c_sources(source, &[]).unwrap();
+        });
+        for claim in [
+            "short_fold_in_arithmetic.ensures_0",
+            "short_fold_with_symbolic_arithmetic.ensures_0",
+        ] {
+            let prefix = format!("same\tgoal\tcondition:Compare(int32 ==)\t{claim}\thave\t");
+            assert!(
+                lines.iter().any(|line| line.starts_with(&prefix)
+                    && line.split('\t').nth(7).is_some_and(|raised| {
+                        raised.contains("to_integer(") && raised.contains(".fold(")
+                    })),
+                "{claim}: {lines:#?}"
+            );
+            let expanded = crate::surface::expand_c_claim_source_by_label(source, &[], claim)
+                .unwrap_or_else(|error| panic!("{}", error.report()));
+            assert!(!expanded.contains("normalize("), "{expanded}");
+            crate::surface::without_proof_search_for_claim(claim, || {
+                crate::surface::verify_c_sources(&expanded, &[]).map_err(|error| error.report())
+            })
+            .unwrap_or_else(|error| panic!("{claim}\n{error}\n{expanded}"));
+        }
+    }
+
     /// A pointer a pure function returns raises as that call, and a read
     /// through it as a typed read through the call; a pointer argument of a
     /// Click call with no proof name raises as the pointer itself; and a

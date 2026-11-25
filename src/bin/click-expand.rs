@@ -1009,17 +1009,49 @@ int32 identity(int32 x) {
             "{written}"
         );
 
-        let double_divisor = directory.path().join("double_divisor.click");
+        let double_division = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/float64_division_by_literal.md");
+        check(&double_division, "double_divisor_bound.ensures_0").unwrap();
+        for (claim, sign) in [
+            ("divide_positive.ensures_0", "positive"),
+            ("divide_negative.ensures_0", "negative"),
+        ] {
+            let expanded = check(&double_division, claim).unwrap();
+            for bound in ["lower", "upper"] {
+                assert!(
+                    expanded.contains(&format!("float64_divide_{sign}_{bound}")),
+                    "{claim}: {expanded}"
+                );
+            }
+        }
+
+        let negative_multiplication = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/float32_negative_literal_multiplication.md");
+        check(&negative_multiplication, "negative_product.ensures_0").unwrap();
+        for (claim, side) in [
+            ("multiply_left.ensures_0", ""),
+            ("multiply_right.ensures_0", "right_"),
+        ] {
+            let expanded = check(&negative_multiplication, claim).unwrap();
+            for bound in ["lower", "upper"] {
+                assert!(
+                    expanded.contains(&format!("float32_scale_negative_{side}{bound}")),
+                    "{claim}: {expanded}"
+                );
+            }
+        }
+
+        let double_product = directory.path().join("double_product.click");
         fs::write(
-            &double_divisor,
-            r#"theorem double_divisor_bound(x: double) {
-    requires x >= float64_from_bits(0xc024000000000000u64);
-    ensures x / float64_from_bits(0xc000000000000000u64) <= float64_from_bits(0x4014000000000000u64) by close();
+            &double_product,
+            r#"theorem double_product(x: double) {
+    requires x <= float64_from_bits(0x4024000000000000u64);
+    ensures x * float64_from_bits(0x4000000000000000u64) <= float64_from_bits(0x4034000000000000u64) by close();
 }
 "#,
         )
         .unwrap();
-        let generated = check(&double_divisor, "double_divisor_bound.ensures_0").unwrap_err();
+        let generated = check(&double_product, "double_product.ensures_0").unwrap_err();
         assert!(
             generated.contains("Expanded proof still contains normalize()"),
             "{generated}"
@@ -1366,17 +1398,16 @@ int32 bad(int32 x) {
         assert!(!expanded.contains(text), "{expanded}");
     }
 
-    /// Call outcomes: the `solve` closing the `returned` arm is selected by
-    /// its line, and only that arm is rewritten.
+    /// Select the execution step in the threw arm by its source line.
     #[test]
     #[ignore = "nightly: 1.1s in the parallel gate"]
     fn a_line_in_a_call_outcome_arm_selects_its_smart_tactic() {
         let path = mdtest_path("cpp_single_guard_throw_step.md");
         assert_eq!(
-            markdown_line(&path, 81).trim(),
+            markdown_line(&path, 84).trim(),
             "step_until(function.exit);"
         );
-        let expanded = run_location(&path, "81").unwrap();
+        let expanded = run_location(&path, "84").unwrap();
         let tail = expanded
             .split_once("        threw(error) => {\n")
             .expect("the threw arm is kept")

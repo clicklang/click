@@ -63,7 +63,7 @@ impl<'a> Proof<'a> {
         &self,
         guard: &Proposition,
         consequent: &Proposition,
-    ) -> Option<(ClickProposition, ClickProposition)> {
+    ) -> Option<(SurfaceProposition, SurfaceProposition)> {
         let (surface_guard, surface_consequent) = self.with_guarded_term_raiser(|raiser| {
             Some((raiser.guard(guard)?, raiser.comparison(consequent)?))
         })?;
@@ -82,12 +82,12 @@ impl<'a> Proof<'a> {
     pub(super) fn raised_comparison_surface(
         &self,
         kernel: &Proposition,
-    ) -> Option<ClickProposition> {
+    ) -> Option<SurfaceProposition> {
         let surface = self.with_guarded_term_raiser(|raiser| raiser.comparison(kernel))?;
         self.surface_lowers_to(&surface, kernel).then_some(surface)
     }
 
-    fn surface_lowers_to(&self, surface: &ClickProposition, kernel: &Proposition) -> bool {
+    fn surface_lowers_to(&self, surface: &SurfaceProposition, kernel: &Proposition) -> bool {
         self.lower_surface_proposition(surface, "guarded solve premise")
             .is_ok_and(|lowered| {
                 lowered == *kernel
@@ -115,7 +115,7 @@ impl<'a> Proof<'a> {
                 goal.surface_bindings
                     .iter()
                     .filter_map(|(name, binding)| match binding {
-                        ContractExpression::ProgramExpression(ProgramExpression::Value(
+                        SurfaceTerm::ProgramExpression(ProgramExpression::Value(
                             crate::kernel::integer64_c_value!(MachineTerm::Variable(variable)),
                         )) => Some((*variable, name.clone())),
                         _ => None,
@@ -132,7 +132,7 @@ impl<'a> Proof<'a> {
     }
 }
 
-type BinaryExpression = fn(Box<ContractExpression>, Box<ContractExpression>) -> ContractExpression;
+type BinaryExpression = fn(Box<SurfaceTerm>, Box<SurfaceTerm>) -> SurfaceTerm;
 
 /// The operands and the written operator of a no-overflow condition.
 fn overflow_operands(
@@ -150,7 +150,7 @@ fn overflow_operands(
             op: OverflowOperation::Add,
             left,
             right,
-        } => (left, right, ContractExpression::Add),
+        } => (left, right, SurfaceTerm::Add),
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Subtract,
@@ -162,7 +162,7 @@ fn overflow_operands(
             op: OverflowOperation::Subtract,
             left,
             right,
-        } => (left, right, ContractExpression::Subtract),
+        } => (left, right, SurfaceTerm::Subtract),
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Multiply,
@@ -174,7 +174,7 @@ fn overflow_operands(
             op: OverflowOperation::Multiply,
             left,
             right,
-        } => (left, right, ContractExpression::Multiply),
+        } => (left, right, SurfaceTerm::Multiply),
         _ => return None,
     };
     Some((left, right, construct))
@@ -185,53 +185,53 @@ const MAX_RAISING_STATES: usize = 16;
 
 /// The distinct model-field accesses written in a goal.
 fn collect_goal_field_accesses(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     accesses: &mut Vec<ResourceFieldAccess>,
 ) {
     let mut pending_propositions = vec![proposition];
     let mut pending_expressions = Vec::new();
     while let Some(proposition) = pending_propositions.pop() {
         match proposition {
-            ClickProposition::Comparison { left, right, .. } => {
+            SurfaceProposition::Comparison { left, right, .. } => {
                 pending_expressions.push(left);
                 pending_expressions.push(right);
             }
-            ClickProposition::Defined { expression }
-            | ClickProposition::IsA {
+            SurfaceProposition::Defined { expression }
+            | SurfaceProposition::IsA {
                 pointer: expression,
                 ..
             } => pending_expressions.push(expression),
-            ClickProposition::And(left, right)
-            | ClickProposition::Or(left, right)
-            | ClickProposition::Implies(left, right) => {
+            SurfaceProposition::And(left, right)
+            | SurfaceProposition::Or(left, right)
+            | SurfaceProposition::Implies(left, right) => {
                 pending_propositions.push(left);
                 pending_propositions.push(right);
             }
-            ClickProposition::Not(inner) => pending_propositions.push(inner),
+            SurfaceProposition::Not(inner) => pending_propositions.push(inner),
             _ => {}
         }
     }
     while let Some(expression) = pending_expressions.pop() {
         match expression {
-            ContractExpression::ResourceField(access) => {
+            SurfaceTerm::ResourceField(access) => {
                 if !accesses.contains(access) {
                     accesses.push(access.clone());
                 }
             }
-            ContractExpression::Add(left, right)
-            | ContractExpression::Subtract(left, right)
-            | ContractExpression::Multiply(left, right) => {
+            SurfaceTerm::Add(left, right)
+            | SurfaceTerm::Subtract(left, right)
+            | SurfaceTerm::Multiply(left, right) => {
                 pending_expressions.push(left);
                 pending_expressions.push(right);
             }
-            ContractExpression::IntegerContext(inner)
-            | ContractExpression::Negate(inner)
-            | ContractExpression::Old(inner)
-            | ContractExpression::At {
+            SurfaceTerm::IntegerContext(inner)
+            | SurfaceTerm::Negate(inner)
+            | SurfaceTerm::Old(inner)
+            | SurfaceTerm::At {
                 expression: inner, ..
             } => pending_expressions.push(inner),
             // An exact observation names the field it observes.
-            ContractExpression::Call { name, arguments } if name == "to_integer" => {
+            SurfaceTerm::Call { name, arguments } if name == "to_integer" => {
                 pending_expressions.extend(arguments);
             }
             _ => {}
@@ -248,14 +248,14 @@ struct GuardedTermRaiser<'v, 'p> {
 }
 
 impl GuardedTermRaiser<'_, '_> {
-    fn guard(&self, guard: &Proposition) -> Option<ClickProposition> {
+    fn guard(&self, guard: &Proposition) -> Option<SurfaceProposition> {
         // Complete ordinary range guards name the same operation as the
         // former private overflow query. Keep model-field state names on
         // its operands; the caller checks the full domain's round trip.
         let query = crate::kernel::machine_integer::definedness::interval_query_form(guard);
         let guard = query.as_ref().unwrap_or(guard);
         match guard {
-            Proposition::And(left, right) => Some(ClickProposition::And(
+            Proposition::And(left, right) => Some(SurfaceProposition::And(
                 Box::new(self.guard(left)?),
                 Box::new(self.guard(right)?),
             )),
@@ -263,7 +263,7 @@ impl GuardedTermRaiser<'_, '_> {
                 if let Some((left, right, construct)) =
                     overflow_operands(condition.native_compat()) =>
             {
-                Some(ClickProposition::Defined {
+                Some(SurfaceProposition::Defined {
                     expression: construct(Box::new(self.term(left)?), Box::new(self.term(right)?)),
                 })
             }
@@ -272,7 +272,7 @@ impl GuardedTermRaiser<'_, '_> {
     }
 
     /// An int32 or int64 comparison, in either polarity.
-    fn comparison(&self, proposition: &Proposition) -> Option<ClickProposition> {
+    fn comparison(&self, proposition: &Proposition) -> Option<SurfaceProposition> {
         let Proposition::ConditionIs(condition, value) = proposition else {
             return None;
         };
@@ -321,14 +321,14 @@ impl GuardedTermRaiser<'_, '_> {
                 ComparisonOperator::NotEqual | ComparisonOperator::In => return None,
             }
         };
-        Some(ClickProposition::Comparison {
+        Some(SurfaceProposition::Comparison {
             left: self.operand(view.operands[0].operand_view())?,
             operator,
             right: self.operand(view.operands[1].operand_view())?,
         })
     }
 
-    fn operand(&self, value: crate::kernel::MachineOperandView<'_>) -> Option<ContractExpression> {
+    fn operand(&self, value: crate::kernel::MachineOperandView<'_>) -> Option<SurfaceTerm> {
         use crate::kernel::MachineOperandView as V;
         let V::Shared(root) = value else {
             let V::Legacy(value) = value else {
@@ -352,9 +352,9 @@ impl GuardedTermRaiser<'_, '_> {
             value.binary()
         {
             let construct: BinaryExpression = match op {
-                MachineBinaryOp::Add => ContractExpression::Add,
-                MachineBinaryOp::Subtract => ContractExpression::Subtract,
-                MachineBinaryOp::Multiply => ContractExpression::Multiply,
+                MachineBinaryOp::Add => SurfaceTerm::Add,
+                MachineBinaryOp::Subtract => SurfaceTerm::Subtract,
+                MachineBinaryOp::Multiply => SurfaceTerm::Multiply,
                 _ => {
                     return super::surface_synthesis::raise_kernel_term(
                         root,
@@ -397,10 +397,9 @@ impl GuardedTermRaiser<'_, '_> {
 
     /// A model field the goal names, read at the current state, at function
     /// entry, or at the newest recorded state that holds this value.
-    fn field_surface(&self, term: &MachineTerm) -> Option<ContractExpression> {
-        let named = |access: &ResourceFieldAccess| {
-            Box::new(ContractExpression::ResourceField(access.clone()))
-        };
+    fn field_surface(&self, term: &MachineTerm) -> Option<SurfaceTerm> {
+        let named =
+            |access: &ResourceFieldAccess| Box::new(SurfaceTerm::ResourceField(access.clone()));
         for access in self.accesses {
             if Self::field_value(self.view.fixed_state.state, access) == Some(term) {
                 return Some(*named(access));
@@ -408,13 +407,13 @@ impl GuardedTermRaiser<'_, '_> {
         }
         for access in self.accesses {
             if Self::field_value(self.view.fixed_state.pre_state, access) == Some(term) {
-                return Some(ContractExpression::Old(named(access)));
+                return Some(SurfaceTerm::Old(named(access)));
             }
         }
         for (selector, state) in self.preferred_states() {
             for access in self.accesses {
                 if Self::field_value(state, access) == Some(term) {
-                    return Some(ContractExpression::At {
+                    return Some(SurfaceTerm::At {
                         selector: (*selector).clone(),
                         expression: named(access),
                     });
@@ -424,13 +423,13 @@ impl GuardedTermRaiser<'_, '_> {
         None
     }
 
-    fn term(&self, term: &MachineTerm) -> Option<ContractExpression> {
+    fn term(&self, term: &MachineTerm) -> Option<SurfaceTerm> {
         if let MachineTerm::Variable(variable) = term
             && let Some(name) = self.bound.get(variable)
         {
-            return Some(ContractExpression::ProgramExpression(
-                ProgramExpression::Variable((name.clone()).into()),
-            ));
+            return Some(SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                (name.clone()).into(),
+            )));
         }
         if let Some(field) = self.field_surface(term) {
             return Some(field);
@@ -440,10 +439,10 @@ impl GuardedTermRaiser<'_, '_> {
         };
         let composite = match term {
             binary_term!(Int32, Add, left, right) => {
-                binary(left, right).map(|(left, right)| ContractExpression::Add(left, right))
+                binary(left, right).map(|(left, right)| SurfaceTerm::Add(left, right))
             }
             binary_term!(Int32, Subtract, left, right) => {
-                binary(left, right).map(|(left, right)| ContractExpression::Subtract(left, right))
+                binary(left, right).map(|(left, right)| SurfaceTerm::Subtract(left, right))
             }
             binary_term!(Int32, Multiply, left, right)
             | MachineTerm::Binary {
@@ -451,19 +450,19 @@ impl GuardedTermRaiser<'_, '_> {
                 op: MachineBinaryOp::Multiply,
                 left,
                 right,
-            } => binary(left, right).map(|(left, right)| ContractExpression::Multiply(left, right)),
+            } => binary(left, right).map(|(left, right)| SurfaceTerm::Multiply(left, right)),
             MachineTerm::Binary {
                 format: MachineIntegerType::Int64,
                 op: MachineBinaryOp::Add,
                 left,
                 right,
-            } => binary(left, right).map(|(left, right)| ContractExpression::Add(left, right)),
+            } => binary(left, right).map(|(left, right)| SurfaceTerm::Add(left, right)),
             MachineTerm::Binary {
                 format: MachineIntegerType::Int64,
                 op: MachineBinaryOp::Subtract,
                 left,
                 right,
-            } => binary(left, right).map(|(left, right)| ContractExpression::Subtract(left, right)),
+            } => binary(left, right).map(|(left, right)| SurfaceTerm::Subtract(left, right)),
             _ => None,
         };
         composite
@@ -483,7 +482,7 @@ impl GuardedTermRaiser<'_, '_> {
                         self.view.parameter_binding,
                         state,
                     )?;
-                    Some(ContractExpression::At {
+                    Some(SurfaceTerm::At {
                         selector: (*selector).clone(),
                         expression: Box::new(expression),
                     })

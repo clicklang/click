@@ -235,12 +235,6 @@ that no complete word was recovered and that comparison was not attempted.
 These are retained results of the check itself; formatting does not rerun the
 resolver or guess which premise would make the proof succeed.
 
-A rejected cited premise of `transport(source, target) using { ... }` prints
-`required transport premise:` with that exact lowered proposition under the
-same labels as the goal and retained checked prefix. This also applies to
-fixed-state checks and loop-body execution; it does not replace the premise
-with an abbreviated dump of available facts and resources.
-
 A checked function-pointer load step prints the local it produces, the exact
 value label, and `read: load_function_pointer(address) in state#N`, where
 `state#N` is the memory label of the read, not a surface program point.

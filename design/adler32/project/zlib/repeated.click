@@ -644,14 +644,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    }
    have len <= at(before_block, len) - 16u64 by close();
    have viewable(buf[0u64..len]) by {
-    transport(at(before_block, viewable(buf[0u64..len])), viewable(buf[0u64..len])) using {
-     buf == at(before_block, buf) + 16;
-     at(before_block, viewable(buf[0u64..len]));
-     16u64 <= at(before_block, len);
-     len <= at(before_block, len) - 16u64;
-     len <= 5551u64;
-     len <= 9223372036854775807u64;
-    };
+    transport(at(before_block, viewable(buf[0u64..len])), viewable(buf[0u64..len]));
    }
    have to_integer(adler) == 1 + adler_byte_sum(old(buf), zlib_prefix_count(old(len), len)) by { rewrite(zlib_prefix_count(old(len), len), zlib_prefix_count(old(len), at(before_block, len)) + 16); close(); }
    have to_integer(sum2) == to_integer(zlib_prefix_count(old(len), len)) + adler_weighted_sum(old(buf), zlib_prefix_count(old(len), len), zlib_prefix_count(old(len), len)) by { rewrite(zlib_prefix_count(old(len), len), zlib_prefix_count(old(len), at(before_block, len)) + 16); close(); }
@@ -863,14 +856,7 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have len <= 15u64;
    have len <= 9223372036854775807u64;
    have viewable(buf[0u64..len]) by {
-    transport(at(before_decrement, viewable(buf[0u64..len])), viewable(buf[0u64..len])) using {
-     buf == at(before_decrement, buf) + 1;
-     at(before_decrement, viewable(buf[0u64..len]));
-     1u64 <= at(before_decrement, len);
-     len <= at(before_decrement, len) - 1u64;
-     len <= 15u64;
-     len <= 9223372036854775807u64;
-    };
+    transport(at(before_decrement, viewable(buf[0u64..len])), viewable(buf[0u64..len]));
    }
    have old(len) - len <= 5551u64 by {
     have to_integer(old(len) - len) <= 5551 by close() using {

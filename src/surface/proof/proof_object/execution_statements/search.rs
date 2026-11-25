@@ -12,8 +12,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// names a frame the source could not cross.
     pub(in crate::surface::proof) fn apply_planned_fact_transport(
         search_input: &Proof<'a>,
-        surface_source: &ClickProposition,
-        surface_target: &ClickProposition,
+        surface_source: &SurfaceProposition,
+        surface_target: &SurfaceProposition,
         tactic_index: usize,
         source_refusal: Option<&ClickError>,
     ) -> Result<Proof<'a>, ClickError> {
@@ -34,8 +34,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
 
     fn apply_planned_fact_transport_inner(
         search_input: &Proof<'a>,
-        surface_source: &ClickProposition,
-        surface_target: &ClickProposition,
+        surface_source: &SurfaceProposition,
+        surface_target: &SurfaceProposition,
         tactic_index: usize,
         source_refusal: Option<&ClickError>,
     ) -> Result<Proof<'a>, ClickError> {
@@ -168,8 +168,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// state and the outcome's facts.
     fn apply_planned_outcome_fact_transport(
         search_input: &Proof<'a>,
-        surface_source: &ClickProposition,
-        surface_target: &ClickProposition,
+        surface_source: &SurfaceProposition,
+        surface_target: &SurfaceProposition,
         tactic_index: usize,
         source_refusal: Option<&ClickError>,
     ) -> Result<Proof<'a>, ClickError> {

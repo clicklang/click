@@ -42,11 +42,11 @@ uint8 fill_byte_tail(uint8 p[], int32 n) {
             mark before_store;
             unfold(first_byte(p));
             have p[0] == old(first_byte(p)) by { close(); }
-            have i != 0 by { normalize() using { i >= 1; }; }
+            have i != 0 by { close(); }
             apply(click::separation::separate_elements(p, i, 0));
             step();
-            have separate(loop(0).statement(0).footprint, memory(p[0])) by {
-                normalize() using { at(before_store, separate(memory(p[i]), memory(p[0]))); };
+            have at(before_store, separate(loop(0).statement(0).footprint, memory(p[0]))) by {
+                close();
             }
             have p[0] == at(before_store, p[0]) by {
                 preserve(memory(p[0]), loop(0).statement(0));

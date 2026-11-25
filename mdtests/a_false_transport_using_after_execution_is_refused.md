@@ -1,8 +1,7 @@
-# A false `transport using` after execution is refused
+# A false marked-state assertion after execution is refused
 
-The companion of `a_false_transport_using_between_execution_steps_is_refused.md`.
-Written at function exit, after `step_until(function.exit)`, the same false `transport using` is checked by the
-same step and refused with the same reason.
+The entry value of `a[m]` stays unknown at function exit, so `close()` cannot
+prove that it was 5.
 
 ```c filename=a_false_transport_using_after_execution_is_refused.c
 void mark_one(int32 a[], int32 n, int32 i, int32 m) {

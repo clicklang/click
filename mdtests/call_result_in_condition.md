@@ -4,7 +4,7 @@
 the branch fact and the callee's guarantee are about a value the proof cannot
 spell. `let { result: r } = step(classify);` names that value through the explicit `result` key, independently of whether
 the callee also produces resources. The name then works in `have`,
-`rewrite`, and `normalize() using` premises on either side of the branch.
+`rewrite`, and `close() using` premises on either side of the branch.
 
 `return classify(x);` is the same shape with the result flowing to `result`.
 
