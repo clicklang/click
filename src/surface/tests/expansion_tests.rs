@@ -22033,24 +22033,23 @@ fn throwing_call_forks_expand_and_reverify_in_every_position() {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
-#[ignore = "nightly: live and exit-time call payload expansion and replay"]
+#[ignore = "nightly: call payload expansion and replay"]
 fn call_outcome_payload_bindings_expand_and_replay() {
     let (source, owned_sources) = mdtest_sources("mdtests/outcomes_payload_bindings.md");
     let sources = crate::cli::source_refs(&owned_sources);
-    for label in ["live.contract", "deferred.contract"] {
-        let expanded = expand_c_claim_source_by_label(&source, &sources, label)
-            .unwrap_or_else(|error| panic!("{label}: {error}"));
-        assert_eq!(
-            expanded.matches("returned(value) =>").count(),
-            2,
-            "{expanded}"
-        );
-        assert_eq!(expanded.matches("threw(error) =>").count(), 2, "{expanded}");
-        crate::surface::without_implicit_solve_for_claim(label, || {
-            verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
-        })
-        .unwrap_or_else(|error| panic!("{label}: {error}\n{expanded}"));
-    }
+    let label = "live.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+        .unwrap_or_else(|error| panic!("{label}: {error}"));
+    assert_eq!(
+        expanded.matches("returned(value) =>").count(),
+        1,
+        "{expanded}"
+    );
+    assert_eq!(expanded.matches("threw(error) =>").count(), 1, "{expanded}");
+    crate::surface::without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
+    })
+    .unwrap_or_else(|error| panic!("{label}: {error}\n{expanded}"));
     for offset in source
         .match_indices("have value == 5")
         .map(|(offset, _)| offset)
@@ -22659,6 +22658,29 @@ fn exceptional_claim_label_expands_two_throwing_calls_fixture() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_77")]
 fn exceptional_claim_label_expands_grouped_outcomes_fixture() {
     check_exceptional_claim_label_expansion("grouped_proof_closes_normal_and_exceptional_claims");
+}
+
+#[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_77")]
+fn terminal_throwing_call_requires_a_frontier_split_and_expands() {
+    let (source, owned_sources) = mdtest_sources("mdtests/exceptional_terminal_call.md");
+    let sources = crate::cli::source_refs(&owned_sources);
+    let written_step = format!("{source} by {{ step(); }}");
+    let error = verify_c_sources(&written_step, &sources)
+        .expect_err("a linear step cannot take both call successors");
+    assert!(error.message().contains("which may throw"), "{error}");
+    assert!(error.message().contains("Write `outcomes"), "{error}");
+
+    let label = "caller.contract";
+    let expanded = expand_c_claim_source_by_label(&source, &sources, label)
+        .expect("the implicit tail can split the terminal call");
+    let caller = expanded.split_once("int32 caller(").unwrap().1;
+    let (_, body) = caller.split_once("} by {").unwrap();
+    assert!(body.trim_start().starts_with("outcomes {"), "{expanded}");
+    crate::surface::without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &sources)
+    })
+    .expect("the generated frontier split replays without search");
 }
 
 #[test]
@@ -26703,6 +26725,7 @@ test_batches! {
     expansion_batch_77: [
         exceptional_claim_label_expands_two_throwing_calls_fixture,
         exceptional_claim_label_expands_grouped_outcomes_fixture,
+        terminal_throwing_call_requires_a_frontier_split_and_expands,
         exceptional_claim_label_expands_routed_throw_fixture,
         exceptional_claim_labels_preserve_names_and_covering_proofs_in_projects,
     ],

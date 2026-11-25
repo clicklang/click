@@ -901,23 +901,6 @@ pub(super) fn append_surface_tactics_by_leaf(
             threw_proof.steps_mut().extend(threw_steps.iter().cloned());
             return Ok(());
         }
-        if !matches!(
-            steps.last(),
-            Some(ProofStep::If { .. } | ProofStep::Match { .. })
-        ) {
-            steps.push(ProofStep::CallOutcomes {
-                payload_bindings: [None, None],
-                returned_proof: Box::new(
-                    ProofCertificate::from_steps(returned_steps.clone())
-                        .map_err(|error| error.raw_summary().to_string())?,
-                ),
-                threw_proof: Box::new(
-                    ProofCertificate::from_steps(threw_steps.clone())
-                        .map_err(|error| error.raw_summary().to_string())?,
-                ),
-            });
-            return Ok(());
-        }
     }
 
     fn append_certificate(
@@ -1873,15 +1856,18 @@ mod proof_fact_store_tests {
 
     #[test]
     fn call_outcome_closers_keep_independent_certificates() {
-        let mut steps = vec![ProofStep::Step];
+        let mut steps = vec![ProofStep::CallOutcomes {
+            payload_bindings: [None, None],
+            returned_proof: Box::new(ProofCertificate::from_steps(Vec::new()).unwrap()),
+            threw_proof: Box::new(ProofCertificate::from_steps(Vec::new()).unwrap()),
+        }];
         append_surface_tactics_by_leaf(
             &mut steps,
-            &[vec![ProofTactic::Normalize], vec![ProofTactic::Known]],
-            Some(&[true, false]),
+            &[vec![ProofTactic::Known], vec![ProofTactic::Normalize]],
+            Some(&[false, true]),
         )
         .unwrap();
         let [
-            ProofStep::Step,
             ProofStep::CallOutcomes {
                 returned_proof,
                 threw_proof,
@@ -1889,7 +1875,7 @@ mod proof_fact_store_tests {
             },
         ] = steps.as_slice()
         else {
-            panic!("distinct call edges must retain a structured certificate");
+            panic!("distinct call edges must retain the existing call split");
         };
         assert_eq!(returned_proof.steps(), &[ProofStep::Normalize]);
         assert_eq!(threw_proof.steps(), &[ProofStep::Known]);

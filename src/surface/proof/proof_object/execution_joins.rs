@@ -1717,14 +1717,6 @@ impl<'a> Proof<'a> {
                         if arm_index == 0 { "then" } else { "else" }
                     )));
                 }
-                // A call the arm stepped together with its `return` labels the
-                // arm's own paths; it is the innermost edge on each of them.
-                let arm_call_edges = arm
-                    .execution
-                    .presentation
-                    .call_outcome_edges
-                    .as_ref()
-                    .filter(|edges| edges.len() == completed.paths().len());
                 // Every path the arm completed publishes the arm's case facts
                 // first, so a fact among them needs no lookup in the path's own
                 // (otherwise unindexed) streams.
@@ -1747,16 +1739,6 @@ impl<'a> Proof<'a> {
                         path_evidence.checked_leaf_facts = None;
                     }
 
-                    if path_evidence.call_routes.is_empty()
-                        && let Some(edges) = arm_call_edges
-                    {
-                        path_evidence
-                            .call_routes
-                            .push(CallOutcomeEdge::from_payloads(
-                                edges[arm_path_index],
-                                &arm.execution.presentation.terminal_call_payloads,
-                            ));
-                    }
                     if let Some(call) = call {
                         // An `outcomes` nested in this arm was joined first, so
                         // its edge follows this one.

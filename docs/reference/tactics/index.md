@@ -1305,9 +1305,11 @@ their kernel propositions from the names in scope.
 **Form:** `outcomes { returned[(value)] => { ... } threw[(error)] => { ... } }`
 
 **Specialized.** Write it at a C++ call that may throw, when the two outcomes
-need different proofs; the implicit tail splits them for you. At a maybe-throwing
-call, `outcomes` executes the call and starts each arm at its checked successor. Inside a `try`/`catch (int name)` the `threw`
-arm follows the caught exceptional edge into the handler.
+need different proofs; the implicit tail splits them for you. A call with both
+checked successors needs this split even when its next statement is a return.
+At a maybe-throwing call, `outcomes` executes the call and starts each arm
+at its checked successor. Inside a `try`/`catch (int name)` the `threw` arm
+follows the caught exceptional edge into the handler.
 
 Outside any `try` the `threw` arm ends at function exit with that throw, while
 the `returned` arm continues with the rest of the function and may hold the next

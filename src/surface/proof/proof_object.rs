@@ -617,13 +617,8 @@ pub(in crate::surface::proof) struct ExecutionProofPresentation {
     /// Deferred source prefix already visited while preparing case obligations.
     pub(in crate::surface::proof) partitioned_post_execution_tactics:
         PersistentSequence<DeferredPostExecutionTactic>,
-    /// Checked direct-call edge order for the narrow terminal int32 handler
-    /// split. This is path-routing presentation, not proof evidence: each
-    /// selected outcome retains its own kernel-checked theorem and goal.
+    /// Returned/threw edge order for paths joined by an explicit call split.
     pub(in crate::surface::proof) call_outcome_edges: Option<Vec<bool>>,
-    /// Payloads of a call that a single statement step finished together with
-    /// its terminal continuation, in returned/threw order.
-    pub(in crate::surface::proof) terminal_call_payloads: [Option<StoredExecutionValue>; 2],
     /// The path's surface record: certificate-visible certificate facts, the
     /// premise anchor, and proof-level case choices.
     pub(in crate::surface::proof) surface_record: SurfaceRecord,
@@ -894,7 +889,6 @@ impl ExecutionProofState {
                 deferred_obtain_names: PersistentBinderMap::default(),
                 partitioned_post_execution_tactics: PersistentSequence::default(),
                 call_outcome_edges: None,
-                terminal_call_payloads: [None, None],
                 surface_record: SurfaceRecord::default(),
                 invariant_closer_step: Default::default(),
                 region_solve: None,
