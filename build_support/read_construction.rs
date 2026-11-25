@@ -157,7 +157,12 @@ const BASELINE: &[(&str, Form, usize)] = &[
     ("src/kernel/assumptions.rs", Form::UnplacedPoint, 1),
     ("src/kernel/equality_graph.rs", Form::UnplacedPoint, 2),
     ("src/kernel/equality_graph/terms.rs", Form::UnplacedPoint, 1),
-    ("src/kernel/eval/memory_loads.rs", Form::UnplacedPoint, 8),
+    ("src/kernel/eval/memory_loads.rs", Form::UnplacedPoint, 11),
+    (
+        "src/kernel/functions/globals_and_aggregates.rs",
+        Form::UnplacedPoint,
+        2,
+    ),
     ("src/kernel/memory_history.rs", Form::UnplacedPoint, 3),
     ("src/kernel/primitives.rs", Form::UnplacedPoint, 1),
     (
@@ -165,6 +170,7 @@ const BASELINE: &[(&str, Form, usize)] = &[
         Form::UnplacedPoint,
         1,
     ),
+    ("src/kernel/primitives/load.rs", Form::UnplacedPoint, 1),
     (
         "src/kernel/primitives/machine_integer.rs",
         Form::UnplacedPoint,
@@ -173,7 +179,7 @@ const BASELINE: &[(&str, Form, usize)] = &[
     (
         "src/kernel/primitives/memory_state.rs",
         Form::UnplacedPoint,
-        6,
+        17,
     ),
     (
         "src/kernel/primitives/program_point.rs",
@@ -183,12 +189,12 @@ const BASELINE: &[(&str, Form, usize)] = &[
     (
         "src/kernel/primitives/term_operations.rs",
         Form::UnplacedPoint,
-        1,
+        3,
     ),
     (
         "src/kernel/proof/equality_rewrite.rs",
         Form::UnplacedPoint,
-        1,
+        2,
     ),
     ("src/kernel/proof/execution.rs", Form::UnplacedPoint, 1),
     (
@@ -324,6 +330,8 @@ impl<'ast> Visit<'ast> for Counter {
                 [.., last] if *last == "canonical_form_of_load" || *last == "memory_read" => {
                     self.add(Form::UnplacedPoint)
                 }
+                // An optional read site falls back to an unplaced point.
+                [.., last] if *last == "read_at_optional" => self.add(Form::UnplacedPoint),
                 [.., owner, last]
                     if *last == "Load"
                         && (*owner == "AddressBase"
@@ -335,6 +343,13 @@ impl<'ast> Visit<'ast> for Counter {
             }
         }
         syn::visit::visit_expr_call(self, call);
+    }
+    fn visit_expr_method_call(&mut self, call: &'ast syn::ExprMethodCall) {
+        // A typed load's optional read site falls back to an unplaced point.
+        if call.method == "legacy_read_point" {
+            self.add(Form::UnplacedPoint);
+        }
+        syn::visit::visit_expr_method_call(self, call);
     }
     // Expression and pattern paths: a pattern's path is an `ExprPath` too.
     fn visit_expr_path(&mut self, path: &'ast syn::ExprPath) {
