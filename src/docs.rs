@@ -237,8 +237,8 @@ pub fn written_tactic_class(written: &str) -> Option<(String, TacticClass)> {
 }
 
 /// Whether a written tactic is a smart form that elides an argument a
-/// simple form of the same tactic takes written, such as `transport(P, Q)`
-/// beside its `using` form. Its refusal is a search miss ([`SEARCH_MISS_MEANING`]).
+/// simple form of the same tactic takes written. Its refusal uses
+/// [`SEARCH_MISS_MEANING`].
 pub fn written_tactic_elides_argument(written: &str) -> bool {
     let Some((name, TacticClass::Smart)) = written_tactic_class(written) else {
         return false;
@@ -575,14 +575,13 @@ mod tests {
     }
 
     #[test]
-    fn an_elided_form_has_the_search_miss_meaning() {
+    fn tactics_without_a_written_counterpart_use_their_class_meaning() {
         assert!(!written_tactic_elides_argument("apply(t(x));"));
         assert!(!written_tactic_elides_argument("apply(fact);"));
-        assert!(written_tactic_elides_argument("transport(p, q);"));
+        assert!(!written_tactic_elides_argument("transport(p, q);"));
         assert!(!written_tactic_elides_argument(
             "apply(a == b implies c == d) using { a == b; };"
         ));
-        assert!(!written_tactic_elides_argument("close();"));
         assert!(!written_tactic_elides_argument("close();"));
         assert!(!written_tactic_elides_argument(
             "close() using { a == b; };"

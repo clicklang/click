@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise nightly failure aggregation with all builds and tests stubbed out."""
+"""Exercise gate frontend selection and nightly failure handling with stubs."""
 import os
 from pathlib import Path
 import shutil
@@ -27,8 +27,12 @@ with tempfile.TemporaryDirectory(prefix="click-check-nightly-") as directory:
     (scripts / "test-check-nightly.py").write_text("")
     (scripts / "test-benchmark-verify.py").write_text("")
     (scripts / "proof-ratio.py").write_text("")
-    for name in ["build-cpp-exporter.sh", "build-charon.sh"]:
-        executable(scripts / name, 'echo /stub/frontend\n')
+    executable(scripts / "build-cpp-exporter.sh", 'echo /stub/frontend\n')
+    executable(scripts / "build-charon.sh", """
+printf 'build-charon %s\\n' "$*" >> "$CHECK_TEST_LOG"
+echo /stub/frontend
+""")
+    executable(scripts / "fast-gate-build.sh", 'echo "{}"\n')
     for name in ["rustfmt", "cargo-nextest"]:
         executable(binaries / name, "exit 0\n")
     executable(binaries / "cargo", '''
@@ -36,6 +40,7 @@ printf '%s\\n' "$*" >> "$CHECK_TEST_LOG"
 case "$1" in
     clippy) exit "$CHECK_TEST_CLIPPY" ;;
     nextest)
+        printf 'charon=%s\\n' "${CLICK_CHARON:-}" >> "$CHECK_TEST_LOG"
         if [[ " $* " == *" --no-capture "* ]]; then
             exit "$CHECK_TEST_FIXTURES"
         fi
@@ -67,4 +72,28 @@ esac
         assert [(name, status) for name, _, status in phases] == [
             ("clippy", str(clippy)), ("tests", str(units)), ("fixtures", str(fixtures))
         ], phases
+    env = dict(os.environ, PATH=f"{binaries}:{os.environ['PATH']}",
+               CHECK_TEST_LOG=str(log), CHECK_TEST_UNITS="0", CHECK_TEST_FIXTURES="0")
+    for name in ["CLICK_CHARON", "CLICK_NIGHTLY", "CLICK_REQUIRE_FRONTENDS"]:
+        env.pop(name, None)
+    cached_charon = root / "target/charon/debug/charon"
+    for configured, cached in [(None, False), (None, True), ("/stub/charon", True)]:
+        if cached and not cached_charon.exists():
+            cached_charon.parent.mkdir(parents=True)
+            for binary in [cached_charon, cached_charon.with_name("charon-driver")]:
+                executable(binary, "exit 0\n")
+        log.write_text("")
+        gate_env = dict(env, CLICK_CHARON=configured) if configured else env
+        result = subprocess.run(
+            ["bash", str(scripts / "check.sh")],
+            env=gate_env, capture_output=True, text=True,
+        )
+        commands = log.read_text()
+        expected_charon = configured or (str(cached_charon) if cached else "")
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "build-charon" not in commands, commands
+        assert f"charon={expected_charon}\n" in commands, commands
+        assert ("not test(gate_tests::rust_import::)" in commands) == (not expected_charon), commands
+        assert ("skipping tests/rust_import.rs" in result.stderr) == (not expected_charon), result.stderr
 print("nightly driver: all four failure-aggregation and phase-record checks passed")
+print("local gate: Charon selection checks passed")
