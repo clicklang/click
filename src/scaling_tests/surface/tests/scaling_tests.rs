@@ -8636,9 +8636,9 @@ fn explicit_byte_view_narrowing_keeps_large_seeded_ranges_compact() {
     });
     assert!(
         samples.iter().all(|(size, work)| {
-            // Surface arithmetic sees the encoded bound's bits. Permit
-            // logarithmic numeric work, never a visit per seeded cell.
-            *work <= samples[0].1 + 512 * (size.ilog2() - samples[0].0.ilog2()) as usize
+            // The containment and restriction applications recheck the
+            // encoded bounds. Permit logarithmic work in the range length.
+            *work <= samples[0].1 + 1280 * (size.ilog2() - samples[0].0.ilog2()) as usize
         }),
         "range length must not materialize cells: {samples:?}"
     );

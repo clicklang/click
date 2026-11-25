@@ -14991,8 +14991,8 @@ fn have_primitive_reports_prerequisites_and_driver_solves_them() {
         &theorems,
     );
     // No without_implicit_solve scope: the primitive itself must not solve.
-    assert!(root.begin_have(target.clone(), true, true).is_err());
-    let (_, obligations) = probe_open_obligations(|| root.begin_have(target.clone(), true, true));
+    assert!(root.begin_have(target.clone(), true).is_err());
+    let (_, obligations) = probe_open_obligations(|| root.begin_have(target.clone(), true));
     assert!(
         !obligations.recorded.is_empty(),
         "opening must expose its prerequisites"
@@ -15088,7 +15088,7 @@ fn proposed_goal_spelling_retains_unproved_domains_for_the_driver() {
         outer.recorded.is_empty(),
         "presentation cannot leak debts into another operation"
     );
-    assert!(root.begin_have(candidate.clone(), true, true).is_err());
+    assert!(root.begin_have(candidate.clone(), true).is_err());
     assert!(
         root.driver().open_have(candidate).is_err(),
         "reflexivity cannot prove the unbounded addition's domain"

@@ -793,7 +793,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         let driver_proof = self.proof;
         let mut scope = driver_proof
             .driver()
-            .open_have_with_goal_observations(proposition.clone(), true)?;
+            .open_have_as_written(proposition.clone())?;
         for step in proof.steps() {
             scope = scope.driver().apply_step(step.clone())?;
         }
