@@ -87,30 +87,30 @@ void *fill_range(void *argument) {
             step() by { close(); }
 
             have separate(loop(0).statement(0).footprint, at(before_write, memory(*job))) by {
-                normalize() using {
+                close() using {
                     separate(at(before_write, memory(job->output[index])), at(before_write, memory(*job)));
                 };
             }
             apply(separation::contains_refl(loop(0).statement(0).footprint));
-            have contains(at(before_write, memory(*job)), at(before_write, memory(job->begin))) by { normalize(); }
+            have contains(at(before_write, memory(*job)), at(before_write, memory(job->begin))) by { close(); }
             apply(separation::separate_restrict(loop(0).statement(0).footprint, at(before_write, memory(*job)),
                 loop(0).statement(0).footprint, at(before_write, memory(job->begin))));
             have job->begin == at(before_write, job->begin) by {
                 preserve(at(before_write, memory(job->begin)), loop(0).statement(0));
             }
-            have contains(at(before_write, memory(*job)), at(before_write, memory(job->output))) by { normalize(); }
+            have contains(at(before_write, memory(*job)), at(before_write, memory(job->output))) by { close(); }
             apply(separation::separate_restrict(loop(0).statement(0).footprint, at(before_write, memory(*job)),
                 loop(0).statement(0).footprint, at(before_write, memory(job->output))));
             have job->output == at(before_write, job->output) by {
                 preserve(at(before_write, memory(job->output)), loop(0).statement(0));
             }
-            have contains(at(before_write, memory(*job)), at(before_write, memory(job->end))) by { normalize(); }
+            have contains(at(before_write, memory(*job)), at(before_write, memory(job->end))) by { close(); }
             apply(separation::separate_restrict(loop(0).statement(0).footprint, at(before_write, memory(*job)),
                 loop(0).statement(0).footprint, at(before_write, memory(job->end))));
             have job->end == at(before_write, job->end) by {
                 preserve(at(before_write, memory(job->end)), loop(0).statement(0));
             }
-            have contains(at(before_write, memory(*job)), memory(at(before_write, &job->value)[0])) by { normalize(); }
+            have contains(at(before_write, memory(*job)), memory(at(before_write, &job->value)[0])) by { close(); }
             apply(separation::separate_restrict(loop(0).statement(0).footprint, at(before_write, memory(*job)),
                 loop(0).statement(0).footprint, memory(at(before_write, &job->value)[0])));
             have load<int32>(at(before_write, &job->value)) == at(before_write, load<int32>(&job->value)) by {
