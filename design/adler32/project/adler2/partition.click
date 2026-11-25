@@ -257,14 +257,26 @@ theorem adler_signed_partition_identity(n: uint64) {
   apply(adler_index_observation(n % 4u64));
   have n % 4u64 <= n by normalize();
   have to_integer(n - (n % 4u64)) == to_integer(n) - to_integer((n % 4u64));
-  have defined((n - n % 4u64) as uint32 as int32 + (n % 4u64) as uint32 as int32) by close() using { 0 <= (n - n % 4u64) as uint32 as int32; (n - n % 4u64) as uint32 as int32 <= 22204; 0 <= (n % 4u64) as uint32 as int32; (n % 4u64) as uint32 as int32 <= 3; };
-  have to_integer(((n - n % 4u64) as uint32 as int32) + ((n % 4u64) as uint32 as int32)) == to_integer(((n - n % 4u64) as uint32 as int32)) + to_integer(((n % 4u64) as uint32 as int32));
+  have to_integer((n - n % 4u64) as uint32 as int32) + to_integer((n % 4u64) as uint32 as int32) <= 2147483647 by close() using {
+   (n - n % 4u64) as uint32 as int32 <= 22204; (n % 4u64) as uint32 as int32 <= 3;
+  };
+  have to_integer((n - n % 4u64) as uint32 as int32) + to_integer((n % 4u64) as uint32 as int32) >= -2147483648 by close() using {
+   0 <= (n - n % 4u64) as uint32 as int32; 0 <= (n % 4u64) as uint32 as int32;
+  };
+  have defined((n - n % 4u64) as uint32 as int32 + (n % 4u64) as uint32 as int32) by {
+   all {
+    to_integer((n - n % 4u64) as uint32 as int32) + to_integer((n % 4u64) as uint32 as int32) <= 2147483647 => { close(); }
+    to_integer((n - n % 4u64) as uint32 as int32) + to_integer((n % 4u64) as uint32 as int32) >= -2147483648 => { close(); }
+   }
+  }
+  apply(integer::int32_add_to_integer((n - n % 4u64) as uint32 as int32, (n % 4u64) as uint32 as int32));
   have to_integer(n as uint32 as int32) == to_integer((n - n % 4u64) as uint32 as int32 + (n % 4u64) as uint32 as int32) by {
    rewrite(to_integer((n - n % 4u64) as uint32 as int32 + (n % 4u64) as uint32 as int32), to_integer((n - n % 4u64) as uint32 as int32) + to_integer((n % 4u64) as uint32 as int32));
    rewrite(to_integer(n as uint32 as int32), to_integer(n));
    rewrite(to_integer((n - n % 4u64) as uint32 as int32), to_integer(n - n % 4u64));
    rewrite(to_integer((n % 4u64) as uint32 as int32), to_integer(n % 4u64));
-   close() using { to_integer(n - n % 4u64) == to_integer(n) - to_integer(n % 4u64); };
+   rewrite(to_integer(n - n % 4u64), to_integer(n) - to_integer(n % 4u64));
+   close() using {};
   }
   close();
  }
@@ -400,14 +412,26 @@ theorem adler_small_tail_indices(n: uint64) {
   apply(adler_index_observation(n % 4u64));
   have n % 4u64 <= n by normalize();
   have to_integer(n - (n % 4u64)) == to_integer(n) - to_integer((n % 4u64));
-  have defined(n as uint32 as int32 - (n % 4u64) as uint32 as int32) by close() using { 0 <= n as uint32 as int32; n as uint32 as int32 <= 22207; 0 <= (n % 4u64) as uint32 as int32; (n % 4u64) as uint32 as int32 <= 3; };
-  have to_integer((n as uint32 as int32) - ((n % 4u64) as uint32 as int32)) == to_integer((n as uint32 as int32)) - to_integer(((n % 4u64) as uint32 as int32));
+  have to_integer(n as uint32 as int32) - to_integer((n % 4u64) as uint32 as int32) <= 2147483647 by close() using {
+   n as uint32 as int32 <= 22207; 0 <= (n % 4u64) as uint32 as int32;
+  };
+  have to_integer(n as uint32 as int32) - to_integer((n % 4u64) as uint32 as int32) >= -2147483648 by close() using {
+   0 <= n as uint32 as int32; (n % 4u64) as uint32 as int32 <= 3;
+  };
+  have defined(n as uint32 as int32 - (n % 4u64) as uint32 as int32) by {
+   all {
+    to_integer(n as uint32 as int32) - to_integer((n % 4u64) as uint32 as int32) <= 2147483647 => { close(); }
+    to_integer(n as uint32 as int32) - to_integer((n % 4u64) as uint32 as int32) >= -2147483648 => { close(); }
+   }
+  }
+  apply(integer::int32_subtract_to_integer(n as uint32 as int32, (n % 4u64) as uint32 as int32));
   have to_integer(n as uint32 as int32 - (n % 4u64) as uint32 as int32) == to_integer((n - n % 4u64) as uint32 as int32) by {
    rewrite(to_integer(n as uint32 as int32 - (n % 4u64) as uint32 as int32), to_integer(n as uint32 as int32) - to_integer((n % 4u64) as uint32 as int32));
    rewrite(to_integer(n as uint32 as int32), to_integer(n));
    rewrite(to_integer((n % 4u64) as uint32 as int32), to_integer(n % 4u64));
    rewrite(to_integer((n - n % 4u64) as uint32 as int32), to_integer(n - n % 4u64));
-   close() using { to_integer(n - n % 4u64) == to_integer(n) - to_integer(n % 4u64); };
+   rewrite(to_integer(n - n % 4u64), to_integer(n) - to_integer(n % 4u64));
+   close() using {};
   }
   close();
  }
@@ -425,14 +449,26 @@ theorem adler_small_tail_indices(n: uint64) {
   apply(adler_index_observation(n % 4u64));
   have n % 4u64 <= n by normalize();
   have to_integer(n - (n % 4u64)) == to_integer(n) - to_integer((n % 4u64));
-  have defined(n as uint32 as int32 - (n - n % 4u64) as uint32 as int32) by close() using { 0 <= n as uint32 as int32; n as uint32 as int32 <= 22207; 0 <= (n - n % 4u64) as uint32 as int32; (n - n % 4u64) as uint32 as int32 <= 22204; };
-  have to_integer((n as uint32 as int32) - ((n - n % 4u64) as uint32 as int32)) == to_integer((n as uint32 as int32)) - to_integer(((n - n % 4u64) as uint32 as int32));
+  have to_integer(n as uint32 as int32) - to_integer((n - n % 4u64) as uint32 as int32) <= 2147483647 by close() using {
+   n as uint32 as int32 <= 22207; 0 <= (n - n % 4u64) as uint32 as int32;
+  };
+  have to_integer(n as uint32 as int32) - to_integer((n - n % 4u64) as uint32 as int32) >= -2147483648 by close() using {
+   0 <= n as uint32 as int32; (n - n % 4u64) as uint32 as int32 <= 22204;
+  };
+  have defined(n as uint32 as int32 - (n - n % 4u64) as uint32 as int32) by {
+   all {
+    to_integer(n as uint32 as int32) - to_integer((n - n % 4u64) as uint32 as int32) <= 2147483647 => { close(); }
+    to_integer(n as uint32 as int32) - to_integer((n - n % 4u64) as uint32 as int32) >= -2147483648 => { close(); }
+   }
+  }
+  apply(integer::int32_subtract_to_integer(n as uint32 as int32, (n - n % 4u64) as uint32 as int32));
   have to_integer(n as uint32 as int32 - (n - n % 4u64) as uint32 as int32) == to_integer((n % 4u64) as uint32 as int32) by {
    rewrite(to_integer(n as uint32 as int32 - (n - n % 4u64) as uint32 as int32), to_integer(n as uint32 as int32) - to_integer((n - n % 4u64) as uint32 as int32));
    rewrite(to_integer(n as uint32 as int32), to_integer(n));
    rewrite(to_integer((n % 4u64) as uint32 as int32), to_integer(n % 4u64));
    rewrite(to_integer((n - n % 4u64) as uint32 as int32), to_integer(n - n % 4u64));
-   close() using { to_integer(n - n % 4u64) == to_integer(n) - to_integer(n % 4u64); };
+   rewrite(to_integer(n - n % 4u64), to_integer(n) - to_integer(n % 4u64));
+   close() using {};
   }
   close();
  }

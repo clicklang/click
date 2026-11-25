@@ -97,7 +97,7 @@ contract int64 OversizeFee(const struct FeeFrac* this, int32 at_size) {
 
 theorem oversize_fee_evaluation() {
     ensures OversizeFee(&FeeFrac::EvaluateFee@MODE@) by {
-        unfold(OversizeFee);
+        unfold(OversizeFee(&FeeFrac::EvaluateFee@MODE@));
         close();
     }
 }
