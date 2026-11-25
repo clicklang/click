@@ -1503,6 +1503,10 @@ search plus leaves.
 
 **Form:** `close() using { P; ... }`
 
+The listed premises must supply the branch condition. The rejection fixture
+`mdtests/close_using_rejects_ambient_condition.md` shows a condition held in
+the surrounding proof and omitted from the list.
+
 **Specialized.** Write it when `close()` picks the wrong premises or searches too
 long, to restrict it to the named facts. On a proposition goal, including a
 contract claim after function exit, search using exactly the listed proposition
@@ -2147,7 +2151,7 @@ Expansion retains the normalization step and cited evidence; checking
 reconstructs the graph from the surrounding checked proof context. Work
 follows the selected expression and premises.
 
-**Checked examples:** [`normalize_using_rejects_ambient.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_rejects_ambient.md), [`normalize_using_decides_conditions_without_substituting.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_decides_conditions_without_substituting.md), [`uint64_int32_exact_index_alias.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_int32_exact_index_alias.md), [`uint64_int32_low_word_is_not_address_equality.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_int32_low_word_is_not_address_equality.md)
+**Checked examples:** [`normalize_using_decides_conditions_without_substituting.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_decides_conditions_without_substituting.md), [`uint64_int32_exact_index_alias.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_int32_exact_index_alias.md), [`uint64_int32_low_word_is_not_address_equality.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_int32_low_word_is_not_address_equality.md)
 
 ### Arithmetic search
 

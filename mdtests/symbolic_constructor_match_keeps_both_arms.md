@@ -8,11 +8,11 @@ function choose(c: Color) -> Color {
 theorem unknown(c: Color) {
     ensures choose(c) == Color::Red by {
         unfold(choose(c));
-        normalize();
+        close();
     }
 }
 ```
 
 ```expect
-fail: normalize
+fail: could not establish `match c
 ```
