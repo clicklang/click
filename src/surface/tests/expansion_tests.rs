@@ -22678,7 +22678,7 @@ fn terminal_throwing_call_requires_a_frontier_split_and_expands() {
     let (_, body) = caller.split_once("} by {").unwrap();
     assert!(body.trim_start().starts_with("outcomes {"), "{expanded}");
     crate::surface::without_implicit_solve_for_claim(label, || {
-        verify_c_sources(&expanded, &sources)
+        verify_c_sources(&expanded, &sources).map_err(|error| error.to_string())
     })
     .expect("the generated frontier split replays without search");
 }
