@@ -132,3 +132,45 @@ fn pointer_storage_keys_hash_the_shared_bounds_width_once() {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }
+
+#[test]
+fn equal_pointer_payloads_intern_without_walking_children_or_live_pointers() {
+    for size in [16, 64, 256] {
+        let source = SharedPointer::import(&complete_source());
+        let mut width =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(1000013));
+        for _ in 0..size {
+            width = KernelTerm::machine_binary_shared(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Add,
+                [width.clone(), width],
+            );
+        }
+        // `size` unrelated live pointers, each with its own type.
+        let live: Vec<_> = (0..size)
+            .map(|index| {
+                let mut value = source.node().clone();
+                value.array = value.array.with_owner(Some(SharedAddress::import(
+                    &Address::symbolic(Variable(1001000 + index as u64)),
+                )));
+                SharedPointer::new(value)
+            })
+            .collect();
+        let mut value = source.node().clone();
+        let mut bounds = value.array.bounds().unwrap().clone();
+        bounds.width = width;
+        value.array = value.array.with_bounds(Some(bounds));
+        let first = SharedPointer::new(value.clone());
+        let (second, work) =
+            crate::instrumentation::measure_deterministic_work(|| SharedPointer::new(value));
+        assert_eq!(work, 1, "size={size}");
+        assert_eq!(first, second);
+        let (terms_equal, work) = crate::instrumentation::measure_deterministic_work(|| {
+            KernelTerm::shared_pointer_value(first.clone())
+                == KernelTerm::shared_pointer_value(second.clone())
+        });
+        assert!(terms_equal);
+        assert!(work <= 8, "size={size}, work={work}");
+        assert_eq!(live.len(), size);
+    }
+}
