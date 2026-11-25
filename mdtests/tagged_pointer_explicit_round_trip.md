@@ -28,8 +28,9 @@ void tag(struct node* n, struct node* p, int32 color) {
         close() using { aligned(p, 8); };
     }
     have (n->word & ~3) == address(p) by {
-        rewrite(color, 1);
-        normalize() using { aligned(p, 8); };
+        rewrite(n->word, address(p) + 1);
+        have (address(p) & 3u64) == 0u64 by { close() using { aligned(p, 8); }; }
+        apply(click::integer::uint64_mask_add_clear(address(p), 1u64, ~3u64));
     }
     have ((n->word & ~3) as (struct node *)) == p by {
         close();

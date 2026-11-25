@@ -84,7 +84,7 @@ int32 write_then_read(int32* a, int32* b, int32 s, int32 e, int32 i) {
     have a[0] == 1 by { close(); }
     have s <= e by { close() using { s <= i; i < e; }; }
     have separate(memory(a[0..2]), memory(b[s..e]));
-    have contains(memory(a[0..2]), memory(a[0])) by { normalize(); }
+    have contains(memory(a[0..2]), memory(a[0])) by { close(); }
     have i <= 2147483646 by { close() using { i < e; }; }
     have defined(i + 1) by { close() using { i <= 2147483646; }; }
     have i <= ((i + 1) as int32) by { close() using { i <= 2147483646; }; }
@@ -95,8 +95,8 @@ int32 write_then_read(int32* a, int32* b, int32 s, int32 e, int32 i) {
     have separate(memory(a[0]), memory(b[i..i+1])) by {
         apply(separation::separate_restrict(memory(a[0..2]), memory(b[s..e]), memory(a[0]), memory(b[i..i+1])));
     }
-    have contains(memory(b[i..i+1]), memory(b[i])) by { normalize(); }
-    have contains(memory(a[0]), memory(a[0])) by { normalize(); }
+    have contains(memory(b[i..i+1]), memory(b[i])) by { close(); }
+    have contains(memory(a[0]), memory(a[0])) by { close(); }
     have separate(memory(a[0]), memory(b[i])) by {
         apply(separation::separate_restrict(memory(a[0]), memory(b[i..i+1]), memory(a[0]), memory(b[i])));
     }
@@ -108,7 +108,7 @@ int32 write_then_read(int32* a, int32* b, int32 s, int32 e, int32 i) {
     have a[0] == at(before, a[0]) by {
         preserve(memory(a[0]), statement(2));
     }
-    have a[0] == 1 by { normalize() using { a[0] == at(before, a[0]); at(before, a[0]) == 1; }; }
+    have a[0] == 1 by { close(); }
     step(); step();
 }
 

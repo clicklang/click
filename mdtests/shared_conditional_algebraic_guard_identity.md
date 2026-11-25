@@ -13,9 +13,20 @@ function joined(x: Payload, unused: int32) -> int32 {
 }
 theorem identity(x: Payload, a: int32, b: int32) {
     ensures joined(x, a) == joined(x, b) by {
-        unfold(joined(x, a));
-        unfold(joined(x, b));
-        normalize() using {};
+        match x {
+            Payload::Item(n) => {
+                rewrite(x, Payload::Item(n));
+                unfold(joined(Payload::Item(n), a));
+                unfold(joined(Payload::Item(n), b));
+                close();
+            },
+            Payload::Empty => {
+                rewrite(x, Payload::Empty);
+                unfold(joined(Payload::Empty, a));
+                unfold(joined(Payload::Empty, b));
+                close();
+            },
+        }
     }
 }
 ```
