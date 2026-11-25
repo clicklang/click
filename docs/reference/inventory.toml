@@ -2352,6 +2352,10 @@ id = "primitive.extern.__click_constant_p_unknown"
 path = "reference/language/index.md#__click_constant_p_unknown"
 
 [[item]]
+id = "library.theorem.stdout_non_null"
+path = "reference/library/index.md#stdout"
+
+[[item]]
 id = "library.extern.fprintf"
 path = "reference/library/index.md#fprintf"
 
