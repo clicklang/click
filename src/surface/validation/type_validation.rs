@@ -3264,7 +3264,6 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::Choose(_)
             | ProofTactic::Solve
             | ProofTactic::ImplicitSolve
-            | ProofTactic::CompatibilityFactTransport { .. }
             | ProofTactic::SolveUsing(_) => {}
             ProofTactic::IntroBlock { body, .. } => {
                 validate_pure_theorem_tactics(theorem_name, body)?;
@@ -3390,9 +3389,7 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::CloseInvariantsBy(_) => "close_invariants",
         ProofTactic::Preserve(_) => "preserve",
         ProofTactic::Rewrite(_) => "rewrite",
-        ProofTactic::Transport { .. } | ProofTactic::CompatibilityFactTransport { .. } => {
-            "transport"
-        }
+        ProofTactic::Transport { .. } => "transport",
         ProofTactic::Instantiate { .. } => "instantiate",
         ProofTactic::Solve => "solve",
         ProofTactic::ImplicitSolve => "implicit tail",

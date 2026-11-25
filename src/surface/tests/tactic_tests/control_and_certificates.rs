@@ -798,15 +798,6 @@ fn parses_and_classifies_simple_and_smart_tactics() {
         TacticClass::Smart(SmartSite::FactTransport)
     ));
     assert!(matches!(
-        ProofTactic::CompatibilityFactTransport {
-            source: transport_source,
-            target: transport_target,
-            premises: Vec::new(),
-        }
-        .class(),
-        TacticClass::Simple(SimpleTactic::FactTransport)
-    ));
-    assert!(matches!(
         ProofTactic::Step.class(),
         TacticClass::Simple(SimpleTactic::StatementTransition)
     ));

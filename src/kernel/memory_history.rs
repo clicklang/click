@@ -994,7 +994,7 @@ impl OriginLoadEndpoint {
     /// The access width a walk from this endpoint uses.
     #[cfg(test)]
     fn bytes(&self) -> u32 {
-        crate::kernel::load_term_access_width(&self.memory(), &self.pointer, self.kind)
+        crate::kernel::load_term_access_width(self.memory(), &self.pointer, self.kind)
     }
 
     #[cfg(test)]
@@ -1411,7 +1411,7 @@ impl CheckedLoadEquality {
                     && cell.has_only_typed_hops()
                     && written.byte_width() == bytes
                     && cell.checks_walk_from(
-                        &endpoint.memory(),
+                        endpoint.memory(),
                         &endpoint.pointer,
                         bytes,
                         assumptions,
@@ -1441,11 +1441,7 @@ impl CheckedLoadEquality {
                     && left.kind == right.kind
                     && left.pointer.base == right.pointer.base
                     && offset.checks(&left.pointer.offset, &right.pointer.offset, assumptions)
-                    && memories_match_for_pointer_load(
-                        &left.memory(),
-                        &right.memory(),
-                        &left.pointer,
-                    )
+                    && memories_match_for_pointer_load(left.memory(), right.memory(), &left.pointer)
             }
             CheckedLoadEqualityEvidence::OriginMemoryDag {
                 left,
@@ -1493,7 +1489,7 @@ impl CheckedLoadEquality {
                                     || pointer.as_ref() == &right.pointer)
                                 && equality.right
                                     == MachineTerm::read_named(
-                                        ProgramPoint::unplaced(&right.memory()),
+                                        ProgramPoint::unplaced(right.memory()),
                                         pointer.clone(),
                                         right.kind,
                                     )
@@ -1722,7 +1718,7 @@ fn checked_stored_origin_operand_equality(
         let previous = EXPLICIT_DAG_CHECK.with(|flag| flag.replace(true));
         let cell = with_extended_dag_bridging(|| {
             memory_dag_cell_source(
-                &endpoint.memory(),
+                endpoint.memory(),
                 &endpoint.pointer,
                 endpoint.bytes(),
                 assumptions,

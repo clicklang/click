@@ -7713,9 +7713,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(source) = premises.next() else {
             return Ok(None);
         };
-        // The source is itself one of the available equalities. The shared
-        // planner checks and minimizes the list, and returns the checked
-        // transport in the exact form recorded for expansion.
+        // The source is itself one of the available equalities. Use the
+        // selected facts to construct an ordinary proof.
         Self::try_fixed_state_fact_transport(
             search_input,
             &source,
@@ -12536,30 +12535,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(Some(proof));
         }
-        let separations = premises
-            .iter()
-            .filter(|premise| {
-                matches!(
-                    premise,
-                    SyntaxProposition::Separate {
-                        left: ResourceSubject::Footprint(_),
-                        ..
-                    }
-                )
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-        if let Some(steps) = statement_preservation_steps(source, target, &separations)
-            .or_else(|| comparison_preservation_steps(source, target, &separations))
-            .or_else(|| implication_preservation_steps(source, target, &separations))
-            .or_else(|| conjunction_preservation_steps(source, target, &separations))
-            .or_else(|| conjunction_projection_preservation_steps(source, target, &separations))
-            && let Some(proof) = attempt::candidate_outcome(
-                search_input
-                    .driver()
-                    .apply_ordinary_transport_steps(target, steps),
-            )?
-        {
+        if let Some(proof) = Self::try_direct_selected_fact_transport(
+            search_input,
+            source,
+            target,
+            premises,
+            &source_fact,
+        )? {
             return Ok(Some(proof));
         }
         if search_input.surface_goal() != Some(target) {
@@ -12649,6 +12631,104 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(Some(proof));
         }
         attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))
+    }
+
+    /// Apply the local checked rules for the candidate's named evidence.
+    pub(in crate::surface::proof) fn try_direct_selected_fact_transport(
+        search_input: &Proof<'a>,
+        source: &SyntaxProposition,
+        target: &SyntaxProposition,
+        premises: &[SyntaxProposition],
+        source_fact: &Proposition,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_direct_selected_fact_transport");
+        // A single named footprint whose exit is current can state the
+        // equality directly. Older footprints use the ordinary chain below.
+        if search_input.surface_goal() == Some(target)
+            && let Some(separation) =
+                single_statement_preservation_premise(source, target, premises)
+            && let Some(execution) = search_input.execution()
+            && let Some(Proposition::ResourceSeparate { left, .. }) = attempt::candidate_outcome(
+                search_input.lower_surface_proposition_direct(&separation, "transport separation"),
+            )?
+            && let crate::kernel::Resource::Footprint(footprint) = left.as_ref()
+            && crate::kernel::MemoryStateIdentity::of(&footprint.after)
+                == crate::kernel::MemoryStateIdentity::of(execution.core.state.memory())
+            && footprint
+                .after_resources
+                .shares_storage_with(execution.core.state.resources())
+            && let Some(proof) = attempt::candidate_outcome(
+                search_input
+                    .driver()
+                    .apply_step(ProofStep::Preserve(separation)),
+            )?
+        {
+            return Ok(Some(proof));
+        }
+        if let Some((steps, narrow_range)) = viewability_restriction_steps(source, target, premises)
+            && let Some(target_fact) = attempt::candidate_outcome(
+                search_input.lower_surface_proposition_direct(target, "transport target"),
+            )?
+        {
+            let same_state = match (source_fact, &target_fact) {
+                (
+                    Proposition::MemoryLoadable {
+                        memory: left,
+                        wide: false,
+                        ..
+                    },
+                    Proposition::MemoryLoadable {
+                        memory: right,
+                        wide: false,
+                        ..
+                    },
+                ) if narrow_range => left == right,
+                (
+                    Proposition::ResourceViewable { memory: left, .. }
+                    | Proposition::MemoryLoadable { memory: left, .. },
+                    Proposition::ResourceViewable { memory: right, .. }
+                    | Proposition::MemoryLoadable { memory: right, .. },
+                ) if !narrow_range => left == right,
+                _ => false,
+            };
+            if same_state
+                && let Some(proof) = attempt::candidate_outcome(
+                    search_input
+                        .driver()
+                        .apply_ordinary_transport_steps(target, steps),
+                )?
+            {
+                return Ok(Some(proof));
+            }
+        }
+        let separations = premises
+            .iter()
+            .filter(|premise| {
+                matches!(
+                    premise,
+                    SyntaxProposition::Separate {
+                        left: ResourceSubject::Footprint(_),
+                        ..
+                    }
+                )
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        if let Some(steps) = statement_preservation_steps(source, target, &separations)
+            .or_else(|| comparison_preservation_steps(source, target, &separations))
+            .or_else(|| implication_preservation_steps(source, target, &separations))
+            .or_else(|| conjunction_preservation_steps(source, target, &separations))
+            .or_else(|| conjunction_projection_preservation_steps(source, target, &separations))
+            && let Some(proof) = attempt::candidate_outcome(
+                search_input
+                    .driver()
+                    .apply_ordinary_transport_steps(target, steps),
+            )?
+        {
+            return Ok(Some(proof));
+        }
+        Ok(None)
     }
 
     /// Tries available universal facts when the atomic decision cannot name

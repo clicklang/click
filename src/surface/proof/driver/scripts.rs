@@ -638,7 +638,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     | ProofTactic::ApplyInduction { .. }
                     | ProofTactic::Instantiate { .. }
                     | ProofTactic::Transport { .. }
-                    | ProofTactic::CompatibilityFactTransport { .. }
                     | ProofTactic::LetSatisfy(_)
             ) && tactics.get(index + 1).is_some_and(|next| {
                 !matches!(
@@ -1080,7 +1079,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     | ProofTactic::ApplyInduction { .. }
                     | ProofTactic::Instantiate { .. }
                     | ProofTactic::Transport { .. }
-                    | ProofTactic::CompatibilityFactTransport { .. }
                     | ProofTactic::LetSatisfy(_)
             ) && !proof.focused_discharged()
                 && checked_fact_spells_the_goal(&proof)
