@@ -41,8 +41,8 @@ void insert::rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 co
                         unfold(color_bit(Color::Black)); normalize();
                     }
                     let { metadata: metadata, left: left, right: right } = unfold(tree);
-                    have 0 <= color by { rewrite(color, 1); normalize(); }
-                    have color <= 1 by { rewrite(color, 1); normalize(); }
+                    have 0 <= color by { rewrite(color, 1); close(); }
+                    have color <= 1 by { rewrite(color, 1); close(); }
                     step();
                     have rb->__rb_parent_color == address(p) + 1 by {
                         rewrite(color, 1);
@@ -78,8 +78,8 @@ void insert::rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 co
                         unfold(color_bit(Color::Red)); normalize();
                     }
                     let { metadata: metadata, left: left, right: right } = unfold(tree);
-                    have 0 <= color by { rewrite(color, 0); normalize(); }
-                    have color <= 1 by { rewrite(color, 0); normalize(); }
+                    have 0 <= color by { rewrite(color, 0); close(); }
+                    have color <= 1 by { rewrite(color, 0); close(); }
                     step();
                     have rb->__rb_parent_color == address(p) + 0 by {
                         rewrite(color, 0); normalize();
