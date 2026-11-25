@@ -1178,6 +1178,13 @@ theorem rounding_can_merge(x: float) {
         let rounded = check(&strict_sum, "rounding_can_merge.ensures_0").unwrap_err();
         assert!(rounded.contains("unsuccessful search"), "{rounded}");
 
+        let strict_cast = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/float_addition_with_strict_input_bounds.md");
+        let expanded = check(&strict_cast, "cast_sum.ensures_0").unwrap();
+        for name in ["float64_add_lower", "float64_add_upper"] {
+            assert!(expanded.contains(name), "{expanded}");
+        }
+
         let strict_square = directory.path().join("strict_square.click");
         fs::write(
             &strict_square,
