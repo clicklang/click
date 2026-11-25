@@ -9035,16 +9035,13 @@ pub struct ClickError {
     /// Report detail few errors carry, shared behind one pointer so the
     /// error stays small enough to return by value.
     report_detail: Option<std::sync::Arc<ReportDetail>>,
-    /// The refused statement or condition has several checked successors
-    /// that are cases told apart by their path facts. A simple tactic does
-    /// not split on them; a planner that can split may take over.
-    /// Inside, the source condition a proof-level case split separates
-    /// those cases on first, when one has a Click spelling.
+    /// The refused operation has several checked successors. A linear step
+    /// reports the split so a planner can route the proof at this frontier.
     path_case_split: Option<std::sync::Arc<PathCaseSplit>>,
     timing_tactic: Option<Box<TimingTacticContext>>,
 }
 
-/// How a proof-level split separates a refusal's path cases.
+/// How to split the checked successors of an operation that refused a linear step.
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum PathCaseSplit {
     /// No split has a Click spelling.
@@ -9054,6 +9051,8 @@ enum PathCaseSplit {
     /// A proof `match` on an enum value, one arm per variant, as a Rust
     /// `match` of a value whose variant is not yet known needs.
     Match(ProofMatch),
+    /// The checked next call has one returned and one threw successor.
+    CallOutcomes,
 }
 
 /// The cause of a refused input or checked proof operation. `Proof` means
@@ -11696,7 +11695,19 @@ impl ClickError {
 
     /// Whether this refusal is a simple tactic declining to split path cases.
     pub(crate) fn is_path_case_split(&self) -> bool {
-        self.path_case_split.is_some()
+        self.path_case_split.is_some() && !self.requires_call_outcomes()
+    }
+
+    pub(crate) fn with_call_outcomes_split(mut self) -> Self {
+        self.path_case_split = Some(std::sync::Arc::new(PathCaseSplit::CallOutcomes));
+        self
+    }
+
+    pub(crate) fn requires_call_outcomes(&self) -> bool {
+        matches!(
+            self.path_case_split.as_deref(),
+            Some(PathCaseSplit::CallOutcomes)
+        )
     }
 
     /// Records the condition a proof-level case split separates this
