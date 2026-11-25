@@ -519,3 +519,56 @@ fn machine_comparison_and_guard_reads_are_bounded_on_hits_and_misses() {
         }
     }
 }
+
+/// Deciding a closed comparison walks its operand trees once: the work grows
+/// with the operands, linearly, and an undecided comparison stops at its
+/// first symbolic leaf, whatever lies beyond it.
+#[test]
+fn closed_operand_evaluation_is_linear_in_the_operands() {
+    use crate::kernel::MachineBinaryOp;
+    let chain = |size: usize, leaf: MachineTerm| {
+        let mut term = leaf;
+        for _ in 0..size {
+            term = MachineTerm::Binary {
+                op: MachineBinaryOp::BitwiseOr,
+                format: MachineIntegerType::Int32,
+                left: Box::new(MachineTerm::constant(0)),
+                right: Box::new(term),
+            };
+        }
+        term
+    };
+    let compare = |operand: MachineTerm| ConditionTerm::Compare {
+        format: MachineIntegerType::Int32,
+        relation: crate::kernel::CompareRelation::Equal,
+        left: Box::new(MachineTerm::constant(1)),
+        right: Box::new(operand),
+    };
+    let mut works = Vec::new();
+    for size in [16, 64, 256] {
+        let (value, work) = crate::instrumentation::measure_deterministic_work(|| {
+            literal_native_comparison_value(&compare(chain(size, MachineTerm::constant(1))))
+        });
+        assert_eq!(value, Some(true));
+        works.push(work);
+        // A symbolic leaf at the root's first operand ends the walk at once.
+        let blocked = MachineTerm::Binary {
+            op: MachineBinaryOp::BitwiseOr,
+            format: MachineIntegerType::Int32,
+            left: Box::new(MachineTerm::Variable(Variable(999_802))),
+            right: Box::new(chain(size, MachineTerm::constant(1))),
+        };
+        let (value, work) = crate::instrumentation::measure_deterministic_work(|| {
+            literal_native_comparison_value(&compare(blocked))
+        });
+        assert_eq!(value, None);
+        assert!(
+            work <= 8,
+            "a symbolic first leaf costs {work} at size {size}"
+        );
+    }
+    assert!(
+        works[2] <= works[0] * 16 + 16 && works[1] <= works[0] * 4 + 16,
+        "closed evaluation is not linear: {works:?}"
+    );
+}
