@@ -44,21 +44,37 @@ pub(super) fn clear() {
     STATE.with(|state| *state.borrow_mut() = State::default());
 }
 
+/// The observation of the memory-named read of `pointer` in `memory`,
+/// found by its read key alone: no point is made, so none is claimed.
 pub(super) fn existing(memory: &SharedMemory, pointer: &Address, kind: LoadKind) -> Option<Id> {
-    existing_at(&ProgramPoint::unplaced(memory), pointer, kind)
+    existing_by_key(
+        crate::kernel::program_point::ReadKey::Memory(memory.arena_id()),
+        pointer,
+        kind,
+    )
 }
 
 pub(super) fn existing_at(point: &ProgramPoint, pointer: &Address, kind: LoadKind) -> Option<Id> {
+    existing_by_key(point.read_key(), pointer, kind)
+}
+
+fn existing_by_key(
+    key: crate::kernel::program_point::ReadKey,
+    pointer: &Address,
+    kind: LoadKind,
+) -> Option<Id> {
     crate::instrumentation::record_deterministic_work(1);
     STATE.with(|state| {
         state
             .borrow()
             .keys
-            .get(&(point.read_key(), pointer.clone(), kind))
+            .get(&(key, pointer.clone(), kind))
             .copied()
     })
 }
 
+/// [`record_at`] of two bare memories, for tests.
+#[cfg(test)]
 pub(super) fn record(
     memory: &SharedMemory,
     pointer: &Address,
@@ -67,10 +83,10 @@ pub(super) fn record(
     bytes: u32,
 ) -> Id {
     record_at(
-        &ProgramPoint::unplaced(memory),
+        &ProgramPoint::at(memory),
         pointer,
         kind,
-        &ProgramPoint::unplaced(origin),
+        &ProgramPoint::at(origin),
         bytes,
     )
 }
@@ -85,17 +101,17 @@ pub(super) fn record_at(
     record_with_width(point, pointer, kind, origin, bytes, true)
 }
 
-pub(super) fn record_untyped(
-    memory: &SharedMemory,
+pub(super) fn record_untyped_at(
+    point: &ProgramPoint,
     pointer: &Address,
     kind: LoadKind,
-    origin: &SharedMemory,
+    origin: &ProgramPoint,
 ) -> Id {
     record_with_width(
-        &ProgramPoint::unplaced(memory),
+        point,
         pointer,
         kind,
-        &ProgramPoint::unplaced(origin),
+        origin,
         kind.unrecorded_access_byte_width(),
         false,
     )

@@ -13,6 +13,7 @@ use super::*;
 #[derive(Clone, Copy)]
 pub(super) struct ScalarReadDescriptor<'a> {
     term: &'a MachineTerm,
+    point: &'a ProgramPoint,
     memory: &'a SharedMemory,
     pointer: &'a Address,
     kind: LoadKind,
@@ -22,6 +23,11 @@ pub(super) struct ScalarReadDescriptor<'a> {
 impl<'a> ScalarReadDescriptor<'a> {
     pub(super) fn memory(&self) -> &'a SharedMemory {
         self.memory
+    }
+
+    /// The read's own point, whose memory [`Self::memory`] is.
+    pub(super) fn point(&self) -> &'a ProgramPoint {
+        self.point
     }
 
     pub(super) fn address(&self) -> &'a Address {
@@ -38,6 +44,7 @@ impl<'a> ScalarReadDescriptor<'a> {
         };
         Some(Self {
             term,
+            point: memory,
             memory: memory.shared_memory(),
             pointer,
             kind: *kind,
@@ -81,6 +88,7 @@ pub(super) fn select_comparison_identity(
 ) -> (ScalarReadComparisonIdentity, Option<u32>) {
     let ScalarReadDescriptor {
         term: bits,
+        point: _,
         memory: origin,
         pointer: original_pointer,
         kind: original_kind,
@@ -141,17 +149,18 @@ pub(super) fn select_comparison_identity(
 /// This is bookkeeping, not the construction or selection of the read term.
 pub(super) fn record_comparison_observation(
     identity: &ScalarReadComparisonIdentity,
-    origin: &SharedMemory,
+    origin: &ProgramPoint,
     observed_bytes: Option<u32>,
 ) {
     let MachineTerm::MemoryLoad(memory, pointer, kind) = identity.as_legacy_read() else {
         unreachable!("selected scalar read identity");
     };
+    // The identity is memory-named; place it where the read's own point is.
+    let point = ProgramPoint::viewing(memory.shared_memory(), memory);
+    let origin = ProgramPoint::viewing(origin.shared_memory(), origin);
     let id = match observed_bytes {
-        Some(bytes) => {
-            read_observations::record(memory.shared_memory(), pointer, *kind, origin, bytes)
-        }
-        None => read_observations::record_untyped(memory.shared_memory(), pointer, *kind, origin),
+        Some(bytes) => read_observations::record_at(&point, pointer, *kind, &origin, bytes),
+        None => read_observations::record_untyped_at(&point, pointer, *kind, &origin),
     };
     read_observations::select(id);
 }
