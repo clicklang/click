@@ -3642,7 +3642,7 @@ mod tests {
             assert!(error.message().contains(diagnostic), "{}", error.report());
             assert!(!error.message().contains("budget"), "{}", error.report());
         }
-        let changed_goal = "theorem changed_goal(n: int32) { requires n >= 0; ensures n >= 0 implies n >= 0 by { intro(); let ih = induct(n); close(); } }";
+        let changed_goal = "theorem changed_goal(n: int32) { requires n >= 0; ensures n >= 0 implies n >= 0 by { intro() { let ih = induct(n); close(); } } }";
         let error = crate::surface::verify_c_sources(changed_goal, &[])
             .expect_err("induction still targets the original theorem goal");
         assert!(
@@ -3993,19 +3993,22 @@ mod tests {
                 requires x == 0;
                 requires forall (k: int32) { k <= 10 implies k <= 20 };
                 ensures forall (x: int32) { x <= 10 implies x <= 20 } by {
-                    intro(); intro();
-                    have x <= 20 by {
-                        instantiate(forall (x: int32) { x <= 10 implies x <= 20 }, x);
-                        close();
+                    intro() {
+                        intro() {
+                            have x <= 20 by {
+                                instantiate(forall (x: int32) { x <= 10 implies x <= 20 }, x);
+                                close();
+                            }
+                            close();
+                        }
                     }
-                    close();
                 }
             }
         "#;
         let verified = verify_instantiation_theorem(source)
             .expect("intro bindings must shadow theorem parameters");
         assert!(verified.kernel_authority.is_some());
-        let invalid = source.replace("intro(); intro();", "intro();");
+        let invalid = source.replace("have x <= 20 by {", "have x == 0 by {");
         assert!(
             verify_instantiation_theorem(&invalid).is_err(),
             "the outer x cannot supply evidence for the introduced x"
@@ -4156,9 +4159,10 @@ mod tests {
             theorem wrong_sort(x: int32) {
                 requires forall (k: int32) { k == k };
                 ensures forall (x: Integer) { x == x } by {
-                    intro();
-                    instantiate(forall (k: int32) { k == k }, x);
-                    normalize();
+                    intro() {
+                        instantiate(forall (k: int32) { k == k }, x);
+                        normalize();
+                    }
                 }
             }
         "#;

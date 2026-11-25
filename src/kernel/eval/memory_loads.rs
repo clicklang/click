@@ -160,7 +160,12 @@ pub(in crate::kernel) fn evaluate_retained_memory_load_paths(
             if let ExpressionOutcome::Value(value) = &mut path.outcome {
                 *value = retained_cell_conversion(
                     value,
-                    complete_loaded_word(value.native().into_owned(), memory, &address),
+                    complete_loaded_word(
+                        value.native().into_owned(),
+                        memory,
+                        Some(point),
+                        &address,
+                    ),
                 );
             }
         }
@@ -177,7 +182,7 @@ pub(in crate::kernel) fn evaluate_retained_memory_load_paths(
             // equation. Ordinary observations do not publish this evidence.
             // The read is named by its version point, as the source place
             // lowers, so the equation states what a written read of it means.
-            let read = Address::canonical_read(&observed.0, &observed.1);
+            let read = Address::canonical_read(&observed.0, Some(point), &observed.1);
             path.facts.push(
                 if matches!(value.program_type(), ProgramType::FunctionPointer(_)) {
                     ExecutionPureFact::checked_pointer_read_equation(value.clone(), read)
@@ -461,7 +466,7 @@ pub(in crate::kernel) fn evaluate_indexed_read(
     // The selected entry supplies the numeric bits. A complete load still
     // carries the pointer representation of the observed cell.
     let value = if entry_word {
-        complete_loaded_word(value, origin.memory(), &pointer)
+        complete_loaded_word(value, origin.memory(), Some(origin), &pointer)
     } else {
         value
     };
@@ -535,7 +540,12 @@ fn exact_logical_read_value(
         let bits = crate::kernel::MachineTerm::read_named(point.clone(), pointer.clone(), kind);
         ProgramValue::from_bitvector_term(value_type, bits)?
     };
-    Some(complete_loaded_word(value, point.memory(), pointer))
+    Some(complete_loaded_word(
+        value,
+        point.memory(),
+        Some(&point),
+        pointer,
+    ))
 }
 
 fn float_read_term(point: ProgramPoint, pointer: &Address, format: KernelFloatType) -> MachineTerm {
@@ -656,7 +666,7 @@ fn evaluate_logical_memory_load_paths_unbridged(
                 path.outcome = ExpressionOutcome::Value(value);
             }
             if let ExpressionOutcome::Value(value) = &mut path.outcome {
-                *value = complete_loaded_word(value.clone(), memory, &pointer);
+                *value = complete_loaded_word(value.clone(), memory, origin, &pointer);
             }
             path.facts
                 .retain(|fact| !is_load_variable_defining_fact(fact.proposition()));
@@ -700,6 +710,7 @@ fn evaluate_logical_memory_load_paths_unbridged(
                         assumptions,
                         None,
                         LoadPurpose::Logical,
+                        origin,
                     )
                     .or_else(|| value_type.read_cell(&stored))
                     .inspect(|value| {
@@ -707,6 +718,7 @@ fn evaluate_logical_memory_load_paths_unbridged(
                             record_pointer_read_observation(value.address(), memory, &pointer);
                             let current = Address::canonical_read(
                                 &crate::kernel::intern_memory_ref(memory),
+                                origin,
                                 &pointer,
                             );
                             if complete_pointer {
@@ -728,7 +740,9 @@ fn evaluate_logical_memory_load_paths_unbridged(
     value
         .into_iter()
         .map(|value| ExpressionPath {
-            outcome: ExpressionOutcome::Value(complete_loaded_word(value, memory, &pointer)),
+            outcome: ExpressionOutcome::Value(complete_loaded_word(
+                value, memory, origin, &pointer,
+            )),
             facts: facts.clone(),
             obligations: obligations.clone(),
         })
@@ -760,6 +774,32 @@ fn holds_its_own_read(stored: &ProgramValue, pointer: &Address) -> bool {
         .is_some_and(
             |term| matches!(term, MachineTerm::MemoryLoad(_, address, _) if *address == *pointer),
         )
+}
+
+fn retained_cell_holds_its_own_read(value: &ExecutionValue, pointer: &Address) -> bool {
+    use crate::kernel::execution_value::storage_keys::AddressKey;
+    let native_read = |word| {
+        matches!(
+            viewed_as_memory_load(word),
+            Some(MachineTerm::MemoryLoad(_, cell, _)) if *cell == *pointer
+        )
+    };
+    let Some(root) = value.shared() else {
+        return holds_its_own_read(value.native_payload().expect("native cell"), pointer);
+    };
+    match root.node() {
+        KernelTermNode::MemoryLoad { address, .. } => {
+            AddressKey::native(pointer) == AddressKey::shared(address)
+        }
+        KernelTermNode::FloatRead(read) => {
+            AddressKey::native(pointer) == AddressKey::shared(read.parts().1)
+        }
+        KernelTermNode::Variable(variable) if value.program_type() != ProgramType::Bool => {
+            native_read(&MachineTerm::Variable(*variable))
+        }
+        KernelTermNode::ImportedScalar(input) => native_read(input.value()),
+        _ => root.retained_machine_input().is_some_and(native_read),
+    }
 }
 
 /// Whether a logical read of a `value_type` cell lowers to the read at the
@@ -1266,17 +1306,39 @@ fn evaluate_retained_memory_load_case(
             .and_then(|address| memory.known_retained_value(&address))
     });
     if let Some(value) =
-        known.filter(|stored| !names_version || holds_its_own_read(&stored.native(), &pointer))
+        known.filter(|value| !names_version || retained_cell_holds_its_own_read(value, &pointer))
     {
+        if value.shared().is_some()
+            && value.program_type() == value_type
+            && matches!(
+                value_type,
+                ProgramType::Bool
+                    | ProgramType::Int32
+                    | ProgramType::UInt32
+                    | ProgramType::Int64
+                    | ProgramType::UInt64
+                    | ProgramType::Float32
+                    | ProgramType::Float64
+            )
+        {
+            // These same-type reads need no conversion or narrow range facts.
+            return vec![ExpressionPath {
+                outcome: ExpressionOutcome::Value(value),
+                facts,
+                obligations,
+            }];
+        }
+        let native = value.native();
         if let Some(value) = canonicalized_pointer_value_from_int_cell(
             memory,
             &pointer,
-            &value.native(),
+            &native,
             value_type,
             &mut facts,
             assumptions,
             source,
             purpose,
+            site,
         ) {
             return vec![ExpressionPath {
                 outcome: ExpressionOutcome::Value(value.into()),
@@ -1284,7 +1346,7 @@ fn evaluate_retained_memory_load_case(
                 obligations,
             }];
         }
-        if let Some(converted) = value_type.read_cell(&value.native()) {
+        if let Some(converted) = value_type.read_cell(&native) {
             return vec![ExpressionPath {
                 outcome: ExpressionOutcome::Value(retained_cell_conversion(&value, converted)),
                 facts,
@@ -1302,7 +1364,7 @@ fn evaluate_retained_memory_load_case(
                 obligations,
             }];
         }
-        if !pointer_cell_defers_to_symbolic(&value.native()) {
+        if !pointer_cell_defers_to_symbolic(&native) {
             return vec![ExpressionPath {
                 outcome: ExpressionOutcome::RuntimeError(RuntimeError::LoadTypeMismatch {
                     pointer: pointer.clone(),
@@ -1370,6 +1432,7 @@ fn evaluate_retained_memory_load_case(
             assumptions,
             source,
             purpose,
+            site,
         ) {
             return vec![ExpressionPath {
                 outcome: ExpressionOutcome::Value(value.into()),
@@ -1684,6 +1747,7 @@ fn evaluate_retained_memory_load_case(
                 assumptions,
                 source,
                 purpose,
+                site,
             ) {
                 ExpressionOutcome::Value(value.into())
             } else if let Some(value) = value_type.read_cell(&stored_value.native()) {
@@ -2105,6 +2169,7 @@ fn cell_value_recorded_on_path(
         assumptions,
         source,
         purpose,
+        origin,
     ) {
         return Some(value.into());
     }
@@ -2143,6 +2208,7 @@ fn canonicalized_pointer_value_from_int_cell(
     assumptions: &PureFactContext,
     source: Option<&LoadSourceId>,
     purpose: LoadPurpose,
+    site: Option<&ProgramPoint>,
 ) -> Option<ProgramValue> {
     value_type.pointee_type()?;
     // `prefix_read`: the state and cell the cached prefix reads. A pointer
@@ -2197,8 +2263,9 @@ fn canonicalized_pointer_value_from_int_cell(
     let loaded = if let Some(fresh) = fresh {
         Address::symbolic(fresh)
     } else if copied_prefix {
-        Address::loaded_value(
+        Address::loaded_value_read_at(
             &crate::kernel::intern_memory_ref(memory).unchanged_bytes_source(),
+            site,
             pointer,
         )
     } else if let Some((state, _)) = prefix_read.as_ref().filter(|(_, cell)| cell == pointer) {
@@ -2206,14 +2273,15 @@ fn canonicalized_pointer_value_from_int_cell(
         // holds both halves as that state's reads, else this memory.
         let from = held_pointer_cell_state(memory, pointer, state)
             .unwrap_or_else(|| crate::kernel::intern_memory_ref(memory));
-        Address::canonical_read(&from, pointer)
+        Address::canonical_read(&from, site, pointer)
     } else {
         Address::loaded(defining_load.as_ref()?).expect("selected pointer read")
     };
-    let result = Pointer::from_read(
+    let result = Pointer::from_read_at(
         loaded.clone(),
         value_type,
         &crate::kernel::intern_memory_ref(memory),
+        site,
         pointer,
     );
     if purpose == LoadPurpose::Program
@@ -2225,7 +2293,12 @@ fn canonicalized_pointer_value_from_int_cell(
         // point. Check that one edge's frame; a scalar prefix alone cannot
         // establish equality of complete pointer domains.
         let ProgramValue::Pointer(before) =
-            previous.symbolic_pointer_version_load(&boundary.defining_address, value_type)
+            // The same read, one store edge back.
+            previous.symbolic_pointer_version_load(
+                Some(&boundary.point),
+                &boundary.defining_address,
+                value_type,
+            )
         else {
             unreachable!("pointer version load")
         };
@@ -2263,13 +2336,19 @@ fn canonicalized_pointer_value_from_int_cell(
                         .as_ref()
                         .is_some_and(|(_, cell)| cell == pointer) =>
                 {
-                    assumptions.register_pointer_read(
+                    assumptions.register_pointer_read_at(
                         &loaded,
                         &read.defining_memory,
+                        Some(&read.point),
                         &read.defining_address,
                     )
                 }
-                _ => assumptions.register_pointer_read(&loaded, memory.shared_memory(), address),
+                _ => assumptions.register_pointer_read_at(
+                    &loaded,
+                    memory.shared_memory(),
+                    Some(memory),
+                    address,
+                ),
             }
         }
         // Volatile observations retain their legacy opaque value until their
@@ -2466,6 +2545,7 @@ fn symbolic_index_run_load(
 fn complete_loaded_word(
     value: ProgramValue,
     memory: &SymbolicMemory,
+    site: Option<&ProgramPoint>,
     address: &Address,
 ) -> ProgramValue {
     if !WordRepresentationScope::keeps_representation() {
@@ -2478,10 +2558,11 @@ fn complete_loaded_word(
         return value;
     }
     let bits = crate::kernel::spec::program_value_bitvector_term(&value).expect("LP64 word");
-    let pointer = Pointer::from_read(
+    let pointer = Pointer::from_read_at(
         Address::from_integer_address(bits),
         ProgramType::VoidPointer,
         &crate::kernel::intern_memory_ref(memory),
+        site,
         address,
     );
     ProgramValue::PointerInteger(PointerIntegerValue {
@@ -2541,18 +2622,22 @@ fn canonicalized_retained_symbolic_load_value_with_identity(
     if let Some(value @ ProgramValue::PointerInteger(_)) = memory.known_value(&address)
         && value_type.accepts(&value)
     {
-        return Some((complete_loaded_word(value, memory, &address)).into());
+        return Some((complete_loaded_word(value, memory, site, &address)).into());
     }
     if WordRepresentationScope::keeps_representation()
         && matches!(value_type, ProgramType::Int64 | ProgramType::UInt64)
         && let Some(value @ ProgramValue::PointerInteger(_)) =
             crate::kernel::memory_history::complete_pointer_carrier_read_value(
-                &Address::loaded_value(&crate::kernel::intern_memory_ref(memory), &address),
+                &Address::loaded_value_read_at(
+                    &crate::kernel::intern_memory_ref(memory),
+                    site,
+                    &address,
+                ),
                 assumptions,
             )
         && value_type.accepts(&value)
     {
-        return Some((complete_loaded_word(value, memory, &address)).into());
+        return Some((complete_loaded_word(value, memory, site, &address)).into());
     }
     // A logical pointer read names the cell's version, whatever pointer the
     // cell holds (`docs/internals/raise-lower-principle.md`).
@@ -2568,7 +2653,11 @@ fn canonicalized_retained_symbolic_load_value_with_identity(
         let stored = value.pointer().expect("selected complete pointer cell");
         facts.push(ExecutionPureFact::logical_read_equation(
             stored.clone(),
-            Address::loaded_value(&crate::kernel::intern_memory_ref(memory), &address),
+            Address::loaded_value_read_at(
+                &crate::kernel::intern_memory_ref(memory),
+                site,
+                &address,
+            ),
         ));
         if !assumptions.should_force_symbolic_external_loads() {
             return Some(value);
@@ -2582,7 +2671,7 @@ fn canonicalized_retained_symbolic_load_value_with_identity(
     }
     let value = if names_version {
         record_load_access_width(memory, &address, value_type.byte_width());
-        memory.symbolic_pointer_version_load(&address, value_type)
+        memory.symbolic_pointer_version_load(site, &address, value_type)
     } else {
         symbolic_load_value(memory, site, &address, value_type)?
     };
@@ -2617,13 +2706,13 @@ fn canonicalized_retained_symbolic_load_value_with_identity(
         ProgramValue::Int64(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
             let read = canonical_scalar_read(bits);
             return Some(
-                (complete_loaded_word(ProgramValue::Int64(read), memory, &address)).into(),
+                (complete_loaded_word(ProgramValue::Int64(read), memory, site, &address)).into(),
             );
         }
         ProgramValue::UInt64(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
             let read = canonical_scalar_read(bits);
             return Some(
-                (complete_loaded_word(ProgramValue::UInt64(read), memory, &address)).into(),
+                (complete_loaded_word(ProgramValue::UInt64(read), memory, site, &address)).into(),
             );
         }
         ProgramValue::Int128(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
@@ -2637,7 +2726,7 @@ fn canonicalized_retained_symbolic_load_value_with_identity(
         _ => {}
     }
     let ProgramValue::Pointer(pointer_value) = &value else {
-        return Some((complete_loaded_word(value, memory, &address)).into());
+        return Some((complete_loaded_word(value, memory, site, &address)).into());
     };
     // The read keeps its version name. The equality graph relates it to the
     // pointer stored there whenever a query names the read and memory alone
@@ -2656,7 +2745,11 @@ fn canonicalized_retained_symbolic_load_value_with_identity(
         }
         // The raw read of this state is the read the version names: one
         // place, so a read through an alias of the address reaches it.
-        let raw = Address::loaded_value(&crate::kernel::intern_memory_ref(memory), &address);
+        let raw = Address::loaded_value_read_at(
+            &crate::kernel::intern_memory_ref(memory),
+            site,
+            &address,
+        );
         if raw != *pointer_value.address() {
             facts.push(ExecutionPureFact::logical_read_equation(
                 pointer_value.clone(),
@@ -2670,10 +2763,11 @@ fn canonicalized_retained_symbolic_load_value_with_identity(
     // numeric read coordinate, preserving its bounds and object class.
     // Forced symbolic reads retain the selected state's read instead;
     // recovering a representation is neither requested nor needed there.
-    let complete_read = Pointer::from_read(
+    let complete_read = Pointer::from_read_at(
         pointer_value.address().clone(),
         value_type,
         &crate::kernel::intern_memory_ref(memory),
+        site,
         &address,
     );
     // A logical or specification read keeps its term; recovery belongs to
@@ -2693,7 +2787,11 @@ fn canonicalized_retained_symbolic_load_value_with_identity(
             .with_type(value_type);
         facts.push(ExecutionPureFact::logical_read_equation(
             pointer.clone(),
-            Address::loaded_value(&crate::kernel::intern_memory_ref(memory), &address),
+            Address::loaded_value_read_at(
+                &crate::kernel::intern_memory_ref(memory),
+                site,
+                &address,
+            ),
         ));
         return Some(retained_cell_conversion(
             &stored,
@@ -2708,7 +2806,7 @@ fn canonicalized_retained_symbolic_load_value_with_identity(
     {
         let retained_state = crate::kernel::intern_memory_ref(memory);
         let bits = crate::kernel::MachineTerm::read_named(
-            ProgramPoint::at(&retained_state),
+            ProgramPoint::at_optional_read_site(&retained_state, site),
             address.clone(),
             LoadKind::Int32,
         );
@@ -2717,10 +2815,11 @@ fn canonicalized_retained_symbolic_load_value_with_identity(
             fresh, load, facts, source, None,
         );
         return Some(
-            (ProgramValue::Pointer(Pointer::from_read(
+            (ProgramValue::Pointer(Pointer::from_read_at(
                 Address::symbolic(fresh),
                 value_type,
                 &retained_state,
+                site,
                 &address,
             )))
             .into(),
@@ -3665,6 +3764,8 @@ pub(crate) struct ScalarReadObservation {
 }
 
 mod read_observations;
+#[cfg(test)]
+mod read_site_tests;
 mod scalar_reads;
 
 use scalar_reads::{ScalarReadComparisonIdentity, ScalarReadDescriptor};
@@ -5048,26 +5149,8 @@ fn common_float_conversion_mentions_load(root: &KernelTerm) -> bool {
             KernelTermNode::FloatRead(_)
             | KernelTermNode::MemoryLoad { .. }
             | KernelTermNode::FloatCall(_) => return true,
-            KernelTermNode::Legacy(value) => {
-                let crate::kernel::PureFunctionArgument::Value(value) = value.value() else {
-                    unreachable!("numeric conversion operand");
-                };
-                let native = match value {
-                    ProgramValue::Int8(value)
-                    | ProgramValue::UInt8(value)
-                    | ProgramValue::Int16(value)
-                    | ProgramValue::UInt16(value)
-                    | ProgramValue::Int32(value)
-                    | ProgramValue::UInt32(value)
-                    | ProgramValue::Int64(value)
-                    | ProgramValue::UInt64(value)
-                    | ProgramValue::Int128(value)
-                    | ProgramValue::UInt128(value)
-                    | ProgramValue::Float32(value)
-                    | ProgramValue::Float64(value) => value,
-                    _ => unreachable!("numeric conversion operand"),
-                };
-                if term_mentions_a_memory_load(native) {
+            KernelTermNode::ImportedScalar(input) => {
+                if term_mentions_a_memory_load(input.value()) {
                     return true;
                 }
             }
@@ -6111,7 +6194,7 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
         ProgramType::Float32 => Some(memory.symbolic_float32_load(pointer)),
         ProgramType::Float64 => Some(memory.symbolic_float64_load(pointer)),
         ProgramType::Int8Pointer | ProgramType::Int8PointerPointer => {
-            Some(memory.symbolic_pointer_load(pointer, value_type))
+            Some(memory.symbolic_pointer_load(site, pointer, value_type))
         }
         ProgramType::VoidPointerPointer
         | ProgramType::ParameterPointer(_)
@@ -6133,18 +6216,20 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
         | ProgramType::Int64PointerPointer
         | ProgramType::UInt128PointerPointer
         | ProgramType::UInt64PointerPointer => {
-            Some(memory.symbolic_pointer_load(pointer, value_type))
+            Some(memory.symbolic_pointer_load(site, pointer, value_type))
         }
         ProgramType::Float32Pointer
         | ProgramType::Float64Pointer
         | ProgramType::Float32PointerPointer
         | ProgramType::Float64PointerPointer => {
-            Some(memory.symbolic_pointer_load(pointer, value_type))
+            Some(memory.symbolic_pointer_load(site, pointer, value_type))
         }
-        ProgramType::FunctionPointer(_) => Some(memory.symbolic_pointer_load(pointer, value_type)),
+        ProgramType::FunctionPointer(_) => {
+            Some(memory.symbolic_pointer_load(site, pointer, value_type))
+        }
         // Click's untyped pointer reads a pointer-width cell as any pointer
         // load does; only its type states no pointee.
-        ProgramType::Pointer => Some(memory.symbolic_pointer_load(pointer, value_type)),
+        ProgramType::Pointer => Some(memory.symbolic_pointer_load(site, pointer, value_type)),
         ProgramType::Int8Array(_) => None,
         ProgramType::Int32Array(_)
         | ProgramType::UInt8Array(_)
@@ -6218,8 +6303,11 @@ pub(in crate::kernel) fn cached_symbolic_storage_cell_value(
         .map(|(identity, _)| wrap(identity.into_legacy_read()))
 }
 
+/// `site`, when the caller has one, is where the read is made; the read
+/// records it and is the same term.
 pub(in crate::kernel) fn symbolic_storage_cell_value(
     memory: &SymbolicMemory,
+    site: Option<&ProgramPoint>,
     pointer: &Address,
     program_type: ProgramType,
     record_width: bool,
@@ -6229,23 +6317,27 @@ pub(in crate::kernel) fn symbolic_storage_cell_value(
             record_load_access_width(memory, pointer, program_type.byte_width());
         }
         let load = crate::kernel::MachineTerm::read_named(
-            ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
+            ProgramPoint::at_optional_read_site(
+                &(crate::kernel::intern_memory(memory.clone())),
+                site,
+            ),
             pointer.clone(),
             LoadKind::Int32,
         );
         let value = Address::loaded(&load).expect("symbolic pointer cell read");
-        return Some(ProgramValue::Pointer(Pointer::from_read(
+        return Some(ProgramValue::Pointer(Pointer::from_read_at(
             value,
             program_type,
             &crate::kernel::intern_memory(memory.clone()),
+            site,
             pointer,
         )));
     }
     // Entry cells and contract reads select the same structural descriptor.
     let value = if record_width {
-        symbolic_load_value(memory, None, pointer, program_type)
+        symbolic_load_value(memory, site, pointer, program_type)
     } else {
-        symbolic_load_value_unrecorded(memory, None, pointer, program_type)
+        symbolic_load_value_unrecorded(memory, site, pointer, program_type)
     };
     value.map(|value| match value {
         ProgramValue::Int8(bits) => ProgramValue::Int8(canonical_scalar_read(&bits)),
@@ -6301,8 +6393,8 @@ mod tests {
         let before = intern_memory_ref(&memory);
         let after = crate::kernel::intern_memory(memory.store(other.clone(), int32(9)));
         assert_eq!(
-            Address::canonical_read(&before, &cell),
-            Address::canonical_read(&after, &cell),
+            Address::canonical_read(&before, None, &cell),
+            Address::canonical_read(&after, None, &cell),
             "a store to another object leaves the cell's version point"
         );
         assert_ne!(
@@ -6316,8 +6408,8 @@ mod tests {
             ProgramValue::Pointer(Pointer::new(Address::null(), ProgramType::Int32Pointer)),
         ));
         assert_ne!(
-            Address::canonical_read(&after, &cell),
-            Address::canonical_read(&rewritten, &cell),
+            Address::canonical_read(&after, None, &cell),
+            Address::canonical_read(&rewritten, None, &cell),
         );
     }
 
@@ -6350,7 +6442,7 @@ mod tests {
                     LoadKind::Bits64,
                 ))
             };
-            let pointer = || Address::canonical_read(&after, &cell);
+            let pointer = || Address::canonical_read(&after, None, &cell);
             let (integer_read, pointer_read) = if pointer_first {
                 let pointer_read = pointer();
                 (integer(), pointer_read)
@@ -6368,7 +6460,7 @@ mod tests {
             );
             assert_eq!(
                 pointer_read,
-                Address::canonical_read(&before, &cell),
+                Address::canonical_read(&before, None, &cell),
                 "the store to another object leaves the version"
             );
             let observation =
@@ -6396,7 +6488,12 @@ mod tests {
             cell.clone().offset_by_bytes(4),
             ProgramValue::UInt32(0u32.into()),
         );
-        for read in [Address::canonical_read, Address::canonical_loaded_value] {
+        let canonical_read =
+            |memory: &SharedMemory, cell: &Address| Address::canonical_read(memory, None, cell);
+        for read in [
+            &canonical_read as &dyn Fn(&SharedMemory, &Address) -> Address,
+            &Address::canonical_loaded_value,
+        ] {
             let read = |memory: &SymbolicMemory| read(&intern_memory_ref(memory), &cell);
             assert_eq!(
                 read(&before),
@@ -6855,8 +6952,8 @@ mod tests {
             ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
         ] {
             let ordinary = symbolic_load_value(&memory, None, &address, ty).unwrap();
-            let logical = memory.symbolic_pointer_version_load(&address, ty);
-            let entry = symbolic_storage_cell_value(&memory, &address, ty, true)
+            let logical = memory.symbolic_pointer_version_load(None, &address, ty);
+            let entry = symbolic_storage_cell_value(&memory, None, &address, ty, true)
                 .expect("entry pointer read");
             let run = memory.clone().with_seeded_cells(
                 address.clone(),
@@ -7667,6 +7764,7 @@ mod tests {
                     &assumptions,
                     None,
                     LoadPurpose::Validity,
+                    None,
                 )
                 .unwrap();
                 let ProgramValue::Pointer(cached) = cached else {
@@ -7817,6 +7915,7 @@ mod tests {
                 &assumptions,
                 None,
                 LoadPurpose::Validity,
+                None,
             )
             .unwrap();
             let ProgramValue::Pointer(cached) = cached else {
@@ -9144,6 +9243,7 @@ mod tests {
                 &context,
                 None,
                 LoadPurpose::Program,
+                None,
             )
             .unwrap() else {
                 panic!("pointer read")
@@ -9189,6 +9289,7 @@ mod tests {
                 &context,
                 None,
                 LoadPurpose::Program,
+                None,
             )
             .unwrap() else {
                 panic!("pointer read")
@@ -9364,7 +9465,7 @@ mod tests {
         let source = Address::symbolic(Variable(940_095));
         let destination = Address::symbolic(Variable(940_096));
         let ProgramValue::Pointer(original) =
-            base.symbolic_pointer_load(&source, ProgramType::Int32Pointer)
+            base.symbolic_pointer_load(None, &source, ProgramType::Int32Pointer)
         else {
             unreachable!()
         };
@@ -9379,7 +9480,7 @@ mod tests {
             ProgramValue::Int32(MachineTerm::Variable(variable)),
         );
         let ProgramValue::Pointer(prefix) =
-            cached.symbolic_pointer_load(&destination, ProgramType::Int32Pointer)
+            cached.symbolic_pointer_load(None, &destination, ProgramType::Int32Pointer)
         else {
             unreachable!()
         };
@@ -9473,6 +9574,7 @@ mod tests {
                 facts,
                 None,
                 purpose,
+                None,
             )
             .expect("typed cached read")
         };
@@ -9540,6 +9642,7 @@ mod tests {
                     context,
                     None,
                     purpose,
+                    None,
                 )
                 .unwrap()
             };
@@ -9604,8 +9707,8 @@ mod tests {
         };
         let field_a = a.clone().offset_by_bytes(8);
         let field_b = b.clone().offset_by_bytes(8);
-        let first = base.symbolic_pointer_load(&field_a, ProgramType::Int32Pointer);
-        let second = base.symbolic_pointer_load(&field_b, ProgramType::Int32Pointer);
+        let first = base.symbolic_pointer_load(None, &field_a, ProgramType::Int32Pointer);
+        let second = base.symbolic_pointer_load(None, &field_b, ProgramType::Int32Pointer);
         let slot_a = Address {
             base: "local:raw-a".into(),
             offset: AddressOffset::Constant(0),
@@ -9797,6 +9900,7 @@ mod tests {
                 &context,
                 None,
                 LoadPurpose::Program,
+                None,
             )
             .expect("typed cached read") else {
                 panic!("pointer read")
@@ -9904,6 +10008,7 @@ mod tests {
             &context,
             Some(&source),
             LoadPurpose::Program,
+            None,
         )
         .expect("cached typed pointer") else {
             panic!("expected pointer");
@@ -9966,6 +10071,7 @@ mod tests {
                 context,
                 None,
                 LoadPurpose::Logical,
+                None,
             )
             .unwrap() else {
                 panic!("pointer read")
@@ -10045,6 +10151,7 @@ mod tests {
             &context,
             None,
             LoadPurpose::VolatileProgram,
+            None,
         )
         .expect("cached volatile pointer") else {
             panic!("expected pointer");
@@ -10428,8 +10535,8 @@ mod tests {
             ProgramType::VoidPointer,
         ] {
             let stored =
-                symbolic_storage_cell_value(&memory, &address, program_type, false).unwrap();
-            let logical = memory.symbolic_pointer_load(&address, program_type);
+                symbolic_storage_cell_value(&memory, None, &address, program_type, false).unwrap();
+            let logical = memory.symbolic_pointer_load(None, &address, program_type);
             assert!(
                 stored == logical,
                 "storage and logical reads must have identical values and provenance"
@@ -10443,10 +10550,12 @@ mod tests {
         let changed = memory
             .clone()
             .store(address.offset_by_bytes(4), ProgramValue::Int32(7.into()));
-        let old = symbolic_storage_cell_value(&memory, &address, ProgramType::Int32Pointer, false)
-            .unwrap();
-        let new = symbolic_storage_cell_value(&changed, &address, ProgramType::Int32Pointer, false)
-            .unwrap();
+        let old =
+            symbolic_storage_cell_value(&memory, None, &address, ProgramType::Int32Pointer, false)
+                .unwrap();
+        let new =
+            symbolic_storage_cell_value(&changed, None, &address, ProgramType::Int32Pointer, false)
+                .unwrap();
         assert!(old != new);
     }
 
@@ -10456,7 +10565,7 @@ mod tests {
         let address = Address::symbolic(Variable(190_001));
         let memory = SymbolicMemory::new();
         let ProgramValue::Pointer(value) =
-            memory.symbolic_pointer_load(&address, ProgramType::Int32Pointer)
+            memory.symbolic_pointer_load(None, &address, ProgramType::Int32Pointer)
         else {
             panic!("typed pointer read")
         };

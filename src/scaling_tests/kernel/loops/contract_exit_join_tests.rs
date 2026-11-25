@@ -335,7 +335,8 @@ fn exit_cache_reconciliation_reuses_the_joins_exit_contexts() {
     };
     let memory = SymbolicMemory::new().with_block("shared", 4);
     // Name the cell's load, as the exit's own read did.
-    let load = symbolic_storage_cell_value(&memory, &pointer, ProgramType::Int32, true).unwrap();
+    let load =
+        symbolic_storage_cell_value(&memory, None, &pointer, ProgramType::Int32, true).unwrap();
     let zero = int32(0);
     let exits = || {
         [

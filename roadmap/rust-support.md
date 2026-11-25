@@ -73,19 +73,36 @@ the rest of the subset is in the [Rust reference](../docs/reference/rust.md).
    [version manager reference](../docs/reference/cli/versions.md) and the
    [coverage matrix](../docs/reference/coverage.md) name the two hosts. Locks
    stay byte-identical across the two hosts for equal inputs, as the
-   [shared front-end design](#shared-front-end-design) requires.
+   [shared front-end design](#shared-front-end-design) requires. Because the
+   fixed profile targets `x86_64-unknown-linux-gnu` on every host
+   ([supported semantics](../docs/reference/rust.md#supported-semantics)),
+   the macOS bundle extracts for that target and carries its standard
+   library, and the docs say that a crate is verified as that target on
+   every host, so `cfg` code for another target is not what is checked.
 2. **Crates with dependencies.** The remaining work:
    - **Cargo resolution and locking.** A project unit describes a crate by
      its Cargo manifest and lockfile. `click capture` lets Cargo resolve the
      dependencies, and the Click lock pins and hashes every dependency input
      the compiler reads, so offline verification on a fresh clone needs
      neither the network nor a registry.
+   - **Where a dependency's interface comes from.** Core and std interfaces
+     ship with Click in `library/rust/`; a third-party crate's do not.
+     Design, before implementing, how a project supplies one: where the
+     interface file lives in the project, its syntax for a crate's
+     functions, types, trait impls and generic items (the existing
+     [trait method interfaces](../docs/reference/rust.md#trait-method-interfaces)
+     are the starting point), how the project unit selects it, and how it is
+     recorded in the lock. Today a user-written Rust interface exists only
+     for `extern "C"` block functions.
    - **Interface lookup for dependency items.** A call to, or a value of, a
-     dependency item resolves by its crate-qualified path to a Click
-     interface, through the same lookup that maps core and std items to
-     their `library/rust/` contracts. The interface's contracts are reported
-     as assumptions like any other library interface
+     dependency item resolves by its crate-qualified path to the Click
+     interface the project supplies, through the same lookup that maps core
+     and std items to their `library/rust/` contracts. The interface's
+     contracts are reported as assumptions like any other library interface
      ([trust](../docs/concepts/trust.md#library-interfaces)).
+   - **Cargo itself.** Decide whether the front-end bundle carries `cargo`
+     at the pinned toolchain or capture uses the user's, and how crate
+     features are selected and recorded.
    - **Refusal diagnostics.** A dependency function or type without an
      interface is refused with a diagnostic naming the crate and the item,
      only when the selected roots reach it. An unsupported construct in
@@ -105,9 +122,14 @@ the rest of the subset is in the [Rust reference](../docs/reference/rust.md).
   (The adler2 project is captured and verified only by
   `tests/rust_import/frontend.rs::installed_rust_frontend_extracts_and_verifies_without_rustup`,
   against a source-built front end; no adler2 lock is committed or compared.)
-- **Dependencies.** A small fixture crate with one third-party dependency
-  from a pinned source, and one verified function that calls into it through
-  a Click interface. The test locks it, verifies it offline with the
+- **Dependencies.** A small fixture crate with one real third-party
+  dependency from a pinned source, and one verified function that calls into
+  it through a Click interface the fixture supplies. The proposed dependency
+  is `memchr`: widely used, and its `memchr::memchr(needle: u8, haystack:
+  &[u8]) -> Option<usize>` uses only types Click already supports, so the
+  demonstration tests the dependency route rather than language coverage.
+  Language coverage a dependency needs is
+  [rust-language-baseline.md](rust-language-baseline.md). The test locks it, verifies it offline with the
   dependency source and the front end removed, and checks three refusals: a
   changed dependency source, a dependency missing from the lock, and a call
   into a dependency item that has no interface.

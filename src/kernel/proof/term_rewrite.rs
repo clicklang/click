@@ -5583,7 +5583,7 @@ impl<'a> TermRewrite<'a> {
                 self.changed = true;
                 // Rewriting changes the selected address, not the read into
                 // its stored value. Keep the immutable defining state.
-                Address::version_read(&read.defining_memory, &address).base
+                Address::version_read_at(&read.defining_memory, Some(&read.point), &address).base
             } else {
                 p.base.clone()
             };
@@ -6778,7 +6778,6 @@ impl<'a> TermRewrite<'a> {
                 }
                 KernelTermNode::IntegerToMachine { .. }
                 | KernelTermNode::BoolCast { .. }
-                | KernelTermNode::Legacy(_)
                 | KernelTermNode::MachineObservationInput { .. }
                 | KernelTermNode::WrittenMachine(_)
                 | KernelTermNode::Call { .. }
@@ -9573,9 +9572,10 @@ mod pointer_integer_rewrite_tests {
         );
         let stored = ProgramValue::pointer(Address::symbolic(Variable(996_012)));
         let memory = SymbolicMemory::new().store(to.address().clone(), stored.clone());
-        let read = memory.symbolic_pointer_version_load(from.address(), ProgramType::Int32Pointer);
+        let read =
+            memory.symbolic_pointer_version_load(None, from.address(), ProgramType::Int32Pointer);
         let expected =
-            memory.symbolic_pointer_version_load(to.address(), ProgramType::Int32Pointer);
+            memory.symbolic_pointer_version_load(None, to.address(), ProgramType::Int32Pointer);
         assert_ne!(expected, stored, "a rewritten logical read stays a read");
         let rewrite = || TermRewrite::for_pointer_value_exact(&from, &to).value(&read);
         assert_eq!(rewrite(), expected);
@@ -9584,7 +9584,7 @@ mod pointer_integer_rewrite_tests {
             ProgramValue::pointer(Address::symbolic(Variable(996_013))),
         );
         let later_read =
-            later.symbolic_pointer_version_load(to.address(), ProgramType::Int32Pointer);
+            later.symbolic_pointer_version_load(None, to.address(), ProgramType::Int32Pointer);
         assert_ne!(later_read, expected);
         assert_eq!(
             rewrite(),
@@ -9621,8 +9621,11 @@ mod pointer_integer_rewrite_tests {
             destination,
             ProgramValue::pointer(Address::symbolic(Variable(996_023))),
         );
-        let _ =
-            later.symbolic_pointer_version_load(&address(to.clone()), ProgramType::Int32Pointer);
+        let _ = later.symbolic_pointer_version_load(
+            None,
+            &address(to.clone()),
+            ProgramType::Int32Pointer,
+        );
         assert_eq!(TermRewrite::for_bits(&from, &to).pointer(&input), expected);
         let value = ProgramValue::pointer(input);
         assert_eq!(

@@ -46,6 +46,7 @@ fn retaining_pointer_read_results_ignores_unrelated_read_definitions() {
         let memory = SymbolicMemory::new();
         for n in 0..unrelated {
             memory.symbolic_pointer_load(
+                None,
                 &Address::symbolic(Variable(1019000 + n)),
                 ProgramType::Int32Pointer,
             );
@@ -55,6 +56,7 @@ fn retaining_pointer_read_results_ignores_unrelated_read_definitions() {
             let values = (0..size)
                 .map(|n| {
                     memory.symbolic_pointer_load(
+                        None,
                         &Address::symbolic(Variable(1020000 + n)),
                         ProgramType::Int32Pointer,
                     )
@@ -852,5 +854,38 @@ fn memory_float_key_work_is_shared_cached_and_session_scoped() {
             assert!(cold[0] <= previous * 5, "{previous} -> {}", cold[0]);
         }
         previous = Some(cold[0]);
+    }
+}
+
+#[test]
+fn numeric_cells_retain_and_hash_shared_word_syntax() {
+    use std::hash::Hash;
+
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let mut root =
+            KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(998810));
+        for _ in 0..size {
+            root = KernelTerm::machine_binary_shared(
+                format,
+                MachineBinaryOp::Add,
+                [root.clone(), root],
+            );
+        }
+        let exports = KernelTermExport::machine_export_count();
+        let (cell, cold) = crate::instrumentation::measure_deterministic_work(|| {
+            let cell = StoredMemoryValue::from(ExecutionValue::Shared(root.clone()));
+            cell.hash(&mut std::collections::hash_map::DefaultHasher::new());
+            cell
+        });
+        assert_eq!(cell.value().shared(), Some(&root));
+        assert!(cold <= 4 * size + 16, "size={size}, cold={cold}");
+        let (_, warm) = crate::instrumentation::measure_deterministic_work(|| {
+            cell.hash(&mut std::collections::hash_map::DefaultHasher::new());
+        });
+        assert!(warm <= 4, "size={size}, warm={warm}");
+        assert!(!root.has_cached_native_argument());
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }

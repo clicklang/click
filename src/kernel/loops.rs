@@ -3528,12 +3528,7 @@ fn joined_resource_fields<'a>(
 
 fn same_loop_exit_integer(left: &StoredIntegerTerm, right: &StoredIntegerTerm) -> bool {
     match (left.root(), right.root()) {
-        (Some(left), Some(right))
-            if !matches!(left.node(), KernelTermNode::Legacy(_))
-                && !matches!(right.node(), KernelTermNode::Legacy(_)) =>
-        {
-            left.integer_native_syntax_equal(right)
-        }
+        (Some(left), Some(right)) => left.integer_native_syntax_equal(right),
         _ => left == right,
     }
 }

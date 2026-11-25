@@ -57,7 +57,11 @@ theorem imported_callbacks(lo: int32, hi: int32) {
         unfold(imported_twice(|x: Integer| -> Integer { x + 1 }, 3)); close();
     }
     ensures imported_every(|i: int32| -> Prop { i < hi }, lo, hi) by {
-        intro(); intro(); close();
+        intro() {
+            intro() {
+                close();
+            }
+        }
     }
 }
 
@@ -76,7 +80,7 @@ theorem range_callbacks(lo: int32, hi: int32, offset: Integer) {
     ensures reduce(step, lo, hi, 0) == (lo..hi).fold(0, step) by {
         unfold(reduce(step, lo, hi, 0)); close();
     }
-    ensures every(predicate, lo, hi) by { intro(); intro(); close(); }
+    ensures every(predicate, lo, hi) by { intro() { intro() { close(); } } }
 }
 
 theorem callback_fold_append(lo: int32, hi: int32) {

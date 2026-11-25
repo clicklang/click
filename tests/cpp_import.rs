@@ -1589,20 +1589,55 @@ int32& probe(const struct View& view) { views view.pointer; views view.pointer[0
 }
 
 #[test]
-fn nested_reference_read_reports_the_unsupported_expression() {
-    let source = "struct Byte { unsigned char value; const unsigned char& get() const noexcept { return value; } }; bool probe(const Byte& byte) noexcept { return byte.get() == 67; }";
-    let project = Project::with_fixture("observe.cpp", "probe", source);
-    let error = refresh_import(&project.config()).unwrap_err();
-    assert!(
-        error.contains("reading a C++ call's reference result inside a larger expression"),
-        "{error}"
+#[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: retained replay and both permission controls take 1.6s locally"]
+fn nested_reference_reads_follow_short_circuit_evaluation() {
+    let project = Project::with_fixture(
+        "observe.cpp",
+        "probe",
+        r#"
+struct Byte {
+  unsigned char value;
+  const unsigned char& get() const noexcept { return value; }
+};
+bool probe(const Byte& first, const Byte& second) noexcept {
+  return first.get() == 67 && second.get() == 75;
+}
+"#,
     );
-    let supported = source.replace(
-        "return byte.get() == 67;",
-        "const unsigned char value = byte.get(); return value == 67;",
-    );
-    let project = Project::with_fixture("observe.cpp", "probe", &supported);
     refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    let source = r#"verifying "observe.cpp";
+const uint8& Byte::get() const {
+  views this->value;
+  ensures &result == &this->value;
+}
+bool probe(const struct Byte& first, const struct Byte& second) {
+  views first.value;
+  views second.value;
+  requires second.value == 75u8;
+  ensures result implies (old(first.value) as int32) == 67;
+  ensures (old(first.value) as int32) == 67 implies result;
+}
+"#;
+    check_selected_claim_certificate(&project, &import, source);
+
+    let (getter, _) = source.split_once("bool probe(").unwrap();
+    let skipped = format!(
+        "{getter}bool probe(const struct Byte& first, const struct Byte& second) {{
+  views first.value;
+  requires first.value == 0u8;
+  ensures not result;
+}}
+"
+    );
+    let path = project.directory.join("observe.click");
+    fs::write(&path, &skipped).unwrap();
+    let verify = |source| {
+        verify_program_prepared_project(&read_click_project(&path, source).unwrap(), &import)
+    };
+    verify(&skipped).unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(verify(&skipped.replace("first.value == 0u8", "first.value == 67u8")).is_err());
 }
 
 #[test]

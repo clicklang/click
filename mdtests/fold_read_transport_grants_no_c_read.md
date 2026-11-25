@@ -58,15 +58,18 @@ int32 set_then_read(int32 *v, int32 i) {
     mark entry;
     step();
     have forall (k: int32) { 0 <= k and k < i implies v[k] == at(entry, v[k]) } by {
-        intro(); intro();
-        have i != k by { close() using { k < i; }; }
-        have separate(memory(v[i]), memory(v[k])) by {
-            apply(click::separation::separate_elements(v, i, k));
+        intro() {
+            intro() {
+                have i != k by { close() using { k < i; }; }
+                have separate(memory(v[i]), memory(v[k])) by {
+                    apply(click::separation::separate_elements(v, i, k));
+                }
+                have separate(statement(0).footprint, memory(v[k])) by {
+                    normalize() using { separate(memory(v[i]), memory(v[k])); };
+                }
+                preserve(memory(v[k]), statement(0));
+            }
         }
-        have separate(statement(0).footprint, memory(v[k])) by {
-            normalize() using { separate(memory(v[i]), memory(v[k])); };
-        }
-        preserve(memory(v[k]), statement(0));
     }
     have 0 <= i by { close() using { 0 < i; }; }
     have zeros(v, 0, i) == at(entry, zeros(v, 0, i)) by {

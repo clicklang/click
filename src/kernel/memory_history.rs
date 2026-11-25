@@ -3096,7 +3096,7 @@ pub(in crate::kernel) fn complete_pointer_reads_equal_across_frame(
             else {
                 return None;
             };
-            Address::loaded_value(memory.shared_memory(), &address).as_loaded_value()
+            Address::loaded_value_at(&memory, &address).as_loaded_value()
         })
     };
     let (Some(a), Some(b)) = (read(left), read(right)) else {
@@ -3384,7 +3384,7 @@ fn checked_pointer_read_endpoint_and_kind(
             let application = assumptions.retained_pointer_read_application(read)?;
             let definition = application.as_loaded_value()?;
             Some(crate::kernel::MachineTerm::read_named(
-                ProgramPoint::at(&definition.defining_memory),
+                ProgramPoint::at_read_site(&definition.defining_memory, &definition.point),
                 definition.defining_address,
                 LoadKind::of_type(ProgramType::Int32Pointer)?,
             ))
@@ -3426,7 +3426,12 @@ fn checked_pointer_read_endpoint_and_kind(
             // A walk can stop at an unproved or affecting edge. Its cached
             // cell map is not a certificate for a value across that edge.
             MemoryDagCell::Unwritten { .. } => {
-                Some((Address::loaded_value(cell.node(), &address), false))
+                // The read made at `memory`, of the state the walk found
+                // its bytes unchanged from.
+                Some((
+                    Address::loaded_value_read_at(cell.node(), Some(&memory), &address),
+                    false,
+                ))
             }
         }
     })

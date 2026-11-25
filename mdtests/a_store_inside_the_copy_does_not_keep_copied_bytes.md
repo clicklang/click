@@ -41,9 +41,12 @@ void copy_n(char* dst, const char* src, uint64 n) {
         have forall (k: uint64) { k < n implies
             (dst as (uint8 *))[k] == at(copied, (dst as (uint8 *))[k])
         } by {
-            intro(); intro();
-            have separate(statement(1).footprint, memory((dst as (uint8 *))[k])) by { close(); }
-            preserve(memory((dst as (uint8 *))[k]), statement(1));
+            intro() {
+                intro() {
+                    have separate(statement(1).footprint, memory((dst as (uint8 *))[k])) by { close(); }
+                    preserve(memory((dst as (uint8 *))[k]), statement(1));
+                }
+            }
         }
         close();
     }

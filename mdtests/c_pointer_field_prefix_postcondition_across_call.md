@@ -58,49 +58,51 @@ int32 vector_push(struct vector* owner, int32 value) {
     step();
     step();
     have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
-        intro();
-        intro();
-        have 0 <= k;
-        have k < old(owner->len);
-        // The append writes at the old length, beyond this prefix element.
-        have old(owner->len) != k by {
-            if old(owner->len) == k {
-                have not (k < old(owner->len)) by {
-                    rewrite(old(owner->len), k);
-                    close();
+        intro() {
+            intro() {
+                have 0 <= k;
+                have k < old(owner->len);
+                // The append writes at the old length, beyond this prefix element.
+                have old(owner->len) != k by {
+                    if old(owner->len) == k {
+                        have not (k < old(owner->len)) by {
+                            rewrite(old(owner->len), k);
+                            close();
+                        }
+                        contradiction(k < old(owner->len));
+                    } else {
+                        close();
+                    }
                 }
-                contradiction(k < old(owner->len));
-            } else {
+                have separate(memory(old(owner->data)[old(owner->len)]), memory(old(owner->data)[k])) by {
+                    apply(click::separation::separate_elements(old(owner->data), old(owner->len), k));
+                }
+                have separate(statement(4).footprint, memory(old(owner->data)[k])) by {
+                    close() using { separate(memory(old(owner->data)[old(owner->len)]), memory(old(owner->data)[k])); };
+                }
+                have at(statement(4).exit, owner->data[k]) == at(statement(4).entry, owner->data[k]) by {
+                    preserve(memory(old(owner->data)[k]), statement(4));
+                }
+                // Restrict the struct/array separation to the length field and element.
+                have k < old(owner->cap) by {
+                    close() using { k < old(owner->len); old(owner->len) <= old(owner->cap); };
+                }
+                have contains(memory(*owner), memory(owner->len)) by { normalize(); }
+                have contains(memory(old(owner->data)[0..old(owner->cap)]), memory(old(owner->data)[k])) by {
+                    apply(click::separation::contains_element(old(owner->data), 0, old(owner->cap), k));
+                }
+                have separate(memory(owner->len), memory(old(owner->data)[k])) by {
+                    apply(click::separation::separate_restrict(memory(*owner), memory(old(owner->data)[0..old(owner->cap)]), memory(owner->len), memory(old(owner->data)[k])));
+                }
+                have separate(statement(5).footprint, memory(old(owner->data)[k])) by {
+                    close() using { separate(memory(owner->len), memory(old(owner->data)[k])); };
+                }
+                have at(statement(5).exit, owner->data[k]) == at(statement(5).entry, owner->data[k]) by {
+                    preserve(memory(old(owner->data)[k]), statement(5));
+                }
                 close();
             }
         }
-        have separate(memory(old(owner->data)[old(owner->len)]), memory(old(owner->data)[k])) by {
-            apply(click::separation::separate_elements(old(owner->data), old(owner->len), k));
-        }
-        have separate(statement(4).footprint, memory(old(owner->data)[k])) by {
-            close() using { separate(memory(old(owner->data)[old(owner->len)]), memory(old(owner->data)[k])); };
-        }
-        have at(statement(4).exit, owner->data[k]) == at(statement(4).entry, owner->data[k]) by {
-            preserve(memory(old(owner->data)[k]), statement(4));
-        }
-        // Restrict the struct/array separation to the length field and element.
-        have k < old(owner->cap) by {
-            normalize() using { k < old(owner->len); old(owner->len) <= old(owner->cap); };
-        }
-        have contains(memory(*owner), memory(owner->len)) by { normalize(); }
-        have contains(memory(old(owner->data)[0..old(owner->cap)]), memory(old(owner->data)[k])) by {
-            apply(click::separation::contains_element(old(owner->data), 0, old(owner->cap), k));
-        }
-        have separate(memory(owner->len), memory(old(owner->data)[k])) by {
-            apply(click::separation::separate_restrict(memory(*owner), memory(old(owner->data)[0..old(owner->cap)]), memory(owner->len), memory(old(owner->data)[k])));
-        }
-        have separate(statement(5).footprint, memory(old(owner->data)[k])) by {
-            close() using { separate(memory(owner->len), memory(old(owner->data)[k])); };
-        }
-        have at(statement(5).exit, owner->data[k]) == at(statement(5).entry, owner->data[k]) by {
-            preserve(memory(old(owner->data)[k]), statement(5));
-        }
-        close();
     }
     step();
     have owner->data == old(owner->data) by {

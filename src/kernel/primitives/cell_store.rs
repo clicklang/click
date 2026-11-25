@@ -845,15 +845,17 @@ pub(crate) fn cell_run_value(element_type: ProgramType, load: MachineTerm) -> Pr
                 definition
             {
                 crate::kernel::equality_graph::EqualityGraph::default()
-                    .register_pointer_read_definition(
+                    .register_pointer_read_definition_at(
                         &value,
                         retained_state.shared_memory(),
+                        Some(&retained_state),
                         &address,
                     );
-                return ProgramValue::Pointer(crate::kernel::Pointer::from_read(
+                return ProgramValue::Pointer(crate::kernel::Pointer::from_read_at(
                     value,
                     program_type,
                     retained_state.shared_memory(),
+                    Some(&retained_state),
                     &address,
                 ));
             }
@@ -1462,7 +1464,7 @@ impl CellStore {
             if let Some(base) = assumptions.parameter_partition_cell_base(
                 resources,
                 &key,
-                crate::kernel::reasoning::cell_access_byte_width(value.native()),
+                crate::kernel::reasoning::nonzero_cell_access_width(value.byte_width()),
             ) {
                 let mut cells = index.known.get(&base).cloned().unwrap_or_default();
                 cells.insert(key.clone(), ());
@@ -2355,7 +2357,7 @@ impl CellStore {
             }
         }
         if let Some(value) = self.concrete.get(pointer) {
-            return variable(value.native());
+            return value.value().machine()?.1.variable().copied();
         }
         let slot = self.live_run_slot(pointer)?;
         if let RunValueMode::Constant(value) = &slot.run.mode {

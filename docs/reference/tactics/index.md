@@ -70,7 +70,7 @@ remains supported.
   See [Proposition reasoning](#proposition-reasoning).
 - `match value { ... }`: split the proof on an algebraic value's
   constructors. See [Proposition reasoning](#proposition-reasoning).
-- `intro()`: assume an implication's antecedent or fix a universal's
+- `intro() { ... }`: assume an implication's antecedent or fix a universal's
   variable. See [Proposition reasoning](#proposition-reasoning).
 - `let ih = induct(value)`, with `apply(ih(m))`: prove
   a pure theorem by induction. See
@@ -1129,8 +1129,8 @@ step is still checked.
 | `normalize() using { P; ... }` | simple | Compatibility | Check normalization against written premises. | [Reference](#normalization-with-selected-premises) |
 | `preserve(resource, region)` | simple | Specialized | Preserve a selected read across a separated effect. | [Reference](#preservation) |
 | `rewrite(from, to)` | simple | Core | Rewrite the goal using an equality. | [Reference](#rewriting) |
-| `intro()` | simple | Core | Introduce a universal binder or implication premise. | [Reference](#introducing-a-binder-or-premise) |
-| `let name = intro()` | simple | Specialized | Choose the name introduced into the proof. | [Reference](#naming-an-introduced-binder) |
+| `intro() { ... }` | control | Core | Introduce a universal binder or implication premise. | [Reference](#introducing-a-binder-or-premise) |
+| `intro(name) { ... }` | control | Specialized | Choose the name introduced into the block. | [Reference](#naming-an-introduced-binder) |
 | `enumerate()` | simple | Expansion output | Close a constant-bounded universal from its instances. | [Reference](#finite-enumeration) |
 | `contradiction(P)` | simple | Core | Close a goal from incompatible facts. | [Reference](#contradictions) |
 | `contradiction()` | simple | Core | Close a goal from an established `false`. | [Reference](#contradictions) |
@@ -1366,7 +1366,7 @@ the whole goal, each conjunct trying direct steps first.
 An implication whose antecedent `normalize()` refutes, such as
 `i == i + 1 implies n <= 5u64` with Integer `i + 1`, is introduced and closed
 by `contradiction` on that antecedent, reading only the goal; expansion
-writes `intro(); contradiction(A);`
+writes `intro() { contradiction(A); }`
 ([`an_antecedent_normalization_refutes_closes_its_implication.md`](https://github.com/clicklang/click/blob/master/mdtests/an_antecedent_normalization_refutes_closes_its_implication.md)).
 An implication whose antecedent, or one conjunct of an `a and b` antecedent,
 has its opposite among the facts closes by `contradiction` once `close()`
@@ -1449,19 +1449,17 @@ from the exact-result bounds
 ([`solve_defined_read_through_a_produced_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_defined_read_through_a_produced_resource.md)).
 
 A goal that reads one cell at two version points, such as `owner->cell[0] ==
-owner->phase` right after a store wrote the first side from the second, is
-proved by `transport` from the cell's reflexive equality at a recently recorded
-point, with the frame evidence the transport selects as its `using` list
+owner->phase` right after a store wrote the first side from the second, can
+use a frame proof from a recently recorded point. When search finds ordinary
+separation and preservation steps, expansion writes them into the proof
 ([`solve_frames_a_read_across_a_separate_store.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_frames_a_read_across_a_separate_store.md)).
 
-A goal that reads memory and held at the function's entry or at one of the 8
-most recently recorded points is proved by one `transport` from that point,
-with the frame evidence the transport selects. A read written through one
-alias of a cell whose fact was stated through another, across a store the
-context's facts keep separate from it, is carried this way: lowering keeps the
-read as written
+A goal that held at function entry or at one of the eight most recently
+recorded points can use the frame evidence for that state. Lowering keeps
+an aliased read as written
 ([`fold_argument_reads_through_model_pointer.md`](https://github.com/clicklang/click/blob/master/mdtests/fold_argument_reads_through_model_pointer.md)).
-A fact from an older point needs an explicit `transport`.
+If verification needs a legacy frame check and search finds no ordinary
+proof, expansion reports that it is unavailable for the claim.
 
 A goal that is one disjunct of an available disjunction whose every other
 disjunct an exact fact refutes is proved by `cases` over that disjunction, the
@@ -1767,9 +1765,11 @@ when the count is known in range. It also checks the equality of the signed
 and unsigned right shifts of the positive signed maximum at the same in-range
 count. A constant right shift of a zero-extended unsigned byte or halfword
 has a range computed from its source width and count, including after a
-signed widening of the result.
-For a positive literal left operand, a count bound below the point where
-the result would reach the sign bit establishes that the shift fits.
+signed widening of the result. An unsigned left shift of one is nonzero
+when its count is below the width. A signed count reading also needs a
+nonnegative bound. For a positive literal left operand, a count bound below
+the point where the result would reach the sign bit establishes that the shift
+fits.
 
 A root conditional equals its selected arm when its written guard is available.
 A root Integer or machine conditional with identical arms equals that shared
@@ -1931,6 +1931,8 @@ premises and the equality graph, then applies `normalize()`'s check (see
 For a signed `int32` order goal, the cited comparisons can form a chain in
 list order from the goal's lower endpoint to its upper endpoint. A strict
 goal needs at least one strict link. Replay checks the listed links directly.
+For a machine-integer disequality against a literal, one cited order bound
+can establish that the word excludes the literal.
 
 A true `float` or `double` comparison against a literal can cite one stronger
 bound. Exact widening from `float` to `double` widens the endpoint and preserves
@@ -1961,9 +1963,14 @@ lower bound is zero if that range crosses zero.
 A product's lower bound can instead cite two strictly positive lower
 endpoints. Multiplication by a literal signed zero can cite a finite
 operand or its two finite bounds. `close()` accepts the exact
-`isfinite` premise for the zero product.
-`close()` can select these float bounds and expand to `normalize() using`
-with the selected premises.
+`isfinite` premise for the zero product. Negation and exact widening
+from `float` to `double` preserve finiteness.
+For an integer converted to `float` or `double`, `close()` can check
+the rounded limits of the source type. A tighter bound can cite a constant
+integer endpoint. The check rounds that endpoint at the destination precision.
+`close()` prefers named library laws when they cover the selected bounds.
+For other supported shapes it can still expand to `normalize() using` with
+those premises.
 
 
 For two negative signed operands, `x < 0`, `y < 0`, and
@@ -2620,8 +2627,7 @@ charges the affected expression.
 the consequent. For a universal, it fixes an arbitrary value and proves
 the body at that value. The closing brace discharges the original goal and
 ends the scope of the premise or binder. In a grouped contract proof the
-next tactic can then work on the next claim. The flat forms `intro();` and
-`let name = intro();` are also accepted.
+next tactic can then work on the next claim.
 
 With `intro()`, a universal's variable keeps the name its quantifier wrote.
 An earlier binding of the same name stays readable as `outer.name`. That
@@ -2641,7 +2647,6 @@ access in a proof; it is not parsed as the shadowed-binder qualifier.
 - `(lo..hi).all(|x| { B })`: one scoped introduction binds `x` and makes
   both `lo <= x` and `x < hi` available while proving `B`. Use one nested
   block per range and a separate block for an implication written in `B`.
-  Flat introductions take two steps, one for the binder and one for membership.
 - An implication lowering inserted in front of a written body, such as a
   path fact: `intro()` adds the premise and keeps the written goal focused.
   If such an implication sits between a range binder and the membership
@@ -2661,14 +2666,15 @@ access in a proof; it is not parsed as the shadowed-binder qualifier.
 **Failure, checking, and tools:**
 
 A refusal names the goal's shape, such as "got a condition fact" or "got a
-conjunction". Click checks the introduction and the proof of its body. Expansion preserves
-the written block and expands any smart steps inside it.
+conjunction". Click checks the introduction and the proof of its body. Expansion preserves a written block and expands any smart steps inside it.
+When search introduces a written binder or premise and finishes its goal,
+expansion can retain that proof as an `intro` block.
 
 **Checked examples:** [`scoped_intro.md`](https://github.com/clicklang/click/blob/master/mdtests/scoped_intro.md), [`copy_n_segment_invariant.md`](https://github.com/clicklang/click/blob/master/mdtests/copy_n_segment_invariant.md), [`quantifier_intro_nested_connectives.md`](https://github.com/clicklang/click/blob/master/mdtests/quantifier_intro_nested_connectives.md), [`integer_forall_intro.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_forall_intro.md), [`an_introduced_variable_hides_a_parameter_of_its_name.md`](https://github.com/clicklang/click/blob/master/mdtests/an_introduced_variable_hides_a_parameter_of_its_name.md)
 
 ### Naming an introduced binder
 
-**Form:** `let name = intro()`
+**Form:** `intro(name) { ... }`
 
 **Specialized.** Write it when the quantifier's own variable name would clash
 with or obscure a name the proof uses. For a goal written `forall (x: T) { ...
@@ -2688,15 +2694,14 @@ binder type it accepts, when `name` is new:
 - A fact named by `have name: P` is hidden, not refused: `name` reads the
   variable for the rest of the block, and the fact stays available by its
   proposition.
-- After a range quantifier's variable, the next `intro()` introduces its
-  range guard; after a binder whose body lowering guarded, the next `intro()`
-  introduces that guard.
+- For a written range, the block normally introduces membership with the
+  binder. An intervening lowering premise has its own introduction.
 
 **Outside it**, with what to write instead:
 
 - A name already in scope: choose another; nothing is shadowed.
-- An implication or negation goal, which introduces a fact, and facts have no
-  names: write `intro();`, and cite the fact by its proposition.
+- An implication or negation goal, which introduces a fact: write `intro() { ... }` and
+  cite the premise by its proposition.
 
 **Failure, checking, and tools:**
 
@@ -3276,7 +3281,7 @@ with that reason
 ([`have_name_is_not_cited_in_its_own_proof.md`](https://github.com/clicklang/click/blob/master/mdtests/have_name_is_not_cited_in_its_own_proof.md),
 [`have_name_is_cited_only_in_its_block.md`](https://github.com/clicklang/click/blob/master/mdtests/have_name_is_cited_only_in_its_block.md)).
 
-A quantifier variable, including one named by `let name = intro()`, hides a
+A quantifier variable, including one named by `intro(name) { ... }`, hides a
 fact of the same name in its body. The chosen name must not reuse an active
 value binding.
 The container stays intrinsically control; its selectable source site may own

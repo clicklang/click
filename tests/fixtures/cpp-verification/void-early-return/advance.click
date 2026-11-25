@@ -8,22 +8,26 @@ void advance(bool empty, int32& cursor) {
     if empty {
         step_until(function.exit);
         have empty implies cursor == old(cursor) by {
-            intro();
-            close();
+            intro() {
+                close();
+            }
         }
         have not empty implies cursor == 7 by {
-            intro();
-            contradiction(not empty);
+            intro() {
+                contradiction(not empty);
+            }
         }
     } else {
         step_until(function.exit);
         have empty implies cursor == old(cursor) by {
-            intro();
-            contradiction(empty);
+            intro() {
+                contradiction(empty);
+            }
         }
         have not empty implies cursor == 7 by {
-            intro();
-            close();
+            intro() {
+                close();
+            }
         }
     }
 }

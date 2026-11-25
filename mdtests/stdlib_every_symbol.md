@@ -14,13 +14,57 @@ The transitivity laws `float_order::float32_le_le`,
 `float_order::float64_le_le`, `float_order::float64_le_lt`, and
 `float_order::float64_lt_le` are exercised in
 [`float_order_transitivity.md`](float_order_transitivity.md).
+The strict-to-non-strict laws `float_order::float32_lt_to_le` and
+`float_order::float64_lt_to_le` are exercised in
+[`arithmetic_expression_float_weaken_quotient_bound.md`](arithmetic_expression_float_weaken_quotient_bound.md).
+
 The rounded addition bounds `float_order::float32_add_lower`,
 `float_order::float32_add_upper`, `float_order::float64_add_lower`, and
 `float_order::float64_add_upper` are exercised in
 [`arithmetic_expression_float_add_pair.md`](arithmetic_expression_float_add_pair.md).
-The finite positive scaling bounds `float_order::float32_scale_lower` and
-`float_order::float32_scale_upper` are exercised in
+The finite positive scaling bounds `float_order::float32_scale_lower`,
+`float_order::float32_scale_upper`, `float_order::float32_scale_right_lower`,
+and `float_order::float32_scale_right_upper` are exercised in
 [`arithmetic_expression_float_bound_composition.md`](arithmetic_expression_float_bound_composition.md).
+The rounded subtraction bounds `float_order::float32_sub_lower`,
+`float_order::float32_sub_upper`, `float_order::float64_sub_lower`, and
+`float_order::float64_sub_upper` are exercised in
+[`arithmetic_expression_float_subtract_pair.md`](arithmetic_expression_float_subtract_pair.md)
+and [`arithmetic_expression_float_bound_composition.md`](arithmetic_expression_float_bound_composition.md).
+
+The narrowing laws `float_order::float64_narrow_le` and
+`float_order::float64_narrow_lt` are exercised in
+[`arithmetic_safety_float_narrowing_keeps_rounded_bounds.md`](arithmetic_safety_float_narrowing_keeps_rounded_bounds.md).
+The rounded cast law `float_order::int32_to_float32_le` is exercised in
+[`arithmetic_float_cast_from_integer_bounds.md`](arithmetic_float_cast_from_integer_bounds.md).
+The product bounds `float_order::float32_positive_product_lower` and
+`float_order::float64_positive_product_lower` are exercised in
+[`arithmetic_expression_float_reciprocal_and_products.md`](arithmetic_expression_float_reciprocal_and_products.md).
+The finite interval bounds `float_order::float32_product_lower`,
+`float_order::float32_product_upper`, `float_order::float64_product_lower`,
+and `float_order::float64_product_upper` are exercised in
+[`arithmetic_expression_float_signed_ranges.md`](arithmetic_expression_float_signed_ranges.md).
+
+The reciprocal laws `float_order::float32_reciprocal_lower`,
+`float_order::float32_reciprocal_upper`, `float_order::float64_reciprocal_lower`,
+and `float_order::float64_reciprocal_upper` are exercised in the cast proofs in
+[`arithmetic_expression_float_reciprocal_and_products.md`](arithmetic_expression_float_reciprocal_and_products.md)
+and [`arithmetic_expression_float_signed_quotient_ranges.md`](arithmetic_expression_float_signed_quotient_ranges.md).
+The quotient laws `float_order::float32_quotient_lower`,
+`float_order::float32_quotient_upper`, `float_order::float64_quotient_lower`,
+and `float_order::float64_quotient_upper` are exercised in those same proofs.
+
+The signed reciprocal bounds `float_order::float32_bounded_reciprocal_lower`,
+`float_order::float32_bounded_reciprocal_upper`,
+`float_order::float64_bounded_reciprocal_lower`, and
+`float_order::float64_bounded_reciprocal_upper`, and the strict positive minimum
+laws `float_order::float32_strictly_positive_minimum` and
+`float_order::float64_strictly_positive_minimum` are exercised in
+[`float_reciprocal_bounds_are_checked.md`](float_reciprocal_bounds_are_checked.md).
+The finite interval and square bounds `float_order::float32_finite_between`,
+`float_order::float64_finite_between`, `float_order::float32_square_interval`,
+and `float_order::float64_square_interval` are exercised in
+[`arithmetic_expression_float_interval_laws.md`](arithmetic_expression_float_interval_laws.md).
 
 The representation law `integer::uint32_from_le_bytes` is exercised in
 [`integer_uint32_from_le_bytes_initialization.md`](integer_uint32_from_le_bytes_initialization.md).

@@ -1,0 +1,24 @@
+{
+  "units": {
+    "str_views": {
+      "language": "rust",
+      "sources": {
+        "strs.rs": {}
+      },
+      "crate": {
+        "name": "str_views",
+        "edition": "2021",
+        "features": [],
+        "roots": [
+          "str_views::byte_len",
+          "str_views::blank",
+          "str_views::longer",
+          "str_views::width"
+        ],
+        "files": [
+          "strs.rs"
+        ]
+      }
+    }
+  }
+}

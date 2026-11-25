@@ -7,18 +7,17 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// an ordinary have. The final equality checks the goal's actual points.
     pub(in crate::surface::proof) fn try_indexed_read_preservation(
         search_input: &Proof<'a>,
+        target: &ClickProposition,
         point_limit: usize,
         derive_separation: bool,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_indexed_read_preservation");
-        let Some(
-            target @ ClickProposition::Comparison {
-                left,
-                operator: ComparisonOperator::Equal,
-                right,
-            },
-        ) = search_input.surface_goal()
+        let ClickProposition::Comparison {
+            left,
+            operator: ComparisonOperator::Equal,
+            right,
+        } = target
         else {
             return Ok(None);
         };
@@ -124,8 +123,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 Some(separated) => Some(separated),
                 None if (outcome || derive_separation) && footprint.members.len() == 1 => {
                     let written = footprint.members.front().expect("one footprint member");
-                    if outcome
-                        && !loop_exit
+                    if !loop_exit
                         && let Some(separated) = Self::try_distinct_indexed_store_separation(
                             &proof,
                             written,

@@ -32,7 +32,8 @@ impl BooleanStorageKey {
                 KernelTermNode::Variable(v) => {
                     Self(BooleanKeyKind::Word(MachineTerm::Variable(*v)))
                 }
-                KernelTermNode::Legacy(_) | KernelTermNode::CallArgument(_) => {
+                KernelTermNode::ImportedScalar(input) => Self::native(input.value()),
+                KernelTermNode::ObservedArgument(_) | KernelTermNode::CallArgument(_) => {
                     let Some(PureFunctionArgument::Value(ProgramValue::Bool(word))) =
                         root.written_argument()
                     else {
@@ -267,6 +268,142 @@ impl Ord for ConditionStorageKey {
 
 /// Native ProgramValue variant order. Numeric local keys live in the separate
 /// machine-observation family; numeric memory cells keep native structural keys.
+/// Exact program value identity for descriptor storage and typed call arguments.
+/// Local numeric observations use a different key.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::kernel) enum ProgramStorageKey {
+    Scalar(ProgramType, ScalarStorageKey),
+    Boolean(BooleanStorageKey),
+    Pointer(PointerStorageKey),
+    Algebraic(AlgebraicStorageKey),
+    Native(ProgramValue),
+}
+
+impl ProgramStorageKey {
+    pub(in crate::kernel) fn for_value(value: &ExecutionValue) -> Self {
+        match value {
+            ExecutionValue::Native(value) => Self::native(value),
+            ExecutionValue::Shared(root) => {
+                // The execution handoff borrows the call's written carrier.
+                // Nested call arguments instead follow structural export.
+                if matches!(root.node(), KernelTermNode::Call { .. })
+                    && MachineIntegerType::from_program_type(value.program_type()).is_some()
+                {
+                    let word = root.machine_conversion_leaf().expect("machine result call");
+                    return Self::Scalar(value.program_type(), ScalarStorageKey::native(word));
+                }
+                Self::shared(root)
+            }
+        }
+    }
+
+    pub(in crate::kernel) fn native(value: &ProgramValue) -> Self {
+        match value {
+            crate::kernel::integer_c_value!(word)
+            | ProgramValue::Float32(word)
+            | ProgramValue::Float64(word) => {
+                Self::Scalar(value.program_type(), ScalarStorageKey::native(word))
+            }
+            ProgramValue::Bool(word) => Self::Boolean(BooleanStorageKey::native(word)),
+            ProgramValue::Pointer(pointer) => Self::Pointer(PointerStorageKey::native(pointer)),
+            ProgramValue::Parameter(value) => Self::Algebraic(AlgebraicStorageKey::native(value)),
+            ProgramValue::PointerInteger(_) | ProgramValue::Void => Self::Native(value.clone()),
+        }
+    }
+
+    pub(super) fn shared(root: &KernelTerm) -> Self {
+        if let Some(PureFunctionArgument::Value(value)) = root.written_argument() {
+            return Self::native(value);
+        }
+        if root.pointer_payload().is_some() {
+            return Self::Pointer(pointer_for_root(root));
+        }
+        match (root.ty(), root.node()) {
+            (KernelType::Algebraic(_), _) => Self::Algebraic(algebraic_for_root(root)),
+            (_, KernelTermNode::ProgramParameter { operand }) => {
+                Self::Algebraic(algebraic_for_root(operand))
+            }
+            (KernelType::Bool | KernelType::Program(ProgramType::Bool), _) => {
+                Self::Boolean(BooleanStorageKey::shared(root))
+            }
+            (KernelType::Program(ty), KernelTermNode::ImportedScalar(input)) => {
+                debug_assert_ne!(*ty, ProgramType::Bool);
+                Self::Scalar(input.carrier(), root.scalar_storage_key())
+            }
+            (KernelType::Program(ty), _)
+                if MachineIntegerType::from_program_type(*ty).is_some()
+                    || KernelFloatType::from_program_type(*ty).is_some() =>
+            {
+                Self::Scalar(*ty, root.scalar_storage_key())
+            }
+            _ => Self::native(
+                root.program_value_native_compat()
+                    .expect("program storage key"),
+            ),
+        }
+    }
+
+    fn rank(&self) -> u8 {
+        match self {
+            Self::Boolean(_) => 2,
+            Self::Pointer(_) => 15,
+            Self::Algebraic(_) => 16,
+            Self::Scalar(ty, _) => match ty {
+                ProgramType::Int8 => 3,
+                ProgramType::Int16 => 4,
+                ProgramType::Int32 => 5,
+                ProgramType::UInt8 => 6,
+                ProgramType::UInt16 => 7,
+                ProgramType::UInt32 => 8,
+                ProgramType::Int64 => 9,
+                ProgramType::UInt64 => 10,
+                ProgramType::Int128 => 11,
+                ProgramType::UInt128 => 12,
+                ProgramType::Float32 => 13,
+                ProgramType::Float64 => 14,
+                _ => unreachable!("scalar program carrier"),
+            },
+            Self::Native(value) => native_rank(value),
+        }
+    }
+}
+
+impl Hash for ProgramStorageKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.rank().hash(state);
+        match self {
+            Self::Scalar(_, key) => key.hash(state),
+            Self::Boolean(key) => key.hash(state),
+            Self::Pointer(key) => key.hash(state),
+            Self::Algebraic(key) => key.hash(state),
+            Self::Native(value) => value.hash(state),
+        }
+    }
+}
+
+impl PartialOrd for ProgramStorageKey {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ProgramStorageKey {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.rank()
+            .cmp(&other.rank())
+            .then_with(|| match (self, other) {
+                (Self::Scalar(_, a), Self::Scalar(_, b)) => a.cmp(b),
+                (Self::Boolean(a), Self::Boolean(b)) => a.cmp(b),
+                (Self::Pointer(a), Self::Pointer(b)) => a.cmp(b),
+                (Self::Algebraic(a), Self::Algebraic(b)) => a.cmp(b),
+                (Self::Native(a), Self::Native(b)) => a.cmp(b),
+                _ => unreachable!("same program value rank"),
+            })
+    }
+}
+
+/// Native ProgramValue variant order. Numeric local keys live in the separate
+/// machine-observation family; numeric memory cells keep native structural keys.
 fn native_rank(value: &ProgramValue) -> u8 {
     match value {
         ProgramValue::PointerInteger(_) => 0,
@@ -288,61 +425,6 @@ fn native_rank(value: &ProgramValue) -> u8 {
         ProgramValue::Parameter(_) => 16,
     }
 }
-#[derive(Eq, PartialEq)]
-pub(super) enum NativeStorageIdentity<'a> {
-    Boolean(&'a BooleanStorageKey),
-    Float32(&'a FloatStorageKey),
-    Float64(&'a FloatStorageKey),
-    Algebraic(&'a AlgebraicStorageKey),
-    Pointer(&'a PointerStorageKey),
-    Value(&'a ProgramValue),
-}
-impl NativeStorageIdentity<'_> {
-    fn rank(&self) -> u8 {
-        match self {
-            Self::Boolean(_) => 2,
-            Self::Float32(_) => 13,
-            Self::Float64(_) => 14,
-            Self::Algebraic(_) => 16,
-            Self::Pointer(_) => 15,
-            Self::Value(v) => native_rank(v),
-        }
-    }
-}
-impl Hash for NativeStorageIdentity<'_> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.rank().hash(state);
-        match self {
-            Self::Boolean(v) => v.hash(state),
-            Self::Float32(v) | Self::Float64(v) => v.hash(state),
-            Self::Algebraic(v) => v.hash(state),
-            Self::Pointer(v) => v.hash(state),
-            Self::Value(v) => v.hash(state),
-        }
-    }
-}
-impl PartialOrd for NativeStorageIdentity<'_> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-impl Ord for NativeStorageIdentity<'_> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.rank()
-            .cmp(&other.rank())
-            .then_with(|| match (self, other) {
-                (Self::Boolean(a), Self::Boolean(b)) => a.cmp(b),
-                (Self::Float32(a), Self::Float32(b)) | (Self::Float64(a), Self::Float64(b)) => {
-                    a.cmp(b)
-                }
-                (Self::Algebraic(a), Self::Algebraic(b)) => a.cmp(b),
-                (Self::Pointer(a), Self::Pointer(b)) => a.cmp(b),
-                (Self::Value(a), Self::Value(b)) => a.cmp(b),
-                _ => unreachable!("each migrated family uses its projection"),
-            })
-    }
-}
-
 impl Drop for ConditionStorageKey {
     fn drop(&mut self) {
         fn take(key: &mut ConditionStorageKey, pending: &mut Vec<ConditionStorageKey>) {
@@ -366,16 +448,15 @@ impl Drop for ConditionStorageKey {
 }
 
 mod pointer;
-pub(in crate::kernel) use pointer::compare_offsets;
 pub(in crate::kernel) use pointer::for_root as pointer_for_root;
-pub(in crate::kernel) use pointer::{OffsetKey, PointerStorageKey};
+pub(in crate::kernel) use pointer::{AddressKey, OffsetKey, PointerStorageKey, offset_for_root};
 
 mod algebraic;
 pub(in crate::kernel) use algebraic::AlgebraicStorageKey;
 pub(in crate::kernel) use algebraic::for_root as algebraic_for_root;
 
-mod float;
-pub(in crate::kernel) use float::FloatStorageKey;
+mod scalar;
+pub(in crate::kernel) use scalar::ScalarStorageKey;
 
 thread_local! {
     // Syntax is immutable across state restores, but a fresh verification must
@@ -384,7 +465,7 @@ thread_local! {
 }
 pub(in crate::kernel) fn clear_session_key_memos() {
     CONDITION_KEYS.with(|keys| keys.borrow_mut().clear());
-    float::clear_session_key_memos();
+    scalar::clear_session_key_memos();
     algebraic::clear_session_key_memos();
     pointer::clear_session_key_memos();
 }
@@ -420,6 +501,6 @@ pub(in crate::kernel) fn condition_for_root(source: &KernelTerm) -> ConditionSto
     })
 }
 
-pub(in crate::kernel) fn float_for_root(root: &KernelTerm) -> FloatStorageKey {
-    float::for_root(root)
+pub(in crate::kernel) fn scalar_for_root(root: &KernelTerm) -> ScalarStorageKey {
+    scalar::for_root(root)
 }

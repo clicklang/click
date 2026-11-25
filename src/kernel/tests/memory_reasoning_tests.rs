@@ -8063,7 +8063,7 @@ fn kept_call_frame_with_loaded_owner_survives_equivalent_input_lineages() {
     let address = Address::symbolic(Variable(953_001));
     let memory = SymbolicMemory::new();
     let ProgramValue::Pointer(value) =
-        memory.symbolic_pointer_load(&address, ProgramType::Int32Pointer)
+        memory.symbolic_pointer_load(None, &address, ProgramType::Int32Pointer)
     else {
         panic!("a typed pointer read");
     };

@@ -8,9 +8,10 @@ function black(w: Walk) -> int32 decreases w {
 theorem unfold_an_introduced_integer(rest: Walk) {
     requires black(rest) == 1;
     ensures forall (d: Integer) { black(Walk::At(d, rest)) == 1 } by {
-        intro();
-        unfold(black(Walk::At(d, rest)));
-        close();
+        intro() {
+            unfold(black(Walk::At(d, rest)));
+            close();
+        }
     }
 }
 theorem unfold_a_parameter(d: Integer, rest: Walk) {

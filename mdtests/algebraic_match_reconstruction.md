@@ -7,8 +7,9 @@ theorem written(p: Packet) {
     ensures forall (unused: Integer) {
         (match p { Packet::Empty => Packet::Empty, Packet::Value(v) => Packet::Value(v), }) == p
     } by {
-        intro();
-        close();
+        intro() {
+            close();
+        }
     }
 }
 

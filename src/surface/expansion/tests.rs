@@ -1,5 +1,25 @@
 use super::*;
 
+#[test]
+fn verification_only_fact_transport_has_no_source_expansion() {
+    let proposition = ClickProposition::Defined {
+        expression: ContractExpression::IntegerLiteral("0".into()),
+    };
+    let tactics = [ProofTactic::CompatibilityFactTransport {
+        source: proposition.clone(),
+        target: proposition,
+        premises: Vec::new(),
+    }];
+    let rendered = printing::format_partial_tactic_sequence(&tactics);
+    assert!(!rendered.contains("transport("), "{rendered}");
+    let error = require_surface_expansion(rendered).unwrap_err();
+    assert!(
+        error
+            .message()
+            .contains("a legacy frame check has no ordinary proof")
+    );
+}
+
 // Read proof fixtures at runtime, as the markdown harness does, so editing a
 // fixture does not invalidate the Rust test executable.
 fn mdtest_markdown(name: &str) -> String {
@@ -623,9 +643,10 @@ int32 shadowed_c(int32 x) {
     ensures forall (x: int32) { x == x };
 } by {
     step_until(function.exit);
-    intro();
-    have outer.x == 0 by { close(); }
-    close();
+    intro() {
+        have outer.x == 0 by { close(); }
+        close();
+    }
 }
 "#;
     let sources = [("shadowed.c", c_source)];
@@ -634,10 +655,7 @@ int32 shadowed_c(int32 x) {
     let expanded =
         expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("selected smart tactic should expand");
-    assert!(
-        expanded.contains("have outer.x == 0 by { close(); }"),
-        "{expanded}"
-    );
+    assert!(expanded.contains("have outer.x == 0 by {"), "{expanded}");
     assert!(expanded.contains("outer.x"), "{expanded}");
     verify_c_sources(&expanded, &sources).expect("expanded C proof must reverify");
 
@@ -657,10 +675,12 @@ int32 shadowed_twice_c(int32 x) {
     ensures forall (x: int32) { forall (x: int32) { x == x } };
 } by {
     step_until(function.exit);
-    intro();
-    intro();
-    have outer.outer.x == 0 by { close(); }
-    close();
+    intro() {
+        intro() {
+            have outer.outer.x == 0 by { close(); }
+            close();
+        }
+    }
 }
 "#;
     let sources = [("shadowed.c", c_source)];
@@ -670,7 +690,7 @@ int32 shadowed_twice_c(int32 x) {
         expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("selected smart tactic should expand");
     assert!(
-        expanded.contains("have outer.outer.x == 0 by { close(); }"),
+        expanded.contains("have outer.outer.x == 0 by {"),
         "{expanded}"
     );
     verify_c_sources(&expanded, &sources).expect("expanded nested C proof must reverify");
@@ -683,10 +703,12 @@ fn tactic_expansion_can_name_two_levels_of_shadowed_binders() {
 theorem shadowed_twice(x: int32) {
     requires x == 0;
     ensures forall (x: int32) { forall (x: int32) { x == x } } by {
-        intro();
-        intro();
-        have outer.outer.x == 0 by { close(); }
-        close();
+        intro() {
+            intro() {
+                have outer.outer.x == 0 by { close(); }
+                close();
+            }
+        }
     }
 }
 "#;
@@ -2013,7 +2035,7 @@ int32 identity(int32 x) {
     )
     .expect("grouped solve should expand");
 
-    assert!(expanded.contains("intro();"), "{expanded}");
+    assert!(expanded.contains("intro()"), "{expanded}");
     assert!(expanded.ends_with("\n    close();\n}\n"), "{expanded}");
     verify_c_sources(&expanded, &sources)
         .expect("the second solve should still have its goal after expansion");
@@ -3091,7 +3113,7 @@ theorem set_one_is_make_positive() {
     let theorem = &expanded[expanded
         .find("theorem set_one_is_make_positive")
         .expect("expanded source should retain the theorem")..];
-    assert!(theorem.contains("intro();"), "{theorem}");
+    assert!(theorem.contains("intro()"), "{theorem}");
     assert!(!theorem.contains("extract("), "{theorem}");
     assert!(!theorem.contains("solve();"), "{theorem}");
     verify_c_sources(&expanded, &sources)

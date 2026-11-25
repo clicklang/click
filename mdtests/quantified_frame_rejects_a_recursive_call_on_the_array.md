@@ -35,9 +35,12 @@ void zap(int32 *v, int32 n) {
     mark before_call;
     step();
     have forall (k: int32) { 0 <= k and to_integer(k) < to_integer(n - 1) implies v[k] == at(before_call, v[k]) } by {
-        intro(); intro();
-        have separate(statement(2).footprint, memory(v[k])) by { close(); }
-        preserve(memory(v[k]), statement(2));
+        intro() {
+            intro() {
+                have separate(statement(2).footprint, memory(v[k])) by { close(); }
+                preserve(memory(v[k]), statement(2));
+            }
+        }
     }
 }
 ```

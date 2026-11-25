@@ -57,6 +57,7 @@ fn source_contract_application(name: &str, arguments: &[ContractExpression]) -> 
 /// Click source that parses back. Every spelling is chosen by its caller;
 /// no output depends on who else is printing.
 /// Diagnostic spelling for a kernel conjunction without complete Surface labels.
+pub(super) const COMPATIBILITY_FACT_TRANSPORT: &str = "<verification-only fact transport>";
 pub(super) const COMPATIBILITY_NORMALIZATION: &str = "<verification-only normalization>";
 pub(super) const UNRAISED_CONJUNCT: &str = "<unraised conjunct>";
 
@@ -1395,6 +1396,9 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                 source_click_proposition(target)
             ),
         ),
+        ProofTactic::CompatibilityFactTransport { .. } => {
+            line(output, &prefix, COMPATIBILITY_FACT_TRANSPORT)
+        }
         ProofTactic::TransportUsing {
             source,
             target,

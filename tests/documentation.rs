@@ -885,6 +885,7 @@ const SIDECAR_LIBRARY_FILES: &[(&str, &str)] = &[
     ("library/cpp/", "cpp"),
     ("library/rust/core.interface.click", "rust"),
     ("library/rust/integers.interface.click", "rust"),
+    ("library/rust/str.interface.click", "rust"),
 ];
 
 fn library_identity(path: &Path) -> String {
@@ -1421,7 +1422,7 @@ fn tactic_form_inventory_is_bidirectional() {
             "transport" => surface == "`transport(P, Q)`",
             "transport-using" => surface == "`transport(P, Q) using { R; ... }`",
             "instantiate" => surface == format!("`{}`", form.syntax),
-            "intro" => surface == "`intro()`",
+            "intro" => surface == "`intro() { ... }`",
             "close" | "solve" => surface == format!("`{}`", form.syntax),
             "close-using" => surface == "`close() using { P; ... }`",
             "unfold-function" => surface == "`unfold(function(args))`",

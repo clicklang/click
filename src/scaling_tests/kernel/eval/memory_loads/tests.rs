@@ -1098,6 +1098,7 @@ fn cached_pointer_value_keeps_its_defining_coordinates_and_scales() {
                 &context,
                 None,
                 LoadPurpose::Program,
+                None,
             )
             .expect("selected pointer cache")
         };
@@ -1122,6 +1123,7 @@ fn cached_pointer_value_keeps_its_defining_coordinates_and_scales() {
                 &context,
                 None,
                 LoadPurpose::Program,
+                None,
             )
             .is_none(),
             "an arbitrary scalar must not gain pointer identity"
@@ -1505,6 +1507,7 @@ fn cached_raw_pointer_names_ignore_unrelated_read_definitions() {
         let origin = intern_memory_ref(&base);
         for i in 0..size {
             base.symbolic_pointer_load(
+                None,
                 &Address::symbolic(Variable(990_000 + i)),
                 ProgramType::Int32Pointer,
             );
@@ -1519,8 +1522,8 @@ fn cached_raw_pointer_names_ignore_unrelated_read_definitions() {
         };
         let field_a = a.clone().offset_by_bytes(8);
         let field_b = b.clone().offset_by_bytes(8);
-        let first = base.symbolic_pointer_load(&field_a, ProgramType::Int32Pointer);
-        let second = base.symbolic_pointer_load(&field_b, ProgramType::Int32Pointer);
+        let first = base.symbolic_pointer_load(None, &field_a, ProgramType::Int32Pointer);
+        let second = base.symbolic_pointer_load(None, &field_b, ProgramType::Int32Pointer);
         let slot_a = Address {
             base: "local:raw-a".into(),
             offset: AddressOffset::Constant(0),
@@ -1659,6 +1662,7 @@ fn querying_an_opaque_word_pointer_does_not_search_unrelated_call_resources() {
         let value = complete_loaded_word(
             ProgramValue::UInt64(MachineTerm::Variable(Variable(989_705))),
             &memory,
+            None,
             &word,
         );
         assert!(matches!(value, ProgramValue::PointerInteger(_)));
@@ -1898,12 +1902,12 @@ fn typed_pointer_read_store_frames_use_the_selected_edge_and_owners() {
                     .expect("complete owned frame");
                 assert_eq!(source.read_identity(), before.read_identity());
                 let ProgramValue::Pointer(before_value) =
-                    source.symbolic_pointer_version_load(&slot, ProgramType::Int64Pointer)
+                    source.symbolic_pointer_version_load(None, &slot, ProgramType::Int64Pointer)
                 else {
                     unreachable!()
                 };
                 let ProgramValue::Pointer(after_value) =
-                    memory.symbolic_pointer_version_load(&slot, ProgramType::Int64Pointer)
+                    memory.symbolic_pointer_version_load(None, &slot, ProgramType::Int64Pointer)
                 else {
                     unreachable!()
                 };
@@ -2136,6 +2140,7 @@ fn symbolic_pointer_observations_scale_with_selected_cells() {
                 let address = base.offset_by_bytes(i * 8);
                 let value = symbolic_storage_cell_value(
                     &memory,
+                    None,
                     &address,
                     ProgramType::Int32Pointer,
                     false,

@@ -555,6 +555,35 @@ is one PR, measured with the gate harnesses, the raise-lower audit and
 5. **Abstract bytes**: uninitialized bytes and provenance fragments.
 6. **`loaded_value`** and the remaining scalar load variables go with the
    legacy walk.
+   Until then, a memory-named pointer load records its read site wherever
+   its builder has a point in reach (`design/point-named-reads.md`,
+   stage 1): `Address::loaded_value_at` and `loaded_source_value_at` for a
+   read of the point's own memory or its source, and
+   `Address::loaded_value_read_at(memory, site, cell)` for a read of
+   another state made there (an older node a walk found the bytes
+   unchanged from, or a working copy of the site's memory). The pointer-cell
+   producers take the site as an `Option<&ProgramPoint>`, as the scalar
+   `symbolic_*_load`s do: `Address::canonical_read`, `version_read_at` and
+   `version_read_value`, `SymbolicMemory::symbolic_pointer_load` and
+   `symbolic_pointer_version_load`, `symbolic_storage_cell_value`,
+   `Pointer::from_read_at` (the complete read's domain origin), the graph's
+   read definitions (`register_pointer_read_definition_at`,
+   `register_pointer_read_at`), and the bridge
+   `legacy_pointer_word_read(memory, site, cell)`, whose callers the
+   ratchet still counts. The site is no part of the load's identity
+   (`Load::at` interns by read key and hashes a legacy point by memory), so
+   no term changes (`eval/memory_loads/read_site_tests.rs`); the interner
+   keeps the first point it saw, so a load first built without a site keeps
+   none. Builders with no point leave the load siteless rather than invent
+   one: the frame transports (`transport_framed_*`, the shared pointer
+   transport), which carry only the post-state memory;
+   `canonical_loaded_value`, whose one caller holds an `ExecutionState`
+   (asking it for `program_point()` can mint a pending point, which would
+   move later point ids); retained definitions that keep a memory, not a
+   point (`typed_pointer_read_definitions`, a binding's
+   `observed_pointer_read`, `retained_pointer_read_application`); the
+   cache-only `cached_symbolic_storage_cell_value`; and the post-`free`
+   memory of a heap free, which has no point yet.
 7. **Untyped `Pointer`.** Once loads and stores state their own types, remove
    `program_type` from `Pointer` and `KernelPointer`. Today about 250 sites
    read it; all have an operation or declaration in reach except untyped

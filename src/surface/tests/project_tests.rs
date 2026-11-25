@@ -534,11 +534,8 @@ int32 box_pipeline(struct box* owner, int32 data[], int32 value) {
     .expect("an explicit call-entry state should check with an owned resource");
 }
 
-/// A `close() using` premise that equates one expression across two call
-/// transitions (`owner->data == at(region(2).entry, owner->data)`) names
-/// one unwritten cell twice: terms are canonical at creation, so both sides
-/// are the same load variable and the premise is reflexive. The expansion
-/// needs no state transport and rewrites from the remaining premise.
+/// Restricted solve proves the pointer equality through the selected call
+/// entry program points, retaining the equality rewrites in the certificate.
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.6s in the parallel gate"]
@@ -627,7 +624,7 @@ int32 box_pipeline(struct box* owner, int32 data[]) {
             at(region(2).entry, owner->data) == data;
         }
     }
-    step();
+    step_until(function.exit);
     close();
 }
 "#;
@@ -642,12 +639,29 @@ int32 box_pipeline(struct box* owner, int32 data[]) {
 
     let selected = click_source.find("have owner->data == data by {").unwrap();
     let position = expansion::position_at_offset(click_source, selected);
-    let error = expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
-        .expect_err("the state-bridged restricted solve has no ordinary certificate yet");
-    assert!(
-        error.message().contains("used legacy normalization"),
-        "{error:?}"
-    );
+    let expanded =
+        expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
+            .expect("expand restricted solve at the named program points");
+    for rewrite in [
+        "rewrite(owner->data, at(region(3).entry, owner->data));",
+        "rewrite(at(region(3).entry, owner->data), at(region(2).entry, owner->data));",
+    ] {
+        assert!(expanded.contains(rewrite), "{expanded}");
+    }
+    assert!(!expanded.contains("normalize("), "{expanded}");
+
+    let expanded = expand_c_claim_source(
+        click_source,
+        &sources,
+        "box_pipeline",
+        expansion::ContractProofClaim::Grouped,
+    )
+    .expect("expand the contract with its remaining execution steps");
+    assert!(!expanded.contains("normalize("), "{expanded}");
+    crate::surface::check_audit_claim("box_pipeline.contract", true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
 }
 
 #[test]

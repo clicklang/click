@@ -73,7 +73,7 @@ impl<'a> FloatOperandView<'a> {
             Self::Native(_, MachineTerm::Constant { format, bits }) => Some((*format, *bits)),
             Self::Shared(root) => match root.node() {
                 KernelTermNode::FloatLiteral { carrier, bits } => Some((*carrier, *bits)),
-                KernelTermNode::Legacy(_) | KernelTermNode::CallArgument(_) => {
+                KernelTermNode::ObservedArgument(_) | KernelTermNode::CallArgument(_) => {
                     Self::from_value(match root.written_argument()? {
                         PureFunctionArgument::Value(value) => value,
                         _ => return None,
@@ -95,7 +95,7 @@ impl<'a> FloatOperandView<'a> {
             Self::Native(_, MachineTerm::Variable(variable)) => Some(*variable),
             Self::Shared(root) => match root.node() {
                 KernelTermNode::Variable(variable) => Some(*variable),
-                KernelTermNode::Legacy(_) | KernelTermNode::CallArgument(_) => {
+                KernelTermNode::ObservedArgument(_) | KernelTermNode::CallArgument(_) => {
                     Self::from_value(match root.written_argument()? {
                         PureFunctionArgument::Value(value) => value,
                         _ => return None,
@@ -118,7 +118,8 @@ impl<'a> FloatOperandView<'a> {
                 | KernelTermNode::Variable(_) => {
                     Self::from_value(root.float_native_value()?)?.native_compat()
                 }
-                KernelTermNode::Legacy(_) | KernelTermNode::CallArgument(_) => {
+                KernelTermNode::ImportedScalar(input) => Some(input.value()),
+                KernelTermNode::ObservedArgument(_) | KernelTermNode::CallArgument(_) => {
                     Self::from_value(match root.written_argument()? {
                         PureFunctionArgument::Value(value) => value,
                         _ => return None,
@@ -150,7 +151,7 @@ impl KernelTermImport {
         } else if let Some(variable) = view.variable() {
             KernelTerm::variable(ty, variable)
         } else {
-            KernelTerm::legacy(PureFunctionArgument::Value(format.value(term.clone())))
+            KernelTerm::imported_scalar(format.program_type(), term)
         }
     }
 }
@@ -260,7 +261,7 @@ mod tests {
                 else_term: Box::new(MachineTerm::Variable(Variable(999938))),
             };
             let root = KernelTermImport::default().float(format, &native);
-            assert!(matches!(root.node(), KernelTermNode::Legacy(_)));
+            assert!(matches!(root.node(), KernelTermNode::ImportedScalar(_)));
             assert_eq!(
                 KernelTermExport::float(&root).unwrap(),
                 format.value(native)
@@ -324,6 +325,7 @@ impl KernelTerm {
                             bits: *bits,
                         })
                     }
+                    KernelTermNode::ImportedScalar(input) => format.value(input.value().clone()),
                     KernelTermNode::Variable(variable) => {
                         format.value(MachineTerm::Variable(*variable))
                     }

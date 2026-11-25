@@ -405,6 +405,12 @@ fn local_identities(file: &ClickFile) -> Vec<DeclarationIdentity> {
             DeclarationIdentity::ProgramFunction(definition.signature().name().to_string())
         }))
         .chain(
+            file.c_library_values
+                .keys()
+                .cloned()
+                .map(DeclarationIdentity::CLibraryValue),
+        )
+        .chain(
             file.tactic_definitions()
                 .iter()
                 .map(|definition| DeclarationIdentity::Tactic(definition.name().to_string())),
@@ -450,6 +456,7 @@ fn merge_modules(
         imports: Vec::new(),
         library_imports: Vec::new(),
         verifying_sources: Vec::new(),
+        c_library_values: BTreeMap::new(),
         c_target: None,
         thread_runtime: Default::default(),
         algebraic_type_definitions: Vec::new(),
@@ -531,6 +538,12 @@ fn merge_modules(
             merged.imports = local.imports.clone();
             merged.verifying_sources = local.verifying_sources.clone();
         }
+        merged.c_library_values.extend(
+            local
+                .c_library_values
+                .iter()
+                .map(|(name, value)| (name.clone(), value.clone())),
+        );
         merged
             .contract_definitions
             .extend(local.contract_definitions.iter().cloned());
@@ -1324,6 +1337,60 @@ int32 caller(int32 x) { requires x >= 0; ensures result == x; }
         };
         assert_eq!(assumption.name, "external_identity");
         assert_eq!(assumption.family, ModelFamily::Extern);
+    }
+
+    #[test]
+    fn c_interface_constants_link_as_stable_values() {
+        let interface = r#"FILE *const stdout;
+const int32 library_status;
+FILE* library_output() { ensures result == stdout; }
+"#;
+        let native = r#"typedef struct stream { int count; } FILE;
+extern FILE *const stdout;
+extern const int library_status;
+extern FILE *library_output(void);
+FILE *output(void) { FILE *copy = stdout; return copy; }
+int status(void) { return library_status; }
+FILE *via_library(void) { return library_output(); }
+"#;
+        let sidecar = r#"verifying "caller.c";
+FILE* output() { ensures result == stdout; }
+int32 status() { ensures result == library_status; }
+FILE* via_library() { ensures result == stdout; }
+"#;
+        let verify = |interface: &str, native: &str, sidecar: &str| {
+            let project = ClickProject::new(
+                "caller.click",
+                [
+                    ClickModuleSource::new("values.interface.click", interface, []),
+                    ClickModuleSource::new(
+                        "caller.click",
+                        format!("import \"values.interface.click\";\n{sidecar}"),
+                        ["values.interface.click".to_string()],
+                    ),
+                ],
+            );
+            let inputs = ProgramInputs::Bundle(vec![("caller.c", native)]);
+            let (summary, result) = verify_project_with_summary(&project, &inputs)?;
+            result?;
+            Ok::<_, ClickError>(summary)
+        };
+        let summary = verify(interface, native, sidecar).unwrap_or_else(|error| panic!("{error}"));
+        assert!(summary.assumptions["output"].iter().any(|assumption| {
+            assumption.name == "stdout" && assumption.family == ModelFamily::CLibrary
+        }));
+        let nonnull = sidecar.replace("result == stdout", "result != 0");
+        assert!(verify(interface, native, &nonnull).is_err());
+        let mutable = native.replace("FILE *const stdout", "FILE *stdout");
+        let error = verify(interface, &mutable, sidecar).expect_err("mutable C object");
+        assert!(
+            error
+                .message()
+                .contains("does not match the const declaration"),
+            "{error}"
+        );
+        let error = verify("", native, sidecar).expect_err("missing library declaration");
+        assert!(error.message().contains("but has no definition"), "{error}");
     }
 
     #[test]

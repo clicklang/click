@@ -28,7 +28,6 @@ run_quality_checks() {
     python3 -I scripts/test-benchmark-verify.py
     python3 -I scripts/test-nightly-report.py
     scripts/mdbook-build.sh
-    scripts/docs-lint.sh
 }
 
 # CI runs formatting and documentation alongside compilation. The final

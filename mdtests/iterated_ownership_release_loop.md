@@ -96,46 +96,48 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
             have forall (k: int32) {
                 i <= k and k < end implies occupied[k] == 0
             } by {
-                intro();
-                intro();
-                if i < k {
-                    have to_integer(i + 1) <= to_integer(k);
-                    have n <= k by {
-                        rewrite(n, at(opened, i));
-                        close();
+                intro() {
+                    intro() {
+                        if i < k {
+                            have to_integer(i + 1) <= to_integer(k);
+                            have n <= k by {
+                                rewrite(n, at(opened, i));
+                                close();
+                            }
+                            have at(opened, occupied[k]) == 0 by {
+                                instantiate(forall (k: int32) {
+                                    n <= k and k < end implies at(opened, occupied[k]) == 0
+                                }, k);
+                                close();
+                            }
+                            have 0 < k;
+                            have 0 <= k;
+                            have k < capacity;
+                            have i < capacity;
+                            have separate(loop(0).statement(0).footprint, memory(occupied[k])) by {
+                                close() using { };
+                            }
+                            have at(loop(0).statement(0).exit, occupied[k]) == at(opened, occupied[k]) by {
+                                preserve(memory(occupied[k]), loop(0).statement(0));
+                            }
+                            have i != k by { close() using { i < k; }; }
+                            have separate(memory(occupied[i]), memory(occupied[k])) by {
+                                apply(click::separation::separate_elements(occupied, i, k));
+                            }
+                            have separate(loop(0).statement(1).footprint, memory(occupied[k])) by {
+                                close() using { separate(memory(occupied[i]), memory(occupied[k])); };
+                            }
+                            have occupied[k] == at(loop(0).statement(1).entry, occupied[k]) by {
+                                preserve(memory(occupied[k]), loop(0).statement(1));
+                            }
+                            close();
+                        } else {
+                            have i == k;
+                            have k == i;
+                            rewrite(k, i);
+                            close();
+                        }
                     }
-                    have at(opened, occupied[k]) == 0 by {
-                        instantiate(forall (k: int32) {
-                            n <= k and k < end implies at(opened, occupied[k]) == 0
-                        }, k);
-                        close();
-                    }
-                    have 0 < k;
-                    have 0 <= k;
-                    have k < capacity;
-                    have i < capacity;
-                    have separate(loop(0).statement(0).footprint, memory(occupied[k])) by {
-                        close() using { };
-                    }
-                    have at(loop(0).statement(0).exit, occupied[k]) == at(opened, occupied[k]) by {
-                        preserve(memory(occupied[k]), loop(0).statement(0));
-                    }
-                    have i != k by { close() using { i < k; }; }
-                    have separate(memory(occupied[i]), memory(occupied[k])) by {
-                        apply(click::separation::separate_elements(occupied, i, k));
-                    }
-                    have separate(loop(0).statement(1).footprint, memory(occupied[k])) by {
-                        close() using { separate(memory(occupied[i]), memory(occupied[k])); };
-                    }
-                    have occupied[k] == at(loop(0).statement(1).entry, occupied[k]) by {
-                        preserve(memory(occupied[k]), loop(0).statement(1));
-                    }
-                    close();
-                } else {
-                    have i == k;
-                    have k == i;
-                    rewrite(k, i);
-                    close();
                 }
             }
             have at(opened, i) <= end by close();

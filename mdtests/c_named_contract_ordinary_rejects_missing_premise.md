@@ -19,11 +19,12 @@ theorem lift(callback: int32 (*)(int32)) {
     ensures Target(callback) by {
         unfold(Source(callback));
         unfold(Target(callback));
-        intro();
-        have result == x implies result >= 0 by {
-            apply(nonnegative_equal(x, result));
+        intro() {
+            have result == x implies result >= 0 by {
+                apply(nonnegative_equal(x, result));
+            }
+            close();
         }
-        close();
     }
 }
 ```

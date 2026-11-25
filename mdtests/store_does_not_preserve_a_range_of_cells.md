@@ -24,9 +24,11 @@ void mark_one(int32 a[], int32 n, int32 i) {
     have forall (k: int32) {
         0 <= k and k < n implies a[k] == at(entry, a[k])
     } by {
-        intro();
-        intro();
-        close();
+        intro() {
+            intro() {
+                close();
+            }
+        }
     }
 }
 ```

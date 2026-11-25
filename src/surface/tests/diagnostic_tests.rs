@@ -184,7 +184,7 @@ fn implicit_tail_handles_unsigned_statement_cases_with_tracing() {
 fn unclosed_have_script_retains_its_remaining_goal_and_introduced_premise() {
     let source = r#"verifying "f.c";
         int32 f(int32 x) { ensures result == x; } by {
-            have x == 42 implies x == 43 by { intro(); }
+            have x == 42 implies x == 43 by { intro() {} }
             step_until(function.exit); close();
         }"#;
     with_proof_trace("f", || {
@@ -199,7 +199,7 @@ fn unclosed_have_script_retains_its_remaining_goal_and_introduced_premise() {
     });
     let corrected = source
         .replace("x == 43", "x == 42")
-        .replace("intro();", "intro(); close();");
+        .replace("intro() {}", "intro() { close(); }");
     verify_c_sources(&corrected, &[("f.c", "int f(int x) { return x; }")]).unwrap();
 }
 
@@ -207,7 +207,7 @@ fn unclosed_have_script_retains_its_remaining_goal_and_introduced_premise() {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_00")]
 fn unclosed_theorem_script_retains_its_remaining_goal_and_introduced_premise() {
     let source = r#"theorem unfinished(x: int32) {
-        ensures x == 42 implies x == 43 by { intro(); }
+        ensures x == 42 implies x == 43 by { intro() {} }
     }"#;
     with_proof_trace("unfinished", || {
         let error = verify_c_sources(source, &[]).unwrap_err();
@@ -220,7 +220,7 @@ fn unclosed_theorem_script_retains_its_remaining_goal_and_introduced_premise() {
     });
     let corrected = source
         .replace("x == 43", "x == 42")
-        .replace("intro();", "intro(); close();");
+        .replace("intro() {}", "intro() { close(); }");
     verify_c_sources(&corrected, &[]).unwrap();
 }
 

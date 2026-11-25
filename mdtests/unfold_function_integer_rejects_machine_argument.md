@@ -4,9 +4,10 @@
 function machine(x: int32) -> int32 { x }
 theorem rejects_integer_machine_argument() {
     ensures forall (d: Integer) { d == d } by {
-        intro();
-        unfold(machine(d));
-        normalize();
+        intro() {
+            unfold(machine(d));
+            normalize();
+        }
     }
 }
 ```

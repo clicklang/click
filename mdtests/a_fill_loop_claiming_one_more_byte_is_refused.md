@@ -33,39 +33,41 @@ void fill(uint8* bytes, uint64 length, uint8 value) {
             step();
             have i <= length;
             have forall (k: uint64) { k < i implies bytes[k] == value } by {
-                intro();
-                intro();
-                if k < at(before, i) {
-                    instantiate(forall (k: uint64) { k < at(before, i) implies at(before, bytes[k]) == at(before, value) }, k);
-                    have at(before, i) != k by {
-                        close() using { k < at(before, i); };
+                intro() {
+                    intro() {
+                        if k < at(before, i) {
+                            instantiate(forall (k: uint64) { k < at(before, i) implies at(before, bytes[k]) == at(before, value) }, k);
+                            have at(before, i) != k by {
+                                close() using { k < at(before, i); };
+                            }
+                            have at(before, separate(memory(bytes[i]), memory(bytes[k]))) by {
+                                apply(separation::separate_elements(bytes, at(before, i), k));
+                            }
+                            have separate(loop(0).statement(0).footprint, memory(bytes[k])) by {
+                                close();
+                            }
+                            have at(loop(0).statement(0).exit, bytes[k]) == at(before, bytes[k]) by {
+                                preserve(memory(bytes[k]), loop(0).statement(0));
+                            }
+                            have bytes[k] == at(loop(0).statement(0).exit, bytes[k]) by { close(); }
+                            have bytes[k] == at(before, bytes[k]) by {
+                                close();
+                            }
+                            have bytes[k] == value by {
+                                rewrite(bytes[k], at(before, bytes[k]));
+                                close();
+                            }
+                            close();
+                        } else {
+                            have k < at(before, i) + 1;
+                            have k <= at(before, i) by {
+                                close() using { k < at(before, i) + 1; };
+                            }
+                            have k == at(before, i);
+                            rewrite(k, at(before, i));
+                            close();
+                        }
                     }
-                    have at(before, separate(memory(bytes[i]), memory(bytes[k]))) by {
-                        apply(separation::separate_elements(bytes, at(before, i), k));
-                    }
-                    have separate(loop(0).statement(0).footprint, memory(bytes[k])) by {
-                        close();
-                    }
-                    have at(loop(0).statement(0).exit, bytes[k]) == at(before, bytes[k]) by {
-                        preserve(memory(bytes[k]), loop(0).statement(0));
-                    }
-                    have bytes[k] == at(loop(0).statement(0).exit, bytes[k]) by { close(); }
-                    have bytes[k] == at(before, bytes[k]) by {
-                        close();
-                    }
-                    have bytes[k] == value by {
-                        rewrite(bytes[k], at(before, bytes[k]));
-                        close();
-                    }
-                    close();
-                } else {
-                    have k < at(before, i) + 1;
-                    have k <= at(before, i) by {
-                        close() using { k < at(before, i) + 1; };
-                    }
-                    have k == at(before, i);
-                    rewrite(k, at(before, i));
-                    close();
                 }
             }
         }
@@ -73,14 +75,16 @@ void fill(uint8* bytes, uint64 length, uint8 value) {
     step_until(function.exit);
     have at(loop(0).exit, i) == length;
     have forall (k: uint64) { k < length implies bytes[k] == value } by {
-        intro();
-        intro();
-        have k < at(loop(0).exit, i) by {
-            rewrite(at(loop(0).exit, i), length);
-            close();
+        intro() {
+            intro() {
+                have k < at(loop(0).exit, i) by {
+                    rewrite(at(loop(0).exit, i), length);
+                    close();
+                }
+                instantiate(forall (k: uint64) { k < at(loop(0).exit, i) implies at(loop(0).exit, bytes[k]) == at(loop(0).exit, value) }, k);
+                close();
+            }
         }
-        instantiate(forall (k: uint64) { k < at(loop(0).exit, i) implies at(loop(0).exit, bytes[k]) == at(loop(0).exit, value) }, k);
-        close();
     }
     close();
     close();

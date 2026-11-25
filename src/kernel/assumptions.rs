@@ -84,7 +84,9 @@ pub(in crate::kernel) use memory_reasoning::parameter_partition_root;
 pub(in crate::kernel) use memory_reasoning::parameter_partition_variable;
 pub(in crate::kernel) use memory_reasoning::read_candidate_byte_width;
 pub(in crate::kernel) use memory_reasoning::signed_byte_sum_is_nonwrapping_views;
-pub(in crate::kernel) use memory_reasoning::{AccessExtent, access_extent_of_value};
+pub(in crate::kernel) use memory_reasoning::{
+    AccessExtent, access_extent_of_type, access_extent_of_value,
+};
 pub(in crate::kernel) use memory_reasoning::{
     frame_composite_definitions, owned_instances_naming_access_base,
 };
@@ -118,8 +120,16 @@ fn address_bases_equal_with_load_atoms(
             // The rule compares integer reads; a pointer load reaches it
             // through the one legacy bridge (`legacy_pointer_word_read`).
             (AddressBase::Load(a), AddressBase::Load(b)) => loads_match(
-                &crate::kernel::legacy_pointer_word_read(a.point().shared_memory(), a.cell()),
-                &crate::kernel::legacy_pointer_word_read(b.point().shared_memory(), b.cell()),
+                &crate::kernel::legacy_pointer_word_read(
+                    a.point().shared_memory(),
+                    Some(a.point()),
+                    a.cell(),
+                ),
+                &crate::kernel::legacy_pointer_word_read(
+                    b.point().shared_memory(),
+                    Some(b.point()),
+                    b.cell(),
+                ),
             ),
             (AddressBase::Symbolic(_), AddressBase::Symbolic(_)) => {
                 let base = |block: &AddressBase| Address {
@@ -4368,7 +4378,13 @@ impl PureFactContext {
         }
         // The exact proposition was admitted above. The retained producer
         // binding supplies the read descriptor independently of its spelling.
-        self.file_typed_pointer_read(*variable, memory.shared_memory(), address, value);
+        self.file_typed_pointer_read(
+            *variable,
+            memory.shared_memory(),
+            Some(memory),
+            address,
+            value,
+        );
         self
     }
 
@@ -4398,15 +4414,28 @@ impl PureFactContext {
     /// equality queries never search history.
     /// No proposition or read authority is introduced. Checked unions belong
     /// only to this persistent proof context; definitions are unconditional.
+    #[cfg(test)]
     pub(in crate::kernel) fn register_pointer_read(
         &self,
         value: &Address,
         memory: &SharedMemory,
         address: &Address,
     ) {
+        self.register_pointer_read_at(value, memory, None, address);
+    }
+
+    /// [`Self::register_pointer_read`] of a read made at `site`, when the
+    /// producer has one: the reads it names record that site.
+    pub(in crate::kernel) fn register_pointer_read_at(
+        &self,
+        value: &Address,
+        memory: &SharedMemory,
+        site: Option<&ProgramPoint>,
+        address: &Address,
+    ) {
         self.equality_graph
-            .register_pointer_read_definition(value, memory, address);
-        self.register_pointer_read_source(memory, address);
+            .register_pointer_read_definition_at(value, memory, site, address);
+        self.register_pointer_read_source(memory, site, address);
     }
 
     /// Reconcile a retained, checked pointer read with a cached alias value.
@@ -4418,17 +4447,36 @@ impl PureFactContext {
         memory: &SharedMemory,
         address: &Address,
     ) {
-        self.register_pointer_read(value, memory, address);
-        self.register_cached_pointer_read_value(memory, address);
+        self.register_checked_pointer_read_at(value, memory, None, address);
     }
 
-    fn register_cached_pointer_read_value(&self, memory: &SharedMemory, address: &Address) {
+    /// [`Self::register_checked_pointer_read`] of a read made at `site`.
+    pub(in crate::kernel) fn register_checked_pointer_read_at(
+        &self,
+        value: &Address,
+        memory: &SharedMemory,
+        site: Option<&ProgramPoint>,
+        address: &Address,
+    ) {
+        self.register_pointer_read_at(value, memory, site, address);
+        self.register_cached_pointer_read_value(memory, site, address);
+    }
+
+    fn register_cached_pointer_read_value(
+        &self,
+        memory: &SharedMemory,
+        site: Option<&ProgramPoint>,
+        address: &Address,
+    ) {
         let start = crate::kernel::prelude::canonical_load_projection_source(memory, address)
             .unwrap_or_else(|| memory.clone());
         for spelling in self.equality_graph.pointer_spellings(address) {
             if let Some(ProgramValue::Pointer(value)) = start.known_value(&spelling) {
                 self.equality_graph.add_checked_pointer_equality(
-                    &Pointer::new(Address::loaded_value(memory, address), value.program_type()),
+                    &Pointer::new(
+                        Address::loaded_value_read_at(memory, site, address),
+                        value.program_type(),
+                    ),
                     &value,
                 );
                 return;
@@ -4438,11 +4486,16 @@ impl PureFactContext {
 
     /// This rule relates load applications only. An execution value's bridge
     /// remains scoped to its certified binding, including restricted contexts.
-    fn register_pointer_read_source(&self, memory: &SharedMemory, address: &Address) {
+    fn register_pointer_read_source(
+        &self,
+        memory: &SharedMemory,
+        site: Option<&ProgramPoint>,
+        address: &Address,
+    ) {
         if let Some(source) = self.pointer_read_source(memory, address) {
             self.equality_graph.add_checked_pointer_read_equality(
-                &Address::loaded_value(memory, address),
-                &Address::loaded_value(&source, address),
+                &Address::loaded_value_read_at(memory, site, address),
+                &Address::loaded_value_read_at(&source, site, address),
             );
         }
     }
@@ -4501,6 +4554,7 @@ impl PureFactContext {
         &mut self,
         variable: Variable,
         memory: &SharedMemory,
+        site: Option<&ProgramPoint>,
         address: &Address,
         value: &Address,
     ) {
@@ -4523,9 +4577,9 @@ impl PureFactContext {
             .with_inserted(variable, definitions);
         self.content_fingerprint ^= Self::typed_pointer_read_fingerprint(variable, &key, value);
         self.equality_graph
-            .add_equality(value, &Address::loaded_value(memory, address));
-        self.register_pointer_read_source(memory, address);
-        self.register_cached_pointer_read_value(memory, address);
+            .add_equality(value, &Address::loaded_value_read_at(memory, site, address));
+        self.register_pointer_read_source(memory, site, address);
+        self.register_cached_pointer_read_value(memory, site, address);
     }
 
     fn typed_pointer_read_fingerprint(
@@ -5033,7 +5087,15 @@ impl PureFactContext {
                         )),
                     };
                     if self.condition_facts.get(&definition) == Some(&true) {
-                        self.file_typed_pointer_read(*variable, memory, address, pointer_value);
+                        // The filed definition keeps its memory, not the
+                        // point it was read at.
+                        self.file_typed_pointer_read(
+                            *variable,
+                            memory,
+                            None,
+                            address,
+                            pointer_value,
+                        );
                     }
                 }
             }
@@ -10960,7 +11022,12 @@ impl ExecutionPureFact {
         if generated_load_binding_matches_proposition(binding, self.proposition())
             && crate::kernel::eval::typed_pointer_read_variable(value) == Some(*variable)
         {
-            context.register_checked_pointer_read(value, memory.shared_memory(), address);
+            context.register_checked_pointer_read_at(
+                value,
+                memory.shared_memory(),
+                Some(memory),
+                address,
+            );
             if let Some((observed_memory, observed_address)) = observed_pointer_read {
                 context.equality_graph.add_checked_read_equality(
                     value,
@@ -13847,8 +13914,8 @@ mod shared_load_atom_comparison_tests {
         assert_eq!(
             asked.into_inner(),
             vec![(
-                crate::kernel::legacy_pointer_word_read(&memory, &cell),
-                crate::kernel::legacy_pointer_word_read(&memory, &other),
+                crate::kernel::legacy_pointer_word_read(&memory, None, &cell),
+                crate::kernel::legacy_pointer_word_read(&memory, None, &other),
             )]
         );
     }

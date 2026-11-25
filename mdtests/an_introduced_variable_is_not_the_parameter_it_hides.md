@@ -9,9 +9,10 @@ the parameter `y` says nothing about.
 theorem t(y: int32) {
     requires y == 7;
     ensures forall (y: int32) { y == y } by {
-        intro();
-        have y == 7 by { close(); }
-        close();
+        intro() {
+            have y == 7 by { close(); }
+            close();
+        }
     }
 }
 ```
