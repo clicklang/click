@@ -3743,10 +3743,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let step = if proof.goal().is_some_and(|goal| {
-            crate::kernel::proof::arithmetic_special::checks_selected_float_bounds(
-                goal,
-                requirements,
-            )
+            use crate::kernel::proof::arithmetic_special::{
+                checks_selected_float_bounds, positive_divisor_product_guards,
+            };
+            checks_selected_float_bounds(goal, requirements)
+                || [false, true].into_iter().any(|swap| {
+                    positive_divisor_product_guards(goal, swap).as_deref() == Some(requirements)
+                })
         }) {
             ProofStep::NormalizeUsing(surfaces)
         } else {
@@ -4380,10 +4383,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_bounded_arithmetic_closure");
         use crate::kernel::proof::arithmetic_special::{
-            checks_selected_float_bounds, float_compound_bound_operand, is_float_bound,
-            promoted_right_shift_bound, shift_count_mask_requirements, shifted_one_bounds,
-            signed_max_shift_count_bound, signed_product_guard_candidates,
-            signed_quotient_bridge_requirement, signed_shift_bound_mask_identity,
+            checks_selected_float_bounds, float_compound_bound_operand, float_finiteness_bounds,
+            float_finiteness_source, float_zero_product_premise, is_float_bound,
+            positive_divisor_product_guards, promoted_right_shift_bound,
+            shift_count_mask_requirements, shifted_one_bounds, signed_max_shift_count_bound,
+            signed_product_guard_candidates, signed_quotient_bridge_requirement,
+            signed_shift_bound_mask_identity,
         };
         let Some(goal) = search_input.goal() else {
             return Ok(None);
@@ -4584,15 +4589,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(Some(closed));
         }
-        if let Some(bound) = float_compound_bound_operand(goal)
-            && let Some(closed) = Self::try_normalize_after_arithmetic_bounds(
-                search_input,
-                &[bound],
-                introduced_surfaces,
-            )?
-        {
-            return Ok(Some(closed));
-        }
         for premises in candidates {
             check_verification_deadline()?;
             let surfaces = premises
@@ -4618,6 +4614,25 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if let Some(closed) =
                 attempt::candidate_outcome(search_input.driver().apply_step(step))?
             {
+                return Ok(Some(closed));
+            }
+        }
+        let derived_requirements = [false, true]
+            .into_iter()
+            .filter_map(|swap| positive_divisor_product_guards(goal, swap))
+            .chain(
+                float_finiteness_source(goal)
+                    .or_else(|| float_zero_product_premise(goal))
+                    .map(|premise| vec![premise]),
+            )
+            .chain(float_finiteness_bounds(goal).map(Vec::from))
+            .chain(float_compound_bound_operand(goal).map(|bound| vec![bound]));
+        for requirements in derived_requirements {
+            if let Some(closed) = Self::try_normalize_after_arithmetic_bounds(
+                search_input,
+                &requirements,
+                introduced_surfaces,
+            )? {
                 return Ok(Some(closed));
             }
         }
