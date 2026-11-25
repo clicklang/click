@@ -1,15 +1,9 @@
-# `normalize() using` reads a narrow stored value
+# A checked address equality identifies a narrow stored read
 
-Linux `string_get_size` ends its fraction with `tmp[j+1] = '\0'`. With `j`
-known, the byte it wrote is at a constant offset, but the store's address is
-spelled with `j`, so no fact about `tmp[3]` holds by its term alone.
-
-`normalize() using { j == 2; }` justifies a read's recorded stored value from
-the cited conditions: the bounded memory-history walk reaches the store
-`t[j + 1] = 0` and, reading `j == 2`, finds it writes the read's byte. That
-gives the read's value, `t[3u64] == 0u8`, and that it reads written bytes,
-`defined(t[3u64])`, for reads of every width. A wrong value, a byte the store
-did not write, or a premise that does not place the store are refused.
+Linux `string_get_size` ends its fraction by writing `tmp[j + 1] = '\0'`.
+With `j == 2`, the proof calculates the address equality
+`&t[3u64] == &t[j + 1]`. Rewriting that address in both goals exposes the
+store's recorded value and the fact that all bytes of the read were written.
 
 ```c filename=narrow_store.c
 int s(int j)
@@ -32,8 +26,15 @@ int32 s(int32 j) {
         step();
         step();
         step();
-        have t[3u64] == 0u8 by { normalize() using { j == 2; }; }
-        have defined(t[3u64]) by { normalize() using { j == 2; }; }
+        have &t[3u64] == &t[j + 1] by { rewrite(j, 2); close(); }
+        have t[3u64] == 0u8 by {
+            rewrite(&t[3u64], &t[j + 1]);
+            close();
+        }
+        have defined(t[3u64]) by {
+            rewrite(&t[3u64], &t[j + 1]);
+            close();
+        }
         step_until(function.exit);
         close();
     } else {

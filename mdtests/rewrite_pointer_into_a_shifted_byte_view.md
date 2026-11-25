@@ -52,7 +52,13 @@ void keep(const uint8* p, int32 n, int32 i) {
                 }
                 have 0 <= 0 by { close(); }
                 have 0 <= 4 by { close(); }
-                have to_integer(4) <= to_integer((i + 4) - i) by { normalize(); }
+                have to_integer(4) <= to_integer((i + 4) - i) by {
+                    apply(click::integer::int32_add_to_integer(i, 4));
+                    apply(click::integer::int32_subtract_to_integer(i + 4, i));
+                    rewrite(to_integer((i + 4) - (i)), to_integer(i + 4) - to_integer(i));
+                    rewrite(to_integer(i + 4), to_integer(i) + 4);
+                    close();
+                }
                 have contains(memory((p + i)[0..(i + 4) - i]), memory((p + i)[0..4])) by {
                     apply(click::separation::contains_subrange(p + i, 0, (i + 4) - i, 0, 4));
                 }

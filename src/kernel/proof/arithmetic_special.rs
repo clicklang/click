@@ -4694,12 +4694,13 @@ pub(crate) fn float_corner_bound_weakening(
 pub(crate) enum FloatScaleOperation {
     MultiplyLeft,
     MultiplyRight,
+    MultiplyNegativeLeft,
+    MultiplyNegativeRight,
     DividePositive,
     DivideNegative,
 }
 
-/// Rounded division by a nonzero finite literal, or float32 multiplication
-/// by a positive finite literal.
+/// Rounded division or float32 multiplication by a nonzero finite literal.
 pub(crate) fn float_scale_bound_weakening(
     source: &Proposition,
     goal: &Proposition,
@@ -4723,6 +4724,12 @@ pub(crate) fn float_scale_bound_weakening(
         }
         (Multiply, false, true) if result.format == KernelFloatType::Float32 => {
             FloatScaleOperation::MultiplyRight
+        }
+        (Multiply, true, false) if result.format == KernelFloatType::Float32 => {
+            FloatScaleOperation::MultiplyNegativeLeft
+        }
+        (Multiply, false, false) if result.format == KernelFloatType::Float32 => {
+            FloatScaleOperation::MultiplyNegativeRight
         }
         (Divide, false, true) => FloatScaleOperation::DividePositive,
         (Divide, false, false) => FloatScaleOperation::DivideNegative,

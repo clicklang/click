@@ -46,7 +46,7 @@ int32 set_before_terminator(
             if index == length {
                 have not (index < length) by {
                     rewrite(index, length);
-                    normalize();
+                    close();
                 }
                 contradiction(index < length);
             } else {
@@ -57,7 +57,7 @@ int32 set_before_terminator(
             apply(click::separation::separate_elements(data, index, length));
         }
         have separate(statement(0).footprint, memory(data[length])) by {
-            normalize() using { separate(memory(data[index]), memory(data[length])); };
+            close() using { separate(memory(data[index]), memory(data[length])); };
         }
         have data[length] == at(statement(0).entry, data[length]) by {
             preserve(memory(data[length]), statement(0));

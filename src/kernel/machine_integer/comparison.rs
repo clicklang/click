@@ -269,6 +269,35 @@ pub(crate) fn retains_int32_match(
         })
 }
 
+/// Select a native equality over a retained int32 fold or its immediate sum.
+/// Surface raises these operands as explicit Integer observations because
+/// direct machine comparison syntax retains a different comparison node.
+pub(crate) fn native_int32_fold_equality(condition: &ConditionTerm) -> Option<[&MachineTerm; 2]> {
+    let ConditionTerm::Compare {
+        format: MachineIntegerType::Int32,
+        relation: crate::kernel::CompareRelation::Equal,
+        left,
+        right,
+    } = condition
+    else {
+        return None;
+    };
+    let operands = [left.as_ref(), right.as_ref()];
+    let is_fold = |operand: crate::kernel::MachineOperandView<'_>| operand.fold().is_some();
+    operands
+        .into_iter()
+        .map(crate::kernel::MachineOperandView::Legacy)
+        .any(|operand| {
+            is_fold(operand)
+                || operand.binary().is_some_and(|(format, operator, terms)| {
+                    format == MachineIntegerType::Int32
+                        && operator == crate::kernel::MachineBinaryOp::Add
+                        && terms.into_iter().any(is_fold)
+                })
+        })
+        .then_some(operands)
+}
+
 /// Preserve comparisons over literals, identical variables, and bounded
 /// operations during logical lowering. Inspect only operand roots.
 pub(crate) fn logical_condition_for_operand_views(

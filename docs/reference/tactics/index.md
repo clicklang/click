@@ -2124,9 +2124,12 @@ offsets at the same version point and storage block.
 A read of at most four bytes, and `defined(...)` of a read of any width, are
 justified the same way: the walk, reading the cited conditions only, must end
 at a store that writes the read's whole width, so `t[j + 1] = 0` under a
-cited `j == 2` gives `t[3u64] == 0u8` and `defined(t[3u64])`
-([`normalize_using_reads_a_narrow_stored_value.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_reads_a_narrow_stored_value.md),
-[`normalize_using_refuses_a_narrow_value_the_store_did_not_write.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_refuses_a_narrow_value_the_store_did_not_write.md)).
+cited `j == 2` gives `t[3u64] == 0u8` and `defined(t[3u64])`.
+An ordinary proof can establish the exact address equality first, then
+rewrite the read to the store's address
+([`normalize_using_reads_a_narrow_stored_value.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_reads_a_narrow_stored_value.md)).
+A different byte still needs its own store
+([`normalize_using_refuses_a_narrow_value_the_store_did_not_write.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_refuses_a_narrow_value_the_store_did_not_write.md)).
 
 For a top-level 64-bit read equality, the cited conditions can also justify
 its recorded stored value: the typed memory-history walk checks each effect,
