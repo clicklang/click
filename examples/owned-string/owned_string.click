@@ -213,11 +213,8 @@ int32 owned_string_push(struct owned_string* owner, int32 value) {
     have owner->len == at(region(4).entry, (index + 1));
     step();
     have 0 <= old(owner->len) + 1 by {
-        normalize() using {
-            0 <= old(owner->len);
-            old(owner->len) < old(owner->cap);
-            old(owner->cap) <= 1073741823;
-        };
+        apply(click::integer::int32_increment_lower_bound(old(owner->len), 0, old(owner->cap)));
+        close();
     }
     have owner->data == old(owner->data) by {
         close();
