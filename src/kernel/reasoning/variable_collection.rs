@@ -957,7 +957,7 @@ fn load_carrier(
     algebraic_type: &crate::kernel::AlgebraicType,
 ) -> AlgebraicValue {
     AlgebraicTermNode::memory_load_carrier_value(
-        &crate::kernel::ProgramPoint::at(memory),
+        &crate::kernel::ProgramPoint::unplaced(memory),
         pointer,
         algebraic_type,
     )

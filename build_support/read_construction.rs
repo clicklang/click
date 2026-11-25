@@ -41,6 +41,7 @@ pub(super) enum Form {
     LoadBase,
     Bits64,
     PointerWordRead,
+    UnplacedPoint,
 }
 
 impl Form {
@@ -54,6 +55,7 @@ impl Form {
             Self::LoadBase => "`AddressBase::Load(..)`",
             Self::Bits64 => "`LoadKind::Bits64` spellings",
             Self::PointerWordRead => "`legacy_pointer_word_read(..)` calls",
+            Self::UnplacedPoint => "`ProgramPoint::unplaced(..)` calls",
         }
     }
 
@@ -69,6 +71,9 @@ impl Form {
             }
             Self::PointerWordRead => {
                 "name, compare and key a pointer load as a `Load` (design/loads.md, step 3b)"
+            }
+            Self::UnplacedPoint => {
+                "place the memory: `ProgramPoint::viewing` for a state or a view of one, `ProgramPoint::walked` for a legacy walk's memory (design/point-named-reads.md)"
             }
         }
     }
@@ -139,7 +144,78 @@ const BASELINE: &[(&str, Form, usize)] = &[
         "src/kernel/primitives/term_operations.rs",
         Form::PointerWordRead,
         2,
+    ), // Points built from a bare memory, with no place (`ProgramPoint::unplaced`).
+    // Each conversion to `viewing` or `walked` lowers its file's entry; the
+    // constructor goes when the table has none.
+    (
+        "src/kernel/api/contract_certification/contract_claims.rs",
+        Form::UnplacedPoint,
+        1,
     ),
+    ("src/kernel/assumptions.rs", Form::UnplacedPoint, 1),
+    ("src/kernel/equality_graph.rs", Form::UnplacedPoint, 2),
+    ("src/kernel/equality_graph/terms.rs", Form::UnplacedPoint, 1),
+    ("src/kernel/eval/memory_loads.rs", Form::UnplacedPoint, 7),
+    (
+        "src/kernel/eval/memory_loads/read_observations.rs",
+        Form::UnplacedPoint,
+        5,
+    ),
+    ("src/kernel/memory_history.rs", Form::UnplacedPoint, 1),
+    ("src/kernel/primitives.rs", Form::UnplacedPoint, 1),
+    (
+        "src/kernel/primitives/cell_store.rs",
+        Form::UnplacedPoint,
+        1,
+    ),
+    (
+        "src/kernel/primitives/machine_integer.rs",
+        Form::UnplacedPoint,
+        1,
+    ),
+    (
+        "src/kernel/primitives/memory_state.rs",
+        Form::UnplacedPoint,
+        6,
+    ),
+    (
+        "src/kernel/primitives/program_point.rs",
+        Form::UnplacedPoint,
+        2,
+    ),
+    (
+        "src/kernel/primitives/term_operations.rs",
+        Form::UnplacedPoint,
+        1,
+    ),
+    ("src/kernel/proof/execution.rs", Form::UnplacedPoint, 1),
+    (
+        "src/kernel/reasoning/substitution.rs",
+        Form::UnplacedPoint,
+        1,
+    ),
+    (
+        "src/kernel/reasoning/variable_collection.rs",
+        Form::UnplacedPoint,
+        1,
+    ),
+    ("src/kernel/spec.rs", Form::UnplacedPoint, 1),
+    (
+        "src/surface/lowering/resource_lowering.rs",
+        Form::UnplacedPoint,
+        2,
+    ),
+    (
+        "src/surface/proof/fixed_state_proofs/fact_transport.rs",
+        Form::UnplacedPoint,
+        1,
+    ),
+    (
+        "src/surface/proof/smart_closures/search.rs",
+        Form::UnplacedPoint,
+        2,
+    ),
+    ("src/surface/proof_trace.rs", Form::UnplacedPoint, 1),
 ];
 
 /// Direct constructions of each form in `file`, outside test code.
@@ -235,6 +311,11 @@ impl<'ast> Visit<'ast> for Counter {
                 [.., last] if *last == "ReadPoint" => self.add(Form::ReadPoint),
                 [.., last] if *last == "legacy_pointer_word_read" => {
                     self.add(Form::PointerWordRead)
+                }
+                [.., owner, last]
+                    if *last == "unplaced" && (*owner == "ProgramPoint" || *owner == "Self") =>
+                {
+                    self.add(Form::UnplacedPoint)
                 }
                 [.., owner, last]
                     if *last == "Load"

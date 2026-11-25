@@ -6161,7 +6161,7 @@ impl SymbolicMemory {
             element_type,
             first,
             count,
-            ProgramPoint::at(&source),
+            ProgramPoint::unplaced(&source),
         )
     }
 
@@ -6305,7 +6305,7 @@ impl SymbolicMemory {
             element_type,
             0,
             count,
-            ProgramPoint::at(&source),
+            ProgramPoint::unplaced(&source),
             RunValueMode::Constant(value),
         ))
     }
@@ -7018,7 +7018,7 @@ impl SymbolicMemory {
         program_type: ProgramType,
         source: SharedMemory,
     ) -> Self {
-        self.materialize_cell_at(pointer, program_type, &ProgramPoint::at(&source))
+        self.materialize_cell_at(pointer, program_type, &ProgramPoint::unplaced(&source))
     }
 
     pub(crate) fn materialize_cell_at(
@@ -8890,7 +8890,7 @@ impl SymbolicMemory {
     /// The point a legacy symbolic read of this memory is named at: this
     /// memory, recording `site` as the read site when the caller has one.
     fn legacy_read_point(&self, site: Option<&ProgramPoint>) -> ProgramPoint {
-        ProgramPoint::at_optional_read_site(&crate::kernel::intern_memory(self.clone()), site)
+        ProgramPoint::read_at_optional(&crate::kernel::intern_memory(self.clone()), site)
     }
 
     #[cfg_attr(test, track_caller)]
@@ -9025,7 +9025,7 @@ impl SymbolicMemory {
             return None;
         }
         let load = crate::kernel::MachineTerm::read_named(
-            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
+            ProgramPoint::unplaced(&(crate::kernel::intern_memory(self.clone()))),
             pointer.clone(),
             LoadKind::of_type(ty.program_type())?,
         );
@@ -9038,7 +9038,7 @@ impl SymbolicMemory {
 
     pub(in crate::kernel) fn symbolic_float32_load(&self, pointer: &Address) -> ProgramValue {
         ProgramValue::Float32(crate::kernel::MachineTerm::read_named(
-            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
+            ProgramPoint::unplaced(&(crate::kernel::intern_memory(self.clone()))),
             pointer.clone(),
             LoadKind::Float32,
         ))
@@ -9046,7 +9046,7 @@ impl SymbolicMemory {
 
     pub(in crate::kernel) fn symbolic_float64_load(&self, pointer: &Address) -> ProgramValue {
         ProgramValue::Float64(crate::kernel::MachineTerm::read_named(
-            ProgramPoint::at(&(crate::kernel::intern_memory(self.clone()))),
+            ProgramPoint::unplaced(&(crate::kernel::intern_memory(self.clone()))),
             pointer.clone(),
             LoadKind::Float64,
         ))
@@ -9085,7 +9085,7 @@ impl SymbolicMemory {
     ) -> ProgramValue {
         let retained_state = crate::kernel::intern_memory(self.clone());
         let value = Address::loaded(&crate::kernel::MachineTerm::read_named(
-            ProgramPoint::at_optional_read_site(&retained_state, site),
+            ProgramPoint::read_at_optional(&retained_state, site),
             pointer.clone(),
             LoadKind::Int32,
         ))
@@ -10248,7 +10248,7 @@ impl ExecutionState {
             components.push((
                 description.clone(),
                 Some(crate::kernel::MachineTerm::read_named(
-                    ProgramPoint::at(&(intern_memory_ref(&self.memory))),
+                    ProgramPoint::unplaced(&(intern_memory_ref(&self.memory))),
                     anchor.clone(),
                     LoadKind::Int32,
                 )),

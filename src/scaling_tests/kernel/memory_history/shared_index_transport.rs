@@ -32,7 +32,12 @@ fn framed_index_transport_visits_shared_nodes_without_tree_exports() {
             let after = SymbolicMemory::new();
             let exports = KernelTermExport::machine_export_count();
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-                transport_framed_atomic_pointer_offset(&offset, &after, None).unwrap()
+                transport_framed_atomic_pointer_offset(
+                    &offset,
+                    &crate::kernel::ProgramPoint::of_memory(&after),
+                    None,
+                )
+                .unwrap()
             });
             assert_eq!(exports, KernelTermExport::machine_export_count());
             let (AddressOffset::Int32Scaled { value: result, .. }

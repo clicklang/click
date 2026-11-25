@@ -114,7 +114,7 @@ fn offset_condition_rewrites_preserve_shared_offset_dags() {
                     .unwrap();
                 let transported = crate::kernel::memory_history::transport_framed_common_condition(
                     &source,
-                    &crate::kernel::SymbolicMemory::new(),
+                    &crate::kernel::ProgramPoint::of_memory(&crate::kernel::SymbolicMemory::new()),
                     None,
                 )
                 .unwrap();

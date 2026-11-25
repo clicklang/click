@@ -5990,7 +5990,7 @@ fn scalar_read_in_state(read: &MachineTerm, state: &ExecutionState) -> Option<Ma
     let selected = crate::kernel::canonical_form_of_load_at(&site, pointer.as_ref().clone(), *kind);
     (selected == *read).then(|| {
         MachineTerm::read_named(
-            crate::kernel::ProgramPoint::at_read_site(site.shared_memory(), &site),
+            crate::kernel::ProgramPoint::read_at(site.shared_memory(), &site),
             pointer.as_ref().clone(),
             *kind,
         )

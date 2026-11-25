@@ -1425,14 +1425,26 @@ pub struct ProgramPoint {
     read: ReadSelection,
 }
 
+/// Where a memory-named point's memory belongs.
+#[derive(Clone)]
+enum LegacyPlace {
+    /// On the point's own path, which it has.
+    OwnPath,
+    /// The memory is the state at this point, or a view of that state.
+    TrueAt(PathLink),
+    /// The legacy walk's memory for a read made at this point. It is the
+    /// state of an earlier point the walk does not name, not this one's.
+    WalkedFrom(PathLink),
+    /// Built from a bare memory ([`ProgramPoint::unplaced`]): no claim.
+    Unplaced,
+}
+
 #[derive(Clone)]
 enum ReadSelection {
-    /// Named by its memory (`ReadKey::Memory`). When the point has no path
-    /// of its own, the read site: the point the read was made at, kept so a
-    /// later stage can select the read's version along that path
-    /// (`design/point-named-reads.md`, stage 1). It is no part of the
-    /// point's identity.
-    Legacy(Option<PathLink>),
+    /// Named by its memory (`ReadKey::Memory`), with the point that memory
+    /// belongs to ([`LegacyPlace`]). The place is no part of the point's
+    /// identity.
+    Legacy(LegacyPlace),
     Exact,
     Entry,
     CallOutput,
@@ -1543,63 +1555,107 @@ impl Ord for ProgramPoint {
 }
 
 impl ProgramPoint {
-    /// A point built from a bare memory state, with no place on a path.
+    /// A point built from a bare memory state, with no place on a path: it
+    /// claims nothing about where its memory is true. Production code is
+    /// converting to [`Self::viewing`] and [`Self::walked`];
+    /// `build_support/read_construction.rs` holds its uses to a shrinking
+    /// count, and it goes when that count reaches zero.
+    pub fn unplaced(memory: &SharedMemory) -> Self {
+        Self {
+            memory: memory.clone(),
+            path: PathLink::default(),
+            read: ReadSelection::Legacy(LegacyPlace::Unplaced),
+        }
+    }
+
+    /// [`Self::unplaced`], for tests.
+    #[cfg(test)]
     pub fn at(memory: &SharedMemory) -> Self {
-        Self {
-            memory: memory.clone(),
-            path: PathLink::default(),
-            read: ReadSelection::Legacy(None),
+        Self::unplaced(memory)
+    }
+
+    /// A memory-named read of `memory` made at `site`: [`Self::viewing`]
+    /// when `memory` is `site`'s own state, else [`Self::walked`], which
+    /// claims nothing about where `memory` is true.
+    pub(crate) fn read_at(memory: &SharedMemory, site: &ProgramPoint) -> Self {
+        if memory == site.shared_memory() {
+            Self::viewing(memory, site)
+        } else {
+            Self::walked(memory, site)
         }
     }
 
-    /// A legacy read of `memory` made at `site`: named by `memory`, as
-    /// [`ProgramPoint::at`] is, and recording `site`'s place on its path as
-    /// the read site ([`ProgramPoint::read_site`]). The site changes no
-    /// identity: legacy points compare by memory.
-    pub(crate) fn at_read_site(memory: &SharedMemory, site: &ProgramPoint) -> Self {
-        Self {
-            memory: memory.clone(),
-            path: PathLink::default(),
-            read: ReadSelection::Legacy(site.read_site().cloned()),
-        }
-    }
-
-    /// [`ProgramPoint::at_read_site`] when the caller has a read site, else
-    /// [`ProgramPoint::at`]: the same point either way.
-    pub(crate) fn at_optional_read_site(memory: &SharedMemory, site: Option<&Self>) -> Self {
+    /// [`Self::read_at`] when the caller has a site, else
+    /// [`Self::unplaced`].
+    pub(crate) fn read_at_optional(memory: &SharedMemory, site: Option<&ProgramPoint>) -> Self {
         match site {
-            Some(site) => Self::at_read_site(memory, site),
-            None => Self::at(memory),
+            Some(site) => Self::read_at(memory, site),
+            None => Self::unplaced(memory),
+        }
+    }
+
+    /// `memory`, a state equal to `source`'s or a view of it (a
+    /// substitution, a materialization, a projection), placed where
+    /// `source`'s memory is placed. Named by `memory`.
+    pub(crate) fn viewing(memory: &SharedMemory, source: &ProgramPoint) -> Self {
+        Self {
+            memory: memory.clone(),
+            path: PathLink::default(),
+            read: ReadSelection::Legacy(source.place()),
+        }
+    }
+
+    /// The legacy walk's memory for a read made at `read_at`. The memory
+    /// belongs to an earlier point the walk does not name, so it is placed
+    /// as walked from `read_at`, not as true there. Named by `memory`.
+    pub(crate) fn walked(memory: &SharedMemory, read_at: &ProgramPoint) -> Self {
+        let place = match read_at.place() {
+            LegacyPlace::TrueAt(path) | LegacyPlace::WalkedFrom(path) => {
+                LegacyPlace::WalkedFrom(path)
+            }
+            LegacyPlace::Unplaced => LegacyPlace::Unplaced,
+            LegacyPlace::OwnPath => unreachable!("a place is never the own path"),
+        };
+        Self {
+            memory: memory.clone(),
+            path: PathLink::default(),
+            read: ReadSelection::Legacy(place),
+        }
+    }
+
+    /// Where this point's memory belongs, for a point built from it.
+    fn place(&self) -> LegacyPlace {
+        if self.path.id().is_some() {
+            return LegacyPlace::TrueAt(self.path.clone());
+        }
+        match &self.read {
+            ReadSelection::Legacy(
+                place @ (LegacyPlace::TrueAt(_) | LegacyPlace::WalkedFrom(_)),
+            ) => place.clone(),
+            // A state never placed on a path (a scratch state) stands nowhere.
+            _ => LegacyPlace::Unplaced,
         }
     }
 
     /// The point on a path a read through this point was made at: the
-    /// point's own path when it has one, else the read site a legacy read
-    /// recorded. `None` for a read built from a bare memory.
+    /// point's own path when it has one, else the place its memory was
+    /// given. `None` for an unplaced point.
     pub(crate) fn read_site(&self) -> Option<&PathLink> {
         if self.path.id().is_some() {
             return Some(&self.path);
         }
         match &self.read {
-            ReadSelection::Legacy(site) => site.as_ref(),
+            ReadSelection::Legacy(LegacyPlace::TrueAt(path) | LegacyPlace::WalkedFrom(path)) => {
+                Some(path)
+            }
             _ => None,
         }
-    }
-
-    /// This point, recording `site`'s read site when it has none of its own.
-    pub(crate) fn with_read_site_of(mut self, site: &ProgramPoint) -> Self {
-        if self.read_site().is_none()
-            && let ReadSelection::Legacy(own) = &mut self.read
-        {
-            *own = site.read_site().cloned();
-        }
-        self
     }
 
     /// The point a `SymbolicMemory` value stands at, interning it first. Callers
     /// that already hold an interned state use [`ProgramPoint::at`].
     pub(crate) fn of_memory(memory: &SymbolicMemory) -> Self {
-        Self::at(&intern_memory(memory.clone()))
+        Self::unplaced(&intern_memory(memory.clone()))
     }
 
     /// The first point of a new path, standing at `memory`: a place no other
@@ -1612,7 +1668,7 @@ impl ProgramPoint {
         Self {
             memory: shared,
             path,
-            read: ReadSelection::Legacy(None),
+            read: ReadSelection::Legacy(LegacyPlace::OwnPath),
         }
     }
 
@@ -1632,7 +1688,7 @@ impl ProgramPoint {
         Self {
             memory: shared,
             path,
-            read: ReadSelection::Legacy(None),
+            read: ReadSelection::Legacy(LegacyPlace::OwnPath),
         }
     }
 
@@ -1750,7 +1806,7 @@ impl ProgramPoint {
     /// The same view identified by its memory, as an unselected point is.
     /// Reads through it still use the recorded path's cell versions.
     pub(in crate::kernel) fn for_legacy_read(mut self) -> Self {
-        self.read = ReadSelection::Legacy(None);
+        self.read = ReadSelection::Legacy(LegacyPlace::OwnPath);
         self
     }
 
@@ -1785,7 +1841,7 @@ impl ProgramPoint {
             return Self {
                 memory: anchor.memory.clone(),
                 path: PathLink(Some(point), anchor.view.clone()),
-                read: ReadSelection::Legacy(None),
+                read: ReadSelection::Legacy(LegacyPlace::OwnPath),
             };
         }
         self.clone()
@@ -2084,7 +2140,7 @@ impl ProgramPoint {
         Self {
             memory: steps.first_base.clone(),
             path: before.clone(),
-            read: ReadSelection::Legacy(None),
+            read: ReadSelection::Legacy(LegacyPlace::OwnPath),
         }
         .unwritten_static_scalar_version(pointer, value_type)
     }
@@ -2435,17 +2491,18 @@ mod tests {
         assert!(left.memory().pending_steps.is_none());
     }
 
-    /// A legacy read records where it was made, and the record is no part
-    /// of its identity: the read at a site is the same term as the read of
-    /// the same memory built from that memory alone, and a point rebuilt
-    /// from the read's point keeps the site.
+    /// A legacy read records where its memory belongs, and the record is no
+    /// part of its identity: the read placed at a site is the same term as
+    /// the read of the same memory built from that memory alone. A view of
+    /// a state is placed as true there; the legacy walk's memory, and any
+    /// view of it, only as walked from there.
     #[test]
-    fn a_legacy_read_records_its_site_without_changing_its_term() {
+    fn a_legacy_read_records_its_place_without_changing_its_term() {
         let state = stored(&ExecutionState::default().with_memory(memory_holding(0)), 1);
         let site = state.program_point();
         let memory = site.shared_memory().clone();
         let bare = ProgramPoint::at(&memory);
-        let sited = ProgramPoint::at_read_site(&memory, &site);
+        let sited = ProgramPoint::read_at(&memory, &site);
         assert!(bare.read_site().is_none());
         assert!(sited.read_site().is_some_and(|path| path.id() == site.id()));
         assert_eq!(sited.read_key(), bare.read_key());
@@ -2454,18 +2511,31 @@ mod tests {
             MachineTerm::read_named(sited.clone(), slot(), LoadKind::Int32),
             MachineTerm::read_named(bare.clone(), slot(), LoadKind::Int32)
         );
-        let rebuilt = ProgramPoint::at_read_site(&memory, &sited);
+        let rebuilt = ProgramPoint::read_at(&memory, &sited);
         assert!(
             rebuilt
                 .read_site()
                 .is_some_and(|path| path.id() == site.id())
         );
+        assert!(matches!(
+            sited.read,
+            super::ReadSelection::Legacy(super::LegacyPlace::TrueAt(_))
+        ));
+        let walked = ProgramPoint::walked(&memory, &site);
+        assert!(matches!(
+            walked.read,
+            super::ReadSelection::Legacy(super::LegacyPlace::WalkedFrom(_))
+        ));
         assert!(
-            bare.clone()
-                .with_read_site_of(&site)
+            walked
                 .read_site()
                 .is_some_and(|path| path.id() == site.id())
         );
+        assert_eq!(walked, bare);
+        assert!(matches!(
+            ProgramPoint::viewing(&memory, &walked).read,
+            super::ReadSelection::Legacy(super::LegacyPlace::WalkedFrom(_))
+        ));
         // A point with no path has no point for an exact selection to keep,
         // so it keeps its read site, and its term is unchanged.
         let exact = sited.clone().for_exact_read();

@@ -8557,13 +8557,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         // The cell as the current state reads it.
         let current = crate::kernel::intern_memory_ref(view.fixed_state.state.memory());
-        let current_side = if *right_memory.point() == crate::kernel::ProgramPoint::at(&current) {
-            right
-        } else if *left_memory.point() == crate::kernel::ProgramPoint::at(&current) {
-            left
-        } else {
-            return Ok(None);
-        };
+        let current_side =
+            if *right_memory.point() == crate::kernel::ProgramPoint::unplaced(&current) {
+                right
+            } else if *left_memory.point() == crate::kernel::ProgramPoint::unplaced(&current) {
+                left
+            } else {
+                return Ok(None);
+            };
         let Some(cell) = super::surface_synthesis::synthesize_surface_machine_expression(
             current_side,
             view.parameter_binding,

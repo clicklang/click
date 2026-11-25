@@ -1201,7 +1201,7 @@ fn describe_unnamed_cell_addition(
                 crate::kernel::resource_tracker::widest_scalar_access_bytes(),
             ),
         },
-        &crate::kernel::resource_tracker::ProgramPoint::at(base),
+        &crate::kernel::resource_tracker::ProgramPoint::unplaced(base),
     ) {
         Some(version) => {
             let (version_arena, version_id) = version.shared_memory().arena_id();
