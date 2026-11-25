@@ -17,7 +17,7 @@ pub(in crate::surface::proof) struct ExecutionMatchPlan {
     arm_case_source: Arc<ProofMatch>,
     case_indices: Vec<usize>,
     matched_instance: Option<crate::kernel::ResourceInstance>,
-    bindings: Vec<PersistentBinderMap<ContractExpression>>,
+    bindings: Vec<PersistentBinderMap<SurfaceTerm>>,
     integer_bindings: Vec<PersistentBinderMap<crate::kernel::SpecIntegerExpression>>,
     parent_locals: ProofLocals,
     deferred_base: PersistentSequence<DeferredPostExecutionTactic>,
@@ -63,9 +63,9 @@ impl ExecutionMatchPlan {
     /// The surface condition that names one side of a live-arm split: a match
     /// over the same scrutinee that yields `1` exactly on `left`. Excluded
     /// constructors are already impossible, so they take the `0` side.
-    pub(in crate::surface::proof) fn condition(&self, left: &[usize]) -> ClickProposition {
-        ClickProposition::Comparison {
-            left: ContractExpression::AlgebraicMatch {
+    pub(in crate::surface::proof) fn condition(&self, left: &[usize]) -> SurfaceProposition {
+        SurfaceProposition::Comparison {
+            left: SurfaceTerm::AlgebraicMatch {
                 scrutinee: Box::new(self.source.scrutinee.clone()),
                 arms: self
                     .source
@@ -81,7 +81,7 @@ impl ExecutionMatchPlan {
                             .cloned()
                             .map(SurfaceBinder::from)
                             .collect(),
-                        body: ContractExpression::ProgramExpression(ProgramExpression::Value(
+                        body: SurfaceTerm::ProgramExpression(ProgramExpression::Value(
                             ProgramValue::Int32(MachineTerm::constant(u32::from(
                                 left.contains(&index),
                             ))),
@@ -90,9 +90,9 @@ impl ExecutionMatchPlan {
                     .collect(),
             },
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::ProgramExpression(ProgramExpression::Value(
-                ProgramValue::Int32(MachineTerm::constant(1)),
-            )),
+            right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Int32(
+                MachineTerm::constant(1),
+            ))),
         }
     }
 }
@@ -106,7 +106,7 @@ impl ExecutionMatchPlan {
 /// tactic without the arm's field bindings.
 fn attach_arm_lexical_scope(
     tactic: &mut DeferredPostExecutionTactic,
-    scope: &PersistentBinderMap<ContractExpression>,
+    scope: &PersistentBinderMap<SurfaceTerm>,
 ) {
     if tactic.lexical_bindings.is_none() {
         tactic.lexical_bindings = Some(scope.clone());
@@ -131,7 +131,7 @@ fn attach_arm_lexical_scope(
 /// and each written arm's case and field bindings.
 pub(in crate::surface::proof) struct OutcomeMatchCases {
     pub(in crate::surface::proof) partition: Arc<CheckedProofCasePartition>,
-    pub(in crate::surface::proof) arms: Vec<(usize, PersistentBinderMap<ContractExpression>)>,
+    pub(in crate::surface::proof) arms: Vec<(usize, PersistentBinderMap<SurfaceTerm>)>,
     /// The first choice variable after this partition's witnesses.
     pub(in crate::surface::proof) next_variable: u64,
 }
@@ -196,7 +196,7 @@ impl<'a> Proof<'a> {
 
     pub(in crate::surface::proof) fn with_surface_local_scope(
         &self,
-        bindings: &PersistentBinderMap<ContractExpression>,
+        bindings: &PersistentBinderMap<SurfaceTerm>,
     ) -> Self {
         let mut locals = self.state.locals().clone();
         locals.set_values(bindings.clone());
@@ -205,7 +205,7 @@ impl<'a> Proof<'a> {
 
     pub(in crate::surface::proof) fn surface_local_scope(
         &self,
-    ) -> PersistentBinderMap<ContractExpression> {
+    ) -> PersistentBinderMap<SurfaceTerm> {
         self.state.locals().values.clone()
     }
 
@@ -213,9 +213,9 @@ impl<'a> Proof<'a> {
     /// locals. Remove expired obtains from every typed binding map.
     pub(in crate::surface::proof) fn update_deferred_outcome_locals(
         &self,
-        previous: Option<&PersistentBinderMap<ContractExpression>>,
-        scope: Option<&PersistentBinderMap<ContractExpression>>,
-        obtained: &PersistentBinderMap<ContractExpression>,
+        previous: Option<&PersistentBinderMap<SurfaceTerm>>,
+        scope: Option<&PersistentBinderMap<SurfaceTerm>>,
+        obtained: &PersistentBinderMap<SurfaceTerm>,
         expired: &[String],
     ) -> Self {
         let mut locals = self.state.locals().clone();
@@ -248,13 +248,13 @@ impl<'a> Proof<'a> {
 
     pub(in crate::surface::proof) fn scope_call_payload(
         &self,
-        scope: Option<&PersistentBinderMap<ContractExpression>>,
+        scope: Option<&PersistentBinderMap<SurfaceTerm>>,
         name: &str,
         value: StoredExecutionValue,
-    ) -> PersistentBinderMap<ContractExpression> {
+    ) -> PersistentBinderMap<SurfaceTerm> {
         scope.unwrap_or(&self.state.locals().values).with_inserted(
             name.to_owned(),
-            ContractExpression::ProgramExpression(ProgramExpression::Value(value.into_native())),
+            SurfaceTerm::ProgramExpression(ProgramExpression::Value(value.into_native())),
         )
     }
 
@@ -327,7 +327,7 @@ impl<'a> Proof<'a> {
         value: &crate::kernel::AlgebraicTerm,
     ) -> Result<
         (
-            Vec<PersistentBinderMap<ContractExpression>>,
+            Vec<PersistentBinderMap<SurfaceTerm>>,
             Vec<PersistentBinderMap<crate::kernel::SpecIntegerExpression>>,
         ),
         ClickError,
@@ -348,9 +348,9 @@ impl<'a> Proof<'a> {
             let mut integer_scope = self.state.locals().integer_values.clone();
             for (field_index, (name, field)) in arm.bindings.iter().zip(fields).enumerate() {
                 let expression = match field {
-                    AlgebraicValue::Program(value) => ContractExpression::ProgramExpression(
-                        ProgramExpression::Value(value.clone()),
-                    ),
+                    AlgebraicValue::Program(value) => {
+                        SurfaceTerm::ProgramExpression(ProgramExpression::Value(value.clone()))
+                    }
                     AlgebraicValue::Algebraic(binding) => {
                         // A concrete scrutinee already carries immutable payload
                         // identities. Constructor injectivity in the checked arm
@@ -366,7 +366,7 @@ impl<'a> Proof<'a> {
                         let AlgebraicTermNode::Variable(variable) = value.node else {
                             unreachable!()
                         };
-                        ContractExpression::AlgebraicVariable {
+                        SurfaceTerm::AlgebraicVariable {
                             name: name.clone().into(), binder_index: variable.algebraic_binder_index().expect("a case binder is an algebraic binder") as usize,
                             algebraic_type: AlgebraicTypeApplication {
                                 rigid: value.algebraic_type.rigid, name: value.algebraic_type.name.clone(),
@@ -379,7 +379,7 @@ impl<'a> Proof<'a> {
                             name.clone(),
                             crate::kernel::SpecIntegerExpression::Term(value.clone()),
                         );
-                        ContractExpression::Binding(name.clone())
+                        SurfaceTerm::Binding(name.clone())
                     }
                 };
                 scope = scope.with_inserted(name.clone(), expression);
@@ -405,12 +405,12 @@ impl<'a> Proof<'a> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("a `match` after execution requires a C execution proof"));
         };
-        let equation = ClickProposition::Comparison {
+        let equation = SurfaceProposition::Comparison {
             left: source.scrutinee.clone(),
             operator: ComparisonOperator::Equal,
             right: source.scrutinee.clone(),
         };
-        let ClickProposition::Comparison {
+        let SurfaceProposition::Comparison {
             left: expression, ..
         } = self.substitute_fixed_state_locals_in_proposition(&equation)?
         else {
@@ -493,7 +493,7 @@ impl<'a> Proof<'a> {
         source: &Arc<ProofMatch>,
         arm_source_index: impl Fn(usize) -> usize,
     ) -> Result<ExecutionMatchPlan, ClickError> {
-        let equation = ClickProposition::Comparison {
+        let equation = SurfaceProposition::Comparison {
             left: source.scrutinee.clone(),
             operator: ComparisonOperator::Equal,
             right: source.scrutinee.clone(),
@@ -504,7 +504,7 @@ impl<'a> Proof<'a> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("proof `match` currently requires a C execution proof"));
         };
-        let ClickProposition::Comparison {
+        let SurfaceProposition::Comparison {
             left: expression, ..
         } = self.substitute_fixed_state_locals_in_proposition(&equation)?
         else {
@@ -515,7 +515,7 @@ impl<'a> Proof<'a> {
         // facts are checked for this instance without searching unrelated
         // resources. Other algebraic expressions remain ordinary matches.
         let matched_resource_field = match &expression {
-            ContractExpression::ResourceField(access) => {
+            SurfaceTerm::ResourceField(access) => {
                 let state = &execution.core.state;
                 let name = access.projected_name();
                 if let Some((instance, field_index)) = state.projected_resource_field(
@@ -561,8 +561,8 @@ impl<'a> Proof<'a> {
         // result, splits the algebraic value the local holds here, the one
         // its variant tests read.
         let local = match &expression {
-            ContractExpression::Binding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::Binding(name)
+            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) if !values.contains_key(name) && !self.state.locals().values.contains_key(name) => {
                 match execution.core.state.locals().get_native(name).as_deref() {
@@ -672,7 +672,7 @@ impl<'a> Proof<'a> {
         &self,
         plan: &ExecutionMatchPlan,
         index: usize,
-        surface: &ClickProposition,
+        surface: &SurfaceProposition,
     ) -> Result<Arc<CheckedProofCasePartition>, ClickError> {
         let fact = self.lower_surface_proposition(surface, "constructor-arm contradiction")?;
         plan.partition
@@ -721,10 +721,10 @@ impl<'a> Proof<'a> {
         else {
             unreachable!()
         };
-        let surface = ClickProposition::Comparison {
+        let surface = SurfaceProposition::Comparison {
             left: plan.source.scrutinee.clone(),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::AlgebraicConstructor {
+            right: SurfaceTerm::AlgebraicConstructor {
                 algebraic_type: AlgebraicTypeApplication {
                     rigid: false,
                     name: constructor.native_compat().algebraic_type.name.clone(),
@@ -747,8 +747,8 @@ impl<'a> Proof<'a> {
                         // certificate generated inside the arm prints the
                         // binder the source wrote instead of a kernel variable
                         // id that no later lowering can resolve.
-                        ContractExpression::ProgramExpression(ProgramExpression::Value(_)) => {
-                            ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                        SurfaceTerm::ProgramExpression(ProgramExpression::Value(_)) => {
+                            SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                                 (name.clone()).into(),
                             ))
                         }
@@ -811,7 +811,7 @@ impl<'a> Proof<'a> {
             .bindings
             .iter()
             .filter_map(|name| match plan.bindings[index].get(name)? {
-                ContractExpression::ProgramExpression(ProgramExpression::Value(value)) => {
+                SurfaceTerm::ProgramExpression(ProgramExpression::Value(value)) => {
                     crate::kernel::single_variable_of_program_value(value)
                         .map(|variable| (variable, SurfaceBinder::from(name)))
                 }
@@ -1060,7 +1060,7 @@ impl<'a> Proof<'a> {
 
     pub(in crate::surface::proof) fn split_execution_match_group(
         &self,
-        condition: ClickProposition,
+        condition: SurfaceProposition,
     ) -> Result<(Self, ExecutionProofCaseSplit<'a>), ClickError> {
         let branch = self
             .focused_branch()
@@ -1254,7 +1254,7 @@ impl<'a> Proof<'a> {
                             node: crate::kernel::SpecAlgebraicExpressionNode::Variable(variable),
                         },
                     ));
-                    ContractExpression::Binding(name.clone())
+                    SurfaceTerm::Binding(name.clone())
                 }
                 Sort::Integer => {
                     locals.set_integer_values(locals.integer_values.with_inserted(
@@ -1263,29 +1263,25 @@ impl<'a> Proof<'a> {
                             crate::kernel::IntegerTerm::var(variable),
                         ),
                     ));
-                    ContractExpression::Binding(name.clone())
+                    SurfaceTerm::Binding(name.clone())
                 }
                 Sort::ProgramObjectPointer(interface_type, class) => {
-                    ContractExpression::ProgramExpression(ProgramExpression::Value(
+                    SurfaceTerm::ProgramExpression(ProgramExpression::Value(
                         crate::kernel::symbolic_call_result(interface_type, variable)
                             .with_pointer_object_class(Some(class)),
                     ))
                 }
                 Sort::ProgramPointer(interface_type) => {
-                    ContractExpression::ProgramExpression(ProgramExpression::Value(
+                    SurfaceTerm::ProgramExpression(ProgramExpression::Value(
                         crate::kernel::symbolic_call_result(interface_type, variable),
                     ))
                 }
-                Sort::ProgramInt32 => {
-                    ContractExpression::ProgramExpression(ProgramExpression::Value(
-                        crate::kernel::symbolic_call_result(ProgramType::Int32, variable),
-                    ))
-                }
-                Sort::ProgramInt64 => {
-                    ContractExpression::ProgramExpression(ProgramExpression::Value(
-                        crate::kernel::symbolic_call_result(ProgramType::Int64, variable),
-                    ))
-                }
+                Sort::ProgramInt32 => SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+                    crate::kernel::symbolic_call_result(ProgramType::Int32, variable),
+                )),
+                Sort::ProgramInt64 => SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+                    crate::kernel::symbolic_call_result(ProgramType::Int64, variable),
+                )),
                 _ => return Err(proof.step_error("unsupported match field sort")),
             };
             locals.set_values(locals.values.with_inserted(name.clone(), expression));

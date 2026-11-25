@@ -36,7 +36,7 @@ fn integer_symbolic_aliases_keep_simple_verification_bounded() {
 
 #[test]
 fn indexed_surface_resolution_ignores_unrelated_available_facts() {
-    let surface = ClickProposition::Comparison {
+    let surface = SurfaceProposition::Comparison {
         left: current_var("x"),
         operator: ComparisonOperator::Equal,
         right: current_int(1),
@@ -74,10 +74,10 @@ fn indexed_surface_resolution_ignores_unrelated_available_facts() {
 /// every suffix still answers for its own surface.
 #[test]
 fn nested_implication_lowering_records_in_linear_work() {
-    fn chain(depth: u32) -> (ClickProposition, Proposition) {
+    fn chain(depth: u32) -> (SurfaceProposition, Proposition) {
         let atom = |index: u32| {
             (
-                ClickProposition::Comparison {
+                SurfaceProposition::Comparison {
                     left: current_var(&format!("x{}", index % 2)),
                     operator: ComparisonOperator::Equal,
                     right: current_int(index % 3),
@@ -91,7 +91,7 @@ fn nested_implication_lowering_records_in_linear_work() {
         let (mut surface, mut kernel) = atom(depth);
         for index in (0..depth).rev() {
             let (left_surface, left_kernel) = atom(index);
-            surface = ClickProposition::Implies(Box::new(left_surface), Box::new(surface));
+            surface = SurfaceProposition::Implies(Box::new(left_surface), Box::new(surface));
             kernel = Proposition::Implies(Box::new(left_kernel), Box::new(kernel));
         }
         (surface, kernel)
@@ -105,9 +105,9 @@ fn nested_implication_lowering_records_in_linear_work() {
         }
         proposition
     }
-    fn surface_suffix(mut proposition: &ClickProposition, depth: u32) -> &ClickProposition {
+    fn surface_suffix(mut proposition: &SurfaceProposition, depth: u32) -> &SurfaceProposition {
         for _ in 0..depth {
-            let ClickProposition::Implies(_, right) = proposition else {
+            let SurfaceProposition::Implies(_, right) = proposition else {
                 unreachable!("a chain suffix is an implication or its last atom")
             };
             proposition = right;
@@ -161,12 +161,12 @@ fn nested_implication_lowering_records_in_linear_work() {
 
 #[test]
 fn qualified_storage_source_index_preserves_forks_and_scales() {
-    fn pair(index: u32) -> (Address, ContractExpression, ClickProposition, Proposition) {
+    fn pair(index: u32) -> (Address, SurfaceTerm, SurfaceProposition, Proposition) {
         let pointer = Address {
             base: AddressBase::Concrete(format!("global:state#file-static:file{index}.c")),
             offset: AddressOffset::Constant(0),
         };
-        let expression = ContractExpression::QualifiedC {
+        let expression = SurfaceTerm::QualifiedC {
             name: format!("file{index}::state"),
             lowered: ProgramExpression::TypedLoad {
                 pointer: Box::new(ProgramExpression::Value(ProgramValue::Pointer(
@@ -179,7 +179,7 @@ fn qualified_storage_source_index_preserves_forks_and_scales() {
                 source: Default::default(),
             },
         };
-        let surface = ClickProposition::Comparison {
+        let surface = SurfaceProposition::Comparison {
             left: expression.clone(),
             operator: ComparisonOperator::Equal,
             right: current_int(index),
@@ -246,7 +246,7 @@ fn requirement_spelling_selects_one_recorded_enclosing_clause() {
         let mut spellings = SurfacePropositionMap::default();
         let mut latest = None;
         for index in 0..size {
-            let surface = ClickProposition::Comparison {
+            let surface = SurfaceProposition::Comparison {
                 left: current_var(&format!("source{index}")),
                 operator: ComparisonOperator::Equal,
                 right: current_int(1),

@@ -32,7 +32,7 @@ impl PartialEq for ProofCertificate {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CertificateConjunct {
-    proposition: ClickProposition,
+    proposition: SurfaceProposition,
     proof: ProofCertificate,
 }
 
@@ -46,14 +46,14 @@ pub struct CertificateConjunct {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ProofStep {
     Match {
-        scrutinee: ContractExpression,
+        scrutinee: SurfaceTerm,
         ensuring: Option<Vec<ProofAssertion>>,
         arms: Vec<CertificateInductionArm>,
     },
     CloseInvariantsBy(Box<ProofCertificate>),
     All(Vec<CertificateConjunct>),
     Both {
-        conjuncts: [Option<std::sync::Arc<ClickProposition>>; 2],
+        conjuncts: [Option<std::sync::Arc<SurfaceProposition>>; 2],
         left_proof: Box<ProofCertificate>,
         right_proof: Box<ProofCertificate>,
     },
@@ -70,7 +70,7 @@ pub enum ProofStep {
     StepCall(CallBinderTransport),
     /// One application of a user-defined tactic's verified contract.
     UserTactic(CallBinderTransport),
-    UnfoldProposition(ClickProposition),
+    UnfoldProposition(SurfaceProposition),
     UnfoldFunction(ClickFunctionApplication),
     UnfoldResource(ResourceClause),
     /// `let { witness: name, ... } = unfold(resource)` on a declared
@@ -88,23 +88,23 @@ pub enum ProofStep {
     },
     ApplyInduction {
         hypothesis: String,
-        arguments: Vec<ContractExpression>,
+        arguments: Vec<SurfaceTerm>,
     },
-    ApplyFact(ClickProposition),
+    ApplyFact(SurfaceProposition),
     ApplyFactUsing {
-        fact: ClickProposition,
-        premises: Vec<ClickProposition>,
+        fact: SurfaceProposition,
+        premises: Vec<SurfaceProposition>,
     },
     ApplyTheorem(TheoremApplication),
     ApplyTheoremUsing {
         application: TheoremApplication,
-        premises: Vec<ClickProposition>,
+        premises: Vec<SurfaceProposition>,
     },
     /// The planner must check its selected premises. A checked step can
     /// retain the bare application if the current facts also justify it.
     ApplyPlannedTheorem {
         application: TheoremApplication,
-        premises: Vec<ClickProposition>,
+        premises: Vec<SurfaceProposition>,
     },
     ObserveResource(ResourceClause),
     ObserveSubject(ResourceSubject),
@@ -121,10 +121,10 @@ pub enum ProofStep {
     CheckTerminationCallbacks,
     Known,
     Normalize,
-    NormalizeUsing(Vec<ClickProposition>),
+    NormalizeUsing(Vec<SurfaceProposition>),
     /// A compatibility check used in verification. It has no expansion spelling.
-    CompatibilityNormalize(Option<Vec<ClickProposition>>),
-    ArithmeticUsing(Vec<ClickProposition>),
+    CompatibilityNormalize(Option<Vec<SurfaceProposition>>),
+    ArithmeticUsing(Vec<SurfaceProposition>),
 
     Intro,
     IntroAs(String),
@@ -134,26 +134,26 @@ pub enum ProofStep {
         body: Box<ProofCertificate>,
     },
     Enumerate,
-    Contradiction(ClickProposition),
-    Rewrite(ClickProposition),
-    Preserve(ClickProposition),
+    Contradiction(SurfaceProposition),
+    Rewrite(SurfaceProposition),
+    Preserve(SurfaceProposition),
     TransportUsing {
-        source: ClickProposition,
-        target: ClickProposition,
-        premises: Vec<ClickProposition>,
+        source: SurfaceProposition,
+        target: SurfaceProposition,
+        premises: Vec<SurfaceProposition>,
     },
     CompatibilityFactTransport {
-        source: ClickProposition,
-        target: ClickProposition,
-        premises: Vec<ClickProposition>,
+        source: SurfaceProposition,
+        target: SurfaceProposition,
+        premises: Vec<SurfaceProposition>,
     },
     /// Substitute consecutive universal binders, preserving the residual body and guards.
     Instantiate {
-        quantified: ClickProposition,
-        arguments: Vec<ContractExpression>,
+        quantified: SurfaceProposition,
+        arguments: Vec<SurfaceTerm>,
     },
     Have {
-        proposition: ClickProposition,
+        proposition: SurfaceProposition,
         proof: Box<ProofCertificate>,
     },
     Open {
@@ -163,13 +163,13 @@ pub enum ProofStep {
         deferred_tail: Option<DeferredOpenTail>,
     },
     If {
-        condition: ClickProposition,
+        condition: SurfaceProposition,
         ensuring: Option<Vec<ProofAssertion>>,
         then_proof: Box<ProofCertificate>,
         else_proof: Box<ProofCertificate>,
     },
     Cases {
-        disjunction: ClickProposition,
+        disjunction: SurfaceProposition,
         left_proof: Box<ProofCertificate>,
         right_proof: Box<ProofCertificate>,
     },
@@ -201,7 +201,7 @@ pub struct CertificateStructuralClause {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct CertificateStructuralItem {
-    pub(super) claim: ClickProposition,
+    pub(super) claim: SurfaceProposition,
     pub(super) name: Option<String>,
 }
 

@@ -78,7 +78,7 @@ impl AlgebraicVariables {
 
     fn argument_type(
         &self,
-        expression: &ContractExpression,
+        expression: &SurfaceTerm,
         functions: &BinderMap<ClickFunctionType>,
         context: &str,
     ) -> Result<Option<ClickType>, ClickError> {
@@ -94,11 +94,11 @@ impl AlgebraicVariables {
             return Ok(Some(cast_type));
         }
         match expression {
-            ContractExpression::Lambda {
+            SurfaceTerm::Lambda {
                 parameters, result, ..
             } => return Ok(Some(lambdas::signature(parameters, result))),
 
-            ContractExpression::Field {
+            SurfaceTerm::Field {
                 pointee_struct: Some(struct_name),
                 lowered,
                 ..
@@ -110,15 +110,15 @@ impl AlgebraicVariables {
                     }));
                 }
             }
-            ContractExpression::AlgebraicVariable { algebraic_type, .. }
-            | ContractExpression::AlgebraicConstructor { algebraic_type, .. } => {
+            SurfaceTerm::AlgebraicVariable { algebraic_type, .. }
+            | SurfaceTerm::AlgebraicConstructor { algebraic_type, .. } => {
                 return Ok(Some(ClickType::Algebraic(algebraic_type.clone())));
             }
             // A resource's field, `before.items`, has its declared type.
-            ContractExpression::ResourceField(access) if access.click_type.is_some() => {
+            SurfaceTerm::ResourceField(access) if access.click_type.is_some() => {
                 return Ok(access.click_type.clone());
             }
-            ContractExpression::Call { name, arguments } => {
+            SurfaceTerm::Call { name, arguments } => {
                 if let Some(function) = functions.get(name) {
                     let result = if function.type_parameters.is_empty() {
                         function.return_type.clone()
@@ -144,9 +144,9 @@ impl AlgebraicVariables {
                     return Ok(Some(result));
                 }
             }
-            ContractExpression::Binding(name)
-            | ContractExpression::ProgramBinding(name)
-            | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+            SurfaceTerm::Binding(name)
+            | SurfaceTerm::ProgramBinding(name)
+            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
             )) => {
                 if let Some(nominal) = self.nominal_types.get(name) {
@@ -160,9 +160,9 @@ impl AlgebraicVariables {
                     return Ok(Some(ClickType::Algebraic(application)));
                 }
             }
-            ContractExpression::Old(inner)
-            | ContractExpression::Exact(inner)
-            | ContractExpression::At {
+            SurfaceTerm::Old(inner)
+            | SurfaceTerm::Exact(inner)
+            | SurfaceTerm::At {
                 expression: inner, ..
             } => {
                 return self.argument_type(inner, functions, context);
@@ -195,17 +195,17 @@ impl AlgebraicVariables {
     }
 }
 
-fn is_deep_literal_add(expression: &ContractExpression) -> bool {
+fn is_deep_literal_add(expression: &SurfaceTerm) -> bool {
     let mut operands = 0;
     let mut current = expression;
-    while let ContractExpression::Add(left, right) = current {
-        if !matches!(right.as_ref(), ContractExpression::IntegerLiteral(_)) {
+    while let SurfaceTerm::Add(left, right) = current {
+        if !matches!(right.as_ref(), SurfaceTerm::IntegerLiteral(_)) {
             return false;
         }
         operands += 1;
         current = left;
     }
-    operands > 128 && matches!(current, ContractExpression::IntegerLiteral(_))
+    operands > 128 && matches!(current, SurfaceTerm::IntegerLiteral(_))
 }
 
 pub(in crate::surface) fn resource_match_arm_scopes<'a, 'b>(
@@ -292,7 +292,7 @@ pub(in crate::surface) fn resource_match_arm_scopes<'a, 'b>(
                 ClickType::Algebraic(application) => {
                     substitution.insert(
                         name.clone(),
-                        ContractExpression::AlgebraicVariable {
+                        SurfaceTerm::AlgebraicVariable {
                             name: name.clone().into(),
                             algebraic_type: application.clone(),
                             binder_index: index,
@@ -399,7 +399,7 @@ pub(in crate::surface) fn resource_match_arm_scopes<'a, 'b>(
 pub(in crate::surface) struct BodyChildren {
     pub(in crate::surface) children: Vec<ResourceChildBody>,
     pub(in crate::surface) contains: Vec<ResourceClause>,
-    pub(in crate::surface) facts: Vec<ClickProposition>,
+    pub(in crate::surface) facts: Vec<SurfaceProposition>,
 }
 
 /// Splits `body`, a match arm or the unmatched body of `definition`, into
@@ -420,7 +420,7 @@ pub(in crate::surface) fn resource_body_children<'b>(
 ) -> Result<BodyChildren, ClickError> {
     let no_values = BTreeMap::new();
     let field_names = ContractSubstitutions::with_body_fields_as_program_names(&no_values);
-    let spell_fields = |arguments: &[ContractExpression]| {
+    let spell_fields = |arguments: &[SurfaceTerm]| {
         arguments
             .iter()
             .map(|argument| substitute_contract_expression_in(argument, &field_names))
@@ -428,16 +428,16 @@ pub(in crate::surface) fn resource_body_children<'b>(
             .map_err(ClickError::new)
     };
     let mut equations =
-        BTreeMap::<(crate::kernel::InstanceRef, &str), Vec<(usize, &ContractExpression)>>::new();
+        BTreeMap::<(crate::kernel::InstanceRef, &str), Vec<(usize, &SurfaceTerm)>>::new();
     for (index, fact) in body.facts.iter().enumerate() {
-        if let ClickProposition::Comparison {
+        if let SurfaceProposition::Comparison {
             left,
             operator: ComparisonOperator::Equal,
             right,
         } = fact
         {
             for (access, value) in [(left, right), (right, left)] {
-                if let ContractExpression::ResourceField(access) = access
+                if let SurfaceTerm::ResourceField(access) = access
                     && access.children.is_empty()
                 {
                     equations
@@ -588,7 +588,7 @@ pub(in crate::surface) fn resource_body_children<'b>(
         for argument in &arguments {
             // C expressions are read-only. The kernel checks their value,
             // ownership requirements, and path obligations when rewriting.
-            if !matches!(argument, ContractExpression::Call { .. }) {
+            if !matches!(argument, SurfaceTerm::Call { .. }) {
                 resource_argument_to_program_expression(argument)?;
             }
             // Pure calls are type checked by the shared specification lowerer.
@@ -620,7 +620,7 @@ pub(in crate::surface) fn resource_body_children<'b>(
                 )));
             };
             let source = match value {
-                ContractExpression::ResourceField(access)
+                SurfaceTerm::ResourceField(access)
                     if access.identity == crate::kernel::InstanceRef::Body
                         && access.children.is_empty() =>
                 {
@@ -639,9 +639,9 @@ pub(in crate::surface) fn resource_body_children<'b>(
                     }
                     crate::kernel::ResourceChildField::Parent(access.field_index)
                 }
-                ContractExpression::Binding(variable)
-                | ContractExpression::ProgramBinding(variable)
-                | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+                SurfaceTerm::Binding(variable)
+                | SurfaceTerm::ProgramBinding(variable)
+                | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
                     crate::kernel::BindingName::Named(variable),
                 )) => {
                     let (index, _) = constructor_bindings
@@ -1516,7 +1516,7 @@ pub(super) fn validate_algebraic_type_uses(
 }
 
 fn validate_algebraic_proposition(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     variables: &mut AlgebraicVariables,
     click_functions: &BinderMap<ClickFunctionType>,
     predicates: &BTreeMap<&str, &PredicateDefinition>,
@@ -1526,9 +1526,9 @@ fn validate_algebraic_proposition(
     let mut pending = vec![proposition];
     while let Some(proposition) = pending.pop() {
         match proposition {
-            ClickProposition::And(left, right)
-            | ClickProposition::Or(left, right)
-            | ClickProposition::Implies(left, right) => {
+            SurfaceProposition::And(left, right)
+            | SurfaceProposition::Or(left, right)
+            | SurfaceProposition::Implies(left, right) => {
                 pending.push(right);
                 pending.push(left);
             }
@@ -1547,7 +1547,7 @@ fn validate_algebraic_proposition(
 
 #[inline(never)]
 fn validate_algebraic_proposition_one(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     variables: &mut AlgebraicVariables,
     click_functions: &BinderMap<ClickFunctionType>,
     predicates: &BTreeMap<&str, &PredicateDefinition>,
@@ -1555,7 +1555,7 @@ fn validate_algebraic_proposition_one(
     context: &str,
 ) -> Result<(), ClickError> {
     match proposition {
-        ClickProposition::Value(expression) => {
+        SurfaceProposition::Value(expression) => {
             validate_algebraic_expression(
                 expression,
                 variables,
@@ -1566,7 +1566,7 @@ fn validate_algebraic_proposition_one(
             )?;
             Ok(())
         }
-        ClickProposition::Comparison { left, right, .. } => {
+        SurfaceProposition::Comparison { left, right, .. } => {
             validate_algebraic_expression(
                 left,
                 variables,
@@ -1585,9 +1585,9 @@ fn validate_algebraic_proposition_one(
             )
             .map(|_| ())
         }
-        ClickProposition::FloatClassification { expression, .. }
-        | ClickProposition::Defined { expression }
-        | ClickProposition::IsA {
+        SurfaceProposition::FloatClassification { expression, .. }
+        | SurfaceProposition::Defined { expression }
+        | SurfaceProposition::IsA {
             pointer: expression,
             ..
         } => validate_algebraic_expression(
@@ -1599,14 +1599,14 @@ fn validate_algebraic_proposition_one(
             context,
         )
         .map(|_| ()),
-        ClickProposition::And(left, right)
-        | ClickProposition::Or(left, right)
-        | ClickProposition::Implies(left, right) => {
+        SurfaceProposition::And(left, right)
+        | SurfaceProposition::Or(left, right)
+        | SurfaceProposition::Implies(left, right) => {
             let _ = (left, right);
             unreachable!("binary propositions are handled iteratively")
         }
-        ClickProposition::Not(body)
-        | ClickProposition::At {
+        SurfaceProposition::Not(body)
+        | SurfaceProposition::At {
             proposition: body, ..
         } => validate_algebraic_proposition(
             body,
@@ -1616,13 +1616,13 @@ fn validate_algebraic_proposition_one(
             definitions,
             context,
         ),
-        ClickProposition::ForAll {
+        SurfaceProposition::ForAll {
             click_type: interface_type,
             name,
             body,
             ..
         }
-        | ClickProposition::Exists {
+        | SurfaceProposition::Exists {
             click_type: interface_type,
             name,
             body,
@@ -1673,14 +1673,14 @@ fn validate_algebraic_proposition_one(
             variables.end(scope);
             result
         }
-        ClickProposition::RangeAll {
+        SurfaceProposition::RangeAll {
             start,
             end,
             item,
             body,
             ..
         }
-        | ClickProposition::RangeAny {
+        | SurfaceProposition::RangeAny {
             start,
             end,
             item,
@@ -1727,7 +1727,7 @@ fn validate_algebraic_proposition_one(
             variables.end(scope);
             result
         }
-        ClickProposition::PredicateCall { name, arguments } => {
+        SurfaceProposition::PredicateCall { name, arguments } => {
             let definition = predicates.get(name.as_str()).copied();
             let actual_types = arguments
                 .iter()
@@ -1870,10 +1870,10 @@ fn validate_algebraic_proposition_one(
             }
             Ok(())
         }
-        ClickProposition::Separate { .. }
-        | ClickProposition::ResourceViewable { .. }
-        | ClickProposition::Contains { .. }
-        | ClickProposition::Loadable { .. } => Ok(()),
+        SurfaceProposition::Separate { .. }
+        | SurfaceProposition::ResourceViewable { .. }
+        | SurfaceProposition::Contains { .. }
+        | SurfaceProposition::Loadable { .. } => Ok(()),
     }
 }
 
@@ -1881,7 +1881,7 @@ fn validate_algebraic_proposition_one(
 fn validate_algebraic_quantifier_body(
     name: &SurfaceBinder,
     application: &AlgebraicTypeApplication,
-    body: &ClickProposition,
+    body: &SurfaceProposition,
     variables: &mut AlgebraicVariables,
     click_functions: &BinderMap<ClickFunctionType>,
     predicates: &BTreeMap<&str, &PredicateDefinition>,
@@ -1892,7 +1892,7 @@ fn validate_algebraic_quantifier_body(
     variables.hide(name);
     let substitutions = BTreeMap::from([(
         name.to_string(),
-        ContractExpression::AlgebraicVariable {
+        SurfaceTerm::AlgebraicVariable {
             name: name.to_string().into(),
             algebraic_type: application.clone(),
             binder_index: 0,
@@ -1911,16 +1911,16 @@ fn validate_algebraic_quantifier_body(
     result
 }
 
-fn expression_is_integer_binding(expression: &ContractExpression, bindings: &BinderSet) -> bool {
+fn expression_is_integer_binding(expression: &SurfaceTerm, bindings: &BinderSet) -> bool {
     match expression {
-        ContractExpression::Binding(name) => bindings.contains(name),
-        ContractExpression::ProgramExpression(ProgramExpression::Variable(name)) => {
+        SurfaceTerm::Binding(name) => bindings.contains(name),
+        SurfaceTerm::ProgramExpression(ProgramExpression::Variable(name)) => {
             bindings.contains(name)
         }
-        ContractExpression::Negate(inner) => expression_is_integer_binding(inner, bindings),
-        ContractExpression::Add(left, right)
-        | ContractExpression::Subtract(left, right)
-        | ContractExpression::Multiply(left, right) => {
+        SurfaceTerm::Negate(inner) => expression_is_integer_binding(inner, bindings),
+        SurfaceTerm::Add(left, right)
+        | SurfaceTerm::Subtract(left, right)
+        | SurfaceTerm::Multiply(left, right) => {
             expression_is_integer_binding(left, bindings)
                 || expression_is_integer_binding(right, bindings)
         }
@@ -1928,13 +1928,13 @@ fn expression_is_integer_binding(expression: &ContractExpression, bindings: &Bin
     }
 }
 
-fn expression_is_untyped_integer_literal(expression: &ContractExpression) -> bool {
+fn expression_is_untyped_integer_literal(expression: &SurfaceTerm) -> bool {
     match expression {
-        ContractExpression::IntegerLiteral(_) => true,
-        ContractExpression::Negate(inner) => expression_is_untyped_integer_literal(inner),
-        ContractExpression::Add(left, right)
-        | ContractExpression::Subtract(left, right)
-        | ContractExpression::Multiply(left, right) => {
+        SurfaceTerm::IntegerLiteral(_) => true,
+        SurfaceTerm::Negate(inner) => expression_is_untyped_integer_literal(inner),
+        SurfaceTerm::Add(left, right)
+        | SurfaceTerm::Subtract(left, right)
+        | SurfaceTerm::Multiply(left, right) => {
             expression_is_untyped_integer_literal(left)
                 && expression_is_untyped_integer_literal(right)
         }
@@ -1951,7 +1951,7 @@ fn expression_is_untyped_integer_literal(expression: &ContractExpression) -> boo
 /// non-literal arm must be an Integer binding (or another Integer-valued
 /// nested match), while literal arms remain contextual and neutral.
 fn expression_is_integer_match_result(
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     variables: &mut AlgebraicVariables,
     click_functions: &BinderMap<ClickFunctionType>,
     predicates: &BTreeMap<&str, &PredicateDefinition>,
@@ -1959,10 +1959,10 @@ fn expression_is_integer_match_result(
     context: &str,
 ) -> Result<bool, ClickError> {
     match expression {
-        ContractExpression::Negate(inner)
-        | ContractExpression::Old(inner)
-        | ContractExpression::Exact(inner)
-        | ContractExpression::At {
+        SurfaceTerm::Negate(inner)
+        | SurfaceTerm::Old(inner)
+        | SurfaceTerm::Exact(inner)
+        | SurfaceTerm::At {
             expression: inner, ..
         } => expression_is_integer_match_result(
             inner,
@@ -1972,25 +1972,24 @@ fn expression_is_integer_match_result(
             definitions,
             context,
         ),
-        ContractExpression::Add(left, right)
-        | ContractExpression::Subtract(left, right)
-        | ContractExpression::Multiply(left, right) => Ok(expression_is_integer_match_result(
+        SurfaceTerm::Add(left, right)
+        | SurfaceTerm::Subtract(left, right)
+        | SurfaceTerm::Multiply(left, right) => Ok(expression_is_integer_match_result(
             left,
             variables,
             click_functions,
             predicates,
             definitions,
             context,
-        )?
-            || expression_is_integer_match_result(
-                right,
-                variables,
-                click_functions,
-                predicates,
-                definitions,
-                context,
-            )?),
-        ContractExpression::AlgebraicMatch { scrutinee, arms } => {
+        )? || expression_is_integer_match_result(
+            right,
+            variables,
+            click_functions,
+            predicates,
+            definitions,
+            context,
+        )?),
+        SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
             let Some(algebraic_type) = validate_algebraic_expression(
                 scrutinee,
                 variables,
@@ -2030,7 +2029,7 @@ fn expression_is_integer_match_result(
                         ClickType::Algebraic(algebraic_type) => {
                             algebraic_bindings.insert(
                                 binding.clone(),
-                                ContractExpression::AlgebraicVariable {
+                                SurfaceTerm::AlgebraicVariable {
                                     name: binding.clone(),
                                     algebraic_type,
                                     binder_index: binding_index,
@@ -2069,7 +2068,7 @@ fn expression_is_integer_match_result(
 }
 
 fn validate_algebraic_expression(
-    mut expression: &ContractExpression,
+    mut expression: &SurfaceTerm,
     variables: &mut AlgebraicVariables,
     click_functions: &BinderMap<ClickFunctionType>,
     predicates: &BTreeMap<&str, &PredicateDefinition>,
@@ -2084,7 +2083,7 @@ fn validate_algebraic_expression(
     // alias sequences off the call stack while retaining value-before-body
     // validation and the existing type error for an algebraic initializer.
     loop {
-        let ContractExpression::Let {
+        let SurfaceTerm::Let {
             name,
             click_type: Some(ClickType::Integer),
             value,
@@ -2119,7 +2118,7 @@ fn validate_algebraic_expression(
 }
 
 fn validate_algebraic_expression_node(
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     variables: &mut AlgebraicVariables,
     click_functions: &BinderMap<ClickFunctionType>,
     predicates: &BTreeMap<&str, &PredicateDefinition>,
@@ -2127,7 +2126,7 @@ fn validate_algebraic_expression_node(
     context: &str,
 ) -> Result<Option<AlgebraicTypeApplication>, ClickError> {
     if let Some(reduced) = lambdas::reduce_head(expression).map_err(ClickError::new)? {
-        if let ContractExpression::Let { value, .. } = expression {
+        if let SurfaceTerm::Let { value, .. } = expression {
             validate_algebraic_expression(
                 value,
                 variables,
@@ -2147,7 +2146,7 @@ fn validate_algebraic_expression_node(
         );
     }
     match expression {
-        ContractExpression::IntegerContext(value) => validate_algebraic_expression(
+        SurfaceTerm::IntegerContext(value) => validate_algebraic_expression(
             value,
             variables,
             click_functions,
@@ -2156,7 +2155,7 @@ fn validate_algebraic_expression_node(
             context,
         ),
 
-        ContractExpression::Proposition(proposition) => {
+        SurfaceTerm::Proposition(proposition) => {
             validate_algebraic_proposition(
                 proposition,
                 variables,
@@ -2167,14 +2166,14 @@ fn validate_algebraic_expression_node(
             )?;
             Ok(None)
         }
-        ContractExpression::Resource(_) => Ok(None),
-        ContractExpression::MethodCall { method, .. } => Err(ClickError::new(format!(
+        SurfaceTerm::Resource(_) => Ok(None),
+        SurfaceTerm::MethodCall { method, .. } => Err(ClickError::new(format!(
             "{context}: the method `{method}` was not resolved by its receiver's type"
         ))),
-        ContractExpression::RegionResult(_)
-        | ContractExpression::RegionAllocation(_)
-        | ContractExpression::RegionParameter { .. } => Ok(None),
-        ContractExpression::Lambda {
+        SurfaceTerm::RegionResult(_)
+        | SurfaceTerm::RegionAllocation(_)
+        | SurfaceTerm::RegionParameter { .. } => Ok(None),
+        SurfaceTerm::Lambda {
             parameters, body, ..
         } => {
             let scope = variables.scope();
@@ -2193,7 +2192,7 @@ fn validate_algebraic_expression_node(
             checked?;
             Ok(None)
         }
-        ContractExpression::Apply {
+        SurfaceTerm::Apply {
             function,
             arguments,
         } => {
@@ -2217,8 +2216,8 @@ fn validate_algebraic_expression_node(
             Ok(None)
         }
 
-        ContractExpression::IntegerLiteral(_) => Ok(None),
-        ContractExpression::Negate(inner) => validate_algebraic_expression(
+        SurfaceTerm::IntegerLiteral(_) => Ok(None),
+        SurfaceTerm::Negate(inner) => validate_algebraic_expression(
             inner,
             variables,
             click_functions,
@@ -2226,15 +2225,15 @@ fn validate_algebraic_expression_node(
             definitions,
             context,
         ),
-        ContractExpression::ResourceField(access) => Ok(match &access.click_type {
+        SurfaceTerm::ResourceField(access) => Ok(match &access.click_type {
             Some(ClickType::Algebraic(ty)) => Some(ty.clone()),
             _ => None,
         }),
-        ContractExpression::AlgebraicVariable { algebraic_type, .. } => {
+        SurfaceTerm::AlgebraicVariable { algebraic_type, .. } => {
             validate_type_application(algebraic_type, definitions, context)?;
             Ok(Some(algebraic_type.clone()))
         }
-        ContractExpression::AlgebraicConstructor {
+        SurfaceTerm::AlgebraicConstructor {
             algebraic_type,
             variant,
             arguments,
@@ -2392,9 +2391,9 @@ fn validate_algebraic_expression_node(
                             click_functions,
                             context,
                         )? && !(if type_is_arithmetic(actual) && type_is_arithmetic(*expected) {
-                            matches!(argument, ContractExpression::IntegerLiteral(_))
-                                || matches!(argument, ContractExpression::Negate(inner)
-                                    if matches!(inner.as_ref(), ContractExpression::IntegerLiteral(_)))
+                            matches!(argument, SurfaceTerm::IntegerLiteral(_))
+                                || matches!(argument, SurfaceTerm::Negate(inner)
+                                    if matches!(inner.as_ref(), SurfaceTerm::IntegerLiteral(_)))
                                 || implicitly_converts(actual, *expected)
                         } else {
                             click_types_compatible(actual, *expected)
@@ -2412,7 +2411,7 @@ fn validate_algebraic_expression_node(
             }
             Ok(Some(algebraic_type.clone()))
         }
-        ContractExpression::AlgebraicMatch { scrutinee, arms } => {
+        SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
             let Some(algebraic_type) = validate_algebraic_expression(
                 scrutinee,
                 variables,
@@ -2500,7 +2499,7 @@ fn validate_algebraic_expression_node(
                         ClickType::Algebraic(algebraic_type) => {
                             algebraic_bindings.insert(
                                 binding.clone(),
-                                ContractExpression::AlgebraicVariable {
+                                SurfaceTerm::AlgebraicVariable {
                                     name: binding.clone(),
                                     algebraic_type,
                                     binder_index: binding_index,
@@ -2597,7 +2596,7 @@ fn validate_algebraic_expression_node(
                 _ => None,
             })
         }
-        ContractExpression::SequenceLiteral(elements) => {
+        SurfaceTerm::SequenceLiteral(elements) => {
             for element in elements {
                 validate_algebraic_expression(
                     element,
@@ -2610,20 +2609,20 @@ fn validate_algebraic_expression_node(
             }
             Ok(None)
         }
-        ContractExpression::SequenceConcat(left, right)
-        | ContractExpression::Add(left, right)
-        | ContractExpression::Subtract(left, right)
-        | ContractExpression::Multiply(left, right)
-        | ContractExpression::Divide(left, right)
-        | ContractExpression::Remainder(left, right)
-        | ContractExpression::ShiftLeft(left, right)
-        | ContractExpression::RustShiftLeft(left, right)
-        | ContractExpression::ShiftRight(left, right)
-        | ContractExpression::RustShiftRight(left, right)
-        | ContractExpression::BitwiseAnd(left, right)
-        | ContractExpression::BitwiseOr(left, right)
-        | ContractExpression::BitwiseXor(left, right)
-        | ContractExpression::Index(left, right) => {
+        SurfaceTerm::SequenceConcat(left, right)
+        | SurfaceTerm::Add(left, right)
+        | SurfaceTerm::Subtract(left, right)
+        | SurfaceTerm::Multiply(left, right)
+        | SurfaceTerm::Divide(left, right)
+        | SurfaceTerm::Remainder(left, right)
+        | SurfaceTerm::ShiftLeft(left, right)
+        | SurfaceTerm::RustShiftLeft(left, right)
+        | SurfaceTerm::ShiftRight(left, right)
+        | SurfaceTerm::RustShiftRight(left, right)
+        | SurfaceTerm::BitwiseAnd(left, right)
+        | SurfaceTerm::BitwiseOr(left, right)
+        | SurfaceTerm::BitwiseXor(left, right)
+        | SurfaceTerm::Index(left, right) => {
             validate_algebraic_expression(
                 left,
                 variables,
@@ -2642,9 +2641,9 @@ fn validate_algebraic_expression_node(
             )?;
             Ok(None)
         }
-        ContractExpression::Old(inner)
-        | ContractExpression::Exact(inner)
-        | ContractExpression::At {
+        SurfaceTerm::Old(inner)
+        | SurfaceTerm::Exact(inner)
+        | SurfaceTerm::At {
             expression: inner, ..
         } => validate_algebraic_expression(
             inner,
@@ -2654,7 +2653,7 @@ fn validate_algebraic_expression_node(
             definitions,
             context,
         ),
-        ContractExpression::BitwiseNot(inner) => {
+        SurfaceTerm::BitwiseNot(inner) => {
             validate_algebraic_expression(
                 inner,
                 variables,
@@ -2665,7 +2664,7 @@ fn validate_algebraic_expression_node(
             )?;
             Ok(None)
         }
-        ContractExpression::If {
+        SurfaceTerm::If {
             condition,
             then_branch,
             else_branch,
@@ -2707,7 +2706,7 @@ fn validate_algebraic_expression_node(
                 ))),
             }
         }
-        ContractExpression::RangeFold {
+        SurfaceTerm::RangeFold {
             start,
             end,
             initial,
@@ -2754,7 +2753,7 @@ fn validate_algebraic_expression_node(
             result?;
             Ok(None)
         }
-        ContractExpression::Let {
+        SurfaceTerm::Let {
             name,
             click_type,
             value,
@@ -2825,7 +2824,7 @@ fn validate_algebraic_expression_node(
                 context,
             )
         }
-        ContractExpression::Call { name, arguments } if is_integer_truncation(name) => {
+        SurfaceTerm::Call { name, arguments } if is_integer_truncation(name) => {
             let (left, right) =
                 integer_truncation_arguments(name, arguments).map_err(ClickError::new)?;
             for argument in [left, right] {
@@ -2846,9 +2845,7 @@ fn validate_algebraic_expression_node(
             }
             Ok(None)
         }
-        ContractExpression::Call { name, arguments }
-            if integer_conversion_target(name).is_some() =>
-        {
+        SurfaceTerm::Call { name, arguments } if integer_conversion_target(name).is_some() => {
             let argument = integer_conversion_argument(name, arguments).map_err(ClickError::new)?;
             // Reverse conversions give their argument mathematical Integer
             // context. Do not infer a C width for a large contextual numeral;
@@ -2869,7 +2866,7 @@ fn validate_algebraic_expression_node(
             }
             Ok(None)
         }
-        ContractExpression::Call { name, arguments } if name == "to_nat" => {
+        SurfaceTerm::Call { name, arguments } if name == "to_nat" => {
             let argument = integer_conversion_argument(name, arguments).map_err(ClickError::new)?;
             super::type_validation::validate_to_nat_argument_type(
                 argument,
@@ -2879,7 +2876,7 @@ fn validate_algebraic_expression_node(
             )?;
             Ok(Some(AlgebraicTypeApplication::concrete("Nat")))
         }
-        ContractExpression::Call { name, arguments } => {
+        SurfaceTerm::Call { name, arguments } => {
             let function = click_functions.get(name);
             let actual_types = arguments
                 .iter()
@@ -3103,15 +3100,15 @@ fn validate_algebraic_expression_node(
             }))
         }
         // A C name of a Rust enum's type holds that enum's value.
-        ContractExpression::Binding(name)
-        | ContractExpression::ProgramBinding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+        SurfaceTerm::Binding(name)
+        | SurfaceTerm::ProgramBinding(name)
+        | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) => Ok(variables.get(name).and_then(|interface_type| {
             AlgebraicTypeApplication::of_enum_interface_type(*interface_type)
         })),
         // So does `*r` for a reference `r` to one.
-        ContractExpression::ProgramExpression(ProgramExpression::Load(pointer))
+        SurfaceTerm::ProgramExpression(ProgramExpression::Load(pointer))
             if matches!(pointer.as_ref(), ProgramExpression::Variable(name)
                 if matches!(name.named().and_then(|name| variables.get(name)), Some(InterfaceType::ParameterPointer(_)))) =>
         {
@@ -3127,14 +3124,14 @@ fn validate_algebraic_expression_node(
                 InterfaceType::Parameter(*enum_type),
             ))
         }
-        ContractExpression::QualifiedC { .. }
-        | ContractExpression::CUnary { .. }
-        | ContractExpression::MemoryLoad { .. }
-        | ContractExpression::ProgramExpression(_)
-        | ContractExpression::ArrayIndex { .. }
-        | ContractExpression::Field { .. }
-        | ContractExpression::ResourceCount(_)
-        | ContractExpression::ResourceWildcard => Ok(None),
+        SurfaceTerm::QualifiedC { .. }
+        | SurfaceTerm::CUnary { .. }
+        | SurfaceTerm::MemoryLoad { .. }
+        | SurfaceTerm::ProgramExpression(_)
+        | SurfaceTerm::ArrayIndex { .. }
+        | SurfaceTerm::Field { .. }
+        | SurfaceTerm::ResourceCount(_)
+        | SurfaceTerm::ResourceWildcard => Ok(None),
     }
 }
 
@@ -3244,7 +3241,7 @@ impl ScopedTypes {
 /// Keep algebraic match bindings available to condition checking. The
 /// ordinary checker still checks C comparisons and their carrier rules.
 fn validate_scalar_return_condition(
-    condition: &ClickProposition,
+    condition: &SurfaceProposition,
     types: &mut ScopedTypes,
     click_functions: &BinderMap<ClickFunctionType>,
     definitions: &BTreeMap<&str, &AlgebraicTypeDefinition>,
@@ -3254,14 +3251,14 @@ fn validate_scalar_return_condition(
     while let Some(condition) = pending.pop() {
         crate::instrumentation::record_deterministic_work(1);
         match condition {
-            ClickProposition::And(left, right)
-            | ClickProposition::Or(left, right)
-            | ClickProposition::Implies(left, right) => {
+            SurfaceProposition::And(left, right)
+            | SurfaceProposition::Or(left, right)
+            | SurfaceProposition::Implies(left, right) => {
                 pending.push(right);
                 pending.push(left);
             }
-            ClickProposition::Not(body) => pending.push(body),
-            ClickProposition::Comparison { left, right, .. } => {
+            SurfaceProposition::Not(body) => pending.push(body),
+            SurfaceProposition::Comparison { left, right, .. } => {
                 let mut algebraic = false;
                 for operand in [left, right] {
                     // Arithmetic and sequence syntax cannot produce an
@@ -3269,16 +3266,16 @@ fn validate_scalar_return_condition(
                     // ordinary validator, including sequence comparisons.
                     if !matches!(
                         operand,
-                        ContractExpression::Binding(_)
-                            | ContractExpression::ProgramBinding(_)
-                            | ContractExpression::AlgebraicVariable { .. }
-                            | ContractExpression::AlgebraicConstructor { .. }
-                            | ContractExpression::Call { .. }
-                            | ContractExpression::AlgebraicMatch { .. }
-                            | ContractExpression::If { .. }
-                            | ContractExpression::Let { .. }
-                            | ContractExpression::Apply { .. }
-                            | ContractExpression::ProgramExpression(ProgramExpression::Variable(_))
+                        SurfaceTerm::Binding(_)
+                            | SurfaceTerm::ProgramBinding(_)
+                            | SurfaceTerm::AlgebraicVariable { .. }
+                            | SurfaceTerm::AlgebraicConstructor { .. }
+                            | SurfaceTerm::Call { .. }
+                            | SurfaceTerm::AlgebraicMatch { .. }
+                            | SurfaceTerm::If { .. }
+                            | SurfaceTerm::Let { .. }
+                            | SurfaceTerm::Apply { .. }
+                            | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(_))
                     ) {
                         continue;
                     }
@@ -3328,7 +3325,7 @@ fn validate_scalar_return_condition(
 /// types flow through branches so null and Integer numerals stay contextual.
 /// Bool retains its strict rule, rather than accepting an implicit truth test.
 fn require_scalar_return_value(
-    mut expression: &ContractExpression,
+    mut expression: &SurfaceTerm,
     expected: &ClickType,
     types: &mut ScopedTypes,
     click_functions: &BinderMap<ClickFunctionType>,
@@ -3337,7 +3334,7 @@ fn require_scalar_return_value(
 ) -> Result<(), ClickError> {
     let scope = types.scope();
     let checked = (|| {
-        while let ContractExpression::Let {
+        while let SurfaceTerm::Let {
             name,
             click_type,
             value,
@@ -3417,7 +3414,7 @@ fn require_scalar_return_value(
 }
 
 fn require_scalar_return_leaf(
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     expected: &ClickType,
     types: &mut ScopedTypes,
     click_functions: &BinderMap<ClickFunctionType>,
@@ -3426,7 +3423,7 @@ fn require_scalar_return_leaf(
 ) -> Result<(), ClickError> {
     crate::instrumentation::record_deterministic_work(1);
     match expression {
-        ContractExpression::If {
+        SurfaceTerm::If {
             condition,
             then_branch,
             else_branch,
@@ -3455,7 +3452,7 @@ fn require_scalar_return_leaf(
                 context,
             )
         }
-        ContractExpression::AlgebraicMatch { scrutinee, arms } => {
+        SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
             let scrutinee_type = infer_generic_expression_type(
                 scrutinee,
                 types,
@@ -3490,7 +3487,7 @@ fn require_scalar_return_leaf(
                     if let Some(ClickType::Algebraic(algebraic_type)) = &value {
                         algebraic_bindings.insert(
                             binding.clone(),
-                            ContractExpression::AlgebraicVariable {
+                            SurfaceTerm::AlgebraicVariable {
                                 name: binding.clone(),
                                 algebraic_type: algebraic_type.clone(),
                                 binder_index: index,
@@ -3523,9 +3520,9 @@ fn require_scalar_return_leaf(
             }
             Ok(())
         }
-        ContractExpression::Add(left, right)
-        | ContractExpression::Subtract(left, right)
-        | ContractExpression::Multiply(left, right)
+        SurfaceTerm::Add(left, right)
+        | SurfaceTerm::Subtract(left, right)
+        | SurfaceTerm::Multiply(left, right)
             if expected == &ClickType::Integer =>
         {
             require_scalar_return_value(
@@ -3545,7 +3542,7 @@ fn require_scalar_return_leaf(
                 context,
             )
         }
-        ContractExpression::Negate(inner) if expected == &ClickType::Integer => {
+        SurfaceTerm::Negate(inner) if expected == &ClickType::Integer => {
             require_scalar_return_value(
                 inner,
                 expected,
@@ -3555,7 +3552,7 @@ fn require_scalar_return_leaf(
                 context,
             )
         }
-        ContractExpression::RangeFold {
+        SurfaceTerm::RangeFold {
             initial,
             accumulator,
             item,
@@ -3695,7 +3692,7 @@ fn require_scalar_return_leaf(
 }
 
 fn infer_generic_expression_type(
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     variables: &mut ScopedTypes,
     click_functions: &BinderMap<ClickFunctionType>,
     definitions: &BTreeMap<&str, &AlgebraicTypeDefinition>,
@@ -3706,7 +3703,7 @@ fn infer_generic_expression_type(
     }
 
     if let Some(reduced) = lambdas::reduce_head(expression).map_err(ClickError::new)? {
-        if let ContractExpression::Let { value, .. } = expression {
+        if let SurfaceTerm::Let { value, .. } = expression {
             infer_generic_expression_type(value, variables, click_functions, definitions, context)?;
         }
         return infer_generic_expression_type(
@@ -3721,9 +3718,9 @@ fn infer_generic_expression_type(
         return Ok(Some(cast_type));
     }
     match expression {
-        ContractExpression::IntegerContext(_) => Ok(Some(ClickType::Integer)),
+        SurfaceTerm::IntegerContext(_) => Ok(Some(ClickType::Integer)),
 
-        ContractExpression::Proposition(_) => {
+        SurfaceTerm::Proposition(_) => {
             infer_scoped_spec_value_type(
                 expression,
                 &variables.program_value_types,
@@ -3734,12 +3731,12 @@ fn infer_generic_expression_type(
             )?;
             Ok(Some(ClickType::Proposition))
         }
-        ContractExpression::Resource(_) => Ok(Some(ClickType::Resource)),
-        ContractExpression::RegionResult(_)
-        | ContractExpression::RegionAllocation(_)
-        | ContractExpression::RegionParameter { .. }
-        | ContractExpression::MethodCall { .. } => Ok(None),
-        ContractExpression::Lambda {
+        SurfaceTerm::Resource(_) => Ok(Some(ClickType::Resource)),
+        SurfaceTerm::RegionResult(_)
+        | SurfaceTerm::RegionAllocation(_)
+        | SurfaceTerm::RegionParameter { .. }
+        | SurfaceTerm::MethodCall { .. } => Ok(None),
+        SurfaceTerm::Lambda {
             parameters,
             result,
             body,
@@ -3760,7 +3757,7 @@ fn infer_generic_expression_type(
             checked?;
             Ok(Some(lambdas::signature(parameters, result)))
         }
-        ContractExpression::Apply {
+        SurfaceTerm::Apply {
             function,
             arguments,
         } => {
@@ -3796,17 +3793,15 @@ fn infer_generic_expression_type(
             Ok(Some(*result))
         }
 
-        ContractExpression::IntegerLiteral(_) => {
-            Ok(generics::default_numeral_click_type(expression))
-        }
-        ContractExpression::Negate(inner) => {
+        SurfaceTerm::IntegerLiteral(_) => Ok(generics::default_numeral_click_type(expression)),
+        SurfaceTerm::Negate(inner) => {
             infer_generic_expression_type(inner, variables, click_functions, definitions, context)
         }
-        ContractExpression::ResourceField(access) => Ok(access.click_type.clone()),
-        ContractExpression::AlgebraicVariable { algebraic_type, .. } => {
+        SurfaceTerm::ResourceField(access) => Ok(access.click_type.clone()),
+        SurfaceTerm::AlgebraicVariable { algebraic_type, .. } => {
             Ok(Some(ClickType::Algebraic(algebraic_type.clone())))
         }
-        ContractExpression::AlgebraicConstructor {
+        SurfaceTerm::AlgebraicConstructor {
             algebraic_type,
             variant,
             arguments,
@@ -3847,27 +3842,27 @@ fn infer_generic_expression_type(
             }
             Ok(Some(ClickType::Algebraic(algebraic_type.clone())))
         }
-        ContractExpression::Binding(name)
-        | ContractExpression::ProgramBinding(name)
-        | ContractExpression::ProgramExpression(ProgramExpression::Variable(
+        SurfaceTerm::Binding(name)
+        | SurfaceTerm::ProgramBinding(name)
+        | SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
             crate::kernel::BindingName::Named(name),
         )) => Ok(variables.get(name).cloned()),
-        ContractExpression::QualifiedC { .. }
-        | ContractExpression::CUnary { .. }
-        | ContractExpression::MemoryLoad { .. }
-        | ContractExpression::ProgramExpression(_) => infer_contract_expression_type(
+        SurfaceTerm::QualifiedC { .. }
+        | SurfaceTerm::CUnary { .. }
+        | SurfaceTerm::MemoryLoad { .. }
+        | SurfaceTerm::ProgramExpression(_) => infer_contract_expression_type(
             expression,
             &variables.program_value_types,
             click_functions,
             context,
         )
         .map(|interface_type| interface_type.map(ClickType::Program)),
-        ContractExpression::Old(inner)
-        | ContractExpression::Exact(inner)
-        | ContractExpression::At {
+        SurfaceTerm::Old(inner)
+        | SurfaceTerm::Exact(inner)
+        | SurfaceTerm::At {
             expression: inner, ..
         } => infer_generic_expression_type(inner, variables, click_functions, definitions, context),
-        ContractExpression::BitwiseNot(inner) => {
+        SurfaceTerm::BitwiseNot(inner) => {
             let actual = infer_generic_expression_type(
                 inner,
                 variables,
@@ -3885,7 +3880,7 @@ fn infer_generic_expression_type(
             }
             Ok(actual)
         }
-        ContractExpression::AlgebraicMatch { scrutinee, arms } => {
+        SurfaceTerm::AlgebraicMatch { scrutinee, arms } => {
             let Some(ClickType::Algebraic(application)) = infer_generic_expression_type(
                 scrutinee,
                 variables,
@@ -3941,7 +3936,7 @@ fn infer_generic_expression_type(
             }
             Ok(result_type)
         }
-        ContractExpression::If {
+        SurfaceTerm::If {
             condition,
             then_branch,
             else_branch,
@@ -3979,7 +3974,7 @@ fn infer_generic_expression_type(
             }
             Ok(then_type.or(else_type))
         }
-        ContractExpression::Let {
+        SurfaceTerm::Let {
             name,
             click_type,
             value,
@@ -4015,7 +4010,7 @@ fn infer_generic_expression_type(
             variables.end(scope);
             body_type
         }
-        ContractExpression::Call { name, arguments } => {
+        SurfaceTerm::Call { name, arguments } => {
             let Some(function) = click_functions.get(name) else {
                 return Ok(None);
             };
@@ -4057,20 +4052,20 @@ fn infer_generic_expression_type(
                 })
                 .unwrap_or_else(|| Ok(Some(function.return_type.clone())))
         }
-        ContractExpression::Add(left, right)
-        | ContractExpression::Subtract(left, right)
-        | ContractExpression::Multiply(left, right)
-        | ContractExpression::Divide(left, right)
-        | ContractExpression::Remainder(left, right)
-        | ContractExpression::ShiftLeft(left, right)
-        | ContractExpression::RustShiftLeft(left, right)
-        | ContractExpression::ShiftRight(left, right)
-        | ContractExpression::RustShiftRight(left, right)
-        | ContractExpression::BitwiseAnd(left, right)
-        | ContractExpression::BitwiseOr(left, right)
-        | ContractExpression::BitwiseXor(left, right)
-        | ContractExpression::Index(left, right)
-        | ContractExpression::SequenceConcat(left, right) => {
+        SurfaceTerm::Add(left, right)
+        | SurfaceTerm::Subtract(left, right)
+        | SurfaceTerm::Multiply(left, right)
+        | SurfaceTerm::Divide(left, right)
+        | SurfaceTerm::Remainder(left, right)
+        | SurfaceTerm::ShiftLeft(left, right)
+        | SurfaceTerm::RustShiftLeft(left, right)
+        | SurfaceTerm::ShiftRight(left, right)
+        | SurfaceTerm::RustShiftRight(left, right)
+        | SurfaceTerm::BitwiseAnd(left, right)
+        | SurfaceTerm::BitwiseOr(left, right)
+        | SurfaceTerm::BitwiseXor(left, right)
+        | SurfaceTerm::Index(left, right)
+        | SurfaceTerm::SequenceConcat(left, right) => {
             let left_type = infer_generic_expression_type(
                 left,
                 variables,
@@ -4089,11 +4084,11 @@ fn infer_generic_expression_type(
             // integer operand read as an Integer.
             let arithmetic = matches!(
                 expression,
-                ContractExpression::Add(..)
-                    | ContractExpression::Subtract(..)
-                    | ContractExpression::Multiply(..)
-                    | ContractExpression::Divide(..)
-                    | ContractExpression::Remainder(..)
+                SurfaceTerm::Add(..)
+                    | SurfaceTerm::Subtract(..)
+                    | SurfaceTerm::Multiply(..)
+                    | SurfaceTerm::Divide(..)
+                    | SurfaceTerm::Remainder(..)
             );
             if arithmetic
                 && left_type
@@ -4127,17 +4122,17 @@ fn infer_generic_expression_type(
             )
             .map(|interface_type| interface_type.map(ClickType::Program))
         }
-        ContractExpression::SequenceLiteral(_)
-        | ContractExpression::RangeFold { .. }
-        | ContractExpression::Field { .. }
-        | ContractExpression::ArrayIndex { .. }
-        | ContractExpression::ResourceCount(_)
-        | ContractExpression::ResourceWildcard => Ok(None),
+        SurfaceTerm::SequenceLiteral(_)
+        | SurfaceTerm::RangeFold { .. }
+        | SurfaceTerm::Field { .. }
+        | SurfaceTerm::ArrayIndex { .. }
+        | SurfaceTerm::ResourceCount(_)
+        | SurfaceTerm::ResourceWildcard => Ok(None),
     }
 }
 
 fn validate_generic_proposition_types(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     variables: &mut ScopedTypes,
     click_functions: &BinderMap<ClickFunctionType>,
     predicates: &BTreeMap<&str, &PredicateDefinition>,
@@ -4148,14 +4143,14 @@ fn validate_generic_proposition_types(
     while let Some(proposition) = pending.pop() {
         crate::instrumentation::record_deterministic_work(1);
         match proposition {
-            ClickProposition::And(left, right)
-            | ClickProposition::Or(left, right)
-            | ClickProposition::Implies(left, right) => {
+            SurfaceProposition::And(left, right)
+            | SurfaceProposition::Or(left, right)
+            | SurfaceProposition::Implies(left, right) => {
                 pending.push(right);
                 pending.push(left);
             }
-            ClickProposition::Not(body)
-            | ClickProposition::At {
+            SurfaceProposition::Not(body)
+            | SurfaceProposition::At {
                 proposition: body, ..
             } => pending.push(body),
             proposition => validate_generic_proposition_types_one(
@@ -4173,7 +4168,7 @@ fn validate_generic_proposition_types(
 
 #[inline(never)]
 fn validate_generic_proposition_types_one(
-    proposition: &ClickProposition,
+    proposition: &SurfaceProposition,
     variables: &mut ScopedTypes,
     click_functions: &BinderMap<ClickFunctionType>,
     predicates: &BTreeMap<&str, &PredicateDefinition>,
@@ -4181,7 +4176,7 @@ fn validate_generic_proposition_types_one(
     context: &str,
 ) -> Result<(), ClickError> {
     match proposition {
-        ClickProposition::Value(expression) => {
+        SurfaceProposition::Value(expression) => {
             let actual = infer_generic_expression_type(
                 expression,
                 variables,
@@ -4200,7 +4195,7 @@ fn validate_generic_proposition_types_one(
                 ))
             }
         }
-        ClickProposition::Comparison {
+        SurfaceProposition::Comparison {
             operator,
             left,
             right,
@@ -4243,7 +4238,7 @@ fn validate_generic_proposition_types_one(
             }
             Ok(())
         }
-        ClickProposition::PredicateCall { name, arguments } => {
+        SurfaceProposition::PredicateCall { name, arguments } => {
             let Some(predicate) = predicates.get(name.as_str()) else {
                 return Ok(());
             };
@@ -4274,16 +4269,16 @@ fn validate_generic_proposition_types_one(
             }
             Ok(())
         }
-        ClickProposition::And(..)
-        | ClickProposition::Or(..)
-        | ClickProposition::Implies(..)
-        | ClickProposition::Not(..)
-        | ClickProposition::At { .. } => {
+        SurfaceProposition::And(..)
+        | SurfaceProposition::Or(..)
+        | SurfaceProposition::Implies(..)
+        | SurfaceProposition::Not(..)
+        | SurfaceProposition::At { .. } => {
             unreachable!("logical propositions are handled iteratively")
         }
-        ClickProposition::FloatClassification { expression, .. }
-        | ClickProposition::Defined { expression }
-        | ClickProposition::IsA {
+        SurfaceProposition::FloatClassification { expression, .. }
+        | SurfaceProposition::Defined { expression }
+        | SurfaceProposition::IsA {
             pointer: expression,
             ..
         } => {
@@ -4296,7 +4291,7 @@ fn validate_generic_proposition_types_one(
             )?;
             Ok(())
         }
-        ClickProposition::RangeAll { body, .. } | ClickProposition::RangeAny { body, .. } => {
+        SurfaceProposition::RangeAll { body, .. } | SurfaceProposition::RangeAny { body, .. } => {
             validate_generic_proposition_types(
                 body,
                 variables,
@@ -4306,13 +4301,13 @@ fn validate_generic_proposition_types_one(
                 context,
             )
         }
-        ClickProposition::ForAll {
+        SurfaceProposition::ForAll {
             click_type: interface_type,
             name,
             body,
             ..
         }
-        | ClickProposition::Exists {
+        | SurfaceProposition::Exists {
             click_type: interface_type,
             name,
             body,
@@ -4331,10 +4326,10 @@ fn validate_generic_proposition_types_one(
             variables.end(scope);
             result
         }
-        ClickProposition::Separate { .. }
-        | ClickProposition::ResourceViewable { .. }
-        | ClickProposition::Contains { .. }
-        | ClickProposition::Loadable { .. } => Ok(()),
+        SurfaceProposition::Separate { .. }
+        | SurfaceProposition::ResourceViewable { .. }
+        | SurfaceProposition::Contains { .. }
+        | SurfaceProposition::Loadable { .. } => Ok(()),
     }
 }
 

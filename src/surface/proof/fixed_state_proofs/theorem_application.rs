@@ -16,7 +16,7 @@ pub(in crate::surface::proof) struct CheckedFixedStateTheoremApplication {
 pub(in crate::surface::proof) fn check_fixed_state_theorem_application_using_facts(
     theorem_environment: &TheoremEnvironment,
     application: &TheoremApplication,
-    surface_premises: &[ClickProposition],
+    surface_premises: &[SurfaceProposition],
     claim_label: &str,
     tactic_index: usize,
     available: &PureFactStore,

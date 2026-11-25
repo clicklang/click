@@ -613,10 +613,10 @@ mod tests {
                     },
                     true,
                 );
-                let surface = ClickProposition::Comparison {
-                    left: ContractExpression::IntegerLiteral(index.to_string()),
+                let surface = SurfaceProposition::Comparison {
+                    left: SurfaceTerm::IntegerLiteral(index.to_string()),
                     operator: ComparisonOperator::Equal,
-                    right: ContractExpression::IntegerLiteral((100 + index).to_string()),
+                    right: SurfaceTerm::IntegerLiteral((100 + index).to_string()),
                 };
                 (kernel, surface)
             })

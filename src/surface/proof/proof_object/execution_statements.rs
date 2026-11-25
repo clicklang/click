@@ -87,12 +87,12 @@ mod ranking_diagnostic_tests {
 
     #[test]
     fn ranking_note_uses_written_literals_instead_of_declaration_keys() {
-        let measure = ContractExpression::Add(
-            Box::new(ContractExpression::Subtract(
-                Box::new(ContractExpression::Binding("n".into())),
-                Box::new(ContractExpression::Binding("t".into())),
+        let measure = SurfaceTerm::Add(
+            Box::new(SurfaceTerm::Subtract(
+                Box::new(SurfaceTerm::Binding("n".into())),
+                Box::new(SurfaceTerm::Binding("t".into())),
             )),
-            Box::new(ContractExpression::ProgramExpression(
+            Box::new(SurfaceTerm::ProgramExpression(
                 crate::kernel::program_expression::uint32_literal(1),
             )),
         );
@@ -136,8 +136,8 @@ mod ranking_diagnostic_tests {
 fn program_branch_condition_at_frontier(
     execution: &ExecutionProofState,
     context: &ExecutionProofContext<'_>,
-    condition: &ClickProposition,
-) -> Result<Option<ClickProposition>, ClickError> {
+    condition: &SurfaceProposition,
+) -> Result<Option<SurfaceProposition>, ClickError> {
     let statement_index = execution.core.frontier.next_statement_index;
     if !context
         .constants
@@ -363,7 +363,7 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn written_bundle_member_surfaces(
         &self,
         ranking: bool,
-    ) -> Option<Vec<ClickProposition>> {
+    ) -> Option<Vec<SurfaceProposition>> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return None;
         };
@@ -375,11 +375,11 @@ impl<'a> Proof<'a> {
         // it lowers back to its leaf.
         let next_pass = BTreeMap::from([(
             crate::surface::LOOP_ITERATIONS_NAME.to_string(),
-            ContractExpression::Add(
-                Box::new(ContractExpression::Binding(
+            SurfaceTerm::Add(
+                Box::new(SurfaceTerm::Binding(
                     crate::surface::LOOP_ITERATIONS_NAME.to_string(),
                 )),
-                Box::new(ContractExpression::IntegerLiteral("1".to_string())),
+                Box::new(SurfaceTerm::IntegerLiteral("1".to_string())),
             ),
         )]);
         let one_pass_on = bundle
@@ -402,9 +402,9 @@ impl<'a> Proof<'a> {
                 let mut whole = true;
                 while let Some(member) = pending.pop() {
                     match member {
-                        ClickProposition::And(left, right) => {
+                        SurfaceProposition::And(left, right) => {
                             if std::mem::take(&mut whole) {
-                                members.push(ClickProposition::And(left.clone(), right.clone()));
+                                members.push(SurfaceProposition::And(left.clone(), right.clone()));
                             }
                             pending.push(*right);
                             pending.push(*left);
@@ -419,8 +419,8 @@ impl<'a> Proof<'a> {
         }
         if ranking && bundle.ranking_surfaces.len() == bundle.ranking_measures.len() {
             for component in &bundle.ranking_surfaces {
-                members.push(ClickProposition::Comparison {
-                    left: ContractExpression::IntegerLiteral("0".to_string()),
+                members.push(SurfaceProposition::Comparison {
+                    left: SurfaceTerm::IntegerLiteral("0".to_string()),
                     operator: ComparisonOperator::LessEqual,
                     right: component.clone(),
                 });
@@ -439,7 +439,7 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn synthesized_bundle_member_surface(
         &self,
         goal: &Proposition,
-    ) -> Option<ClickProposition> {
+    ) -> Option<SurfaceProposition> {
         self.bundle_member_surface(goal, true)
     }
 
@@ -447,7 +447,11 @@ impl<'a> Proof<'a> {
     /// the synthesized form whether or not it lowers back to `goal`. Only a
     /// refusal reads the unchecked form, to name the states a member
     /// compares; nothing proves or records it.
-    fn bundle_member_surface(&self, goal: &Proposition, checked: bool) -> Option<ClickProposition> {
+    fn bundle_member_surface(
+        &self,
+        goal: &Proposition,
+        checked: bool,
+    ) -> Option<SurfaceProposition> {
         let context = self.execution_context()?;
         let execution = self.execution()?;
         let bundle = context.constants.invariant_body_context.as_deref()?;
@@ -461,7 +465,7 @@ impl<'a> Proof<'a> {
                     Some((state, selector)),
                 )
             };
-            let accepted = |surface: &ClickProposition| {
+            let accepted = |surface: &SurfaceProposition| {
                 !checked
                     || self
                         .lower_surface_goal(surface, "loop invariant bundle member")
@@ -571,7 +575,7 @@ impl<'a> Proof<'a> {
     fn evaluate_at_frontier(
         &self,
         context: &ExecutionProofContext<'_>,
-        expression: &ContractExpression,
+        expression: &SurfaceTerm,
         what: &str,
     ) -> Result<ProgramValue, ClickError> {
         let execution = self
@@ -915,12 +919,12 @@ impl<'a> Proof<'a> {
                     crate::instrumentation::record_deterministic_work(1);
                     let value = self.evaluate_at_frontier(
                         context,
-                        &ContractExpression::ProgramExpression(argument.clone()),
+                        &SurfaceTerm::ProgramExpression(argument.clone()),
                         &format!("call argument `{name}`"),
                     )?;
                     produced_arguments.push((
                         name.clone(),
-                        ContractExpression::ProgramExpression(ProgramExpression::Value(value)),
+                        SurfaceTerm::ProgramExpression(ProgramExpression::Value(value)),
                     ));
                 }
             }
@@ -984,7 +988,7 @@ impl<'a> Proof<'a> {
                 })?;
                 Some((
                     name.clone(),
-                    ContractExpression::ProgramExpression(ProgramExpression::Value(value)),
+                    SurfaceTerm::ProgramExpression(ProgramExpression::Value(value)),
                 ))
             }
             None => None,
@@ -1106,7 +1110,7 @@ impl<'a> Proof<'a> {
             // denotes a typed null pointer here. Do not coerce arbitrary
             // integer expressions, even when their evaluated value is zero.
             if parameter.program_type().is_pointer()
-                && matches!(&argument, ContractExpression::IntegerLiteral(text) if text == "0")
+                && matches!(&argument, SurfaceTerm::IntegerLiteral(text) if text == "0")
             {
                 arguments.push(ProgramValue::typed_pointer(
                     crate::kernel::Address::null(),
@@ -1568,7 +1572,7 @@ impl<'a> Proof<'a> {
     fn debug_assert_spelling_relowers(
         &self,
         requirement: &UnresolvedRequirement,
-        surface: &ClickProposition,
+        surface: &SurfaceProposition,
     ) {
         if !cfg!(debug_assertions) {
             return;
@@ -1787,7 +1791,7 @@ impl<'a> Proof<'a> {
     /// the back edge — so no join consumes this split.
     pub(in crate::surface::proof) fn split_preservation_case(
         &self,
-        condition: &ClickProposition,
+        condition: &SurfaceProposition,
         tactic_index: usize,
     ) -> Result<(Self, [Option<BranchId>; 2]), ClickError> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
@@ -2206,27 +2210,26 @@ struct FrontierCall {
 /// The member reads its `pre` values at the iteration entry, as an `ensures`
 /// reads them through `old`, so it is spelled the way its author would write
 /// it, not reconstructed from the lowered goal.
-fn ranking_descent_surface(bundle: &InvariantBodyContext) -> Option<ClickProposition> {
+fn ranking_descent_surface(bundle: &InvariantBodyContext) -> Option<SurfaceProposition> {
     let selector = bundle.iteration_entry_selector.as_ref()?;
     let components = &bundle.ranking_surfaces;
     if components.is_empty() || components.len() != bundle.ranking_measures.len() {
         return None;
     }
-    let compare = |component: &ContractExpression, operator: ComparisonOperator| {
-        ClickProposition::Comparison {
+    let compare =
+        |component: &SurfaceTerm, operator: ComparisonOperator| SurfaceProposition::Comparison {
             left: component.clone(),
             operator,
-            right: ContractExpression::At {
+            right: SurfaceTerm::At {
                 selector: selector.clone(),
                 expression: Box::new(component.clone()),
             },
-        }
-    };
+        };
     let arm = |pivot: usize| {
         (0..pivot).rev().fold(
             compare(&components[pivot], ComparisonOperator::LessThan),
             |rest, index| {
-                ClickProposition::And(
+                SurfaceProposition::And(
                     Box::new(compare(&components[index], ComparisonOperator::Equal)),
                     Box::new(rest),
                 )
@@ -2236,7 +2239,7 @@ fn ranking_descent_surface(bundle: &InvariantBodyContext) -> Option<ClickProposi
     (0..components.len()).rev().fold(None, |rest, pivot| {
         Some(match rest {
             None => arm(pivot),
-            Some(rest) => ClickProposition::Or(Box::new(arm(pivot)), Box::new(rest)),
+            Some(rest) => SurfaceProposition::Or(Box::new(arm(pivot)), Box::new(rest)),
         })
     })
 }

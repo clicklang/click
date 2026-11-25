@@ -4,7 +4,7 @@ use crate::kernel::{OrdinaryTerminationScope, TerminationCheck};
 impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn for_program_termination(
         scope: &Arc<OrdinaryTerminationScope>,
-        surface: &ClickProposition,
+        surface: &SurfaceProposition,
         context: &'a PureTheoremContext,
         definitions: SpecDefinitions<'a>,
         theorems: &'a TheoremEnvironment,

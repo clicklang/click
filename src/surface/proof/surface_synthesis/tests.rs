@@ -153,7 +153,7 @@ fn separate_round_trips_without_generating_span_obligations() {
 /// Compare structural lowering separately from proving the use site's debts.
 /// Ordinary proof operations still check those debts before admitting a fact.
 fn relower_written_proposition(
-    surface: &ClickProposition,
+    surface: &SurfaceProposition,
     state: &ExecutionState,
 ) -> Result<Proposition, String> {
     relower_written_proposition_with_states(surface, state, state, &RecordedStates::default())
@@ -172,7 +172,7 @@ fn a_printed_void_pointer_coercion_round_trips_its_pointer_type() {
     let Requirement::Proposition(mut proposition) = function.requires()[0].clone() else {
         panic!("expected a comparison requirement");
     };
-    let ClickProposition::Comparison { right, .. } = &mut proposition else {
+    let SurfaceProposition::Comparison { right, .. } = &mut proposition else {
         panic!("expected a comparison");
     };
     *right = crate::surface::lowering::pure_function_parameter_argument(
@@ -207,7 +207,7 @@ fn a_printed_void_pointer_coercion_round_trips_its_pointer_type() {
 }
 
 fn relower_written_proposition_with_states(
-    surface: &ClickProposition,
+    surface: &SurfaceProposition,
     pre_state: &ExecutionState,
     state: &ExecutionState,
     recorded_states: &RecordedStates,
@@ -229,13 +229,13 @@ fn relower_written_proposition_with_states(
 /// One cell of a foreign static or file-scope object, spelled the way a
 /// caller's own contract writes it: the qualified name under the source
 /// alias, then the flat cell index used by the caller-side resource range.
-fn qualified_cell(name: &str, base: &ProgramValue, index: i32) -> ContractExpression {
-    ContractExpression::Index(
-        Box::new(ContractExpression::QualifiedC {
+fn qualified_cell(name: &str, base: &ProgramValue, index: i32) -> SurfaceTerm {
+    SurfaceTerm::Index(
+        Box::new(SurfaceTerm::QualifiedC {
             name: name.to_string(),
             lowered: ProgramExpression::Value(base.clone()),
         }),
-        Box::new(ContractExpression::IntegerLiteral(index.to_string())),
+        Box::new(SurfaceTerm::IntegerLiteral(index.to_string())),
     )
 }
 
@@ -245,16 +245,16 @@ fn qualified_multidimensional_cell(
     row: i32,
     column: i32,
     columns: i32,
-) -> ContractExpression {
+) -> SurfaceTerm {
     let flat_index = row * columns + column;
-    ContractExpression::ArrayIndex {
-        base: Box::new(ContractExpression::QualifiedC {
+    SurfaceTerm::ArrayIndex {
+        base: Box::new(SurfaceTerm::QualifiedC {
             name: name.to_string(),
             lowered: ProgramExpression::Value(base.clone()),
         }),
         indexes: vec![
-            ContractExpression::ProgramExpression(ProgramExpression::Value(int32(row as u32))),
-            ContractExpression::ProgramExpression(ProgramExpression::Value(int32(column as u32))),
+            SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(row as u32))),
+            SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(column as u32))),
         ],
         dimensions: vec![1, columns as u32],
         lowered: ProgramExpression::Index(
@@ -288,10 +288,10 @@ fn recorded_qualified_cells(
     let mut sources = SurfacePropositionMap::default();
     let loads = (0..cells)
         .map(|index| {
-            let written = ClickProposition::Comparison {
+            let written = SurfaceProposition::Comparison {
                 left: qualified_cell(name, &base, index),
                 operator: ComparisonOperator::Equal,
-                right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(5))),
+                right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(5))),
             };
             let lowered = relower_written_proposition(&written, &state)
                 .expect("a qualified cell comparison lowers at a state holding the object");
@@ -354,34 +354,34 @@ fn synthesized_under_sources(
     proposition: &Proposition,
     sources: &SurfacePropositionMap,
     state: &ExecutionState,
-) -> Option<ClickProposition> {
+) -> Option<SurfaceProposition> {
     let _sources = QualifiedSynthesisScope::enter(sources);
     let _budget = SurfaceSynthesisScope::enter();
     synthesize_surface_proposition(proposition, ParameterBinding::default(), state)
 }
 
 /// Every qualified name the spelling of a proposition reaches for.
-fn qualified_names_in(proposition: &ClickProposition) -> BTreeSet<String> {
+fn qualified_names_in(proposition: &SurfaceProposition) -> BTreeSet<String> {
     let mut names = BTreeSet::new();
     let mut propositions = vec![proposition];
     while let Some(proposition) = propositions.pop() {
         match proposition {
-            ClickProposition::And(left, right)
-            | ClickProposition::Or(left, right)
-            | ClickProposition::Implies(left, right) => {
+            SurfaceProposition::And(left, right)
+            | SurfaceProposition::Or(left, right)
+            | SurfaceProposition::Implies(left, right) => {
                 propositions.push(left);
                 propositions.push(right);
             }
-            ClickProposition::Comparison { left, right, .. } => {
+            SurfaceProposition::Comparison { left, right, .. } => {
                 for expression in [left, right] {
                     let mut base = expression;
-                    while let ContractExpression::Index(inner, _)
-                    | ContractExpression::Field { base: inner, .. }
-                    | ContractExpression::ArrayIndex { base: inner, .. } = base
+                    while let SurfaceTerm::Index(inner, _)
+                    | SurfaceTerm::Field { base: inner, .. }
+                    | SurfaceTerm::ArrayIndex { base: inner, .. } = base
                     {
                         base = inner;
                     }
-                    if let ContractExpression::QualifiedC { name, .. } = base {
+                    if let SurfaceTerm::QualifiedC { name, .. } = base {
                         names.insert(name.clone());
                     }
                 }
@@ -414,18 +414,18 @@ fn spelling_validation_cannot_defer_its_debts_to_a_statement_probe() {
         "x",
         ProgramValue::Int32(MachineTerm::Variable(Variable(894321))),
     );
-    let candidate = ClickProposition::Comparison {
-        left: ContractExpression::Call {
+    let candidate = SurfaceProposition::Comparison {
+        left: SurfaceTerm::Call {
             name: "to_integer".into(),
-            arguments: vec![ContractExpression::Add(
-                Box::new(ContractExpression::ProgramExpression(
-                    ProgramExpression::Variable("x".into()),
-                )),
-                Box::new(ContractExpression::IntegerLiteral("1".into())),
+            arguments: vec![SurfaceTerm::Add(
+                Box::new(SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                    "x".into(),
+                ))),
+                Box::new(SurfaceTerm::IntegerLiteral("1".into())),
             )],
         },
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::IntegerLiteral("0".into()),
+        right: SurfaceTerm::IntegerLiteral("0".into()),
     };
     let proposition = relower_written_proposition(&candidate, &state).unwrap();
     let (accepted, probe) = super::super::execution_planning::probe_open_obligations(|| {
@@ -521,11 +521,11 @@ fn definedness_round_trips_at_distinct_points_after_unfold_names_a_cell() {
     let historical = synthesize_surface_proposition(&historical_fact, parameters, &current)
         .expect("the historical observation should have a spelling");
     assert!(
-        matches!(&historical, ClickProposition::At { selector: selected, .. } if selected == &selector)
+        matches!(&historical, SurfaceProposition::At { selector: selected, .. } if selected == &selector)
     );
     let present = synthesize_surface_proposition(&current_fact, parameters, &current)
         .expect("the current observation should have a spelling");
-    assert!(matches!(&present, ClickProposition::Defined { .. }));
+    assert!(matches!(&present, SurfaceProposition::Defined { .. }));
     for (spelled, fact) in [(historical, historical_fact), (present, current_fact)] {
         assert_eq!(
             relower_written_proposition_with_states(&spelled, &current, &current, &points),
@@ -733,7 +733,7 @@ fn qualified_multidimensional_cell_recovery_preserves_its_source_rank() {
         },
         ProgramType::Int32Pointer,
     );
-    let surface = ClickProposition::Comparison {
+    let surface = SurfaceProposition::Comparison {
         left: qualified_multidimensional_cell(
             "static_local::increment_twice::values",
             &base,
@@ -742,7 +742,7 @@ fn qualified_multidimensional_cell_recovery_preserves_its_source_rank() {
             3,
         ),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(5))),
+        right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(5))),
     };
     let lowered = relower_written_proposition(&surface, &state)
         .expect("a qualified multidimensional cell comparison lowers");
@@ -754,8 +754,8 @@ fn qualified_multidimensional_cell_recovery_preserves_its_source_rank() {
         .expect("the recorded multidimensional spelling is recoverable");
     assert!(matches!(
         spelled,
-        ClickProposition::Comparison {
-            left: ContractExpression::ArrayIndex { .. },
+        SurfaceProposition::Comparison {
+            left: SurfaceTerm::ArrayIndex { .. },
             ..
         }
     ));
@@ -861,7 +861,7 @@ fn exact_external_zero_based_byte_range_round_trips_symbolic_end() {
         &BTreeMap::new(),
     )
     .expect("the exact external byte range must be spellable");
-    let ClickProposition::Loadable { segment } = &synthesized else {
+    let SurfaceProposition::Loadable { segment } = &synthesized else {
         panic!("the requirement must remain one viewability: {synthesized:?}");
     };
     assert_eq!(segment.base, ProgramExpression::Variable("bytes".into()));
@@ -901,7 +901,7 @@ fn exact_external_zero_based_byte_range_resolves_direct_variable_argument() {
         &BTreeMap::new(),
     )
     .expect("the exact named local argument must resolve to its declared byte parameter");
-    let ClickProposition::Loadable { segment } = synthesized else {
+    let SurfaceProposition::Loadable { segment } = synthesized else {
         panic!("the requirement must remain one viewability");
     };
     assert_eq!(segment.base, ProgramExpression::Variable("bytes".into()));
@@ -1085,12 +1085,10 @@ fn external_symbolic_element_constant_byte_requirement(
 /// defined, followed by a guarded universal one-byte loadability range. The
 /// caller's outer `loadable(bytes[0..len + 1])` fact is a separate premise;
 /// this regression targets the quantified `k` carrier that retains `1`.
-fn full_external_guarded_range_surface() -> ClickProposition {
-    let length =
-        ContractExpression::ProgramExpression(ProgramExpression::Variable("__click_q0".into()));
-    let index =
-        ContractExpression::ProgramExpression(ProgramExpression::Variable("__click_q1".into()));
-    let quantified_range = ClickProposition::Loadable {
+fn full_external_guarded_range_surface() -> SurfaceProposition {
+    let length = SurfaceTerm::ProgramExpression(ProgramExpression::Variable("__click_q0".into()));
+    let index = SurfaceTerm::ProgramExpression(ProgramExpression::Variable("__click_q1".into()));
+    let quantified_range = SurfaceProposition::Loadable {
         segment: ContractSegment {
             uninitialized: false,
             state: ContractSegmentState::Current,
@@ -1101,33 +1099,29 @@ fn full_external_guarded_range_surface() -> ClickProposition {
                 Box::new(ProgramExpression::Value(int32(1))),
             ),
             surface: ContractSegmentSurface::Range {
-                base: ContractExpression::ProgramExpression(ProgramExpression::Variable(
-                    "bytes".into(),
-                )),
+                base: SurfaceTerm::ProgramExpression(ProgramExpression::Variable("bytes".into())),
                 start: index.clone(),
-                end: ContractExpression::Add(
+                end: SurfaceTerm::Add(
                     Box::new(index.clone()),
-                    Box::new(ContractExpression::ProgramExpression(
-                        ProgramExpression::Value(int32(1)),
-                    )),
+                    Box::new(SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+                        int32(1),
+                    ))),
                 ),
             },
         },
     };
-    let all_before_loadable = ClickProposition::ForAll {
+    let all_before_loadable = SurfaceProposition::ForAll {
         click_type: ClickType::Program(InterfaceType::Int32),
         name: "__click_q1".into(),
         written_name: None,
-        body: Box::new(ClickProposition::Implies(
-            Box::new(ClickProposition::And(
-                Box::new(ClickProposition::Comparison {
+        body: Box::new(SurfaceProposition::Implies(
+            Box::new(SurfaceProposition::And(
+                Box::new(SurfaceProposition::Comparison {
                     left: index.clone(),
                     operator: ComparisonOperator::GreaterEqual,
-                    right: ContractExpression::ProgramExpression(ProgramExpression::Value(int32(
-                        0,
-                    ))),
+                    right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(0))),
                 }),
-                Box::new(ClickProposition::Comparison {
+                Box::new(SurfaceProposition::Comparison {
                     left: index.clone(),
                     operator: ComparisonOperator::LessThan,
                     right: length.clone(),
@@ -1136,13 +1130,13 @@ fn full_external_guarded_range_surface() -> ClickProposition {
             Box::new(quantified_range),
         )),
     };
-    ClickProposition::Exists {
+    SurfaceProposition::Exists {
         click_type: ClickType::Program(InterfaceType::Int32),
         name: "__click_q0".into(),
         written_name: None,
-        body: Box::new(ClickProposition::And(
-            Box::new(ClickProposition::Defined {
-                expression: ContractExpression::ProgramExpression(ProgramExpression::Add(
+        body: Box::new(SurfaceProposition::And(
+            Box::new(SurfaceProposition::Defined {
+                expression: SurfaceTerm::ProgramExpression(ProgramExpression::Add(
                     Box::new(ProgramExpression::Variable("__click_q0".into())),
                     Box::new(ProgramExpression::Value(int32(1))),
                 )),
@@ -1201,7 +1195,7 @@ fn full_guarded_requirement_with_variable_argument_round_trips() {
         )
         .expect("the guarded strlen requirement must be spellable")
     };
-    assert!(matches!(synthesized, ClickProposition::Exists { .. }));
+    assert!(matches!(synthesized, SurfaceProposition::Exists { .. }));
     let lowered = relower_written_proposition(&synthesized, &state)
         .expect("the synthesized existential must lower through the have path");
     let resolve = crate::kernel::resolve_load_variables_from_registry;
@@ -1248,7 +1242,7 @@ fn full_guarded_constant_byte_requirement_with_variable_argument_round_trips() {
         )
         .expect("the guarded constant-byte strlen requirement must be spellable")
     };
-    assert!(matches!(synthesized, ClickProposition::Exists { .. }));
+    assert!(matches!(synthesized, SurfaceProposition::Exists { .. }));
     let lowered = relower_written_proposition(&synthesized, &state)
         .expect("the synthesized existential must lower through the have path");
     let resolve = crate::kernel::resolve_load_variables_from_registry;
@@ -1284,7 +1278,7 @@ fn strlen_symbolic_element_range_round_trips_exactly() {
         )
         .expect("strlen's reduced one-element range must be spellable")
     };
-    let ClickProposition::Loadable { segment } = &synthesized else {
+    let SurfaceProposition::Loadable { segment } = &synthesized else {
         panic!("the requirement must remain one viewability: {synthesized:?}");
     };
     assert_eq!(segment.base, ProgramExpression::Variable("bytes".into()));
@@ -1316,7 +1310,7 @@ fn strlen_symbolic_element_constant_byte_range_round_trips_exactly() {
         )
         .expect("a constant one-byte symbolic range must be spellable")
     };
-    let ClickProposition::Loadable { segment } = &synthesized else {
+    let SurfaceProposition::Loadable { segment } = &synthesized else {
         panic!("the requirement must remain one viewability: {synthesized:?}");
     };
     assert_eq!(
@@ -1435,7 +1429,7 @@ fn strlen_constant_element_range_falls_back_to_general_synthesis() {
         &state,
     )
     .expect("a constant reduced element must retain the historical range fallback");
-    let ClickProposition::Loadable { segment } = &synthesized else {
+    let SurfaceProposition::Loadable { segment } = &synthesized else {
         panic!("the requirement must remain one viewability: {synthesized:?}");
     };
     assert_eq!(segment.base, ProgramExpression::Variable("bytes".into()));
@@ -1483,7 +1477,7 @@ fn strlen_zero_based_element_range_round_trips_exactly() {
         &state,
     )
     .expect("the canonical zero-based strlen element must be spellable");
-    let ClickProposition::Loadable { segment } = &synthesized else {
+    let SurfaceProposition::Loadable { segment } = &synthesized else {
         panic!("the requirement must remain one viewability: {synthesized:?}");
     };
     assert_eq!(segment.base, ProgramExpression::Variable("bytes".into()));
@@ -1539,7 +1533,7 @@ fn non_external_named_range_still_uses_general_synthesis() {
     let synthesized =
         synthesize_surface_proposition(&requirement, ParameterBinding::default(), &state)
             .expect("the general named-range path must remain available for local pointers");
-    let ClickProposition::Loadable { segment } = &synthesized else {
+    let SurfaceProposition::Loadable { segment } = &synthesized else {
         panic!("the requirement should remain one viewability: {synthesized:?}");
     };
     assert_eq!(segment.base, ProgramExpression::Variable("elements".into()));
@@ -1729,13 +1723,13 @@ fn external_argument_range_loadability_round_trips_through_the_range_form() {
 
     // The spelling is the written range form over the parameter's own name,
     // not a zero-based range over a displaced base.
-    let ClickProposition::ForAll { body, .. } = &spelled else {
+    let SurfaceProposition::ForAll { body, .. } = &spelled else {
         panic!("the requirement is one universal: {spelled:?}");
     };
-    let ClickProposition::Implies(_, consequent) = body.as_ref() else {
+    let SurfaceProposition::Implies(_, consequent) = body.as_ref() else {
         panic!("the universal's body is one implication: {spelled:?}");
     };
-    let ClickProposition::Loadable { segment } = consequent.as_ref() else {
+    let SurfaceProposition::Loadable { segment } = consequent.as_ref() else {
         panic!("the consequent is one viewability: {spelled:?}");
     };
     assert_eq!(segment.base, ProgramExpression::Variable("bytes".into()));
@@ -1770,20 +1764,20 @@ fn quantified_loadability_uses_saved_state() {
     )
     .expect("the quantified loadability goal must retain its saved state");
 
-    let ClickProposition::ForAll { body, .. } = &spelled else {
+    let SurfaceProposition::ForAll { body, .. } = &spelled else {
         panic!("the saved requirement is one universal: {spelled:?}");
     };
-    let ClickProposition::Implies(_, consequent) = body.as_ref() else {
+    let SurfaceProposition::Implies(_, consequent) = body.as_ref() else {
         panic!("the saved universal has one guarded body: {spelled:?}");
     };
     assert!(
         matches!(
             consequent.as_ref(),
-            ClickProposition::At {
+            SurfaceProposition::At {
                 selector: actual,
                 proposition,
             } if actual == &selector
-                && matches!(proposition.as_ref(), ClickProposition::Loadable { .. })
+                && matches!(proposition.as_ref(), SurfaceProposition::Loadable { .. })
         ),
         "the loadability leaf must be read at the saved loop state: {spelled:?}"
     );
@@ -1830,7 +1824,7 @@ fn named_element_ranges_preserve_nonzero_starts_and_folded_byte_counts() {
             )
             .expect("a named element range must be spellable")
         };
-        let ClickProposition::Loadable { segment } = &synthesized else {
+        let SurfaceProposition::Loadable { segment } = &synthesized else {
             panic!("the requirement should synthesize as one viewable range: {synthesized:?}");
         };
         assert_eq!(segment.base, ProgramExpression::Variable("elements".into()));
@@ -1847,7 +1841,7 @@ fn named_element_ranges_preserve_nonzero_starts_and_folded_byte_counts() {
         };
         assert_eq!(
             synthesized,
-            ClickProposition::Loadable {
+            SurfaceProposition::Loadable {
                 segment: segment.clone(),
             }
         );
@@ -1869,7 +1863,7 @@ fn named_element_ranges_preserve_nonzero_starts_and_folded_byte_counts() {
         )
         .expect("a folded byte count must retain its nonzero named range")
     };
-    let ClickProposition::Loadable { segment } = &synthesized else {
+    let SurfaceProposition::Loadable { segment } = &synthesized else {
         panic!("the folded requirement should synthesize as one range");
     };
     assert_eq!(segment.base, ProgramExpression::Variable("elements".into()));
@@ -1973,7 +1967,7 @@ fn exists_loadable_range_call_requirement_is_spellable() {
     )
     .expect("the call requirement must be spellable");
     assert!(
-        matches!(spelled, ClickProposition::Exists { .. }),
+        matches!(spelled, SurfaceProposition::Exists { .. }),
         "the existential is spelled as one: {spelled:?}"
     );
 }
@@ -1993,9 +1987,7 @@ fn function_call_synthesis_scales_with_named_arguments() {
             &BTreeMap::new(),
         )
         .unwrap();
-        assert!(
-            matches!(call, ContractExpression::Call { arguments, .. } if arguments.len() == size)
-        );
+        assert!(matches!(call, SurfaceTerm::Call { arguments, .. } if arguments.len() == size));
         let work = SURFACE_SYNTHESIS_BUDGET.with(|budget| {
             SURFACE_SYNTHESIS_WORK_LIMIT - budget.borrow().as_ref().unwrap().remaining_work
         });
@@ -2045,7 +2037,7 @@ fn function_array_synthesis_requires_the_exact_named_state() {
     )
     .unwrap();
     assert!(
-        matches!(&call, ContractExpression::Call { arguments, .. } if matches!(arguments.as_slice(), [ContractExpression::Old(_)]))
+        matches!(&call, SurfaceTerm::Call { arguments, .. } if matches!(arguments.as_slice(), [SurfaceTerm::Old(_)]))
     );
     // An unresolved historical pointer re-enters entry-state synthesis. The
     // entry slot must be free for that nested scope to clear and restore it.
@@ -2165,13 +2157,13 @@ fn nested_propositions_synthesize_with_small_frames_and_linear_work() {
                 let mut leaves = 0;
                 while let Some(node) = pending.pop() {
                     match node {
-                        ClickProposition::And(left, right)
-                        | ClickProposition::Or(left, right)
-                        | ClickProposition::Implies(left, right) => {
+                        SurfaceProposition::And(left, right)
+                        | SurfaceProposition::Or(left, right)
+                        | SurfaceProposition::Implies(left, right) => {
                             pending.push(left);
                             pending.push(right);
                         }
-                        ClickProposition::Comparison {
+                        SurfaceProposition::Comparison {
                             operator: ComparisonOperator::Equal,
                             ..
                         } => leaves += 1,
@@ -2276,7 +2268,7 @@ fn load_defining_equation_uses_entry_state() {
         &post,
     )
     .expect("entry load-defining equation must be spellable");
-    let ClickProposition::At {
+    let SurfaceProposition::At {
         selector: ProgramPointSelector::ProgramPoint(point),
         proposition,
     } = &spelled
@@ -2285,7 +2277,7 @@ fn load_defining_equation_uses_entry_state() {
     };
     assert_eq!(point.region, CodeRegionRef::Function);
     assert_eq!(point.kind, ProgramPointKind::Entry);
-    let ClickProposition::Comparison { left, right, .. } = proposition.as_ref() else {
+    let SurfaceProposition::Comparison { left, right, .. } = proposition.as_ref() else {
         panic!("the entry state must contain the defining equality: {spelled:?}");
     };
     assert_ne!(left, right, "the entry spelling must not be tautological");
@@ -2346,7 +2338,7 @@ fn load_defining_equation_uses_saved_state() {
         Some((&retained_state, &selector)),
     )
     .expect("the explicitly saved load state must be spellable");
-    let ClickProposition::At {
+    let SurfaceProposition::At {
         selector: actual,
         proposition,
     } = &spelled
@@ -2354,7 +2346,7 @@ fn load_defining_equation_uses_saved_state() {
         panic!("a changed entry and post-state must use the saved state: {spelled:?}");
     };
     assert_eq!(actual, &selector);
-    let ClickProposition::Comparison { left, right, .. } = proposition.as_ref() else {
+    let SurfaceProposition::Comparison { left, right, .. } = proposition.as_ref() else {
         panic!("the saved state must contain the defining equality: {spelled:?}");
     };
     assert_ne!(left, right, "the saved spelling must not be tautological");
@@ -2424,7 +2416,7 @@ fn bounded_pool_load_equation_round_trips_without_internal_names() {
     );
     let spelled = synthesize_surface_proposition(&requirement, ParameterBinding::default(), &state)
         .expect("bounded-pool call load equation must be spellable");
-    let ClickProposition::Comparison { left, right, .. } = &spelled else {
+    let SurfaceProposition::Comparison { left, right, .. } = &spelled else {
         panic!("load equation must remain an equality: {spelled:?}");
     };
     assert_ne!(left, right, "the source spelling must not be tautological");
@@ -2446,7 +2438,7 @@ fn owned_string_load_equation_round_trips_without_internal_names() {
     );
     let spelled = synthesize_surface_proposition(&requirement, ParameterBinding::default(), &state)
         .expect("owned-string call load equation must be spellable");
-    let ClickProposition::Comparison { left, right, .. } = &spelled else {
+    let SurfaceProposition::Comparison { left, right, .. } = &spelled else {
         panic!("load equation must remain an equality: {spelled:?}");
     };
     assert_ne!(left, right, "the source spelling must not be tautological");
@@ -2592,12 +2584,12 @@ fn actual_struct_field_load_equation(
         &state,
     )
     .expect("the example-shaped load equation must be spellable");
-    let ClickProposition::Comparison { left, right, .. } = &spelled else {
+    let SurfaceProposition::Comparison { left, right, .. } = &spelled else {
         panic!("load equation must remain an equality: {spelled:?}");
     };
     assert_ne!(left, right, "the source spelling must not be tautological");
-    assert!(matches!(left, ContractExpression::ProgramBinding(name) if name == "result"));
-    assert!(matches!(right, ContractExpression::Field { field, .. } if field == field_name));
+    assert!(matches!(left, SurfaceTerm::ProgramBinding(name) if name == "result"));
+    assert!(matches!(right, SurfaceTerm::Field { field, .. } if field == field_name));
     let lowered = relower_written_proposition(&spelled, &state).unwrap();
     assert_eq!(
         crate::kernel::proof::proposition_identity_key(&lowered),
@@ -2767,10 +2759,10 @@ fn strlen_existential_guard_round_trips_without_duplicate_guard() {
         .expect("strlen requirement should synthesize");
     assert!(matches!(
         &spelled,
-        ClickProposition::Exists {
+        SurfaceProposition::Exists {
             body,
             ..
-        } if matches!(body.as_ref(), ClickProposition::Comparison { .. })
+        } if matches!(body.as_ref(), SurfaceProposition::Comparison { .. })
     ));
     let lowered = relower_written_proposition(&spelled, &state)
         .expect("the omitted guard must be regenerated by ordinary lowering");
@@ -2810,10 +2802,10 @@ fn strlen_guard_is_retained_when_the_sibling_does_not_regenerate_it() {
         .expect("the negative shape should remain spellable");
     assert!(matches!(
         &spelled,
-        ClickProposition::Exists {
+        SurfaceProposition::Exists {
             body,
             ..
-        } if matches!(body.as_ref(), ClickProposition::And(left, _) if matches!(left.as_ref(), ClickProposition::And(..)))
+        } if matches!(body.as_ref(), SurfaceProposition::And(left, _) if matches!(left.as_ref(), SurfaceProposition::And(..)))
     ));
     let lowered = relower_written_proposition(&spelled, &state)
         .expect("the retained guard and comparison should lower");
@@ -2875,8 +2867,8 @@ fn strlen_guard_prefix_synthesis_scales_linearly_and_fails_closed() {
         if guard_count > 1 {
             assert!(matches!(
                 surface,
-                ClickProposition::Exists { body, .. }
-                    if matches!(body.as_ref(), ClickProposition::And(left, _) if matches!(left.as_ref(), ClickProposition::Defined { .. }))
+                SurfaceProposition::Exists { body, .. }
+                    if matches!(body.as_ref(), SurfaceProposition::And(left, _) if matches!(left.as_ref(), SurfaceProposition::Defined { .. }))
             ));
         }
         SURFACE_SYNTHESIS_BUDGET.with(|budget| {
@@ -2951,11 +2943,11 @@ fn pointer_field_synthesis_through_cast_and_local_selects_current_value() {
             &state,
         )
         .expect("the actual pointer field must have a spelling");
-        assert!(matches!(&spelled, ContractExpression::Field { field, .. } if field == "selected"));
-        let equality = ClickProposition::Comparison {
+        assert!(matches!(&spelled, SurfaceTerm::Field { field, .. } if field == "selected"));
+        let equality = SurfaceProposition::Comparison {
             left: spelled,
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::ProgramExpression(ProgramExpression::Value(value(
+            right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(value(
                 selected.clone(),
             ))),
         };
@@ -3025,7 +3017,7 @@ fn a_local_indexes_only_addresses_formed_from_it() {
         .into_iter()
         .map(|(var, name)| (var, SurfaceBinder::from(name)))
         .collect::<BTreeMap<_, _>>();
-    let Some(ContractExpression::Index(base, _)) = synthesize_local_indexed_load(
+    let Some(SurfaceTerm::Index(base, _)) = synthesize_local_indexed_load(
         &own_cell,
         crate::kernel::LoadKind::Int32,
         ParameterBinding::default(),
@@ -3036,9 +3028,7 @@ fn a_local_indexes_only_addresses_formed_from_it() {
     };
     assert_eq!(
         *base,
-        ContractExpression::ProgramExpression(ProgramExpression::Variable(
-            ("arena".to_string()).into()
-        ))
+        SurfaceTerm::ProgramExpression(ProgramExpression::Variable(("arena".to_string()).into()))
     );
 }
 
@@ -3174,12 +3164,11 @@ fn synthesized_unsigned_operations_and_computed_orders_relower_exactly() {
 
 #[test]
 fn pure_sequence_membership_round_trips_its_operands_and_negation() {
-    let element =
-        |value| ContractExpression::ProgramExpression(ProgramExpression::Value(int32(value)));
-    let literal = |value| ContractExpression::SequenceLiteral(vec![element(value)]);
-    let empty = ContractExpression::SequenceLiteral(vec![]);
-    let concat = |left, right| ContractExpression::SequenceConcat(Box::new(left), Box::new(right));
-    let membership = ClickProposition::Comparison {
+    let element = |value| SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(value)));
+    let literal = |value| SurfaceTerm::SequenceLiteral(vec![element(value)]);
+    let empty = SurfaceTerm::SequenceLiteral(vec![]);
+    let concat = |left, right| SurfaceTerm::SequenceConcat(Box::new(left), Box::new(right));
+    let membership = SurfaceProposition::Comparison {
         left: element(2),
         operator: ComparisonOperator::In,
         right: concat(empty, concat(literal(1), literal(2))),
@@ -3187,7 +3176,7 @@ fn pure_sequence_membership_round_trips_its_operands_and_negation() {
     let state = ExecutionState::new();
     for written in [
         membership.clone(),
-        ClickProposition::Not(Box::new(membership)),
+        SurfaceProposition::Not(Box::new(membership)),
     ] {
         let lowered = relower_written_proposition(&written, &state).unwrap();
         let atom = match &lowered {
@@ -3208,13 +3197,13 @@ fn pure_sequence_membership_round_trips_its_operands_and_negation() {
 #[test]
 fn pure_sequence_equality_round_trips_empty_and_nested_concatenation() {
     let literal = |value| {
-        ContractExpression::SequenceLiteral(vec![ContractExpression::ProgramExpression(
+        SurfaceTerm::SequenceLiteral(vec![SurfaceTerm::ProgramExpression(
             ProgramExpression::Value(int32(value)),
         )])
     };
-    let empty = ContractExpression::SequenceLiteral(vec![]);
-    let concat = |left, right| ContractExpression::SequenceConcat(Box::new(left), Box::new(right));
-    let written = ClickProposition::Comparison {
+    let empty = SurfaceTerm::SequenceLiteral(vec![]);
+    let concat = |left, right| SurfaceTerm::SequenceConcat(Box::new(left), Box::new(right));
+    let written = SurfaceProposition::Comparison {
         left: concat(empty.clone(), concat(literal(1), literal(2))),
         operator: ComparisonOperator::Equal,
         right: concat(concat(literal(1), literal(2)), empty),
@@ -3241,22 +3230,20 @@ fn pure_sequence_equality_round_trips_empty_and_nested_concatenation() {
 #[test]
 fn synthesized_uint32_cast_preserves_its_state() {
     let selector = ProgramPointSelector::Mark("before".into());
-    let expression = synthesize_uint32_operand(ContractExpression::At {
+    let expression = synthesize_uint32_operand(SurfaceTerm::At {
         selector: selector.clone(),
-        expression: Box::new(ContractExpression::ProgramExpression(
-            ProgramExpression::Variable("x".into()),
-        )),
+        expression: Box::new(SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+            "x".into(),
+        ))),
     })
     .unwrap();
-    assert!(
-        matches!(&expression, ContractExpression::At { selector: actual, .. } if actual == &selector)
-    );
-    let surface = ClickProposition::Comparison {
+    assert!(matches!(&expression, SurfaceTerm::At { selector: actual, .. } if actual == &selector));
+    let surface = SurfaceProposition::Comparison {
         left: expression,
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::ProgramExpression(ProgramExpression::Value(
-            ProgramValue::UInt32(MachineTerm::constant(u32::MAX)),
-        )),
+        right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::UInt32(
+            MachineTerm::constant(u32::MAX),
+        ))),
     };
     let before = ExecutionState::new().with_local("x", int32(u32::MAX));
     let after = ExecutionState::new().with_local("x", int32(0));
@@ -3298,8 +3285,8 @@ fn wide_memory_selectors_preserve_width_and_signedness() {
                 base.offset_by_bytes(offset),
                 pointer_type,
             ));
-            let written = ClickProposition::Comparison {
-                left: ContractExpression::ProgramExpression(ProgramExpression::TypedLoad {
+            let written = SurfaceProposition::Comparison {
+                left: SurfaceTerm::ProgramExpression(ProgramExpression::TypedLoad {
                     pointer: Box::new(address),
                     value_type,
                     volatile: false,
@@ -3308,9 +3295,7 @@ fn wide_memory_selectors_preserve_width_and_signedness() {
                     source: Default::default(),
                 }),
                 operator: ComparisonOperator::LessThan,
-                right: ContractExpression::ProgramExpression(ProgramExpression::Value(
-                    constant.clone(),
-                )),
+                right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(constant.clone())),
             };
             let fact = relower_written_proposition(&written, &state).unwrap();
             let Proposition::ConditionIs(condition, _) = fact else {
@@ -3383,7 +3368,7 @@ fn struct_loadable_spans_relower_without_widening_over_padding() {
     .unwrap();
     assert!(matches!(
         &clipped,
-        ClickProposition::Loadable {
+        SurfaceProposition::Loadable {
             segment: ContractSegment {
                 surface: ContractSegmentSurface::Range { .. },
                 ..
@@ -3547,11 +3532,11 @@ fn entry_model_raising_uses_the_binder_that_minted_the_field() {
     .unwrap();
     let size = synthesize_scalar_model_field(size, &current).unwrap();
     for (raised, name) in [(model, "model"), (size, "size")] {
-        let ContractExpression::Old(inner) = raised else {
+        let SurfaceTerm::Old(inner) = raised else {
             panic!("the entry field must raise through old: {raised:?}");
         };
         assert!(
-            matches!(*inner, ContractExpression::ResourceField(ref access)
+            matches!(*inner, SurfaceTerm::ResourceField(ref access)
                 if access.owner == "t" && access.field == name),
             "{inner:?}"
         );
@@ -3631,10 +3616,10 @@ fn a_model_field_value_its_instance_no_longer_holds_is_spelled_where_it_was_intr
         )
     }
     .expect("the earlier field value must be spelled where its instance held it");
-    let ClickProposition::Comparison { left, .. } = &spelled else {
+    let SurfaceProposition::Comparison { left, .. } = &spelled else {
         panic!("the fact must be spelled as a comparison: {spelled:?}");
     };
-    let ContractExpression::At {
+    let SurfaceTerm::At {
         selector,
         expression,
     } = left
@@ -3643,7 +3628,7 @@ fn a_model_field_value_its_instance_no_longer_holds_is_spelled_where_it_was_intr
     };
     assert_eq!(selector, &point(0));
     assert!(
-        matches!(expression.as_ref(), ContractExpression::ResourceField(field) if field.field == "size"),
+        matches!(expression.as_ref(), SurfaceTerm::ResourceField(field) if field.field == "size"),
         "the value must be spelled as the instance's field: {spelled:?}"
     );
 }
@@ -3740,12 +3725,12 @@ fn allocation_result_names_survive_reassignment_and_follow_state_scope() {
     };
     assert_eq!(
         raised,
-        Some(ContractExpression::RegionAllocation(point.region.clone()))
+        Some(SurfaceTerm::RegionAllocation(point.region.clone()))
     );
-    let surface = ClickProposition::Comparison {
-        left: ContractExpression::RegionAllocation(point.region.clone()),
+    let surface = SurfaceProposition::Comparison {
+        left: SurfaceTerm::RegionAllocation(point.region.clone()),
         operator: ComparisonOperator::Equal,
-        right: ContractExpression::QualifiedC {
+        right: SurfaceTerm::QualifiedC {
             name: "allocation_under_test".to_owned(),
             lowered: ProgramExpression::Value(ProgramValue::typed_pointer(
                 first.clone(),
@@ -3936,23 +3921,19 @@ fn array_index_spelling_keeps_the_source_index_at_each_integer_width() {
                     crate::kernel::KernelTermExport::machine_export_count(),
                     exports
                 );
-                assert!(
-                    matches!(&spelled, ContractExpression::Index(..)),
-                    "{spelled:?}"
-                );
+                assert!(matches!(&spelled, SurfaceTerm::Index(..)), "{spelled:?}");
                 let text = crate::surface::diagnostics::describe_contract_expression(&spelled);
                 assert!(!text.contains(" as "), "{text}");
                 if !increment {
                     assert_eq!(text, "a[i]");
                 }
-                let right = ContractExpression::ProgramExpression(ProgramExpression::Value(
-                    if width == 8 {
+                let right =
+                    SurfaceTerm::ProgramExpression(ProgramExpression::Value(if width == 8 {
                         ProgramValue::Int64(zero.clone())
                     } else {
                         ProgramValue::Int32(zero.clone())
-                    },
-                ));
-                let surface = ClickProposition::Comparison {
+                    }));
+                let surface = SurfaceProposition::Comparison {
                     left: spelled,
                     operator: ComparisonOperator::Equal,
                     right: right.clone(),
@@ -3990,7 +3971,7 @@ fn array_index_spelling_keeps_the_source_index_at_each_integer_width() {
                     )
                 };
                 let parsed = parser::parse(&format!("{prefix} function indexed(a: {pointer_type}, i: {source_type}) -> {result_type} {{ {text} }}")).unwrap();
-                let reparsed = ClickProposition::Comparison {
+                let reparsed = SurfaceProposition::Comparison {
                     left: parsed.click_function_definitions()[0]
                         .body()
                         .unwrap()
@@ -4082,7 +4063,7 @@ fn generic_call_spelling_reparses_to_the_same_concrete_and_nested_instance() {
             "x".to_string(),
             ProgramValue::Int32(MachineTerm::Variable(Variable(99001))),
         )]);
-        let lower = |proposition: &ClickProposition| {
+        let lower = |proposition: &SurfaceProposition| {
             crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
                 proposition, &PureFactContext::new(), ContractEnvironment::new(&values, &BTreeMap::new()),
                 FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
@@ -4151,8 +4132,8 @@ fn pointee_layout_spells_a_field_load_at_its_byte_offset() {
         ParameterBinding::new(&parameters, &arguments),
     )
     .expect("a pointer parameter's nominal layout names its field");
-    let expected = ClickProposition::Defined {
-        expression: ContractExpression::ProgramExpression(ProgramExpression::TypedLoad {
+    let expected = SurfaceProposition::Defined {
+        expression: SurfaceTerm::ProgramExpression(ProgramExpression::TypedLoad {
             pointer: Box::new(ProgramExpression::PointerOffsetBytes {
                 pointer: Box::new(ProgramExpression::Variable("p".into())),
                 bytes: 8.into(),
@@ -4164,7 +4145,7 @@ fn pointee_layout_spells_a_field_load_at_its_byte_offset() {
             source: Default::default(),
         }),
     };
-    let surface = ClickProposition::Defined { expression: load };
+    let surface = SurfaceProposition::Defined { expression: load };
     assert_eq!(
         crate::surface::printing::source_click_proposition(&surface),
         "defined(p->side)"
@@ -4302,7 +4283,7 @@ fn unified_terms_round_trip_nested_calls_and_mixed_integer_arguments() {
         let value = ProgramValue::Int32(MachineTerm::Variable(Variable(99002)));
         let state = ExecutionState::new().with_local("x", value.clone());
         let values = ProgramValueBindings::from([("x".to_string(), value)]);
-        let lower = |proposition: &ClickProposition| {
+        let lower = |proposition: &SurfaceProposition| {
             crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
                 proposition, &PureFactContext::new(), ContractEnvironment::new(&values, &BTreeMap::new()),
                 FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
@@ -4445,18 +4426,18 @@ fn local_read_test_store(
         .with_memory(state.memory().clone().store(pointer.clone(), value))
 }
 
-fn local_read_test_claim(value_type: ProgramType) -> ClickProposition {
+fn local_read_test_claim(value_type: ProgramType) -> SurfaceProposition {
     let limit = match value_type {
         ProgramType::UInt32 => ProgramValue::UInt32(MachineTerm::uint32_constant(20)),
         ProgramType::Int64 => ProgramValue::Int64(MachineTerm::int64_constant(20)),
         ProgramType::UInt64 => ProgramValue::UInt64(MachineTerm::uint64_constant(20)),
         _ => int32(20),
     };
-    ClickProposition::Comparison {
-        left: ContractExpression::CUnary {
-            operand: Box::new(ContractExpression::ProgramExpression(
-                ProgramExpression::Variable("p".into()),
-            )),
+    SurfaceProposition::Comparison {
+        left: SurfaceTerm::CUnary {
+            operand: Box::new(SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                "p".into(),
+            ))),
             lowered: ProgramExpression::TypedLoad {
                 pointer: Box::new(ProgramExpression::Value(int32(0))),
                 value_type,
@@ -4467,7 +4448,7 @@ fn local_read_test_claim(value_type: ProgramType) -> ClickProposition {
             },
         },
         operator: ComparisonOperator::LessEqual,
-        right: ContractExpression::ProgramExpression(ProgramExpression::Value(limit)),
+        right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(limit)),
     }
 }
 
@@ -4486,10 +4467,10 @@ fn exact_read_raises_at_its_own_point_when_another_point_has_equal_memory() {
     assert_eq!(first.memory(), second.memory());
 
     let mut claim = local_read_test_claim(ProgramType::Int32);
-    let ClickProposition::Comparison { left, .. } = &mut claim else {
+    let SurfaceProposition::Comparison { left, .. } = &mut claim else {
         unreachable!("test comparison");
     };
-    *left = ContractExpression::Exact(Box::new(left.clone()));
+    *left = SurfaceTerm::Exact(Box::new(left.clone()));
     let exact = relower_written_proposition(&claim, &first).unwrap();
     let read = local_test_read_operand(&exact, ProgramType::Int32);
     let MachineTerm::MemoryLoad(point, ..) = read else {
@@ -4515,10 +4496,10 @@ fn exact_read_raises_at_its_own_point_when_another_point_has_equal_memory() {
     // read key as the exact read, so the read is spelled plainly there: the
     // spelling depends on the read's key, not on its selection kind.
     assert!(
-        matches!(&raised, ContractExpression::At { selector: at, expression }
-        if at == &selector && !matches!(expression.as_ref(), ContractExpression::Exact(_)))
+        matches!(&raised, SurfaceTerm::At { selector: at, expression }
+        if at == &selector && !matches!(expression.as_ref(), SurfaceTerm::Exact(_)))
     );
-    let ClickProposition::Comparison { left, .. } = &mut claim else {
+    let SurfaceProposition::Comparison { left, .. } = &mut claim else {
         unreachable!("test comparison");
     };
     *left = raised;
@@ -4616,9 +4597,9 @@ fn check_local_read_versions(value_type: ProgramType, disjoint_type: ProgramType
             &BTreeMap::new(),
         )
         .expect("a named version has an ordinary read spelling");
-        assert!(matches!(&raised, ContractExpression::At { selector: at, .. } if at == selector));
+        assert!(matches!(&raised, SurfaceTerm::At { selector: at, .. } if at == selector));
         let mut replay = claim.clone();
-        let ClickProposition::Comparison { left, .. } = &mut replay else {
+        let SurfaceProposition::Comparison { left, .. } = &mut replay else {
             unreachable!("test comparison")
         };
         *left = raised;
@@ -4731,9 +4712,9 @@ fn whole_static_read_selects_and_replays_its_recorded_store() {
         &BTreeMap::new(),
     )
     .expect("the earlier static read has a recorded spelling");
-    assert!(matches!(&raised, ContractExpression::At { selector: at, .. } if at == &selector));
+    assert!(matches!(&raised, SurfaceTerm::At { selector: at, .. } if at == &selector));
     let mut replay = claim;
-    let ClickProposition::Comparison { left, .. } = &mut replay else {
+    let SurfaceProposition::Comparison { left, .. } = &mut replay else {
         unreachable!("test comparison");
     };
     *left = raised;
@@ -4810,9 +4791,9 @@ fn ordinary_fixed_offset_read_keeps_its_version_across_sibling_stores() {
         let raised =
             raise_kernel_term(&root, ParameterBinding::default(), &entry, &BTreeMap::new())
                 .expect("a recorded fixed-offset read has a spelling");
-        assert!(matches!(&raised, ContractExpression::At { selector: at, .. } if at == &selector));
+        assert!(matches!(&raised, SurfaceTerm::At { selector: at, .. } if at == &selector));
         let mut replay = claim.clone();
-        let ClickProposition::Comparison { left, .. } = &mut replay else {
+        let SurfaceProposition::Comparison { left, .. } = &mut replay else {
             unreachable!("test comparison")
         };
         *left = raised;
@@ -4916,10 +4897,10 @@ fn shared_scalar_load_raises_and_relowers_to_the_same_read_node() {
     ));
     let surface = raise_kernel_term(&root, ParameterBinding::default(), &state, &BTreeMap::new())
         .expect("read spelling");
-    let claim = ClickProposition::Comparison {
+    let claim = SurfaceProposition::Comparison {
         left: surface,
         operator: ComparisonOperator::LessEqual,
-        right: ContractExpression::IntegerLiteral("20".into()),
+        right: SurfaceTerm::IntegerLiteral("20".into()),
     };
     let lowered = relower_written_proposition(&claim, &state).unwrap();
     let Some((ConditionTerm::Compare { left, .. }, true)) = lowered.condition_native() else {
@@ -4955,7 +4936,7 @@ fn volatile_read_event_results_raise_and_lower_exactly() {
     for (event, value) in values.iter().enumerate() {
         let expression = synthesize_surface_value(value, ParameterBinding::default(), &state)
             .expect("event result spelling");
-        let expected = ContractExpression::RegionResult(CodeRegionRef::Path(vec![
+        let expected = SurfaceTerm::RegionResult(CodeRegionRef::Path(vec![
             SourcePathStep::Region(3),
             SourcePathStep::ReadEvent(event),
         ]));
@@ -4971,7 +4952,7 @@ fn volatile_read_event_results_raise_and_lower_exactly() {
         };
         assert_eq!(
             claim,
-            &ClickProposition::Comparison {
+            &SurfaceProposition::Comparison {
                 left: expected.clone(),
                 operator: ComparisonOperator::Equal,
                 right: expected,
@@ -5131,7 +5112,7 @@ fn shared_arithmetic_raising_does_not_export_operand_trees() {
     let surface =
         raise_kernel_term(&root, ParameterBinding::default(), &state, &BTreeMap::new()).unwrap();
     assert_eq!(KernelTermExport::machine_export_count(), exports);
-    let written = ClickProposition::Comparison {
+    let written = SurfaceProposition::Comparison {
         left: surface,
         operator: ComparisonOperator::LessEqual,
         right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(20))),
@@ -5430,7 +5411,7 @@ fn common_match_surface_preserves_typed_binders_and_relowers_nested_results() {
             "{declarations} theorem probe(payload: MatchScope, n: int32) {{ requires {requirement}; ensures true; }}"
         );
         let file = parser::parse(&source).unwrap();
-        let lower = |proposition: &ClickProposition| {
+        let lower = |proposition: &SurfaceProposition| {
             crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
             proposition, &PureFactContext::new(), ContractEnvironment::new(&values, &BTreeMap::new()),
             FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
@@ -6217,10 +6198,10 @@ fn check_float_reads_at_old_and_recorded_states(exact: bool) {
             &BTreeMap::new(),
         )
         .unwrap();
-        let comparison = |left| ClickProposition::Comparison {
+        let comparison = |left| SurfaceProposition::Comparison {
             left,
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::ProgramExpression(ProgramExpression::Value(format.value(
+            right: SurfaceTerm::ProgramExpression(ProgramExpression::Value(format.value(
                 match format {
                     crate::kernel::KernelFloatType::Float32 => MachineTerm::constant(0),
                     crate::kernel::KernelFloatType::Float64 => MachineTerm::uint64_constant(0),
@@ -6648,7 +6629,7 @@ fn numeric_float_casts_read_historical_and_current_operands() {
     let parsed =
         parser::parse("double probe(int32 x) { ensures result == (old(x) + x) as double; }")
             .unwrap();
-    let Ensure::Proposition(ClickProposition::Comparison {
+    let Ensure::Proposition(SurfaceProposition::Comparison {
         right: expression, ..
     }) = parsed.function_blocks()[0].ensures()[0].ensure()
     else {
@@ -7486,7 +7467,7 @@ fn closed_machine_orders_round_trip_after_checked_rewrite() {
             let state = ExecutionState::new().with_local("x", value.clone());
             let values = ProgramValueBindings::from([("x".to_string(), value.clone())]);
             let empty = BTreeMap::new();
-            let lower = |surface: &ClickProposition| {
+            let lower = |surface: &SurfaceProposition| {
                 crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
                     surface, &PureFactContext::new(), ContractEnvironment::new(&values, &empty),
                     FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
@@ -7652,7 +7633,7 @@ fn machine_arithmetic_round_trips_after_checked_rewrite() {
                 let state = ExecutionState::new().with_local("x", value.clone());
                 let values = ProgramValueBindings::from([("x".to_string(), value)]);
                 let empty = BTreeMap::new();
-                let lower = |surface: &ClickProposition| {
+                let lower = |surface: &SurfaceProposition| {
                     crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
                         surface, &PureFactContext::new(), ContractEnvironment::new(&values, &empty),
                         FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
@@ -7740,7 +7721,7 @@ fn assert_narrow_comparison_round_trip(
     proposition: &Proposition,
     format: MachineIntegerType,
     state: &ExecutionState,
-    lower: impl Fn(&ClickProposition) -> Proposition,
+    lower: impl Fn(&SurfaceProposition) -> Proposition,
 ) {
     let Some((ConditionTerm::Compare { format: actual, .. }, _)) = proposition.condition_native()
     else {
@@ -7783,7 +7764,7 @@ fn narrow_comparisons_round_trip_after_checked_rewrite() {
                     let state = ExecutionState::new().with_local("x", x.clone());
                     let values = ProgramValueBindings::from([("x".to_string(), x)]);
                     let empty = BTreeMap::new();
-                    let lower = |surface: &ClickProposition| {
+                    let lower = |surface: &SurfaceProposition| {
                         crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
                             surface, &PureFactContext::new(), ContractEnvironment::new(&values, &empty),
                             FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
@@ -8019,14 +8000,14 @@ fn negative_int64_comparisons_round_trip_under_point_selectors() {
     let _session = crate::kernel::VerificationSession::enter();
     let state = ExecutionState::new();
     let word = |n| {
-        ContractExpression::ProgramExpression(ProgramExpression::Value(ProgramValue::Int64(
+        SurfaceTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::Int64(
             MachineTerm::int64_constant(n),
         )))
     };
     for left in [
         word(-9),
-        ContractExpression::Old(Box::new(word(-9))),
-        ContractExpression::At {
+        SurfaceTerm::Old(Box::new(word(-9))),
+        SurfaceTerm::At {
             selector: ProgramPointSelector::from(ProgramPointRef {
                 region: CodeRegionRef::Function,
                 kind: ProgramPointKind::Entry,
@@ -8034,7 +8015,7 @@ fn negative_int64_comparisons_round_trip_under_point_selectors() {
             expression: Box::new(word(-9)),
         },
     ] {
-        let original = ClickProposition::Comparison {
+        let original = SurfaceProposition::Comparison {
             left,
             operator: ComparisonOperator::LessEqual,
             right: word(100),
@@ -9132,11 +9113,10 @@ fn call_capture_names_the_selected_result_at_its_declared_type() {
     let value = ProgramValue::Int32(term.clone());
     let state = ExecutionState::new().with_local(&capture, value.clone());
     let mut points = RecordedStates::new().with_source_layout(layout);
-    let expected =
-        ContractExpression::RegionResult(CodeRegionRef::Path(vec![SourcePathStep::Call(
-            "get".into(),
-            0,
-        )]));
+    let expected = SurfaceTerm::RegionResult(CodeRegionRef::Path(vec![SourcePathStep::Call(
+        "get".into(),
+        0,
+    )]));
 
     let raise = |points: &RecordedStates, sought: &MachineTerm, state: &ExecutionState| {
         let _scope = SynthesisRecordedPointsScope::enter(points);
@@ -9155,7 +9135,7 @@ fn call_capture_names_the_selected_result_at_its_declared_type() {
     let newer_value = ProgramValue::Int32(newer.clone());
     let current = state.clone().with_local(&capture, newer_value.clone());
     points.record_call_result(0, Some(newer_value.clone()));
-    let historical = ContractExpression::At {
+    let historical = SurfaceTerm::At {
         selector: saved,
         expression: Box::new(expected.clone()),
     };
@@ -9184,7 +9164,7 @@ fn call_capture_names_the_selected_result_at_its_declared_type() {
         lower(&expected).unwrap(),
         SpecExpression::Value(newer_value)
     );
-    let missing = ContractExpression::At {
+    let missing = SurfaceTerm::At {
         selector: before,
         expression: Box::new(expected.clone()),
     };
@@ -9588,7 +9568,7 @@ fn integer_match_on_written_constructor_round_trips() {
         file.click_function_definitions(),
         file.algebraic_type_definitions(),
     );
-    let lower = |proposition: &ClickProposition| {
+    let lower = |proposition: &SurfaceProposition| {
         crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
             proposition,
             &PureFactContext::new(),
@@ -9770,7 +9750,7 @@ fn declared_predicate_array_raises_and_lowers_its_entry_point() {
     let points = RecordedStates::new();
     let predicates = PredicateEnvironment::new(file.predicate_definitions());
     let functions = ClickFunctionEnvironment::new(&[]);
-    let lower = |surface: &ClickProposition, entry: &ExecutionState| {
+    let lower = |surface: &SurfaceProposition, entry: &ExecutionState| {
         crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
             surface,
             &PureFactContext::new(),
@@ -9798,8 +9778,8 @@ fn declared_predicate_array_raises_and_lowers_its_entry_point() {
     )
     .expect("the indexed array argument has a spelling");
     assert!(
-        matches!(&raised, ClickProposition::PredicateCall { arguments, .. }
-        if matches!(arguments.first(), Some(ContractExpression::Old(_))))
+        matches!(&raised, SurfaceProposition::PredicateCall { arguments, .. }
+        if matches!(arguments.first(), Some(SurfaceTerm::Old(_))))
     );
     assert_eq!(lower(&raised, &entry_view), Ok(original));
 }
@@ -9840,7 +9820,7 @@ fn declared_predicate_array_raises_at_its_write_point() {
     points.insert(selector.clone(), first.clone());
     let predicates = PredicateEnvironment::new(file.predicate_definitions());
     let functions = ClickFunctionEnvironment::new(&[]);
-    let lower = |surface: &ClickProposition, current: &ExecutionState| {
+    let lower = |surface: &SurfaceProposition, current: &ExecutionState| {
         crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
             surface,
             &PureFactContext::new(),
@@ -9866,8 +9846,8 @@ fn declared_predicate_array_raises_at_its_write_point() {
     let raised = synthesize_surface_proposition(&original, ParameterBinding::default(), &second)
         .expect("the array reference retains its write point");
     assert!(
-        matches!(&raised, ClickProposition::PredicateCall { arguments, .. }
-        if matches!(arguments.first(), Some(ContractExpression::At { selector: at, .. }) if at == &selector))
+        matches!(&raised, SurfaceProposition::PredicateCall { arguments, .. }
+        if matches!(arguments.first(), Some(SurfaceTerm::At { selector: at, .. }) if at == &selector))
     );
     assert_eq!(lower(&raised, &second), Ok(original));
 }
@@ -9969,8 +9949,10 @@ fn fixed_width_opaque_field_observation_round_trips_its_store_point() {
         &second,
     )
     .expect("the indexed field reads have a Click spelling");
-    assert!(matches!(&raised, ClickProposition::Comparison { left, .. }
-        if matches!(left, ContractExpression::At { selector: point, .. } if *point == selector)));
+    assert!(
+        matches!(&raised, SurfaceProposition::Comparison { left, .. }
+        if matches!(left, SurfaceTerm::At { selector: point, .. } if *point == selector))
+    );
     assert_eq!(
         relower_written_proposition_with_states(&raised, &state, &second, &points),
         Ok(goal),
@@ -10033,7 +10015,7 @@ fn generic_parameter_cell_raises_and_lowers_its_entry_version() {
     let points = RecordedStates::new();
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
-    let lower = |surface: &ClickProposition| {
+    let lower = |surface: &SurfaceProposition| {
         crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
             surface,
             &PureFactContext::new(),
@@ -10108,7 +10090,7 @@ fn nested_operand_definedness_round_trips() {
         ParameterBinding::default(),
         &state,
     ) {
-        Some(ClickProposition::Defined { expression }) => expression,
+        Some(SurfaceProposition::Defined { expression }) => expression,
         other => panic!("an overflow atom raises as `defined`: {other:?}"),
     };
     let ab = spelled(&flat_atom);
@@ -10121,11 +10103,11 @@ fn nested_operand_definedness_round_trips() {
         },
         false,
     ));
-    let ContractExpression::Add(_, c_term) = &ac else {
+    let SurfaceTerm::Add(_, c_term) = &ac else {
         panic!("`a + c`: {ac:?}");
     };
-    let nested = ClickProposition::Defined {
-        expression: ContractExpression::Add(Box::new(ab), c_term.clone()),
+    let nested = SurfaceProposition::Defined {
+        expression: SurfaceTerm::Add(Box::new(ab), c_term.clone()),
     };
     assert_eq!(
         relower_written_proposition(&nested, &state).as_ref(),

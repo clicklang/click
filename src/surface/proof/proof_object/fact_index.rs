@@ -3,11 +3,11 @@
 use super::*;
 
 pub(in crate::surface::proof) fn collect_surface_conjunct_leaves(
-    proposition: &ClickProposition,
-    leaves: &mut Vec<ClickProposition>,
+    proposition: &SurfaceProposition,
+    leaves: &mut Vec<SurfaceProposition>,
 ) {
     match proposition {
-        ClickProposition::And(left, right) => {
+        SurfaceProposition::And(left, right) => {
             collect_surface_conjunct_leaves(left, leaves);
             collect_surface_conjunct_leaves(right, leaves);
         }

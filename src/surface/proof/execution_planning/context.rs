@@ -41,7 +41,7 @@ pub(in crate::surface::proof) struct ExecutionProofEnvironment<'a> {
     /// `match` arm's bindings, `let { ... } = unfold(...)` names, call-result binders.
     /// The planners resolve them into the loop's written clauses before
     /// lowering, as a `have` goal at that point would.
-    pub(in crate::surface::proof) proof_locals: BinderMap<ContractExpression>,
+    pub(in crate::surface::proof) proof_locals: BinderMap<SurfaceTerm>,
 }
 
 impl<'a> ExecutionProofEnvironment<'a> {
@@ -175,7 +175,7 @@ pub(in crate::surface::proof) struct PlanningExecutionContext {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface::proof) struct ProofCaseChoice {
-    pub(in crate::surface::proof) condition: ClickProposition,
+    pub(in crate::surface::proof) condition: SurfaceProposition,
     pub(in crate::surface::proof) value: bool,
     /// Set when the case is one arm of a proof `match`. Merging then groups
     /// the paths by arm and rebuilds the `match` instead of an `if`.
@@ -595,7 +595,7 @@ pub(in crate::surface::proof) fn surface_program_condition(
     condition: &ProgramExpression,
     state: &ExecutionState,
     points: Option<&RecordedStates>,
-) -> Result<ClickProposition, ClickError> {
+) -> Result<SurfaceProposition, ClickError> {
     Ok(surface_program_condition_unresolved(
         condition, state, points,
     ))
@@ -605,7 +605,7 @@ fn surface_program_condition_unresolved(
     condition: &ProgramExpression,
     state: &ExecutionState,
     points: Option<&RecordedStates>,
-) -> ClickProposition {
+) -> SurfaceProposition {
     let no_values = BTreeMap::new();
     let source_names = crate::surface::lowering::ContractSubstitutions::with_source_names(
         &no_values,
@@ -614,7 +614,7 @@ fn surface_program_condition_unresolved(
     );
     // A local is written by its name where the condition's state resolves
     // that name to it, as a proof that writes the condition reads it.
-    let expression = |expression: &ProgramExpression| -> ContractExpression {
+    let expression = |expression: &ProgramExpression| -> SurfaceTerm {
         substitute_program_expression_as_contract_with_numerals(
             expression,
             source_names.clone(),
@@ -641,7 +641,7 @@ fn surface_program_condition_unresolved(
                     expression(value)
                 }
             };
-            ClickProposition::Comparison {
+            SurfaceProposition::Comparison {
                 left: operand(left),
                 operator,
                 right: operand(right),
@@ -672,27 +672,27 @@ fn surface_program_condition_unresolved(
         ProgramExpression::GreaterEqual(left, right) => {
             comparison(left, ComparisonOperator::GreaterEqual, right)
         }
-        ProgramExpression::Not(body) => ClickProposition::Not(Box::new(
+        ProgramExpression::Not(body) => SurfaceProposition::Not(Box::new(
             surface_program_condition_unresolved(body, state, points),
         )),
-        ProgramExpression::And(left, right) => ClickProposition::And(
+        ProgramExpression::And(left, right) => SurfaceProposition::And(
             Box::new(surface_program_condition_unresolved(left, state, points)),
             Box::new(surface_program_condition_unresolved(right, state, points)),
         ),
-        ProgramExpression::Or(left, right) => ClickProposition::Or(
+        ProgramExpression::Or(left, right) => SurfaceProposition::Or(
             Box::new(surface_program_condition_unresolved(left, state, points)),
             Box::new(surface_program_condition_unresolved(right, state, points)),
         ),
         // A `bool` value is the claim on itself (Stage 5): `Bool` has no
         // integer value to compare with zero.
         condition if crate::kernel::program_expression_has_bool_type(state, condition) => {
-            ClickProposition::Comparison {
+            SurfaceProposition::Comparison {
                 left: expression(condition),
                 operator: ComparisonOperator::NotEqual,
                 right: crate::surface::bool_literal(false),
             }
         }
-        condition => ClickProposition::Comparison {
+        condition => SurfaceProposition::Comparison {
             left: expression(condition),
             operator: ComparisonOperator::NotEqual,
             right: expression(&ProgramExpression::Value(int32(0))),
@@ -1179,10 +1179,10 @@ mod tests {
                     tactics.push(ProofTactic::Mark(format!("prefix-{low}-{high}")));
                     offsets.push(tactics.len());
                     case_path.push(ProofCaseChoice {
-                        condition: ClickProposition::Comparison {
-                            left: ContractExpression::Binding("k".into()),
+                        condition: SurfaceProposition::Comparison {
+                            left: SurfaceTerm::Binding("k".into()),
                             operator: ComparisonOperator::LessThan,
-                            right: ContractExpression::IntegerLiteral(middle.to_string()),
+                            right: SurfaceTerm::IntegerLiteral(middle.to_string()),
                         },
                         value: leaf < middle,
                         match_arm: None,

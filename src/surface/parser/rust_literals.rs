@@ -205,15 +205,15 @@ impl IntegerLiteral {
         })
     }
 
-    pub(super) fn contract_expression(&self, negative: bool) -> Result<ContractExpression, String> {
+    pub(super) fn contract_expression(&self, negative: bool) -> Result<SurfaceTerm, String> {
         if self.suffix.is_some() {
-            return Ok(ContractExpression::ProgramExpression(
-                ProgramExpression::Value(self.native_value(negative)?),
-            ));
+            return Ok(SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+                self.native_value(negative)?,
+            )));
         }
-        let expression = ContractExpression::IntegerLiteral(self.digits.clone());
+        let expression = SurfaceTerm::IntegerLiteral(self.digits.clone());
         Ok(if negative {
-            ContractExpression::Negate(Box::new(expression))
+            SurfaceTerm::Negate(Box::new(expression))
         } else {
             expression
         })

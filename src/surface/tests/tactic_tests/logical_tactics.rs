@@ -623,8 +623,8 @@ fn parses_existential_proof_tactics() {
         if binding.bindings == [("k".to_string(), Some(ClickType::Program(InterfaceType::Int32)))]));
     assert_eq!(
         tactics[2],
-        ProofTactic::Witness(ProofWitness::single(ContractExpression::Add(
-            Box::new(ContractExpression::Binding("k".to_string())),
+        ProofTactic::Witness(ProofWitness::single(SurfaceTerm::Add(
+            Box::new(SurfaceTerm::Binding("k".to_string())),
             Box::new(current_int(1)),
         )))
     );
@@ -763,27 +763,27 @@ fn parses_click_proposition_syntax() {
     assert_eq!(file.predicate_definitions()[0].name(), "nonnegative");
     assert!(matches!(
         function.requires()[0],
-        Requirement::Proposition(ClickProposition::And(_, _))
+        Requirement::Proposition(SurfaceProposition::And(_, _))
     ));
     assert!(matches!(
         function.requires()[1],
-        Requirement::Proposition(ClickProposition::PredicateCall { .. })
+        Requirement::Proposition(SurfaceProposition::PredicateCall { .. })
     ));
     assert!(matches!(
         function.ensures()[0].ensure(),
-        Ensure::Proposition(ClickProposition::And(_, _))
+        Ensure::Proposition(SurfaceProposition::And(_, _))
     ));
     assert!(matches!(
         function.ensures()[1].ensure(),
-        Ensure::Proposition(ClickProposition::Implies(_, _))
+        Ensure::Proposition(SurfaceProposition::Implies(_, _))
     ));
     assert!(matches!(
         function.ensures()[2].ensure(),
-        Ensure::Proposition(ClickProposition::PredicateCall { .. })
+        Ensure::Proposition(SurfaceProposition::PredicateCall { .. })
     ));
     assert!(matches!(
         function.ensures()[3].ensure(),
-        Ensure::Proposition(ClickProposition::ForAll { .. })
+        Ensure::Proposition(SurfaceProposition::ForAll { .. })
     ));
 }
 
@@ -801,7 +801,7 @@ fn parses_rust_style_let_annotations() {
 
     assert!(matches!(
         body,
-        ContractExpression::Let {
+        SurfaceTerm::Let {
             name,
             click_type: Some(ClickType::Program(InterfaceType::Int32)),
             ..
@@ -826,8 +826,8 @@ fn parses_contract_level_let_bindings() {
 
     assert!(matches!(
         ensure.ensure(),
-        Ensure::Proposition(ClickProposition::Comparison {
-            right: ContractExpression::Let {
+        Ensure::Proposition(SurfaceProposition::Comparison {
+            right: SurfaceTerm::Let {
                 name,
                 click_type: Some(ClickType::Program(InterfaceType::Int32)),
                 ..
@@ -854,13 +854,13 @@ fn parses_contract_level_let_where_bindings() {
 
     assert!(matches!(
         ensure.ensure(),
-        Ensure::Proposition(ClickProposition::Exists {
+        Ensure::Proposition(SurfaceProposition::Exists {
             click_type: ClickType::Program(InterfaceType::Int32),
             name,
             body,
             ..
         }) if name == "k"
-            && matches!(body.as_ref(), ClickProposition::And(_, _))
+            && matches!(body.as_ref(), SurfaceProposition::And(_, _))
     ));
 }
 
@@ -882,7 +882,7 @@ fn parses_proposition_let_where_bindings() {
 
     assert!(matches!(
         ensure.ensure(),
-        Ensure::Proposition(ClickProposition::Exists {
+        Ensure::Proposition(SurfaceProposition::Exists {
             click_type: ClickType::Program(InterfaceType::Int32),
             name,
             ..
@@ -1153,9 +1153,9 @@ fn unfolds_predicate_requirement_to_prove_consequence() {
                 ProofTactic::ExecuteUntil(ExecutionPoint::FUNCTION_EXIT),
                 ProofTactic::UnfoldFunction(ClickFunctionApplication {
                     name: "sorted_pair".into(),
-                    arguments: vec![ContractExpression::ProgramExpression(
-                        ProgramExpression::Variable("p".into())
-                    )]
+                    arguments: vec![SurfaceTerm::ProgramExpression(ProgramExpression::Variable(
+                        "p".into()
+                    ))]
                 }),
                 ProofTactic::Close,
             ]

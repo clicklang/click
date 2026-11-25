@@ -9,7 +9,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// stopped it.
     pub(in crate::surface::proof) fn try_wide_arithmetic_using(
         search_input: &Proof<'a>,
-        surface_premises: &[ClickProposition],
+        surface_premises: &[SurfaceProposition],
     ) -> Result<Proof<'a>, Option<String>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_wide_arithmetic_using");
@@ -63,7 +63,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Err(None);
         }
-        let written = |proposition: &ClickProposition| {
+        let written = |proposition: &SurfaceProposition| {
             relation_parts(proposition)
                 .and_then(|(lower, upper, ..)| literal_carrier(&lower).or(literal_carrier(&upper)))
         };
@@ -113,7 +113,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn wide_arithmetic_with(
         search_input: &Proof<'a>,
         carrier: Carrier,
-        surface_premises: &[ClickProposition],
+        surface_premises: &[SurfaceProposition],
     ) -> Result<Proof<'a>, Option<String>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("wide_arithmetic_with");
@@ -153,18 +153,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // What is still to be carried to Integer: a listed order premise,
         // or a sum or difference to observe term by term.
         enum Pending {
-            Premise(
-                ClickProposition,
-                ContractExpression,
-                ContractExpression,
-                Relation,
-            ),
-            Operation(ContractExpression),
+            Premise(SurfaceProposition, SurfaceTerm, SurfaceTerm, Relation),
+            Operation(SurfaceTerm),
         }
         let mut pending = Vec::new();
         let mut operations = Vec::new();
         let mut atoms = Vec::new();
-        let literal = |text: &str| ContractExpression::IntegerLiteral(text.to_string());
+        let literal = |text: &str| SurfaceTerm::IntegerLiteral(text.to_string());
         for premise in surface_premises {
             let kernel = search_input
                 .lower_cited_surface_proposition(premise, "`close() using` premise")
@@ -327,29 +322,29 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     }
                     Pending::Operation(operation) => {
                         let (left, right, subtract) = match operation {
-                            ContractExpression::Add(left, right) => (left, right, false),
-                            ContractExpression::Subtract(left, right) => (left, right, true),
+                            SurfaceTerm::Add(left, right) => (left, right, false),
+                            SurfaceTerm::Subtract(left, right) => (left, right, true),
                             _ => unreachable!("only sums and differences are collected"),
                         };
                         let exact = if subtract {
-                            ContractExpression::Subtract(
+                            SurfaceTerm::Subtract(
                                 Box::new(to_integer(left)),
                                 Box::new(to_integer(right)),
                             )
                         } else {
-                            ContractExpression::Add(
+                            SurfaceTerm::Add(
                                 Box::new(to_integer(left)),
                                 Box::new(to_integer(right)),
                             )
                         };
-                        let out_of_range = |guard: &ClickProposition| {
+                        let out_of_range = |guard: &SurfaceProposition| {
                             format!(
                                 "the listed premises do not show that `{}` stays within {ty} (`{}`); {article} {ty} sum or difference that may leave its range is not the sum or difference of its operands",
                                 describe(operation),
                                 spell(guard)
                             )
                         };
-                        let prove = |proof: &Proof<'a>, proposition: &ClickProposition| {
+                        let prove = |proof: &Proof<'a>, proposition: &SurfaceProposition| {
                             proof
                                 .driver()
                                 .apply_step(have(
@@ -380,7 +375,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         let bounded = match carrier {
                             Carrier::UInt64 | Carrier::UInt32 => bounded,
                             Carrier::Int64 => bounded.and_then(|proof| {
-                                let defined = ClickProposition::Defined {
+                                let defined = SurfaceProposition::Defined {
                                     expression: operation.clone(),
                                 };
                                 proof
@@ -392,7 +387,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             }),
                         };
                         bounded.and_then(|proof| {
-                            let equation = ClickProposition::Comparison {
+                            let equation = SurfaceProposition::Comparison {
                                 left: to_integer(operation),
                                 operator: ComparisonOperator::Equal,
                                 right: exact.clone(),

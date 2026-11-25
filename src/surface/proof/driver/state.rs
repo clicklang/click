@@ -14,7 +14,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     #[cfg(test)]
     pub(in crate::surface::proof) fn complete_fixed_state_obligations(
         &self,
-        goals: &[ClickProposition],
+        goals: &[SurfaceProposition],
     ) -> Result<ProofCertificate, ClickError> {
         let driver_proof = self.proof;
         driver_proof
@@ -33,7 +33,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     pub(in crate::surface::proof) fn complete_fixed_state_obligations_since(
         &self,
         since: &ProofCheckpoint<'a>,
-        goals: &[ClickProposition],
+        goals: &[SurfaceProposition],
         claim_goals: &[Vec<crate::kernel::ContractClaimGoal>],
         claim_keys: &[FunctionContractClaimKey],
     ) -> Result<
@@ -52,7 +52,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     pub(in crate::surface::proof) fn complete_fixed_state_obligations_inner(
         &self,
         since: Option<&ProofCheckpoint<'a>>,
-        goals: &[ClickProposition],
+        goals: &[SurfaceProposition],
         claim_goals: &[Vec<crate::kernel::ContractClaimGoal>],
         claim_keys: &[FunctionContractClaimKey],
     ) -> Result<

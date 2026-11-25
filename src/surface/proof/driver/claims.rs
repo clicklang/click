@@ -184,7 +184,7 @@ enum PendingPostExecutionTactic<'a> {
     Tactic(
         &'a DeferredPostExecutionTactic,
         usize,
-        Option<PersistentBinderMap<ContractExpression>>,
+        Option<PersistentBinderMap<SurfaceTerm>>,
     ),
     EndIfArm {
         choice: usize,
@@ -251,8 +251,8 @@ fn obtain_scope_ends(tactics: &[ProofTactic]) -> BTreeMap<usize, usize> {
 /// outputs also have to survive until their source block ends.
 #[derive(Default)]
 struct DeferredOutcomeLocals {
-    source: Option<PersistentBinderMap<ContractExpression>>,
-    obtained: PersistentBinderMap<ContractExpression>,
+    source: Option<PersistentBinderMap<SurfaceTerm>>,
+    obtained: PersistentBinderMap<SurfaceTerm>,
     ends: BTreeMap<usize, Vec<String>>,
     checked_obtains: usize,
 }
@@ -262,7 +262,7 @@ impl DeferredOutcomeLocals {
         &mut self,
         proof: &mut Option<Proof<'a>>,
         source_index: usize,
-        scope: Option<&PersistentBinderMap<ContractExpression>>,
+        scope: Option<&PersistentBinderMap<SurfaceTerm>>,
     ) {
         let Some(root) = proof.as_ref() else { return };
         let mut expired = Vec::new();
@@ -910,7 +910,7 @@ fn prove_claims_by_checked_tactics(
         };
         surface_propositions.record_lowering(surface, fact)?;
         surface_propositions.record_lowering(
-            &ClickProposition::At {
+            &SurfaceProposition::At {
                 selector: ProgramPointSelector::ProgramPoint(ProgramPointRef {
                     region: CodeRegionRef::Function,
                     kind: ProgramPointKind::Entry,
@@ -1191,7 +1191,7 @@ fn entry_type_resource_split(
             .iter()
             .zip(arguments)
             .map(|(parameter, argument)| (parameter.name.as_str(), argument.clone()))
-            .collect::<BTreeMap<&str, ContractExpression>>();
+            .collect::<BTreeMap<&str, SurfaceTerm>>();
         let condition =
             crate::surface::lowering::substitute_click_proposition(condition, &substitutions)
                 .ok()?;
@@ -1712,7 +1712,7 @@ fn focus_claim_goal<'a>(
     root: &Proof<'a>,
     kernel_goal: Option<crate::kernel::ContractClaimGoal>,
     source_key: &FunctionContractClaimKey,
-    surface_goal: &ClickProposition,
+    surface_goal: &SurfaceProposition,
 ) -> Result<Proof<'a>, ClickError> {
     match kernel_goal {
         Some(goal) => root.driver().open_contract_claim(&goal, surface_goal),
@@ -1755,7 +1755,7 @@ fn apply_claim_step<'a>(
     rewritten: Option<&(Proof<'a>, ProofCheckpoint<'a>)>,
     root: Option<&Proof<'a>>,
     source_key: &FunctionContractClaimKey,
-    surface_goal: &ClickProposition,
+    surface_goal: &SurfaceProposition,
     candidates: impl FnOnce() -> Result<Vec<Option<crate::kernel::ContractClaimGoal>>, ClickError>,
     step: impl Fn(&Proof<'a>, ClaimProofOrigin) -> Result<Result<Proof<'a>, ClickError>, ClickError>,
 ) -> Result<Result<ClaimStepApplied<'a>, ClaimStepMiss>, ClickError> {
@@ -1816,9 +1816,9 @@ fn begin_outcome_claim_proof<'a>(
     arguments: &[ProgramExpression],
     outcome: &FunctionOutcome,
     claims: &[FunctionClaimRef<'_>],
-    rewrite_claim_equalities: &[Vec<ClickProposition>],
+    rewrite_claim_equalities: &[Vec<SurfaceProposition>],
     tactic: &str,
-) -> Result<(usize, ClickProposition, Proof<'a>), ClickError> {
+) -> Result<(usize, SurfaceProposition, Proof<'a>), ClickError> {
     let (claim_index, surface_goal) = focused_proposition_claim(outcome_root, claims, tactic)?;
     let claim_key = claims[claim_index].key();
     let kernel_goal = contract_closing_goal(
@@ -1866,7 +1866,7 @@ enum ClaimClosureSearch<'p> {
     /// Explain why the claim is open without searching.
     None,
     /// `close() using`: only the listed premises.
-    Restricted(&'p [ClickProposition]),
+    Restricted(&'p [SurfaceProposition]),
     /// The direct logical closure, then `solve`.
     Solve,
 }
@@ -1877,8 +1877,8 @@ fn close_claim_directly_from_outcome<'a>(
     claim: &FunctionClaimRef<'_>,
     pre_state: &ExecutionState,
     outcome: &FunctionOutcome,
-    surface_goal: &ClickProposition,
-    rewrite_equalities: &[ClickProposition],
+    surface_goal: &SurfaceProposition,
+    rewrite_equalities: &[SurfaceProposition],
     claim_label: &str,
     path_index: usize,
     entry_facts: &(impl PropositionSource + ?Sized),
@@ -2018,7 +2018,7 @@ fn close_claim_directly_from_outcome<'a>(
     // case names the surface spellings and which state each reads.
     let evaluated_sides = match (surface_goal, outcome) {
         (
-            ClickProposition::Comparison { left, right, .. },
+            SurfaceProposition::Comparison { left, right, .. },
             FunctionOutcome::Return { value, state },
         ) => {
             let values = parameter_values(parameter_binding).unwrap_or_default();
@@ -2027,7 +2027,7 @@ fn close_claim_directly_from_outcome<'a>(
                 &values,
                 &state.program_point(),
             );
-            let evaluate = |expression: &ContractExpression| {
+            let evaluate = |expression: &SurfaceTerm| {
                 evaluate_fixed_state_expression_through_kernel(
                     expression,
                     root.facts().assumptions(),
@@ -2081,7 +2081,7 @@ fn close_claim_directly_from_outcome<'a>(
                         // Both branches below need it: one to say the two sides
                         // read different states, the other to say what a value
                         // may have changed *since*.
-                        let state_role = |expression: &ContractExpression| {
+                        let state_role = |expression: &SurfaceTerm| {
                             if contains_old_expression(expression) {
                                 "function entry"
                             } else if contains_at_expression(expression) {
@@ -2308,7 +2308,7 @@ pub(super) fn proof_case_fact_conflicts(
 /// continued by the tactics after it.
 struct OpenedClaimProof<'a> {
     claim_index: usize,
-    surface_goal: ClickProposition,
+    surface_goal: SurfaceProposition,
     proof: Proof<'a>,
     /// An `intro` opened a scope: a later `have` extends this proof, and a
     /// closer that does not apply to it is read against the claims instead.
@@ -2364,7 +2364,7 @@ fn outcome_claim_root<'a>(
 /// result is the step's own outcome.
 fn apply_post_execution_arithmetic_using<'a>(
     focused: &Proof<'a>,
-    surface_premises: &[ClickProposition],
+    surface_premises: &[SurfaceProposition],
 ) -> Result<Result<Proof<'a>, ClickError>, ClickError> {
     let kernels = surface_premises
         .iter()
@@ -2659,7 +2659,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
     entry_pure_facts: &PureFactList,
     path_capture: Option<&DeferredTacticCapture>,
     path_requirements: &PureFactStore,
-    rewrite_claim_equalities: &[Vec<ClickProposition>],
+    rewrite_claim_equalities: &[Vec<SurfaceProposition>],
     rewritten_claim_proofs: &[Option<(Proof<'a>, ProofCheckpoint<'a>)>],
     outcome: &mut FunctionOutcome,
     outcome_proof: &mut Option<Proof<'a>>,
@@ -3571,7 +3571,7 @@ fn focused_proposition_claim<'c>(
     root: &Proof<'_>,
     claims: &[FunctionClaimRef<'c>],
     tactic: &str,
-) -> Result<(usize, &'c ClickProposition), ClickError> {
+) -> Result<(usize, &'c SurfaceProposition), ClickError> {
     let Some(crate::kernel::proof::OutcomeGoal::Claim { position, .. }) =
         root.first_open_outcome_goal()?
     else {
@@ -3639,7 +3639,7 @@ fn unfolds_outcome_goal(
     let target = match tactic {
         ProofTactic::UnfoldProposition(target) => target.clone(),
         ProofTactic::UnfoldFunction(application) if predicates.get(&application.name).is_some() => {
-            ClickProposition::PredicateCall {
+            SurfaceProposition::PredicateCall {
                 name: application.name.clone(),
                 arguments: application.arguments.clone(),
             }
@@ -3661,20 +3661,20 @@ fn unfolds_outcome_goal(
     if goals.next().is_some() {
         return false;
     }
-    fn contains(goal: &ClickProposition, target: &ClickProposition) -> bool {
+    fn contains(goal: &SurfaceProposition, target: &SurfaceProposition) -> bool {
         if goal == target {
             return true;
         }
         match goal {
-            ClickProposition::And(a, b)
-            | ClickProposition::Or(a, b)
-            | ClickProposition::Implies(a, b) => contains(a, target) || contains(b, target),
-            ClickProposition::Not(body)
-            | ClickProposition::At {
+            SurfaceProposition::And(a, b)
+            | SurfaceProposition::Or(a, b)
+            | SurfaceProposition::Implies(a, b) => contains(a, target) || contains(b, target),
+            SurfaceProposition::Not(body)
+            | SurfaceProposition::At {
                 proposition: body, ..
             }
-            | ClickProposition::ForAll { body, .. }
-            | ClickProposition::Exists { body, .. } => contains(body, target),
+            | SurfaceProposition::ForAll { body, .. }
+            | SurfaceProposition::Exists { body, .. } => contains(body, target),
             _ => false,
         }
     }
@@ -3944,7 +3944,7 @@ pub(super) fn finish_ordered_proof<'a>(
             claims
                 .iter()
                 .find_map(|claim| match claim.clause().ensure() {
-                    Ensure::Proposition(ClickProposition::Or(left, _)) => {
+                    Ensure::Proposition(SurfaceProposition::Or(left, _)) => {
                         Some(left.as_ref().clone())
                     }
                     _ => None,
@@ -3955,7 +3955,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             claims
                                 .iter()
                                 .find_map(|claim| match claim.clause().ensure() {
-                                    Ensure::Proposition(ClickProposition::Implies(left, _)) => {
+                                    Ensure::Proposition(SurfaceProposition::Implies(left, _)) => {
                                         Some(left.as_ref().clone())
                                     }
                                     _ => None,
@@ -3972,13 +3972,13 @@ pub(super) fn finish_ordered_proof<'a>(
                             claims
                                 .iter()
                                 .find_map(|claim| match claim.clause().ensure() {
-                                    Ensure::Proposition(ClickProposition::Comparison {
+                                    Ensure::Proposition(SurfaceProposition::Comparison {
                                         left,
                                         right,
                                         ..
                                     }) => [left, right].into_iter().find_map(|expression| {
                                         match expression {
-                                            ContractExpression::If { condition, .. } => {
+                                            SurfaceTerm::If { condition, .. } => {
                                                 Some(condition.as_ref().clone())
                                             }
                                             _ => None,
@@ -4241,7 +4241,7 @@ pub(super) fn finish_ordered_proof<'a>(
                     // The direct Solve path checks them inside its checked
                     // `have` scope, preserving the original claim's
                     // checked completion through each rewrite.
-                    let mut rewrite_claim_equalities: Vec<Vec<ClickProposition>> =
+                    let mut rewrite_claim_equalities: Vec<Vec<SurfaceProposition>> =
                         vec![Vec::new(); claims.len()];
                     // A claim goal rewritten on the retained outcome proof
                     // stays that proof, with the position after the rewrite:
@@ -6677,7 +6677,7 @@ mod tests {
 
     #[test]
     fn deferred_cases_retain_prefixes_closers_and_duplicate_execution_paths() {
-        let condition = ClickProposition::PredicateCall {
+        let condition = SurfaceProposition::PredicateCall {
             name: "P".into(),
             arguments: vec![],
         };

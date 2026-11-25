@@ -5,19 +5,19 @@ fn sequence_child_spelling_visits_only_the_written_elements() {
     let mut samples = Vec::new();
     for length in [32, 128, 512] {
         let singleton = |index| {
-            ContractExpression::SequenceLiteral(vec![ContractExpression::ProgramExpression(
+            SurfaceTerm::SequenceLiteral(vec![SurfaceTerm::ProgramExpression(
                 ProgramExpression::Variable(format!("v{index}").into()),
             )])
         };
         // Deliberately skewed source concatenation must not make flattening
         // revisit prefixes or recurse on the Rust stack.
         let sequence = (1..length).fold(singleton(0), |left, index| {
-            ContractExpression::SequenceConcat(Box::new(left), Box::new(singleton(index)))
+            SurfaceTerm::SequenceConcat(Box::new(left), Box::new(singleton(index)))
         });
-        let goal = ClickProposition::Comparison {
+        let goal = SurfaceProposition::Comparison {
             left: sequence.clone(),
             operator: ComparisonOperator::Equal,
-            right: ContractExpression::Old(Box::new(sequence)),
+            right: SurfaceTerm::Old(Box::new(sequence)),
         };
         let (children, work) = crate::instrumentation::measure_deterministic_work(|| {
             surface_logical_children(&goal, true).unwrap()
@@ -26,9 +26,9 @@ fn sequence_child_spelling_visits_only_the_written_elements() {
         let mut leaves = 0;
         while let Some(child) = pending.pop() {
             match child {
-                ClickProposition::And(left, right) => pending.extend([*right, *left]),
-                ClickProposition::Comparison {
-                    right: ContractExpression::Old(_),
+                SurfaceProposition::And(left, right) => pending.extend([*right, *left]),
+                SurfaceProposition::Comparison {
+                    right: SurfaceTerm::Old(_),
                     ..
                 } => leaves += 1,
                 other => panic!("lost an element's state: {other:?}"),
@@ -46,13 +46,13 @@ fn sequence_child_spelling_visits_only_the_written_elements() {
 #[test]
 fn computed_transport_read_selection_is_linear_in_written_expression() {
     for length in [32, 128, 512] {
-        let read = ContractExpression::ProgramExpression(ProgramExpression::Load(Box::new(
+        let read = SurfaceTerm::ProgramExpression(ProgramExpression::Load(Box::new(
             ProgramExpression::Variable("p".into()),
         )));
         let expression = (1..length).fold(read.clone(), |left, _| {
-            ContractExpression::Add(Box::new(left), Box::new(read.clone()))
+            SurfaceTerm::Add(Box::new(left), Box::new(read.clone()))
         });
-        let historical = ContractExpression::At {
+        let historical = SurfaceTerm::At {
             selector: ProgramPointSelector::ProgramPoint(ProgramPointRef {
                 region: CodeRegionRef::Region(0),
                 kind: ProgramPointKind::Entry,

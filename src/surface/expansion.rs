@@ -3194,7 +3194,7 @@ impl ExpansionCapture {
 pub(super) enum LoopEntryBranches {
     Leaf(Vec<usize>),
     Split {
-        condition: ClickProposition,
+        condition: SurfaceProposition,
         yes: Box<Self>,
         no: Box<Self>,
     },
@@ -4664,7 +4664,7 @@ fn source_tactic_entries_with_tokens(
             if kernel_axiom_name
                 && !matches!(
                     ensure.ensure(),
-                    Ensure::Proposition(ClickProposition::PredicateCall { .. })
+                    Ensure::Proposition(SurfaceProposition::PredicateCall { .. })
                 )
             {
                 continue;

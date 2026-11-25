@@ -38,17 +38,17 @@ impl Form {
 struct Atom {
     // Retain the interned term for as long as its id keys a source operand.
     _term: SharedIntegerTerm,
-    surface: ContractExpression,
+    surface: SurfaceTerm,
 }
 
 struct Node {
     form: Form,
     equal: bool,
-    claim: ClickProposition,
+    claim: SurfaceProposition,
     semantic: IntegerAffineClaim,
 }
 
-fn literal(value: &BigInt) -> ContractExpression {
+fn literal(value: &BigInt) -> SurfaceTerm {
     // A fixed-width literal already carries its parsed bits. Observing it
     // keeps repeated large endpoints exact without repeatedly parsing an
     // arbitrary-precision decimal in every theorem argument.
@@ -56,28 +56,26 @@ fn literal(value: &BigInt) -> ContractExpression {
         && value.bits() > 31
         && let Some(magnitude) = num_traits::ToPrimitive::to_u64(&value.abs())
     {
-        let observed = ContractExpression::Call {
+        let observed = SurfaceTerm::Call {
             name: "to_integer".into(),
-            arguments: vec![ContractExpression::ProgramExpression(
-                ProgramExpression::Value(crate::kernel::uint64(MachineTerm::uint64_constant(
-                    magnitude,
-                ))),
-            )],
+            arguments: vec![SurfaceTerm::ProgramExpression(ProgramExpression::Value(
+                crate::kernel::uint64(MachineTerm::uint64_constant(magnitude)),
+            ))],
         };
         return observed;
     }
     surface_signed_integer_literal(value)
 }
-fn zero() -> ContractExpression {
+fn zero() -> SurfaceTerm {
     literal(&BigInt::zero())
 }
-fn add(a: ContractExpression, b: ContractExpression) -> ContractExpression {
-    ContractExpression::Add(Box::new(a), Box::new(b))
+fn add(a: SurfaceTerm, b: SurfaceTerm) -> SurfaceTerm {
+    SurfaceTerm::Add(Box::new(a), Box::new(b))
 }
-fn multiply(a: ContractExpression, b: ContractExpression) -> ContractExpression {
-    ContractExpression::Multiply(Box::new(a), Box::new(b))
+fn multiply(a: SurfaceTerm, b: SurfaceTerm) -> SurfaceTerm {
+    SurfaceTerm::Multiply(Box::new(a), Box::new(b))
 }
-fn compare(a: ContractExpression, equal: bool, b: ContractExpression) -> ClickProposition {
+fn compare(a: SurfaceTerm, equal: bool, b: SurfaceTerm) -> SurfaceProposition {
     // A detached reflexivity or substitution identity has no surrounding
     // Integer operand. Keep constant arithmetic exact in that position too.
     let mut pending = vec![&a, &b];
@@ -85,13 +83,11 @@ fn compare(a: ContractExpression, equal: bool, b: ContractExpression) -> ClickPr
     while let Some(term) = pending.pop() {
         crate::instrumentation::record_deterministic_work(1);
         match term {
-            ContractExpression::IntegerLiteral(_) => {}
-            ContractExpression::Negate(value) => pending.push(value),
-            ContractExpression::Add(left, right)
-            | ContractExpression::Subtract(left, right)
-            | ContractExpression::Multiply(left, right) => {
-                pending.extend([left.as_ref(), right.as_ref()])
-            }
+            SurfaceTerm::IntegerLiteral(_) => {}
+            SurfaceTerm::Negate(value) => pending.push(value),
+            SurfaceTerm::Add(left, right)
+            | SurfaceTerm::Subtract(left, right)
+            | SurfaceTerm::Multiply(left, right) => pending.extend([left.as_ref(), right.as_ref()]),
             _ => {
                 closed = false;
                 break;
@@ -103,7 +99,7 @@ fn compare(a: ContractExpression, equal: bool, b: ContractExpression) -> ClickPr
     } else {
         a
     };
-    ClickProposition::Comparison {
+    SurfaceProposition::Comparison {
         left: a,
         operator: if equal {
             ComparisonOperator::Equal
@@ -115,8 +111,8 @@ fn compare(a: ContractExpression, equal: bool, b: ContractExpression) -> ClickPr
 }
 fn application(
     name: &str,
-    arguments: Vec<ContractExpression>,
-    premises: Vec<ClickProposition>,
+    arguments: Vec<SurfaceTerm>,
+    premises: Vec<SurfaceProposition>,
 ) -> ProofStep {
     ProofStep::ApplyPlannedTheorem {
         application: TheoremApplication {
@@ -126,16 +122,16 @@ fn application(
         premises,
     }
 }
-fn have(claim: ClickProposition, steps: Vec<ProofStep>) -> ProofStep {
+fn have(claim: SurfaceProposition, steps: Vec<ProofStep>) -> ProofStep {
     super::super::wide_arithmetic::have(claim, steps)
 }
-fn computational_fact(claim: ClickProposition) -> ProofStep {
+fn computational_fact(claim: SurfaceProposition) -> ProofStep {
     // Let run_scope prefer known and explicit algebra for goal-local
     // identities. Other identities still use the existing checked rule.
     have(claim, vec![ProofStep::CompatibilityNormalize(None)])
 }
 
-fn expression(form: &Form, atoms: &BTreeMap<u64, Atom>) -> ContractExpression {
+fn expression(form: &Form, atoms: &BTreeMap<u64, Atom>) -> SurfaceTerm {
     if form.terms.is_empty() {
         // The callee supplies Integer context for a theorem argument;
         // compare() adds a lexical type only to detached constant claims.
@@ -148,7 +144,7 @@ fn expression(form: &Form, atoms: &BTreeMap<u64, Atom>) -> ContractExpression {
         let term = if coefficient.is_one() {
             term
         } else if coefficient == &BigInt::from(-1) {
-            ContractExpression::Negate(Box::new(term))
+            SurfaceTerm::Negate(Box::new(term))
         } else {
             multiply(literal(coefficient), term)
         };
@@ -169,7 +165,7 @@ fn expression(form: &Form, atoms: &BTreeMap<u64, Atom>) -> ContractExpression {
 
 fn operand(
     term: &SharedIntegerTerm,
-    surface: ContractExpression,
+    surface: SurfaceTerm,
     atoms: &mut BTreeMap<u64, Atom>,
 ) -> Form {
     if let Some(constant) = term.as_const() {
@@ -292,15 +288,15 @@ fn reading_matching(proposition: &Proposition, claim: &IntegerAffineClaim) -> Op
     })
 }
 
-pub(super) fn canonical_surface(surface: &ClickProposition) -> Option<ClickProposition> {
+pub(super) fn canonical_surface(surface: &SurfaceProposition) -> Option<SurfaceProposition> {
     let anchored = surface_comparison_with_anchored_operands(surface);
     let mut surface = &anchored;
     let mut negative = false;
-    while let ClickProposition::Not(body) = surface {
+    while let SurfaceProposition::Not(body) = surface {
         negative = !negative;
         surface = body;
     }
-    let ClickProposition::Comparison {
+    let SurfaceProposition::Comparison {
         left,
         operator,
         right,
@@ -330,7 +326,7 @@ pub(super) fn canonical_surface(surface: &ClickProposition) -> Option<ClickPropo
         }
         operator => (left.clone(), operator, right.clone()),
     };
-    Some(ClickProposition::Comparison {
+    Some(SurfaceProposition::Comparison {
         left,
         operator,
         right,
@@ -339,8 +335,8 @@ pub(super) fn canonical_surface(surface: &ClickProposition) -> Option<ClickPropo
 
 fn prepare_relation(
     relation: Reading,
-    canonical: &ClickProposition,
-    source: &ClickProposition,
+    canonical: &SurfaceProposition,
+    source: &SurfaceProposition,
     atoms: &mut BTreeMap<u64, Atom>,
 ) -> (Form, bool, Vec<ProofStep>) {
     let (left, operator, right) = integer_surface_ordered_parts(canonical).expect("ordered source");
@@ -352,7 +348,7 @@ fn prepare_relation(
     let mut form = operand(&relation.left, left.clone(), atoms)
         .add(&operand(&relation.right, right.clone(), atoms).scaled(&BigInt::from(-1)));
     let mut body = Vec::new();
-    let mut ordered = ClickProposition::Comparison {
+    let mut ordered = SurfaceProposition::Comparison {
         left: left.clone(),
         operator,
         right: right.clone(),
@@ -384,7 +380,7 @@ fn prepare_relation(
         let identity = compare(
             value.clone(),
             true,
-            ContractExpression::Subtract(Box::new(left.clone()), Box::new(right.clone())),
+            SurfaceTerm::Subtract(Box::new(left.clone()), Box::new(right.clone())),
         );
         body.push(computational_fact(identity.clone()));
         body.push(application(
@@ -396,7 +392,7 @@ fn prepare_relation(
     }
 
     let shifted = compare(
-        ContractExpression::Subtract(Box::new(left.clone()), Box::new(right.clone())),
+        SurfaceTerm::Subtract(Box::new(left.clone()), Box::new(right.clone())),
         true,
         zero(),
     );
@@ -412,7 +408,11 @@ fn prepare_relation(
     (form, relation.equal, body)
 }
 
-fn restore(target: &ClickProposition, node: &Node, atoms: &BTreeMap<u64, Atom>) -> Vec<ProofStep> {
+fn restore(
+    target: &SurfaceProposition,
+    node: &Node,
+    atoms: &BTreeMap<u64, Atom>,
+) -> Vec<ProofStep> {
     let (_, operator, right) = integer_surface_non_strict_parts(target).expect("ordered target");
     let equal = operator == ComparisonOperator::Equal;
     if !equal {
@@ -421,7 +421,7 @@ fn restore(target: &ClickProposition, node: &Node, atoms: &BTreeMap<u64, Atom>) 
         let identity = compare(
             value.clone(),
             true,
-            ContractExpression::Subtract(Box::new(left.clone()), Box::new(right.clone())),
+            SurfaceTerm::Subtract(Box::new(left.clone()), Box::new(right.clone())),
         );
         return vec![
             computational_fact(identity.clone()),
@@ -481,7 +481,7 @@ fn disequality_operands(proposition: &Proposition) -> Vec<(SharedIntegerTerm, Sh
 fn strict_node(
     proof: &Proof<'_>,
     bound: &Node,
-    disequal: &(Proposition, ClickProposition),
+    disequal: &(Proposition, SurfaceProposition),
     atoms: &mut BTreeMap<u64, Atom>,
 ) -> Result<(Form, bool, Vec<ProofStep>), ClickError> {
     let observed = observed_native_surface_comparison(&disequal.0, &disequal.1);
@@ -504,7 +504,7 @@ fn strict_node(
         .ok_or_else(|| proof.step_error("Integer strictness requires its bound's disequality"))?;
     let canonical = canonical_surface(&observed)
         .ok_or_else(|| proof.step_error("Integer disequality has no comparison spelling"))?;
-    let ClickProposition::Comparison {
+    let SurfaceProposition::Comparison {
         left,
         operator: ComparisonOperator::NotEqual,
         right,
@@ -517,12 +517,12 @@ fn strict_node(
         std::mem::swap(&mut left, &mut right);
     }
     let ordered = compare(left.clone(), false, right.clone());
-    let neq = ClickProposition::Comparison {
+    let neq = SurfaceProposition::Comparison {
         left: left.clone(),
         operator: ComparisonOperator::NotEqual,
         right: right.clone(),
     };
-    let strict = ClickProposition::Comparison {
+    let strict = SurfaceProposition::Comparison {
         left: left.clone(),
         operator: ComparisonOperator::LessThan,
         right: right.clone(),
@@ -733,7 +733,7 @@ fn contradiction_claim(claim: &IntegerAffineClaim) -> bool {
 /// Restate one relation by explicitly proved identities of its operands.
 /// There is no affine reasoning over facts hidden in `normalize using`:
 /// all the algebra is in the two context-free identity goals.
-fn transfer(target: &ClickProposition, fact: &ClickProposition) -> Vec<ProofStep> {
+fn transfer(target: &SurfaceProposition, fact: &SurfaceProposition) -> Vec<ProofStep> {
     let (a, operator, b) = integer_surface_ordered_parts(target).expect("composition target");
     let (c, _, d) = integer_surface_ordered_parts(fact).expect("composition fact");
     let left = compare(a.clone(), true, c.clone());
@@ -757,7 +757,7 @@ fn transfer(target: &ClickProposition, fact: &ClickProposition) -> Vec<ProofStep
     body
 }
 
-fn with_argument_domains(step: ProofStep, domains: &[ClickProposition]) -> ProofStep {
+fn with_argument_domains(step: ProofStep, domains: &[SurfaceProposition]) -> ProofStep {
     match step {
         ProofStep::Have { proposition, proof } => have(
             proposition,
@@ -788,30 +788,28 @@ fn with_argument_domains(step: ProofStep, domains: &[ClickProposition]) -> Proof
     }
 }
 
-pub(super) fn observed_argument(expression: &ContractExpression) -> Option<ContractExpression> {
+pub(super) fn observed_argument(expression: &SurfaceTerm) -> Option<SurfaceTerm> {
     match expression {
-        ContractExpression::IntegerContext(value) => observed_argument(value),
-        ContractExpression::Call { name, arguments }
-            if name == "to_integer" && arguments.len() == 1 =>
-        {
+        SurfaceTerm::IntegerContext(value) => observed_argument(value),
+        SurfaceTerm::Call { name, arguments } if name == "to_integer" && arguments.len() == 1 => {
             observed_argument(&arguments[0]).or_else(|| Some(arguments[0].clone()))
         }
-        ContractExpression::At {
+        SurfaceTerm::At {
             selector,
             expression,
-        } => Some(ContractExpression::At {
+        } => Some(SurfaceTerm::At {
             selector: selector.clone(),
             expression: Box::new(observed_argument(expression)?),
         }),
-        ContractExpression::Old(expression) => Some(ContractExpression::Old(Box::new(
-            observed_argument(expression)?,
-        ))),
-        ContractExpression::Let {
+        SurfaceTerm::Old(expression) => {
+            Some(SurfaceTerm::Old(Box::new(observed_argument(expression)?)))
+        }
+        SurfaceTerm::Let {
             name,
             click_type: Some(ClickType::Integer),
             value,
             body,
-        } if matches!(body.as_ref(), ContractExpression::Binding(bound) if bound == name) => {
+        } if matches!(body.as_ref(), SurfaceTerm::Binding(bound) if bound == name) => {
             observed_argument(value)
         }
         _ => None,
@@ -897,11 +895,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// substitution explicit also preserves machine observations in the bound.
     pub(super) fn try_interval_exclusion_using(
         input: &Proof<'a>,
-        premises: &[(Proposition, ClickProposition)],
+        premises: &[(Proposition, SurfaceProposition)],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_interval_exclusion_using");
-        let Some(ClickProposition::Comparison {
+        let Some(SurfaceProposition::Comparison {
             left,
             operator: ComparisonOperator::NotEqual,
             right,
@@ -996,8 +994,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn apply_integer_composition(
         proof: &Proof<'a>,
         plan: &IntegerArithmeticPlan,
-        pairs: &[(Proposition, ClickProposition)],
-        surface_goal: &ClickProposition,
+        pairs: &[(Proposition, SurfaceProposition)],
+        surface_goal: &SurfaceProposition,
         ranges: &[SpelledBound],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
@@ -1144,7 +1142,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     prepare_relation(relation, &canonical, source, &mut atoms)
                 }
                 IntegerArithmeticNode::NegatedGoal { .. } => {
-                    let source = ClickProposition::Not(Box::new(surface_goal.clone()));
+                    let source = SurfaceProposition::Not(Box::new(surface_goal.clone()));
                     let kernel = Proposition::Not(Box::new(goal.clone()));
                     let observed = observed_native_surface_comparison(&kernel, &source);
                     let lowered =
@@ -1341,9 +1339,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         let integer_zero =
                             super::super::surface_synthesis::integer_typed_expression(zero());
                         let fact = compare(
-                            ContractExpression::Negate(Box::new(source_value.clone())),
+                            SurfaceTerm::Negate(Box::new(source_value.clone())),
                             true,
-                            ContractExpression::Negate(Box::new(integer_zero)),
+                            SurfaceTerm::Negate(Box::new(integer_zero)),
                         );
                         body.push(have(
                             fact.clone(),
@@ -1419,7 +1417,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             steps.push(ProofStep::Contradiction(conclusion.claim.clone()));
         } else if goal_surface.is_none() {
             steps.push(have(
-                ClickProposition::Not(Box::new(conclusion.claim.clone())),
+                SurfaceProposition::Not(Box::new(conclusion.claim.clone())),
                 vec![ProofStep::Known],
             ));
             steps.push(ProofStep::Contradiction(conclusion.claim.clone()));
@@ -1461,7 +1459,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let mut domain_candidates = Vec::new();
         for expression in &written {
             if let Some(expression) = observed_argument(expression) {
-                domain_candidates.push(ClickProposition::Defined { expression });
+                domain_candidates.push(SurfaceProposition::Defined { expression });
             }
         }
         // Partial mathematical operations and native arguments of opaque
@@ -1474,29 +1472,29 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         for term in terms {
             match term {
-                ContractExpression::Call { name, arguments }
+                SurfaceTerm::Call { name, arguments }
                     if matches!(
                         name.as_str(),
                         "truncating_quotient" | "truncating_remainder"
                     ) && arguments.len() == 2 =>
                 {
-                    domain_candidates.push(ClickProposition::Comparison {
+                    domain_candidates.push(SurfaceProposition::Comparison {
                         left: arguments[1].clone(),
                         operator: ComparisonOperator::NotEqual,
-                        right: ContractExpression::IntegerLiteral("0".into()),
+                        right: SurfaceTerm::IntegerLiteral("0".into()),
                     });
                 }
-                ContractExpression::Add(_, _)
-                | ContractExpression::Subtract(_, _)
-                | ContractExpression::Multiply(_, _)
-                | ContractExpression::Divide(_, _)
-                | ContractExpression::Remainder(_, _)
-                | ContractExpression::ShiftLeft(_, _)
-                | ContractExpression::ShiftRight(_, _)
-                | ContractExpression::BitwiseAnd(_, _)
-                | ContractExpression::CUnary { .. }
-                | ContractExpression::MemoryLoad { .. }
-                | ContractExpression::ProgramExpression(
+                SurfaceTerm::Add(_, _)
+                | SurfaceTerm::Subtract(_, _)
+                | SurfaceTerm::Multiply(_, _)
+                | SurfaceTerm::Divide(_, _)
+                | SurfaceTerm::Remainder(_, _)
+                | SurfaceTerm::ShiftLeft(_, _)
+                | SurfaceTerm::ShiftRight(_, _)
+                | SurfaceTerm::BitwiseAnd(_, _)
+                | SurfaceTerm::CUnary { .. }
+                | SurfaceTerm::MemoryLoad { .. }
+                | SurfaceTerm::ProgramExpression(
                     ProgramExpression::Add(..)
                     | ProgramExpression::Subtract(..)
                     | ProgramExpression::Multiply(..)
@@ -1507,7 +1505,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     | ProgramExpression::BitwiseAnd(..)
                     | ProgramExpression::Cast { .. },
                 ) => {
-                    domain_candidates.push(ClickProposition::Defined {
+                    domain_candidates.push(SurfaceProposition::Defined {
                         expression: term.clone(),
                     });
                 }
@@ -1562,7 +1560,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     domain_proofs.push(have(domain.clone(), vec![ProofStep::Known]));
                     domains.push(domain.clone());
                 }
-                if matches!(domain, ClickProposition::Defined { .. })
+                if matches!(domain, SurfaceProposition::Defined { .. })
                     && !normalizes_context_free(&kernel)
                     && !domains.contains(&domain)
                 {
@@ -1687,9 +1685,9 @@ mod tests {
         let premise =
             Proposition::condition_is(ConditionTerm::IntegerLessEqual(x.clone(), y.clone()), true);
         let surface = compare(
-            ContractExpression::Binding("x".into()),
+            SurfaceTerm::Binding("x".into()),
             false,
-            ContractExpression::Binding("y".into()),
+            SurfaceTerm::Binding("y".into()),
         );
         let mut context = PureTheoremContext {
             diagnostic_names: Default::default(),
@@ -1750,9 +1748,9 @@ mod tests {
             true,
         );
         let surface_goal = compare(
-            multiply(literal(&factor), ContractExpression::Binding("x".into())),
+            multiply(literal(&factor), SurfaceTerm::Binding("x".into())),
             false,
-            multiply(literal(&factor), ContractExpression::Binding("y".into())),
+            multiply(literal(&factor), SurfaceTerm::Binding("y".into())),
         );
         let predicates = PredicateEnvironment::new(&[]);
         let functions = ClickFunctionEnvironment::new(&[]);
@@ -2094,7 +2092,7 @@ mod scaling_tests {
 /// domain of its own: an operation or a read rather than a name or literal.
 /// Its claim is then that operation's domain alone, over operand values
 /// whose own domains the theorem's arguments carry.
-pub(super) fn domain_has_compound_operand(domain: &ClickProposition) -> bool {
+pub(super) fn domain_has_compound_operand(domain: &SurfaceProposition) -> bool {
     // A C fragment's operand owes a domain unless it is a value or a local:
     // a static or global object is a memory read.
     fn compound_fragment(operand: &ProgramExpression) -> bool {
@@ -2108,35 +2106,35 @@ pub(super) fn domain_has_compound_operand(domain: &ClickProposition) -> bool {
             _ => true,
         }
     }
-    fn compound(operand: &ContractExpression) -> bool {
+    fn compound(operand: &SurfaceTerm) -> bool {
         match operand {
-            ContractExpression::Binding(_)
-            | ContractExpression::ProgramBinding(_)
-            | ContractExpression::IntegerLiteral(_) => false,
-            ContractExpression::ProgramExpression(fragment) => compound_fragment(fragment),
+            SurfaceTerm::Binding(_)
+            | SurfaceTerm::ProgramBinding(_)
+            | SurfaceTerm::IntegerLiteral(_) => false,
+            SurfaceTerm::ProgramExpression(fragment) => compound_fragment(fragment),
             _ => true,
         }
     }
-    let ClickProposition::Defined { expression } = domain else {
+    let SurfaceProposition::Defined { expression } = domain else {
         return false;
     };
     let mut root = expression;
     loop {
         match root {
-            ContractExpression::Old(inner)
-            | ContractExpression::IntegerContext(inner)
-            | ContractExpression::At {
+            SurfaceTerm::Old(inner)
+            | SurfaceTerm::IntegerContext(inner)
+            | SurfaceTerm::At {
                 expression: inner, ..
             } => root = inner,
-            ContractExpression::CUnary { operand, .. } => root = operand,
+            SurfaceTerm::CUnary { operand, .. } => root = operand,
             _ => break,
         }
     }
     match root {
-        ContractExpression::Add(left, right)
-        | ContractExpression::Subtract(left, right)
-        | ContractExpression::Multiply(left, right) => compound(left) || compound(right),
-        ContractExpression::ProgramExpression(
+        SurfaceTerm::Add(left, right)
+        | SurfaceTerm::Subtract(left, right)
+        | SurfaceTerm::Multiply(left, right) => compound(left) || compound(right),
+        SurfaceTerm::ProgramExpression(
             ProgramExpression::Add(left, right)
             | ProgramExpression::Subtract(left, right)
             | ProgramExpression::Multiply(left, right),

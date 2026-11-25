@@ -147,11 +147,11 @@ fn interface_substitution_reads_only_referenced_proof_bindings() {
 
     let generated = SurfaceBinder::fresh();
     let selected = SurfaceTerm::ProgramExpression(ProgramExpression::Value(int32(42)));
-    let fact = ClickProposition::ForAll {
+    let fact = SurfaceProposition::ForAll {
         name: "x".into(),
         written_name: None,
         click_type: ClickType::Integer,
-        body: Box::new(ClickProposition::Comparison {
+        body: Box::new(SurfaceProposition::Comparison {
             left: SurfaceTerm::Binding("n".into()),
             operator: ComparisonOperator::Equal,
             right: SurfaceTerm::Binding("x".into()),
