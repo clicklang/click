@@ -492,3 +492,42 @@ fn algebraic_closure_abstract_payloads_follow_their_terms() {
     assert!(graph.are_algebraic_equal(&some(70), &some(71)));
     assert!(!graph.are_algebraic_equal(&some(70), &some(72)));
 }
+
+/// Constructor injectivity on a pointer field gives the pointers' equality
+/// component by component: `Node(p) == Node(q)` makes `p` and `q` the same
+/// address with the same provenance, as a stated pointer equality does.
+#[test]
+fn constructor_injectivity_splits_pointer_fields() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let ty = model_type(
+        "PointerInjective",
+        AlgebraicValueType::Program(ProgramType::Int32Pointer),
+    );
+    let (p, q) = (
+        Address::symbolic(Variable(94)),
+        Address::symbolic(Variable(95)),
+    );
+    let node = |address: &Address| {
+        constructor(
+            &ty,
+            "Node",
+            vec![AlgebraicValue::Program(ProgramValue::Pointer(
+                Pointer::new(address.clone(), ProgramType::Int32Pointer),
+            ))],
+        )
+    };
+    let (model, alias) = (variable(&ty, 96), variable(&ty, 97));
+    let base = PureFactContext::new()
+        .assume_proposition(eq(&model, &node(&p)))
+        .assume_proposition(eq(&node(&q), &alias));
+    assert!(!base.equality_graph.are_equal(&p, &q));
+    assert!(!base.equality_graph.provenance_equal(&p, &q));
+    let joined = base.assume_proposition(eq(&model, &alias));
+    assert!(
+        joined
+            .equality_graph
+            .are_algebraic_equal(&node(&p), &node(&q))
+    );
+    assert!(joined.equality_graph.are_equal(&p, &q));
+    assert!(joined.equality_graph.provenance_equal(&p, &q));
+}

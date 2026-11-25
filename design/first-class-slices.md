@@ -6,6 +6,8 @@ retain paired pointer/length parameters where the existing fold machinery
 needs them. Current admitted positions and source restrictions are in the
 [Rust reference](../docs/reference/rust.md#pure-functions-predicates-and-theorems).
 The original proposal for a new built-in kernel slice type was not adopted.
+[Rust slices as wide pointers](rust-slice-values.md) replaces this design;
+this record describes what is implemented until that lands.
 
 ## Representation by position (adopted)
 
