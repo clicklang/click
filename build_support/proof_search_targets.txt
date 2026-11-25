@@ -307,6 +307,8 @@ try_positive_float_product_bound
 try_float_corner_bound
 try_apply_float_interval_bound
 resolve_float_interval_bound
+prepare_float_interval_bounds
+retain_float_adjacent_bound
 try_retain_float_interval_fact
 try_float_zero_product_bound
 try_float_square_bound

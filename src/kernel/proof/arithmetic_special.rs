@@ -3618,6 +3618,12 @@ impl FloatBound<'_> {
             self.endpoint + 1
         })
     }
+
+    fn finite_inclusive_endpoint(&self) -> u64 {
+        self.inclusive_endpoint()
+            .filter(|&bits| bits & !float_sign_bit(self.format) < float_infinity(self.format))
+            .unwrap_or(self.endpoint)
+    }
 }
 
 pub(crate) fn is_float_bound(proposition: &Proposition) -> bool {
@@ -3678,6 +3684,16 @@ pub(super) fn adjacent_float_bound_sources(goal: &Proposition) -> [Option<Propos
             .then(|| source(endpoint ^ sign))
             .flatten(),
     ]
+}
+
+/// Plan the inclusive comparison used to cite a strict interval endpoint.
+pub(crate) fn tighter_float_interval_bound(premise: &Proposition) -> Option<Proposition> {
+    let bound = float_bound(premise)?;
+    let endpoint = bound.finite_inclusive_endpoint();
+    if endpoint == bound.endpoint {
+        return None;
+    }
+    float_bound_proposition(bound.format, bound.operand, endpoint, bound.lower, false)
 }
 
 /// The monotone operations for which one selected bound suffices.
@@ -4447,12 +4463,7 @@ impl<'a> FloatPairBound<'a> {
         {
             return None;
         }
-        Some(
-            premise
-                .inclusive_endpoint()
-                .filter(|&bits| finite(bits))
-                .unwrap_or(premise.endpoint),
-        )
+        Some(premise.finite_inclusive_endpoint())
     }
 
     pub(crate) fn stronger_endpoint(&self, index: usize, candidate: u64, previous: u64) -> bool {
@@ -4625,7 +4636,7 @@ pub(crate) fn float_zero_product_from_bounds(
     [first, second]: &[Proposition; 2],
 ) -> Option<(KernelFloatType, Proposition)> {
     let pair = FloatPairBound::new(goal)?;
-    if !pair.zero_product || float_bound(first)?.strict || float_bound(second)?.strict {
+    if !pair.zero_product {
         return None;
     }
     pair.operand_endpoint(0, first)?;
@@ -4641,7 +4652,7 @@ pub(crate) fn float_square_bound(
 ) -> Option<(FloatBoundWeakening, u64)> {
     use crate::kernel::FloatBinaryOperator::Multiply;
     let pair = FloatPairBound::new(goal)?;
-    if !pair.square || float_bound(first)?.strict || float_bound(second)?.strict {
+    if !pair.square {
         return None;
     }
     let format = pair.goal.format;
@@ -4668,11 +4679,7 @@ pub(crate) fn float_positive_product_bound(
 ) -> Option<FloatBoundWeakening> {
     use crate::kernel::FloatBinaryOperator::Multiply;
     let pair = FloatPairBound::new(goal)?;
-    if pair.operator != Multiply
-        || pair.zero_product
-        || float_bound(first)?.strict
-        || float_bound(second)?.strict
-    {
+    if pair.operator != Multiply || pair.zero_product {
         return None;
     }
     let endpoints = [
@@ -4702,9 +4709,6 @@ pub(crate) fn float_corner_bound_weakening(
     }
     let mut endpoints = [0; 4];
     for (index, (endpoint, bound)) in endpoints.iter_mut().zip(bounds).enumerate() {
-        if float_bound(bound)?.strict {
-            return None;
-        }
         *endpoint = pair.operand_endpoint(index, bound)?;
     }
     if !pair.established_by(&endpoints) {

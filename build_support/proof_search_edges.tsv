@@ -918,7 +918,7 @@ src/kernel/search/proposition_search.rs	search	ProofSearch::select_float_pair_bo
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	select_float_pair_bounds	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	try_float_pair_bound	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_pair_bound	resolve_solve_premises_unmeasured	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_pair_bound	driver	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_pair_bound	retain_float_adjacent_bound	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_apply_float_pair_bound	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_apply_float_pair_bound	try_float_bound_weakening	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_bound_chain	try_float_bound_link	2
@@ -940,10 +940,10 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_pair_bo
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_literal_sum_or_difference_bound	try_apply_float_pair_bound	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	try_positive_float_product_bound	1
 src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_positive_float_product_bound	try_apply_float_interval_bound	1
-src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_positive_float_product_bound	resolve_float_interval_bound	1
+src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_positive_float_product_bound	prepare_float_interval_bounds	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	try_float_corner_bound	1
 src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_float_corner_bound	try_apply_float_interval_bound	1
-src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_float_corner_bound	resolve_float_interval_bound	1
+src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_float_corner_bound	prepare_float_interval_bounds	1
 src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_float_corner_bound	driver	1
 src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_apply_float_interval_bound	try_retain_float_interval_fact	1
 src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_apply_float_interval_bound	try_float_bound_weakening	1
@@ -953,10 +953,10 @@ src/surface/proof/smart_closures/address_words.rs	search	ProofSearch::try_record
 src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_retain_float_interval_fact	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	try_float_zero_product_bound	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_bounded_arithmetic_closure	try_float_square_bound	1
-src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_float_zero_product_bound	resolve_float_interval_bound	1
+src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_float_zero_product_bound	prepare_float_interval_bounds	1
 src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_float_zero_product_bound	try_retain_float_interval_fact	1
 src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_float_zero_product_bound	driver	1
-src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_float_square_bound	resolve_float_interval_bound	1
+src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_float_square_bound	prepare_float_interval_bounds	1
 src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_float_square_bound	try_apply_float_interval_bound	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_bound_link	try_rounded_int32_to_float32_bound	1
 src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::try_rounded_int32_to_float32_bound	driver	1
@@ -973,3 +973,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_struct_field_
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::prepare_float_bound	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_apply_float_pair_bound	prepare_float_bound	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_float_scale_bound	prepare_float_bound	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::retain_float_adjacent_bound	driver	1
+src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::prepare_float_interval_bounds	resolve_float_interval_bound	1
+src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::prepare_float_interval_bounds	retain_float_adjacent_bound	1
+src/surface/proof/smart_closures/float_intervals.rs	search	ProofSearch::prepare_float_interval_bounds	prepare_float_bound	1
