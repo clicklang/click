@@ -577,24 +577,6 @@ fn viewability_transport_expands_to_ordinary_restriction() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_04")]
-fn generic_viewability_transport_expands_to_ordinary_restriction() {
-    let (source, _) = mdtest_sources("mdtests/viewable_restrict_resources.md");
-    let source = source.replace(
-        "apply(separation::viewable_restrict(A, B))",
-        "transport(viewable(A), viewable(B)) using { viewable(A); contains(A, B); }",
-    );
-    verify_c_sources(&source, &[]).unwrap();
-    let expanded = expand_c_claim_source_by_label(&source, &[], "restrict_view.ensures_0").unwrap();
-    assert!(
-        expanded.contains("separation::viewable_restrict"),
-        "{expanded}"
-    );
-    assert!(!expanded.contains("transport("), "{expanded}");
-    without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
-}
-
-#[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_04")]
 fn single_write_transport_expansion_replays_without_search() {
     let (source, sources) = mdtest_sources("mdtests/single_write_transport_expansion.md");
     let sources = sources
@@ -1528,7 +1510,6 @@ test_batches! {
     transport_batch_04: [
         resource_viewability_restriction_expands_without_transport,
         viewability_transport_expands_to_ordinary_restriction,
-        generic_viewability_transport_expands_to_ordinary_restriction,
         single_write_transport_expansion_replays_without_search,
     ],
     transport_batch_05: [

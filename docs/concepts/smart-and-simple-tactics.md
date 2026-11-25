@@ -73,7 +73,7 @@ with the argument written is simple:
 
 | Elided form (smart) | Written form (simple) | What the search fills |
 |---|---|---|
-| `transport(P, Q)` | `transport(P, Q) using { R; ... }` | the frame evidence |
+| `transport(P, Q)` | `have`, `preserve`, and `rewrite` | the selected reads and footprint separations |
 
 Implication application checks antecedents in scope. When the ordinary
 implicit closer proves a missing one, expansion writes its `have` before

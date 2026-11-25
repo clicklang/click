@@ -1566,10 +1566,10 @@ mod observed_integer_argument_tests {
                     apply(equal_arguments(a, b));
                 }
             }
-            theorem reverse_transport(a: Integer, b: Integer) {
+            theorem reverse_selected_fact(a: Integer, b: Integer) {
                 requires b == a;
                 ensures a == b by {
-                    transport(b == a, a == b) using { b == a; }
+                    close() using { b == a; };
                 }
             }
             theorem reverse_observations(a: uint32, b: uint32) {
@@ -1583,7 +1583,7 @@ mod observed_integer_argument_tests {
         for label in [
             "reverse_requirement",
             "reverse_citation",
-            "reverse_transport",
+            "reverse_selected_fact",
             "reverse_observations",
         ] {
             let expanded =
@@ -1595,7 +1595,10 @@ mod observed_integer_argument_tests {
             ("requires b == a;", "requires b != a;"),
             ("equal_arguments(a, b)", "equal_arguments(a + 1, b)"),
             ("using { b == a; }", "using {}"),
-            ("transport(b == a, a == b)", "transport(b == a, a != b)"),
+            (
+                "ensures a == b by {\n                    close() using { b == a; };",
+                "ensures a != b by {\n                    close() using { b == a; };",
+            ),
             (
                 "requires to_integer(b) == to_integer(a);",
                 "requires to_integer(b) != to_integer(a);",

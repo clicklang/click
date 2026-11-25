@@ -8027,35 +8027,6 @@ fn selected_post_execution_capture_ignores_nested_certificate_indices() {
 }
 
 #[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_24")]
-fn post_execution_transport_observes_a_preceding_have() {
-    let c_source = r#"
-            int32 identity(int32 x) {
-                return x;
-            }
-        "#;
-    let click_source = r#"
-            verifying "identity.c";
-
-            int32 identity(int32 x) {
-                ensures result == x;
-            } by {
-                step_until(function.exit);
-                have result == x by {
-                    close();
-                }
-                transport(result == x, result == x) using {
-                    result == x;
-                }
-                close();
-            }
-        "#;
-
-    verify_c_sources(click_source, &[("identity.c", c_source)])
-        .expect("post-execution tactics should check in source order");
-}
-
-#[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_25")]
 fn selected_post_execution_transport_emits_an_explicit_certificate() {
     let c_source = r#"
@@ -26418,7 +26389,6 @@ test_batches! {
         selected_post_execution_smart_have_uses_its_path_certificate,
         post_execution_smart_have_applies_a_theorem_to_result_through_proof,
         selected_post_execution_capture_ignores_nested_certificate_indices,
-        post_execution_transport_observes_a_preceding_have,
     ],
     expansion_batch_25: [
         selected_post_execution_transport_emits_an_explicit_certificate,
