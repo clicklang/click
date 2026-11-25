@@ -53,7 +53,7 @@ void clear(struct region* region) {
             have m == i;
             have 0 <= i;
             have i < arena->capacity;
-            have contains(memory(*region), memory(region->start)) by { normalize(); }
+            have contains(memory(*region), memory(region->start)) by { close(); }
             have contains(memory(arena->occupied[0..arena->capacity]), memory(arena->occupied[i])) by {
                 apply(click::separation::contains_element(arena->occupied, 0, arena->capacity, i));
             }
