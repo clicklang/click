@@ -128,7 +128,8 @@ fn field_at_two_points<'a>(
     for (earlier, current) in [(left, right), (right, left)] {
         let (earlier_point, earlier_read) = anchor(earlier);
         let (current_point, current_read) = anchor(current);
-        let across_entry = earlier_point == current_point
+        let across_entry = earlier_point.is_some()
+            && earlier_point == current_point
             && matches!(earlier_read, SyntaxTerm::Old(read) if read.as_ref() == current_read);
         let across_named_points = earlier_point.is_some()
             && current_point.is_some()
