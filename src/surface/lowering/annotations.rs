@@ -233,6 +233,7 @@ fn fixed_measure_state(expression: &SyntaxTerm) -> Option<FixedMeasureState> {
     }
 }
 
+mod comparison_elaboration;
 #[cfg(test)]
 mod tests;
 
@@ -5695,137 +5696,8 @@ impl AnnotationLowerer<'_> {
                 operator,
                 right,
             } => {
-                if let (Some(left_element), Some(right_element)) = (
-                    self.contract_pointer_element_type(left, environment),
-                    self.contract_pointer_element_type(right, environment),
-                ) && left_element != right_element
-                {
-                    return Err(format!(
-                        "incompatible pointer comparison: {:?} pointer and {:?} pointer; use a checked byte-view cast to compare byte views",
-                        left_element, right_element
-                    ));
-                }
-                if *operator == ComparisonOperator::In {
-                    return Ok(SpecProposition::SequenceMembership {
-                        element: self.lower_contract_expression_to_spec(left, environment)?,
-                        sequence: self.lower_contract_sequence_to_spec(right, environment)?,
-                    });
-                }
-                let left_is_integer = self.contract_expression_is_integer(left, environment);
-                let right_is_integer = self.contract_expression_is_integer(right, environment);
-                let left_is_integer = left_is_integer
-                    || (right_is_integer && matches!(left, SyntaxTerm::AlgebraicMatch { .. }));
-                let right_is_integer = right_is_integer
-                    || (left_is_integer && matches!(right, SyntaxTerm::AlgebraicMatch { .. }));
-                if left_is_integer || right_is_integer {
-                    if left_is_integer != right_is_integer
-                        && !(if left_is_integer {
-                            is_unsuffixed_integer_literal_expression(right)
-                        } else {
-                            is_unsuffixed_integer_literal_expression(left)
-                        })
-                    {
-                        return Err(
-                            "mathematical Integer expressions cannot be compared with C values"
-                                .to_string(),
-                        );
-                    }
-                    return Ok(SpecProposition::IntegerComparison {
-                        left: self.lower_contract_integer_to_spec(left, environment)?,
-                        operator: integer_comparison_operator(*operator)?,
-                        right: self.lower_contract_integer_to_spec(right, environment)?,
-                    });
-                }
-                // Two values of one struct are equal when each field is: the
-                // constructor is injective, so the comparison is its fields'.
-                if matches!(
-                    operator,
-                    ComparisonOperator::Equal | ComparisonOperator::NotEqual
-                ) && let (Some((left_type, left_fields)), Some((right_type, right_fields))) = (
-                    struct_constructor_fields(left),
-                    struct_constructor_fields(right),
-                ) && left_type == right_type
-                    && left_fields.len() == right_fields.len()
-                    && !left_fields.is_empty()
-                    && crate::surface::struct_values::field_names(&left_type).is_some()
-                {
-                    let mut fields = None;
-                    for (left, right) in left_fields.into_iter().zip(right_fields) {
-                        let field = self.lower_atomic_proposition_to_spec(
-                            &SyntaxProposition::Comparison {
-                                left,
-                                operator: ComparisonOperator::Equal,
-                                right,
-                            },
-                            environment,
-                        )?;
-                        fields = Some(match fields {
-                            None => field,
-                            Some(before) => SpecProposition::And(Box::new(before), Box::new(field)),
-                        });
-                    }
-                    let equal = fields.expect("a struct value has a field");
-                    return Ok(if *operator == ComparisonOperator::Equal {
-                        equal
-                    } else {
-                        SpecProposition::Not(Box::new(equal))
-                    });
-                }
-                let has_algebraic = self.enum_program_value_type(left, environment).is_some()
-                    || self.enum_program_value_type(right, environment).is_some()
-                    || contract_expression_is_algebraic(
-                        left,
-                        self.spec_definitions.functions,
-                        environment,
-                        &mut Vec::new(),
-                    )
-                    || contract_expression_is_algebraic(
-                        right,
-                        self.spec_definitions.functions,
-                        environment,
-                        &mut Vec::new(),
-                    )
-                    || self.generic_call_returns_algebraic(left, environment)
-                    || self.generic_call_returns_algebraic(right, environment);
-                if has_algebraic {
-                    let equal = match operator {
-                        ComparisonOperator::Equal => true,
-                        ComparisonOperator::NotEqual => false,
-                        _ => {
-                            return Err("algebraic values support only `==` and `!=` comparisons"
-                                .to_string());
-                        }
-                    };
-                    return Ok(SpecProposition::AlgebraicComparison {
-                        left: self.lower_contract_algebraic_to_spec(left, environment)?,
-                        equal,
-                        right: self.lower_contract_algebraic_to_spec(right, environment)?,
-                    });
-                }
-                let has_sequence =
-                    contract_expression_is_sequence(left) || contract_expression_is_sequence(right);
-                if has_sequence {
-                    let equal = match operator {
-                        ComparisonOperator::Equal => true,
-                        ComparisonOperator::NotEqual => false,
-                        _ => {
-                            return Err(
-                                "sequences support only `==` and `!=` comparisons".to_string()
-                            );
-                        }
-                    };
-                    Ok(SpecProposition::SequenceComparison {
-                        left: self.lower_contract_sequence_to_spec(left, environment)?,
-                        equal,
-                        right: self.lower_contract_sequence_to_spec(right, environment)?,
-                    })
-                } else {
-                    Ok(SpecProposition::Comparison {
-                        left: self.lower_contract_expression_to_spec(left, environment)?,
-                        operator: c_comparison_operator(*operator),
-                        right: self.lower_contract_expression_to_spec(right, environment)?,
-                    })
-                }
+                let surface = self.elaborate_comparison(left, *operator, right, environment)?;
+                self.lower_surface_proposition(&surface, environment)
             }
             SyntaxProposition::FloatClassification {
                 expression,
