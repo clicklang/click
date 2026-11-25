@@ -3683,9 +3683,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
-        let Some(proved) = attempt::candidate_outcome(scope.driver().apply_step(
-            ProofStep::CompatibilityNormalize(Some(vec![condition.clone()])),
-        ))?
+        let Some(rewritten) = attempt::candidate_outcome(
+            scope
+                .driver()
+                .apply_step(ProofStep::Rewrite(condition.clone())),
+        )?
+        else {
+            return Ok(None);
+        };
+        let Some(proved) =
+            attempt::candidate_outcome(rewritten.driver().apply_step(ProofStep::Known))?
         else {
             return Ok(None);
         };
@@ -4785,11 +4792,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             operator,
                             right: right.clone(),
                         };
-                        if let Some(proof) =
-                            attempt::candidate_outcome(search_input.driver().apply_step(
-                                ProofStep::CompatibilityNormalize(Some(vec![premise])),
-                            ))?
-                        {
+                        if let Some(proof) = attempt::candidate_outcome(
+                            search_input
+                                .driver()
+                                .apply_step(ProofStep::NormalizeUsing(vec![premise])),
+                        )? {
                             return Ok(Some(proof));
                         }
                     }

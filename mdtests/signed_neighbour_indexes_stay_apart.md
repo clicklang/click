@@ -52,7 +52,11 @@ int32 store_next(int32* a, int32 i) {
 } by {
     step();
     step();
-    have defined(i + 1);
+    have defined(i + 1) by {
+        have -2147483648 <= to_integer(i) + 1 by close() using { 0 <= i; };
+        have to_integer(i) + 1 <= 2147483647 by close() using { i < 7; };
+        close();
+    }
     have ((i + 1) as int32) != i;
     have separate(memory(a[i + 1]), memory(a[i])) by {
         apply(separation::separate_elements(a, i + 1, i));
@@ -78,7 +82,11 @@ int32 store_next_in_anchored_range(int32* a, int32 i) {
 } by {
     step();
     step();
-    have defined(i + 1);
+    have defined(i + 1) by {
+        have -2147483648 <= to_integer(i) + 1 by close() using { 0 <= i; };
+        have to_integer(i) + 1 <= 2147483647 by close() using { i < 1000; };
+        close();
+    }
     have ((i + 1) as int32) != i;
     have separate(memory(a[i + 1]), memory(a[i])) by {
         apply(separation::separate_elements(a, i + 1, i));

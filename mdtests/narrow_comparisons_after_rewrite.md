@@ -37,7 +37,9 @@ theorem selected_byte_preserves_bound(flag: int32, value: uint64) {
     requires flag == 0;
     ensures (48 as uint8) <= selected_byte(flag, value) by {
         unfold(selected_byte(flag, value));
-        have (48 as uint8) <= (48u64 + value % 10u64) as uint8;
+        have (48 as uint8) <= (48u64 + value % 10u64) as uint8 by {
+            normalize() using {};
+        }
         rewrite(flag, 0); close();
         close();
     }

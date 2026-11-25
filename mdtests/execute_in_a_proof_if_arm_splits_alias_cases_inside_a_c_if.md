@@ -56,7 +56,7 @@ int32 f(int32 u, int32 w) {
                     if u == 2 {
                         rewrite(u, 2); close();
                     } else {
-                        have u == 3 by { close() using { 1 <= u; u < 4; u != 1; u != 2; }; }
+                        have u == 3 by { normalize() using { 1 <= u; u < 4; u != 1; u != 2; }; }
                         rewrite(u, 3); close();
                     }
                 }

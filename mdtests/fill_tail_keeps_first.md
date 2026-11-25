@@ -32,7 +32,7 @@ int32 fill_tail_keeps_first(int32 p[], int32 n) {
         invariant p[0] == old(p[0]);
         maintain by {
             mark before_store;
-            have i != 0 by { close() using { i >= 1; }; }
+            have i != 0 by { normalize() using { i >= 1; }; }
             have separate(memory(p[i]), memory(p[0])) by {
                 apply(click::separation::separate_elements(p, i, 0));
             }

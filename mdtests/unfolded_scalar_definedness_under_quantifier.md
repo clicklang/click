@@ -9,6 +9,7 @@ void check(int32* data) { data[0] = 0; return; }
 ```
 
 ```click
+import click::integer;
 resource bounded(data: int32*) {
     field value: int32;
     owns data[0..10];
@@ -21,7 +22,13 @@ void check(int32* data) {
 } by {
     let { value: p } = unfold(before);
     step();
-    have defined(p + 1) by close();
+    have 10 <= 2147483647 by { close(); }
+    have p < 2147483647 by {
+        apply(integer::int32_less_than_less_equal_transitive(p, 10, 2147483647));
+    }
+    have defined(p + 1) by {
+        apply(integer::int32_increment_below_max_is_defined(p));
+    }
     have forall (k: int32) {
         0 <= k and to_integer(k) < to_integer(p + 1) implies data[k] == data[k]
     } by { intro() { intro() { close(); } } }
