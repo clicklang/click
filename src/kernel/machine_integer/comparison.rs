@@ -198,9 +198,7 @@ pub(crate) fn native_comparison_of_integer_observation(
 /// zero, an out-of-range shift), is not closed. One visit per node of the term,
 /// which is the condition's own input; nothing else is read.
 fn closed_machine_constant(term: &MachineTerm) -> Option<MachineTerm> {
-    // Only an operation node is evaluated, one unit each. A literal or any
-    // other leaf costs nothing, so a comparison of plain operands costs what
-    // it did before this evaluation existed.
+    crate::instrumentation::record_deterministic_work(1);
     let folded = match term {
         MachineTerm::Constant { .. } => return Some(term.clone()),
         MachineTerm::Binary {
@@ -208,29 +206,20 @@ fn closed_machine_constant(term: &MachineTerm) -> Option<MachineTerm> {
             format,
             left,
             right,
-        } => {
-            crate::instrumentation::record_deterministic_work(1);
-            MachineTerm::machine_binary(
-                *format,
-                *op,
-                closed_machine_constant(left)?,
-                closed_machine_constant(right)?,
-            )
-        }
+        } => MachineTerm::machine_binary(
+            *format,
+            *op,
+            closed_machine_constant(left)?,
+            closed_machine_constant(right)?,
+        ),
         MachineTerm::Unary {
             format,
             op,
             operand,
-        } => {
-            crate::instrumentation::record_deterministic_work(1);
-            MachineTerm::machine_unary(*format, *op, closed_machine_constant(operand)?)
-        }
+        } => MachineTerm::machine_unary(*format, *op, closed_machine_constant(operand)?),
         MachineTerm::Cast {
             value, from, to, ..
-        } => {
-            crate::instrumentation::record_deterministic_work(1);
-            MachineTerm::machine_integer_cast(*from, *to, closed_machine_constant(value)?)
-        }
+        } => MachineTerm::machine_integer_cast(*from, *to, closed_machine_constant(value)?),
         _ => return None,
     };
     matches!(folded, MachineTerm::Constant { .. }).then_some(folded)
