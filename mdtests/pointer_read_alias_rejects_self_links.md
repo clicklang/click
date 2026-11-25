@@ -16,10 +16,10 @@ void connect(struct node *p, struct node *q) {
  step(); step();
  have p->next == p;
  have q->next == q;
- have p == q by normalize();
+ have p == q by close();
 }
 ```
 
 ```expect
-fail: `normalize` goal did not normalize to true
+fail: could not establish `p == q`
 ```

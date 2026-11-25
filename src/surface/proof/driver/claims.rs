@@ -371,7 +371,7 @@ fn next_checked_post_execution_tactic<'a>(
             }));
             continue;
         }
-        let mut scope = deferred
+        let scope = deferred
             .lexical_bindings
             .clone()
             .or_else(|| arm_scope.clone());
@@ -426,36 +426,16 @@ fn next_checked_post_execution_tactic<'a>(
                 )
             }
             PostExecutionTactic::CallOutcomes {
-                payload_bindings,
                 returned_tactics,
                 threw_tactics,
             } => {
                 let proof = proof.as_ref().ok_or_else(|| {
-                    ClickError::new("post-execution `outcomes` has no focused outcome Proof")
+                    ClickError::new("deferred call arm has no focused outcome Proof")
                 })?;
                 let focused = proof.clone().at_source_tactic(deferred.source_index);
-                let edge = focused.checked_call_outcome(call_depth)?;
-                let returned = edge.returned;
-                if let Some(name) = &payload_bindings[usize::from(!returned)] {
-                    let payload = edge.payload.clone().ok_or_else(|| {
-                        focused.step_error(format!(
-                            "`outcomes` cannot bind `{name}`: this call edge has no bindable payload"
-                        ))
-                    })?;
-                    scope = Some(focused.scope_call_payload(
-                        scope.as_ref().or({
-                            if locals.ends.is_empty() {
-                                None
-                            } else {
-                                locals.source.as_ref()
-                            }
-                        }),
-                        name,
-                        payload,
-                    ));
-                }
+                let returned = focused.checked_call_returned(call_depth)?;
                 (
-                    SurfacePathSelector::CallOutcome(payload_bindings.clone()),
+                    SurfacePathSelector::CallOutcome,
                     returned,
                     if returned {
                         returned_tactics
@@ -617,6 +597,12 @@ fn checked_driver_refusal(
     claim_labels: &[String],
     decline: Decline,
 ) -> ClickError {
+    if decline == Decline::OutcomesAfterExit {
+        return ClickError::new(format!(
+            "`{proof_label}`: `outcomes` requires a maybe-throwing call at the execution frontier"
+        ))
+        .with_failed_tactic("outcomes");
+    }
     if decline == Decline::RegionDepth {
         return ClickError::new(format!(
             "`{proof_label}`: checked execution-region recursion exceeds the supported depth of {MAX_CHECKED_PROOF_REGION_RECURSION}. This bound counts active recursive regions, not written proof nesting; completed early-return cases run iteratively. Move an inner `match`, `branch`, or proof `if` into a contracted helper, or prove part of it in a `have`."

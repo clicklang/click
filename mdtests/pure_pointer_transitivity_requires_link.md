@@ -11,10 +11,10 @@ void probe(int32* p, int32* q) {
     ensures p == q;
 } by {
     have identity(q) == q by { unfold(identity(q)); close(); }
-    have p == q by { normalize() using { }; }
+    have p == q by { close() using { }; }
 }
 ```
 
 ```expect
-fail: `normalize using` goal did not normalize to true using the listed conditions
+fail: `close() using` could not prove the current goal from only its listed premises
 ```

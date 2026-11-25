@@ -25,11 +25,11 @@ void claim(int32 *data, int32 *occupied, int32 **kept) {
     mark before;
     step();
     have separate(statement(0).footprint, memory(occupied[0])) by {
-        normalize() using { separate(memory(occupied[0]), memory(kept[0])); };
+        close() using { separate(memory(occupied[0]), memory(kept[0])); };
     }
 }
 ```
 
 ```expect
-fail: goal did not normalize to true
+fail: `close() using` could not prove the current goal from only its listed premises
 ```

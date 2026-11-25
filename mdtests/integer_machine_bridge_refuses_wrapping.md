@@ -9,7 +9,7 @@ theorem wraps(x: uint64) {
     requires 0 <= to_integer(x) + 1;
     requires to_integer(x) + 1 <= 18446744073709551616;
     ensures to_integer(x + 1u64) == to_integer(x) + 1 by {
-        normalize() using {
+        close() using {
             0 <= to_integer(x) + 1;
             to_integer(x) + 1 <= 18446744073709551616;
         };
@@ -18,5 +18,5 @@ theorem wraps(x: uint64) {
 ```
 
 ```expect
-fail: `normalize using` goal did not normalize to true
+fail: `close() using` could not prove the current goal from only its listed premises
 ```

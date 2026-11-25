@@ -6,11 +6,11 @@ function or_value(x: uint64, y: uint64) -> int32 {
 }
 theorem unknown(x: uint64, y: uint64) {
     ensures or_value(x, y) == 7 by {
-        unfold(or_value(x, y)); normalize();
+        unfold(or_value(x, y)); close();
     }
 }
 ```
 
 ```expect
-fail: did not normalize to true
+fail: could not establish `((if x == 0 or y == 1 { 7 } else { 9 }) as int32) == 7`
 ```

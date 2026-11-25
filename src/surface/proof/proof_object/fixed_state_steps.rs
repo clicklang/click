@@ -3003,12 +3003,12 @@ impl<'a> Proof<'a> {
     /// inside the outermost one. The labels were derived from the exact
     /// source shape and checked outcome when the outcome goal was created,
     /// not from a user assertion.
-    pub(in crate::surface::proof) fn checked_call_outcome(
+    pub(in crate::surface::proof) fn checked_call_returned(
         &self,
         depth: usize,
-    ) -> Result<&CallOutcomeEdge, ClickError> {
+    ) -> Result<bool, ClickError> {
         self.focused_outcome_data()
-            .and_then(|data| data.call_routes.get(depth))
+            .and_then(|data| data.call_routes.get(depth).copied())
             .ok_or_else(|| {
                 self.step_error("`outcomes` requires a checked returned/threw call edge")
             })

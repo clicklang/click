@@ -2538,12 +2538,12 @@ fn scalar_int32_profile_catches_a_modular_throw_with_a_typed_payload() {
     let with_payload = format!(
         r#"{sidecar_source} by {{
             outcomes {{
-                returned => {{ step_until(function.exit); }}
-                threw => {{ step_until(function.exit); }}
-            }}
-            outcomes {{
-                returned => {{ close(); }}
-                threw(error) => {{ have error == 7 by close(); close(); }}
+                returned => {{ step_until(function.exit); close(); }}
+                threw(error) => {{
+                    step_until(function.exit);
+                    have error == 7 by close();
+                    close();
+                }}
             }}
         }}"#
     );

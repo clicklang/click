@@ -31,18 +31,18 @@ void insert::rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 co
                 rewrite(color, sized_root_color_bit(tree.model));
                 rewrite(tree.model, SizedTree::Node(identity, before, shade, value, left_model, right_model));
                 unfold(sized_root_color_bit(SizedTree::Node(identity, before, shade, value, left_model, right_model)));
-                normalize();
+                close();
             }
             match shade {
                 Color::Black => {
                     have color == 1 by {
                         rewrite(color, color_bit(shade));
                         rewrite(shade, Color::Black);
-                        unfold(color_bit(Color::Black)); normalize();
+                        unfold(color_bit(Color::Black)); close();
                     }
                     let { metadata: metadata, left: left, right: right } = unfold(tree);
-                    have 0 <= color by { rewrite(color, 1); normalize(); }
-                    have color <= 1 by { rewrite(color, 1); normalize(); }
+                    have 0 <= color by { rewrite(color, 1); close(); }
+                    have color <= 1 by { rewrite(color, 1); close(); }
                     step();
                     have rb->__rb_parent_color == address(p) + 1 by {
                         rewrite(color, 1);
@@ -75,14 +75,14 @@ void insert::rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 co
                     have color == 0 by {
                         rewrite(color, color_bit(shade));
                         rewrite(shade, Color::Red);
-                        unfold(color_bit(Color::Red)); normalize();
+                        unfold(color_bit(Color::Red)); close();
                     }
                     let { metadata: metadata, left: left, right: right } = unfold(tree);
-                    have 0 <= color by { rewrite(color, 0); normalize(); }
-                    have color <= 1 by { rewrite(color, 0); normalize(); }
+                    have 0 <= color by { rewrite(color, 0); close(); }
+                    have color <= 1 by { rewrite(color, 0); close(); }
                     step();
                     have rb->__rb_parent_color == address(p) + 0 by {
-                        rewrite(color, 0); normalize();
+                        rewrite(color, 0); close();
                     }
                     have (rb->__rb_parent_color & ~3) == address(p) by {
                         rewrite(color, 0);

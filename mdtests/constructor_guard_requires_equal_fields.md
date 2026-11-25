@@ -8,11 +8,11 @@ function same_payload(x: int32, y: int32) -> int32 {
 theorem unequal_fields_are_not_assumed_equal(x: int32, y: int32) {
     ensures same_payload(x, y) == 1 by {
         unfold(same_payload(x, y));
-        normalize() using { };
+        close() using { };
     }
 }
 ```
 
 ```expect
-fail: `normalize using` goal did not normalize to true using the listed conditions
+fail: `close() using` could not prove the current goal from only its listed premises
 ```

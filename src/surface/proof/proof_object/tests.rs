@@ -13390,9 +13390,8 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
             outcomes
                 .focus_branch(id)
                 .unwrap()
-                .checked_call_outcome(0)
+                .checked_call_returned(0)
                 .ok()
-                .map(|edge| edge.returned)
         })
         .collect::<Vec<_>>();
     call_edges.sort_unstable();
