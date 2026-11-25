@@ -131,3 +131,62 @@ impl<'a> TypingEnvironment<'a> {
         }
     }
 }
+
+/// Check that a binder's declared type answers every typing query exactly as
+/// the value lowering bound it to: the property that lets elaboration type a
+/// binder from its declaration, before anything is lowered
+/// (`design/typed-surface.md`). `lowered` is the context lowering built for
+/// the binder's body.
+#[cfg(test)]
+pub(super) fn check_declared_binder(
+    name: &SurfaceBinder,
+    declared: &ClickType,
+    lowered: &SpecElaborationContext,
+) {
+    let by_value = TypingEnvironment::of(lowered);
+    let mut by_type = TypingEnvironment::of(lowered);
+    by_type.binders.insert(name.clone(), declared.clone());
+    let pairs: [(&str, String, String); 7] = [
+        (
+            "binding_click_type",
+            format!("{:?}", by_type.binding_click_type(name)),
+            format!("{:?}", by_value.binding_click_type(name)),
+        ),
+        (
+            "program_binding_click_type",
+            format!("{:?}", by_type.program_binding_click_type(name)),
+            format!("{:?}", by_value.program_binding_click_type(name)),
+        ),
+        (
+            "algebraic_binding_click_type",
+            format!("{:?}", by_type.algebraic_binding_click_type(name)),
+            format!("{:?}", by_value.algebraic_binding_click_type(name)),
+        ),
+        (
+            "binding_is_algebraic",
+            format!("{:?}", by_type.binding_is_algebraic(name)),
+            format!("{:?}", by_value.binding_is_algebraic(name)),
+        ),
+        (
+            "bound_array_element_type",
+            format!("{:?}", by_type.bound_array_element_type(name)),
+            format!("{:?}", by_value.bound_array_element_type(name)),
+        ),
+        (
+            "bound_pointer_pointee_type",
+            format!("{:?}", by_type.bound_pointer_pointee_type(name)),
+            format!("{:?}", by_value.bound_pointer_pointee_type(name)),
+        ),
+        (
+            "bound_enum_value_type",
+            format!("{:?}", by_type.bound_enum_value_type(name)),
+            format!("{:?}", by_value.bound_enum_value_type(name)),
+        ),
+    ];
+    for (query, typed, lowered) in pairs {
+        assert_eq!(
+            typed, lowered,
+            "binder `{name:?}` declared `{declared:?}`: `{query}` answers differently from its lowered value"
+        );
+    }
+}
