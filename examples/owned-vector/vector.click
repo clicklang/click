@@ -140,7 +140,9 @@ int32 vector_copy(
             have contains(memory(dst[0..dst_capacity]), memory(dst[i])) by {
                 apply(separation::contains_element(dst, 0, dst_capacity, i));
             }
-            have separate(memory(dst[i]), memory(src[0..src_capacity])) by { close(); }
+            apply(separation::separate_restrict(
+                memory(dst[0..dst_capacity]), memory(src[0..src_capacity]),
+                memory(dst[i]), memory(src[0..src_capacity])));
             step();
             // Establish the source frame before incrementing the write index.
             have forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) } by {

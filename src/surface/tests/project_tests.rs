@@ -508,15 +508,14 @@ int32 box_pipeline(struct box* owner, int32 data[], int32 value) {
     produces owned_box(owner);
     ensures result == value;
 } by {
-    step_until(region(3).entry);
+    step_until(call(box_set, 0).entry);
     have owner->data == data by close();
     have owner->value == 0 by close();
-    step();
-    have owner->data[at(region(3).entry, owner->value)] == value by {
+    step(box_set);
+    have owner->data[at(call(box_set, 0).entry, owner->value)] == value by {
         close();
     }
     have owner->data[0] == value by close();
-    step();
     step_until(function.exit);
     close();
 }
@@ -740,9 +739,9 @@ int32 pipeline(struct counter* owner) {
     ensures result == 1;
     ensures owner->value == 1;
 } by {
-    step_until(region(3).entry);
+    step_until(statement(3).entry);
     have owner->value == 1 by close();
-    step();
+    step_until(function.exit);
     close();
 }
 "#;
@@ -773,12 +772,14 @@ int32 pipeline(struct counter* owner) {
     verify_c_sources(&have_expanded, &sources)
         .expect("the mixed-state frontier-local expansion should check");
 
-    let selected = click_source.find("step_until(region(3).entry);").unwrap();
+    let selected = click_source
+        .find("step_until(statement(3).entry);")
+        .unwrap();
     let position = expansion::position_at_offset(click_source, selected);
     let expanded =
         expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("mixed-state smart execution should expand");
-    assert!(!expanded.contains("step_until(region(3).entry);"));
+    assert!(!expanded.contains("step_until(statement(3).entry);"));
     verify_c_sources(&expanded, &sources)
         .expect("the mixed-state smart execution expansion should check");
 }
@@ -903,6 +904,10 @@ int32 buffer_push(struct buffer* owner, int32 value) {
 } by {
     unfold(buffer_storage(owner));
     step_until(function.exit);
+    have owner->len <= owner->cap by { close(); }
+    apply(click::separation::contains_subrange(owner->data, 0, owner->cap, 0, owner->len));
+    apply(click::separation::viewable_restrict(
+        memory(owner->data[0..owner->cap]), memory(owner->data[0..owner->len])));
     fold(buffer_storage(owner));
     close();
 }
@@ -918,13 +923,13 @@ int32 buffer_pipeline(
     consumes *owner;
     consumes data[0..capacity];
     produces nonempty_buffer(owner) by {
-        step_until(region(2).entry);
+        step_until(call(buffer_push, 0).entry);
         unfold(empty_buffer(owner));
         have 0 <= owner->len by close();
         have owner->len <= owner->cap by close();
         have viewable(owner->data[0..owner->len]) by close();
         fold(buffer_storage(owner));
-        step_until(region(3).entry);
+        step_until(statement(3).entry);
         unfold(buffer_storage(owner));
         have owner->len == 1 by close();
         have 1 <= owner->len by {
@@ -932,7 +937,7 @@ int32 buffer_pipeline(
             normalize();
         }
         fold(nonempty_buffer(owner));
-        step();
+        step_until(function.exit);
     }
 }
 "#;
@@ -946,12 +951,14 @@ int32 buffer_pipeline(
         crate::instrumentation::collect(|| verify_c_sources(click_source, &sources));
     verified.expect("the original vector-shaped proof should verify");
 
-    let selected = click_source.rfind("step_until").unwrap();
+    let selected = click_source
+        .find("step_until(statement(3).entry);")
+        .unwrap();
     let position = expansion::position_at_offset(click_source, selected);
     let expanded =
         expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("vector-shaped mixed-state smart execution should expand");
-    assert!(!expanded.contains("step_until(region(3).entry);"));
+    assert!(!expanded.contains("step_until(statement(3).entry);"));
     verify_c_sources(&expanded, &sources)
         .expect("the vector-shaped mixed-state expansion should check");
 }

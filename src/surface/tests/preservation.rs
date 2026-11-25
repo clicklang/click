@@ -474,7 +474,7 @@ fn pointer_rejection_prefixes_expand_and_replay() {
         (
             "joined_pointer_field_read_rejects_different_field",
             "inspect",
-            "have model->right == leaf by {\n                                normalize() using { sibling == model; sibling->left == child; child == leaf; };\n                            }",
+            "have model->right == leaf by {\n                                close() using { sibling == model; sibling->left == child; child == leaf; };\n                            }",
             "have child == leaf by { close(); }",
         ),
         (
@@ -1856,7 +1856,12 @@ fn saved_memory_observation_expands_and_replays() {
     }
     assert!(source.contains("observe(at("), "{source}");
     assert!(!source.contains("transport("), "{source}");
-    without_implicit_solve(|| verify_c_sources(&source, &sources)).unwrap();
+    for claim in ["update.contract", "update_byte.contract"] {
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&source, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
 }
 
 #[test]

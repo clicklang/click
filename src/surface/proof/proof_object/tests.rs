@@ -6074,8 +6074,7 @@ fn result_aware_fixed_state_apply_scales_with_unrelated_facts() {
         assert!(complete.is_complete());
         assert!(matches!(
             complete.certificate().steps().first(),
-            Some(ProofStep::ApplyTheoremUsing { application, premises })
-                if application.name == "result_reflexive" && premises.is_empty()
+            Some(ProofStep::ApplyTheorem(application)) if application.name == "result_reflexive"
         ));
         assert!(root.certificate().steps().is_empty());
     }
@@ -6105,16 +6104,21 @@ fn result_aware_fixed_state_context_apply_is_indexed_and_transactional() {
     else {
         panic!("test function should have a proof script");
     };
-    let (application, surface_premise) = tactics
+    let application = tactics
         .iter()
         .find_map(|tactic| match tactic {
-            ProofTactic::ApplyTheoremUsing {
-                application,
-                premises,
-            } => Some((application, premises.first()?)),
+            ProofTactic::ApplyTheorem(application) => Some(application),
             _ => None,
         })
-        .expect("grouped proof should contain an explicit theorem application");
+        .expect("grouped proof should contain a theorem application");
+    let [result_expression, upper_expression] = application.arguments.as_slice() else {
+        panic!("the application should bind the result and the upper bound");
+    };
+    let surface_premise = SyntaxProposition::Comparison {
+        left: result_expression.clone(),
+        operator: ComparisonOperator::LessThan,
+        right: upper_expression.clone(),
+    };
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_definitions =
@@ -6129,7 +6133,7 @@ fn result_aware_fixed_state_context_apply_is_indexed_and_transactional() {
     let state = ExecutionState::new();
     let recorded_states = RecordedStates::new();
     let kernel_premise = lower_fixed_state_proposition_with_assumptions(
-        surface_premise,
+        &surface_premise,
         &PureFactContext::new(),
         ParameterBinding::new(parsed_function.parameters(), &arguments),
         FixedStateFrame::new(&state, &state, Some(&result), &recorded_states),
@@ -6138,7 +6142,7 @@ fn result_aware_fixed_state_context_apply_is_indexed_and_transactional() {
     .expect("the result-aware theorem premise should lower");
     let mut surface_propositions = SurfacePropositionMap::default();
     surface_propositions
-        .record_lowering(surface_premise, &kernel_premise)
+        .record_lowering(&surface_premise, &kernel_premise)
         .expect("the selected premise form should be recorded");
 
     for size in LOCAL_PROOF_FACT_SIZES {
@@ -9304,10 +9308,6 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
         );
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
-        let step = ProofStep::ApplyTheoremUsing {
-            application: application.clone(),
-            premises: vec![premise.clone()],
-        };
         let before_script = fact_node_allocations();
         let complete = root
             .driver()
@@ -9327,12 +9327,8 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
         assert!(complete.is_complete());
         assert_eq!(
             complete.certificate().steps().first(),
-            Some(&ProofStep::Have {
-                proposition: premise.clone(),
-                proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Known]).unwrap()),
-            })
+            Some(&ProofStep::ApplyTheorem(application.clone()))
         );
-        assert_eq!(complete.certificate().steps().get(1), Some(&step));
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
     }

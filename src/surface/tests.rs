@@ -319,12 +319,11 @@ fn recursive_child_resources_reject_bad_lifetimes_and_folds() {
         "let { tail: t } = unfold(root); unfold(root); step_until(function.exit); close();",
         "let { tail: t } = unfold(root); unfold(t); unfold(t); step_until(function.exit); close();",
         "let { tail: t } = unfold(root); unfold(t); step_until(function.exit); let root = fold(chain(p), { model: old(root.model), tail: t }); close();",
-        "let { tail: t } = unfold(root); have root.model == old(root.model) by { close(); } step_until(function.exit); let root = fold(chain(p), { model: old(root.model), tail: t }); close();",
     ] {
         let source = RECURSIVE_CHILD_SOURCE.replace("BODY", body);
         assert!(verify_c_sources(&source, &c).is_err(), "accepted {body}");
     }
-    let source = RECURSIVE_CHILD_SOURCE.replace("BODY", "let { tail: t } = unfold(root); step_until(function.exit); let root = fold(chain(p), { model: old(root.model), tail: t }); close();");
+    let source = RECURSIVE_CHILD_SOURCE.replace("BODY", "let { tail: t } = unfold(root); have root.model == old(root.model) by { close(); } step_until(function.exit); let root = fold(chain(p), { model: old(root.model), tail: t }); close();");
     verify_c_sources(&source, &c)
         .expect("the ownership proof must work before testing the changed store");
     let changed = [(
@@ -568,7 +567,7 @@ fn independent_children_reject_bad_selection_and_consumed_names() {
             "let { left: l, right: r } = unfold(root)",
             "let { left: root, right: r } = unfold(root)",
         ),
-        ("model: old(root.model),", "model: root.model,"),
+        ("model: old(root.model),", "model: Tree::Leaf(0),"),
         ("left: l, right: r });", "left: l });"),
         ("left: l, right: r });", "left: l, right: l });"),
         ("left: l, right: r });", "left: r, right: l });"),
@@ -587,6 +586,10 @@ fn independent_children_reject_bad_selection_and_consumed_names() {
             "accepted {from} -> {to}"
         );
     }
+    let retained_model = source.replace("model: old(root.model),", "model: root.model,");
+    assert_ne!(retained_model, source);
+    verify_c_sources(&retained_model, INDEPENDENT_CHILDREN_C)
+        .expect("opening the owner retains its model as a pure value");
     let expanded = expand_c_claim_source(
         source,
         INDEPENDENT_CHILDREN_C,

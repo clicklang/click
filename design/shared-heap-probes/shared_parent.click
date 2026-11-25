@@ -149,11 +149,11 @@ void parent_detach(struct parent* p) {
     requires 1 <= p->kid->refs;
     consumes child_control(p->kid);
     consumes child_ref(p->kid);
-    if old(p->kid->refs) > 1 {
+    if old(exact(p->kid->refs)) > 1 {
         produces child_control(old(p->kid));
     }
     produces p->kid;
-    ensures old(p->kid->refs) > 1 implies old(p->kid)->payload == old(p->kid->payload);
+    ensures old(exact(p->kid->refs)) > 1 implies old(p->kid)->payload == old(p->kid->payload);
 } by {
     match link.link {
         ParentLink::Empty => {
@@ -163,10 +163,34 @@ void parent_detach(struct parent* p) {
             unfold(link);
             have old(p->kid) == entry_child;
             have to_integer(old(p->kid->refs)) == to_integer(old(count(child_ref(p->kid))));
+            have old(exact(p->kid->refs)) == old(p->kid->refs) by { close(); }
             step();
             have entry_child->refs == old(p->kid->refs);
             if entry_child->refs > 1 {
                 have to_integer(old(count(child_ref(p->kid)))) > 1;
+                step_until(statement(2).entry);
+                have kid == old(p->kid) by { close(); }
+                with(child_control(kid)) {
+                    have kid->payload == old(p->kid->payload) by { close(); }
+                    have separate(memory(p->kid), memory(*kid)) by { close(); }
+                    have contains(memory(*kid), memory(kid->payload)) by { normalize(); }
+                    apply(click::separation::contains_refl(memory(p->kid)));
+                    apply(click::separation::separate_restrict(memory(p->kid), memory(*kid),
+                        memory(p->kid), memory(kid->payload)));
+                    mark before_clear;
+                    step();
+                    have separate(statement(2).footprint, memory(kid->payload)) by {
+                        normalize() using { at(before_clear, separate(memory(p->kid), memory(kid->payload))); };
+                    }
+                    have kid->payload == at(before_clear, kid->payload) by {
+                        preserve(memory(kid->payload), statement(2));
+                    }
+                    have kid->payload == old(p->kid->payload) by {
+                        rewrite(kid->payload, at(before_clear, kid->payload));
+                        close();
+                    }
+                }
+                have old(p->kid)->payload == old(p->kid->payload) by { rewrite(old(p->kid), kid); close(); }
                 step_until(function.exit);
                 close();
             } else {
@@ -207,29 +231,20 @@ int32 run_first_destroyed(int32 payload) {
     let { link: first_link } = step(parent_attach);
     let { link: second_link } = step(parent_attach);
     step(child_release);
-    have first->kid == kid;
+    have first->kid == kid by { close(); }
+    have exact(first->kid->refs) == exact(kid->refs) by { rewrite(first->kid, kid); close(); }
+    have exact(kid->refs) == 2 by { close(); }
+    have exact(first->kid->refs) == 2 by { close(); }
+    have exact(first->kid->refs) > 1 by { rewrite(exact(first->kid->refs), 2); close(); }
     have kid->payload == payload;
-    with(child_control(kid)) {
-        have to_integer(count(child_ref(kid))) > 1;
-        have 2 <= to_integer(kid->refs) by {
-            rewrite(to_integer(kid->refs), to_integer(count(child_ref(kid))));
-            close();
-        }
-    }
     have first->kid->payload == payload by { rewrite(first->kid, kid); close(); }
-    have first->kid->refs == kid->refs by {
-        normalize() using { first->kid == kid; };
-    }
-    have first->kid->refs > 1 by {
-        rewrite(first->kid->refs, kid->refs);
-        close() using { 2 <= to_integer(kid->refs); };
-    }
     mark detaching;
     step(parent_detach, { link: first_link });
     have at(detaching, first->kid) == kid by close();
+    have at(detaching, exact(first->kid->refs)) > 1 by { close(); }
     have at(detaching, first->kid)->payload == at(detaching, first->kid->payload) by {
-        have at(detaching, first->kid)->payload == at(detaching, first->kid->payload);
-        close();
+        apply(at(detaching, exact(first->kid->refs)) > 1 implies
+            at(detaching, first->kid)->payload == at(detaching, first->kid->payload));
     }
     have at(detaching, first->kid->payload) == payload by close();
     have at(detaching, first->kid)->payload == payload by {
@@ -247,14 +262,38 @@ int32 run_first_destroyed(int32 payload) {
     have second->kid == kid;
     have second->kid->payload == payload by { rewrite(second->kid, kid); close(); }
     mark reading;
-    step(parent_read_payload, { link: second_link });
-    have at(reading, second->kid->payload) == payload by close();
-    have out == at(reading, second->kid->payload);
-    have out == payload;
-    have second->kid == kid;
+    let { result: observed } = step(parent_read_payload, { link: second_link });
+    have observed == at(reading, second->kid->payload) by { close(); }
+    have at(reading, second->kid->payload) == payload by { close(); }
+    have observed == payload by { close(); }
+    mark after_read;
+    step();
+    have second->kid == kid by { close(); }
+    have at(after_read, separate(memory(out), memory(kid->refs))) by { normalize(); }
+    have separate(statement(11).assignment(out, 0).footprint, memory(kid->refs)) by {
+        normalize() using { at(after_read, separate(memory(out), memory(kid->refs))); };
+    }
+    have separate(statement(11).assignment(out, 0).footprint, memory(second->kid->refs)) by {
+        rewrite(second->kid, kid);
+        close();
+    }
+    have exact(second->kid->refs) == at(after_read, exact(second->kid->refs)) by {
+        preserve(memory(second->kid->refs), statement(11).assignment(out, 0));
+    }
+    have out == observed by { close(); }
+    have out == payload by { close(); }
     with(child_control(kid)) {
-        have 1 <= to_integer(kid->refs) by {
+        have to_integer(count(child_ref(kid))) == 1 by { normalize(); }
+        have to_integer(kid->refs) == 1 by {
             rewrite(to_integer(kid->refs), to_integer(count(child_ref(kid))));
+            close();
+        }
+        have second->kid->refs == 1 by { rewrite(second->kid, kid); close(); }
+        have exact(second->kid->refs) <= 1 by {
+            have at(after_read, exact(second->kid->refs)) == second->kid->refs by { close(); }
+            rewrite(exact(second->kid->refs), at(after_read, exact(second->kid->refs)));
+            rewrite(at(after_read, exact(second->kid->refs)), second->kid->refs);
+            rewrite(second->kid->refs, 1);
             close();
         }
     }
@@ -285,29 +324,20 @@ int32 run_second_destroyed(int32 payload) {
     let { link: first_link } = step(parent_attach);
     let { link: second_link } = step(parent_attach);
     step(child_release);
-    have second->kid == kid;
+    have second->kid == kid by { close(); }
+    have exact(second->kid->refs) == exact(kid->refs) by { rewrite(second->kid, kid); close(); }
+    have exact(kid->refs) == 2 by { close(); }
+    have exact(second->kid->refs) == 2 by { close(); }
+    have exact(second->kid->refs) > 1 by { rewrite(exact(second->kid->refs), 2); close(); }
     have kid->payload == payload;
-    with(child_control(kid)) {
-        have to_integer(count(child_ref(kid))) > 1;
-        have 2 <= to_integer(kid->refs) by {
-            rewrite(to_integer(kid->refs), to_integer(count(child_ref(kid))));
-            close();
-        }
-    }
     have second->kid->payload == payload by { rewrite(second->kid, kid); close(); }
-    have second->kid->refs == kid->refs by {
-        normalize() using { second->kid == kid; };
-    }
-    have second->kid->refs > 1 by {
-        rewrite(second->kid->refs, kid->refs);
-        close() using { 2 <= to_integer(kid->refs); };
-    }
     mark detaching;
     step(parent_detach, { link: second_link });
     have at(detaching, second->kid) == kid by close();
+    have at(detaching, exact(second->kid->refs)) > 1 by { close(); }
     have at(detaching, second->kid)->payload == at(detaching, second->kid->payload) by {
-        have at(detaching, second->kid)->payload == at(detaching, second->kid->payload);
-        close();
+        apply(at(detaching, exact(second->kid->refs)) > 1 implies
+            at(detaching, second->kid)->payload == at(detaching, second->kid->payload));
     }
     have at(detaching, second->kid->payload) == payload by close();
     have at(detaching, second->kid)->payload == payload by {
@@ -325,14 +355,38 @@ int32 run_second_destroyed(int32 payload) {
     have first->kid == kid;
     have first->kid->payload == payload by { rewrite(first->kid, kid); close(); }
     mark reading;
-    step(parent_read_payload, { link: first_link });
-    have at(reading, first->kid->payload) == payload by close();
-    have out == at(reading, first->kid->payload);
-    have out == payload;
-    have first->kid == kid;
+    let { result: observed } = step(parent_read_payload, { link: first_link });
+    have observed == at(reading, first->kid->payload) by { close(); }
+    have at(reading, first->kid->payload) == payload by { close(); }
+    have observed == payload by { close(); }
+    mark after_read;
+    step();
+    have first->kid == kid by { close(); }
+    have at(after_read, separate(memory(out), memory(kid->refs))) by { normalize(); }
+    have separate(statement(11).assignment(out, 0).footprint, memory(kid->refs)) by {
+        normalize() using { at(after_read, separate(memory(out), memory(kid->refs))); };
+    }
+    have separate(statement(11).assignment(out, 0).footprint, memory(first->kid->refs)) by {
+        rewrite(first->kid, kid);
+        close();
+    }
+    have exact(first->kid->refs) == at(after_read, exact(first->kid->refs)) by {
+        preserve(memory(first->kid->refs), statement(11).assignment(out, 0));
+    }
+    have out == observed by { close(); }
+    have out == payload by { close(); }
     with(child_control(kid)) {
-        have 1 <= to_integer(kid->refs) by {
+        have to_integer(count(child_ref(kid))) == 1 by { normalize(); }
+        have to_integer(kid->refs) == 1 by {
             rewrite(to_integer(kid->refs), to_integer(count(child_ref(kid))));
+            close();
+        }
+        have first->kid->refs == 1 by { rewrite(first->kid, kid); close(); }
+        have exact(first->kid->refs) <= 1 by {
+            have at(after_read, exact(first->kid->refs)) == first->kid->refs by { close(); }
+            rewrite(exact(first->kid->refs), at(after_read, exact(first->kid->refs)));
+            rewrite(at(after_read, exact(first->kid->refs)), first->kid->refs);
+            rewrite(first->kid->refs, 1);
             close();
         }
     }
