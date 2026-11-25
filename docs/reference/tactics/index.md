@@ -1305,7 +1305,7 @@ their kernel propositions from the names in scope.
 **Form:** `outcomes { returned[(value)] => { ... } threw[(error)] => { ... } }`
 
 **Specialized.** Write it at a C++ call that may throw, when the two outcomes
-need different proofs; the implicit tail splits them for you. A call with both
+need different proofs. The implicit tail splits them for you. A call with both
 checked successors needs this split even when its next statement is a return.
 At a maybe-throwing call, `outcomes` executes the call and starts each arm
 at its checked successor. Inside a `try`/`catch (int name)` the `threw` arm
@@ -1319,16 +1319,17 @@ it took.
 
 Write `returned(value)` to name the checked value of a call whose result the
 program uses. Write `threw(error)` to name the thrown payload. Each name is a
-proof binding scoped to its arm, including after the arm reaches function exit. A call's
-returned value still names that value after the caller transforms it, and a
-caught exception names the original thrown value even if the caller returns
-normally. An arm without a name can ignore its payload.
+proof binding scoped to its arm, including after the arm reaches function exit.
+A call's returned value still names that value after the caller transforms it,
+and a caught exception names the original thrown value even if the caller
+returns normally. An arm without a name can ignore its payload.
 
 **Failure, checking, and tools:**
 
-The checked execution must establish exactly one edge of each kind. Each arm has
-its own outcome goal and must close it; neither arm can use the other's facts or
-state. Expansion preserves both certificates.
+The checked execution must establish exactly one edge of each kind. Writing
+`outcomes` after the call has already executed is an error. Each arm has its
+own outcome goal and must close it with the facts and state available in that
+arm. Expansion preserves both certificates.
 
 **Checked examples:** [`cpp_import.rs`](https://github.com/clicklang/click/blob/master/tests/cpp_import.rs), [`outcomes_routes_a_throw_that_leaves_the_function.md`](https://github.com/clicklang/click/blob/master/mdtests/outcomes_routes_a_throw_that_leaves_the_function.md), [`outcomes_payload_bindings.md`](https://github.com/clicklang/click/blob/master/mdtests/outcomes_payload_bindings.md)
 
