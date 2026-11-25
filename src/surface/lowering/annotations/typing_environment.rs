@@ -38,6 +38,71 @@ impl<'a> TypingEnvironment<'a> {
         }
     }
 
+    /// Whether a name is bound to an algebraic value.
+    pub(super) fn binding_is_algebraic<Q: crate::surface::binders::BinderKey + ?Sized>(
+        &self,
+        name: &Q,
+    ) -> bool {
+        match self.binders.get(name) {
+            Some(click_type) => matches!(click_type, ClickType::Algebraic(_)),
+            None => self.outer.binding_is_algebraic(name),
+        }
+    }
+
+    /// The element type of a name bound to an array reference. A binder is
+    /// never one: lowering drops the outer name's array reference when it
+    /// binds the name.
+    pub(super) fn bound_array_element_type<Q: crate::surface::binders::BinderKey + ?Sized>(
+        &self,
+        name: &Q,
+    ) -> Option<ProgramType> {
+        match self.binders.get(name) {
+            Some(_) => None,
+            None => self.outer.bound_array_element_type(name),
+        }
+    }
+
+    /// The pointee type of a name bound to a pointer: a pointer binder's
+    /// declared pointee, or an outer name's lowered pointer's.
+    pub(super) fn bound_pointer_pointee_type<Q: crate::surface::binders::BinderKey + ?Sized>(
+        &self,
+        name: &Q,
+    ) -> Option<ProgramType> {
+        match self.binders.get(name) {
+            Some(click_type) => click_type
+                .interface_type()
+                .map(InterfaceType::to_kernel_type)
+                .and_then(ProgramType::pointee_type),
+            None => self.outer.bound_pointer_pointee_type(name),
+        }
+    }
+
+    /// The program type of a name bound to an enum or library value: a
+    /// binder's declared type when it is one, or an outer name's lowered
+    /// value's.
+    pub(super) fn bound_enum_value_type<Q: crate::surface::binders::BinderKey + ?Sized>(
+        &self,
+        name: &Q,
+    ) -> Option<ProgramType> {
+        match self.binders.get(name) {
+            Some(click_type) => click_type
+                .interface_type()
+                .map(InterfaceType::to_kernel_type)
+                .filter(|ty| matches!(ty, ProgramType::Parameter(_))),
+            None => self.outer.bound_enum_value_type(name),
+        }
+    }
+
+    /// The call whose result `result` and region results name here.
+    pub(super) fn call_result_point(&self) -> Option<&'a ProgramPointSelector> {
+        self.outer.call_result_point.as_ref()
+    }
+
+    /// Whether bare `result` names the contract's return value here.
+    pub(super) fn contract_result_in_scope(&self) -> bool {
+        self.outer.contract_result_in_scope
+    }
+
     /// The type of a name read as a program binding. Lowering keeps an
     /// Integer binder in `integer_values` and an algebraic one in
     /// `algebraic_values`, and every other binder in `values`, which is all a
