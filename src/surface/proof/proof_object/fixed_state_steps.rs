@@ -2324,14 +2324,13 @@ impl<'a> Proof<'a> {
                 ProofContext::Execution(_) if self.focused_outcome_data().is_some() => self
                     .outcome_fixed_state_view()
                     .expect("a focused outcome judgment resolves its fixed-state view"),
-                // A leading nested `have` is a proposition proof at the
-                // execution frontier. It evaluates the quantified fact and
-                // argument in that outcome's fixed-state environment without
-                // exporting or checking execution state.
                 ProofContext::Execution(_) => self
                     .execution_proposition_fixed_state_view()
+                    .or_else(|| self.execution_frontier_fixed_state_view())
                     .ok_or_else(|| {
-                        self.step_error("`instantiate` requires a fixed-state proposition proof")
+                        self.step_error(
+                            "`instantiate` requires a proposition proof or execution frontier",
+                        )
                     })?,
                 _ => {
                     return Err(
@@ -2395,8 +2394,11 @@ impl<'a> Proof<'a> {
                 .expect("a focused outcome judgment resolves its fixed-state view"),
             ProofContext::Execution(_) => self
                 .execution_proposition_fixed_state_view()
+                .or_else(|| self.execution_frontier_fixed_state_view())
                 .ok_or_else(|| {
-                    self.step_error("`instantiate` requires a fixed-state proposition proof")
+                    self.step_error(
+                        "`instantiate` requires a proposition proof or execution frontier",
+                    )
                 })?,
             ProofContext::Pure(_) => unreachable!("handled above"),
         };
@@ -2497,9 +2499,9 @@ impl<'a> Proof<'a> {
             self.state
                 .apply_instantiate(quantified, argument)
                 .map_err(|error| match error {
-                    PropositionCloseError::NotProposition => {
-                        self.step_error("`instantiate` requires a proposition goal")
-                    }
+                    PropositionCloseError::NotProposition => self.step_error(
+                        "`instantiate` requires a proposition goal or execution frontier",
+                    ),
                     PropositionCloseError::InstantiateQuantifiedUnavailable => {
                         self.step_error(format!(
                             "`instantiate` quantified fact is not exactly available: {}",

@@ -2899,13 +2899,6 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                                             "the checked execution region nesting limit is {MAX_CHECKED_EXECUTION_REGION_DEPTH}",
                                         ))
                                         .with_kind(ClickErrorKind::Unsupported),
-                                    Ok(_) | Err(Decline::Shape)
-                                        if matches!(indexed.tactic, ProofTactic::Instantiate { .. }) =>
-                                    {
-                                        diagnostic
-                                            .with_context("For proposition-only work, move the operation into `have proposition by { ... }`.")
-                                            .with_kind(ClickErrorKind::Unsupported)
-                                    }
                                     Ok(_) | Err(Decline::Shape) => {
                                         diagnostic.with_kind(ClickErrorKind::Internal)
                                     }

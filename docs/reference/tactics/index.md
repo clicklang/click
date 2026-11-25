@@ -2858,10 +2858,10 @@ instantiation performs no premise search or guard discharge.
 **Outside it:** a universal not yet established must be proved first with
 `have`. A value of another carrier needs a conversion. The former `using`
 list is rejected; write ordinary guard proofs instead.
-The loop preservation checker currently supports instantiation inside
-`have proposition by { ... }`. Supporting a standalone instantiation in
-`maintain` requires the checker to carry the added fact between execution
-steps.
+At an execution frontier, including inside a loop's `maintain` block,
+`instantiate` adds the instance to the current path without executing a
+statement. The next `step()` can use the fact.
+See [the checked loop example](https://github.com/clicklang/click/blob/master/mdtests/loop_decreases_index_ordered_walk.md).
 
 
 **Failure, checking, and tools:**

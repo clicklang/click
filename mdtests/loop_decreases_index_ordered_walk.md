@@ -35,12 +35,9 @@ int32 walk(int32 next[8], int32 start) {
         initialize by close();
         maintain by {
             have 0 < cur;
-            have 0 <= next[cur] and next[cur] < cur by {
-                instantiate(forall (k: int32) {
-                    0 < k and k < 8 implies 0 <= next[k] and next[k] < k
-                }, cur);
-                close();
-            }
+            instantiate(forall (k: int32) {
+                0 < k and k < 8 implies 0 <= next[k] and next[k] < k
+            }, cur);
             step();
         }
     }

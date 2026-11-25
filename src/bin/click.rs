@@ -1579,11 +1579,6 @@ int32 check(struct link* node) {
                 "does not return a C value",
             ),
             (
-                "loop_preserve_bare_instantiate_names_repair.md",
-                "unsupported",
-                "move the operation into `have proposition by { ... }`",
-            ),
-            (
                 "named_contract_rejects_unheld_link_read.md",
                 "contract error",
                 "could not address resource clause",
