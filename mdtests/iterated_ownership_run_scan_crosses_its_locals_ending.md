@@ -118,10 +118,8 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                     close();
                 }
                 have lo <= at(iteration, i) by {
-                    close() using {
-                        lo <= hi;
-                        hi == at(iteration, i);
-                    };
+                    rewrite(at(iteration, i), hi);
+                    close();
                 }
                 have to_integer(at(iteration, i)) < to_integer(at(iteration, i) + 1);
                 have at(iteration, i) < i by {
@@ -142,7 +140,8 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                 have to_integer(lo + run_length) == to_integer(i) by {
                     rewrite(to_integer(run_length), to_integer(at(iteration, run_length) + 1));
                     rewrite(to_integer(i), to_integer(at(iteration, i) + 1));
-                    close();
+                    rewrite(to_integer(at(iteration, i)), to_integer(lo + at(iteration, run_length)));
+                    normalize() using {};
                 }
                 have 0 <= run_length and run_length <= i by {
                     close();
@@ -155,6 +154,11 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                 }
                 have to_integer(run.lo + run_length) == to_integer(i) by {
                     close();
+                }
+                have defined(run.lo + run_length) implies
+                    to_integer(run.lo + run_length) == to_integer(i) implies
+                    0 <= run_length and run_length <= i by {
+                    intro() { intro() { close(); } }
                 }
                 have 0 <= at(iteration, i) by {
                     close();
@@ -189,6 +193,11 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                 let run = fold(arena_scan(data, occupied, capacity), {
                     lo: i, hi: i
                 });
+                have defined(run.lo + run_length) implies
+                    to_integer(run.lo + run_length) == to_integer(i) implies
+                    0 <= run_length and run_length <= i by {
+                    intro() { intro() { close(); } }
+                }
                 have 0 <= at(iteration, i) by {
                     close();
                 }

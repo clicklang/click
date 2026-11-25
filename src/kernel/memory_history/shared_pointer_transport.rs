@@ -35,12 +35,7 @@ impl<'a> Transport<'a> {
             return None;
         };
         let format = MachineIntegerType::from_program_type(*ty)?;
-        let source =
-            if let Some(source) = SharedMachineIntegerTerm::from_shared(format, root.clone()) {
-                source
-            } else {
-                return None;
-            };
+        let source = SharedMachineIntegerTerm::from_shared(format, root.clone())?;
         let result = transport_framed_index(&source, self.after, self.assumptions)?;
         self.indices.insert(root.clone(), result.clone());
         Some(result)

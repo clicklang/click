@@ -2375,8 +2375,7 @@ fn scalar_induction_keeps_integer_parameters_and_their_guards() {
         without_implicit_solve_for_claim("carry_seed_returns_the_same_integer.ensures_0", || {
             verify_click_theorems(&guarded_family).map_err(|error| error.report())
         })
-        .err()
-        .expect("cold replay must require the instantiated guard");
+        .expect_err("cold replay must require the instantiated guard");
     assert!(
         error.to_string().contains("induction hypothesis"),
         "{error}"
@@ -11774,7 +11773,6 @@ fn literal_constructor_field_disequality_expands_to_known() {
 #[test]
 fn computed_sequence_negations_expand_to_known() {
     let (source, _) = mdtest_sources("mdtests/sequence_literals.md");
-    let source = source.replace("[0, 1] != [1, 0] by close()", "[0, 1] != [1, 0] by close()");
     for (theorem, next_theorem) in [
         (
             "sequence_order_is_observable",

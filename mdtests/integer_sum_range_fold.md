@@ -98,9 +98,9 @@ int32 sum(int32 a[], int32 n) {
         invariant forall (j: int32) { 0 <= j and j < n implies defined(a[j]) };
         invariant 0 <= i;
         invariant i <= n;
-        invariant to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) });
-        invariant (-1000 * to_integer(i)) <= (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) });
-        invariant (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) <= (1000 * to_integer(i));
+        invariant to_integer(total) == (0..i).fold(0, |acc, k| { acc + to_integer(a[k]) }) and
+            -1000 * to_integer(i) <= (0..i).fold(0, |acc, k| { acc + to_integer(a[k]) }) and
+            (0..i).fold(0, |acc, k| { acc + to_integer(a[k]) }) <= 1000 * to_integer(i);
         initialize by {
             have forall (j: int32) { 0 <= j and j < n implies defined(a[j]) } by { close(); }
             have 0 <= i by {
@@ -204,13 +204,15 @@ int32 sum(int32 a[], int32 n) {
                 close() using { ((-1000 * to_integer(i)) - 1000) <= (to_integer(total) + to_integer(a[i])); to_integer((i + 1)) == (to_integer(i) + to_integer(1)); };
             }
             have (-1000 * to_integer((i + 1))) <= to_integer((total + a[i])) by {
-                close() using { (-1000 * to_integer((i + 1))) <= (to_integer(total) + to_integer(a[i])); to_integer((total + a[i])) == (to_integer(total) + to_integer(a[i])); };
+                rewrite(to_integer((total + a[i])), (to_integer(total) + to_integer(a[i])));
+                close();
             }
             have (to_integer(total) + to_integer(a[i])) <= (1000 * to_integer((i + 1))) by {
                 close() using { (to_integer(total) + to_integer(a[i])) <= ((1000 * to_integer(i)) + 1000); to_integer((i + 1)) == (to_integer(i) + to_integer(1)); };
             }
             have to_integer((total + a[i])) <= (1000 * to_integer((i + 1))) by {
-                close() using { to_integer((total + a[i])) == (to_integer(total) + to_integer(a[i])); (to_integer(total) + to_integer(a[i])) <= (1000 * to_integer((i + 1))); };
+                rewrite(to_integer((total + a[i])), (to_integer(total) + to_integer(a[i])));
+                close();
             }
             step();
             step();
@@ -264,10 +266,12 @@ int32 sum(int32 a[], int32 n) {
                 close();
             }
             have (-1000 * to_integer(i)) <= (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) by {
-                close() using { (-1000 * to_integer(i)) <= to_integer(total); to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }); };
+                rewrite((0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }), to_integer(total));
+                close();
             }
             have (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) <= (1000 * to_integer(i)) by {
-                close() using { to_integer(total) <= (1000 * to_integer(i)); to_integer(total) == (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }); };
+                rewrite((0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }), to_integer(total));
+                close();
             }
             have forall (k: int32) { k >= 0 and k < i implies defined(a[k]) } by {
                 intro() {
