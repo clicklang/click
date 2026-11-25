@@ -12,10 +12,10 @@ verifying "saved_overlap.c";
 void advance(int32 *p, int32 i) { ensures true; requires i == 0; } by {
     step();
     have i == 1;
-    have separate(memory(old(p)[i]), memory(old(p)[1])) by { normalize(); }
+    have separate(memory(old(p)[i]), memory(old(p)[1])) by { close(); }
 }
 ```
 
 ```expect
-fail: goal did not normalize to true
+fail: could not establish `separate(memory(old(p)[i]), memory(old(p)[1]))`
 ```

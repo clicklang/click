@@ -102,7 +102,7 @@ void probe(struct node *p, struct root *root) {
   have near == rid;
   mark before_write;
   step();
-  have near->tag == at(before_write, rid->tag) by { normalize() using { near == rid; }; }
+  have near->tag == at(before_write, rid->tag) by { close() using { near == rid; }; }
  } }
  } }
  } }
@@ -110,5 +110,5 @@ void probe(struct node *p, struct root *root) {
 ```
 
 ```expect
-fail: `normalize using` goal did not normalize to true using the listed conditions
+fail: `close() using` could not prove the current goal from only its listed premises
 ```
