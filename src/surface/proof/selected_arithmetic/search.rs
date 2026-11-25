@@ -209,19 +209,19 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         crate::kernel::search::record_discovery("disequality_goal_equality");
         let kernel = match search_input.goal()? {
             condition_source_0 @ Proposition::ConditionIs(_, true)
-                if let Some((ConditionTerm::IntegerNotEqual(left, right), _)) =
-                    condition_source_0.condition_native() =>
+                if let Some((OldConditionTerm::IntegerNotEqual(left, right), _)) =
+                    condition_source_0.old_condition() =>
             {
                 Proposition::condition_is(
-                    ConditionTerm::IntegerEqual(left.clone(), right.clone()),
+                    OldConditionTerm::IntegerEqual(left.clone(), right.clone()),
                     true,
                 )
             }
             condition_source_0 @ Proposition::ConditionIs(_, false)
-                if let Some((condition @ (ConditionTerm::IntegerEqual(..)
+                if let Some((condition @ (OldConditionTerm::IntegerEqual(..)
                 // An 8- or 16-bit equality is the same fact as the `int32`
                 // equality of its widenings (rule K8).
-                | ConditionTerm::Compare {
+                | OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32
                         | MachineIntegerType::UInt32
                         | MachineIntegerType::Int8
@@ -231,11 +231,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     relation: CompareRelation::Equal,
                     ..
                 }
-                | ConditionTerm::Compare {
+                | OldConditionTerm::Compare {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
                     ..
-                }), _)) = condition_source_0.condition_native() =>
+                }), _)) = condition_source_0.old_condition() =>
             {
                 Proposition::condition_is(condition.clone(), true)
             }
@@ -558,7 +558,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         crate::kernel::search::record_discovery("try_equality_by_bounds_early");
         if let (
             Some((
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
                     ..
@@ -567,7 +567,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             )),
             Some(SyntaxProposition::Comparison { left, right, .. }),
         ) = (
-            search_input.goal().and_then(Proposition::condition_native),
+            search_input.goal().and_then(Proposition::old_condition),
             search_input.surface_goal(),
         ) && !writes_sum_or_difference(left, right)
         {
@@ -2008,7 +2008,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 &query, condition_source_0 @ Proposition::ConditionIs(
                     _,
                     false
-                ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Overflows {
+                ) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Overflows {
                         format: MachineIntegerType::Int32 | MachineIntegerType::Int64,
                         op: OverflowOperation::Add | OverflowOperation::Subtract,
                         ..
@@ -2153,11 +2153,11 @@ mod retained_match_policy_tests {
                 MachineIntegerType::Int32,
                 native.clone(),
             ));
-        let common = ConditionTerm::IntegerEqual(
+        let common = OldConditionTerm::IntegerEqual(
             observed.into(),
             crate::kernel::IntegerTerm::constant_i64(1).into(),
         );
-        let written = ConditionTerm::Compare {
+        let written = OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(native),
@@ -2173,7 +2173,7 @@ mod retained_match_policy_tests {
             )));
         }
         assert!(!is_word32_equality(&Proposition::condition_is(
-            ConditionTerm::IntegerEqual(
+            OldConditionTerm::IntegerEqual(
                 crate::kernel::IntegerTerm::Variable(crate::kernel::Variable(991989)).into(),
                 crate::kernel::IntegerTerm::constant_i64(1).into()
             ),

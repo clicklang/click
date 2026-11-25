@@ -19,7 +19,7 @@ fn checked_attachment_is_flat_beside_unrelated_equality_history() {
             let mut facts = initial.clone();
             for i in 0..size {
                 facts = facts.assume_condition(
-                    ConditionTerm::equal(
+                    OldConditionTerm::equal(
                         OldMachineTerm::Variable(Variable(868_000 + i)),
                         OldMachineTerm::Variable(Variable(868_001 + i)),
                     ),
@@ -27,7 +27,7 @@ fn checked_attachment_is_flat_beside_unrelated_equality_history() {
                 );
             }
             facts = facts.assume_condition(
-                ConditionTerm::address_equal(base.clone(), alias.clone()),
+                OldConditionTerm::address_equal(base.clone(), alias.clone()),
                 true,
             );
             let owner = ResourceFact::own_memory(MemoryRange::new_with_element_width(
@@ -141,7 +141,7 @@ fn forks_before_publication_keep_indexed_candidates_without_input_rescans() {
         // Both forks precede resource publication. Their term registrations
         // cannot be assumed to extend the published graph's local node IDs.
         let branch = empty.clone().assume_condition(
-            ConditionTerm::address_offset_equal(at(0).offset, at(size).offset),
+            OldConditionTerm::address_offset_equal(at(0).offset, at(size).offset),
             true,
         );
         let sibling = empty.clone();
@@ -212,11 +212,11 @@ fn normalization_keeps_fork_pairing_without_deferred_input_scans() {
         };
         let parent = PureFactContext::new();
         let first = parent.clone().assume_condition(
-            ConditionTerm::address_offset_equal(at(0).offset, at(size).offset),
+            OldConditionTerm::address_offset_equal(at(0).offset, at(size).offset),
             true,
         );
         let sibling = parent.clone().assume_condition(
-            ConditionTerm::address_offset_equal(at(0).offset, at(size + 1).offset),
+            OldConditionTerm::address_offset_equal(at(0).offset, at(size + 1).offset),
             true,
         );
         // Removing a zero owner forces a real normalization replacement and
@@ -303,7 +303,7 @@ fn first_memory_occurrence_on_a_sibling_uses_closed_equality_state() {
         for i in 0..size {
             for (context, prefix) in [(&mut parent, 865_000), (&mut sibling, 866_000)] {
                 *context = context.clone().assume_condition(
-                    ConditionTerm::equal(
+                    OldConditionTerm::equal(
                         OldMachineTerm::Variable(Variable(prefix + i)),
                         OldMachineTerm::Variable(Variable(prefix + i + 1)),
                     ),
@@ -312,7 +312,7 @@ fn first_memory_occurrence_on_a_sibling_uses_closed_equality_state() {
             }
         }
         sibling = sibling.assume_condition(
-            ConditionTerm::address_offset_equal(at(0).offset, at(1).offset),
+            OldConditionTerm::address_offset_equal(at(0).offset, at(1).offset),
             true,
         );
         let resources = ResourceContext::new();
@@ -372,7 +372,7 @@ fn whole_cell_write_merges_and_queries_do_not_scan_other_payloads() {
             crate::persistent::measure_persistent_work(|| {
                 crate::instrumentation::measure_deterministic_work(|| {
                     let facts = empty.assume_condition(
-                        ConditionTerm::address_offset_equal(at(0).offset, at(1).offset),
+                        OldConditionTerm::address_offset_equal(at(0).offset, at(1).offset),
                         true,
                     );
                     resources.synchronize_memory_equalities(&facts);
@@ -426,7 +426,7 @@ fn late_offset_cell_hits_scale_with_affected_entries() {
             crate::persistent::measure_persistent_work(|| {
                 crate::instrumentation::measure_deterministic_work(|| {
                     let facts = empty.assume_condition(
-                        ConditionTerm::address_offset_equal(at(0).offset, at(size).offset),
+                        OldConditionTerm::address_offset_equal(at(0).offset, at(size).offset),
                         true,
                     );
                     resources.synchronize_memory_equalities(&facts);
@@ -482,7 +482,7 @@ fn cell_publication_and_forks_do_not_repeat_input_registration() {
                     resources = resources.unchecked_with_fact(view(&at(i), 0, 4));
                     resources.synchronize_memory_equalities(&facts);
                     facts = facts.assume_condition(
-                        ConditionTerm::address_offset_equal(at(i).offset, at(size + i).offset),
+                        OldConditionTerm::address_offset_equal(at(i).offset, at(size + i).offset),
                         true,
                     );
                     resources.synchronize_memory_equalities(&facts);
@@ -491,7 +491,10 @@ fn cell_publication_and_forks_do_not_repeat_input_registration() {
                 for i in 0..size {
                     let branch_resources = resources.clone();
                     let branch_facts = facts.clone().assume_condition(
-                        ConditionTerm::address_offset_equal(at(0).offset, at(3 * size + i).offset),
+                        OldConditionTerm::address_offset_equal(
+                            at(0).offset,
+                            at(3 * size + i).offset,
+                        ),
                         true,
                     );
                     branch_resources.synchronize_memory_equalities(&branch_facts);
@@ -575,7 +578,7 @@ fn cell_footprint_merges_and_queries_do_not_scan_other_sizes() {
         let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
                 let facts = empty.assume_condition(
-                    ConditionTerm::address_offset_equal(owner.offset, alias.offset.clone()),
+                    OldConditionTerm::address_offset_equal(owner.offset, alias.offset.clone()),
                     true,
                 );
                 resources.synchronize_memory_equalities(&facts);
@@ -606,14 +609,14 @@ fn interval_selection_is_indexed_beside_same_class_non_suppliers() {
     let alias = Address::symbolic(Variable(895_031));
     let facts = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::equal(
+            OldConditionTerm::equal(
                 OldMachineTerm::Variable(Variable(895_032)),
                 OldMachineTerm::Variable(Variable(895_033)),
             ),
             true,
         )
         .assume_condition(
-            ConditionTerm::address_equal(base.clone(), alias.clone()),
+            OldConditionTerm::address_equal(base.clone(), alias.clone()),
             true,
         );
     let mut samples = Vec::new();
@@ -725,14 +728,17 @@ fn symbolic_write_permission_does_not_search_views() {
     let n = OldMachineTerm::Variable(Variable(961_003));
     let facts = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::address_equal(base.clone(), alias.clone()),
+            OldConditionTerm::address_equal(base.clone(), alias.clone()),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_equal(1u32.into(), i.clone()),
+            OldConditionTerm::signed_less_equal(1u32.into(), i.clone()),
             true,
         )
-        .assume_condition(ConditionTerm::signed_less_than(i.clone(), n.clone()), true);
+        .assume_condition(
+            OldConditionTerm::signed_less_than(i.clone(), n.clone()),
+            true,
+        );
     let query = base.offset_by_elements(i, 1);
     let owned = MemoryRange::new_with_element_width(base.clone(), 1u32.into(), n.clone(), 1);
     let mut samples = Vec::new();
@@ -781,11 +787,11 @@ fn symbolic_partition_read_start_is_indexed_without_searching_other_ranges() {
     let facts = empty
         .clone()
         .assume_condition(
-            ConditionTerm::signed_less_equal(0u32.into(), i.clone()),
+            OldConditionTerm::signed_less_equal(0u32.into(), i.clone()),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_than(i.clone(), split.clone()),
+            OldConditionTerm::signed_less_than(i.clone(), split.clone()),
             true,
         );
     let query = base.offset_by_elements(i, 1);
@@ -831,7 +837,7 @@ fn indexed_memory_support_and_fragment_consumption_ignore_unrelated_spans() {
     let empty = PureFactContext::new();
     let facts = empty
         .clone()
-        .assume_condition(ConditionTerm::address_equal(p.clone(), q.clone()), true);
+        .assume_condition(OldConditionTerm::address_equal(p.clone(), q.clone()), true);
     let own = |base: &Address, start: u32, end: u32| {
         ResourceFact::own_memory(MemoryRange::new_with_element_width(
             base.clone(),
@@ -955,7 +961,7 @@ fn direct_memory_support_does_not_enumerate_overlapping_views() {
     let p = Address::symbolic(Variable(976_000));
     let q = Address::symbolic(Variable(976_001));
     let facts = PureFactContext::new()
-        .assume_condition(ConditionTerm::address_equal(p.clone(), q.clone()), true);
+        .assume_condition(OldConditionTerm::address_equal(p.clone(), q.clone()), true);
     for late_owner in [false, true] {
         for bytes in [4u32, 4096] {
             let owner = ResourceFact::own_memory(MemoryRange::new_with_element_width(
@@ -1005,7 +1011,7 @@ fn symbolic_fragment_support_follows_indexed_endpoint_successors() {
     let next = OldMachineTerm::add(i.clone(), 1u32.into());
     let facts = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(n.clone()),
@@ -1014,7 +1020,7 @@ fn symbolic_fragment_support_follows_indexed_endpoint_successors() {
             true,
         )
         .assume_condition(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(i.clone()),
@@ -1023,10 +1029,13 @@ fn symbolic_fragment_support_follows_indexed_endpoint_successors() {
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_greater_equal(i.clone(), 0u32.into()),
+            OldConditionTerm::signed_greater_equal(i.clone(), 0u32.into()),
             true,
         )
-        .assume_condition(ConditionTerm::signed_less_than(i.clone(), n.clone()), true);
+        .assume_condition(
+            OldConditionTerm::signed_less_than(i.clone(), n.clone()),
+            true,
+        );
     let own = |start, end| ResourceFact::own_memory(MemoryRange::new(p.clone(), start, end));
     let required = own(0u32.into(), n.clone());
     let mut samples = Vec::new();
@@ -1088,15 +1097,21 @@ fn ordered_symbolic_subrange_selects_its_retained_residual_without_scanning() {
     let next_j = OldMachineTerm::add(j.clone(), 1u32.into());
     let facts = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_greater_equal(i.clone(), 0u32.into()),
+            OldConditionTerm::signed_greater_equal(i.clone(), 0u32.into()),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_greater_equal(j.clone(), 0u32.into()),
+            OldConditionTerm::signed_greater_equal(j.clone(), 0u32.into()),
             true,
         )
-        .assume_condition(ConditionTerm::signed_less_than(i.clone(), j.clone()), true)
-        .assume_condition(ConditionTerm::signed_less_than(j.clone(), n.clone()), true);
+        .assume_condition(
+            OldConditionTerm::signed_less_than(i.clone(), j.clone()),
+            true,
+        )
+        .assume_condition(
+            OldConditionTerm::signed_less_than(j.clone(), n.clone()),
+            true,
+        );
     let own = |start, end| ResourceFact::own_memory(MemoryRange::new(p.clone(), start, end));
     let tail = own(next_i, n);
     let required = own(j.clone(), next_j);
@@ -1161,7 +1176,7 @@ fn constant_memory_miss_ignores_unrelated_zero_bound_neighbors() {
         let mut facts = PureFactContext::new();
         for k in 0..size {
             facts = facts.assume_condition(
-                ConditionTerm::signed_greater_equal(
+                OldConditionTerm::signed_greater_equal(
                     OldMachineTerm::Variable(Variable(980_001 + u64::from(k))),
                     0u32.into(),
                 ),
@@ -1341,12 +1356,15 @@ fn captured_interior_pointer_reads_keep_owned_bounds_and_opaque_base_identity() 
     let bounds = empty
         .clone()
         .assume_condition(
-            ConditionTerm::signed_less_equal(0u32.into(), i.clone()),
+            OldConditionTerm::signed_less_equal(0u32.into(), i.clone()),
             true,
         )
-        .assume_condition(ConditionTerm::signed_less_than(i.clone(), n.clone()), true);
+        .assume_condition(
+            OldConditionTerm::signed_less_than(i.clone(), n.clone()),
+            true,
+        );
     let relation =
-        ConditionTerm::address_equal(captured.clone(), base.offset_by_elements(i.clone(), 4));
+        OldConditionTerm::address_equal(captured.clone(), base.offset_by_elements(i.clone(), 4));
     let facts = bounds.clone().assume_condition(relation.clone(), true);
     let range = MemoryRange::new(base.clone(), 0u32.into(), n.clone());
     let owner = ResourceFact::own_memory(range.clone());
@@ -1377,7 +1395,7 @@ fn captured_interior_pointer_reads_keep_owned_bounds_and_opaque_base_identity() 
     );
     // A separate, noncontradictory context says only that the capture is at n.
     let end_only = bounds.clone().assume_condition(
-        ConditionTerm::address_equal(captured.clone(), base.offset_by_elements(n, 4)),
+        OldConditionTerm::address_equal(captured.clone(), base.offset_by_elements(n, 4)),
         true,
     );
     assert!(
@@ -1396,7 +1414,7 @@ fn captured_interior_pointer_reads_keep_owned_bounds_and_opaque_base_identity() 
         for k in 0..size {
             let p = Address::symbolic(Variable(980_000 + k * 2));
             let q = Address::symbolic(Variable(980_001 + k * 2));
-            context = context.assume_condition(ConditionTerm::address_equal(p.clone(), q), true);
+            context = context.assume_condition(OldConditionTerm::address_equal(p.clone(), q), true);
             frame = frame.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
                 p,
                 0u32.into(),
@@ -1436,14 +1454,17 @@ fn captured_interior_address_selects_its_base_beside_same_block_owners() {
     let facts = empty
         .clone()
         .assume_condition(
-            ConditionTerm::address_equal(captured.clone(), base.offset_by_elements(i.clone(), 4)),
+            OldConditionTerm::address_equal(
+                captured.clone(),
+                base.offset_by_elements(i.clone(), 4),
+            ),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_equal(0u32.into(), i.clone()),
+            OldConditionTerm::signed_less_equal(0u32.into(), i.clone()),
             true,
         )
-        .assume_condition(ConditionTerm::signed_less_than(i, n.clone()), true);
+        .assume_condition(OldConditionTerm::signed_less_than(i, n.clone()), true);
     let range = MemoryRange::new(base, 0u32.into(), n);
     let mut samples = Vec::new();
     for size in [16u64, 64, 256, 1024] {
@@ -1744,7 +1765,7 @@ fn cold_read_queries_ignore_unrelated_classes_and_resource_ranges() {
         for index in 0..size {
             let a = pointer(990_000 + index * 2);
             let b = pointer(990_001 + index * 2);
-            context = context.assume_condition(ConditionTerm::address_equal(a, b.clone()), true);
+            context = context.assume_condition(OldConditionTerm::address_equal(a, b.clone()), true);
             resources = resources.unchecked_with_fact(ResourceFact::view_memory(MemoryRange::new(
                 b,
                 0u32.into(),
@@ -1820,7 +1841,7 @@ fn opening_checkpoint_work(steps: u64, unrelated: u64) -> usize {
     let mut base = PureFactContext::new();
     for i in 0..unrelated {
         base = base.assume_condition(
-            ConditionTerm::address_equal(at(1000 + 2 * i), at(1001 + 2 * i)),
+            OldConditionTerm::address_equal(at(1000 + 2 * i), at(1001 + 2 * i)),
             true,
         );
     }

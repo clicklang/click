@@ -92,7 +92,7 @@ pub(in crate::kernel) fn initialized_scalar_range_fact(
     };
     let condition = |relation, left, right| {
         Proposition::condition_is(
-            ConditionTerm::machine_compare(format, relation, left, right),
+            OldConditionTerm::machine_compare(format, relation, left, right),
             true,
         )
     };

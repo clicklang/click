@@ -1664,7 +1664,7 @@ fn program_function_contract_entry_facts(
                 assumptions,
                 ContractEntryFactOrigin::Span,
                 Proposition::condition_is(
-                    ConditionTerm::uint64_less_equal(
+                    OldConditionTerm::uint64_less_equal(
                         length.clone(),
                         OldMachineTerm::uint64_constant(i64::MAX as u64 / u64::from(width)),
                     ),
@@ -3196,11 +3196,11 @@ fn pointer_offsets_equal_with_resolved_atoms(
     };
     let atoms_match = |left: &AddressOffset, right: &AddressOffset| {
         if left == right
-            || assumptions.exact_condition_value(&ConditionTerm::address_offset_equal(
+            || assumptions.exact_condition_value(&OldConditionTerm::address_offset_equal(
                 left.clone(),
                 right.clone(),
             )) == Some(true)
-            || assumptions.exact_condition_value(&ConditionTerm::address_offset_equal(
+            || assumptions.exact_condition_value(&OldConditionTerm::address_offset_equal(
                 right.clone(),
                 left.clone(),
             )) == Some(true)
@@ -3246,7 +3246,7 @@ fn pointer_offsets_equal_with_resolved_atoms(
 /// The instantiation is read off the condition; nothing is searched for.
 pub(crate) fn condition_holds_by_instantiated_fact(
     assumptions: &PureFactContext,
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     value: bool,
     premise_holds: &dyn Fn(&Proposition) -> bool,
 ) -> bool {
@@ -3294,12 +3294,12 @@ pub(crate) fn condition_holds_by_instantiated_fact(
 /// bounded order prover derives it. This is what `transport` checks.
 pub(crate) fn condition_holds_by_memory_resolution(
     assumptions: &PureFactContext,
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     value: bool,
 ) -> bool {
     match (condition, value) {
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
@@ -3312,13 +3312,13 @@ pub(crate) fn condition_holds_by_memory_resolution(
                 || assumptions
                     .has_anchored_bitvector_equality_fact_for_memory_resolution(left, right)
                 || assumptions.proves_order_condition_for_memory_resolution(
-                    &ConditionTerm::signed_less_equal(
+                    &OldConditionTerm::signed_less_equal(
                         left.as_ref().clone(),
                         right.as_ref().clone(),
                     ),
                     true,
                 ) && assumptions.proves_order_condition_for_memory_resolution(
-                    &ConditionTerm::signed_less_equal(
+                    &OldConditionTerm::signed_less_equal(
                         right.as_ref().clone(),
                         left.as_ref().clone(),
                     ),
@@ -3329,7 +3329,7 @@ pub(crate) fn condition_holds_by_memory_resolution(
         // one is: the recorded history shows one version of the cell. The
         // remaining 32-bit routes read the int32 graph and stay 32-bit only.
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left,
@@ -3344,7 +3344,7 @@ pub(crate) fn condition_holds_by_memory_resolution(
         // Two complete reads of one cell carry one value even where each spells
         // its coordinate from its own base (`n + 8` and `old(n) + 8`), as the
         // state-modulo condition matchers already accept.
-        (ConditionTerm::PointerEqual(left, right), true) => assumptions
+        (OldConditionTerm::PointerEqual(left, right), true) => assumptions
             .contains_known(&Proposition::condition_is(condition.clone(), true))
             || (assumptions.pointer_provenance_match(left, right)
                 && (pointers_proven_equal_for_memory_resolution(
@@ -3356,12 +3356,12 @@ pub(crate) fn condition_holds_by_memory_resolution(
                     right.address(),
                     assumptions,
                 ))),
-        (ConditionTerm::AddressEqual(left, right), true) => {
+        (OldConditionTerm::AddressEqual(left, right), true) => {
             pointers_proven_equal_for_memory_resolution(left, right, assumptions)
                 || assumptions.pointers_known_equal(left, right)
                 || pointer_read_has_recorded_value(left, right, assumptions)
         }
-        (ConditionTerm::AddressOffsetEqual(left, right), true) => {
+        (OldConditionTerm::AddressOffsetEqual(left, right), true) => {
             pointer_offsets_proven_equal_for_memory_resolution(left, right, assumptions)
                 || pointer_offsets_equal_with_resolved_atoms(left, right, assumptions)
         }
@@ -3557,7 +3557,7 @@ mod shared_contract_operand_tests {
         };
         let left = offset(a.clone());
         let right = offset(b.clone());
-        let equation = ConditionTerm::equal(
+        let equation = OldConditionTerm::equal(
             OldMachineTerm::Variable(Variable(1017152)),
             OldMachineTerm::Variable(Variable(1017153)),
         );
@@ -3585,8 +3585,8 @@ mod shared_contract_operand_tests {
             byte_width: 4,
         };
         let empty = PureFactContext::new();
-        let lower = ConditionTerm::signed_greater_equal(x.clone(), OldMachineTerm::constant(0));
-        let upper = ConditionTerm::signed_less_equal(
+        let lower = OldConditionTerm::signed_greater_equal(x.clone(), OldMachineTerm::constant(0));
+        let upper = OldConditionTerm::signed_less_equal(
             x.clone(),
             OldMachineTerm::constant(i32::MAX as u32 / 4),
         );
@@ -3669,7 +3669,7 @@ mod prepared_entry_cases_tests {
             .expect("flag = 0, y = 1 satisfies the precondition");
         let entry = open_entry(flag.clone(), OldMachineTerm::Variable(Variable(101)))
             .expect("a symbolic conditional is a single entry requirement");
-        let flag_is_zero = ConditionTerm::equal(flag.clone(), OldMachineTerm::constant(0));
+        let flag_is_zero = OldConditionTerm::equal(flag.clone(), OldMachineTerm::constant(0));
         assert!(!entry.states(&Proposition::condition_is(flag_is_zero.clone(), false)));
         assert!(!entry.states(&Proposition::condition_is(flag_is_zero, true)));
         assert!(entry.facts().iter().any(|fact| {

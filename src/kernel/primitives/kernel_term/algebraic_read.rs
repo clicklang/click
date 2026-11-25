@@ -101,7 +101,7 @@ mod tests {
             let native = SharedMachineIntegerTerm::intern(
                 format,
                 OldMachineTerm::If {
-                    condition: Box::new(ConditionTerm::AlgebraicEqual(
+                    condition: Box::new(OldConditionTerm::AlgebraicEqual(
                         Box::new(value),
                         Box::new(variable),
                     )),

@@ -7,18 +7,18 @@ use std::collections::HashMap;
 type Bounds = (i128, i128);
 
 fn parts(p: &Proposition) -> Option<(&SharedIntegerTerm, &SharedIntegerTerm, bool)> {
-    let (condition, expected) = p.condition_native()?;
+    let (condition, expected) = p.old_condition()?;
     // Integer order is total. A negative C safety test is the opposite
     // directed bound, with the opposite strictness.
     match (condition, expected) {
-        (ConditionTerm::IntegerLessEqual(a, b), true)
-        | (ConditionTerm::IntegerGreaterThan(a, b), false) => Some((a, b, false)),
-        (ConditionTerm::IntegerLessThan(a, b), true)
-        | (ConditionTerm::IntegerGreaterEqual(a, b), false) => Some((a, b, true)),
-        (ConditionTerm::IntegerGreaterEqual(a, b), true)
-        | (ConditionTerm::IntegerLessThan(a, b), false) => Some((b, a, false)),
-        (ConditionTerm::IntegerGreaterThan(a, b), true)
-        | (ConditionTerm::IntegerLessEqual(a, b), false) => Some((b, a, true)),
+        (OldConditionTerm::IntegerLessEqual(a, b), true)
+        | (OldConditionTerm::IntegerGreaterThan(a, b), false) => Some((a, b, false)),
+        (OldConditionTerm::IntegerLessThan(a, b), true)
+        | (OldConditionTerm::IntegerGreaterEqual(a, b), false) => Some((a, b, true)),
+        (OldConditionTerm::IntegerGreaterEqual(a, b), true)
+        | (OldConditionTerm::IntegerLessThan(a, b), false) => Some((b, a, false)),
+        (OldConditionTerm::IntegerGreaterThan(a, b), true)
+        | (OldConditionTerm::IntegerLessEqual(a, b), false) => Some((b, a, true)),
         _ => None,
     }
 }
@@ -309,7 +309,7 @@ mod tests {
         IntegerTerm::constant_i64(n).into()
     }
     fn le(a: SharedIntegerTerm, b: SharedIntegerTerm) -> Proposition {
-        Proposition::condition_is(ConditionTerm::IntegerLessEqual(a, b), true)
+        Proposition::condition_is(OldConditionTerm::IntegerLessEqual(a, b), true)
     }
     fn observe(value: OldMachineTerm) -> SharedIntegerTerm {
         IntegerTerm::from_machine(MachineIntegerType::Int32, value)
@@ -378,7 +378,7 @@ mod tests {
             } else {
                 (x.clone(), endpoint)
             };
-            let premise = Proposition::condition_is(ConditionTerm::IntegerLessThan(a, b), true);
+            let premise = Proposition::condition_is(OldConditionTerm::IntegerLessThan(a, b), true);
             assert!(!reduces_one_operation(&goal, &[premise]));
         }
     }

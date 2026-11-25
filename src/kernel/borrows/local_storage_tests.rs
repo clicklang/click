@@ -167,7 +167,7 @@ fn local_borrow_admission_distinguishes_overlap_from_missing_separation() {
 
     let other = Address::symbolic(Variable(99_100));
     let known_alias = PureFactContext::new().assume_condition(
-        crate::kernel::ConditionTerm::address_equal(range.base().clone(), other.clone()),
+        crate::kernel::OldConditionTerm::address_equal(range.base().clone(), other.clone()),
         true,
     );
     let unrelated = MemoryRange::new(

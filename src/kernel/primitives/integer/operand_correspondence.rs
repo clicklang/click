@@ -315,7 +315,7 @@ pub(crate) fn machine_operand_syntax_cmp(
         let zero = || Box::new(OldMachineTerm::constant(0));
         if view.conditional_view().is_some() {
             OldMachineTerm::If {
-                condition: Box::new(ConditionTerm::Constant(false)),
+                condition: Box::new(OldConditionTerm::Constant(false)),
                 then_term: zero(),
                 else_term: zero(),
             }

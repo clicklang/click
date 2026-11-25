@@ -19,7 +19,7 @@ fn direct_loadable_span_graph_queries_scale_without_fact_index() {
         let mut context = PureFactContext::new().assume_proposition(fact);
         for index in 0..size {
             context =
-                context.assume_condition(ConditionTerm::equal(var(index), var(index + 1)), true);
+                context.assume_condition(OldConditionTerm::equal(var(index), var(index + 1)), true);
         }
         let _scope = context.enter_id_scope();
         PureFactContext::reset_bitvector_equality_index_fact_visits();
@@ -105,7 +105,7 @@ fn filing_a_load_condition_in_a_fork_shares_every_other_load() {
         offset: AddressOffset::Constant(0),
     };
     let load_condition = |id: u64| {
-        ConditionTerm::float64_compare(
+        OldConditionTerm::float64_compare(
             OldMachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
                 Box::new(pointer(id)),
@@ -167,8 +167,10 @@ fn integer_read_facts_do_not_grow_load_time_transport_work() {
     for count in [16, 32, 64] {
         let mut facts = PureFactContext::new();
         for i in 0..count {
-            facts = facts
-                .assume_condition(ConditionTerm::equal(read.clone(), var(9_331_000 + i)), true);
+            facts = facts.assume_condition(
+                OldConditionTerm::equal(read.clone(), var(9_331_000 + i)),
+                true,
+            );
         }
         let (candidates, work) = crate::instrumentation::measure_deterministic_work(|| {
             facts
@@ -178,7 +180,7 @@ fn integer_read_facts_do_not_grow_load_time_transport_work() {
         assert_eq!(candidates, 0);
         assert!(work <= 1);
         assert_eq!(
-            facts.decide(&ConditionTerm::equal(read.clone(), var(9_331_000))),
+            facts.decide(&OldConditionTerm::equal(read.clone(), var(9_331_000))),
             Some(true)
         );
     }

@@ -27,14 +27,14 @@ fn growing_prefixes(unresolved: bool, cancel: bool) {
                     KernelTerm::machine_binary_shared(ty, Op::Add, [root, zero.clone()])
                 };
                 context = context.assume_condition(
-                    ConditionTerm::equal(
+                    OldConditionTerm::equal(
                         OldMachineTerm::Variable(Variable(982010 + n as u64)),
                         OldMachineTerm::constant(n as u32),
                     ),
                     true,
                 );
                 let goal =
-                    ConditionTerm::integer_equal(observe(root.clone()), observe(other.clone()));
+                    OldConditionTerm::integer_equal(observe(root.clone()), observe(other.clone()));
                 assert_eq!(
                     context.decide(&goal),
                     if unresolved { None } else { Some(true) }

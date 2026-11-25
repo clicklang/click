@@ -1871,7 +1871,7 @@ impl ResourceContext {
                 let Some((start, end)) = range.int32_bounds() else {
                     return false;
                 };
-                if assumptions.exact_condition_value(&ConditionTerm::signed_less_than(
+                if assumptions.exact_condition_value(&OldConditionTerm::signed_less_than(
                     start.clone(),
                     end.clone(),
                 )) == Some(true)
@@ -2989,7 +2989,7 @@ fn direct_endpoint_separation(
     assumptions: &PureFactContext,
 ) -> bool {
     if end == start
-        || assumptions.exact_condition_value(&ConditionTerm::signed_less_equal(
+        || assumptions.exact_condition_value(&OldConditionTerm::signed_less_equal(
             end.clone(),
             start.clone(),
         )) == Some(true)
@@ -3041,9 +3041,9 @@ mod tests {
         };
         for strict in [false, true] {
             let condition = if strict {
-                ConditionTerm::integer_less_than(observe(&lower), observe(&cursor))
+                OldConditionTerm::integer_less_than(observe(&lower), observe(&cursor))
             } else {
-                ConditionTerm::integer_less_equal(observe(&lower), observe(&cursor))
+                OldConditionTerm::integer_less_equal(observe(&lower), observe(&cursor))
             };
             let facts = PureFactContext::new().assume_condition(condition, true);
             let base = Address::symbolic(Variable(991425));
@@ -3101,7 +3101,7 @@ mod tests {
             ),
         };
         let equality = Proposition::condition_is(
-            ConditionTerm::address_equal(query.clone(), owner.offset_by_bytes(24)),
+            OldConditionTerm::address_equal(query.clone(), owner.offset_by_bytes(24)),
             true,
         );
         let assumptions = PureFactContext::new().assume_proposition(equality);
@@ -3127,16 +3127,19 @@ mod tests {
         let query = Address::symbolic(Variable(989_103));
         let aliases = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::address_equal(query.clone(), narrow.clone()),
+                OldConditionTerm::address_equal(query.clone(), narrow.clone()),
                 true,
             )
-            .assume_condition(ConditionTerm::address_equal(narrow, wide.clone()), true);
+            .assume_condition(OldConditionTerm::address_equal(narrow, wide.clone()), true);
         let facts = aliases.clone().assume_condition(
-            ConditionTerm::uint64_less_than(index.clone(), OldMachineTerm::uint64_constant(5552)),
+            OldConditionTerm::uint64_less_than(
+                index.clone(),
+                OldMachineTerm::uint64_constant(5552),
+            ),
             true,
         );
         let facts = facts.assume_condition(
-            ConditionTerm::uint64_less_than(
+            OldConditionTerm::uint64_less_than(
                 OldMachineTerm::uint64_add(index.clone(), OldMachineTerm::uint64_constant(1)),
                 OldMachineTerm::uint64_constant(5552),
             ),
@@ -3174,13 +3177,13 @@ mod tests {
         assert!(resources.permits_memory_read(&query, 2, &facts));
         assert!(!ResourceContext::new().permits_memory_read(&query, 1, &facts));
         let last_byte = aliases.clone().assume_condition(
-            ConditionTerm::uint64_equal(index.clone(), OldMachineTerm::uint64_constant(5551)),
+            OldConditionTerm::uint64_equal(index.clone(), OldMachineTerm::uint64_constant(5551)),
             true,
         );
         assert!(resources.permits_memory_read(&query, 1, &last_byte));
         assert!(!resources.permits_memory_read(&query, 2, &last_byte));
         let boundary = aliases.assume_condition(
-            ConditionTerm::uint64_equal(index, OldMachineTerm::uint64_constant(5552)),
+            OldConditionTerm::uint64_equal(index, OldMachineTerm::uint64_constant(5552)),
             true,
         );
         assert!(!resources.permits_memory_read(&query, 1, &boundary));
@@ -3217,20 +3220,23 @@ mod tests {
             1,
         ));
         let bounded = PureFactContext::new()
-            .assume_condition(ConditionTerm::address_equal(temporary, selected), true)
+            .assume_condition(OldConditionTerm::address_equal(temporary, selected), true)
             .assume_condition(
-                ConditionTerm::uint64_less_equal(
+                OldConditionTerm::uint64_less_equal(
                     whole.clone(),
                     OldMachineTerm::uint64_constant(5551),
                 ),
                 true,
             );
         let suffix = bounded.clone().assume_condition(
-            ConditionTerm::uint64_less_equal(remaining.clone(), whole.clone()),
+            OldConditionTerm::uint64_less_equal(remaining.clone(), whole.clone()),
             true,
         );
         let facts = suffix.clone().assume_condition(
-            ConditionTerm::uint64_less_equal(OldMachineTerm::uint64_constant(1), remaining.clone()),
+            OldConditionTerm::uint64_less_equal(
+                OldMachineTerm::uint64_constant(1),
+                remaining.clone(),
+            ),
             true,
         );
         let held = ResourceContext::new().unchecked_with_fact(ResourceFact::view_memory(available));
@@ -3246,14 +3252,14 @@ mod tests {
         );
         let low_word = bounded
             .assume_condition(
-                ConditionTerm::signed_less_equal(
+                OldConditionTerm::signed_less_equal(
                     OldMachineTerm::uint32_from_64(remaining.clone()),
                     OldMachineTerm::uint32_from_64(whole.clone()),
                 ),
                 true,
             )
             .assume_condition(
-                ConditionTerm::uint64_less_equal(OldMachineTerm::uint64_constant(1), remaining),
+                OldConditionTerm::uint64_less_equal(OldMachineTerm::uint64_constant(1), remaining),
                 true,
             );
         assert!(
@@ -3302,16 +3308,19 @@ mod tests {
         };
         let facts = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::address_equal(parameter.clone(), parent),
+                OldConditionTerm::address_equal(parameter.clone(), parent),
                 true,
             )
             .assume_condition(
-                ConditionTerm::address_equal(old_read.clone(), model.clone()),
+                OldConditionTerm::address_equal(old_read.clone(), model.clone()),
                 true,
             )
-            .assume_condition(ConditionTerm::address_equal(cursor.clone(), old_read), true)
             .assume_condition(
-                ConditionTerm::address_equal(cursor.clone(), model.clone()),
+                OldConditionTerm::address_equal(cursor.clone(), old_read),
+                true,
+            )
+            .assume_condition(
+                OldConditionTerm::address_equal(cursor.clone(), model.clone()),
                 true,
             );
         let range = |base: Address, start: u32, end: u32| {
@@ -3376,16 +3385,16 @@ mod tests {
             offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(100000)), 4),
         };
         let facts = PureFactContext::new()
-            .assume_condition(ConditionTerm::address_equal(parameter, parent), true)
+            .assume_condition(OldConditionTerm::address_equal(parameter, parent), true)
             .assume_condition(
-                ConditionTerm::address_equal(old_read.clone(), model.clone()),
+                OldConditionTerm::address_equal(old_read.clone(), model.clone()),
                 true,
             )
             .assume_condition(
-                ConditionTerm::address_equal(cursor.clone(), old_read.clone()),
+                OldConditionTerm::address_equal(cursor.clone(), old_read.clone()),
                 true,
             )
-            .assume_condition(ConditionTerm::address_equal(cursor.clone(), model), true);
+            .assume_condition(OldConditionTerm::address_equal(cursor.clone(), model), true);
         let owner = |offset| {
             ResourceFact::own_memory(MemoryRange::new_with_element_width(
                 old_read.offset_by_bytes(offset),
@@ -3432,7 +3441,7 @@ mod tests {
         let resources = ResourceContext::new().unchecked_with_fact(view(&base, 0, 8));
         resources.synchronize_memory_equalities(&empty);
         let facts = empty.clone().assume_condition(
-            ConditionTerm::address_equal(base.clone(), alias.clone()),
+            OldConditionTerm::address_equal(base.clone(), alias.clone()),
             true,
         );
         assert!(resources.permits_memory_read(&alias, 8, &facts));
@@ -3494,10 +3503,10 @@ mod tests {
         let facts = empty
             .clone()
             .assume_condition(
-                ConditionTerm::address_equal(displaced, middle.clone()),
+                OldConditionTerm::address_equal(displaced, middle.clone()),
                 true,
             )
-            .assume_condition(ConditionTerm::address_equal(middle, alias.clone()), true);
+            .assume_condition(OldConditionTerm::address_equal(middle, alias.clone()), true);
         assert!(
             resources
                 .concrete_write_entries(&alias, 4, &facts)
@@ -3570,10 +3579,10 @@ mod tests {
         };
         let facts = empty
             .assume_condition(
-                ConditionTerm::address_equal(displaced, middle.clone()),
+                OldConditionTerm::address_equal(displaced, middle.clone()),
                 true,
             )
-            .assume_condition(ConditionTerm::address_equal(middle, alias.clone()), true);
+            .assume_condition(OldConditionTerm::address_equal(middle, alias.clone()), true);
         let interior = Address {
             base: alias.base,
             offset: AddressOffset::Constant(4),

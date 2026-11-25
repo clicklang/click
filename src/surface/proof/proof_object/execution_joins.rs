@@ -4030,7 +4030,7 @@ mod progress_tests {
     use super::*;
     fn indexed_fact(index: u32) -> Proposition {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(OldMachineTerm::Variable(Variable(0))),
@@ -4089,7 +4089,7 @@ mod progress_tests {
             ProofAssertion::Fact(written),
         ];
         let comparison = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(OldMachineTerm::Variable(Variable(71_000))),

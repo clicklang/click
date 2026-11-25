@@ -477,7 +477,7 @@ fn shared_conditional_guard_reads_keep_state_identity_in_linear_work() {
         ));
         let pointer = at(block("global:g"), 0);
         crate::kernel::eval::record_load_access_width(memory.memory(), &pointer, 4);
-        let guard = ConditionTerm::equal(
+        let guard = OldConditionTerm::equal(
             OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
                 Box::new(pointer.clone()),

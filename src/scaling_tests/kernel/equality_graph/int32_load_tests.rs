@@ -189,7 +189,8 @@ fn zero_index_read_condition_ignores_unrelated_read_predicates() {
         for index in 0..size {
             let left = load(&memory, &address(950_000 + 2 * index), 4);
             let right = load(&memory, &address(950_001 + 2 * index), 4);
-            context = context.assume_condition(ConditionTerm::signed_less_than(left, right), true);
+            context =
+                context.assume_condition(OldConditionTerm::signed_less_than(left, right), true);
         }
         let base = address(960_000);
         let index = var(960_001);
@@ -200,11 +201,14 @@ fn zero_index_read_condition_ignores_unrelated_read_predicates() {
             &base.offset_by_elements(OldMachineTerm::add(index.clone(), 1u32.into()), 4),
             4,
         );
-        context =
-            context.assume_condition(ConditionTerm::signed_less_than(next.clone(), indexed), true);
-        let target = ConditionTerm::signed_less_than(next, direct);
+        context = context.assume_condition(
+            OldConditionTerm::signed_less_than(next.clone(), indexed),
+            true,
+        );
+        let target = OldConditionTerm::signed_less_than(next, direct);
         let (answer, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let context = context.assume_condition(ConditionTerm::equal(index, 0u32.into()), true);
+            let context =
+                context.assume_condition(OldConditionTerm::equal(index, 0u32.into()), true);
             crate::kernel::reasoning::decide_with_facts(&context, &ExecutionFacts::new(), &target)
         });
         assert_eq!(answer, Some(true));
@@ -223,7 +227,7 @@ fn zero_index_read_condition_ignores_unrelated_read_predicates() {
 /// the projection back through that history would grow with it.
 #[test]
 fn narrow_read_projection_edge_does_not_walk_memory_history() {
-    use crate::kernel::{CompareRelation, ConditionTerm, LoadKind, MachineIntegerType};
+    use crate::kernel::{CompareRelation, LoadKind, MachineIntegerType, OldConditionTerm};
     for (kind, format, bytes) in [
         (LoadKind::UInt8, MachineIntegerType::UInt8, 1),
         (LoadKind::Int16, MachineIntegerType::Int16, 2),
@@ -247,7 +251,7 @@ fn narrow_read_projection_edge_does_not_walk_memory_history() {
                     memory, &cell, kind, bytes,
                 ))
             };
-            let equal = ConditionTerm::Compare {
+            let equal = OldConditionTerm::Compare {
                 format,
                 relation: CompareRelation::Equal,
                 left: Box::new(read(&projected)),

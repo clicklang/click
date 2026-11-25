@@ -490,7 +490,7 @@ mod tests {
                     crate::kernel::program_while(
                         crate::kernel::program_expression::int32_literal(1),
                         vec![Proposition::condition_is(
-                            ConditionTerm::Constant(true),
+                            OldConditionTerm::Constant(true),
                             true,
                         )],
                         ProgramStatement::Skip,
@@ -546,7 +546,7 @@ mod tests {
                 crate::kernel::program_while(
                     crate::kernel::program_expression::int32_literal(1),
                     vec![Proposition::condition_is(
-                        ConditionTerm::Constant(true),
+                        OldConditionTerm::Constant(true),
                         true,
                     )],
                     ProgramStatement::Skip,

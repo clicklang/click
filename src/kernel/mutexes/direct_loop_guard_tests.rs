@@ -184,7 +184,7 @@ fn direct_loop_guard_is_typed_and_affine_even_when_empty() {
             .is_err()
     );
     let mut different = (*carrier(&top)).clone();
-    different.held = ConditionTerm::Constant(true).into();
+    different.held = OldConditionTerm::Constant(true).into();
     assert!(
         top.resources
             .clone()
@@ -346,7 +346,7 @@ fn direct_loop_guard_keeps_negated_conditions_as_boolean_terms() {
     .unwrap();
     assert!(matches!(
         carrier(&head).condition(),
-        ConditionTerm::BoolEqual(..)
+        OldConditionTerm::BoolEqual(..)
     ));
     let opened = MutexContext::new(head)
         .release_current(&address(0), &PureFactContext::new())
@@ -386,7 +386,7 @@ fn direct_loop_guard_transfer_rejects_an_existing_guard_atom() {
 fn direct_loop_guard_transfer_rejects_an_existing_conditional_identity() {
     let top = head(&entry(), 717);
     let mut changed = (*carrier(&top)).clone();
-    changed.held = ConditionTerm::Constant(true).into();
+    changed.held = OldConditionTerm::Constant(true).into();
     assert!(
         top.resources
             .clone()

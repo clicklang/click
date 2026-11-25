@@ -785,198 +785,202 @@ pub(in crate::surface) fn value_naming_tables(
 
 /// The kind of comparison or check a kernel condition makes, for a
 /// diagnostic that has no source spelling of its operands.
-pub(super) fn condition_kind(condition: &ConditionTerm) -> &'static str {
+pub(super) fn condition_kind(condition: &OldConditionTerm) -> &'static str {
     match condition {
-        ConditionTerm::PointerEqual(_, _) => "pointer value equality",
+        OldConditionTerm::PointerEqual(_, _) => "pointer value equality",
 
-        ConditionTerm::AlgebraicEqual(_, _) => "algebraic equality",
-        ConditionTerm::IntegerLessThan(_, _) => "Integer less-than",
-        ConditionTerm::IntegerLessEqual(_, _) => "Integer less-or-equal",
-        ConditionTerm::IntegerGreaterThan(_, _) => "Integer greater-than",
-        ConditionTerm::IntegerGreaterEqual(_, _) => "Integer greater-or-equal",
-        ConditionTerm::IntegerEqual(_, _) => "Integer equality",
-        ConditionTerm::IntegerNotEqual(_, _) => "Integer disequality",
-        ConditionTerm::Compare {
+        OldConditionTerm::AlgebraicEqual(_, _) => "algebraic equality",
+        OldConditionTerm::IntegerLessThan(_, _) => "Integer less-than",
+        OldConditionTerm::IntegerLessEqual(_, _) => "Integer less-or-equal",
+        OldConditionTerm::IntegerGreaterThan(_, _) => "Integer greater-than",
+        OldConditionTerm::IntegerGreaterEqual(_, _) => "Integer greater-or-equal",
+        OldConditionTerm::IntegerEqual(_, _) => "Integer equality",
+        OldConditionTerm::IntegerNotEqual(_, _) => "Integer disequality",
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left: _,
             right: _,
         } => "signed less-than",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
             left: _,
             right: _,
         } => "signed less-or-equal",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterThan,
             left: _,
             right: _,
         } => "signed greater-than",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
             left: _,
             right: _,
         } => "signed greater-or-equal",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left: _,
             right: _,
         } => "int32 equality",
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
             left: _,
             right: _,
         } => "addition overflow",
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Subtract,
             left: _,
             right: _,
         } => "subtraction overflow",
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Multiply,
             left: _,
             right: _,
         } => "multiplication overflow",
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Divide,
             left: _,
             right: _,
         } => "division overflow",
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::ShiftLeft,
             left: _,
             right: _,
         } => "left-shift overflow",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::LessThan,
             left: _,
             right: _,
         } => "int64 signed less-than",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::LessEqual,
             left: _,
             right: _,
         } => "int64 signed less-or-equal",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::GreaterThan,
             left: _,
             right: _,
         } => "int64 signed greater-than",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::GreaterEqual,
             left: _,
             right: _,
         } => "int64 signed greater-or-equal",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
             left: _,
             right: _,
         } => "uint64 less-than",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessEqual,
             left: _,
             right: _,
         } => "uint64 less-or-equal",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::GreaterThan,
             left: _,
             right: _,
         } => "uint64 greater-than",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::GreaterEqual,
             left: _,
             right: _,
         } => "uint64 greater-or-equal",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt32,
             relation: CompareRelation::LessThan,
             left: _,
             right: _,
         } => "uint32 less-than",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt32,
             relation: CompareRelation::LessEqual,
             left: _,
             right: _,
         } => "uint32 less-or-equal",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt32,
             relation: CompareRelation::GreaterThan,
             left: _,
             right: _,
         } => "uint32 greater-than",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt32,
             relation: CompareRelation::GreaterEqual,
             left: _,
             right: _,
         } => "uint32 greater-or-equal",
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: _,
             right: _,
         } => "64-bit equality",
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Add,
             left: _,
             right: _,
         } => "int64 addition overflow",
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Subtract,
             left: _,
             right: _,
         } => "int64 subtraction overflow",
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Multiply,
             left: _,
             right: _,
         } => "int64 multiplication overflow",
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Divide,
             left: _,
             right: _,
         } => "int64 division overflow",
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::ShiftLeft,
             left: _,
             right: _,
         } => "int64 left-shift overflow",
-        ConditionTerm::Compare { .. } => "machine comparison",
-        ConditionTerm::Overflows { .. } => "machine overflow test",
-        ConditionTerm::Float32(FloatCondition::Comparison { .. }) => "float32 comparison",
-        ConditionTerm::Float32(FloatCondition::Classification { .. }) => "float32 classification",
-        ConditionTerm::Float64(FloatCondition::Comparison { .. }) => "float64 comparison",
-        ConditionTerm::Float64(FloatCondition::Classification { .. }) => "float64 classification",
-        ConditionTerm::AddressOffsetEqual(_, _) => "pointer-offset equality",
-        ConditionTerm::AddressEqual(_, _) => "pointer equality",
-        ConditionTerm::Constant(_) => "constant condition",
-        ConditionTerm::Variable(_) => "condition variable",
-        ConditionTerm::BoolApplication(_) => "Bool function application",
-        ConditionTerm::BoolIf { .. } => "Bool conditional",
-        ConditionTerm::BoolEqual(..) => "Bool equality",
+        OldConditionTerm::Compare { .. } => "machine comparison",
+        OldConditionTerm::Overflows { .. } => "machine overflow test",
+        OldConditionTerm::Float32(FloatCondition::Comparison { .. }) => "float32 comparison",
+        OldConditionTerm::Float32(FloatCondition::Classification { .. }) => {
+            "float32 classification"
+        }
+        OldConditionTerm::Float64(FloatCondition::Comparison { .. }) => "float64 comparison",
+        OldConditionTerm::Float64(FloatCondition::Classification { .. }) => {
+            "float64 classification"
+        }
+        OldConditionTerm::AddressOffsetEqual(_, _) => "pointer-offset equality",
+        OldConditionTerm::AddressEqual(_, _) => "pointer equality",
+        OldConditionTerm::Constant(_) => "constant condition",
+        OldConditionTerm::Variable(_) => "condition variable",
+        OldConditionTerm::BoolApplication(_) => "Bool function application",
+        OldConditionTerm::BoolIf { .. } => "Bool conditional",
+        OldConditionTerm::BoolEqual(..) => "Bool equality",
     }
 }
 
@@ -8844,7 +8848,7 @@ fn describe_integer_term(term: &crate::kernel::IntegerTerm) -> String {
     crate::surface::proof_diagnostics::render::render_integer_term(term)
 }
 
-pub(super) fn describe_condition(condition: &ConditionTerm) -> String {
+pub(super) fn describe_condition(condition: &OldConditionTerm) -> String {
     if let Some(unsigned) = describe_unsigned_comparison(condition, ParameterBinding::default()) {
         return unsigned;
     }
@@ -8861,55 +8865,57 @@ pub(super) fn describe_condition(condition: &ConditionTerm) -> String {
         };
     }
     match condition {
-        ConditionTerm::PointerEqual(left, right) => format!(
+        OldConditionTerm::PointerEqual(left, right) => format!(
             "{} == {}",
             describe_pointer(left.address(), ParameterBinding::default()),
             describe_pointer(right.address(), ParameterBinding::default())
         ),
 
-        ConditionTerm::AlgebraicEqual(_, _) => "algebraic equality".to_string(),
-        ConditionTerm::IntegerLessThan(left, right) => {
+        OldConditionTerm::AlgebraicEqual(_, _) => "algebraic equality".to_string(),
+        OldConditionTerm::IntegerLessThan(left, right) => {
             describe_integer_comparison(left, "<", right)
         }
-        ConditionTerm::IntegerLessEqual(left, right) => {
+        OldConditionTerm::IntegerLessEqual(left, right) => {
             describe_integer_comparison(left, "<=", right)
         }
-        ConditionTerm::IntegerGreaterThan(left, right) => {
+        OldConditionTerm::IntegerGreaterThan(left, right) => {
             describe_integer_comparison(left, ">", right)
         }
-        ConditionTerm::IntegerGreaterEqual(left, right) => {
+        OldConditionTerm::IntegerGreaterEqual(left, right) => {
             describe_integer_comparison(left, ">=", right)
         }
-        ConditionTerm::IntegerEqual(left, right) => describe_integer_comparison(left, "==", right),
-        ConditionTerm::IntegerNotEqual(left, right) => {
+        OldConditionTerm::IntegerEqual(left, right) => {
+            describe_integer_comparison(left, "==", right)
+        }
+        OldConditionTerm::IntegerNotEqual(left, right) => {
             describe_integer_comparison(left, "!=", right)
         }
-        ConditionTerm::Constant(value) => value.to_string(),
-        ConditionTerm::Variable(variable) => lowering_only_variable("cond", variable.0),
-        ConditionTerm::Float32(float_condition) => describe_float_condition(float_condition),
-        ConditionTerm::Float64(float_condition) => describe_float_condition(float_condition),
-        ConditionTerm::AddressOffsetEqual(left, right) => format!(
+        OldConditionTerm::Constant(value) => value.to_string(),
+        OldConditionTerm::Variable(variable) => lowering_only_variable("cond", variable.0),
+        OldConditionTerm::Float32(float_condition) => describe_float_condition(float_condition),
+        OldConditionTerm::Float64(float_condition) => describe_float_condition(float_condition),
+        OldConditionTerm::AddressOffsetEqual(left, right) => format!(
             "{} == {}",
             describe_pointer_offset(left),
             describe_pointer_offset(right)
         ),
-        ConditionTerm::AddressEqual(left, right) => {
+        OldConditionTerm::AddressEqual(left, right) => {
             format!(
                 "{} == {}",
                 describe_pointer(left, ParameterBinding::default()),
                 describe_pointer(right, ParameterBinding::default())
             )
         }
-        crate::kernel::ConditionTerm::Compare { .. }
-        | crate::kernel::ConditionTerm::Overflows { .. } => {
+        crate::kernel::OldConditionTerm::Compare { .. }
+        | crate::kernel::OldConditionTerm::Overflows { .. } => {
             unreachable!("bitvector comparisons are described above")
         }
         // The Surface spellings of the `Bool` value forms, as the
         // word-valued application and load are described.
-        ConditionTerm::BoolApplication(application) => {
+        OldConditionTerm::BoolApplication(application) => {
             format!("{}(<typed Click arguments>)", application.name())
         }
-        ConditionTerm::BoolIf {
+        OldConditionTerm::BoolIf {
             condition,
             then_condition,
             else_condition,
@@ -8919,7 +8925,7 @@ pub(super) fn describe_condition(condition: &ConditionTerm) -> String {
             describe_condition(then_condition),
             describe_condition(else_condition)
         ),
-        ConditionTerm::BoolEqual(left, right) => format!(
+        OldConditionTerm::BoolEqual(left, right) => format!(
             "({}) == ({})",
             describe_condition(left),
             describe_condition(right)
@@ -8950,7 +8956,7 @@ pub(super) fn describe_stated_fact(
 /// parameter names; shapes with no parameter-named operands fall back to
 /// the context-free rendering.
 pub(super) fn describe_condition_with_context(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
     let binary = |left: &OldMachineTerm, operator: &str, right: &OldMachineTerm| {
@@ -8964,91 +8970,91 @@ pub(super) fn describe_condition_with_context(
         return unsigned;
     }
     match condition {
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left,
             right,
         } => binary(left, "==", right),
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::LessThan,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
             left,
             right,
         } => binary(left, "<", right),
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::LessEqual,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessEqual,
             left,
             right,
         } => binary(left, "<=", right),
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterThan,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::GreaterThan,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::GreaterThan,
             left,
             right,
         } => binary(left, ">", right),
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::GreaterEqual,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::GreaterEqual,
             left,
             right,
         } => binary(left, ">=", right),
-        ConditionTerm::AddressEqual(left, right) => format!(
+        OldConditionTerm::AddressEqual(left, right) => format!(
             "{} == {}",
             describe_pointer(left, parameter_binding),
             describe_pointer(right, parameter_binding)
@@ -9061,10 +9067,10 @@ pub(super) fn describe_condition_with_context(
 /// marked `(unsigned)`, so it never reads as the signed comparison of the
 /// same operands.
 fn describe_unsigned_comparison(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
-    let ConditionTerm::Compare {
+    let OldConditionTerm::Compare {
         format: MachineIntegerType::UInt32,
         relation:
             relation @ (crate::kernel::CompareRelation::LessThan
@@ -9180,7 +9186,7 @@ mod assembly_fact_tests {
                 vec![pointer.clone()],
             )),
             fact: Box::new(Proposition::condition_is(
-                ConditionTerm::Constant(false),
+                OldConditionTerm::Constant(false),
                 true,
             )),
             source: Some(Box::new(crate::kernel::ResourceBodyFactSource {

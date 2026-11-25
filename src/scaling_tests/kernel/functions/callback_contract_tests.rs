@@ -369,12 +369,12 @@ fn callback_fact_lookup_scales_with_calls_not_unrelated_supported_facts() {
 #[test]
 fn contract_refinement_work_is_flat_in_unrelated_facts() {
     let variable = |index| OldMachineTerm::Variable(Variable(index));
-    let bound = ConditionTerm::signed_less_than(variable(70_001), OldMachineTerm::constant(10));
-    let equality = ConditionTerm::equal(variable(70_002), variable(70_003));
-    let refuted = ConditionTerm::signed_less_than(variable(70_005), OldMachineTerm::constant(0));
+    let bound = OldConditionTerm::signed_less_than(variable(70_001), OldMachineTerm::constant(10));
+    let equality = OldConditionTerm::equal(variable(70_002), variable(70_003));
+    let refuted = OldConditionTerm::signed_less_than(variable(70_005), OldMachineTerm::constant(0));
     let integer = |index| IntegerTerm::Variable(Variable(index));
-    let size_invariant = ConditionTerm::integer_equal(integer(70_010), integer(70_011));
-    let unrelated_size = ConditionTerm::integer_equal(integer(70_012), integer(70_013));
+    let size_invariant = OldConditionTerm::integer_equal(integer(70_010), integer(70_011));
+    let unrelated_size = OldConditionTerm::integer_equal(integer(70_012), integer(70_013));
     let unproved = Proposition::Predicate {
         name: "unproved_refinement_clause".to_string(),
         arguments: vec![],
@@ -410,14 +410,14 @@ fn contract_refinement_work_is_flat_in_unrelated_facts() {
                 .assume_condition(size_invariant.clone(), true);
             for index in 0..size {
                 assumptions = assumptions.assume_condition(
-                    ConditionTerm::integer_equal(
+                    OldConditionTerm::integer_equal(
                         integer(72_000 + index as u64),
                         IntegerTerm::Constant(num_bigint::BigInt::from(index)),
                     ),
                     true,
                 );
                 assumptions = assumptions.assume_condition(
-                    ConditionTerm::signed_less_than(
+                    OldConditionTerm::signed_less_than(
                         OldMachineTerm::Variable(Variable(71_000 + index as u64)),
                         OldMachineTerm::constant(index as u32 + 1),
                     ),
@@ -473,7 +473,7 @@ fn established_callback_frame_rule_ignores_unrelated_owners_and_aliases() {
             if aliases {
                 for i in 0..count {
                     facts = facts.assume_condition(
-                        ConditionTerm::address_equal(
+                        OldConditionTerm::address_equal(
                             Address::symbolic(Variable(8_960_000)),
                             Address::symbolic(Variable(8_962_000 + i)),
                         ),

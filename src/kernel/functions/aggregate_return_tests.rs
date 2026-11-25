@@ -822,7 +822,7 @@ fn aggregate_copy_result_preserves_unrelated_entry_byte_history() {
     };
     let equality = |memory: &SymbolicMemory| {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(read(memory)),
@@ -992,7 +992,7 @@ fn symbolic_construction_storage_respects_known_aliases() {
     let source = Address::symbolic(Variable(870_005));
     let alias = Address::symbolic(Variable(870_006));
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::address_equal(source.clone(), alias.clone()),
+        OldConditionTerm::address_equal(source.clone(), alias.clone()),
         true,
     );
     for forgotten in [false, true] {

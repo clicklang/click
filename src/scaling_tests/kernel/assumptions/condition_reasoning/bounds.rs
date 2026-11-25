@@ -11,7 +11,7 @@ fn shared_bound_consumers_preserve_dag_operands() {
             let mut facts = PureFactContext::new();
             for i in 0..ambient {
                 facts = facts.assume_condition(
-                    ConditionTerm::equal(
+                    OldConditionTerm::equal(
                         OldMachineTerm::Variable(Variable(995000 + i)),
                         OldMachineTerm::constant(7),
                     ),
@@ -31,11 +31,11 @@ fn shared_bound_consumers_preserve_dag_operands() {
                         [root.clone(), root.clone()],
                     );
                     let operand = SharedMachineIntegerTerm::from_shared(ty, root.clone()).unwrap();
-                    let first = ConditionTerm::integer_less_equal(
+                    let first = OldConditionTerm::integer_less_equal(
                         observe(x.clone()),
                         IntegerTerm::Machine(operand.clone()),
                     );
-                    let second = ConditionTerm::integer_less_equal(
+                    let second = OldConditionTerm::integer_less_equal(
                         IntegerTerm::Machine(operand.clone()),
                         observe(y.clone()),
                     );
@@ -76,7 +76,7 @@ fn shared_comparison_class_queries_do_not_export_dag_prefixes() {
             let mut facts = PureFactContext::new();
             for i in 0..ambient {
                 facts = facts.assume_condition(
-                    ConditionTerm::signed_less_equal(
+                    OldConditionTerm::signed_less_equal(
                         OldMachineTerm::Variable(Variable(997000 + i)),
                         OldMachineTerm::constant(7),
                     ),
@@ -94,7 +94,7 @@ fn shared_comparison_class_queries_do_not_export_dag_prefixes() {
                         [root.clone(), root.clone()],
                     );
                     let operand = SharedMachineIntegerTerm::from_shared(ty, root.clone()).unwrap();
-                    let query = ConditionTerm::integer_less_equal(
+                    let query = OldConditionTerm::integer_less_equal(
                         IntegerTerm::Machine(operand.clone()),
                         IntegerTerm::from_machine(ty, right.clone()).unwrap(),
                     );
@@ -105,14 +105,14 @@ fn shared_comparison_class_queries_do_not_export_dag_prefixes() {
                     let child = facts
                         .clone()
                         .assume_condition(
-                            ConditionTerm::integer_equal(
+                            OldConditionTerm::integer_equal(
                                 IntegerTerm::Machine(operand.clone()),
                                 IntegerTerm::from_machine(ty, alias.clone()).unwrap(),
                             ),
                             true,
                         )
                         .assume_condition(
-                            ConditionTerm::signed_less_equal(alias, right.clone()),
+                            OldConditionTerm::signed_less_equal(alias, right.clone()),
                             true,
                         );
                     // This is the full dispatcher, through an equality alias
@@ -162,7 +162,7 @@ fn shared_exact_order_walk_visits_dag_endpoints_once() {
             let mut facts = PureFactContext::new();
             for i in 0..ambient {
                 facts = facts.assume_condition(
-                    ConditionTerm::signed_less_than(
+                    OldConditionTerm::signed_less_than(
                         OldMachineTerm::Variable(Variable(998000 + i * 2)),
                         OldMachineTerm::Variable(Variable(998001 + i * 2)),
                     ),
@@ -183,7 +183,7 @@ fn shared_exact_order_walk_visits_dag_endpoints_once() {
                 )
                 .unwrap();
                 facts = facts.assume_condition(
-                    ConditionTerm::integer_less_than(
+                    OldConditionTerm::integer_less_than(
                         IntegerTerm::Machine(last),
                         IntegerTerm::Machine(next.clone()),
                     ),
@@ -233,11 +233,11 @@ fn initialized_range_order_collection_does_not_enumerate_elements() {
         let index = OldMachineTerm::Variable(var);
         let guard = Proposition::And(
             Box::new(Proposition::condition_is(
-                ConditionTerm::signed_less_equal(0u32.into(), index.clone()),
+                OldConditionTerm::signed_less_equal(0u32.into(), index.clone()),
                 true,
             )),
             Box::new(Proposition::condition_is(
-                ConditionTerm::signed_less_than(index.clone(), OldMachineTerm::constant(size)),
+                OldConditionTerm::signed_less_than(index.clone(), OldMachineTerm::constant(size)),
                 true,
             )),
         );
@@ -262,7 +262,7 @@ fn initialized_range_order_collection_does_not_enumerate_elements() {
             assert!(facts.is_empty());
             assert!(!context.proposition_proves_condition(
                 &source,
-                &ConditionTerm::signed_less_than(OldMachineTerm::Variable(var), 7u32.into()),
+                &OldConditionTerm::signed_less_than(OldMachineTerm::Variable(var), 7u32.into()),
                 true,
             ));
         });

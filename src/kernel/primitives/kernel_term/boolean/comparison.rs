@@ -25,10 +25,10 @@ impl KernelTerm {
         use CompareRelation as R;
         use MachineIntegerType as T;
         let boolean = |value| Self::intern(KernelType::Bool, KernelTermNode::BoolLiteral(value));
-        let native = |value: ConditionTerm| KernelTermImport::default().condition(&value);
+        let native = |value: OldConditionTerm| KernelTermImport::default().condition(&value);
         let views = arguments.each_ref().map(MachineOperandView::Shared);
         if let [Some(left), Some(right)] = views.map(|view| view.literal()) {
-            return native(ConditionTerm::machine_compare(
+            return native(OldConditionTerm::machine_compare(
                 format, relation, left, right,
             ));
         }
@@ -106,7 +106,7 @@ impl KernelTerm {
                         && let Some(OldMachineTerm::IntegerAddress(pointer, _)) =
                             root.machine_conversion_leaf()
                     {
-                        return native(ConditionTerm::address_equal(
+                        return native(OldConditionTerm::address_equal(
                             pointer.as_ref().clone(),
                             Address::null(),
                         ));
@@ -118,12 +118,12 @@ impl KernelTerm {
                     if zero.literal().and_then(|v| v.bitvector64_as_const()) != Some(0) {
                         continue;
                     }
-                    let observed = ConditionTerm::IntegerEqual(
+                    let observed = OldConditionTerm::IntegerEqual(
                         IntegerTerm::Machine(word.retain(format)).into(),
                         IntegerTerm::constant_i64(0).into(),
                     );
                     if let Some((pointer, alignment)) = observed.as_pointer_alignment() {
-                        return native(ConditionTerm::Compare {
+                        return native(OldConditionTerm::Compare {
                             format: T::Int64,
                             relation,
                             left: Box::new(OldMachineTerm::Binary {
@@ -186,7 +186,7 @@ mod tests {
             ] {
                 for left in &values {
                     for right in &values {
-                        let expected = ConditionTerm::machine_compare(
+                        let expected = OldConditionTerm::machine_compare(
                             format,
                             relation,
                             left.clone(),
@@ -236,7 +236,7 @@ mod tests {
             ] {
                 for left in &values {
                     for right in &values {
-                        let expected = ConditionTerm::machine_compare(
+                        let expected = OldConditionTerm::machine_compare(
                             format,
                             relation,
                             left.clone(),
@@ -284,7 +284,7 @@ mod tests {
                 CompareRelation::LessThan,
                 CompareRelation::GreaterEqual,
             ] {
-                let source = ConditionTerm::Compare {
+                let source = OldConditionTerm::Compare {
                     format,
                     relation,
                     left: Box::new(term.clone()),

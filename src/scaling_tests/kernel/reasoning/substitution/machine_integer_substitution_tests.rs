@@ -62,7 +62,7 @@ fn machine_operator_chains_cost_the_same_per_node_at_every_format() {
         let _session = crate::kernel::VerificationSession::enter();
         let chain = machine_operation_chain(format, size);
         let target = OldMachineTerm::Variable(Variable(152_000));
-        let equality = ConditionTerm::machine_compare(
+        let equality = OldConditionTerm::machine_compare(
             format,
             crate::kernel::CompareRelation::Equal,
             chain,

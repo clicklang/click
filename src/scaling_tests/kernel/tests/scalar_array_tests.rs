@@ -324,7 +324,7 @@ fn scalar_array_write_borrow_requirement_ignores_alias_and_borrow_counts() {
             if grow_aliases {
                 for i in 0..count {
                     assumptions = assumptions.assume_condition(
-                        ConditionTerm::address_equal(
+                        OldConditionTerm::address_equal(
                             source.clone(),
                             Address::symbolic(Variable(913_000 + i)),
                         ),

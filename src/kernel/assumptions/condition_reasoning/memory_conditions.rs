@@ -11,10 +11,10 @@ impl PureFactContext {
     /// loaded pointer. Structurally different conditions never match.
     pub fn conditions_equal_modulo_proven_states(
         &self,
-        left: &ConditionTerm,
-        right: &ConditionTerm,
+        left: &OldConditionTerm,
+        right: &OldConditionTerm,
     ) -> bool {
-        if let (ConditionTerm::PointerEqual(a, b), ConditionTerm::PointerEqual(c, d)) =
+        if let (OldConditionTerm::PointerEqual(a, b), OldConditionTerm::PointerEqual(c, d)) =
             (left, right)
         {
             let same_value =
@@ -42,10 +42,10 @@ impl PureFactContext {
     /// it is reserved for target-selected candidates, not broad matching.
     pub(crate) fn conditions_equal_modulo_origin_unchanged(
         &self,
-        left: &ConditionTerm,
-        right: &ConditionTerm,
+        left: &OldConditionTerm,
+        right: &OldConditionTerm,
     ) -> bool {
-        if let (ConditionTerm::PointerEqual(a, b), ConditionTerm::PointerEqual(c, d)) =
+        if let (OldConditionTerm::PointerEqual(a, b), OldConditionTerm::PointerEqual(c, d)) =
             (left, right)
         {
             let same_value =
@@ -109,7 +109,7 @@ impl PureFactContext {
             || self.memory_loads_proven_equal(left, right)
     }
 
-    pub(crate) fn proves_condition_exact(&self, condition: &ConditionTerm, value: bool) -> bool {
+    pub(crate) fn proves_condition_exact(&self, condition: &OldConditionTerm, value: bool) -> bool {
         self.condition_facts.get(condition) == Some(&value)
     }
 
@@ -120,10 +120,10 @@ impl PureFactContext {
     /// address are candidates, since a matching fact loads the same one.
     pub(in crate::kernel) fn proves_algebraic_condition_modulo_states(
         &self,
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
         value: bool,
     ) -> bool {
-        let ConditionTerm::AlgebraicEqual(left, right) = condition else {
+        let OldConditionTerm::AlgebraicEqual(left, right) = condition else {
             return false;
         };
         let mut variables = BTreeSet::new();
@@ -581,7 +581,7 @@ mod tests {
         let (right_name, right_raw) = read("held-read-right");
         let empty = PureFactContext::new();
         let held = empty.clone().assume_condition(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(left_name.clone()),

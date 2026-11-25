@@ -136,40 +136,40 @@ type BinaryExpression = fn(Box<SyntaxTerm>, Box<SyntaxTerm>) -> SyntaxTerm;
 
 /// The operands and the written operator of a no-overflow condition.
 fn overflow_operands(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
 ) -> Option<(&OldMachineTerm, &OldMachineTerm, BinaryExpression)> {
     let (left, right, construct): (_, _, BinaryExpression) = match condition {
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
             left,
             right,
         }
-        | ConditionTerm::Overflows {
+        | OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Add,
             left,
             right,
         } => (left, right, SyntaxTerm::Add),
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Subtract,
             left,
             right,
         }
-        | ConditionTerm::Overflows {
+        | OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Subtract,
             left,
             right,
         } => (left, right, SyntaxTerm::Subtract),
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Multiply,
             left,
             right,
         }
-        | ConditionTerm::Overflows {
+        | OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Multiply,
             left,

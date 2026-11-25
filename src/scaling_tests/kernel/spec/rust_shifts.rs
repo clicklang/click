@@ -8,7 +8,7 @@ fn rust_shifts_are_fact_stable_and_do_not_scan_ambient_facts() {
         let mut base = PureFactContext::new();
         for index in 0..size {
             base = base.assume_condition(
-                ConditionTerm::signed_less_than(
+                OldConditionTerm::signed_less_than(
                     OldMachineTerm::Variable(Variable(700_000 + index)),
                     1000u32.into(),
                 ),
@@ -16,7 +16,7 @@ fn rust_shifts_are_fact_stable_and_do_not_scan_ambient_facts() {
             );
         }
         let bound =
-            ConditionTerm::unsigned_less_than(n.clone(), OldMachineTerm::uint32_constant(8));
+            OldConditionTerm::unsigned_less_than(n.clone(), OldMachineTerm::uint32_constant(8));
         let defined = base.clone().assume_condition(bound.clone(), true);
         let undefined = base.clone().assume_condition(bound.clone(), false);
         let impossible = defined.clone().assume_condition(bound, false);

@@ -143,7 +143,7 @@ fn pthread_handle_leaf_lookup_is_independent_of_other_handles() {
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: growing pthread handle equality stars and chains"]
 fn forwarded_handle_lookup_ignores_equality_class_and_context_population() {
-    use crate::kernel::{ConditionTerm, Proposition, PureFactContext};
+    use crate::kernel::{OldConditionTerm, Proposition, PureFactContext};
     let mut samples = Vec::new();
     for chain in [false, true] {
         for size in [16, 64, 256] {
@@ -152,7 +152,7 @@ fn forwarded_handle_lookup_ignores_equality_class_and_context_population() {
             let word = OldMachineTerm::ThreadHandle(handle);
             let variable = |index| OldMachineTerm::Variable(Variable(1009000 + index));
             let equality = |left, right| {
-                Proposition::condition_is(ConditionTerm::uint64_equal(left, right), true)
+                Proposition::condition_is(OldConditionTerm::uint64_equal(left, right), true)
             };
             let mut facts =
                 PureFactContext::new().assume_proposition(equality(variable(0), word.clone()));

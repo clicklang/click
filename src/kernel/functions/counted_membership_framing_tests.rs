@@ -243,7 +243,7 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
             )
             .store(private.clone(), int32(7));
         let assumptions = PureFactContext::new().assume_condition(
-            ConditionTerm::equal(
+            OldConditionTerm::equal(
                 OldMachineTerm::Variable(old_name),
                 OldMachineTerm::constant(0),
             ),
@@ -297,7 +297,7 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
             "a population mutation must get a fresh load identity"
         );
         let post_facts = assumptions.assume_condition(
-            ConditionTerm::equal(
+            OldConditionTerm::equal(
                 OldMachineTerm::Variable(new_name),
                 OldMachineTerm::constant(1),
             ),

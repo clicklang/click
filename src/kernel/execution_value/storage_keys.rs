@@ -48,7 +48,7 @@ impl BooleanStorageKey {
             if let Some(value) = BooleanOperandView::Shared(root).constant() {
                 BooleanKeyKind::Word(OldMachineTerm::bool_cast(
                     MachineIntegerType::UInt8,
-                    ConditionTerm::Constant(value),
+                    OldConditionTerm::Constant(value),
                 ))
             } else {
                 BooleanKeyKind::Cast(MachineIntegerType::UInt8, root.condition_storage_key())
@@ -120,7 +120,7 @@ struct ConditionKeyData {
 }
 #[derive(Debug, Hash)]
 enum ConditionShape {
-    Atom(ConditionTerm),
+    Atom(OldConditionTerm),
     If([ConditionStorageKey; 3]),
     Equal([ConditionStorageKey; 2]),
 }
@@ -145,9 +145,9 @@ impl ConditionStorageKey {
             _ => Self::native(&BooleanOperandView::Shared(root).identity_leaf()),
         }
     }
-    pub(in crate::kernel) fn native(term: &ConditionTerm) -> Self {
+    pub(in crate::kernel) fn native(term: &OldConditionTerm) -> Self {
         enum Task<'a> {
-            Enter(&'a ConditionTerm),
+            Enter(&'a OldConditionTerm),
             If,
             Equal,
         }
@@ -155,7 +155,7 @@ impl ConditionStorageKey {
         let mut values = Vec::new();
         while let Some(task) = pending.pop() {
             match task {
-                Task::Enter(ConditionTerm::BoolIf {
+                Task::Enter(OldConditionTerm::BoolIf {
                     condition,
                     then_condition,
                     else_condition,
@@ -165,7 +165,7 @@ impl ConditionStorageKey {
                         [else_condition, then_condition, condition].map(|v| Task::Enter(v)),
                     );
                 }
-                Task::Enter(ConditionTerm::BoolEqual(a, b)) => {
+                Task::Enter(OldConditionTerm::BoolEqual(a, b)) => {
                     pending.push(Task::Equal);
                     pending.push(Task::Enter(b));
                     pending.push(Task::Enter(a));
@@ -193,24 +193,24 @@ impl ConditionShape {
             Self::If(_) => 17,
             Self::Equal(_) => 18,
             Self::Atom(value) => match value {
-                ConditionTerm::Constant(_) => 0,
-                ConditionTerm::Variable(_) => 1,
-                ConditionTerm::AlgebraicEqual(..) => 2,
-                ConditionTerm::Compare { .. } => 3,
-                ConditionTerm::Overflows { .. } => 4,
-                ConditionTerm::Float32(_) => 5,
-                ConditionTerm::Float64(_) => 6,
-                ConditionTerm::AddressOffsetEqual(..) => 7,
-                ConditionTerm::AddressEqual(..) => 8,
-                ConditionTerm::PointerEqual(..) => 9,
-                ConditionTerm::IntegerLessThan(..) => 10,
-                ConditionTerm::IntegerLessEqual(..) => 11,
-                ConditionTerm::IntegerGreaterThan(..) => 12,
-                ConditionTerm::IntegerGreaterEqual(..) => 13,
-                ConditionTerm::IntegerEqual(..) => 14,
-                ConditionTerm::IntegerNotEqual(..) => 15,
-                ConditionTerm::BoolApplication(_) => 16,
-                ConditionTerm::BoolIf { .. } | ConditionTerm::BoolEqual(..) => {
+                OldConditionTerm::Constant(_) => 0,
+                OldConditionTerm::Variable(_) => 1,
+                OldConditionTerm::AlgebraicEqual(..) => 2,
+                OldConditionTerm::Compare { .. } => 3,
+                OldConditionTerm::Overflows { .. } => 4,
+                OldConditionTerm::Float32(_) => 5,
+                OldConditionTerm::Float64(_) => 6,
+                OldConditionTerm::AddressOffsetEqual(..) => 7,
+                OldConditionTerm::AddressEqual(..) => 8,
+                OldConditionTerm::PointerEqual(..) => 9,
+                OldConditionTerm::IntegerLessThan(..) => 10,
+                OldConditionTerm::IntegerLessEqual(..) => 11,
+                OldConditionTerm::IntegerGreaterThan(..) => 12,
+                OldConditionTerm::IntegerGreaterEqual(..) => 13,
+                OldConditionTerm::IntegerEqual(..) => 14,
+                OldConditionTerm::IntegerNotEqual(..) => 15,
+                OldConditionTerm::BoolApplication(_) => 16,
+                OldConditionTerm::BoolIf { .. } | OldConditionTerm::BoolEqual(..) => {
                     unreachable!("projected connective")
                 }
             },
@@ -431,7 +431,7 @@ impl Drop for ConditionStorageKey {
             if let Some(data) = Arc::get_mut(&mut key.0) {
                 match std::mem::replace(
                     &mut data.shape,
-                    ConditionShape::Atom(ConditionTerm::Constant(false)),
+                    ConditionShape::Atom(OldConditionTerm::Constant(false)),
                 ) {
                     ConditionShape::If(children) => pending.extend(children),
                     ConditionShape::Equal(children) => pending.extend(children),

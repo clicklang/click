@@ -28,7 +28,7 @@ fn deep_uint8_value(depth: u64) -> OldMachineTerm {
 #[test]
 fn narrow_comparison_identity_is_constant_in_operand_size() {
     use std::hash::{Hash, Hasher};
-    let hash = |condition: &ConditionTerm| {
+    let hash = |condition: &OldConditionTerm| {
         let mut state = std::collections::hash_map::DefaultHasher::new();
         condition.hash(&mut state);
         state.finish()
@@ -39,7 +39,7 @@ fn narrow_comparison_identity_is_constant_in_operand_size() {
     );
     let mut counts = Vec::new();
     for depth in [16, 64, 256, 1024] {
-        let native = ConditionTerm::Compare {
+        let native = OldConditionTerm::Compare {
             format: MachineIntegerType::UInt8,
             relation: CompareRelation::LessThan,
             left: Box::new(deep_uint8_value(depth)),
@@ -51,7 +51,7 @@ fn narrow_comparison_identity_is_constant_in_operand_size() {
         assert!(
             matches!(
                 promoted,
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     ..
                 }

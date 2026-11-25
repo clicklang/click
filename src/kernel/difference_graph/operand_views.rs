@@ -898,8 +898,8 @@ mod tests {
         let named = OldMachineTerm::Variable(name);
         let lower = OldMachineTerm::Variable(Variable(998_302));
         let upper = OldMachineTerm::Variable(Variable(998_303));
-        let equal = ConditionTerm::equal(named.clone(), lower.clone());
-        let bound = ConditionTerm::signed_less_than(lower.clone(), upper.clone());
+        let equal = OldConditionTerm::equal(named.clone(), lower.clone());
+        let bound = OldConditionTerm::signed_less_than(lower.clone(), upper.clone());
         for facts in [
             [equal.clone(), bound.clone()],
             [bound.clone(), equal.clone()],
@@ -910,14 +910,14 @@ mod tests {
             }
             for index in [named.clone(), read.clone()] {
                 assert_eq!(
-                    graph.decide(&ConditionTerm::signed_less_equal(
+                    graph.decide(&OldConditionTerm::signed_less_equal(
                         lower.clone(),
                         index.clone()
                     )),
                     Some(true)
                 );
                 assert_eq!(
-                    graph.decide(&ConditionTerm::signed_less_than(index, upper.clone())),
+                    graph.decide(&OldConditionTerm::signed_less_than(index, upper.clone())),
                     Some(true)
                 );
             }
@@ -938,11 +938,11 @@ mod tests {
                 LoadKind::Int32,
             );
             assert_eq!(
-                graph.decide(&ConditionTerm::signed_less_than(other, upper.clone())),
+                graph.decide(&OldConditionTerm::signed_less_than(other, upper.clone())),
                 None
             );
             assert_eq!(
-                graph.decide(&ConditionTerm::signed_less_than(
+                graph.decide(&OldConditionTerm::signed_less_than(
                     read.clone(),
                     lower.clone()
                 )),
@@ -978,9 +978,19 @@ mod tests {
             };
             let mut bounded = DifferenceGraph::new();
             for condition in [
-                ConditionTerm::machine_compare(ty, CompareRelation::LessEqual, word(0), x.clone()),
-                ConditionTerm::machine_compare(ty, CompareRelation::LessThan, x.clone(), n.clone()),
-                ConditionTerm::machine_compare(ty, CompareRelation::LessEqual, n, word(limit)),
+                OldConditionTerm::machine_compare(
+                    ty,
+                    CompareRelation::LessEqual,
+                    word(0),
+                    x.clone(),
+                ),
+                OldConditionTerm::machine_compare(
+                    ty,
+                    CompareRelation::LessThan,
+                    x.clone(),
+                    n.clone(),
+                ),
+                OldConditionTerm::machine_compare(ty, CompareRelation::LessEqual, n, word(limit)),
             ] {
                 bounded.assume_condition(&condition, true);
             }
@@ -1030,8 +1040,14 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let x = OldMachineTerm::Variable(Variable(997811));
         let mut graph = DifferenceGraph::new();
-        graph.assume_condition(&ConditionTerm::signed_less_equal(2.into(), x.clone()), true);
-        graph.assume_condition(&ConditionTerm::signed_less_equal(x.clone(), 4.into()), true);
+        graph.assume_condition(
+            &OldConditionTerm::signed_less_equal(2.into(), x.clone()),
+            true,
+        );
+        graph.assume_condition(
+            &OldConditionTerm::signed_less_equal(x.clone(), 4.into()),
+            true,
+        );
         let mut cases = Vec::new();
         for op in [
             MachineBinaryOp::Add,
@@ -1093,7 +1109,7 @@ mod tests {
         let x = OldMachineTerm::Variable(Variable(997821));
         let y = OldMachineTerm::Variable(Variable(997822));
         let product = OldMachineTerm::multiply(x, y.clone());
-        let source = ConditionTerm::signed_add_overflows(product.clone(), y.clone());
+        let source = OldConditionTerm::signed_add_overflows(product.clone(), y.clone());
         let parent = DifferenceGraph::new();
         let mut child = parent.clone();
         child.assume_condition(&source, false);
@@ -1143,7 +1159,7 @@ mod tests {
             let right = OldMachineTerm::Variable(Variable(997852));
             let mut graph = DifferenceGraph::new();
             graph.assume_condition(
-                &ConditionTerm::machine_compare(
+                &OldConditionTerm::machine_compare(
                     ty,
                     CompareRelation::LessThan,
                     left.clone(),
@@ -1164,7 +1180,7 @@ mod tests {
                 CompareRelation::GreaterEqual,
             ] {
                 let native =
-                    ConditionTerm::machine_compare(ty, relation, left.clone(), right.clone());
+                    OldConditionTerm::machine_compare(ty, relation, left.clone(), right.clone());
                 let observed = condition_for_operand_views(
                     ty,
                     relation,
@@ -1226,7 +1242,7 @@ mod tests {
                 child.assume_condition(&source, truth);
                 let mut native = DifferenceGraph::new();
                 native.assume_condition(
-                    &ConditionTerm::machine_compare(
+                    &OldConditionTerm::machine_compare(
                         ty,
                         CompareRelation::LessThan,
                         native_left.clone(),

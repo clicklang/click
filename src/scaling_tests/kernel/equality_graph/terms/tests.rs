@@ -163,7 +163,7 @@ fn shared_machine_prefix_registration_is_linear_and_branch_local() {
                     assert!(graph.are_integer_equal(&source, &source));
                     assert!(!graph.are_integer_equal(&source, &other));
                     let comparison =
-                        ConditionTerm::integer_less_equal(source.clone(), other.clone());
+                        OldConditionTerm::integer_less_equal(source.clone(), other.clone());
                     let view = crate::kernel::machine_integer::comparison::native_comparison_view(
                         &comparison,
                         true,

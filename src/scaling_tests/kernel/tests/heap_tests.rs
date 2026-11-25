@@ -22,7 +22,7 @@ fn aliased_read_validity_lookup_ignores_unrelated_facts() {
     let mut samples = Vec::new();
     for count in [0, 16, 64, 256] {
         let mut unrelated = PureFactContext::new().assume_proposition(Proposition::condition_is(
-            ConditionTerm::address_equal(alias.clone(), pointer.clone()),
+            OldConditionTerm::address_equal(alias.clone(), pointer.clone()),
             true,
         ));
         for index in 1..=count {
@@ -283,7 +283,7 @@ fn heap_free_borrow_obligation_ignores_unrelated_aliases_and_borrows() {
             if grow_aliases {
                 for i in 0..count {
                     assumptions = assumptions.assume_condition(
-                        ConditionTerm::address_equal(
+                        OldConditionTerm::address_equal(
                             backing_base.clone(),
                             Address::symbolic(Variable(950_000 + i)),
                         ),
@@ -355,7 +355,7 @@ fn realloc_borrow_requirement_work_is_bounded_by_the_pending_result() {
             if grow_aliases {
                 for i in 0..count {
                     assumptions = assumptions.assume_condition(
-                        ConditionTerm::address_equal(
+                        OldConditionTerm::address_equal(
                             borrow_base.clone(),
                             Address::symbolic(Variable(955_000 + i)),
                         ),
@@ -663,7 +663,7 @@ fn typed_validity_uses_one_storage_anchor_among_many_aliases() {
         for index in 0..count {
             let alias = Address::symbolic(Variable(960_000 + index));
             facts = facts.assume_proposition(Proposition::condition_is(
-                ConditionTerm::address_equal(alias, base.clone()),
+                OldConditionTerm::address_equal(alias, base.clone()),
                 true,
             ));
             memory = memory.store(

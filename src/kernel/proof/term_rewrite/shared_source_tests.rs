@@ -151,7 +151,7 @@ fn opaque_sources_and_replacements_keep_observations_and_fold_endpoints() {
     for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
         let x = OldMachineTerm::Variable(Variable(992520));
         let replacement = OldMachineTerm::If {
-            condition: ConditionTerm::Variable(Variable(992521)).into(),
+            condition: OldConditionTerm::Variable(Variable(992521)).into(),
             then_term: x.clone().into(),
             else_term: OldMachineTerm::Variable(Variable(992522)).into(),
         };
@@ -215,7 +215,7 @@ fn opaque_source_matching_preserves_existing_fold_scope_refusals() {
     let other = Variable(992531);
     for binds_source in [false, true] {
         let source = OldMachineTerm::If {
-            condition: ConditionTerm::Variable(Variable(992532)).into(),
+            condition: OldConditionTerm::Variable(Variable(992532)).into(),
             then_term: OldMachineTerm::Variable(if binds_source { item } else { other }).into(),
             else_term: OldMachineTerm::Variable(Variable(992533)).into(),
         };

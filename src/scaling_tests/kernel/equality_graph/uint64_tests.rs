@@ -70,7 +70,7 @@ fn wide_congruence_queries_do_not_scan_unrelated_equalities() {
 
 #[test]
 fn range_values_and_constants_resolve_long_wide_equality_chains() {
-    use crate::kernel::{ConditionTerm, PureFactContext};
+    use crate::kernel::{OldConditionTerm, PureFactContext};
     for size in [16u64, 64, 256, 1024] {
         let _session = VerificationSession::enter();
         let var = |i| OldMachineTerm::Variable(Variable(950_000 + i));
@@ -79,10 +79,10 @@ fn range_values_and_constants_resolve_long_wide_equality_chains() {
             for i in 0..size {
                 facts = facts
                     .clone()
-                    .assume_condition(ConditionTerm::uint64_equal(var(i), var(i + 1)), true);
+                    .assume_condition(OldConditionTerm::uint64_equal(var(i), var(i + 1)), true);
             }
             facts = facts.clone().assume_condition(
-                ConditionTerm::uint64_equal(var(size), OldMachineTerm::uint64_constant(37)),
+                OldConditionTerm::uint64_equal(var(size), OldMachineTerm::uint64_constant(37)),
                 true,
             );
             assert_eq!(facts.wide_constant_from_equalities(&var(0)), Some(37));
@@ -297,7 +297,7 @@ fn shared_wide_endpoint_queries_reuse_growing_prefixes() {
                     [root, one.clone()],
                 );
                 context = context.assume_condition(
-                    ConditionTerm::integer_equal(observe(root.clone()), observe(base.clone())),
+                    OldConditionTerm::integer_equal(observe(root.clone()), observe(base.clone())),
                     true,
                 );
                 let endpoints = context

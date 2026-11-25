@@ -26,10 +26,10 @@ fn packed(value: &OldMachineTerm, parent: &Address) -> OldMachineTerm {
     }
 }
 fn fact(a: OldMachineTerm, b: OldMachineTerm) -> Proposition {
-    Proposition::condition_is(ConditionTerm::uint64_equal(a, b), true)
+    Proposition::condition_is(OldConditionTerm::uint64_equal(a, b), true)
 }
 fn alias(a: &Address, b: &Address) -> Proposition {
-    Proposition::condition_is(ConditionTerm::address_equal(a.clone(), b.clone()), true)
+    Proposition::condition_is(OldConditionTerm::address_equal(a.clone(), b.clone()), true)
 }
 fn proved(context: &PureFactContext, goal: &Proposition) -> bool {
     crate::kernel::reasoning::required_obligation_is_exactly_discharged(context, goal)
@@ -48,7 +48,7 @@ fn integer_address_coordinates_join_word_classes_and_follow_scoped_equalities() 
     let decoded = Address::from_integer_address(bits.clone());
     let equation = fact(bits.clone(), raw_address(&pointer));
     let goal = Proposition::condition_is(
-        ConditionTerm::uint64_equal(raw_address(&decoded), raw_address(&pointer)),
+        OldConditionTerm::uint64_equal(raw_address(&decoded), raw_address(&pointer)),
         true,
     );
     let base = PureFactContext::new();
@@ -73,20 +73,20 @@ fn integer_address_coordinates_join_word_classes_and_follow_scoped_equalities() 
     // numeric coordinates. A bare address name cannot manufacture that domain.
     let original_domain = right.clone().with_address(decoded.clone());
     assert!(child.contains_known(&Proposition::condition_is(
-        ConditionTerm::PointerEqual(Box::new(original_domain.clone()), Box::new(right.clone())),
+        OldConditionTerm::PointerEqual(Box::new(original_domain.clone()), Box::new(right.clone())),
         true,
     )));
     assert!(child.contains_known(&Proposition::condition_is(
-        ConditionTerm::pointer_equal(original_domain, right.clone()),
+        OldConditionTerm::pointer_equal(original_domain, right.clone()),
         true,
     )));
     assert!(!child.contains_known(&Proposition::condition_is(
-        ConditionTerm::address_equal(decoded, pointer),
+        OldConditionTerm::address_equal(decoded, pointer),
         true,
     )));
     assert!(!child.pointer_provenance_match(&left, &right));
     assert!(!child.contains_known(&Proposition::condition_is(
-        ConditionTerm::pointer_equal(left, right),
+        OldConditionTerm::pointer_equal(left, right),
         true,
     )));
 }
@@ -145,7 +145,7 @@ fn equal_integer_address_words_do_not_merge_pointer_names_or_domains() {
     let q = OldPointer::new(q, ProgramType::Int32Pointer);
     assert!(!context.pointer_provenance_match(&p, &q));
     assert!(!context.contains_known(&Proposition::condition_is(
-        ConditionTerm::pointer_equal(p, q),
+        OldConditionTerm::pointer_equal(p, q),
         true,
     )));
 }
@@ -180,9 +180,10 @@ fn wide_read_and_packed_word_congruence_compose_early_and_late() {
         }
         assert!(proved(&context, &goal));
         assert!(!proved(&context.restricted_to_facts(&[], &[]), &goal));
-        let impossible = context
-            .clone()
-            .assume_condition(ConditionTerm::address_equal(q.clone(), sid.clone()), false);
+        let impossible = context.clone().assume_condition(
+            OldConditionTerm::address_equal(q.clone(), sid.clone()),
+            false,
+        );
         assert!(impossible.is_inconsistent());
         assert!(proved(&impossible, &goal));
         // Cached closure results must not survive a weakened sibling context.
@@ -415,7 +416,7 @@ fn machine_observation_cast_round_trip_is_congruent_inside_arithmetic() {
             left: left.into(),
             right: OldMachineTerm::Variable(Variable(989802)).into(),
         };
-        let goal = crate::kernel::ConditionTerm::machine_compare(
+        let goal = crate::kernel::OldConditionTerm::machine_compare(
             format,
             CompareRelation::Equal,
             parent(round_trip),
@@ -446,9 +447,9 @@ fn machine_observation_round_trip_keeps_equality_scope_and_format() {
             value: IntegerTerm::Machine(SharedMachineIntegerTerm::intern(format, x.clone())).into(),
         };
         let goal =
-            ConditionTerm::machine_compare(format, CompareRelation::Equal, converted, y.clone());
+            OldConditionTerm::machine_compare(format, CompareRelation::Equal, converted, y.clone());
         let edge = Proposition::condition_is(
-            ConditionTerm::machine_compare(format, CompareRelation::Equal, x, y),
+            OldConditionTerm::machine_compare(format, CompareRelation::Equal, x, y),
             true,
         );
         let parent = PureFactContext::new();
@@ -469,7 +470,7 @@ fn machine_observation_round_trip_keeps_equality_scope_and_format() {
         value: IntegerTerm::Machine(signed).into(),
     };
     assert_ne!(
-        PureFactContext::new().decide(&ConditionTerm::equal(
+        PureFactContext::new().decide(&OldConditionTerm::equal(
             changed_sign,
             OldMachineTerm::constant(u32::MAX)
         )),
@@ -484,7 +485,10 @@ fn machine_observation_round_trip_keeps_equality_scope_and_format() {
         value: IntegerTerm::Machine(wide).into(),
     };
     assert_ne!(
-        PureFactContext::new().decide(&ConditionTerm::equal(narrowed, OldMachineTerm::constant(0))),
+        PureFactContext::new().decide(&OldConditionTerm::equal(
+            narrowed,
+            OldMachineTerm::constant(0)
+        )),
         Some(true)
     );
 }

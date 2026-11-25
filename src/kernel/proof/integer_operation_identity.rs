@@ -7,13 +7,13 @@ use super::arithmetic_special::ArithmeticRuleError as Error;
 #[cfg(test)]
 use crate::kernel::binary_node;
 use crate::kernel::machine_integer::{identity::mathematical, range};
-use crate::kernel::{ConditionTerm, Proposition, SharedIntegerTerm};
+use crate::kernel::{OldConditionTerm, Proposition, SharedIntegerTerm};
 
 fn order(proposition: &Proposition) -> Option<(&SharedIntegerTerm, &SharedIntegerTerm)> {
     match proposition {
         condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::IntegerLessEqual(a, b), _)) =
-                condition_source_0.condition_native() =>
+            if let Some((OldConditionTerm::IntegerLessEqual(a, b), _)) =
+                condition_source_0.old_condition() =>
         {
             Some((a, b))
         }
@@ -34,7 +34,7 @@ pub(super) fn check(
     if bounds.len() != 2 {
         return Err(invalid());
     }
-    let Some((ConditionTerm::IntegerEqual(a, b), true)) = result.condition_native() else {
+    let Some((OldConditionTerm::IntegerEqual(a, b), true)) = result.old_condition() else {
         return Err(invalid());
     };
     let (ty, value, stated) = if let Some((ty, value)) = mathematical(a) {
@@ -92,10 +92,10 @@ mod tests {
     use num_bigint::BigInt;
 
     fn le(a: IntegerTerm, b: IntegerTerm) -> Proposition {
-        Proposition::condition_is(ConditionTerm::integer_less_equal(a, b), true)
+        Proposition::condition_is(OldConditionTerm::integer_less_equal(a, b), true)
     }
     fn equal(a: IntegerTerm, b: IntegerTerm) -> Proposition {
-        Proposition::condition_is(ConditionTerm::integer_equal(a, b), true)
+        Proposition::condition_is(OldConditionTerm::integer_equal(a, b), true)
     }
 
     fn operation(
@@ -158,7 +158,7 @@ mod tests {
             for subtract in [false, true] {
                 let (premises, goal, _) = inputs(ty, subtract, min.clone(), max.clone());
                 assert!(check_rule(vec![0, 1], &goal, &premises).is_ok());
-                let Some((ConditionTerm::IntegerEqual(a, b), true)) = goal.condition_native()
+                let Some((OldConditionTerm::IntegerEqual(a, b), true)) = goal.old_condition()
                 else {
                     unreachable!()
                 };
@@ -207,7 +207,7 @@ mod tests {
                 ],
                 vec![
                     Proposition::condition_is(
-                        ConditionTerm::integer_less_equal(
+                        OldConditionTerm::integer_less_equal(
                             IntegerTerm::constant(min.clone()),
                             value.clone(),
                         ),

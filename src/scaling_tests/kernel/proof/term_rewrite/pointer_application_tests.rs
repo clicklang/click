@@ -30,7 +30,10 @@ fn pure_pointer_dag_substitution_and_capture_collection_scale_linearly() {
             let mut captured = BTreeSet::new();
             crate::kernel::prelude::collect_proposition_capture_variables(
                 &Proposition::condition_is(
-                    ConditionTerm::AddressEqual(Box::new(input.clone()), Box::new(input.clone())),
+                    OldConditionTerm::AddressEqual(
+                        Box::new(input.clone()),
+                        Box::new(input.clone()),
+                    ),
                     true,
                 ),
                 &mut captured,

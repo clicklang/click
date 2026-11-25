@@ -1570,7 +1570,7 @@ impl<'a> Proof<'a> {
 
         // A decided range exposes its empty or append equation over the
         // named function, with ordinary obligations for its guards.
-        let fold_equation = if matches!(&equality, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerEqual(_, folded), _)) if (matches!(folded.as_ref(), IntegerTerm::RangeFold { .. }))))
+        let fold_equation = if matches!(&equality, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::IntegerEqual(_, folded), _)) if (matches!(folded.as_ref(), IntegerTerm::RangeFold { .. }))))
             && !self.goal().is_some_and(|goal| {
                 crate::kernel::proof::propositions_are_alpha_equal(goal, &equality)
             }) {
@@ -1598,8 +1598,8 @@ impl<'a> Proof<'a> {
             facts = facts.with_kernel_checked_fact(derived.clone());
             let branch = match self.focused_obligation() {
                 Some(Obligation::Proposition(goal)) => {
-                    let Some((ConditionTerm::IntegerEqual(unfolded, replacement), true)) =
-                        derived.condition_native()
+                    let Some((OldConditionTerm::IntegerEqual(unfolded, replacement), true)) =
+                        derived.old_condition()
                     else {
                         return Err(self.step_error(
                             "the restated fold law did not produce an Integer equation",
@@ -1845,7 +1845,7 @@ impl<'a> Proof<'a> {
         equality: &Proposition,
     ) -> Result<Option<(Proposition, Option<Proposition>)>, ClickError> {
         let name = &application.name;
-        let Some((ConditionTerm::IntegerEqual(whole, folded), true)) = equality.condition_native()
+        let Some((OldConditionTerm::IntegerEqual(whole, folded), true)) = equality.old_condition()
         else {
             return Err(self.step_error(format!(
                 "`unfold({name}(...))` applies to an `Integer`-valued pure function whose body is a range fold"
@@ -1977,8 +1977,8 @@ impl<'a> Proof<'a> {
             if premise == equality {
                 continue;
             }
-            if let Some((ConditionTerm::IntegerEqual(left, right), true)) =
-                (premise).condition_native()
+            if let Some((OldConditionTerm::IntegerEqual(left, right), true)) =
+                (premise).old_condition()
                 && left.as_ref() == &prior
                 && matches!(right.as_ref(), IntegerTerm::RangeFold { .. })
             {
@@ -2212,7 +2212,7 @@ impl<'a> Proof<'a> {
             // this changes presentation, never the kernel obligation.
             if lowered
                 == Some(Proposition::condition_is(
-                    ConditionTerm::Constant(true),
+                    OldConditionTerm::Constant(true),
                     true,
                 ))
                 && let Some(claim) = checked_claim

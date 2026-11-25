@@ -29,7 +29,7 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
                 ProgramValue::Int32(OldMachineTerm::constant(1)),
             );
             context = context.assume_condition(
-                ConditionTerm::address_equal(
+                OldConditionTerm::address_equal(
                     Address::symbolic(Variable(9_881_000 + 2 * index)),
                     Address::symbolic(Variable(9_881_001 + 2 * index)),
                 ),
@@ -59,13 +59,13 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
             offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(9_880_303)), 4),
         };
         context = context.assume_condition(
-            ConditionTerm::address_equal(write_alias.clone(), wide_address.clone()),
+            OldConditionTerm::address_equal(write_alias.clone(), wide_address.clone()),
             true,
         );
         let parent = Address::symbolic(Variable(9_880_304));
         let parent_alias = Address::symbolic(Variable(9_880_305));
         context = context.assume_condition(
-            ConditionTerm::address_equal(parent.clone(), parent_alias.clone()),
+            OldConditionTerm::address_equal(parent.clone(), parent_alias.clone()),
             true,
         );
         let value = OldMachineTerm::IntegerAddress(
@@ -111,7 +111,7 @@ fn complete_read_domains_use_numeric_storage_classes_without_scanning_other_clas
         let _session = crate::kernel::VerificationSession::enter();
         let mut facts = PureFactContext::new();
         let equal = |a: Address, b: Address| {
-            ConditionTerm::uint64_equal(
+            OldConditionTerm::uint64_equal(
                 OldMachineTerm::integer_address(a),
                 OldMachineTerm::integer_address(b),
             )
@@ -294,7 +294,7 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
                 ProgramValue::Int32(OldMachineTerm::constant(index)),
             );
             context = context.assume_condition(
-                ConditionTerm::address_equal(
+                OldConditionTerm::address_equal(
                     Address::symbolic(Variable(9_892_000 + 2 * u64::from(index))),
                     Address::symbolic(Variable(9_892_001 + 2 * u64::from(index))),
                 ),
@@ -318,7 +318,7 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
             ProgramType::VoidPointer,
         );
         let source = Proposition::condition_is(
-            ConditionTerm::PointerEqual(Box::new(value), Box::new(parent)),
+            OldConditionTerm::PointerEqual(Box::new(value), Box::new(parent)),
             true,
         );
         context = context.assume_proposition(source.clone());
@@ -405,7 +405,7 @@ fn converted_narrow_read_value_uses_only_selected_terms_and_cells() {
                 crate::kernel::uint8(7),
             );
             facts = facts.assume_condition(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     OldMachineTerm::Variable(Variable(9_891_000 + index)),
                     OldMachineTerm::constant(3),
                 ),

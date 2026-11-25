@@ -221,7 +221,7 @@ mod storage_tests {
             }),
             ProgramValue::Bool(OldMachineTerm::BoolCast {
                 to: MachineIntegerType::UInt8,
-                value: Box::new(ConditionTerm::Compare {
+                value: Box::new(OldConditionTerm::Compare {
                     format: MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left: Box::new(call),

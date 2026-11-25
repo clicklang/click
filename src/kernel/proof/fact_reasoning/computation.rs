@@ -105,7 +105,7 @@ fn computes_atom(goal: &Proposition, expected: bool) -> bool {
             if unchanged_integer_folds_equal(left, right) {
                 Some(true)
             } else {
-                integer_affine_comparison(&ConditionTerm::IntegerEqual(
+                integer_affine_comparison(&OldConditionTerm::IntegerEqual(
                     left.clone().into(),
                     right.clone().into(),
                 ))
@@ -240,10 +240,10 @@ fn declared_object_ranges_separate(left: &MemoryRange, right: &MemoryRange) -> b
 /// Constant operands and reflexivity only: a bounded structural check, with
 /// no facts, affine normalization, memory walk, or equality-graph query.
 /// Unit propagation uses this intrinsic truth beside exact admitted literals.
-pub(crate) fn trivial_condition_value(condition: &ConditionTerm) -> Option<bool> {
+pub(crate) fn trivial_condition_value(condition: &OldConditionTerm) -> Option<bool> {
     match condition {
-        ConditionTerm::Constant(value) => Some(*value),
-        ConditionTerm::Compare {
+        OldConditionTerm::Constant(value) => Some(*value),
+        OldConditionTerm::Compare {
             format,
             relation,
             left,
@@ -277,12 +277,12 @@ pub(crate) fn trivial_condition_value(condition: &ConditionTerm) -> Option<bool>
                 CompareRelation::GreaterEqual => !order.is_lt(),
             })
         }
-        ConditionTerm::IntegerEqual(left, right)
-        | ConditionTerm::IntegerNotEqual(left, right)
-        | ConditionTerm::IntegerLessThan(left, right)
-        | ConditionTerm::IntegerLessEqual(left, right)
-        | ConditionTerm::IntegerGreaterThan(left, right)
-        | ConditionTerm::IntegerGreaterEqual(left, right) => {
+        OldConditionTerm::IntegerEqual(left, right)
+        | OldConditionTerm::IntegerNotEqual(left, right)
+        | OldConditionTerm::IntegerLessThan(left, right)
+        | OldConditionTerm::IntegerLessEqual(left, right)
+        | OldConditionTerm::IntegerGreaterThan(left, right)
+        | OldConditionTerm::IntegerGreaterEqual(left, right) => {
             let order = if left == right {
                 std::cmp::Ordering::Equal
             } else {
@@ -297,12 +297,12 @@ pub(crate) fn trivial_condition_value(condition: &ConditionTerm) -> Option<bool>
                 a.cmp(b)
             };
             Some(match condition {
-                ConditionTerm::IntegerEqual(..) => order.is_eq(),
-                ConditionTerm::IntegerNotEqual(..) => !order.is_eq(),
-                ConditionTerm::IntegerLessThan(..) => order.is_lt(),
-                ConditionTerm::IntegerLessEqual(..) => !order.is_gt(),
-                ConditionTerm::IntegerGreaterThan(..) => order.is_gt(),
-                ConditionTerm::IntegerGreaterEqual(..) => !order.is_lt(),
+                OldConditionTerm::IntegerEqual(..) => order.is_eq(),
+                OldConditionTerm::IntegerNotEqual(..) => !order.is_eq(),
+                OldConditionTerm::IntegerLessThan(..) => order.is_lt(),
+                OldConditionTerm::IntegerLessEqual(..) => !order.is_gt(),
+                OldConditionTerm::IntegerGreaterThan(..) => order.is_gt(),
+                OldConditionTerm::IntegerGreaterEqual(..) => !order.is_lt(),
                 _ => unreachable!(),
             })
         }
@@ -311,10 +311,10 @@ pub(crate) fn trivial_condition_value(condition: &ConditionTerm) -> Option<bool>
 }
 
 /// Guards whose truth is determined by their literal operands.
-pub(in crate::kernel) fn literal_value_if_guard(condition: &ConditionTerm) -> Option<bool> {
+pub(in crate::kernel) fn literal_value_if_guard(condition: &OldConditionTerm) -> Option<bool> {
     match condition {
-        ConditionTerm::Constant(_) => {}
-        ConditionTerm::Compare { left, right, .. }
+        OldConditionTerm::Constant(_) => {}
+        OldConditionTerm::Compare { left, right, .. }
             if matches!(left.as_ref(), OldMachineTerm::Constant { .. })
                 && matches!(right.as_ref(), OldMachineTerm::Constant { .. }) => {}
         integer_comparison_condition!(left, right)
@@ -434,55 +434,55 @@ fn observed_bitwise_or_has_set_bit(value: &IntegerTerm) -> bool {
     bitwise_or_has_set_bit(value.operand_view(), value.ty().format().bits())
 }
 
-fn condition_value(condition: &ConditionTerm) -> Option<bool> {
+fn condition_value(condition: &OldConditionTerm) -> Option<bool> {
     match condition {
-        ConditionTerm::Constant(value) => Some(*value),
-        ConditionTerm::IntegerEqual(..)
-        | ConditionTerm::IntegerNotEqual(..)
-        | ConditionTerm::IntegerLessThan(..)
-        | ConditionTerm::IntegerLessEqual(..)
-        | ConditionTerm::IntegerGreaterThan(..)
-        | ConditionTerm::IntegerGreaterEqual(..) => {
+        OldConditionTerm::Constant(value) => Some(*value),
+        OldConditionTerm::IntegerEqual(..)
+        | OldConditionTerm::IntegerNotEqual(..)
+        | OldConditionTerm::IntegerLessThan(..)
+        | OldConditionTerm::IntegerLessEqual(..)
+        | OldConditionTerm::IntegerGreaterThan(..)
+        | OldConditionTerm::IntegerGreaterEqual(..) => {
             let (left, right) = match condition {
-                ConditionTerm::IntegerEqual(left, right)
-                | ConditionTerm::IntegerNotEqual(left, right)
-                | ConditionTerm::IntegerLessThan(left, right)
-                | ConditionTerm::IntegerLessEqual(left, right)
-                | ConditionTerm::IntegerGreaterThan(left, right)
-                | ConditionTerm::IntegerGreaterEqual(left, right) => (left, right),
+                OldConditionTerm::IntegerEqual(left, right)
+                | OldConditionTerm::IntegerNotEqual(left, right)
+                | OldConditionTerm::IntegerLessThan(left, right)
+                | OldConditionTerm::IntegerLessEqual(left, right)
+                | OldConditionTerm::IntegerGreaterThan(left, right)
+                | OldConditionTerm::IntegerGreaterEqual(left, right) => (left, right),
                 _ => unreachable!(),
             };
             if matches!(
                 condition,
-                ConditionTerm::IntegerEqual(..) | ConditionTerm::IntegerNotEqual(..)
+                OldConditionTerm::IntegerEqual(..) | OldConditionTerm::IntegerNotEqual(..)
             ) && ((left.as_const().is_some_and(num_traits::Zero::is_zero)
                 && observed_bitwise_or_has_set_bit(right))
                 || (right.as_const().is_some_and(num_traits::Zero::is_zero)
                     && observed_bitwise_or_has_set_bit(left)))
             {
-                return Some(matches!(condition, ConditionTerm::IntegerNotEqual(..)));
+                return Some(matches!(condition, OldConditionTerm::IntegerNotEqual(..)));
             }
             if left == right {
                 return Some(matches!(
                     condition,
-                    ConditionTerm::IntegerEqual(..)
-                        | ConditionTerm::IntegerLessEqual(..)
-                        | ConditionTerm::IntegerGreaterEqual(..)
+                    OldConditionTerm::IntegerEqual(..)
+                        | OldConditionTerm::IntegerLessEqual(..)
+                        | OldConditionTerm::IntegerGreaterEqual(..)
                 ));
             }
             if matches!(
                 condition,
-                ConditionTerm::IntegerEqual(..) | ConditionTerm::IntegerNotEqual(..)
+                OldConditionTerm::IntegerEqual(..) | OldConditionTerm::IntegerNotEqual(..)
             ) && unchanged_integer_folds_equal(left, right)
             {
-                return Some(matches!(condition, ConditionTerm::IntegerEqual(..)));
+                return Some(matches!(condition, OldConditionTerm::IntegerEqual(..)));
             }
             if matches!(
                 condition,
-                ConditionTerm::IntegerEqual(..) | ConditionTerm::IntegerNotEqual(..)
+                OldConditionTerm::IntegerEqual(..) | OldConditionTerm::IntegerNotEqual(..)
             ) && let Some(equal) = conditional_int32_equality(left, right)
             {
-                return Some(equal == matches!(condition, ConditionTerm::IntegerEqual(..)));
+                return Some(equal == matches!(condition, OldConditionTerm::IntegerEqual(..)));
             }
             let left_byte = stored_uint8_observation(left);
             let right_byte = stored_uint8_observation(right);
@@ -493,12 +493,12 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
                 )
             {
                 return Some(match condition {
-                    ConditionTerm::IntegerEqual(..) => a == b,
-                    ConditionTerm::IntegerNotEqual(..) => a != b,
-                    ConditionTerm::IntegerLessThan(..) => a < b,
-                    ConditionTerm::IntegerLessEqual(..) => a <= b,
-                    ConditionTerm::IntegerGreaterThan(..) => a > b,
-                    ConditionTerm::IntegerGreaterEqual(..) => a >= b,
+                    OldConditionTerm::IntegerEqual(..) => a == b,
+                    OldConditionTerm::IntegerNotEqual(..) => a != b,
+                    OldConditionTerm::IntegerLessThan(..) => a < b,
+                    OldConditionTerm::IntegerLessEqual(..) => a <= b,
+                    OldConditionTerm::IntegerGreaterThan(..) => a > b,
+                    OldConditionTerm::IntegerGreaterEqual(..) => a >= b,
                     _ => unreachable!(),
                 });
             }
@@ -506,7 +506,7 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
                 .or_else(|| integer_affine_comparison(condition))
                 .or_else(|| integer_operation_bound_comparison(condition))
         }
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format,
             relation,
             left,
@@ -631,11 +631,11 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
             // In particular, this key must never canonicalize a memory read.
             machine_affine_equality(condition, Clone::clone)
         }
-        ConditionTerm::AddressEqual(left, right) if left == right => Some(true),
-        ConditionTerm::PointerEqual(left, right) if left == right => Some(true),
-        ConditionTerm::AddressOffsetEqual(left, right) if left == right => Some(true),
-        ConditionTerm::AlgebraicEqual(left, right) => algebraic_equality(left, right),
-        ConditionTerm::BoolEqual(left, right) if left == right => Some(true),
+        OldConditionTerm::AddressEqual(left, right) if left == right => Some(true),
+        OldConditionTerm::PointerEqual(left, right) if left == right => Some(true),
+        OldConditionTerm::AddressOffsetEqual(left, right) if left == right => Some(true),
+        OldConditionTerm::AlgebraicEqual(left, right) => algebraic_equality(left, right),
+        OldConditionTerm::BoolEqual(left, right) if left == right => Some(true),
         // Float comparisons deliberately have no reflexivity rule: NaNs
         // compare unequal even when both operands have the same identity.
         _ => None,
@@ -643,10 +643,10 @@ fn condition_value(condition: &ConditionTerm) -> Option<bool> {
 }
 
 fn reduce_known_int32_match_operands(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
 ) -> Option<(CompareRelation, [Cow<'_, OldMachineTerm>; 2])> {
     use crate::kernel::proof::term_rewrite::TermRewrite;
-    let ConditionTerm::Compare {
+    let OldConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation,
         left,
@@ -666,10 +666,10 @@ fn reduce_known_int32_match_operands(
 }
 
 pub(in crate::kernel) fn reduce_known_int32_match_comparison(
-    condition: &ConditionTerm,
-) -> Option<ConditionTerm> {
+    condition: &OldConditionTerm,
+) -> Option<OldConditionTerm> {
     let (relation, [left, right]) = reduce_known_int32_match_operands(condition)?;
-    Some(ConditionTerm::Compare {
+    Some(OldConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation,
         left: Box::new(left.into_owned()),
@@ -677,7 +677,7 @@ pub(in crate::kernel) fn reduce_known_int32_match_comparison(
     })
 }
 
-pub(super) fn known_int32_match_comparison_value(condition: &ConditionTerm) -> Option<bool> {
+pub(super) fn known_int32_match_comparison_value(condition: &OldConditionTerm) -> Option<bool> {
     let (relation, [left, right]) = reduce_known_int32_match_operands(condition)?;
     let ordering = if left == right {
         std::cmp::Ordering::Equal
@@ -718,7 +718,7 @@ fn conditional_int32_observation(value: &IntegerTerm) -> Option<IntegerTerm> {
 }
 
 fn int32_conditional_guard(guard: BooleanOperandView<'_>) -> Option<bool> {
-    if let Some(ConditionTerm::Constant(value)) = guard.native_leaf() {
+    if let Some(OldConditionTerm::Constant(value)) = guard.native_leaf() {
         return Some(*value);
     }
     if let BooleanOperandView::Shared(root) = guard
@@ -835,8 +835,8 @@ fn selected_closed_integer_arm(term: &KernelTerm) -> Option<&KernelTerm> {
 }
 
 pub(in crate::kernel) fn closed_integer_if_comparison(
-    condition: &ConditionTerm,
-) -> Option<ConditionTerm> {
+    condition: &OldConditionTerm,
+) -> Option<OldConditionTerm> {
     map_integer_comparison(condition, |term| {
         let mut arm = selected_closed_integer_arm(term.root())?;
         while let Some(selected) = selected_closed_integer_arm(arm) {
@@ -848,9 +848,9 @@ pub(in crate::kernel) fn closed_integer_if_comparison(
 }
 
 pub(super) fn map_integer_comparison(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     reduce: impl Fn(&SharedIntegerTerm) -> Option<SharedIntegerTerm>,
-) -> Option<ConditionTerm> {
+) -> Option<OldConditionTerm> {
     let integer_comparison_condition!(left, right) = condition else {
         return None;
     };
@@ -861,12 +861,16 @@ pub(super) fn map_integer_comparison(
     let left = left_result.unwrap_or_else(|| left.clone());
     let right = right_result.unwrap_or_else(|| right.clone());
     Some(match condition {
-        ConditionTerm::IntegerLessThan(..) => ConditionTerm::IntegerLessThan(left, right),
-        ConditionTerm::IntegerLessEqual(..) => ConditionTerm::IntegerLessEqual(left, right),
-        ConditionTerm::IntegerGreaterThan(..) => ConditionTerm::IntegerGreaterThan(left, right),
-        ConditionTerm::IntegerGreaterEqual(..) => ConditionTerm::IntegerGreaterEqual(left, right),
-        ConditionTerm::IntegerEqual(..) => ConditionTerm::IntegerEqual(left, right),
-        ConditionTerm::IntegerNotEqual(..) => ConditionTerm::IntegerNotEqual(left, right),
+        OldConditionTerm::IntegerLessThan(..) => OldConditionTerm::IntegerLessThan(left, right),
+        OldConditionTerm::IntegerLessEqual(..) => OldConditionTerm::IntegerLessEqual(left, right),
+        OldConditionTerm::IntegerGreaterThan(..) => {
+            OldConditionTerm::IntegerGreaterThan(left, right)
+        }
+        OldConditionTerm::IntegerGreaterEqual(..) => {
+            OldConditionTerm::IntegerGreaterEqual(left, right)
+        }
+        OldConditionTerm::IntegerEqual(..) => OldConditionTerm::IntegerEqual(left, right),
+        OldConditionTerm::IntegerNotEqual(..) => OldConditionTerm::IntegerNotEqual(left, right),
         _ => unreachable!(),
     })
 }
@@ -993,7 +997,7 @@ fn constructor_payload_variable(field: &AlgebraicValue) -> Option<Variable> {
             to: MachineIntegerType::UInt8,
             value,
         })) => match value.as_ref() {
-            ConditionTerm::Variable(variable) => Some(*variable),
+            OldConditionTerm::Variable(variable) => Some(*variable),
             _ => None,
         },
         _ => None,
@@ -1115,7 +1119,7 @@ fn scoped_constructor_result(term: &AlgebraicTerm) -> Option<ConstructorResult<'
         } = &selected.node
         {
             crate::instrumentation::record_deterministic_work(1);
-            let truth = if let ConditionTerm::Variable(variable) = condition.as_ref() {
+            let truth = if let OldConditionTerm::Variable(variable) = condition.as_ref() {
                 let (_, payload) = payloads.get(variable)?;
                 let AlgebraicValue::Program(ProgramValue::Bool(word)) = payload.value else {
                     return None;
@@ -1285,17 +1289,17 @@ fn constructor_match_projection(term: &AlgebraicTerm) -> Option<&AlgebraicTerm> 
 /// the caller-selected key; anything else, including a product, is an atom.
 /// The walk visits each node of the goal once.
 pub(super) fn machine_affine_equality(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     atom_key: fn(&OldMachineTerm) -> OldMachineTerm,
 ) -> Option<bool> {
     let (left, right, wide) = match condition {
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
         } => (left, right, false),
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left,
@@ -1399,15 +1403,15 @@ fn collect_machine_affine_atoms(
 /// by that constant, which decides equality and, because `Integer` has no
 /// overflow, order as well. Atoms are interned terms, keyed by their shared
 /// identity. The walk visits each node of the goal once.
-pub(super) fn integer_affine_comparison(condition: &ConditionTerm) -> Option<bool> {
+pub(super) fn integer_affine_comparison(condition: &OldConditionTerm) -> Option<bool> {
     use num_traits::Zero;
     let (left, right) = match condition {
-        ConditionTerm::IntegerEqual(left, right)
-        | ConditionTerm::IntegerNotEqual(left, right)
-        | ConditionTerm::IntegerLessThan(left, right)
-        | ConditionTerm::IntegerLessEqual(left, right)
-        | ConditionTerm::IntegerGreaterThan(left, right)
-        | ConditionTerm::IntegerGreaterEqual(left, right) => (left, right),
+        OldConditionTerm::IntegerEqual(left, right)
+        | OldConditionTerm::IntegerNotEqual(left, right)
+        | OldConditionTerm::IntegerLessThan(left, right)
+        | OldConditionTerm::IntegerLessEqual(left, right)
+        | OldConditionTerm::IntegerGreaterThan(left, right)
+        | OldConditionTerm::IntegerGreaterEqual(left, right) => (left, right),
         _ => return None,
     };
     let (atoms, difference) = integer_affine_difference(left, right);
@@ -1416,11 +1420,11 @@ pub(super) fn integer_affine_comparison(condition: &ConditionTerm) -> Option<boo
     }
     let zero = num_bigint::BigInt::zero();
     Some(match condition {
-        ConditionTerm::IntegerEqual(..) => difference == zero,
-        ConditionTerm::IntegerNotEqual(..) => difference != zero,
-        ConditionTerm::IntegerLessThan(..) => difference < zero,
-        ConditionTerm::IntegerLessEqual(..) => difference <= zero,
-        ConditionTerm::IntegerGreaterThan(..) => difference > zero,
+        OldConditionTerm::IntegerEqual(..) => difference == zero,
+        OldConditionTerm::IntegerNotEqual(..) => difference != zero,
+        OldConditionTerm::IntegerLessThan(..) => difference < zero,
+        OldConditionTerm::IntegerLessEqual(..) => difference <= zero,
+        OldConditionTerm::IntegerGreaterThan(..) => difference > zero,
         _ => difference >= zero,
     })
 }
@@ -1445,7 +1449,7 @@ fn integer_product_identity(term: &IntegerTerm) -> Option<&SharedIntegerTerm> {
 
 /// One written distributivity step, with opaque operands. This never
 /// expands a polynomial or chooses a rewrite location.
-pub(super) fn integer_distribution_step(condition: &ConditionTerm) -> bool {
+pub(super) fn integer_distribution_step(condition: &OldConditionTerm) -> bool {
     fn product(a: &SharedIntegerTerm, b: &SharedIntegerTerm) -> SharedIntegerTerm {
         IntegerTerm::Multiply(a.clone(), b.clone()).into()
     }
@@ -1475,24 +1479,24 @@ pub(super) fn integer_distribution_step(condition: &ConditionTerm) -> bool {
         }
         false
     }
-    matches!(condition, ConditionTerm::IntegerEqual(a,b) if direction(a,b) || direction(b,a))
+    matches!(condition, OldConditionTerm::IntegerEqual(a,b) if direction(a,b) || direction(b,a))
 }
 
 /// Explicit `normalize` also distributes constant Integer coefficients.
 /// `known` continues to use `integer_affine_comparison`: adding this rule to
 /// explicit normalization does not expand its computational leaf. Calls,
 /// reads, folds, and products of two symbolic values remain opaque.
-pub(super) fn integer_linear_comparison(condition: &ConditionTerm) -> Option<bool> {
+pub(super) fn integer_linear_comparison(condition: &OldConditionTerm) -> Option<bool> {
     use num_bigint::BigInt;
     use num_traits::Zero;
     use std::collections::{BTreeMap, HashMap, HashSet};
     let (left, right) = match condition {
-        ConditionTerm::IntegerEqual(left, right)
-        | ConditionTerm::IntegerNotEqual(left, right)
-        | ConditionTerm::IntegerLessThan(left, right)
-        | ConditionTerm::IntegerLessEqual(left, right)
-        | ConditionTerm::IntegerGreaterThan(left, right)
-        | ConditionTerm::IntegerGreaterEqual(left, right) => (left, right),
+        OldConditionTerm::IntegerEqual(left, right)
+        | OldConditionTerm::IntegerNotEqual(left, right)
+        | OldConditionTerm::IntegerLessThan(left, right)
+        | OldConditionTerm::IntegerLessEqual(left, right)
+        | OldConditionTerm::IntegerGreaterThan(left, right)
+        | OldConditionTerm::IntegerGreaterEqual(left, right) => (left, right),
         _ => return None,
     };
     // Intrinsic widening and literal observations have cached value readings.
@@ -1646,11 +1650,11 @@ pub(super) fn integer_linear_comparison(condition: &ConditionTerm) -> Option<boo
     }
     let zero = BigInt::zero();
     Some(match condition {
-        ConditionTerm::IntegerEqual(..) => constant == zero,
-        ConditionTerm::IntegerNotEqual(..) => constant != zero,
-        ConditionTerm::IntegerLessThan(..) => constant < zero,
-        ConditionTerm::IntegerLessEqual(..) => constant <= zero,
-        ConditionTerm::IntegerGreaterThan(..) => constant > zero,
+        OldConditionTerm::IntegerEqual(..) => constant == zero,
+        OldConditionTerm::IntegerNotEqual(..) => constant != zero,
+        OldConditionTerm::IntegerLessThan(..) => constant < zero,
+        OldConditionTerm::IntegerLessEqual(..) => constant <= zero,
+        OldConditionTerm::IntegerGreaterThan(..) => constant > zero,
         _ => constant >= zero,
     })
 }
@@ -1658,7 +1662,7 @@ pub(super) fn integer_linear_comparison(condition: &ConditionTerm) -> Option<boo
 /// Check an exact type range or one intrinsic quotient/shift/remainder bound.
 /// Only the two operands' fixed bound shapes select observations; no facts,
 /// operand history, or nested operations are searched.
-pub(super) fn integer_operation_bound_comparison(condition: &ConditionTerm) -> Option<bool> {
+pub(super) fn integer_operation_bound_comparison(condition: &OldConditionTerm) -> Option<bool> {
     fn scaled(term: &SharedIntegerTerm) -> Option<&SharedMachineIntegerTerm> {
         match term.as_ref() {
             IntegerTerm::Machine(value) => Some(value),
@@ -1679,8 +1683,8 @@ pub(super) fn integer_operation_bound_comparison(condition: &ConditionTerm) -> O
         })
     }
     let (left, right) = match condition {
-        ConditionTerm::IntegerLessThan(value, bound)
-        | ConditionTerm::IntegerGreaterThan(bound, value) => {
+        OldConditionTerm::IntegerLessThan(value, bound)
+        | OldConditionTerm::IntegerGreaterThan(bound, value) => {
             if let (IntegerTerm::Machine(value), IntegerTerm::Constant(bound)) =
                 (value.as_ref(), bound.as_ref())
                 && positive_literal_remainder_divisor(value.ty(), value.operand_view()).as_ref()
@@ -1690,8 +1694,8 @@ pub(super) fn integer_operation_bound_comparison(condition: &ConditionTerm) -> O
             }
             return None;
         }
-        ConditionTerm::IntegerLessEqual(left, right) => (left, right),
-        ConditionTerm::IntegerGreaterEqual(left, right) => (right, left),
+        OldConditionTerm::IntegerLessEqual(left, right) => (left, right),
+        OldConditionTerm::IntegerGreaterEqual(left, right) => (right, left),
         _ => return None,
     };
     // A rewrite may leave the old count's zero addend in a retained sum.
@@ -1938,7 +1942,7 @@ mod tests {
         let copied = read(empty.clone(), &source);
         let different = read(empty.clone(), &source.offset_by_bytes(4));
         let check = |memory, expected: &OldMachineTerm| {
-            let condition = ConditionTerm::equal(read(memory, &destination), expected.clone());
+            let condition = OldConditionTerm::equal(read(memory, &destination), expected.clone());
             let goal = Proposition::condition_is(condition, true);
             crate::instrumentation::measure_deterministic_work(|| computes_leaf(&goal))
         };
@@ -2082,7 +2086,7 @@ mod tests {
                     LoadKind::Int32,
                 );
                 let goal = Proposition::condition_is(
-                    ConditionTerm::signed_greater_equal(read, 0u32.into()),
+                    OldConditionTerm::signed_greater_equal(read, 0u32.into()),
                     true,
                 );
                 crate::instrumentation::measure_deterministic_work(|| computes_leaf(&goal))
@@ -2110,7 +2114,7 @@ mod tests {
             |count| IntegerTerm::Add(IntegerTerm::constant_i64(count).into(), n.clone().into());
         let upper = |value: IntegerTerm| {
             Proposition::condition_is(
-                ConditionTerm::IntegerLessEqual(
+                OldConditionTerm::IntegerLessEqual(
                     value.into(),
                     IntegerTerm::constant_i64(i64::from(i32::MAX)).into(),
                 ),
@@ -2119,7 +2123,7 @@ mod tests {
         };
         let lower = |value: IntegerTerm| {
             Proposition::condition_is(
-                ConditionTerm::IntegerLessEqual(
+                OldConditionTerm::IntegerLessEqual(
                     IntegerTerm::constant_i64(i64::from(i32::MIN)).into(),
                     value.into(),
                 ),
@@ -2138,7 +2142,7 @@ mod tests {
             (MachineIntegerType::Int32, true),
             (MachineIntegerType::UInt32, false),
         ] {
-            let condition = ConditionTerm::Compare {
+            let condition = OldConditionTerm::Compare {
                 format,
                 relation: CompareRelation::LessThan,
                 left: Box::new(OldMachineTerm::constant(u32::MAX)),
@@ -2158,7 +2162,7 @@ mod tests {
     fn computation_does_not_use_float_reflexivity() {
         let nan = OldMachineTerm::constant(0x7fc00000);
         let goal = Proposition::condition_is(
-            ConditionTerm::Float32(FloatCondition::Comparison {
+            OldConditionTerm::Float32(FloatCondition::Comparison {
                 operator: ComparisonOperator::Equal,
                 left: Box::new(nan.clone()),
                 right: Box::new(nan),
@@ -2201,14 +2205,14 @@ mod tests {
                     IntegerTerm::multiply(IntegerTerm::Constant(a.clone()), y),
                 );
                 let condition =
-                    ConditionTerm::IntegerEqual(left.clone().into(), right.clone().into());
+                    OldConditionTerm::IntegerEqual(left.clone().into(), right.clone().into());
                 assert_eq!(integer_linear_comparison(&condition), Some(true));
                 for x in &samples {
                     for y in &samples {
                         assert_eq!(evaluate(&left, x, y), evaluate(&right, x, y));
                     }
                 }
-                let wrong = ConditionTerm::IntegerEqual(
+                let wrong = OldConditionTerm::IntegerEqual(
                     left.into(),
                     IntegerTerm::add(right, IntegerTerm::constant_i64(1)).into(),
                 );

@@ -119,14 +119,14 @@ fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
         let count = events.observe_symbolic(&description).unwrap().entry_count;
         let assumptions = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_greater_equal(
+                OldConditionTerm::signed_greater_equal(
                     count.clone(),
                     OldMachineTerm::constant(amount),
                 ),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_equal(
+                OldConditionTerm::signed_less_equal(
                     count,
                     OldMachineTerm::constant((i32::MAX - 1) as u32),
                 ),

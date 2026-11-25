@@ -65,7 +65,7 @@ fn shared_offset_source_paths_scale_with_selected_dags() {
         }
         let l = SharedMachineIntegerTerm::from_shared(ty, left).unwrap();
         let r = SharedMachineIntegerTerm::from_shared(ty, right).unwrap();
-        let source = ConditionTerm::IntegerEqual(
+        let source = OldConditionTerm::IntegerEqual(
             crate::kernel::IntegerTerm::Machine(l.clone()).into(),
             crate::kernel::IntegerTerm::Machine(r.clone()).into(),
         );

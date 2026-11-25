@@ -160,7 +160,7 @@ fn tag_condition(
     relation: CompareRelation,
     left: MachineOperandView<'_>,
     right: MachineOperandView<'_>,
-) -> ConditionTerm {
+) -> OldConditionTerm {
     crate::kernel::machine_integer::comparison::condition_for_operand_views(
         MachineIntegerType::UInt64,
         relation,
@@ -189,10 +189,10 @@ impl PureFactContext {
     /// other route leaves the record incomplete.
     pub(in crate::kernel) fn decide_citing(
         &self,
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
         used: &mut UsedFacts,
     ) -> Option<bool> {
-        if let ConditionTerm::Constant(value) = condition {
+        if let OldConditionTerm::Constant(value) = condition {
             return Some(*value);
         }
         for stored in [condition.clone(), condition.flipped()] {
@@ -210,7 +210,7 @@ impl PureFactContext {
             }
             return Some(aligned);
         }
-        if let ConditionTerm::AddressEqual(left, right) = condition {
+        if let OldConditionTerm::AddressEqual(left, right) = condition {
             if left == right {
                 return Some(true);
             }
@@ -317,7 +317,7 @@ fn require(
 ) -> Result<bool, Refuted> {
     let conditions = [
         (
-            ConditionTerm::pointer_aligned(form.pointer.clone(), alignment),
+            OldConditionTerm::pointer_aligned(form.pointer.clone(), alignment),
             format!("the pointer aligned to {alignment} bytes"),
         ),
         (
@@ -888,7 +888,7 @@ mod exact_word_address_tests {
         let shared = import(&raw);
         let other = import(&other);
         let bound =
-            ConditionTerm::uint64_less_equal(raw.clone(), OldMachineTerm::uint64_constant(3));
+            OldConditionTerm::uint64_less_equal(raw.clone(), OldMachineTerm::uint64_constant(3));
         let context = PureFactContext::new().assume_condition(bound.clone(), true);
         let exports = KernelTermExport::machine_export_count();
         for value in [
@@ -1020,8 +1020,8 @@ mod exact_word_address_tests {
         let bare = PureFactContext::new();
         let aligned = bare
             .clone()
-            .assume_condition(ConditionTerm::pointer_aligned(p.clone(), 8), true)
-            .assume_condition(ConditionTerm::pointer_aligned(q.clone(), 8), true);
+            .assume_condition(OldConditionTerm::pointer_aligned(p.clone(), 8), true)
+            .assume_condition(OldConditionTerm::pointer_aligned(q.clone(), 8), true);
         let word = |pointer: Address, tag| {
             OldMachineTerm::uint64_add(
                 OldMachineTerm::integer_address(pointer),
@@ -1078,12 +1078,12 @@ mod exact_word_address_tests {
         assert_eq!(hash(&classed), hash(&bare));
         // A premise stated over the classed spelling is the exact fact a
         // query over the bare spelling asks for, in either polarity.
-        let stated = ConditionTerm::uint64_equal(
+        let stated = OldConditionTerm::uint64_equal(
             classed.clone(),
             OldMachineTerm::integer_address(other.clone()),
         );
         let asked =
-            ConditionTerm::uint64_equal(bare.clone(), OldMachineTerm::integer_address(other));
+            OldConditionTerm::uint64_equal(bare.clone(), OldMachineTerm::integer_address(other));
         let assumptions = PureFactContext::new().assume_condition(stated, false);
         assert!(
             crate::kernel::reasoning::path_facts::required_obligation_is_exactly_discharged(
@@ -1104,7 +1104,7 @@ mod exact_word_address_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Address::symbolic(Variable(980110));
         let class = CAccessClass::Struct(CStructClass::opaque("node"));
-        let premise = ConditionTerm::uint64_equal(
+        let premise = OldConditionTerm::uint64_equal(
             OldMachineTerm::uint64_bitwise_and(
                 OldMachineTerm::object_pointer_address(pointer.clone(), Some(class.clone())),
                 OldMachineTerm::uint64_constant(7),
@@ -1121,7 +1121,7 @@ mod exact_word_address_tests {
             OldMachineTerm::integer_address(pointer.clone()),
             OldMachineTerm::object_pointer_address(pointer.clone(), Some(class.clone())),
         ] {
-            let tagged = ConditionTerm::uint64_equal(
+            let tagged = OldConditionTerm::uint64_equal(
                 OldMachineTerm::uint64_bitwise_or(
                     address.clone(),
                     OldMachineTerm::uint64_constant(1),
@@ -1139,7 +1139,7 @@ mod exact_word_address_tests {
         let pointer = Address::symbolic(Variable(980010));
         let class = CAccessClass::Scalar(CScalarClass::Int);
         let assumptions = PureFactContext::new()
-            .assume_condition(ConditionTerm::pointer_aligned(pointer.clone(), 4), true);
+            .assume_condition(OldConditionTerm::pointer_aligned(pointer.clone(), 4), true);
         let mut obligations = Vec::new();
         let encoded = cast_program_value_to_type(
             ProgramValue::Pointer(
@@ -1201,7 +1201,7 @@ mod exact_word_address_tests {
         );
         assert!(obligations.is_empty());
         assert_eq!(
-            assumptions.decide(&ConditionTerm::uint64_equal(
+            assumptions.decide(&OldConditionTerm::uint64_equal(
                 address,
                 OldMachineTerm::integer_address(pointer)
             )),
@@ -1217,7 +1217,7 @@ mod exact_word_address_tests {
         let class = CAccessClass::Scalar(CScalarClass::Int);
         let word = OldMachineTerm::Variable(Variable(980021));
         let premise = Proposition::condition_is(
-            ConditionTerm::uint64_equal(
+            OldConditionTerm::uint64_equal(
                 word.clone(),
                 OldMachineTerm::object_pointer_address(pointer.clone(), Some(class.clone())),
             ),
@@ -1274,8 +1274,10 @@ mod exact_word_address_tests {
         let alias = OldMachineTerm::Variable(Variable(980002));
         for assumptions in [
             PureFactContext::new(),
-            PureFactContext::new()
-                .assume_condition(ConditionTerm::uint64_equal(expression.clone(), alias), true),
+            PureFactContext::new().assume_condition(
+                OldConditionTerm::uint64_equal(expression.clone(), alias),
+                true,
+            ),
         ] {
             let mut obligations = Vec::new();
             assert_eq!(
@@ -1317,13 +1319,13 @@ mod exact_word_address_tests {
                     )
                     .unwrap()
                 };
-                let mut lower = ConditionTerm::machine_compare(
+                let mut lower = OldConditionTerm::machine_compare(
                     format,
                     CompareRelation::LessEqual,
                     constant(0),
                     value.clone(),
                 );
-                let mut upper = ConditionTerm::machine_compare(
+                let mut upper = OldConditionTerm::machine_compare(
                     format,
                     CompareRelation::LessEqual,
                     value.clone(),
@@ -1405,8 +1407,8 @@ mod exact_word_address_tests {
             MachineCastSpelling::UInt64FromInt32,
             Box::new(tag.clone()),
         );
-        let lower = ConditionTerm::signed_less_equal(0u32.into(), tag.clone());
-        let upper = ConditionTerm::signed_less_equal(tag, 1u32.into());
+        let lower = OldConditionTerm::signed_less_equal(0u32.into(), tag.clone());
+        let upper = OldConditionTerm::signed_less_equal(tag, 1u32.into());
         for context in [
             PureFactContext::new(),
             PureFactContext::new().assume_condition(lower.clone(), true),
@@ -1425,7 +1427,7 @@ mod exact_word_address_tests {
         let context = PureFactContext::new()
             .assume_condition(lower.clone(), true)
             .assume_condition(upper.clone(), true)
-            .assume_condition(ConditionTerm::pointer_aligned(pointer.clone(), 8), true);
+            .assume_condition(OldConditionTerm::pointer_aligned(pointer.clone(), 8), true);
         let tagged = OldMachineTerm::uint64_bitwise_or(
             OldMachineTerm::integer_address(pointer.clone()),
             converted,
@@ -1466,7 +1468,7 @@ mod retained_tag_tests {
         let y = OldMachineTerm::Variable(Variable(986004));
         let opaque = OldMachineTerm::integer_address(q);
         let source = Proposition::condition_is(
-            ConditionTerm::uint64_equal(
+            OldConditionTerm::uint64_equal(
                 x.clone(),
                 OldMachineTerm::uint64_add(
                     OldMachineTerm::integer_address(p.clone()),
@@ -1476,7 +1478,7 @@ mod retained_tag_tests {
             true,
         );
         let parent = PureFactContext::new().assume_condition(
-            ConditionTerm::uint64_equal(
+            OldConditionTerm::uint64_equal(
                 OldMachineTerm::Variable(Variable(986005)),
                 OldMachineTerm::integer_address(Address::symbolic(Variable(986006))),
             ),
@@ -1531,7 +1533,7 @@ mod retained_tag_tests {
         let y = OldMachineTerm::Variable(Variable(986044));
         let suffix = OldMachineTerm::Variable(Variable(986045));
         let source = |word, pointer| {
-            ConditionTerm::uint64_equal(
+            OldConditionTerm::uint64_equal(
                 word,
                 OldMachineTerm::uint64_add(
                     OldMachineTerm::integer_address(pointer),
@@ -1539,7 +1541,7 @@ mod retained_tag_tests {
                 ),
             )
         };
-        let equality = ConditionTerm::address_equal(p.clone(), q.clone());
+        let equality = OldConditionTerm::address_equal(p.clone(), q.clone());
         let context = PureFactContext::new()
             .assume_condition(source(x.clone(), p), true)
             .assume_condition(source(y.clone(), q), true)
@@ -1633,7 +1635,7 @@ mod retained_tag_tests {
         let raw = read(memory.clone());
         let other = read(memory.with_block("other-tag-cell", 8));
         let source = Proposition::condition_is(
-            ConditionTerm::uint64_equal(
+            OldConditionTerm::uint64_equal(
                 raw,
                 OldMachineTerm::uint64_add(
                     OldMachineTerm::integer_address(pointer.clone()),
@@ -1670,7 +1672,7 @@ mod retained_tag_tests {
         let class = CAccessClass::Scalar(CScalarClass::Int);
         let address = OldMachineTerm::object_pointer_address(p.clone(), Some(class.clone()));
         let aligned = PureFactContext::new()
-            .assume_condition(ConditionTerm::pointer_aligned(p.clone(), 8), true);
+            .assume_condition(OldConditionTerm::pointer_aligned(p.clone(), 8), true);
         let bare = KernelTerm::retained_machine_operand(
             ty,
             MachineOperandView::Old(&OldMachineTerm::integer_address(p.clone())),

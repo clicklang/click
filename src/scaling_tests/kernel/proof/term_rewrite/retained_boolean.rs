@@ -22,7 +22,7 @@ fn retained_boolean_connective_rewriting_keeps_growing_dags_shared() {
                 source,
                 TypedProgramValueReplacement::Bitvector(OldMachineTerm::bool_cast(
                     MachineIntegerType::UInt8,
-                    ConditionTerm::Variable(Variable(994201)),
+                    OldConditionTerm::Variable(Variable(994201)),
                 )),
             )]);
             let integer = BTreeMap::new();

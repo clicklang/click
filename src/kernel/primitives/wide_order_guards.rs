@@ -5,8 +5,8 @@ use crate::kernel::machine_integer::{
     comparison::{NativeComparisonView, comparison_view, condition_for_operand_views},
 };
 use crate::kernel::{
-    CompareRelation as R, ConditionTerm as C, MachineBinaryOp as Op, MachineIntegerType as T,
-    MachineOperandView as V, OldMachineTerm as B,
+    CompareRelation as R, MachineBinaryOp as Op, MachineIntegerType as T, MachineOperandView as V,
+    OldConditionTerm as C, OldMachineTerm as B,
 };
 
 fn order(condition: &C) -> Option<NativeComparisonView<'_>> {

@@ -12,12 +12,14 @@ fn memory_resolution_graph_offset_queries_scale_without_legacy_fact_index() {
         let offset = |id| AddressOffset::scale_int32(scalar(id), 4);
         let named = AddressOffset::Variable(Variable(94_000));
         let mut context = PureFactContext::new().assume_condition(
-            ConditionTerm::address_offset_equal(offset(0), named.clone()),
+            OldConditionTerm::address_offset_equal(offset(0), named.clone()),
             true,
         );
         for index in 0..size {
-            context = context
-                .assume_condition(ConditionTerm::equal(scalar(index), scalar(index + 1)), true);
+            context = context.assume_condition(
+                OldConditionTerm::equal(scalar(index), scalar(index + 1)),
+                true,
+            );
         }
         let _scope = context.enter_id_scope();
         PureFactContext::reset_bitvector_equality_index_fact_visits();
@@ -46,7 +48,7 @@ fn stored_load_alias_lookup_ignores_unrelated_cells() {
         offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(8_991_002)), 4),
     };
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::address_offset_equal(target.offset.clone(), alias.offset.clone()),
+        OldConditionTerm::address_offset_equal(target.offset.clone(), alias.offset.clone()),
         true,
     );
     let mut samples = Vec::new();
@@ -99,13 +101,13 @@ fn interior_base_alias_frames_only_distinct_objects_and_is_indexed() {
         base: "local:interior-alias-store".into(),
         offset: AddressOffset::Constant(0),
     };
-    let equality = ConditionTerm::address_equal(alias.clone(), base.clone());
+    let equality = OldConditionTerm::address_equal(alias.clone(), base.clone());
     let mut samples = Vec::new();
     for size in [16u64, 64, 256, 1024] {
         let mut facts = PureFactContext::new();
         for index in 0..size {
             facts = facts.assume_condition(
-                ConditionTerm::address_equal(
+                OldConditionTerm::address_equal(
                     Address {
                         base: AddressBase::Symbolic(Variable(930_000 + index)),
                         offset: AddressOffset::Constant(0),
@@ -171,7 +173,7 @@ fn mixed_index_offsets_work_ignores_unrelated_facts() {
     let narrow = OldMachineTerm::Variable(Variable(82002));
     let native = AddressOffset::scale_int64(wide.clone(), 1, true);
     let signed = AddressOffset::scale_int32(narrow.clone(), 1);
-    let fact = ConditionTerm::IntegerEqual(
+    let fact = OldConditionTerm::IntegerEqual(
         IntegerTerm::from_machine(MachineIntegerType::UInt64, wide)
             .unwrap()
             .into(),
@@ -184,7 +186,7 @@ fn mixed_index_offsets_work_ignores_unrelated_facts() {
         let mut context = PureFactContext::new().assume_condition(fact.clone(), true);
         for i in 0..size {
             context = context.assume_condition(
-                ConditionTerm::IntegerEqual(
+                OldConditionTerm::IntegerEqual(
                     IntegerTerm::Variable(Variable(83000 + i)).into(),
                     IntegerTerm::constant_i64(i as i64).into(),
                 ),
@@ -420,7 +422,7 @@ fn wide_offset_step_retains_dags_and_ignores_unrelated_facts() {
             );
             for extra in 0..unrelated {
                 facts = facts.assume_condition(
-                    ConditionTerm::equal(
+                    OldConditionTerm::equal(
                         OldMachineTerm::Variable(Variable(1019000 + extra as u64)),
                         OldMachineTerm::constant(3),
                     ),
@@ -459,11 +461,11 @@ fn a_byte_product_comparison_ignores_unrelated_bounded_indices() {
         let bounds = |context: PureFactContext, id| {
             context
                 .assume_condition(
-                    ConditionTerm::signed_less_equal(OldMachineTerm::constant(0), scalar(id)),
+                    OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), scalar(id)),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::signed_less_than(scalar(id), OldMachineTerm::constant(4)),
+                    OldConditionTerm::signed_less_than(scalar(id), OldMachineTerm::constant(4)),
                     true,
                 )
         };

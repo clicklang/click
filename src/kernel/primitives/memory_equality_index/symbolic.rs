@@ -497,14 +497,17 @@ mod tests {
         let facts = empty
             .clone()
             .assume_condition(
-                ConditionTerm::address_equal(base.clone(), alias.clone()),
+                OldConditionTerm::address_equal(base.clone(), alias.clone()),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_equal(0u32.into(), k.clone()),
+                OldConditionTerm::signed_less_equal(0u32.into(), k.clone()),
                 true,
             )
-            .assume_condition(ConditionTerm::signed_less_than(k.clone(), n.clone()), true);
+            .assume_condition(
+                OldConditionTerm::signed_less_than(k.clone(), n.clone()),
+                true,
+            );
         let held = ResourceFact::view_memory(range(&base, 0u32.into(), n.clone()));
         let resources =
             ResourceContext::new_with_equalities(&empty).unchecked_with_fact(held.clone());
@@ -572,16 +575,19 @@ mod tests {
         let k = OldMachineTerm::Variable(Variable(962_003));
         let empty = PureFactContext::new();
         let equal = empty.clone().assume_condition(
-            ConditionTerm::address_equal(base.clone(), alias.clone()),
+            OldConditionTerm::address_equal(base.clone(), alias.clone()),
             true,
         );
         let bounded = equal
             .clone()
             .assume_condition(
-                ConditionTerm::signed_less_equal(0u32.into(), k.clone()),
+                OldConditionTerm::signed_less_equal(0u32.into(), k.clone()),
                 true,
             )
-            .assume_condition(ConditionTerm::signed_less_equal(k.clone(), n.clone()), true);
+            .assume_condition(
+                OldConditionTerm::signed_less_equal(k.clone(), n.clone()),
+                true,
+            );
         for width in [1, 2, 4, 8] {
             let range =
                 MemoryRange::new_with_element_width(base.clone(), 0u32.into(), n.clone(), width);
@@ -686,12 +692,12 @@ mod tests {
         let loaded_alias = Address::loaded_value(&retained_state, &alias);
         let empty = PureFactContext::new();
         let equal_base = empty.clone().assume_condition(
-            ConditionTerm::address_equal(slot.clone(), alias.clone()),
+            OldConditionTerm::address_equal(slot.clone(), alias.clone()),
             true,
         );
         let facts = equal_base
             .clone()
-            .assume_condition(ConditionTerm::equal(n.clone(), m.clone()), true);
+            .assume_condition(OldConditionTerm::equal(n.clone(), m.clone()), true);
         let held = ResourceFact::view_memory(range(&loaded, 0u32.into(), n.clone()));
         let other = ResourceFact::view_memory(range(
             &loaded,
@@ -761,7 +767,7 @@ mod wide_range_reader_tests {
             1,
         );
         let facts = PureFactContext::new()
-            .assume_condition(ConditionTerm::address_equal(base, alias.clone()), true);
+            .assume_condition(OldConditionTerm::address_equal(base, alias.clone()), true);
         let held = ResourceFact::view_memory(wide.clone());
         let resources = ResourceContext::new().unchecked_with_fact(held.clone());
         // Register the resource input at publication, before bounded queries.

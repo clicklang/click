@@ -21,7 +21,7 @@ fn completed_candidate_forks_share_source_state_and_all_path_storage() {
                 let facts = (0..fact_count)
                     .map(|index| {
                         ExecutionPureFact::new(Proposition::condition_is(
-                            ConditionTerm::signed_less_than(
+                            OldConditionTerm::signed_less_than(
                                 OldMachineTerm::Variable(Variable(950_000 + index)),
                                 OldMachineTerm::constant(0),
                             ),
@@ -83,7 +83,7 @@ fn terminal_candidate_publications_retain_records_and_payloads() {
             program_return(crate::kernel::program_expression::int32_literal(0)),
         );
         let proposition = Proposition::condition_is(
-            ConditionTerm::equal(
+            OldConditionTerm::equal(
                 OldMachineTerm::Variable(Variable(970_000)),
                 OldMachineTerm::constant(0),
             ),
@@ -150,7 +150,7 @@ fn terminal_candidate_publications_retain_records_and_payloads() {
 fn extending_a_candidate_retains_payload_and_classifies_only_new_facts() {
     let state = ExecutionState::new();
     let public = ExecutionPureFact::certified(Proposition::condition_is(
-        ConditionTerm::equal(
+        OldConditionTerm::equal(
             OldMachineTerm::Variable(Variable(971_000)),
             OldMachineTerm::constant(0),
         ),
@@ -185,7 +185,7 @@ fn extending_a_candidate_retains_payload_and_classifies_only_new_facts() {
     std::sync::Arc::make_mut(&mut retained.data).completion_delta = Some(delta);
     let source = &retained;
     let new_public = ExecutionPureFact::new(Proposition::condition_is(
-        ConditionTerm::equal(
+        OldConditionTerm::equal(
             OldMachineTerm::Variable(Variable(971_001)),
             OldMachineTerm::constant(1),
         ),
@@ -1059,7 +1059,7 @@ fn symbolic_execution_uses_no_overflow_fact() {
         crate::kernel::program_expression::variable("left"),
         crate::kernel::program_expression::variable("right"),
     ));
-    let no_overflow = ConditionTerm::signed_add_overflows(left_bits.clone(), right_bits.clone());
+    let no_overflow = OldConditionTerm::signed_add_overflows(left_bits.clone(), right_bits.clone());
     let assumptions = PureFactContext::new().assume_condition(no_overflow.clone(), false);
     let theorem = prove_symbolic_program_execution(state.clone(), statement.clone(), assumptions)
         .expect("no-overflow fact should let symbolic add execute");
@@ -1101,26 +1101,26 @@ fn symbolic_add_uses_exact_intervals_to_rule_out_overflow() {
     ));
     let assumptions = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::equal(left_bits, OldMachineTerm::constant(1)),
+            OldConditionTerm::equal(left_bits, OldMachineTerm::constant(1)),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_greater_equal(right_bits.clone(), OldMachineTerm::constant(0)),
+            OldConditionTerm::signed_greater_equal(right_bits.clone(), OldMachineTerm::constant(0)),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_equal(right_bits.clone(), OldMachineTerm::constant(1)),
+            OldConditionTerm::signed_less_equal(right_bits.clone(), OldMachineTerm::constant(1)),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_than(right_bits, OldMachineTerm::constant(1)),
+            OldConditionTerm::signed_less_than(right_bits, OldMachineTerm::constant(1)),
             false,
         );
 
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
         &Proposition::condition_is(
-            ConditionTerm::equal(
+            OldConditionTerm::equal(
                 binary_node!(
                     Int32,
                     Add,
@@ -1146,8 +1146,10 @@ fn symbolic_increment_uses_int_max_bound_to_rule_out_overflow() {
         crate::kernel::program_expression::variable("x"),
         crate::kernel::program_expression::int32_literal(1),
     ));
-    let x_lt_int_max =
-        ConditionTerm::signed_less_than(x_bits.clone(), OldMachineTerm::constant(i32::MAX as u32));
+    let x_lt_int_max = OldConditionTerm::signed_less_than(
+        x_bits.clone(),
+        OldMachineTerm::constant(i32::MAX as u32),
+    );
     let assumptions = PureFactContext::new().assume_condition(x_lt_int_max.clone(), true);
     let theorem = prove_symbolic_program_execution(state.clone(), statement.clone(), assumptions)
         .expect("x < INT_MAX should prove x + 1 does not overflow");
@@ -1178,11 +1180,11 @@ fn symbolic_increment_uses_int_max_bound_to_rule_out_overflow() {
 fn symbolic_increment_uses_any_strict_upper_bound_to_rule_out_overflow() {
     let x_bits = OldMachineTerm::Variable(Variable(651));
     let upper_bits = OldMachineTerm::Variable(Variable(652));
-    let assumption = ConditionTerm::signed_less_than(x_bits.clone(), upper_bits);
+    let assumption = OldConditionTerm::signed_less_than(x_bits.clone(), upper_bits);
     let assumptions = PureFactContext::new().assume_condition(assumption, true);
 
     assert_eq!(
-        assumptions.decide(&ConditionTerm::signed_add_overflows(
+        assumptions.decide(&OldConditionTerm::signed_add_overflows(
             x_bits,
             OldMachineTerm::constant(1),
         )),
@@ -1197,24 +1199,24 @@ fn signed_addition_uses_both_operand_intervals_to_rule_out_overflow() {
     let million = OldMachineTerm::constant(1_000_000);
     let assumptions = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_less_equal(OldMachineTerm::constant(0), left.clone()),
+            OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), left.clone()),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_equal(left.clone(), million.clone()),
+            OldConditionTerm::signed_less_equal(left.clone(), million.clone()),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_equal(OldMachineTerm::constant(0), right.clone()),
+            OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), right.clone()),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_equal(right.clone(), million),
+            OldConditionTerm::signed_less_equal(right.clone(), million),
             true,
         );
 
     assert_eq!(
-        assumptions.decide(&ConditionTerm::signed_add_overflows(left, right)),
+        assumptions.decide(&OldConditionTerm::signed_add_overflows(left, right)),
         Some(false)
     );
 }
@@ -1227,21 +1229,24 @@ fn signed_addition_uses_negative_operand_intervals_to_rule_out_overflow() {
     let zero = OldMachineTerm::constant(0);
     let assumptions = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_less_equal(negative_million.clone(), left.clone()),
+            OldConditionTerm::signed_less_equal(negative_million.clone(), left.clone()),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_equal(left.clone(), zero.clone()),
+            OldConditionTerm::signed_less_equal(left.clone(), zero.clone()),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_equal(negative_million, right.clone()),
+            OldConditionTerm::signed_less_equal(negative_million, right.clone()),
             true,
         )
-        .assume_condition(ConditionTerm::signed_less_equal(right.clone(), zero), true);
+        .assume_condition(
+            OldConditionTerm::signed_less_equal(right.clone(), zero),
+            true,
+        );
 
     assert_eq!(
-        assumptions.decide(&ConditionTerm::signed_add_overflows(left, right)),
+        assumptions.decide(&OldConditionTerm::signed_add_overflows(left, right)),
         Some(false)
     );
 }
@@ -1256,22 +1261,25 @@ fn signed_addition_ranges_nested_additions_only_when_each_level_is_safe() {
     for term in [&left, &middle, &right] {
         assumptions = assumptions
             .assume_condition(
-                ConditionTerm::signed_less_equal(OldMachineTerm::constant(0), term.clone()),
+                OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), term.clone()),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_equal(term.clone(), upper.clone()),
+                OldConditionTerm::signed_less_equal(term.clone(), upper.clone()),
                 true,
             );
     }
     let partial = OldMachineTerm::add(left, middle);
 
     assert_eq!(
-        assumptions.decide(&ConditionTerm::signed_add_overflows(partial.clone(), right)),
+        assumptions.decide(&OldConditionTerm::signed_add_overflows(
+            partial.clone(),
+            right
+        )),
         Some(false)
     );
     assert_eq!(
-        assumptions.decide(&ConditionTerm::signed_add_overflows(
+        assumptions.decide(&OldConditionTerm::signed_add_overflows(
             partial,
             OldMachineTerm::constant(800_000_000),
         )),
@@ -1299,16 +1307,16 @@ fn signed_addition_matches_interval_facts_across_unchanged_states() {
     );
     let assumptions = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_less_equal(OldMachineTerm::constant(0), before_load.clone()),
+            OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), before_load.clone()),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_equal(before_load, OldMachineTerm::constant(1_000_000)),
+            OldConditionTerm::signed_less_equal(before_load, OldMachineTerm::constant(1_000_000)),
             true,
         );
 
     assert_eq!(
-        assumptions.decide(&ConditionTerm::signed_add_overflows(
+        assumptions.decide(&OldConditionTerm::signed_add_overflows(
             after_load.clone(),
             after_load,
         )),
@@ -1448,8 +1456,8 @@ fn missing_memory_load_is_native_undefined_behavior() {
 
 #[test]
 fn function_execution_theorem_retains_non_assumable_verification_conditions() {
-    let verification_condition = Proposition::condition_is(ConditionTerm::Constant(false), true);
-    let conclusion = Proposition::condition_is(ConditionTerm::Constant(true), true);
+    let verification_condition = Proposition::condition_is(OldConditionTerm::Constant(false), true);
+    let conclusion = Proposition::condition_is(OldConditionTerm::Constant(true), true);
     let theorem = Theorem::new(wrap_proof_facts(
         conclusion,
         &PureFactContext::new(),
@@ -1584,7 +1592,7 @@ fn verified_function_rule_applies_contract_without_executing_body() {
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
         &Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(result.clone()),
@@ -1683,7 +1691,7 @@ fn verified_function_rule_coerces_null_constants_in_contract_views() {
         matches!(&fact.proposition(), condition_source_0 @ Proposition::ConditionIs(
                 _,
                 true
-            ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left: _, right }, _)) if (right.as_const() == Some(1))))
+            ) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left: _, right }, _)) if (right.as_const() == Some(1))))
     }));
 }
 
@@ -1766,7 +1774,7 @@ fn verified_function_rule_does_not_publish_one_spec_alias_path() {
         path.obligations()
     );
     assert!(!path.facts().iter().any(|fact| {
-        matches!(&fact.proposition(), condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::AddressOffsetEqual(_, _), _))))
+        matches!(&fact.proposition(), condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::AddressOffsetEqual(_, _), _))))
     }));
 }
 
@@ -1854,7 +1862,7 @@ fn opaque_pointer_result_can_alias_its_argument() {
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
         &Proposition::condition_is(
-            ConditionTerm::address_equal(result.address().clone(), argument),
+            OldConditionTerm::address_equal(result.address().clone(), argument),
             true,
         )
     ));
@@ -2206,7 +2214,7 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
                 assert!(crate::kernel::search::ProofSearch::proves(
                     &(assumptions),
                     &Proposition::condition_is(
-                        ConditionTerm::Compare {
+                        OldConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::Equal,
                             left: Box::new(value.clone()),
@@ -2218,7 +2226,7 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
                 assert!(!crate::kernel::search::ProofSearch::proves(
                     &(assumptions),
                     &Proposition::condition_is(
-                        ConditionTerm::Compare {
+                        OldConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::Equal,
                             left: Box::new(value.clone()),
@@ -2247,7 +2255,7 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
                 assert!(crate::kernel::search::ProofSearch::proves(
                     &(assumptions),
                     &Proposition::condition_is(
-                        ConditionTerm::Compare {
+                        OldConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::Equal,
                             left: Box::new(value.clone()),
@@ -2259,7 +2267,7 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
                 assert!(!crate::kernel::search::ProofSearch::proves(
                     &(assumptions),
                     &Proposition::condition_is(
-                        ConditionTerm::Compare {
+                        OldConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::Equal,
                             left: Box::new(value.clone()),
@@ -2363,7 +2371,7 @@ fn verified_exceptional_call_enters_int32_handler_with_only_exceptional_claims()
         assert!(crate::kernel::search::ProofSearch::proves(
             &(assumptions),
             &Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(value.clone()),
@@ -2375,7 +2383,7 @@ fn verified_exceptional_call_enters_int32_handler_with_only_exceptional_claims()
         assert!(!crate::kernel::search::ProofSearch::proves(
             &(assumptions),
             &Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(value.clone()),
@@ -2498,11 +2506,11 @@ fn effect_endpoint_allows_resource_allocation_bookkeeping() {
 
 #[test]
 fn bool_cast_range_is_rule_c1_of_the_cast() {
-    let flag = ConditionTerm::Variable(Variable(1));
+    let flag = OldConditionTerm::Variable(Variable(1));
     let cast = OldMachineTerm::bool_cast(MachineIntegerType::Int32, flag.clone());
     let equals = |constant| {
         Proposition::condition_is(
-            ConditionTerm::equal(cast.clone(), OldMachineTerm::constant(constant)),
+            OldConditionTerm::equal(cast.clone(), OldMachineTerm::constant(constant)),
             true,
         )
     };
@@ -2537,7 +2545,7 @@ fn decision_memo_distinguishes_equal_shaped_fact_sets_by_content() {
     // one right after the other (in both orders) must not leak either
     // answer to the other.
     let x = OldMachineTerm::Variable(Variable(1));
-    let below = ConditionTerm::signed_less_than(x.clone(), OldMachineTerm::constant(10));
+    let below = OldConditionTerm::signed_less_than(x.clone(), OldMachineTerm::constant(10));
     let assumes_true = PureFactContext::new().assume_condition(below.clone(), true);
     let assumes_false = PureFactContext::new().assume_condition(below.clone(), false);
 
@@ -2550,7 +2558,7 @@ fn decision_memo_distinguishes_equal_shaped_fact_sets_by_content() {
 
 #[test]
 fn assumptions_clones_share_facts_and_cache_keys_are_content_stable() {
-    let condition = ConditionTerm::signed_less_than(
+    let condition = OldConditionTerm::signed_less_than(
         OldMachineTerm::Variable(Variable(9)),
         OldMachineTerm::constant(10),
     );
@@ -2887,7 +2895,7 @@ fn completion_accepts_a_case_arm_recorded_after_the_return() {
     let (candidates, function, trace) = early_return_inputs(returning);
     let root = crate::kernel::proof::PureFactStore::default();
     let then_fact = Proposition::condition_is(
-        ConditionTerm::equal(
+        OldConditionTerm::equal(
             OldMachineTerm::Variable(Variable(1_000_050)),
             OldMachineTerm::constant(5),
         ),
@@ -3622,10 +3630,10 @@ fn completion_key_folds_trivial_conditions_the_proof_lowering_folds() {
     use crate::kernel::api::completion_key;
     let x = OldMachineTerm::Variable(Variable(1));
     let y = OldMachineTerm::Variable(Variable(2));
-    let truth = |value: bool| Proposition::condition_is(ConditionTerm::Constant(value), true);
+    let truth = |value: bool| Proposition::condition_is(OldConditionTerm::Constant(value), true);
     let equal = |left: &OldMachineTerm, right: &OldMachineTerm, value: bool| {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(left.clone()),
@@ -3642,7 +3650,7 @@ fn completion_key_folds_trivial_conditions_the_proof_lowering_folds() {
     // A constant condition folds to the canonical truth value.
     assert_eq!(
         completion_key(&Proposition::condition_is(
-            ConditionTerm::Constant(false),
+            OldConditionTerm::Constant(false),
             false
         )),
         truth(true)
@@ -3650,7 +3658,7 @@ fn completion_key_folds_trivial_conditions_the_proof_lowering_folds() {
     // Negating a constant stays in the canonical truth form.
     assert_eq!(
         completion_key(&Proposition::Not(Box::new(Proposition::condition_is(
-            ConditionTerm::Constant(false),
+            OldConditionTerm::Constant(false),
             true,
         )))),
         truth(true)
@@ -3664,7 +3672,7 @@ fn completion_key_folds_trivial_conditions_the_proof_lowering_folds() {
     assert_eq!(
         completion_key(&Proposition::Implies(
             Box::new(Proposition::condition_is(
-                ConditionTerm::Constant(false),
+                OldConditionTerm::Constant(false),
                 false
             )),
             Box::new(nontrivial.clone()),
@@ -4419,7 +4427,7 @@ fn path_exists_at_program_point(
         Variable(binder),
         Sort::Algebraic(ty.clone()),
         Proposition::condition_is(
-            ConditionTerm::equal(
+            OldConditionTerm::equal(
                 OldMachineTerm::ClickFunctionApplication {
                     name: "walk".into(),
                     arguments: vec![
@@ -4519,7 +4527,7 @@ fn certification_generalization_cannot_borrow_a_preexisting_witness_id() {
     // makes its first identity absent from an arbitrary kernel fact context.
     let would_be_witness = Variable(1 << 44);
     let assumed = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(OldMachineTerm::Variable(would_be_witness)),
@@ -4532,7 +4540,7 @@ fn certification_generalization_cannot_borrow_a_preexisting_witness_id() {
         binder,
         Sort::ProgramInt32,
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::Variable(binder)),
@@ -4576,7 +4584,7 @@ fn conditional_path_universal(
             Variable(binder + 1),
             Sort::ProgramInt32,
             Proposition::condition_is(
-                ConditionTerm::equal(OldMachineTerm::Variable(Variable(binder + 1)), 0.into()),
+                OldConditionTerm::equal(OldMachineTerm::Variable(Variable(binder + 1)), 0.into()),
                 true,
             ),
         )),
@@ -4821,7 +4829,7 @@ fn cloned_functions_and_specifications_share_their_contracts() {
         (0..8)
             .map(|index| ProgramExpression::Value(int32(index)))
             .collect(),
-        vec![Proposition::condition_is(ConditionTerm::Constant(true), true); 8],
+        vec![Proposition::condition_is(OldConditionTerm::Constant(true), true); 8],
         FunctionOutcome::Return {
             value: int32(0).into(),
             state: Box::new(ExecutionState::new()),

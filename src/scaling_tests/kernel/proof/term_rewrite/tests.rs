@@ -1009,7 +1009,7 @@ fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
     let index = OldMachineTerm::Variable(Variable(989_100));
     let native = AddressOffset::scaled_int64_node(index.clone(), 4, true);
     let narrow = AddressOffset::scaled_int32_node(OldMachineTerm::uint32_from_64(index.clone()), 4);
-    let bound = ConditionTerm::uint64_less_equal(
+    let bound = OldConditionTerm::uint64_less_equal(
         index.clone(),
         OldMachineTerm::uint64_constant(1_073_741_823),
     );
@@ -1023,28 +1023,28 @@ fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
     for (condition, truth) in [
         (bound.clone(), true),
         (
-            ConditionTerm::uint64_less_than(
+            OldConditionTerm::uint64_less_than(
                 index.clone(),
                 OldMachineTerm::uint64_constant(1_073_741_824),
             ),
             true,
         ),
         (
-            ConditionTerm::uint64_greater_equal(
+            OldConditionTerm::uint64_greater_equal(
                 OldMachineTerm::uint64_constant(1_073_741_823),
                 index.clone(),
             ),
             true,
         ),
         (
-            ConditionTerm::uint64_greater_than(
+            OldConditionTerm::uint64_greater_than(
                 index.clone(),
                 OldMachineTerm::uint64_constant(1_073_741_823),
             ),
             false,
         ),
         (
-            ConditionTerm::uint64_greater_equal(
+            OldConditionTerm::uint64_greater_equal(
                 index.clone(),
                 OldMachineTerm::uint64_constant(1_073_741_824),
             ),
@@ -1056,32 +1056,35 @@ fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
     for (condition, truth) in [
         (bound.clone(), false),
         (
-            ConditionTerm::signed_less_equal(
+            OldConditionTerm::signed_less_equal(
                 OldMachineTerm::uint32_from_64(index.clone()),
                 OldMachineTerm::constant(1_073_741_823),
             ),
             true,
         ),
         (
-            ConditionTerm::int64_signed_less_equal(
+            OldConditionTerm::int64_signed_less_equal(
                 index.clone(),
                 OldMachineTerm::int64_constant(1_073_741_823),
             ),
             true,
         ),
         (
-            ConditionTerm::uint64_less_equal(
+            OldConditionTerm::uint64_less_equal(
                 index.clone(),
                 OldMachineTerm::uint64_constant(1u64 << 32),
             ),
             true,
         ),
         (
-            ConditionTerm::uint64_less_than(index.clone(), OldMachineTerm::uint64_constant(0)),
+            OldConditionTerm::uint64_less_than(index.clone(), OldMachineTerm::uint64_constant(0)),
             true,
         ),
         (
-            ConditionTerm::uint64_equal(index.clone(), OldMachineTerm::uint64_constant(1u64 << 32)),
+            OldConditionTerm::uint64_equal(
+                index.clone(),
+                OldMachineTerm::uint64_constant(1u64 << 32),
+            ),
             true,
         ),
     ] {
@@ -1096,14 +1099,14 @@ fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
         Variable(989_100),
         Sort::ProgramInteger(MachineIntegerType::UInt64),
         Proposition::condition_is(
-            ConditionTerm::address_offset_equal(native.clone(), narrow.clone()),
+            OldConditionTerm::address_offset_equal(native.clone(), narrow.clone()),
             true,
         ),
     );
     assert_eq!(rewrite.proposition(&binder), binder);
     assert!(rewrite.refusal().is_none());
     let goal = Proposition::condition_is(
-        ConditionTerm::address_offset_equal(native.clone(), narrow),
+        OldConditionTerm::address_offset_equal(native.clone(), narrow),
         true,
     );
     let premise = Proposition::condition_is(bound, true);
@@ -1130,7 +1133,7 @@ fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
         let mut explicit = conditions.clone();
         for offset in 0..size {
             explicit.insert(
-                ConditionTerm::uint64_less_equal(
+                OldConditionTerm::uint64_less_equal(
                     OldMachineTerm::Variable(Variable(990_000 + offset)),
                     OldMachineTerm::uint64_constant(123),
                 ),
@@ -1425,7 +1428,7 @@ fn arithmetic_comparison_memos_are_bounded_and_session_local() {
                 OldMachineTerm::constant(0),
             );
         }
-        let goal = Proposition::condition_is(ConditionTerm::equal(expression, variable), true);
+        let goal = Proposition::condition_is(OldConditionTerm::equal(expression, variable), true);
         let measure = || {
             crate::instrumentation::measure_deterministic_work(|| {
                 crate::kernel::arithmetic_comparison_form(&goal)
@@ -1476,7 +1479,7 @@ fn shared_carrier_collection_reuses_growing_prefixes_without_exporting() {
                 );
                 let machine = SharedMachineIntegerTerm::from_shared(format, root.clone()).unwrap();
                 let proposition = Proposition::condition_is(
-                    ConditionTerm::IntegerEqual(
+                    OldConditionTerm::IntegerEqual(
                         IntegerTerm::Machine(machine.clone()).into(),
                         IntegerTerm::constant_i64(0).into(),
                     ),
@@ -1863,7 +1866,7 @@ fn narrowing_rewrite_visits_scale_with_selected_expression() {
 
 #[test]
 fn conditional_reduction_work_scales_with_selected_expression() {
-    let condition = ConditionTerm::Variable(Variable(51));
+    let condition = OldConditionTerm::Variable(Variable(51));
     let conditions = HashMap::from([(condition.clone(), true)]);
     for size in [16, 64, 256] {
         let input = Term::Bitvector32(

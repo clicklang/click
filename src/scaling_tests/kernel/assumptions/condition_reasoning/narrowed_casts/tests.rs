@@ -20,16 +20,16 @@ fn narrowed_cast_identity_work_is_independent_of_unrelated_facts() {
     for unrelated in [4u32, 64, 1024] {
         let mut context = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_greater_equal(x.clone(), OldMachineTerm::constant(0)),
+                OldConditionTerm::signed_greater_equal(x.clone(), OldMachineTerm::constant(0)),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_equal(x.clone(), OldMachineTerm::constant(255)),
+                OldConditionTerm::signed_less_equal(x.clone(), OldMachineTerm::constant(255)),
                 true,
             );
         for index in 0..unrelated {
             context = context.assume_condition(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     OldMachineTerm::Variable(Variable(171_000 + u64::from(index))),
                     OldMachineTerm::constant(index),
                 ),
@@ -46,10 +46,10 @@ fn narrowed_cast_identity_work_is_independent_of_unrelated_facts() {
         let (related, filing) = crate::instrumentation::measure_deterministic_work(|| {
             context
                 .clone()
-                .assume_condition(ConditionTerm::equal(name.clone(), byte.clone()), true)
+                .assume_condition(OldConditionTerm::equal(name.clone(), byte.clone()), true)
         });
         assert_eq!(
-            related.decide(&ConditionTerm::equal(name, x.clone())),
+            related.decide(&OldConditionTerm::equal(name, x.clone())),
             Some(true)
         );
         work.push(cost.saturating_add(filing));

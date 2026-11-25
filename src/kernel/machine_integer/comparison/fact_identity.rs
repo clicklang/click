@@ -2,8 +2,8 @@
 //! Native narrow comparisons and their promoted spellings share this reading;
 //! stored terms and the comparison's written direction remain unchanged.
 use crate::kernel::{
-    CompareRelation, ConditionTerm, MachineCastSpelling as Encoding, MachineIntegerType,
-    MachineOperandView as View,
+    CompareRelation, MachineCastSpelling as Encoding, MachineIntegerType,
+    MachineOperandView as View, OldConditionTerm,
 };
 use crate::kernel::{constant_u32, int32_constant, uint32_constant};
 
@@ -17,7 +17,7 @@ pub(crate) fn fact_operand_identity<'a>(
     relation: CompareRelation,
     [mut left, mut right]: [View<'a>; 2],
 ) -> (MachineIntegerType, [FactOperand<'a>; 2]) {
-    let format = ConditionTerm::fact_format(format, relation);
+    let format = OldConditionTerm::fact_format(format, relation);
     if relation == CompareRelation::Equal && format.format().bits() == 32 {
         let peel = |term: View<'a>| match term.cast() {
             Some((Encoding::Generic, source, destination, operand))

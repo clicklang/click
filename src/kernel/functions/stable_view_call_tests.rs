@@ -1340,7 +1340,7 @@ fn candidate_unresolved_return_obligation_refuses_recovery() {
     .expect("candidate transfer should be accepted");
     let callee = callee_state_with_resource_transfer(callee, &transfer);
     let unresolved = ProofObligation::verification_condition(Proposition::condition_is(
-        ConditionTerm::Constant(false),
+        OldConditionTerm::Constant(false),
         true,
     ))
     .with_context("callee postcondition");
@@ -2733,7 +2733,7 @@ fn token_population_reader(name: &str, population: &str) -> ProgramFunction {
 /// route looks at it; that check is unrelated to the planner gap.
 fn nonnegative_quantity(quantity: Variable) -> PureFactContext {
     PureFactContext::new().assume_condition(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
             left: Box::new(OldMachineTerm::Variable(quantity)),
@@ -2893,7 +2893,7 @@ fn composite_view_body_check_does_not_try_pointer_aliases() {
     let q = Address::symbolic(Variable(94_101));
     let r = Address::symbolic(Variable(94_102));
     let s = Address::symbolic(Variable(94_103));
-    let equality = |a: &Address, b: &Address| ConditionTerm::address_equal(a.clone(), b.clone());
+    let equality = |a: &Address, b: &Address| OldConditionTerm::address_equal(a.clone(), b.clone());
     let clause = |pointer: &Address| {
         Proposition::Implies(
             Box::new(Proposition::condition_is(equality(pointer, &r), true)),
@@ -2971,7 +2971,7 @@ fn refused_composite_assembly_retains_the_failed_source_clause() {
     assert_eq!(
         *fact,
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: crate::kernel::MachineIntegerType::Int32,
                 relation: crate::kernel::CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::constant(7)),
@@ -3025,7 +3025,10 @@ fn local_storage_classification_does_not_restore_partial_or_aliased_authority() 
             "aliased_partial" | "aliased_whole" | "owner_with_alias_fact"
         ) {
             facts = facts.assume_condition(
-                ConditionTerm::address_equal(local.clone(), Address::symbolic(Variable(941_001))),
+                OldConditionTerm::address_equal(
+                    local.clone(),
+                    Address::symbolic(Variable(941_001)),
+                ),
                 true,
             );
         }

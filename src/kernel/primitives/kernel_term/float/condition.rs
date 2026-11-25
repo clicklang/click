@@ -71,7 +71,7 @@ impl KernelTermImport {
 impl KernelTermExport {
     pub(in crate::kernel::primitives::kernel_term) fn float_condition(
         root: &KernelTerm,
-    ) -> Result<ConditionTerm, &'static str> {
+    ) -> Result<OldConditionTerm, &'static str> {
         let (format, value) = match root.node() {
             KernelTermNode::FloatCompare {
                 format,
@@ -99,8 +99,8 @@ impl KernelTermExport {
             _ => return Err("expected float predicate"),
         };
         Ok(match format {
-            KernelFloatType::Float32 => ConditionTerm::Float32(value),
-            KernelFloatType::Float64 => ConditionTerm::Float64(value),
+            KernelFloatType::Float32 => OldConditionTerm::Float32(value),
+            KernelFloatType::Float64 => OldConditionTerm::Float64(value),
         })
     }
 }
@@ -113,12 +113,12 @@ impl<'a> BooleanOperandView<'a> {
             let left = left.closed_arithmetic_bits()?;
             let right = right.closed_arithmetic_bits()?;
             match format {
-                KernelFloatType::Float32 => ConditionTerm::float32_compare(
+                KernelFloatType::Float32 => OldConditionTerm::float32_compare(
                     OldMachineTerm::uint32_constant(left as u32),
                     OldMachineTerm::uint32_constant(right as u32),
                     operator,
                 ),
-                KernelFloatType::Float64 => ConditionTerm::float64_compare(
+                KernelFloatType::Float64 => OldConditionTerm::float64_compare(
                     OldMachineTerm::uint64_constant(left),
                     OldMachineTerm::uint64_constant(right),
                     operator,
@@ -128,17 +128,17 @@ impl<'a> BooleanOperandView<'a> {
             let (format, classification, operand) = self.float_classification()?;
             let bits = operand.closed_arithmetic_bits()?;
             match format {
-                KernelFloatType::Float32 => ConditionTerm::float32_classification(
+                KernelFloatType::Float32 => OldConditionTerm::float32_classification(
                     OldMachineTerm::uint32_constant(bits as u32),
                     classification,
                 ),
-                KernelFloatType::Float64 => ConditionTerm::float64_classification(
+                KernelFloatType::Float64 => OldConditionTerm::float64_classification(
                     OldMachineTerm::uint64_constant(bits),
                     classification,
                 ),
             }
         };
-        let ConditionTerm::Constant(value) = condition else {
+        let OldConditionTerm::Constant(value) = condition else {
             unreachable!("literal float predicate")
         };
         Some(value)
@@ -165,8 +165,8 @@ impl<'a> BooleanOperandView<'a> {
             ));
         }
         let (format, condition) = match self.native_leaf()? {
-            ConditionTerm::Float32(value) => (KernelFloatType::Float32, value),
-            ConditionTerm::Float64(value) => (KernelFloatType::Float64, value),
+            OldConditionTerm::Float32(value) => (KernelFloatType::Float32, value),
+            OldConditionTerm::Float64(value) => (KernelFloatType::Float64, value),
             _ => return None,
         };
         let FloatCondition::Comparison {
@@ -200,8 +200,8 @@ impl<'a> BooleanOperandView<'a> {
             return Some((*format, *classification, FloatOperandView::Shared(operand)));
         }
         let (format, condition) = match self.native_leaf()? {
-            ConditionTerm::Float32(value) => (KernelFloatType::Float32, value),
-            ConditionTerm::Float64(value) => (KernelFloatType::Float64, value),
+            OldConditionTerm::Float32(value) => (KernelFloatType::Float32, value),
+            OldConditionTerm::Float64(value) => (KernelFloatType::Float64, value),
             _ => return None,
         };
         let FloatCondition::Classification {
@@ -295,8 +295,8 @@ mod tests {
                 }
                 for predicate in predicates {
                     let native = match format {
-                        KernelFloatType::Float32 => ConditionTerm::Float32(predicate),
-                        KernelFloatType::Float64 => ConditionTerm::Float64(predicate),
+                        KernelFloatType::Float32 => OldConditionTerm::Float32(predicate),
+                        KernelFloatType::Float64 => OldConditionTerm::Float64(predicate),
                     };
                     let root = KernelTermImport::default().condition(&native);
                     let before = KernelTermExport::machine_export_count();

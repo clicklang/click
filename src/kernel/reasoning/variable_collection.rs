@@ -426,7 +426,7 @@ pub(in crate::kernel) fn proposition_execution_variable_ceiling(
 
 /// [`proposition_execution_variable_ceiling`] for a condition fact.
 pub(in crate::kernel) fn condition_execution_variable_ceiling(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
 ) -> Option<Variable> {
     execution_variable_ceiling(None, |variables| {
         collect_condition_bitvector_variables(condition, variables)
@@ -465,7 +465,7 @@ fn resource_fact_syntax_execution_variable_ceiling(
 
 /// [`proposition_syntax_execution_variable_ceiling`] for a condition fact.
 pub(in crate::kernel) fn condition_syntax_execution_variable_ceiling(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
 ) -> (Option<Variable>, bool) {
     execution_variable_ceiling(Some(false), |variables| {
         collect_condition_bitvector_variables(condition, variables)
@@ -941,7 +941,7 @@ pub(in crate::kernel) fn collect_term_bitvector_variables(
 /// A condition inside an algebraic conditional, carried as the scalar
 /// conditional `if condition { 1 } else { 0 }`: a walker reaches its terms as
 /// it reaches any scalar conditional's.
-fn condition_carrier(condition: &ConditionTerm) -> AlgebraicValue {
+fn condition_carrier(condition: &OldConditionTerm) -> AlgebraicValue {
     AlgebraicValue::Program(ProgramValue::Int32(OldMachineTerm::If {
         condition: Box::new(condition.clone()),
         then_term: Box::new(OldMachineTerm::constant(1)),
@@ -2348,7 +2348,7 @@ thread_local! {
 /// Equality-source dependencies include byte-offset variables as well as
 /// machine-value variables. Preserve the ordinary state deferral policy.
 pub(in crate::kernel) fn collect_condition_coordinate_index_variables(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     variables: &mut BTreeSet<Variable>,
 ) -> bool {
     struct Scope(bool);
@@ -2365,7 +2365,7 @@ pub(in crate::kernel) fn collect_condition_coordinate_index_variables(
 /// Returns whether a state was encountered. If so, the caller must defer
 /// the whole fact to the complete collector to preserve its connections.
 pub(in crate::kernel) fn collect_condition_index_variables(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     variables: &mut BTreeSet<Variable>,
 ) -> bool {
     let prior = DEFER_CONDITION_STATES.with(|state| state.replace(Some(false)));
@@ -2375,22 +2375,22 @@ pub(in crate::kernel) fn collect_condition_index_variables(
 }
 
 pub(crate) fn collect_condition_bitvector_variables(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     variables: &mut BTreeSet<Variable>,
 ) {
     match condition {
-        ConditionTerm::PointerEqual(left, right) => {
+        OldConditionTerm::PointerEqual(left, right) => {
             for pointer in left.pointers().chain(right.pointers()) {
                 collect_pointer_bitvector_variables(pointer, variables);
             }
         }
 
-        ConditionTerm::AlgebraicEqual(left, right) => {
+        OldConditionTerm::AlgebraicEqual(left, right) => {
             collect_algebraic_term_bitvector_variables(left, variables);
             collect_algebraic_term_bitvector_variables(right, variables);
         }
-        ConditionTerm::Constant(_) => {}
-        ConditionTerm::Variable(variable) => {
+        OldConditionTerm::Constant(_) => {}
+        OldConditionTerm::Variable(variable) => {
             if collecting_connection_variables() {
                 variables.insert(*variable);
             }
@@ -2399,15 +2399,15 @@ pub(crate) fn collect_condition_bitvector_variables(
             collect_bitvector_variables(left, variables);
             collect_bitvector_variables(right, variables);
         }
-        ConditionTerm::Float32(float_condition) | ConditionTerm::Float64(float_condition) => {
+        OldConditionTerm::Float32(float_condition) | OldConditionTerm::Float64(float_condition) => {
             float_condition
                 .for_each_bitvector_term(|term| collect_bitvector_variables(term, variables));
         }
-        ConditionTerm::AddressOffsetEqual(left, right) => {
+        OldConditionTerm::AddressOffsetEqual(left, right) => {
             collect_pointer_offset_bitvector_variables(left, variables);
             collect_pointer_offset_bitvector_variables(right, variables);
         }
-        ConditionTerm::AddressEqual(left, right) => {
+        OldConditionTerm::AddressEqual(left, right) => {
             collect_pointer_bitvector_variables(left, variables);
             collect_pointer_bitvector_variables(right, variables);
         }
@@ -2415,10 +2415,10 @@ pub(crate) fn collect_condition_bitvector_variables(
             collect_integer_variables(left, variables);
             collect_integer_variables(right, variables);
         }
-        ConditionTerm::BoolApplication(application) => {
+        OldConditionTerm::BoolApplication(application) => {
             collect_application_connection_variables(application.arguments(), variables);
         }
-        ConditionTerm::BoolIf { .. } | ConditionTerm::BoolEqual(..) => {
+        OldConditionTerm::BoolIf { .. } | OldConditionTerm::BoolEqual(..) => {
             for child in condition.bool_children() {
                 collect_condition_bitvector_variables(child, variables);
             }
@@ -3056,7 +3056,7 @@ pub(crate) fn collect_integer_free_variables(
 }
 
 fn collect_condition_integer_variables(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     variables: &mut BTreeSet<Variable>,
     seen: &mut SeenTerms,
 ) {
@@ -3071,7 +3071,7 @@ fn collect_condition_integer_variables(
             }
             collect_shared_integer_variables_seen(right, variables, seen);
         }
-        ConditionTerm::AlgebraicEqual(left, right) => {
+        OldConditionTerm::AlgebraicEqual(left, right) => {
             collect_algebraic_integer_variables(left, variables, seen);
             if crate::instrumentation::checked_collection_exhausted() {
                 return;
@@ -3772,7 +3772,7 @@ pub(in crate::kernel) fn collect_proposition_capture_variables(
 }
 
 fn collect_condition_capture_variables(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     variables: &mut BTreeSet<Variable>,
     integer_seen: &mut SeenTerms,
 ) {
@@ -3780,17 +3780,17 @@ fn collect_condition_capture_variables(
         return;
     }
     match condition {
-        ConditionTerm::PointerEqual(left, right) => {
+        OldConditionTerm::PointerEqual(left, right) => {
             for pointer in left.pointers().chain(right.pointers()) {
                 collect_pointer_capture_variables(pointer, variables, integer_seen);
             }
         }
 
-        ConditionTerm::Constant(_) => {}
-        ConditionTerm::Variable(variable) => {
+        OldConditionTerm::Constant(_) => {}
+        OldConditionTerm::Variable(variable) => {
             variables.insert(*variable);
         }
-        ConditionTerm::AlgebraicEqual(left, right) => {
+        OldConditionTerm::AlgebraicEqual(left, right) => {
             collect_capture_variables_in_algebraic_term(left, variables, integer_seen);
             if crate::instrumentation::checked_collection_exhausted() {
                 return;
@@ -3804,21 +3804,21 @@ fn collect_condition_capture_variables(
             }
             collect_bitvector_capture_variables_seen(right, variables, integer_seen);
         }
-        ConditionTerm::Float32(float_condition) | ConditionTerm::Float64(float_condition) => {
+        OldConditionTerm::Float32(float_condition) | OldConditionTerm::Float64(float_condition) => {
             float_condition.for_each_bitvector_term(|term| {
                 if !crate::instrumentation::checked_collection_exhausted() {
                     collect_bitvector_capture_variables_seen(term, variables, integer_seen)
                 }
             });
         }
-        ConditionTerm::AddressOffsetEqual(left, right) => {
+        OldConditionTerm::AddressOffsetEqual(left, right) => {
             collect_pointer_offset_capture_variables(left, variables, integer_seen);
             if crate::instrumentation::checked_collection_exhausted() {
                 return;
             }
             collect_pointer_offset_capture_variables(right, variables, integer_seen);
         }
-        ConditionTerm::AddressEqual(left, right) => {
+        OldConditionTerm::AddressEqual(left, right) => {
             collect_pointer_capture_variables(left, variables, integer_seen);
             if crate::instrumentation::checked_collection_exhausted() {
                 return;
@@ -3832,7 +3832,7 @@ fn collect_condition_capture_variables(
             }
             collect_shared_integer_bitvector_capture_variables(right, variables, integer_seen);
         }
-        ConditionTerm::BoolApplication(application) => {
+        OldConditionTerm::BoolApplication(application) => {
             for argument in application.arguments() {
                 if crate::instrumentation::checked_collection_exhausted() {
                     return;
@@ -3840,7 +3840,7 @@ fn collect_condition_capture_variables(
                 collect_capture_variables_in_pure_argument(argument, variables, integer_seen);
             }
         }
-        ConditionTerm::BoolIf { .. } | ConditionTerm::BoolEqual(..) => {
+        OldConditionTerm::BoolIf { .. } | OldConditionTerm::BoolEqual(..) => {
             for child in condition.bool_children() {
                 if crate::instrumentation::checked_collection_exhausted() {
                     return;
@@ -4877,14 +4877,14 @@ fn collect_pointer_offset_scope_summary(
 }
 
 fn collect_condition_scope_summary(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     summaries: &mut std::collections::HashMap<u64, IntegerScopeSummary>,
 ) -> IntegerScopeSummary {
     if checked_collection_checkpoint() {
         return IntegerScopeSummary::default();
     }
     match condition {
-        ConditionTerm::PointerEqual(left, right) => {
+        OldConditionTerm::PointerEqual(left, right) => {
             let mut summary = IntegerScopeSummary::default();
             for pointer in left.pointers().chain(right.pointers()) {
                 summary.merge(collect_pointer_scope_summary(pointer, summaries));
@@ -4892,9 +4892,9 @@ fn collect_condition_scope_summary(
             summary
         }
 
-        ConditionTerm::Constant(_) => IntegerScopeSummary::default(),
-        ConditionTerm::Variable(variable) => IntegerScopeSummary::bitvector_variable(*variable),
-        ConditionTerm::AlgebraicEqual(left, right) => {
+        OldConditionTerm::Constant(_) => IntegerScopeSummary::default(),
+        OldConditionTerm::Variable(variable) => IntegerScopeSummary::bitvector_variable(*variable),
+        OldConditionTerm::AlgebraicEqual(left, right) => {
             let mut summary = collect_algebraic_scope_summary(left, summaries);
             if crate::instrumentation::checked_collection_exhausted() {
                 return IntegerScopeSummary::default();
@@ -4910,7 +4910,7 @@ fn collect_condition_scope_summary(
             summary.merge(collect_bitvector_scope_summary(right, summaries));
             summary
         }
-        ConditionTerm::Float32(condition) | ConditionTerm::Float64(condition) => {
+        OldConditionTerm::Float32(condition) | OldConditionTerm::Float64(condition) => {
             let mut summary = IntegerScopeSummary::default();
             condition.for_each_bitvector_term(|term| {
                 if !crate::instrumentation::checked_collection_exhausted() {
@@ -4919,7 +4919,7 @@ fn collect_condition_scope_summary(
             });
             summary
         }
-        ConditionTerm::AddressOffsetEqual(left, right) => {
+        OldConditionTerm::AddressOffsetEqual(left, right) => {
             let mut summary = collect_pointer_offset_scope_summary(left, summaries);
             if crate::instrumentation::checked_collection_exhausted() {
                 return IntegerScopeSummary::default();
@@ -4927,7 +4927,7 @@ fn collect_condition_scope_summary(
             summary.merge(collect_pointer_offset_scope_summary(right, summaries));
             summary
         }
-        ConditionTerm::AddressEqual(left, right) => {
+        OldConditionTerm::AddressEqual(left, right) => {
             let mut summary = collect_pointer_scope_summary(left, summaries);
             if crate::instrumentation::checked_collection_exhausted() {
                 return IntegerScopeSummary::default();
@@ -4943,7 +4943,7 @@ fn collect_condition_scope_summary(
             summary.merge(collect_integer_scope_summary_shared(right, summaries));
             summary
         }
-        ConditionTerm::BoolApplication(application) => {
+        OldConditionTerm::BoolApplication(application) => {
             let mut summary = IntegerScopeSummary::default();
             for argument in application.arguments() {
                 if crate::instrumentation::checked_collection_exhausted() {
@@ -4953,7 +4953,7 @@ fn collect_condition_scope_summary(
             }
             summary
         }
-        ConditionTerm::BoolIf { .. } | ConditionTerm::BoolEqual(..) => {
+        OldConditionTerm::BoolIf { .. } | OldConditionTerm::BoolEqual(..) => {
             let mut summary = IntegerScopeSummary::default();
             for child in condition.bool_children() {
                 if crate::instrumentation::checked_collection_exhausted() {
@@ -5534,7 +5534,7 @@ fn collect_bitvector_binder_variables_seen(
 }
 
 fn collect_condition_binder_variables(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     integer_variables: &mut BTreeSet<Variable>,
     bitvector_variables: &mut BTreeSet<Variable>,
     integer_seen: &mut SeenTerms,
@@ -5543,7 +5543,7 @@ fn collect_condition_binder_variables(
         return;
     }
     match condition {
-        ConditionTerm::PointerEqual(left, right) => {
+        OldConditionTerm::PointerEqual(left, right) => {
             for pointer in left.pointers().chain(right.pointers()) {
                 collect_pointer_binder_variables(
                     pointer,
@@ -5554,7 +5554,7 @@ fn collect_condition_binder_variables(
             }
         }
 
-        ConditionTerm::AlgebraicEqual(left, right) => {
+        OldConditionTerm::AlgebraicEqual(left, right) => {
             collect_binder_variables_in_algebraic_term(
                 left,
                 integer_variables,
@@ -5588,7 +5588,7 @@ fn collect_condition_binder_variables(
                 integer_seen,
             );
         }
-        ConditionTerm::Float32(float_condition) | ConditionTerm::Float64(float_condition) => {
+        OldConditionTerm::Float32(float_condition) | OldConditionTerm::Float64(float_condition) => {
             float_condition.for_each_bitvector_term(|term| {
                 if !crate::instrumentation::checked_collection_exhausted() {
                     collect_bitvector_binder_variables_seen(
@@ -5600,7 +5600,7 @@ fn collect_condition_binder_variables(
                 }
             });
         }
-        ConditionTerm::AddressOffsetEqual(left, right) => {
+        OldConditionTerm::AddressOffsetEqual(left, right) => {
             collect_pointer_offset_binder_variables(
                 left,
                 integer_variables,
@@ -5617,7 +5617,7 @@ fn collect_condition_binder_variables(
                 integer_seen,
             );
         }
-        ConditionTerm::AddressEqual(left, right) => {
+        OldConditionTerm::AddressEqual(left, right) => {
             collect_pointer_binder_variables(
                 left,
                 integer_variables,
@@ -5651,8 +5651,8 @@ fn collect_condition_binder_variables(
                 integer_seen,
             );
         }
-        ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => {}
-        ConditionTerm::BoolApplication(application) => {
+        OldConditionTerm::Constant(_) | OldConditionTerm::Variable(_) => {}
+        OldConditionTerm::BoolApplication(application) => {
             for argument in application.arguments() {
                 if crate::instrumentation::checked_collection_exhausted() {
                     return;
@@ -5665,7 +5665,7 @@ fn collect_condition_binder_variables(
                 );
             }
         }
-        ConditionTerm::BoolIf { .. } | ConditionTerm::BoolEqual(..) => {
+        OldConditionTerm::BoolIf { .. } | OldConditionTerm::BoolEqual(..) => {
             for child in condition.bool_children() {
                 if crate::instrumentation::checked_collection_exhausted() {
                     return;

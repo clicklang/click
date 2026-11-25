@@ -50,11 +50,11 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
         };
         let bounded = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_less_equal(2u32.into(), count.clone()),
+                OldConditionTerm::signed_less_equal(2u32.into(), count.clone()),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_equal(count.clone(), 1000u32.into()),
+                OldConditionTerm::signed_less_equal(count.clone(), 1000u32.into()),
                 true,
             );
         let context = bounded.clone().assume_proposition(separation);
@@ -148,30 +148,30 @@ fn wide_read_keeps_full_buffer_index_beside_a_batch_cursor() {
         let global = base.offset_by_typed_elements(full.clone(), 1, true, true);
         let mut aliases = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::address_equal(
+                OldConditionTerm::address_equal(
                     batch.clone(),
                     base.offset_by_typed_elements(prefix, 1, true, true),
                 ),
                 true,
             )
             .assume_condition(
-                ConditionTerm::address_equal(
+                OldConditionTerm::address_equal(
                     query.clone(),
                     batch.offset_by_elements(OldMachineTerm::Variable(Variable(989_206)), 1),
                 ),
                 true,
             )
             .assume_condition(
-                ConditionTerm::address_equal(
+                OldConditionTerm::address_equal(
                     query.clone(),
                     batch.offset_by_typed_elements(local, 1, true, true),
                 ),
                 true,
             )
-            .assume_condition(ConditionTerm::address_equal(query.clone(), global), true);
+            .assume_condition(OldConditionTerm::address_equal(query.clone(), global), true);
         for i in 0..count {
             aliases = aliases.assume_condition(
-                ConditionTerm::address_equal(
+                OldConditionTerm::address_equal(
                     query.clone(),
                     batch.offset_by_elements(OldMachineTerm::Variable(Variable(990_000 + i)), 1),
                 ),
@@ -179,7 +179,10 @@ fn wide_read_keeps_full_buffer_index_beside_a_batch_cursor() {
             );
         }
         let facts = aliases.clone().assume_condition(
-            ConditionTerm::uint64_less_than(full.clone(), OldMachineTerm::uint64_constant(22208)),
+            OldConditionTerm::uint64_less_than(
+                full.clone(),
+                OldMachineTerm::uint64_constant(22208),
+            ),
             true,
         );
         let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::view_memory(
@@ -207,7 +210,7 @@ fn wide_read_keeps_full_buffer_index_beside_a_batch_cursor() {
         assert!(!resources.permits_memory_read(&query, 2, &facts));
         assert!(!resources.permits_memory_read(&query, 1, &aliases));
         let boundary = aliases.assume_condition(
-            ConditionTerm::uint64_equal(full, OldMachineTerm::uint64_constant(22208)),
+            OldConditionTerm::uint64_equal(full, OldMachineTerm::uint64_constant(22208)),
             true,
         );
         assert!(!resources.permits_memory_read(&query, 1, &boundary));
@@ -245,10 +248,10 @@ fn wide_read_keeps_native_index_beside_a_narrow_alias() {
         let wide = bytes.offset_by_typed_elements(native_index.clone(), 1, true, true);
         let query = Address::symbolic(Variable(986_004));
         let mut facts = PureFactContext::new()
-            .assume_condition(ConditionTerm::address_equal(query.clone(), narrow), true)
-            .assume_condition(ConditionTerm::address_equal(query.clone(), wide), true)
+            .assume_condition(OldConditionTerm::address_equal(query.clone(), narrow), true)
+            .assume_condition(OldConditionTerm::address_equal(query.clone(), wide), true)
             .assume_condition(
-                ConditionTerm::uint64_less_than(
+                OldConditionTerm::uint64_less_than(
                     native_index.clone(),
                     OldMachineTerm::uint64_constant(15),
                 ),
@@ -264,7 +267,7 @@ fn wide_read_keeps_native_index_beside_a_narrow_alias() {
         ));
         for item in 0..count {
             facts = facts.assume_condition(
-                ConditionTerm::address_equal(
+                OldConditionTerm::address_equal(
                     Address::symbolic(Variable(987_000 + item)),
                     query.clone(),
                 ),
@@ -330,14 +333,14 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
         );
         let aliases = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::pointer_equal(
+                OldConditionTerm::pointer_equal(
                     cursor_value.clone(),
                     bytes_value.clone().with_address(wide),
                 ),
                 true,
             )
             .assume_condition(
-                ConditionTerm::pointer_equal(
+                OldConditionTerm::pointer_equal(
                     cursor_value.clone(),
                     bytes_value.clone().with_address(narrow),
                 ),
@@ -346,27 +349,27 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
         let mut facts = aliases
             .clone()
             .assume_condition(
-                ConditionTerm::uint64_less_equal(prefix.clone(), length.clone()),
+                OldConditionTerm::uint64_less_equal(prefix.clone(), length.clone()),
                 true,
             )
             .assume_condition(
-                ConditionTerm::uint64_less_equal(remaining.clone(), prefix.clone()),
+                OldConditionTerm::uint64_less_equal(remaining.clone(), prefix.clone()),
                 true,
             )
             .assume_condition(
-                ConditionTerm::uint64_equal(
+                OldConditionTerm::uint64_equal(
                     advance.clone(),
                     OldMachineTerm::uint64_constant(22208),
                 ),
                 true,
             )
             .assume_condition(
-                ConditionTerm::uint64_less_equal(advance.clone(), remaining.clone()),
+                OldConditionTerm::uint64_less_equal(advance.clone(), remaining.clone()),
                 true,
             );
         for value in [&length, &prefix, &remaining] {
             facts = facts.assume_condition(
-                ConditionTerm::uint64_less_equal(
+                OldConditionTerm::uint64_less_equal(
                     value.clone(),
                     OldMachineTerm::uint64_constant(i32::MAX as u64),
                 ),
@@ -375,7 +378,7 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
         }
         for item in 0..count {
             facts = facts.assume_condition(
-                ConditionTerm::address_equal(
+                OldConditionTerm::address_equal(
                     Address::symbolic(Variable(989_000 + item)),
                     cursor.clone(),
                 ),
@@ -466,9 +469,9 @@ fn constant_base_interior_lookup_scales_with_selected_range() {
             offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(950_004)), 4),
         };
         let prefix = PureFactContext::new()
-            .assume_condition(ConditionTerm::address_equal(parameter, parent), true)
+            .assume_condition(OldConditionTerm::address_equal(parameter, parent), true)
             .assume_condition(
-                ConditionTerm::address_equal(old_read.clone(), model.clone()),
+                OldConditionTerm::address_equal(old_read.clone(), model.clone()),
                 true,
             );
         let resources = ResourceContext::new().unchecked_with_facts((0..count).map(|index| {
@@ -484,8 +487,11 @@ fn constant_base_interior_lookup_scales_with_selected_range() {
         // search through all the other spans relative to that same base.
         let facts = prefix
             .clone()
-            .assume_condition(ConditionTerm::address_equal(cursor.clone(), old_read), true)
-            .assume_condition(ConditionTerm::address_equal(cursor.clone(), model), true);
+            .assume_condition(
+                OldConditionTerm::address_equal(cursor.clone(), old_read),
+                true,
+            )
+            .assume_condition(OldConditionTerm::address_equal(cursor.clone(), model), true);
         resources.synchronize_memory_equalities(&facts);
         let required = ResourceFact::own_memory(MemoryRange::new_with_element_width(
             cursor.clone(),
@@ -540,9 +546,9 @@ fn modeled_pointer_alias_field_lookup_scales_with_selected_addresses() {
             offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(940_004)), 4),
         };
         let prefix = PureFactContext::new()
-            .assume_condition(ConditionTerm::address_equal(parameter, parent), true)
+            .assume_condition(OldConditionTerm::address_equal(parameter, parent), true)
             .assume_condition(
-                ConditionTerm::address_equal(old_read.clone(), model.clone()),
+                OldConditionTerm::address_equal(old_read.clone(), model.clone()),
                 true,
             );
         let resources = ResourceContext::new().unchecked_with_facts((0..count).map(|index| {
@@ -559,10 +565,10 @@ fn modeled_pointer_alias_field_lookup_scales_with_selected_addresses() {
         let facts = prefix
             .clone()
             .assume_condition(
-                ConditionTerm::address_equal(cursor.clone(), old_read.clone()),
+                OldConditionTerm::address_equal(cursor.clone(), old_read.clone()),
                 true,
             )
-            .assume_condition(ConditionTerm::address_equal(cursor.clone(), model), true);
+            .assume_condition(OldConditionTerm::address_equal(cursor.clone(), model), true);
         resources.synchronize_memory_equalities(&facts);
         let (permitted, work) = crate::instrumentation::measure_deterministic_work(|| {
             resources.permits_memory_read(&cursor.offset_by_bytes(16), 8, &facts)
@@ -596,7 +602,8 @@ fn mixed_span_read_hits_and_misses_do_not_scan_unrelated_ranges() {
         }
         let empty = PureFactContext::new();
         resources.synchronize_memory_equalities(&empty);
-        let facts = empty.assume_condition(ConditionTerm::address_equal(base, alias.clone()), true);
+        let facts =
+            empty.assume_condition(OldConditionTerm::address_equal(base, alias.clone()), true);
         resources.synchronize_memory_equalities(&facts);
         let at = |offset| Address {
             base: alias.base.clone(),
@@ -676,12 +683,12 @@ fn logical_field_coordinates_keep_symbolic_offsets_without_scanning_aliases() {
         let mut context = PureFactContext::new()
             .assume_proposition(Proposition::ResourceComposition(resources))
             .assume_condition(
-                ConditionTerm::address_equal(owner.clone(), alias.clone()),
+                OldConditionTerm::address_equal(owner.clone(), alias.clone()),
                 true,
             );
         for i in 0..size {
             context = context.assume_condition(
-                ConditionTerm::address_equal(
+                OldConditionTerm::address_equal(
                     alias.clone(),
                     Address::symbolic(Variable(957_000 + i)),
                 ),
@@ -852,7 +859,7 @@ fn check_constant_owner_overlap_population(views: bool, late: bool) {
         let empty = PureFactContext::new();
         let facts = empty
             .clone()
-            .assume_condition(ConditionTerm::address_equal(p.clone(), q.clone()), true);
+            .assume_condition(OldConditionTerm::address_equal(p.clone(), q.clone()), true);
         let range = |base: Address, a: u32, b: u32| {
             MemoryRange::new_with_element_width(base, a.into(), b.into(), 1)
         };
@@ -928,7 +935,7 @@ fn cold_singleton_return_checks_do_not_enumerate_loaded_pointer_alias_stars() {
         let mut facts = PureFactContext::new();
         for index in 0..count {
             facts = facts.assume_condition(
-                ConditionTerm::address_equal(
+                OldConditionTerm::address_equal(
                     query.clone(),
                     Address::symbolic(Variable(9_981_000 + index)),
                 ),
@@ -954,7 +961,7 @@ fn cold_singleton_return_checks_do_not_enumerate_loaded_pointer_alias_stars() {
         });
         samples.push(work);
         let aliased =
-            facts.assume_condition(ConditionTerm::address_equal(query.clone(), held), true);
+            facts.assume_condition(OldConditionTerm::address_equal(query.clone(), held), true);
         assert!(matches!(
             frame.constant_owned_overlap(
                 &ResourceFact::own_memory(range(query, 4u32.into())),

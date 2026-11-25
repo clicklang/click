@@ -57,13 +57,13 @@ fn shallow_scalar_decision_uses_only_registered_loads_in_one_state() {
     );
     let changed = load(&after, &address(2), 4);
     let context =
-        PureFactContext::new().assume_condition(ConditionTerm::equal(var(1), var(2)), true);
+        PureFactContext::new().assume_condition(OldConditionTerm::equal(var(1), var(2)), true);
     assert_eq!(
         context.decide_bitvector_equality_shallow(&left, &right),
         Some(true)
     );
     assert_eq!(
-        context.decide(&ConditionTerm::equal(left.clone(), right.clone())),
+        context.decide(&OldConditionTerm::equal(left.clone(), right.clone())),
         Some(true)
     );
     assert_ne!(
@@ -71,7 +71,7 @@ fn shallow_scalar_decision_uses_only_registered_loads_in_one_state() {
         Some(true)
     );
     assert_ne!(
-        context.decide(&ConditionTerm::equal(left, changed)),
+        context.decide(&OldConditionTerm::equal(left, changed)),
         Some(true)
     );
 }
@@ -111,7 +111,7 @@ fn int32_load_congruence_is_branch_local() {
     let memory = memory();
     let left = load(&memory, &address(1), 4);
     let right = load(&memory, &address(2), 4);
-    let equality = ConditionTerm::equal(var(1), var(2));
+    let equality = OldConditionTerm::equal(var(1), var(2));
     let parent = PureFactContext::new();
     assert!(!parent.equality_graph.are_int32_equal(&left, &right));
     let sibling = parent.clone();
@@ -210,8 +210,8 @@ fn explicit_cross_state_load_equality_composes_without_merging_states() {
     let new_j = load(&after, &address(2), 4);
     // This edge represents a separately checked transport conclusion. The
     // graph must compose it, but must not itself infer that a store is disjoint.
-    let bridge = ConditionTerm::equal(old_i.clone(), new_i.clone());
-    let indices = ConditionTerm::equal(var(1), var(2));
+    let bridge = OldConditionTerm::equal(old_i.clone(), new_i.clone());
+    let indices = OldConditionTerm::equal(var(1), var(2));
     let parent = PureFactContext::new().assume_condition(indices.clone(), true);
     assert!(parent.equality_graph.are_int32_equal(&old_i, &old_j));
     assert!(!parent.equality_graph.are_int32_equal(&old_j, &new_j));
@@ -350,11 +350,11 @@ fn a_late_zero_index_alias_transfers_an_admitted_read_order() {
         &base.offset_by_elements(OldMachineTerm::add(index.clone(), 1u32.into()), 4),
         4,
     );
-    let known = ConditionTerm::signed_less_than(next.clone(), indexed);
-    let target = ConditionTerm::signed_less_than(next, direct);
+    let known = OldConditionTerm::signed_less_than(next.clone(), indexed);
+    let target = OldConditionTerm::signed_less_than(next, direct);
     let root = PureFactContext::new().assume_condition(known, true);
     assert_eq!(root.decide(&target), None);
-    let zero = Proposition::condition_is(ConditionTerm::equal(index, 0u32.into()), true);
+    let zero = Proposition::condition_is(OldConditionTerm::equal(index, 0u32.into()), true);
     let equal = root.assume_proposition(zero.clone());
     assert_eq!(equal.decide(&target), Some(true));
     assert_eq!(
@@ -454,7 +454,7 @@ fn signed_16_and_128_bit_reads_are_the_sign_cast_of_their_unsigned_reads() {
                 terms.are_integer_equal(&reading(left), &reading(right.clone()))
             } else {
                 terms.knows_condition(
-                    &crate::kernel::ConditionTerm::Compare {
+                    &crate::kernel::OldConditionTerm::Compare {
                         format: to,
                         relation: crate::kernel::CompareRelation::Equal,
                         left: Box::new(left),
@@ -492,7 +492,9 @@ fn signed_16_and_128_bit_reads_are_the_sign_cast_of_their_unsigned_reads() {
 /// byte constant does (R-mem), at both ends and both halves of the range.
 #[test]
 fn a_16_bit_constant_decides_the_other_read_of_its_cell() {
-    use crate::kernel::{CompareRelation, ConditionTerm, LoadKind as K, MachineIntegerType as M};
+    use crate::kernel::{
+        CompareRelation, LoadKind as K, MachineIntegerType as M, OldConditionTerm,
+    };
     let _session = crate::kernel::VerificationSession::enter();
     let memory = memory();
     let read = |kind| {
@@ -504,7 +506,7 @@ fn a_16_bit_constant_decides_the_other_read_of_its_cell() {
         ))
     };
     let (signed, unsigned) = (read(K::Int16), read(K::UInt16));
-    let equal = |format, left: &OldMachineTerm, value: i64| ConditionTerm::Compare {
+    let equal = |format, left: &OldMachineTerm, value: i64| OldConditionTerm::Compare {
         format,
         relation: CompareRelation::Equal,
         left: Box::new(left.clone()),

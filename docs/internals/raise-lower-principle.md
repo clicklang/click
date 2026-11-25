@@ -505,7 +505,7 @@ Lowering never folds a comparison of two literals.
   `address(p) == address(p)` retains its `int64` address-word comparison.
   Lowering and the producers whose results must match a lowered goal
   (`preserve`) build the pointer equality with
-  `ConditionTerm::logical_pointer_equal`. A pointer equality raises as
+  `OldConditionTerm::logical_pointer_equal`. A pointer equality raises as
   contract `p == q`, which lowers back to it; the weaker
   `address(p) == address(q)` is the address-word equality a C comparison
   states (`design/pointer-subobject-bounds.md`, Phase B). A `AddressEqual`

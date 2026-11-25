@@ -21,8 +21,8 @@ fn float_comparison_lowering_preserves_symbolic_operator_polarity() {
                 right: Box::new(right.clone()),
             };
             let condition = match format {
-                KernelFloatType::Float32 => ConditionTerm::Float32(condition),
-                KernelFloatType::Float64 => ConditionTerm::Float64(condition),
+                KernelFloatType::Float32 => OldConditionTerm::Float32(condition),
+                KernelFloatType::Float64 => OldConditionTerm::Float64(condition),
             };
             assert_eq!(
                 program_value_comparison_proposition(
@@ -76,7 +76,7 @@ fn float_inequality_lowering_preserves_ieee_constant_results() {
                 assert_eq!(
                     program_value_comparison_proposition(&value(left), operator, &value(right)),
                     Some(Proposition::condition_is(
-                        ConditionTerm::Constant(expected),
+                        OldConditionTerm::Constant(expected),
                         true
                     )),
                     "{format:?}: {left:x} {operator:?} {right:x}"
@@ -146,7 +146,7 @@ fn float_conditional_handoffs_preserve_exact_equality_and_existing_refusals() {
             "other_branch".into(),
             vec![],
         ));
-        let condition = Proposition::condition_is(ConditionTerm::Constant(true), true);
+        let condition = Proposition::condition_is(OldConditionTerm::Constant(true), true);
         let exports = KernelTermExport::float_export_count();
         assert_eq!(
             SpecValue::conditional(&condition, &left, &native, true)

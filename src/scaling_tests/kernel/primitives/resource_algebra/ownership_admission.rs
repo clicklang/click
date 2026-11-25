@@ -18,7 +18,7 @@ fn unsupported_admission_never_discovers_related_owners_or_aliases() {
             for index in 1..count {
                 if aliases {
                     facts = facts.assume_condition(
-                        ConditionTerm::address_equal(pointer(0), pointer(index)),
+                        OldConditionTerm::address_equal(pointer(0), pointer(index)),
                         true,
                     );
                 } else {
@@ -72,11 +72,11 @@ fn first_ownership_queries_use_produced_indexes_and_direct_symbolic_bounds() {
                 if bounded {
                     facts = facts
                         .assume_condition(
-                            ConditionTerm::signed_less_equal(1u32.into(), endpoint.clone()),
+                            OldConditionTerm::signed_less_equal(1u32.into(), endpoint.clone()),
                             true,
                         )
                         .assume_condition(
-                            ConditionTerm::signed_less_equal(endpoint.clone(), 4u32.into()),
+                            OldConditionTerm::signed_less_equal(endpoint.clone(), 4u32.into()),
                             true,
                         );
                 }
@@ -94,7 +94,7 @@ fn first_ownership_queries_use_produced_indexes_and_direct_symbolic_bounds() {
                     // become a query-time traversal of its incident facts.
                     if bounded {
                         facts = facts.assume_condition(
-                            ConditionTerm::signed_less_equal(
+                            OldConditionTerm::signed_less_equal(
                                 endpoint.clone(),
                                 (index + 100).into(),
                             ),
@@ -151,7 +151,7 @@ fn certified_group_and_loop_exchange_keep_fixed_memory_boundaries_as_aliases_gro
             for index in 0..count {
                 if aliases {
                     assumptions = assumptions.assume_condition(
-                        ConditionTerm::address_equal(
+                        OldConditionTerm::address_equal(
                             base.clone(),
                             Address::symbolic(Variable(8_798_000 + u64::from(index))),
                         ),
@@ -249,11 +249,11 @@ fn symbolic_boundaries_are_bounded_as_owners_aliases_and_explicit_frames_grow() 
             };
             let mut facts = PureFactContext::new()
                 .assume_condition(
-                    ConditionTerm::signed_less_equal(1u32.into(), n.clone()),
+                    OldConditionTerm::signed_less_equal(1u32.into(), n.clone()),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::signed_less_equal(n.clone(), 8u32.into()),
+                    OldConditionTerm::signed_less_equal(n.clone(), 8u32.into()),
                     true,
                 );
             let held = span(0u32.into(), n.clone());
@@ -281,7 +281,7 @@ fn symbolic_boundaries_are_bounded_as_owners_aliases_and_explicit_frames_grow() 
                             }
                         };
                         facts = facts.assume_condition(
-                            ConditionTerm::address_equal(base.clone(), other),
+                            OldConditionTerm::address_equal(base.clone(), other),
                             true,
                         );
                     }
@@ -496,7 +496,7 @@ fn symbolic_endpoint_refusal_does_not_follow_a_growing_order_chain() {
         let mut facts = PureFactContext::new();
         for index in 0..count {
             facts = facts.assume_condition(
-                ConditionTerm::signed_less_equal(variable(index), variable(index + 1)),
+                OldConditionTerm::signed_less_equal(variable(index), variable(index + 1)),
                 true,
             );
         }
@@ -550,7 +550,7 @@ fn cold_automatic_return_boundaries_do_not_visit_other_allocations() {
             let mut facts = PureFactContext::new();
             for index in 0..count {
                 facts = facts.assume_condition(
-                    ConditionTerm::address_equal(
+                    OldConditionTerm::address_equal(
                         local(0),
                         Address::symbolic(Variable(8_920_000 + u64::from(index))),
                     ),
@@ -610,7 +610,7 @@ fn legacy_composition_cost_tracks_the_delta_and_written_neighbors() {
                 match axis {
                     "aliases" => {
                         facts = facts.assume_condition(
-                            ConditionTerm::address_equal(pointer.clone(), other),
+                            OldConditionTerm::address_equal(pointer.clone(), other),
                             true,
                         )
                     }

@@ -309,7 +309,7 @@ impl MemoryStateLabels {
     fn legend_kept_frame(
         &mut self,
         ranges: &crate::kernel::ResourceContext,
-        premises: &[(ConditionTerm, bool)],
+        premises: &[(OldConditionTerm, bool)],
     ) -> String {
         const LIMIT: usize = 128;
         let (count, facts) = ranges.diagnostic_facts(LIMIT);
@@ -871,7 +871,7 @@ mod tests {
                     ),
                 ))
             }));
-        let condition = ConditionTerm::Compare {
+        let condition = OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(OldMachineTerm::constant(7)),
@@ -890,7 +890,7 @@ mod tests {
             "{text}"
         );
         assert!(!text.contains("display limit"), "{text}");
-        let many = vec![(ConditionTerm::Constant(true), true); 129];
+        let many = vec![(OldConditionTerm::Constant(true), true); 129];
         let text = labels.legend_kept_frame(&ranges, &many);
         assert!(
             text.contains("1 more premises (call frame display limit)"),

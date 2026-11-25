@@ -332,7 +332,7 @@ mod tests {
             ),
             (
                 OldMachineTerm::If {
-                    condition: Box::new(ConditionTerm::Variable(Variable(999987))),
+                    condition: Box::new(OldConditionTerm::Variable(Variable(999987))),
                     then_term: Box::new(variable.clone()),
                     else_term: Box::new(OldMachineTerm::constant(0)),
                 },

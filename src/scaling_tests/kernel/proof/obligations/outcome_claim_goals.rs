@@ -117,7 +117,7 @@ fn outcome_goal_selection_ignores_closed_claims_and_unrelated_proof_facts() {
                 crate::kernel::proof::PureFactStore::from_ordered(&[]),
                 |facts, index| {
                     facts.with_fact(crate::kernel::Proposition::condition_is(
-                        crate::kernel::ConditionTerm::equal(
+                        crate::kernel::OldConditionTerm::equal(
                             crate::kernel::OldMachineTerm::Variable(crate::kernel::Variable(
                                 976_000 + index,
                             )),
@@ -169,7 +169,7 @@ fn ordinary_closing_steps_ignore_unrelated_facts_and_closed_source_claims() {
                 crate::kernel::proof::PureFactStore::from_ordered(&[]),
                 |facts, index| {
                     facts.with_fact(crate::kernel::Proposition::condition_is(
-                        crate::kernel::ConditionTerm::equal(
+                        crate::kernel::OldConditionTerm::equal(
                             crate::kernel::OldMachineTerm::Variable(crate::kernel::Variable(
                                 978_000 + index,
                             )),

@@ -36,7 +36,7 @@ fn full_and_concise_reports_keep_named_pointer_prerequisites() {
     };
     let pointer = |p: &Address| OldPointer::new(p.clone(), ProgramType::Int32Pointer);
     let requirement = Proposition::condition_is(
-        ConditionTerm::PointerEqual(
+        OldConditionTerm::PointerEqual(
             Box::new(pointer(&names.node)),
             Box::new(pointer(&names.identity)),
         ),
@@ -918,7 +918,7 @@ fn a_condition_search_miss_spells_its_goal_and_premises() {
     let y = OldMachineTerm::Variable(Variable(2));
     let at_most = |term: &OldMachineTerm, bound: u32| {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left: Box::new(term.clone()),
@@ -928,7 +928,7 @@ fn a_condition_search_miss_spells_its_goal_and_premises() {
         )
     };
     let goal = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
             left: Box::new(x.clone()),
@@ -970,7 +970,7 @@ fn verifier_diagnostics_bound_fact_items() {
     let facts = (0..20)
         .map(|index| {
             Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(OldMachineTerm::constant(index)),
@@ -1516,11 +1516,11 @@ fn a_store_wider_than_an_element_is_refused_by_bytes_not_by_index() {
 
     // An inequality the facts already state is not offered again: stating it
     // a second time cannot change what this check concludes.
-    use crate::kernel::{ConditionTerm, OldMachineTerm, Proposition, Variable};
+    use crate::kernel::{OldConditionTerm, OldMachineTerm, Proposition, Variable};
     let i = OldMachineTerm::Variable(Variable(1));
     let j = OldMachineTerm::Variable(Variable(2));
     let differ = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(j.clone()),
@@ -1542,7 +1542,7 @@ fn a_store_wider_than_an_element_is_refused_by_bytes_not_by_index() {
          it again will not help."
     );
     let unrelated = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(i.clone()),
@@ -1579,7 +1579,7 @@ fn empty_footprint_rejects_a_fact_aliased_write_and_effect_range() {
     let after = before.clone().store(alias.clone(), int32(1));
     let pre_state = ExecutionState::new().with_memory(before.clone());
     let aliases_global =
-        Proposition::condition_is(ConditionTerm::address_equal(alias.clone(), global), true);
+        Proposition::condition_is(OldConditionTerm::address_equal(alias.clone(), global), true);
     let facts = [
         ExecutionPureFact::new(Proposition::MemoryMutatesOnly {
             before: before.clone(),
@@ -1625,7 +1625,7 @@ fn empty_footprint_rejects_a_fact_aliased_write_and_effect_range() {
 fn a_conditional_term_spells_its_unsigned_guard() {
     let x = OldMachineTerm::Variable(crate::kernel::Variable(7));
     let term = OldMachineTerm::If {
-        condition: Box::new(ConditionTerm::unsigned_less_than(
+        condition: Box::new(OldConditionTerm::unsigned_less_than(
             x.clone(),
             OldMachineTerm::constant(4),
         )),
@@ -1648,23 +1648,23 @@ fn a_uint32_order_is_named_as_unsigned() {
     );
     for (condition, kind) in [
         (
-            ConditionTerm::unsigned_less_than(x.clone(), y.clone()),
+            OldConditionTerm::unsigned_less_than(x.clone(), y.clone()),
             "uint32 less-than",
         ),
         (
-            ConditionTerm::unsigned_less_equal(x.clone(), y.clone()),
+            OldConditionTerm::unsigned_less_equal(x.clone(), y.clone()),
             "uint32 less-or-equal",
         ),
         (
-            ConditionTerm::unsigned_greater_than(x.clone(), y.clone()),
+            OldConditionTerm::unsigned_greater_than(x.clone(), y.clone()),
             "uint32 greater-than",
         ),
         (
-            ConditionTerm::unsigned_greater_equal(x.clone(), y.clone()),
+            OldConditionTerm::unsigned_greater_equal(x.clone(), y.clone()),
             "uint32 greater-or-equal",
         ),
         (
-            ConditionTerm::uint64_less_than(x.clone(), y.clone()),
+            OldConditionTerm::uint64_less_than(x.clone(), y.clone()),
             "uint64 less-than",
         ),
     ] {
@@ -2941,7 +2941,7 @@ fn memory_history_diagnostic_names_the_store_and_limits_its_claim() {
         )
     };
     let goal = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: Box::new(load(&after)),
@@ -3562,7 +3562,7 @@ fn native_view_solve_distinguishes_a_rejected_kernel_query() {
 fn pending_call_obligations_use_shared_goal_printer_and_state_legend() {
     let _typed = crate::surface::proof_diagnostics::render::TypedNotationScope::enter();
     use crate::kernel::{
-        Address, AddressOffset, ConditionTerm, OldMachineTerm, ProofObligation, Proposition,
+        Address, AddressOffset, OldConditionTerm, OldMachineTerm, ProofObligation, Proposition,
         RuntimeError, SymbolicMemory,
     };
     use crate::surface::proof_diagnostics::render::{
@@ -3574,7 +3574,7 @@ fn pending_call_obligations_use_shared_goal_printer_and_state_legend() {
         offset: AddressOffset::Constant(0),
     };
     let goal = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(OldMachineTerm::read_named(

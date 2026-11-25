@@ -6,7 +6,7 @@
 //! already fired. Thus maintenance is amortized over admitted syntax and
 //! produced facts; queries never traverse clauses or dependency buckets.
 
-use super::{ConditionTerm, Proposition, PureFactContext};
+use super::{OldConditionTerm, Proposition, PureFactContext};
 use crate::kernel::proof::PersistentSequence;
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::sync::Arc;
@@ -86,19 +86,21 @@ impl Ord for Literal {
 // Exact observations may include a value-preserving machine conversion.
 // Read only these cached root relations (at most three conversions), retaining
 // shared operands. This does not simplify arithmetic or consult facts.
-fn observation_reading(condition: &ConditionTerm) -> Option<ConditionTerm> {
+fn observation_reading(condition: &OldConditionTerm) -> Option<OldConditionTerm> {
     use crate::kernel::SharedIntegerTerm;
     let (left, right, rebuild): (
         &SharedIntegerTerm,
         &SharedIntegerTerm,
-        fn(SharedIntegerTerm, SharedIntegerTerm) -> ConditionTerm,
+        fn(SharedIntegerTerm, SharedIntegerTerm) -> OldConditionTerm,
     ) = match condition {
-        ConditionTerm::IntegerEqual(a, b) => (a, b, ConditionTerm::IntegerEqual),
-        ConditionTerm::IntegerNotEqual(a, b) => (a, b, ConditionTerm::IntegerNotEqual),
-        ConditionTerm::IntegerLessThan(a, b) => (a, b, ConditionTerm::IntegerLessThan),
-        ConditionTerm::IntegerLessEqual(a, b) => (a, b, ConditionTerm::IntegerLessEqual),
-        ConditionTerm::IntegerGreaterThan(a, b) => (a, b, ConditionTerm::IntegerGreaterThan),
-        ConditionTerm::IntegerGreaterEqual(a, b) => (a, b, ConditionTerm::IntegerGreaterEqual),
+        OldConditionTerm::IntegerEqual(a, b) => (a, b, OldConditionTerm::IntegerEqual),
+        OldConditionTerm::IntegerNotEqual(a, b) => (a, b, OldConditionTerm::IntegerNotEqual),
+        OldConditionTerm::IntegerLessThan(a, b) => (a, b, OldConditionTerm::IntegerLessThan),
+        OldConditionTerm::IntegerLessEqual(a, b) => (a, b, OldConditionTerm::IntegerLessEqual),
+        OldConditionTerm::IntegerGreaterThan(a, b) => (a, b, OldConditionTerm::IntegerGreaterThan),
+        OldConditionTerm::IntegerGreaterEqual(a, b) => {
+            (a, b, OldConditionTerm::IntegerGreaterEqual)
+        }
         _ => return None,
     };
     let a = left.value_read();
@@ -127,7 +129,7 @@ fn literal(proposition: &Proposition, mut positive: bool) -> Literal {
             use crate::kernel::machine_integer::{Relation, comparison};
             let reading = observation_reading(condition.old_form());
             let condition = reading.as_ref().unwrap_or(condition.old_form());
-            let view = if matches!(condition, ConditionTerm::Compare { .. }) {
+            let view = if matches!(condition, OldConditionTerm::Compare { .. }) {
                 comparison::comparison_view(condition, true)
             } else {
                 comparison::structural_native_comparison_view(condition, true)
@@ -167,7 +169,7 @@ fn constant(proposition: &Proposition) -> Option<bool> {
 }
 
 fn falsehood() -> Proposition {
-    Proposition::condition_is(ConditionTerm::Constant(false), true)
+    Proposition::condition_is(OldConditionTerm::Constant(false), true)
 }
 
 impl Index {

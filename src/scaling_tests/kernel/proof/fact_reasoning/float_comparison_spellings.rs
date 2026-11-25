@@ -10,9 +10,9 @@ fn mirrored_float_spellings_use_exact_indexes_and_preserve_nan_polarity() {
         };
         Proposition::condition_is(
             if wide {
-                ConditionTerm::Float64(condition)
+                OldConditionTerm::Float64(condition)
             } else {
-                ConditionTerm::Float32(condition)
+                OldConditionTerm::Float32(condition)
             },
             value,
         )
@@ -47,7 +47,7 @@ fn mirrored_float_spellings_use_exact_indexes_and_preserve_nan_polarity() {
                     let mut input = (0..size)
                         .map(|i| {
                             Proposition::condition_is(
-                                ConditionTerm::Variable(Variable(992000 + i)),
+                                OldConditionTerm::Variable(Variable(992000 + i)),
                                 true,
                             )
                         })

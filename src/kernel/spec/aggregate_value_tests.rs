@@ -32,7 +32,7 @@ fn unindexed_boolean_loads_use_their_certified_observation_point() {
     };
     let assumptions = PureFactContext::new();
     for state in [&first, &second] {
-        let expected = ProgramValue::of_bool(ConditionTerm::boolean_cell_read(
+        let expected = ProgramValue::of_bool(OldConditionTerm::boolean_cell_read(
             state.program_point().for_exact_read(),
             address.clone(),
         ));

@@ -144,7 +144,7 @@ mod tests {
         );
         assert_eq!(*pointer, replacement);
 
-        let condition = ConditionTerm::Variable(Variable(59));
+        let condition = OldConditionTerm::Variable(Variable(59));
         let conditional = OldMachineTerm::If {
             condition: Box::new(condition.clone()),
             then_term: Box::new(OldMachineTerm::constant(1)),

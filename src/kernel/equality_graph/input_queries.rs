@@ -4,7 +4,7 @@ use crate::kernel::assumptions::load_state_and_pointer;
 use crate::kernel::assumptions::{parameter_alias_bucket, parameter_partition_variable};
 use crate::kernel::reasoning::memories_match_for_pointer_load;
 use crate::kernel::{CompareRelation, MachineIntegerType};
-use crate::kernel::{ConditionTerm, Proposition};
+use crate::kernel::{OldConditionTerm, Proposition};
 use std::collections::BTreeSet;
 
 impl EqualityGraph {
@@ -84,14 +84,14 @@ impl EqualityGraph {
     pub(in crate::kernel) fn exact_uint64_equalities(
         &self,
         term: &OldMachineTerm,
-    ) -> impl Iterator<Item = (&OldMachineTerm, &ConditionTerm)> {
+    ) -> impl Iterator<Item = (&OldMachineTerm, &OldConditionTerm)> {
         self.exact_uint64_equalities_view(crate::kernel::MachineOperandView::Old(term))
     }
 
     pub(in crate::kernel) fn exact_uint64_equalities_view(
         &self,
         term: crate::kernel::MachineOperandView<'_>,
-    ) -> impl Iterator<Item = (&OldMachineTerm, &ConditionTerm)> {
+    ) -> impl Iterator<Item = (&OldMachineTerm, &OldConditionTerm)> {
         self.admitted
             .bitvector64_equality_facts
             .get(
@@ -120,7 +120,7 @@ impl EqualityGraph {
     pub(in crate::kernel) fn recorded_uint64_equals(
         &self,
         term: &OldMachineTerm,
-    ) -> Vec<(OldMachineTerm, ConditionTerm)> {
+    ) -> Vec<(OldMachineTerm, OldConditionTerm)> {
         let exact = self
             .admitted
             .bitvector64_equality_facts
@@ -150,7 +150,7 @@ impl EqualityGraph {
             .get(&(pointer.clone(), kind));
         for condition in candidates.into_iter().flat_map(|sources| sources.iter()) {
             crate::instrumentation::record_deterministic_work(1);
-            let ConditionTerm::Compare {
+            let OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left,
@@ -181,14 +181,14 @@ impl EqualityGraph {
     pub(in crate::kernel) fn exact_literal_sources(
         &self,
         term: &OldMachineTerm,
-    ) -> Option<&crate::persistent::PersistentMap<ConditionTerm, i64>> {
+    ) -> Option<&crate::persistent::PersistentMap<OldConditionTerm, i64>> {
         self.exact_literal_sources_view(crate::kernel::MachineOperandView::Old(term))
     }
 
     pub(in crate::kernel) fn exact_literal_sources_view(
         &self,
         term: crate::kernel::MachineOperandView<'_>,
-    ) -> Option<&crate::persistent::PersistentMap<ConditionTerm, i64>> {
+    ) -> Option<&crate::persistent::PersistentMap<OldConditionTerm, i64>> {
         self.admitted
             .exact_constant_equalities
             .get(&crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey::new(term))

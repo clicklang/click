@@ -84,7 +84,7 @@ fn deep_logical_comparison_keys_visit_each_selected_node_once() {
         for _ in 0..depth {
             proposition = Proposition::Implies(
                 Box::new(Proposition::condition_is(
-                    ConditionTerm::Constant(true),
+                    OldConditionTerm::Constant(true),
                     true,
                 )),
                 Box::new(proposition),

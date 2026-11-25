@@ -352,12 +352,12 @@ fn spelled_alone(expression: &SyntaxTerm) -> String {
 /// The side, converted value, and limit of a machine-range bound on an
 /// `Integer` conversion.
 fn conversion_bound(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     labels: &mut render::MemoryStateLabels,
 ) -> Option<(&'static str, String, String)> {
     let (side, value, bound) = match condition {
-        ConditionTerm::IntegerGreaterEqual(value, bound) => ("lower", value, bound),
-        ConditionTerm::IntegerLessEqual(value, bound) => ("upper", value, bound),
+        OldConditionTerm::IntegerGreaterEqual(value, bound) => ("lower", value, bound),
+        OldConditionTerm::IntegerLessEqual(value, bound) => ("upper", value, bound),
         _ => return None,
     };
     Some((
@@ -368,27 +368,27 @@ fn conversion_bound(
 }
 
 /// The machine operation a signed-overflow guard is about.
-fn overflowing_operation(condition: &ConditionTerm) -> Option<OldMachineTerm> {
+fn overflowing_operation(condition: &OldConditionTerm) -> Option<OldMachineTerm> {
     match condition {
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
             left,
             right,
         } => Some(binary_node!(Int32, Add, left.clone(), right.clone())),
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Subtract,
             left,
             right,
         } => Some(binary_node!(Int32, Subtract, left.clone(), right.clone())),
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Multiply,
             left,
             right,
         } => Some(binary_node!(Int32, Multiply, left.clone(), right.clone())),
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Add,
             left,
@@ -399,7 +399,7 @@ fn overflowing_operation(condition: &ConditionTerm) -> Option<OldMachineTerm> {
             left: left.clone(),
             right: right.clone(),
         }),
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Subtract,
             left,
@@ -410,7 +410,7 @@ fn overflowing_operation(condition: &ConditionTerm) -> Option<OldMachineTerm> {
             left: left.clone(),
             right: right.clone(),
         }),
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Multiply,
             left,
@@ -429,14 +429,14 @@ fn overflowing_operation(condition: &ConditionTerm) -> Option<OldMachineTerm> {
 /// is such an equation.
 fn load_definition_cell(condition: &Proposition) -> Option<&Address> {
     let Some((
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
         },
         true,
-    )) = condition.condition_native()
+    )) = condition.old_condition()
     else {
         return None;
     };

@@ -31,7 +31,7 @@ fn growing_order_paths_reuse_shared_prefixes() {
                     let middle = variable(988010 + 2 * n);
                     let upper = variable(988011 + 2 * n);
                     context = context.assume_condition(
-                        ConditionTerm::integer_less_equal(
+                        OldConditionTerm::integer_less_equal(
                             observe(root.clone()),
                             observe(middle.clone()),
                         ),
@@ -45,7 +45,10 @@ fn growing_order_paths_reuse_shared_prefixes() {
                         ));
                     }
                     context = context.assume_condition(
-                        ConditionTerm::integer_less_than(observe(middle), observe(upper.clone())),
+                        OldConditionTerm::integer_less_than(
+                            observe(middle),
+                            observe(upper.clone()),
+                        ),
                         true,
                     );
                     let path = if ty == MachineIntegerType::Int32 {

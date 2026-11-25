@@ -15,7 +15,7 @@ fn function_pointer_read_query_does_not_scan_aliases_or_cells() {
             for i in 1..=size {
                 memory = memory.store(cell(i as i64), callback_value("other"));
                 facts = facts.assume_condition(
-                    ConditionTerm::address_equal(
+                    OldConditionTerm::address_equal(
                         Address::symbolic(Variable(993000 + i)),
                         if related { cell(0) } else { cell(i as i64) },
                     ),
@@ -26,8 +26,10 @@ fn function_pointer_read_query_does_not_scan_aliases_or_cells() {
             memory = memory.store(cell(0), value);
             let memory = intern_memory(memory);
             let query = Address::symbolic(Variable(999000));
-            facts =
-                facts.assume_condition(ConditionTerm::address_equal(query.clone(), cell(0)), true);
+            facts = facts.assume_condition(
+                OldConditionTerm::address_equal(query.clone(), cell(0)),
+                true,
+            );
             // Measure a cold miss: no producer equation has been admitted.
             let read = function_read(&memory, &query);
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {

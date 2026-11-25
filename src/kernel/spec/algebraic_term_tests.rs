@@ -1432,7 +1432,7 @@ fn algebraic_program_conditionals_preserve_existing_refusals() {
         KernelType::Algebraic(ty),
         Variable(999767),
     ));
-    let guard = Proposition::condition_is(ConditionTerm::Constant(true), true);
+    let guard = Proposition::condition_is(OldConditionTerm::Constant(true), true);
     // Program-carried algebraic values only join when equal. The separate
     // logical algebraic evaluator owns algebraic If construction.
     for retain in [true, false] {

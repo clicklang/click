@@ -2254,7 +2254,7 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
             members.pop()
         }
         .unwrap_or(Proposition::condition_is(
-            crate::kernel::ConditionTerm::Constant(true),
+            crate::kernel::OldConditionTerm::Constant(true),
             true,
         ));
         let introductions = obligations()
@@ -3018,7 +3018,9 @@ mod tests {
     #[test]
     fn checked_product_bounds_use_exact_citations_as_fact_sets_grow() {
         use crate::instrumentation::measure_deterministic_work;
-        use crate::kernel::{ConditionTerm, IntegerTerm, MachineIntegerType, VerificationSession};
+        use crate::kernel::{
+            IntegerTerm, MachineIntegerType, OldConditionTerm, VerificationSession,
+        };
         let _session = VerificationSession::enter();
         let observe = |value| {
             IntegerTerm::from_machine(MachineIntegerType::Int32, OldMachineTerm::Variable(value))
@@ -3027,7 +3029,7 @@ mod tests {
         let x = Variable(10);
         let y = Variable(11);
         let goal = Proposition::condition_is(
-            ConditionTerm::integer_greater_equal(
+            OldConditionTerm::integer_greater_equal(
                 IntegerTerm::multiply(observe(x), observe(y)),
                 IntegerTerm::constant_i64(i64::from(i32::MIN)),
             ),
@@ -3042,7 +3044,7 @@ mod tests {
                 // Grow the orders mentioning x as well as the unrelated fact set.
                 for lhs in [x, Variable(1_000 + n)] {
                     facts = facts.with_fact(Proposition::condition_is(
-                        ConditionTerm::integer_less_than(
+                        OldConditionTerm::integer_less_than(
                             observe(lhs),
                             observe(Variable(2_000 + n)),
                         ),
@@ -3065,9 +3067,10 @@ mod tests {
 
     #[test]
     fn known_computation_keeps_logical_introductions_explicit() {
-        let truth = Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true);
+        let truth =
+            Proposition::condition_is(crate::kernel::OldConditionTerm::Constant(true), true);
         let falsehood =
-            Proposition::condition_is(crate::kernel::ConditionTerm::Constant(false), true);
+            Proposition::condition_is(crate::kernel::OldConditionTerm::Constant(false), true);
         for goal in [
             Proposition::Implies(Box::new(falsehood.clone()), Box::new(truth.clone())),
             crate::kernel::quantifiers::test_forall(
@@ -3095,7 +3098,7 @@ mod tests {
             Proposition::And(Box::new(truth.clone()), Box::new(truth.clone())),
             Proposition::Or(
                 Box::new(Proposition::condition_is(
-                    crate::kernel::ConditionTerm::Constant(false),
+                    crate::kernel::OldConditionTerm::Constant(false),
                     true,
                 )),
                 Box::new(truth),
@@ -3132,14 +3135,14 @@ mod tests {
             "unused".into(),
             Variable(42),
             Sort::Integer,
-            Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true),
+            Proposition::condition_is(crate::kernel::OldConditionTerm::Constant(true), true),
         )
     }
 
     #[test]
     fn integer_choices_and_obtain_choose_witnesses() {
         let source = unused_integer_existential();
-        let goal = Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true);
+        let goal = Proposition::condition_is(crate::kernel::OldConditionTerm::Constant(true), true);
         let proof = integer_choice_proof(
             source.clone(),
             PureFactStore::from_ordered(std::slice::from_ref(&source)),
@@ -3179,7 +3182,7 @@ mod tests {
             source.clone(),
             PureFactStore::from_ordered(std::slice::from_ref(&source))
                 .with_reserved_variables([Variable::witness(ceiling - 1)]),
-            Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true),
+            Proposition::condition_is(crate::kernel::OldConditionTerm::Constant(true), true),
         );
         assert!(matches!(
             exhausted.check_integer_exists_choice(&source, Variable(3_000_000)),
@@ -3200,7 +3203,7 @@ mod tests {
                 Default::default(),
                 binder,
                 Sort::Integer,
-                Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true),
+                Proposition::condition_is(crate::kernel::OldConditionTerm::Constant(true), true),
             ),
         );
         let mut introduced = None;
@@ -3233,7 +3236,7 @@ mod tests {
         let proof = integer_choice_proof(
             source.clone(),
             PureFactStore::from_ordered(std::slice::from_ref(&source)),
-            Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true),
+            Proposition::condition_is(crate::kernel::OldConditionTerm::Constant(true), true),
         );
         let opened = proof
             .check_exists_bindings(&source, 2, Variable(3_000_000))
@@ -3258,7 +3261,7 @@ mod tests {
             Variable(41),
             Sort::Integer,
             Proposition::condition_is(
-                crate::kernel::ConditionTerm::IntegerEqual(
+                crate::kernel::OldConditionTerm::IntegerEqual(
                     crate::kernel::IntegerTerm::var(Variable(41)).into(),
                     crate::kernel::IntegerTerm::var(Variable(41)).into(),
                 ),
@@ -3270,7 +3273,7 @@ mod tests {
         let goal = Proposition::And(
             Box::new(source.clone()),
             Box::new(Proposition::condition_is(
-                crate::kernel::ConditionTerm::IntegerEqual(
+                crate::kernel::OldConditionTerm::IntegerEqual(
                     crate::kernel::IntegerTerm::var(collision).into(),
                     crate::kernel::IntegerTerm::var(collision).into(),
                 ),
@@ -3303,7 +3306,7 @@ mod tests {
             Variable(51),
             Sort::Integer,
             Proposition::condition_is(
-                crate::kernel::ConditionTerm::IntegerEqual(
+                crate::kernel::OldConditionTerm::IntegerEqual(
                     crate::kernel::IntegerTerm::var(Variable(51)).into(),
                     crate::kernel::IntegerTerm::var(Variable(51)).into(),
                 ),
@@ -3349,7 +3352,7 @@ mod tests {
     fn a_freshened_universal_witness_never_takes_a_program_identity() {
         let bound = Variable(2_000_000);
         let body = Proposition::condition_is(
-            crate::kernel::ConditionTerm::signed_less_equal(
+            crate::kernel::OldConditionTerm::signed_less_equal(
                 OldMachineTerm::constant(0),
                 OldMachineTerm::Variable(bound),
             ),
@@ -3381,7 +3384,7 @@ mod tests {
         // A second introduction beside the first must not name it again.
         let second = facts
             .with_fact(Proposition::condition_is(
-                crate::kernel::ConditionTerm::signed_less_equal(
+                crate::kernel::OldConditionTerm::signed_less_equal(
                     OldMachineTerm::constant(0),
                     OldMachineTerm::Variable(witness),
                 ),
@@ -3428,8 +3431,8 @@ mod tests {
             ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind, FrontierPosition,
         };
         use crate::kernel::{
-            Address, AddressOffset, ConditionTerm, ExecutionState, IntegerRangeFoldIndex,
-            IntegerTerm, MachineIntegerType, ProgramValue, SharedIntegerRangeEndpoint,
+            Address, AddressOffset, ExecutionState, IntegerRangeFoldIndex, IntegerTerm,
+            MachineIntegerType, OldConditionTerm, ProgramValue, SharedIntegerRangeEndpoint,
             SymbolicMemory,
         };
         type TestProof = ProofObject<
@@ -3468,7 +3471,7 @@ mod tests {
                 Proposition::Implies(
                     Box::new(Proposition::And(
                         Box::new(Proposition::condition_is(
-                            ConditionTerm::Compare {
+                            OldConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
                                 relation: CompareRelation::LessEqual,
                                 left: Box::new(OldMachineTerm::constant(0)),
@@ -3477,7 +3480,7 @@ mod tests {
                             true,
                         )),
                         Box::new(Proposition::condition_is(
-                            ConditionTerm::Compare {
+                            OldConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
                                 relation: CompareRelation::LessEqual,
                                 left: Box::new(OldMachineTerm::Variable(variable)),
@@ -3534,14 +3537,14 @@ mod tests {
             )
         };
         let fold_fact = Proposition::condition_is(
-            ConditionTerm::IntegerEqual(
+            OldConditionTerm::IntegerEqual(
                 IntegerTerm::var(Variable(50)).into(),
                 fold(Variable(51), Variable(52)).into(),
             ),
             true,
         );
         let fold_goal = Proposition::condition_is(
-            ConditionTerm::IntegerEqual(
+            OldConditionTerm::IntegerEqual(
                 IntegerTerm::var(Variable(50)).into(),
                 fold(Variable(61), Variable(62)).into(),
             ),
@@ -3667,7 +3670,8 @@ mod tests {
 
     #[test]
     fn completed_proposition_retains_whether_it_relied_on_root_assumptions() {
-        let truth = Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true);
+        let truth =
+            Proposition::condition_is(crate::kernel::OldConditionTerm::Constant(true), true);
         for assumed in [false, true] {
             let branch = ProofBranch::new(
                 ProofObligation::Proposition(PropositionObligation::new(truth.clone(), ())),
@@ -3691,7 +3695,7 @@ mod tests {
             assert_eq!(checked.is_closed(), !assumed);
             assert_eq!(checked.proposition(), &truth);
             let falsehood =
-                Proposition::condition_is(crate::kernel::ConditionTerm::Constant(false), true);
+                Proposition::condition_is(crate::kernel::OldConditionTerm::Constant(false), true);
             let guarded =
                 Proposition::Implies(Box::new(falsehood.clone()), Box::new(truth.clone()));
             let weakened = checked.with_implication_prefix(&guarded, 1).unwrap();

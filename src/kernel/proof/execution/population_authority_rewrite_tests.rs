@@ -535,7 +535,7 @@ fn member_body_facts_require_checked_birth_and_reject_forged_consumption_facts()
     )
     .unwrap();
     let forged_facts = exposed.with_fact(Proposition::condition_is(
-        crate::kernel::ConditionTerm::Constant(false),
+        crate::kernel::OldConditionTerm::Constant(false),
         true,
     ));
     assert!(

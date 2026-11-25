@@ -142,7 +142,7 @@ fn recursive_visible_memory_still_refuses_a_held_alias_and_preserves_branches() 
     let pointer = Address::symbolic(Variable(8_860_003));
     let alias = Address::symbolic(Variable(8_860_004));
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::address_equal(pointer.clone(), alias.clone()),
+        OldConditionTerm::address_equal(pointer.clone(), alias.clone()),
         true,
     );
     let evaluated = recursive_output(pointer, OldMachineTerm::constant(64), &facts);

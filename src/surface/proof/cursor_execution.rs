@@ -3778,7 +3778,7 @@ pub(super) fn condition_path_case_split_condition(
     available: &dyn Fn(&Proposition) -> bool,
     state: &ExecutionState,
     proof_context: &ExecutionProofContext<'_>,
-) -> Option<(ConditionTerm, SyntaxProposition)> {
+) -> Option<(OldConditionTerm, SyntaxProposition)> {
     let cases = path_facts
         .iter()
         .map(|path_facts| PathCase { path_facts })
@@ -3891,9 +3891,9 @@ fn path_case_split_condition(
     available: &dyn Fn(&Proposition) -> bool,
     state: &ExecutionState,
     proof_context: &ExecutionProofContext<'_>,
-) -> Option<(ConditionTerm, SyntaxProposition)> {
+) -> Option<(OldConditionTerm, SyntaxProposition)> {
     let facts = cases.iter().map(|case| case.path_facts).collect::<Vec<_>>();
-    let decides = |case: &PathCase<'_>, condition: &ConditionTerm, value: bool| {
+    let decides = |case: &PathCase<'_>, condition: &OldConditionTerm, value: bool| {
         case.path_facts
             .contains(&Proposition::condition_is(condition.clone(), value))
     };
@@ -3915,7 +3915,7 @@ fn path_case_split_condition(
             (splits && undecided).then_some(condition)
         })
         .collect::<Vec<_>>();
-    let decided_by_every_case = |condition: &ConditionTerm| {
+    let decided_by_every_case = |condition: &OldConditionTerm| {
         cases
             .iter()
             .all(|case| decides(case, condition, true) || decides(case, condition, false))

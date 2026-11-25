@@ -884,7 +884,7 @@ mod tests {
     #[test]
     fn rendering_is_the_boundary_that_visits_retained_context() {
         let state = Arc::new(CountingState {
-            goal: Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true),
+            goal: Proposition::condition_is(crate::kernel::OldConditionTerm::Constant(true), true),
             calls: AtomicUsize::new(0),
         });
         let diagnostic = ProofFailureDiagnostic {
@@ -909,10 +909,10 @@ mod tests {
     #[test]
     fn trace_context_retains_a_refined_integer_goal_without_a_source_spelling() {
         use crate::kernel::{
-            ConditionTerm, IntegerTerm, MachineIntegerType, OldMachineTerm, Variable,
+            IntegerTerm, MachineIntegerType, OldConditionTerm, OldMachineTerm, Variable,
         };
         let goal = Proposition::condition_is(
-            ConditionTerm::integer_equal(
+            OldConditionTerm::integer_equal(
                 IntegerTerm::from_machine(
                     MachineIntegerType::Int32,
                     OldMachineTerm::Variable(Variable(981_701)),
@@ -966,7 +966,7 @@ mod tests {
     #[test]
     fn click_error_lazily_caches_and_preserves_structured_context() {
         let state = Arc::new(CountingState {
-            goal: Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true),
+            goal: Proposition::condition_is(crate::kernel::OldConditionTerm::Constant(true), true),
             calls: AtomicUsize::new(0),
         });
         let diagnostic = ProofFailureDiagnostic {
@@ -1107,7 +1107,7 @@ mod tests {
     #[test]
     fn terminal_search_report_renders_unclosed_goal_lazily() {
         let state = Arc::new(CountingState {
-            goal: Proposition::condition_is(crate::kernel::ConditionTerm::Constant(true), true),
+            goal: Proposition::condition_is(crate::kernel::OldConditionTerm::Constant(true), true),
             calls: AtomicUsize::new(0),
         });
         let diagnostic = Arc::new(ProofFailureDiagnostic {
@@ -1149,7 +1149,7 @@ mod tests {
     }
     fn unspelled_test_fact(variable: crate::kernel::Variable) -> Proposition {
         Proposition::condition_is(
-            crate::kernel::ConditionTerm::Compare {
+            crate::kernel::OldConditionTerm::Compare {
                 format: crate::kernel::MachineIntegerType::Int32,
                 relation: crate::kernel::CompareRelation::Equal,
                 left: Box::new(crate::kernel::OldMachineTerm::Variable(variable)),

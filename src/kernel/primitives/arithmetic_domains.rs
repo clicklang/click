@@ -2,7 +2,7 @@
 //! operation's explicit operands; deciding these propositions is separate.
 use super::*;
 
-impl ConditionTerm {
+impl OldConditionTerm {
     /// The two ordinary equalities describing the exceptional signed quotient
     /// or remainder pair. C promotes narrow operands before reaching this helper.
     pub(crate) fn signed_division_exception_tests(
@@ -42,7 +42,7 @@ impl Proposition {
         right: &OldMachineTerm,
     ) -> Self {
         let [minimum, minus_one] =
-            ConditionTerm::signed_division_exception_tests(format, left, right);
+            OldConditionTerm::signed_division_exception_tests(format, left, right);
         Self::Or(
             Box::new(Self::condition_is(minimum, false)),
             Box::new(Self::condition_is(minus_one, false)),
@@ -92,7 +92,12 @@ impl Proposition {
         };
         Self::And(
             Box::new(Self::condition_is(
-                ConditionTerm::machine_compare(format, CompareRelation::Equal, right.clone(), zero),
+                OldConditionTerm::machine_compare(
+                    format,
+                    CompareRelation::Equal,
+                    right.clone(),
+                    zero,
+                ),
                 false,
             )),
             Box::new(Self::signed_division_exclusion(format, left, right)),
@@ -112,16 +117,16 @@ impl Proposition {
         if let IntegerTerm::Machine(value) = &exact
             && format.format().contains(value.ty().format())
         {
-            return Self::condition_is(ConditionTerm::Constant(true), true);
+            return Self::condition_is(OldConditionTerm::Constant(true), true);
         }
         let (minimum, maximum) = format.format().bounds();
         Self::And(
             Box::new(Self::condition_is(
-                ConditionTerm::integer_less_equal(exact.clone(), IntegerTerm::constant(maximum)),
+                OldConditionTerm::integer_less_equal(exact.clone(), IntegerTerm::constant(maximum)),
                 true,
             )),
             Box::new(Self::condition_is(
-                ConditionTerm::integer_greater_equal(exact, IntegerTerm::constant(minimum)),
+                OldConditionTerm::integer_greater_equal(exact, IntegerTerm::constant(minimum)),
                 true,
             )),
         )
@@ -178,8 +183,8 @@ impl Proposition {
             crate::instrumentation::record_deterministic_work(1);
             match part {
                 condition_source_0 @ Proposition::ConditionIs(_, expected)
-                    if let Some((ConditionTerm::Constant(actual), _)) =
-                        condition_source_0.condition_native()
+                    if let Some((OldConditionTerm::Constant(actual), _)) =
+                        condition_source_0.old_condition()
                         && (*actual == expected) =>
                 {
                     None
@@ -206,7 +211,7 @@ impl Proposition {
     }
 }
 
-impl ConditionTerm {
+impl OldConditionTerm {
     /// A total representability comparison. The enclosing shift domain checks
     /// the original count; masking here makes the bound itself well-defined
     /// even when that original count is invalid.
@@ -343,14 +348,14 @@ mod construction_tests {
         // builder's root-type rule below does not fold ordinary comparisons.
         let domain = Proposition::And(
             Box::new(Proposition::condition_is(
-                ConditionTerm::integer_less_equal(
+                OldConditionTerm::integer_less_equal(
                     value.clone(),
                     IntegerTerm::constant_i64(i64::MAX),
                 ),
                 true,
             )),
             Box::new(Proposition::condition_is(
-                ConditionTerm::integer_greater_equal(value, IntegerTerm::constant_i64(i64::MIN)),
+                OldConditionTerm::integer_greater_equal(value, IntegerTerm::constant_i64(i64::MIN)),
                 true,
             )),
         );
@@ -365,12 +370,12 @@ mod construction_tests {
         );
         assert_eq!(
             Proposition::arithmetic_domain([
-                Proposition::condition_is(ConditionTerm::Constant(true), true),
-                Proposition::condition_is(ConditionTerm::Constant(false), false),
+                Proposition::condition_is(OldConditionTerm::Constant(true), true),
+                Proposition::condition_is(OldConditionTerm::Constant(false), false),
             ]),
             None
         );
-        let falsehood = Proposition::condition_is(ConditionTerm::Constant(false), true);
+        let falsehood = Proposition::condition_is(OldConditionTerm::Constant(false), true);
         assert_eq!(
             Proposition::arithmetic_domain([falsehood.clone()]),
             Some(falsehood)
@@ -393,7 +398,7 @@ mod construction_tests {
                     .unwrap();
             let range = Proposition::arithmetic_result_range(destination, value);
             assert_eq!(
-                matches!(&range, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(true), _)))),
+                matches!(&range, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Constant(true), _)))),
                 fits
             );
         }

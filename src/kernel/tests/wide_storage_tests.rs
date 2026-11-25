@@ -210,7 +210,7 @@ fn wide_storage_symbolic_load_requires_full_span_and_local_initialization() {
 fn wide_storage_frame_transport_uses_all_sixteen_bytes() {
     let before = SymbolicMemory::new().with_block("local:wide-storage", 48);
     let condition = |memory: &SymbolicMemory| {
-        ConditionTerm::equal(
+        OldConditionTerm::equal(
             OldMachineTerm::read_named(
                 ProgramPoint::at(&(intern_memory(memory.clone()))),
                 Box::new(address(0)),
@@ -254,7 +254,7 @@ fn wide_order_frame_transport_matches_across_a_disjoint_store() {
         literal(crate::kernel::program_expression::uint8_literal(3)),
     );
     let condition = |memory: &SymbolicMemory| {
-        ConditionTerm::uint64_less_than(
+        OldConditionTerm::uint64_less_than(
             OldMachineTerm::read_named(
                 ProgramPoint::at(&(intern_memory(memory.clone()))),
                 Box::new(address(0)),

@@ -28,7 +28,7 @@ fn equality(
     value: &SharedMachineIntegerTerm,
     ty: MachineIntegerType,
     constant: &OldMachineTerm,
-) -> ConditionTerm {
+) -> OldConditionTerm {
     crate::kernel::machine_integer::comparison::condition_for_operand_views(
         ty,
         CompareRelation::Equal,
@@ -105,7 +105,7 @@ fn exact_index_constant_substitution_requires_its_selected_fact_and_fitting_prod
         },
     };
     let address = pointer(4);
-    let native_source = ConditionTerm::equal(
+    let native_source = OldConditionTerm::equal(
         value.structural_value().clone(),
         OldMachineTerm::constant(7),
     );

@@ -15,7 +15,7 @@ fn shared_comparison_growing_prefixes_scale_linearly() {
                     [root, variable(993001 + index)],
                 );
                 let condition = Proposition::condition_is(
-                    ConditionTerm::integer_less_equal(
+                    OldConditionTerm::integer_less_equal(
                         IntegerTerm::Machine(
                             SharedMachineIntegerTerm::from_shared(format, root.clone()).unwrap(),
                         ),
@@ -65,7 +65,7 @@ fn comparison_read_prefixes_retain_conversions_without_exports() {
                 );
                 let proposition = |value| {
                     Proposition::condition_is(
-                        ConditionTerm::integer_less_than(
+                        OldConditionTerm::integer_less_than(
                             IntegerTerm::Machine(
                                 SharedMachineIntegerTerm::from_shared(format, value).unwrap(),
                             ),
@@ -334,7 +334,7 @@ fn substituted_conditional_guards_match_evaluation_with_linear_work() {
         let mut expected = zero.clone();
         for index in 0..size {
             let bound = OldMachineTerm::constant(index);
-            let guard = ConditionTerm::machine_compare(
+            let guard = OldConditionTerm::machine_compare(
                 format,
                 CompareRelation::Equal,
                 source.clone(),

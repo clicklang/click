@@ -17,8 +17,8 @@ fn wide_multiply_integer_capture_requires_both_native_product_bounds() {
     );
     let (min, max) = MachineIntegerType::Int128.format().bounds();
     let bounds = [
-        ConditionTerm::integer_greater_equal(product.clone(), IntegerTerm::constant(min)),
-        ConditionTerm::integer_less_equal(product.clone(), IntegerTerm::constant(max)),
+        OldConditionTerm::integer_greater_equal(product.clone(), IntegerTerm::constant(min)),
+        OldConditionTerm::integer_less_equal(product.clone(), IntegerTerm::constant(max)),
     ];
     let native = crate::kernel::program_expression::multiply(
         ProgramExpression::Value(left),
@@ -121,7 +121,7 @@ fn wide_scalar_integer_conversion_checks_bounds_and_keeps_symbolic_obligations()
         assert_eq!(paths.len(), 1);
         assert_eq!(paths[0].value.program_type(), destination.program_type());
         assert_eq!(paths[0].obligations.len(), 2);
-        assert!(paths[0].obligations.iter().any(|obligation| matches!(&obligation.proposition(), condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerGreaterEqual(_, _), _))))));
-        assert!(paths[0].obligations.iter().any(|obligation| matches!(&obligation.proposition(), condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerLessEqual(_, _), _))))));
+        assert!(paths[0].obligations.iter().any(|obligation| matches!(&obligation.proposition(), condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::IntegerGreaterEqual(_, _), _))))));
+        assert!(paths[0].obligations.iter().any(|obligation| matches!(&obligation.proposition(), condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::IntegerLessEqual(_, _), _))))));
     }
 }

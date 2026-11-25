@@ -47,7 +47,7 @@ fn unsigned_work_is_flat_beside_values_bounded_by_its_hub() {
     let (i, n) = (variable(0), variable(1));
     let unbounded_divisor = variable(2);
     let unsigned_lt = |a: &OldMachineTerm, b: &OldMachineTerm| {
-        ConditionTerm::unsigned_less_than(a.clone(), b.clone())
+        OldConditionTerm::unsigned_less_than(a.clone(), b.clone())
     };
     let mut samples = Vec::new();
     for size in [64, 128, 512] {
@@ -67,21 +67,21 @@ fn unsigned_work_is_flat_beside_values_bounded_by_its_hub() {
         // Every extra value also supplies a strict unsigned predecessor of
         // this divisor. Equality uses its maintained bound, not those edges.
         let (answer, nonzero) = graph_work(|| {
-            graph.decide(&ConditionTerm::uint32_equal(
+            graph.decide(&OldConditionTerm::uint32_equal(
                 unbounded_divisor.clone(),
                 constant(0),
             ))
         });
         assert_eq!(answer, Some(false));
         let (answer, widened) = graph_work(|| {
-            graph.decide(&ConditionTerm::uint64_less_than(
+            graph.decide(&OldConditionTerm::uint64_less_than(
                 OldMachineTerm::uint64_from_32(i.clone()),
                 OldMachineTerm::uint64_constant(1000),
             ))
         });
         assert_eq!(answer, Some(true));
         let (answer, masked) = graph_work(|| {
-            graph.decide(&ConditionTerm::uint64_less_than(
+            graph.decide(&OldConditionTerm::uint64_less_than(
                 OldMachineTerm::uint64_from_32(OldMachineTerm::Binary {
                     format: crate::kernel::MachineIntegerType::UInt32,
                     op: crate::kernel::MachineBinaryOp::BitwiseAnd,
@@ -105,13 +105,13 @@ fn unsigned_work_is_flat_beside_values_bounded_by_its_hub() {
                 true,
             );
             selected.assume_condition(
-                &ConditionTerm::address_offset_equal(
+                &OldConditionTerm::address_offset_equal(
                     offset.clone(),
                     crate::kernel::AddressOffset::Constant(0),
                 ),
                 false,
             );
-            selected.decide(&ConditionTerm::address_offset_equal(
+            selected.decide(&OldConditionTerm::address_offset_equal(
                 offset,
                 crate::kernel::AddressOffset::Constant(8),
             ))
@@ -149,7 +149,7 @@ fn many_names_for_one_value_stay_one_node() {
         for index in 0..size {
             let alias = variable(1 + index);
             let ((), work) = graph_work(|| {
-                graph.assume_condition(&ConditionTerm::equal(root.clone(), alias.clone()), true);
+                graph.assume_condition(&OldConditionTerm::equal(root.clone(), alias.clone()), true);
             });
             last = work;
             assert_eq!(graph.decide(&lt(&alias, &constant(101))), Some(true));
@@ -230,7 +230,7 @@ fn a_bound_on_a_shared_value_costs_the_same_beside_any_number_of_dependents() {
 fn written_order_queries_are_flat_beside_a_high_degree_bound() {
     let order = |domain, strict, left: &OldMachineTerm, right: &OldMachineTerm| {
         let (left, right) = (Box::new(left.clone()), Box::new(right.clone()));
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: match domain {
                 Domain::Int32 => MachineIntegerType::Int32,
                 Domain::Int64 => MachineIntegerType::Int64,
@@ -296,7 +296,7 @@ fn written_order_queries_are_flat_beside_a_high_degree_bound() {
 fn an_order_of_a_sign_cast_costs_what_the_order_of_its_word_costs() {
     let (i, n) = (variable(0), variable(1));
     let cast = |source, destination| OldMachineTerm::sign_cast32(source, destination, i.clone());
-    let order = |format, left: OldMachineTerm| ConditionTerm::Compare {
+    let order = |format, left: OldMachineTerm| OldConditionTerm::Compare {
         format,
         relation: CompareRelation::LessEqual,
         left: Box::new(left),
@@ -347,7 +347,7 @@ fn an_order_of_a_sign_cast_costs_what_the_order_of_its_word_costs() {
 #[test]
 fn an_order_against_a_uint32_constant_costs_what_its_word_costs() {
     let i = variable(0);
-    let order = |format, right: OldMachineTerm| ConditionTerm::Compare {
+    let order = |format, right: OldMachineTerm| OldConditionTerm::Compare {
         format,
         relation: CompareRelation::LessThan,
         left: Box::new(i.clone()),
@@ -410,7 +410,7 @@ fn retained_rounding_bounds_follow_the_dividend_chain_linearly() {
             );
         }
         let facts = graph(&[(
-            ConditionTerm::uint64_less_than(OldMachineTerm::uint64_constant(0), divisor),
+            OldConditionTerm::uint64_less_than(OldMachineTerm::uint64_constant(0), divisor),
             true,
         )]);
         let condition = crate::kernel::machine_integer::comparison::condition_for_operand_views(
@@ -437,7 +437,7 @@ fn retained_conditional_sum_bounds_preserve_native_intervals() {
     use crate::kernel::machine_integer::comparison::retained_arithmetic_comparison;
     let mut costs = Vec::new();
     for size in [16, 32, 64] {
-        let guard = ConditionTerm::uint64_less_than(
+        let guard = OldConditionTerm::uint64_less_than(
             variable(1_019_001),
             OldMachineTerm::uint64_constant(10),
         );
@@ -451,7 +451,7 @@ fn retained_conditional_sum_bounds_preserve_native_intervals() {
             sum = OldMachineTerm::uint64_add(sum, choice.clone());
         }
         let bound = |limit| {
-            ConditionTerm::uint64_less_equal(sum.clone(), OldMachineTerm::uint64_constant(limit))
+            OldConditionTerm::uint64_less_equal(sum.clone(), OldMachineTerm::uint64_constant(limit))
         };
         let native = bound(size);
         let retained = retained_arithmetic_comparison(&native).unwrap();

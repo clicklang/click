@@ -689,7 +689,7 @@ mod tests {
         assert!(exact.shared_integer_operand(&root).is_none());
         assert!(exact.refusal_status().is_none());
         assert!(!root.has_cached_native_argument());
-        let guard = KernelTermImport::default().condition(&ConditionTerm::bool_application(
+        let guard = KernelTermImport::default().condition(&OldConditionTerm::bool_application(
             "unsupported_integer_rewrite_guard",
             Vec::new(),
         ));
@@ -807,12 +807,12 @@ mod conditional_tests {
         let other = Variable(995101);
         let guard = Variable(995102);
         for condition in [
-            ConditionTerm::Constant(false),
-            ConditionTerm::Constant(true),
-            ConditionTerm::Variable(guard),
-            ConditionTerm::BoolEqual(
-                Box::new(ConditionTerm::Variable(guard)),
-                Box::new(ConditionTerm::Variable(guard)),
+            OldConditionTerm::Constant(false),
+            OldConditionTerm::Constant(true),
+            OldConditionTerm::Variable(guard),
+            OldConditionTerm::BoolEqual(
+                Box::new(OldConditionTerm::Variable(guard)),
+                Box::new(OldConditionTerm::Variable(guard)),
             ),
         ] {
             for no in [IntegerTerm::Variable(other), IntegerTerm::constant_i64(3)] {
@@ -823,9 +823,9 @@ mod conditional_tests {
                 };
                 let root = KernelTermImport::default().integer(&input.clone().into());
                 for truth in [
-                    ConditionTerm::Constant(false),
-                    ConditionTerm::Constant(true),
-                    ConditionTerm::Variable(Variable(995103)),
+                    OldConditionTerm::Constant(false),
+                    OldConditionTerm::Constant(true),
+                    OldConditionTerm::Variable(Variable(995103)),
                 ] {
                     let program = BTreeMap::from([(
                         guard,
@@ -929,7 +929,7 @@ mod conditional_tests {
         let from = Variable(995121);
         let to = Variable(995122);
         let input = IntegerTerm::If {
-            condition: Box::new(ConditionTerm::Variable(Variable(995123))),
+            condition: Box::new(OldConditionTerm::Variable(Variable(995123))),
             then_term: IntegerTerm::Variable(from).into(),
             else_term: IntegerTerm::Variable(to).into(),
         };
@@ -970,7 +970,7 @@ mod conditional_tests {
                     [IntegerTerm::constant_i64(3), large.clone()]
                 };
                 let input = IntegerTerm::If {
-                    condition: Box::new(ConditionTerm::Variable(guard)),
+                    condition: Box::new(OldConditionTerm::Variable(guard)),
                     then_term: arms[0].clone().into(),
                     else_term: arms[1].clone().into(),
                 };
@@ -979,7 +979,7 @@ mod conditional_tests {
                     guard,
                     TypedProgramValueReplacement::Bitvector(OldMachineTerm::bool_cast(
                         MachineIntegerType::UInt8,
-                        ConditionTerm::Constant(truth),
+                        OldConditionTerm::Constant(truth),
                     )),
                 )]);
                 let integer = BTreeMap::new();

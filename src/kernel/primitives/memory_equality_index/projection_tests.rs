@@ -127,16 +127,16 @@ fn fixture() -> (
         .store(slot.clone(), int32(2u32));
     let sibling = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::equal(
+            OldConditionTerm::equal(
                 OldMachineTerm::Variable(Variable(882_000)),
                 OldMachineTerm::Variable(Variable(882_001)),
             ),
             true,
         )
-        .assume_condition(ConditionTerm::address_equal(slot, middle.clone()), true);
+        .assume_condition(OldConditionTerm::address_equal(slot, middle.clone()), true);
     let branch = sibling
         .clone()
-        .assume_condition(ConditionTerm::address_equal(middle, alias), true);
+        .assume_condition(OldConditionTerm::address_equal(middle, alias), true);
     (head, definition, memory, branch, sibling)
 }
 

@@ -431,8 +431,8 @@ impl OldMachineTerm {
                 then_term,
                 else_term,
             } => match condition.as_ref() {
-                ConditionTerm::Constant(true) => then_term.as_const(),
-                ConditionTerm::Constant(false) => else_term.as_const(),
+                OldConditionTerm::Constant(true) => then_term.as_const(),
+                OldConditionTerm::Constant(false) => else_term.as_const(),
                 _ => None,
             },
             Self::RangeFold { .. } => None,
@@ -960,10 +960,10 @@ impl OldMachineTerm {
         }
     }
 
-    pub fn if_then_else(condition: ConditionTerm, then_term: Self, else_term: Self) -> Self {
+    pub fn if_then_else(condition: OldConditionTerm, then_term: Self, else_term: Self) -> Self {
         match condition {
-            ConditionTerm::Constant(true) => then_term,
-            ConditionTerm::Constant(false) => else_term,
+            OldConditionTerm::Constant(true) => then_term,
+            OldConditionTerm::Constant(false) => else_term,
             _ if then_term == else_term => then_term,
             condition => Self::If {
                 condition: Box::new(condition),
@@ -1092,8 +1092,8 @@ fn int64_constant(term: &OldMachineTerm) -> Option<i64> {
             then_term,
             else_term,
         } => match condition.as_ref() {
-            ConditionTerm::Constant(true) => int64_constant(then_term),
-            ConditionTerm::Constant(false) => int64_constant(else_term),
+            OldConditionTerm::Constant(true) => int64_constant(then_term),
+            OldConditionTerm::Constant(false) => int64_constant(else_term),
             _ => None,
         },
         _ => uint64_constant(term).map(|bits| bits as i64),
@@ -1163,8 +1163,8 @@ fn uint64_constant(term: &OldMachineTerm) -> Option<u64> {
             then_term,
             else_term,
         } => match condition.as_ref() {
-            ConditionTerm::Constant(true) => uint64_constant(then_term),
-            ConditionTerm::Constant(false) => uint64_constant(else_term),
+            OldConditionTerm::Constant(true) => uint64_constant(then_term),
+            OldConditionTerm::Constant(false) => uint64_constant(else_term),
             _ => None,
         },
         _ => None,
@@ -1206,8 +1206,8 @@ fn float32_bits_as_const(term: &OldMachineTerm) -> Option<u32> {
             then_term,
             else_term,
         } => match condition.as_ref() {
-            ConditionTerm::Constant(true) => float32_bits_as_const(then_term),
-            ConditionTerm::Constant(false) => float32_bits_as_const(else_term),
+            OldConditionTerm::Constant(true) => float32_bits_as_const(then_term),
+            OldConditionTerm::Constant(false) => float32_bits_as_const(else_term),
             _ => None,
         },
         _ => None,
@@ -1236,8 +1236,8 @@ fn float64_bits_as_const(term: &OldMachineTerm) -> Option<u64> {
             then_term,
             else_term,
         } => match condition.as_ref() {
-            ConditionTerm::Constant(true) => float64_bits_as_const(then_term),
-            ConditionTerm::Constant(false) => float64_bits_as_const(else_term),
+            OldConditionTerm::Constant(true) => float64_bits_as_const(then_term),
+            OldConditionTerm::Constant(false) => float64_bits_as_const(else_term),
             _ => None,
         },
         _ => None,
@@ -2629,7 +2629,7 @@ impl AddressOffset {
     }
 }
 
-impl ConditionTerm {
+impl OldConditionTerm {
     /// The value this condition has because its two operands are the same
     /// term, when it is a comparison of that kind.
     ///
@@ -3073,7 +3073,7 @@ impl ConditionTerm {
     /// exact, so its byte offset is the index times the stride with no
     /// wrap of its own. A shared pointer base may precede them; other
     /// nested sums are refused.
-    pub(crate) fn pointer_offset_uint64_association_guard(&self) -> Option<ConditionTerm> {
+    pub(crate) fn pointer_offset_uint64_association_guard(&self) -> Option<OldConditionTerm> {
         fn scalar(offset: &AddressOffset, width: i64) -> Option<SharedMachineIntegerTerm> {
             match offset {
                 AddressOffset::Int64Scaled {
@@ -3298,7 +3298,7 @@ impl ConditionTerm {
     /// pointer is null. Equal addresses do not make equal pointers (a pointer
     /// one past an object may have the next object's address), so this only
     /// decides the comparison and never replaces it as a fact
-    /// (`ConditionTerm::int64_equal`). Any other address-versus-integer
+    /// (`OldConditionTerm::int64_equal`). Any other address-versus-integer
     /// comparison stays undecided: an integer with no pointer origin never
     /// proves or refutes identity with an allocation.
     pub(crate) fn address_equality_as_pointer_equality(
@@ -3723,7 +3723,7 @@ impl ConditionTerm {
     /// The equality of two `uint32` values, a `uint32` term as written. It
     /// is the same fact as the `int32` equality of the same bits at the
     /// fact-identity and lookup-key level only (rule K6,
-    /// [`ConditionTerm::comparison_fact`]).
+    /// [`OldConditionTerm::comparison_fact`]).
     pub(crate) fn uint32_equal(left: OldMachineTerm, right: OldMachineTerm) -> Self {
         match Self::equal(left, right) {
             Self::Compare {
@@ -3878,7 +3878,7 @@ impl ConditionTerm {
     /// folding to `true`, so the fact raises to `p == p` and lowers back
     /// (`docs/internals/raise-lower-principle.md`, "Lowering is structural").
     /// Producers whose result must match a lowered goal use it too; checking
-    /// decides the reflexive comparison (`ConditionTerm::reflexive_value`).
+    /// decides the reflexive comparison (`OldConditionTerm::reflexive_value`).
     pub(crate) fn logical_pointer_equal(left: OldPointer, right: OldPointer) -> Self {
         if left == right && !left.is_null() {
             let address = left.address().clone();
@@ -6027,8 +6027,8 @@ mod shift_overflow_refusal_tests {
             "the helper must refuse to decide an out-of-range count"
         );
         assert_eq!(
-            ConditionTerm::signed_shift_left_overflows(left.clone(), right.clone()),
-            ConditionTerm::Overflows {
+            OldConditionTerm::signed_shift_left_overflows(left.clone(), right.clone()),
+            OldConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::ShiftLeft,
                 left: Box::new(left),
@@ -6042,7 +6042,7 @@ mod shift_overflow_refusal_tests {
 /// Whether a proposition holds with no facts at all, by a constant structural
 /// check: a condition that is the ground constant it asserts, a closed native
 /// comparison, or a comparison of a term with itself whose value
-/// ([`ConditionTerm::reflexive_value`]) is the one asserted.
+/// ([`OldConditionTerm::reflexive_value`]) is the one asserted.
 ///
 /// Every `using` list consults this one rule, so a premise that states such a
 /// fact needs no fact behind it wherever it is listed, and the kernel's
@@ -6050,21 +6050,21 @@ mod shift_overflow_refusal_tests {
 pub(crate) fn proposition_holds_without_facts(proposition: &Proposition) -> bool {
     match proposition {
         condition_source_0 @ Proposition::ConditionIs(_, value)
-            if let Some((ConditionTerm::Constant(constant), _)) =
-                condition_source_0.condition_native() =>
+            if let Some((OldConditionTerm::Constant(constant), _)) =
+                condition_source_0.old_condition() =>
         {
             constant == value
         }
         condition_source_0 @ Proposition::ConditionIs(_, value)
             if let Some((
-                condition @ ConditionTerm::Compare {
+                condition @ OldConditionTerm::Compare {
                     format,
                     left,
                     right,
                     ..
                 },
                 _,
-            )) = condition_source_0.condition_native()
+            )) = condition_source_0.old_condition()
                 && (format.constant_from_term(left).is_some()
                     && format.constant_from_term(right).is_some()) =>
         {
@@ -6135,7 +6135,7 @@ pub(crate) fn holds_by_format_range(proposition: &Proposition) -> bool {
         }
     };
     let truth = match condition.old_form() {
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format,
             relation,
             left,
@@ -6154,14 +6154,14 @@ pub(crate) fn holds_by_format_range(proposition: &Proposition) -> bool {
                 _ => None,
             }
         }
-        ConditionTerm::IntegerLessThan(left, right)
-        | ConditionTerm::IntegerLessEqual(left, right)
-        | ConditionTerm::IntegerGreaterThan(left, right)
-        | ConditionTerm::IntegerGreaterEqual(left, right) => {
+        OldConditionTerm::IntegerLessThan(left, right)
+        | OldConditionTerm::IntegerLessEqual(left, right)
+        | OldConditionTerm::IntegerGreaterThan(left, right)
+        | OldConditionTerm::IntegerGreaterEqual(left, right) => {
             let relation = match condition.old_form() {
-                ConditionTerm::IntegerLessThan(..) => R::LessThan,
-                ConditionTerm::IntegerLessEqual(..) => R::LessEqual,
-                ConditionTerm::IntegerGreaterThan(..) => R::GreaterThan,
+                OldConditionTerm::IntegerLessThan(..) => R::LessThan,
+                OldConditionTerm::IntegerLessEqual(..) => R::LessEqual,
+                OldConditionTerm::IntegerGreaterThan(..) => R::GreaterThan,
                 _ => R::GreaterEqual,
             };
             let range = |term: &IntegerTerm| match term {
@@ -6202,45 +6202,45 @@ pub(crate) fn mirrored_equality(proposition: &Proposition) -> Option<Proposition
         return None;
     };
     let mirrored = match condition.old_form() {
-        ConditionTerm::IntegerEqual(left, right) => {
-            ConditionTerm::IntegerEqual(right.clone(), left.clone())
+        OldConditionTerm::IntegerEqual(left, right) => {
+            OldConditionTerm::IntegerEqual(right.clone(), left.clone())
         }
-        ConditionTerm::IntegerNotEqual(left, right) => {
-            ConditionTerm::IntegerNotEqual(right.clone(), left.clone())
+        OldConditionTerm::IntegerNotEqual(left, right) => {
+            OldConditionTerm::IntegerNotEqual(right.clone(), left.clone())
         }
-        ConditionTerm::AlgebraicEqual(left, right) => {
-            ConditionTerm::AlgebraicEqual(right.clone(), left.clone())
+        OldConditionTerm::AlgebraicEqual(left, right) => {
+            OldConditionTerm::AlgebraicEqual(right.clone(), left.clone())
         }
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
             relation: CompareRelation::Equal,
             left,
             right,
-        } => ConditionTerm::Compare {
+        } => OldConditionTerm::Compare {
             format: *format,
             relation: CompareRelation::Equal,
             left: right.clone(),
             right: left.clone(),
         },
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left,
             right,
-        } => ConditionTerm::Compare {
+        } => OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: right.clone(),
             right: left.clone(),
         },
-        ConditionTerm::AddressOffsetEqual(left, right) => {
-            ConditionTerm::AddressOffsetEqual(right.clone(), left.clone())
+        OldConditionTerm::AddressOffsetEqual(left, right) => {
+            OldConditionTerm::AddressOffsetEqual(right.clone(), left.clone())
         }
-        ConditionTerm::AddressEqual(left, right) => {
-            ConditionTerm::AddressEqual(right.clone(), left.clone())
+        OldConditionTerm::AddressEqual(left, right) => {
+            OldConditionTerm::AddressEqual(right.clone(), left.clone())
         }
-        ConditionTerm::PointerEqual(left, right) => {
-            ConditionTerm::PointerEqual(right.clone(), left.clone())
+        OldConditionTerm::PointerEqual(left, right) => {
+            OldConditionTerm::PointerEqual(right.clone(), left.clone())
         }
         _ => return None,
     };
@@ -6301,7 +6301,7 @@ mod integer_equality_citation_tests {
             MachineIntegerType::Int64,
             MachineIntegerType::UInt64,
         ] {
-            let condition = ConditionTerm::Compare {
+            let condition = OldConditionTerm::Compare {
                 format,
                 relation: CompareRelation::LessThan,
                 left: Box::new(
@@ -6328,7 +6328,7 @@ mod integer_equality_citation_tests {
     fn listed_integer_constant_arithmetic_is_available_without_facts() {
         let zero: SharedIntegerTerm = IntegerTerm::constant_i64(0).into();
         let sum: SharedIntegerTerm = IntegerTerm::Add(zero.clone(), zero.clone()).into();
-        let equality = ConditionTerm::IntegerEqual(zero.clone(), sum);
+        let equality = OldConditionTerm::IntegerEqual(zero.clone(), sum);
         assert!(listed_premise_holds(
             &Proposition::condition_is(equality.clone(), true),
             |_| false
@@ -6337,7 +6337,7 @@ mod integer_equality_citation_tests {
             &Proposition::condition_is(equality, false),
             |_| false
         ));
-        let symbolic = ConditionTerm::IntegerEqual(
+        let symbolic = OldConditionTerm::IntegerEqual(
             zero.clone(),
             IntegerTerm::Variable(Variable(931_001)).into(),
         );
@@ -6345,7 +6345,7 @@ mod integer_equality_citation_tests {
             &Proposition::condition_is(symbolic, true),
             |_| false
         ));
-        let undefined = ConditionTerm::IntegerEqual(
+        let undefined = OldConditionTerm::IntegerEqual(
             IntegerTerm::truncating_quotient(
                 IntegerTerm::constant_i64(1),
                 IntegerTerm::constant_i64(0),
@@ -6365,23 +6365,24 @@ mod integer_equality_citation_tests {
         let right: SharedIntegerTerm = IntegerTerm::Variable(Variable(931_012)).into();
         for polarity in [true, false] {
             let source = Proposition::condition_is(
-                ConditionTerm::IntegerEqual(left.clone(), right.clone()),
+                OldConditionTerm::IntegerEqual(left.clone(), right.clone()),
                 polarity,
             );
             let target = Proposition::condition_is(
-                ConditionTerm::IntegerEqual(right.clone(), left.clone()),
+                OldConditionTerm::IntegerEqual(right.clone(), left.clone()),
                 polarity,
             );
             assert_eq!(mirrored_equality(&source), Some(target.clone()));
             assert_eq!(mirrored_equality(&target), Some(source.clone()));
             assert!(listed_premise_holds(&target, |fact| fact == &source));
             let wrong_polarity = Proposition::condition_is(
-                ConditionTerm::IntegerEqual(right.clone(), left.clone()),
+                OldConditionTerm::IntegerEqual(right.clone(), left.clone()),
                 !polarity,
             );
             assert!(!listed_premise_holds(&wrong_polarity, |fact| fact == &source));
         }
-        let ordered = Proposition::condition_is(ConditionTerm::IntegerLessThan(left, right), true);
+        let ordered =
+            Proposition::condition_is(OldConditionTerm::IntegerLessThan(left, right), true);
         assert!(mirrored_equality(&ordered).is_none());
     }
 }
@@ -6396,7 +6397,7 @@ mod connective_walk_tests {
     fn a_decided_connective_does_not_ask_its_right_side() {
         let side = |name: u64| {
             Proposition::condition_is(
-                ConditionTerm::signed_less_than(
+                OldConditionTerm::signed_less_than(
                     OldMachineTerm::Variable(Variable(name)),
                     OldMachineTerm::constant(0),
                 ),
@@ -6557,7 +6558,7 @@ mod format_range_premise_tests {
 
     fn holds(relation: CompareRelation, left: OldMachineTerm, bound: i32) -> bool {
         holds_by_format_range(&Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation,
                 left: Box::new(left),
@@ -6589,7 +6590,7 @@ mod format_range_premise_tests {
                     .into();
             let at_least = |bound: i64| {
                 holds_by_format_range(&Proposition::condition_is(
-                    ConditionTerm::IntegerLessEqual(
+                    OldConditionTerm::IntegerLessEqual(
                         IntegerTerm::constant_i64(bound).into(),
                         observed.clone(),
                     ),
@@ -6664,16 +6665,16 @@ mod format_range_premise_tests {
                         };
                         let condition = match relation {
                             CompareRelation::LessThan => {
-                                ConditionTerm::IntegerLessThan(left, right)
+                                OldConditionTerm::IntegerLessThan(left, right)
                             }
                             CompareRelation::LessEqual => {
-                                ConditionTerm::IntegerLessEqual(left, right)
+                                OldConditionTerm::IntegerLessEqual(left, right)
                             }
                             CompareRelation::GreaterThan => {
-                                ConditionTerm::IntegerGreaterThan(left, right)
+                                OldConditionTerm::IntegerGreaterThan(left, right)
                             }
                             CompareRelation::GreaterEqual => {
-                                ConditionTerm::IntegerGreaterEqual(left, right)
+                                OldConditionTerm::IntegerGreaterEqual(left, right)
                             }
                             _ => unreachable!(),
                         };

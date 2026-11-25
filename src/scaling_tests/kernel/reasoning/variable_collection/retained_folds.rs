@@ -294,7 +294,7 @@ fn cached_integer_condition_variable_readers_reuse_the_produced_operands() {
 #[test]
 fn minted_scalar_comparison_readers_reuse_selected_native_read_work() {
     use crate::kernel::{
-        BooleanOperandView, CompareRelation, ConditionTerm, OldMachineTerm, StoredConditionTerm,
+        BooleanOperandView, CompareRelation, OldConditionTerm, OldMachineTerm, StoredConditionTerm,
     };
     for size in [16, 64, 256] {
         let _session = VerificationSession::enter();
@@ -312,7 +312,7 @@ fn minted_scalar_comparison_readers_reuse_selected_native_read_work() {
             base: AddressBase::Symbolic(Variable(979199)),
             offset: crate::kernel::AddressOffset::scaled_int32_node(offset, 4),
         };
-        let native = ConditionTerm::Compare {
+        let native = OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(OldMachineTerm::read_named(

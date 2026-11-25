@@ -8,8 +8,8 @@ pub(crate) use fact_identity::{FactOperand, fact_operand_identity};
 
 use super::{Relation, identity, range, representation};
 use crate::kernel::{
-    ConditionTerm, IntegerComparisonOperator, IntegerTerm, KernelTerm, KernelTermNode,
-    MachineIntegerType, OldMachineTerm, Proposition, SharedIntegerTerm, SharedMachineIntegerTerm,
+    IntegerComparisonOperator, IntegerTerm, KernelTerm, KernelTermNode, MachineIntegerType,
+    OldConditionTerm, OldMachineTerm, Proposition, SharedIntegerTerm, SharedMachineIntegerTerm,
 };
 
 /// A written comparison for structural matching. Unlike checking views, this
@@ -48,9 +48,9 @@ pub(crate) fn structural_boolean_comparison_view(
 }
 
 pub(crate) fn structural_comparison_view(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
 ) -> Option<StructuralComparisonView<'_>> {
-    if let ConditionTerm::Compare {
+    if let OldConditionTerm::Compare {
         format,
         relation,
         left,
@@ -128,16 +128,16 @@ pub(crate) fn structural_integer_comparison_view(
 }
 
 fn integer_comparison_operands(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
 ) -> Option<(IntegerComparisonOperator, [&SharedIntegerTerm; 2])> {
     use IntegerComparisonOperator as Op;
     Some(match condition {
-        ConditionTerm::IntegerLessThan(left, right) => (Op::LessThan, [left, right]),
-        ConditionTerm::IntegerLessEqual(left, right) => (Op::LessEqual, [left, right]),
-        ConditionTerm::IntegerGreaterThan(left, right) => (Op::GreaterThan, [left, right]),
-        ConditionTerm::IntegerGreaterEqual(left, right) => (Op::GreaterEqual, [left, right]),
-        ConditionTerm::IntegerEqual(left, right) => (Op::Equal, [left, right]),
-        ConditionTerm::IntegerNotEqual(left, right) => (Op::NotEqual, [left, right]),
+        OldConditionTerm::IntegerLessThan(left, right) => (Op::LessThan, [left, right]),
+        OldConditionTerm::IntegerLessEqual(left, right) => (Op::LessEqual, [left, right]),
+        OldConditionTerm::IntegerGreaterThan(left, right) => (Op::GreaterThan, [left, right]),
+        OldConditionTerm::IntegerGreaterEqual(left, right) => (Op::GreaterEqual, [left, right]),
+        OldConditionTerm::IntegerEqual(left, right) => (Op::Equal, [left, right]),
+        OldConditionTerm::IntegerNotEqual(left, right) => (Op::NotEqual, [left, right]),
         _ => return None,
     })
 }
@@ -145,7 +145,7 @@ fn integer_comparison_operands(
 /// An Integer comparison as `left REL right` with its truth folded in:
 /// `>`/`>=` swap their operands, and a false comparison is negated.
 fn integer_relation(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     value: bool,
 ) -> Option<(Relation, &SharedIntegerTerm, &SharedIntegerTerm)> {
     let (operator, operands) = integer_comparison_operands(condition)?;
@@ -184,16 +184,16 @@ fn order_integer_operands<T>(
 /// comparisons keep their Integer spelling
 /// (`representation::spells_comparison_natively`).
 pub(crate) fn native_comparison_of_integer_observation(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     value: bool,
-) -> Option<(ConditionTerm, bool)> {
+) -> Option<(OldConditionTerm, bool)> {
     native_comparison_view(condition, value)?.boxed_condition()
 }
 
 /// Check two literal native operands without rewriting the stored comparison
 /// or reading ambient facts. Symbolic operands are refused at their roots.
-pub(crate) fn literal_native_comparison_value(condition: &ConditionTerm) -> Option<bool> {
-    let ConditionTerm::Compare {
+pub(crate) fn literal_native_comparison_value(condition: &OldConditionTerm) -> Option<bool> {
+    let OldConditionTerm::Compare {
         format,
         relation,
         left,
@@ -212,7 +212,7 @@ pub(crate) fn literal_native_comparison_value(condition: &ConditionTerm) -> Opti
     let left = left_literal.as_ref().unwrap_or(left);
     let right = right_literal.as_ref().unwrap_or(right);
     // Wide equality reads no sign and is filed at `int64` whatever its
-    // literals' signedness (`ConditionTerm::int64_equal`): compare the bits.
+    // literals' signedness (`OldConditionTerm::int64_equal`): compare the bits.
     if *format == MachineIntegerType::Int64
         && *relation == crate::kernel::CompareRelation::Equal
         && let (Some(left), Some(right)) =
@@ -235,8 +235,8 @@ pub(crate) fn literal_native_comparison_value(condition: &ConditionTerm) -> Opti
     {
         return None;
     }
-    match ConditionTerm::machine_compare(*format, *relation, left.clone(), right.clone()) {
-        ConditionTerm::Constant(value) => Some(value),
+    match OldConditionTerm::machine_compare(*format, *relation, left.clone(), right.clone()) {
+        OldConditionTerm::Constant(value) => Some(value),
         _ => None,
     }
 }
@@ -244,11 +244,13 @@ pub(crate) fn literal_native_comparison_value(condition: &ConditionTerm) -> Opti
 /// The value of a closed condition from its literal roots alone: a constant,
 /// a native machine or float comparison, or a `bool` equality of two
 /// constants. Checking and exact matching decide the retained comparisons here.
-pub(crate) fn closed_condition_value(condition: &ConditionTerm) -> Option<bool> {
+pub(crate) fn closed_condition_value(condition: &OldConditionTerm) -> Option<bool> {
     match condition {
-        ConditionTerm::Constant(value) => Some(*value),
-        ConditionTerm::BoolEqual(left, right) => match (left.as_ref(), right.as_ref()) {
-            (ConditionTerm::Constant(left), ConditionTerm::Constant(right)) => Some(left == right),
+        OldConditionTerm::Constant(value) => Some(*value),
+        OldConditionTerm::BoolEqual(left, right) => match (left.as_ref(), right.as_ref()) {
+            (OldConditionTerm::Constant(left), OldConditionTerm::Constant(right)) => {
+                Some(left == right)
+            }
             _ => None,
         },
         condition => literal_native_comparison_value(condition)
@@ -273,9 +275,9 @@ pub(crate) fn retains_int32_match(
 /// Surface raises these operands as explicit Integer observations because
 /// direct machine comparison syntax retains a different comparison node.
 pub(crate) fn native_int32_fold_equality(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
 ) -> Option<[&OldMachineTerm; 2]> {
-    let ConditionTerm::Compare {
+    let OldConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: crate::kernel::CompareRelation::Equal,
         left,
@@ -306,7 +308,7 @@ pub(crate) fn logical_condition_for_operand_views(
     format: MachineIntegerType,
     relation: crate::kernel::CompareRelation,
     operands: [crate::kernel::MachineOperandView<'_>; 2],
-) -> ConditionTerm {
+) -> OldConditionTerm {
     logical_comparison(format, relation, operands, false)
 }
 
@@ -314,7 +316,7 @@ pub(in crate::kernel) fn logical_conditional_guard_for_operand_views(
     format: MachineIntegerType,
     relation: crate::kernel::CompareRelation,
     operands: [crate::kernel::MachineOperandView<'_>; 2],
-) -> ConditionTerm {
+) -> OldConditionTerm {
     logical_comparison(format, relation, operands, true)
 }
 
@@ -323,7 +325,7 @@ fn logical_comparison(
     relation: crate::kernel::CompareRelation,
     operands: [crate::kernel::MachineOperandView<'_>; 2],
     in_conditional: bool,
-) -> ConditionTerm {
+) -> OldConditionTerm {
     retained_comparison_for_operand_views(format, relation, operands, in_conditional)
         .unwrap_or_else(|| condition_for_operand_views_in(format, relation, operands, true))
 }
@@ -333,7 +335,7 @@ fn retained_comparison_for_operand_views(
     relation: crate::kernel::CompareRelation,
     operands: [crate::kernel::MachineOperandView<'_>; 2],
     in_conditional: bool,
-) -> Option<ConditionTerm> {
+) -> Option<OldConditionTerm> {
     let variables = operands.map(|operand| operand.variable().copied());
     let [left, right] = if matches!(format.format().bits(), 32 | 64)
         && let [Some(left), Some(right)] = variables
@@ -374,7 +376,7 @@ fn retained_compare(
     relation: crate::kernel::CompareRelation,
     left: OldMachineTerm,
     right: OldMachineTerm,
-) -> ConditionTerm {
+) -> OldConditionTerm {
     // Native 32-bit comparisons read sign-free words; their format carries
     // the signedness. Keep the same operand representation as exact rewriting.
     let [left, right] = if format.format().bits() == 32 {
@@ -384,14 +386,14 @@ fn retained_compare(
     };
     // Wide equality compares words, and its established native filing
     // format is Int64 even when the literal operands are unsigned
-    // (`ConditionTerm::int64_equal`). Narrower equality keeps its format.
+    // (`OldConditionTerm::int64_equal`). Narrower equality keeps its format.
     let format =
         if relation == crate::kernel::CompareRelation::Equal && format.format().bits() == 64 {
             MachineIntegerType::Int64
         } else {
             format
         };
-    ConditionTerm::Compare {
+    OldConditionTerm::Compare {
         format,
         relation,
         left: Box::new(left),
@@ -402,8 +404,8 @@ fn retained_compare(
 /// Whether logical lowering retained a comparison containing a bounded machine
 /// operation. Conditional evaluation must retain it even when checking can decide
 /// its truth intrinsically (a mask bound or reflexive operands, for example).
-pub(crate) fn is_bounded_machine_comparison(condition: &crate::kernel::ConditionTerm) -> bool {
-    let crate::kernel::ConditionTerm::Compare {
+pub(crate) fn is_bounded_machine_comparison(condition: &crate::kernel::OldConditionTerm) -> bool {
+    let crate::kernel::OldConditionTerm::Compare {
         format,
         left,
         right,
@@ -596,16 +598,16 @@ fn read_conditional_atom(
     };
     crate::instrumentation::record_deterministic_work(1);
     let condition = match arguments[0].node() {
-        N::Variable(variable) => ConditionTerm::Variable(*variable),
+        N::Variable(variable) => OldConditionTerm::Variable(*variable),
         N::BoolEqual {
             arguments: [left, right],
         } => {
             let (N::Variable(left), N::Variable(right)) = (left.node(), right.node()) else {
                 return None;
             };
-            ConditionTerm::BoolEqual(
-                Box::new(ConditionTerm::Variable(*left)),
-                Box::new(ConditionTerm::Variable(*right)),
+            OldConditionTerm::BoolEqual(
+                Box::new(OldConditionTerm::Variable(*left)),
+                Box::new(OldConditionTerm::Variable(*right)),
             )
         }
         N::BoolCompare {
@@ -619,7 +621,7 @@ fn read_conditional_atom(
                 left = left.into_word32();
                 right = right.into_word32();
             }
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: *format,
                 relation: *relation,
                 left: Box::new(left),
@@ -642,7 +644,7 @@ pub(crate) fn condition_for_operand_views(
     format: MachineIntegerType,
     relation: crate::kernel::CompareRelation,
     operands: [crate::kernel::MachineOperandView<'_>; 2],
-) -> ConditionTerm {
+) -> OldConditionTerm {
     condition_for_operand_views_in(format, relation, operands, false)
 }
 
@@ -656,7 +658,7 @@ fn condition_for_operand_views_in(
     relation: crate::kernel::CompareRelation,
     operands: [crate::kernel::MachineOperandView<'_>; 2],
     structural: bool,
-) -> ConditionTerm {
+) -> OldConditionTerm {
     use crate::kernel::{CompareRelation as R, MachineOperandView as V};
     if format == MachineIntegerType::Int64 && relation != R::Equal {
         let holds = |a, b| match relation {
@@ -671,7 +673,7 @@ fn condition_for_operand_views_in(
             operands[1],
             holds,
         ) {
-            return ConditionTerm::Constant(value);
+            return OldConditionTerm::Constant(value);
         }
     }
     if format == MachineIntegerType::UInt32
@@ -686,7 +688,7 @@ fn condition_for_operand_views_in(
             _ => None,
         };
         if let Some(result) = result {
-            return ConditionTerm::Constant(result);
+            return OldConditionTerm::Constant(result);
         }
     }
     // Calls and pointer addresses remain native comparison atoms, as before producer migration.
@@ -745,12 +747,12 @@ fn condition_for_operand_views_in(
         std::array::from_fn(|index| atoms[index].as_ref().map(V::Old).unwrap_or(operands[index]));
     if let [V::Old(left), V::Old(right)] = operands {
         let condition =
-            ConditionTerm::machine_compare(format, relation, left.clone(), right.clone());
+            OldConditionTerm::machine_compare(format, relation, left.clone(), right.clone());
         // Only identical or literal operands: a comparison the operands'
         // type range decides, such as `0u64 <= k`, keeps its established
         // decision.
         if structural
-            && matches!(condition, ConditionTerm::Constant(_))
+            && matches!(condition, OldConditionTerm::Constant(_))
             && matches!(format.format().bits(), 32 | 64)
             && (left == right
                 || (format.constant_from_term(left).is_some()
@@ -786,18 +788,20 @@ fn condition_for_operand_views_in(
         }
     });
     match relation {
-        R::Equal => ConditionTerm::integer_equal(left, right),
-        R::LessThan => ConditionTerm::integer_less_than(left, right),
-        R::LessEqual => ConditionTerm::integer_less_equal(left, right),
-        R::GreaterThan => ConditionTerm::integer_greater_than(left, right),
-        R::GreaterEqual => ConditionTerm::integer_greater_equal(left, right),
+        R::Equal => OldConditionTerm::integer_equal(left, right),
+        R::LessThan => OldConditionTerm::integer_less_than(left, right),
+        R::LessEqual => OldConditionTerm::integer_less_equal(left, right),
+        R::GreaterThan => OldConditionTerm::integer_greater_than(left, right),
+        R::GreaterEqual => OldConditionTerm::integer_greater_equal(left, right),
     }
 }
 
 /// Retain native arithmetic at an explicit checking boundary. This is a
 /// syntax-only reading of the selected comparison, not a lowering policy.
-pub(crate) fn retained_arithmetic_comparison(condition: &ConditionTerm) -> Option<ConditionTerm> {
-    let ConditionTerm::Compare {
+pub(crate) fn retained_arithmetic_comparison(
+    condition: &OldConditionTerm,
+) -> Option<OldConditionTerm> {
+    let OldConditionTerm::Compare {
         format,
         relation,
         left,
@@ -986,7 +990,7 @@ impl NativeComparisonView<'_> {
 
     /// An exact Integer reading retaining the carrier's shared operands.
     /// This is a checking consequence; the original lowered term is untouched.
-    pub(crate) fn integer_condition(&self) -> ConditionTerm {
+    pub(crate) fn integer_condition(&self) -> OldConditionTerm {
         let [left, right] = self.operands.each_ref().map(|operand| match operand {
             ComparisonOperand::Observation(value) => IntegerTerm::Machine(value.clone()).into(),
             other => IntegerTerm::from_machine(self.format, other.boxed_value().clone())
@@ -994,10 +998,10 @@ impl NativeComparisonView<'_> {
                 .into(),
         });
         match self.relation {
-            Relation::Equal => ConditionTerm::IntegerEqual(left, right),
-            Relation::NotEqual => ConditionTerm::IntegerNotEqual(left, right),
-            Relation::Less => ConditionTerm::IntegerLessThan(left, right),
-            Relation::LessEqual => ConditionTerm::IntegerLessEqual(left, right),
+            Relation::Equal => OldConditionTerm::IntegerEqual(left, right),
+            Relation::NotEqual => OldConditionTerm::IntegerNotEqual(left, right),
+            Relation::Less => OldConditionTerm::IntegerLessThan(left, right),
+            Relation::LessEqual => OldConditionTerm::IntegerLessEqual(left, right),
         }
     }
 
@@ -1005,9 +1009,9 @@ impl NativeComparisonView<'_> {
     /// quantified-body identity: disequality is a false equality.
     pub(crate) fn integer_proposition(&self) -> crate::kernel::Proposition {
         let condition = self.integer_condition();
-        if let ConditionTerm::IntegerNotEqual(left, right) = condition {
+        if let OldConditionTerm::IntegerNotEqual(left, right) = condition {
             crate::kernel::Proposition::condition_is(
-                ConditionTerm::IntegerEqual(left, right),
+                OldConditionTerm::IntegerEqual(left, right),
                 false,
             )
         } else {
@@ -1017,7 +1021,7 @@ impl NativeComparisonView<'_> {
 
     /// A checking reading that retains arithmetic in the shared arena.
     /// Only fixed-size leaves and already-written native operands use Compare.
-    pub(crate) fn retained_condition(&self) -> (ConditionTerm, bool) {
+    pub(crate) fn retained_condition(&self) -> (OldConditionTerm, bool) {
         use crate::kernel::CompareRelation as R;
         let relation = match self.relation {
             Relation::Equal | Relation::NotEqual => R::Equal,
@@ -1036,7 +1040,7 @@ impl NativeComparisonView<'_> {
         )
     }
 
-    fn boxed_condition(&self) -> Option<(ConditionTerm, bool)> {
+    fn boxed_condition(&self) -> Option<(OldConditionTerm, bool)> {
         representation::comparison(
             self.format,
             self.relation,
@@ -1049,11 +1053,11 @@ impl NativeComparisonView<'_> {
 /// One view for written native comparisons and exact Integer observations.
 /// Native operands are borrowed; Integer operands retain their shared handles.
 pub(crate) fn comparison_view(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     value: bool,
 ) -> Option<NativeComparisonView<'_>> {
     use crate::kernel::CompareRelation as R;
-    let ConditionTerm::Compare {
+    let OldConditionTerm::Compare {
         format,
         relation,
         left,
@@ -1081,7 +1085,7 @@ pub(crate) fn comparison_view(
 }
 
 pub(crate) fn native_comparison_view(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     value: bool,
 ) -> Option<NativeComparisonView<'static>> {
     let (operator, operands) = integer_comparison_operands(condition)?;
@@ -1170,14 +1174,14 @@ fn native_comparison_from_integer_operands(
 }
 
 pub(crate) fn structural_native_comparison_of_integer_observation(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     value: bool,
-) -> Option<(ConditionTerm, bool)> {
+) -> Option<(OldConditionTerm, bool)> {
     structural_native_comparison_view(condition, value)?.boxed_condition()
 }
 
 pub(crate) fn structural_native_comparison_view(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     value: bool,
 ) -> Option<NativeComparisonView<'static>> {
     let (relation, left, right) = integer_relation(condition, value)?;
@@ -1219,14 +1223,14 @@ pub(crate) fn reads_wide_integer_observations(proposition: &Proposition) -> bool
 /// [`native_comparison_of_integer_observation`] at every format, whatever
 /// its spelling: the forward map the converse reading checks against.
 fn native_comparison_at_format(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     value: bool,
-) -> Option<(ConditionTerm, bool)> {
+) -> Option<(OldConditionTerm, bool)> {
     comparison_view_at_format(condition, value)?.boxed_condition()
 }
 
 fn comparison_view_at_format(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     value: bool,
 ) -> Option<NativeComparisonView<'static>> {
     let (relation, left, right) = integer_relation(condition, value)?;
@@ -1307,16 +1311,16 @@ fn comparison_view_at_format_from_operands(
 /// observation the two sides name is tried; nothing else is visited.
 #[cfg(test)]
 pub(crate) fn native_comparison_through_integer_operations(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     value: bool,
 ) -> Option<(
-    ConditionTerm,
+    OldConditionTerm,
     bool,
     Vec<identity::IntegerOperationRangeBound>,
 )> {
     let (view, bounds) = comparison_view_through_integer_operations(condition, value)?;
     match view.boxed_condition()? {
-        (ConditionTerm::Constant(_), _) => None,
+        (OldConditionTerm::Constant(_), _) => None,
         (native, truth) => Some((native, truth, bounds)),
     }
 }
@@ -1324,19 +1328,19 @@ pub(crate) fn native_comparison_through_integer_operations(
 /// The operation bridge before any legacy condition is exported. Range
 /// premises are explicit outputs, so callers retain the same authority checks.
 pub(crate) fn comparison_view_through_integer_operations(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     value: bool,
 ) -> Option<(
     NativeComparisonView<'static>,
     Vec<identity::IntegerOperationRangeBound>,
 )> {
     let (left, right) = match condition {
-        ConditionTerm::IntegerLessThan(left, right)
-        | ConditionTerm::IntegerLessEqual(left, right)
-        | ConditionTerm::IntegerGreaterThan(left, right)
-        | ConditionTerm::IntegerGreaterEqual(left, right)
-        | ConditionTerm::IntegerEqual(left, right)
-        | ConditionTerm::IntegerNotEqual(left, right) => {
+        OldConditionTerm::IntegerLessThan(left, right)
+        | OldConditionTerm::IntegerLessEqual(left, right)
+        | OldConditionTerm::IntegerGreaterThan(left, right)
+        | OldConditionTerm::IntegerGreaterEqual(left, right)
+        | OldConditionTerm::IntegerEqual(left, right)
+        | OldConditionTerm::IntegerNotEqual(left, right) => {
             // Each side is read through its observations' value relations
             // (rule W), so `to_integer(x as uint32) + 1` is an operation on
             // `x`'s own format. Both readings are cached on the sides.
@@ -1377,14 +1381,18 @@ pub(crate) fn comparison_view_through_integer_operations(
         let (left, right) = (read(left)?, read(right)?);
         let (left, right): (SharedIntegerTerm, SharedIntegerTerm) = (left.into(), right.into());
         let read = match condition {
-            ConditionTerm::IntegerLessThan(..) => ConditionTerm::IntegerLessThan(left, right),
-            ConditionTerm::IntegerLessEqual(..) => ConditionTerm::IntegerLessEqual(left, right),
-            ConditionTerm::IntegerGreaterThan(..) => ConditionTerm::IntegerGreaterThan(left, right),
-            ConditionTerm::IntegerGreaterEqual(..) => {
-                ConditionTerm::IntegerGreaterEqual(left, right)
+            OldConditionTerm::IntegerLessThan(..) => OldConditionTerm::IntegerLessThan(left, right),
+            OldConditionTerm::IntegerLessEqual(..) => {
+                OldConditionTerm::IntegerLessEqual(left, right)
             }
-            ConditionTerm::IntegerEqual(..) => ConditionTerm::IntegerEqual(left, right),
-            _ => ConditionTerm::IntegerNotEqual(left, right),
+            OldConditionTerm::IntegerGreaterThan(..) => {
+                OldConditionTerm::IntegerGreaterThan(left, right)
+            }
+            OldConditionTerm::IntegerGreaterEqual(..) => {
+                OldConditionTerm::IntegerGreaterEqual(left, right)
+            }
+            OldConditionTerm::IntegerEqual(..) => OldConditionTerm::IntegerEqual(left, right),
+            _ => OldConditionTerm::IntegerNotEqual(left, right),
         };
         Some((native_comparison_view(&read, value)?, bounds))
     })
@@ -1418,8 +1426,8 @@ pub(crate) fn integer_readings_with_promotions(proposition: &Proposition) -> Vec
 /// comparison is built by the folding constructor, so it is the same term a
 /// promoted comparison of the widenings is. `None` for any other condition.
 /// One match on the root and two widenings.
-pub(crate) fn narrow_comparison_as_int32(condition: &ConditionTerm) -> Option<ConditionTerm> {
-    let ConditionTerm::Compare {
+pub(crate) fn narrow_comparison_as_int32(condition: &OldConditionTerm) -> Option<OldConditionTerm> {
+    let OldConditionTerm::Compare {
         format,
         relation,
         left,
@@ -1434,7 +1442,7 @@ pub(crate) fn narrow_comparison_as_int32(condition: &ConditionTerm) -> Option<Co
     let widen = |term: &OldMachineTerm| {
         super::conversion::convert_term(*format, MachineIntegerType::Int32, term.clone())
     };
-    Some(ConditionTerm::machine_compare(
+    Some(OldConditionTerm::machine_compare(
         MachineIntegerType::Int32,
         *relation,
         widen(left),
@@ -1448,18 +1456,18 @@ pub(crate) fn narrow_comparison_as_int32(condition: &ConditionTerm) -> Option<Co
 /// spelling: [`narrow_comparison_as_int32`], unless it folds to a constant.
 /// Each index files it inside its own adjuster, so assuming, forgetting and
 /// rebuilding a fact agree.
-pub(crate) fn narrow_fact_widening(condition: &ConditionTerm) -> Option<ConditionTerm> {
+pub(crate) fn narrow_fact_widening(condition: &OldConditionTerm) -> Option<OldConditionTerm> {
     narrow_comparison_as_int32(condition)
-        .filter(|widened| !matches!(widened, ConditionTerm::Constant(_)))
+        .filter(|widened| !matches!(widened, OldConditionTerm::Constant(_)))
 }
 
 /// The native 8- or 16-bit comparison a promoted `int32` comparison of
 /// widenings from one narrow format is the same fact as (rule K8), spelled
 /// natively: the reverse of [`narrow_comparison_as_int32`], read through
-/// [`ConditionTerm::comparison_fact`]. A Rust comparison of two narrow
+/// [`OldConditionTerm::comparison_fact`]. A Rust comparison of two narrow
 /// values states this native comparison. `None` for any other condition.
-pub(crate) fn native_narrow_comparison(condition: &ConditionTerm) -> Option<ConditionTerm> {
-    let ConditionTerm::Compare {
+pub(crate) fn native_narrow_comparison(condition: &OldConditionTerm) -> Option<OldConditionTerm> {
+    let OldConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         ..
     } = condition
@@ -1468,7 +1476,7 @@ pub(crate) fn native_narrow_comparison(condition: &ConditionTerm) -> Option<Cond
     };
     let (format, relation, left, right) = condition.comparison_fact()?;
     (format.format().bits() < 32).then(|| {
-        ConditionTerm::narrow_compare(
+        OldConditionTerm::narrow_compare(
             format,
             relation,
             left.term(format).into_owned(),
@@ -1494,9 +1502,9 @@ pub(crate) fn narrow_proposition_as_int32(proposition: &Proposition) -> Option<P
 /// engines read as `0 <= to_integer(x)` (rule W: a widening's observation is
 /// built as written and read through to its operand's), so there is one
 /// reading. One match on the two sides.
-fn integer_comparisons_of_widenings(condition: &ConditionTerm, value: bool) -> Vec<Proposition> {
+fn integer_comparisons_of_widenings(condition: &OldConditionTerm, value: bool) -> Vec<Proposition> {
     use crate::kernel::CompareRelation as R;
-    let ConditionTerm::Compare {
+    let OldConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation,
         left,
@@ -1519,18 +1527,18 @@ fn integer_comparisons_of_widenings(condition: &ConditionTerm, value: bool) -> V
         return Vec::new();
     };
     let (condition, truth) = match (relation, value) {
-        (R::Equal, truth) => (ConditionTerm::IntegerEqual(l, r), truth),
+        (R::Equal, truth) => (OldConditionTerm::IntegerEqual(l, r), truth),
         (R::LessThan, true) | (R::GreaterEqual, false) => {
-            (ConditionTerm::IntegerLessThan(l, r), true)
+            (OldConditionTerm::IntegerLessThan(l, r), true)
         }
         (R::LessEqual, true) | (R::GreaterThan, false) => {
-            (ConditionTerm::IntegerLessEqual(l, r), true)
+            (OldConditionTerm::IntegerLessEqual(l, r), true)
         }
         (R::GreaterThan, true) | (R::LessEqual, false) => {
-            (ConditionTerm::IntegerLessThan(r, l), true)
+            (OldConditionTerm::IntegerLessThan(r, l), true)
         }
         (R::GreaterEqual, true) | (R::LessThan, false) => {
-            (ConditionTerm::IntegerLessEqual(r, l), true)
+            (OldConditionTerm::IntegerLessEqual(r, l), true)
         }
     };
     vec![Proposition::condition_is(condition, truth)]
@@ -1573,14 +1581,14 @@ pub(crate) fn integer_observations_of_native_comparison(
         };
         let (left, right): (SharedIntegerTerm, SharedIntegerTerm) = (left.into(), right.into());
         let candidates = [
-            ConditionTerm::IntegerLessEqual(left.clone(), right.clone()),
-            ConditionTerm::IntegerLessThan(left.clone(), right.clone()),
-            ConditionTerm::IntegerLessEqual(right.clone(), left.clone()),
-            ConditionTerm::IntegerLessThan(right.clone(), left.clone()),
-            ConditionTerm::IntegerEqual(left.clone(), right.clone()),
+            OldConditionTerm::IntegerLessEqual(left.clone(), right.clone()),
+            OldConditionTerm::IntegerLessThan(left.clone(), right.clone()),
+            OldConditionTerm::IntegerLessEqual(right.clone(), left.clone()),
+            OldConditionTerm::IntegerLessThan(right.clone(), left.clone()),
+            OldConditionTerm::IntegerEqual(left.clone(), right.clone()),
         ];
         for candidate in candidates {
-            let truth = if matches!(candidate, ConditionTerm::IntegerEqual(..)) {
+            let truth = if matches!(candidate, OldConditionTerm::IntegerEqual(..)) {
                 *value
             } else {
                 true
@@ -1638,7 +1646,7 @@ mod borrowed_comparison_tests {
                 (R::GreaterThan, !signed),
                 (R::GreaterEqual, !signed),
             ] {
-                let condition = ConditionTerm::Compare {
+                let condition = OldConditionTerm::Compare {
                     format,
                     relation,
                     left: Box::new(left.clone()),
@@ -1656,7 +1664,7 @@ mod borrowed_comparison_tests {
                         expected != truth
                     );
                 }
-                let symbolic = ConditionTerm::Compare {
+                let symbolic = OldConditionTerm::Compare {
                     format,
                     relation,
                     left: Box::new(OldMachineTerm::Variable(Variable(992597))),
@@ -1682,13 +1690,13 @@ mod borrowed_comparison_tests {
                 (R::GreaterEqual, true, Relation::LessEqual, true),
                 (R::GreaterEqual, false, Relation::Less, false),
             ] {
-                let condition = ConditionTerm::Compare {
+                let condition = OldConditionTerm::Compare {
                     format,
                     relation,
                     left: Box::new(OldMachineTerm::Variable(Variable(982412))),
                     right: Box::new(OldMachineTerm::Variable(Variable(982413))),
                 };
-                let ConditionTerm::Compare { left, right, .. } = &condition else {
+                let OldConditionTerm::Compare { left, right, .. } = &condition else {
                     unreachable!()
                 };
                 let view = comparison_view(&condition, truth).unwrap();

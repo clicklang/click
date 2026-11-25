@@ -3,7 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
-use crate::kernel::{CompareRelation, ConditionTerm};
+use crate::kernel::{CompareRelation, OldConditionTerm};
 
 const DEPTHS: [u64; 4] = [8, 32, 128, 512];
 
@@ -41,7 +41,7 @@ fn narrow_equation_width_reads_are_root_bounded() {
             for index in 1..depth {
                 side = OldMachineTerm::machine_binary(format, Op::Add, side, var(20_000 + index));
             }
-            let equation = |right| ConditionTerm::Compare {
+            let equation = |right| OldConditionTerm::Compare {
                 format: Ty::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(side.clone()),
@@ -153,7 +153,7 @@ fn narrow_store_equation_query_scaling(sizes: [u64; 4]) {
                 for i in 1..=size {
                     memory = memory.store(cell(i as i64), narrow_stored_value(format, 3));
                     facts = facts.assume_condition(
-                        ConditionTerm::address_equal(
+                        OldConditionTerm::address_equal(
                             Address::symbolic(Variable(995000 + i)),
                             if related { cell(0) } else { cell(i as i64) },
                         ),
@@ -162,8 +162,10 @@ fn narrow_store_equation_query_scaling(sizes: [u64; 4]) {
                 }
                 memory = memory.store(cell(0), stored.clone());
                 let query = Address::symbolic(Variable(999999));
-                facts = facts
-                    .assume_condition(ConditionTerm::address_equal(query.clone(), cell(0)), true);
+                facts = facts.assume_condition(
+                    OldConditionTerm::address_equal(query.clone(), cell(0)),
+                    true,
+                );
                 facts = facts.assume_proposition(
                     crate::kernel::memory_history::store_value_equation(&memory, &cell(0), &stored)
                         .unwrap(),

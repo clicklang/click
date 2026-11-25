@@ -110,12 +110,12 @@ fn boolean_lowering_keeps_growing_logical_results_shared() {
     let mut costs = Vec::new();
     for size in [8, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut condition = ConditionTerm::Variable(Variable(999991));
+        let mut condition = OldConditionTerm::Variable(Variable(999991));
         for index in 0..size {
-            condition = ConditionTerm::BoolIf {
-                condition: Box::new(ConditionTerm::Variable(Variable(999000 + index))),
+            condition = OldConditionTerm::BoolIf {
+                condition: Box::new(OldConditionTerm::Variable(Variable(999000 + index))),
                 then_condition: Box::new(condition),
-                else_condition: Box::new(ConditionTerm::Constant(false)),
+                else_condition: Box::new(OldConditionTerm::Constant(false)),
             };
         }
         let expression = SpecExpression::ProgramExpression(ProgramExpression::Value(

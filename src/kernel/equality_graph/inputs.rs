@@ -311,7 +311,7 @@ impl EqualityGraph {
             };
             if let Some((left, right)) = pair {
                 equalities.push(crate::kernel::Proposition::condition_is(
-                    crate::kernel::ConditionTerm::address_equal(left.clone(), right.clone()),
+                    crate::kernel::OldConditionTerm::address_equal(left.clone(), right.clone()),
                     true,
                 ));
             }
@@ -333,7 +333,7 @@ impl EqualityGraph {
                     )
                 }
                 Input::Int32(left, right) if is_scalar_read(left) || is_scalar_read(right) => {
-                    Some(ConditionTerm::Compare {
+                    Some(OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(left.clone()),
@@ -341,7 +341,7 @@ impl EqualityGraph {
                     })
                 }
                 Input::UInt64(left, right) if is_scalar_read(left) || is_scalar_read(right) => {
-                    Some(ConditionTerm::Compare {
+                    Some(OldConditionTerm::Compare {
                         format: MachineIntegerType::Int64,
                         relation: CompareRelation::Equal,
                         left: Box::new(left.clone()),
@@ -349,7 +349,7 @@ impl EqualityGraph {
                     })
                 }
                 Input::Offset(left, right) if is_read_offset(left) || is_read_offset(right) => {
-                    Some(ConditionTerm::AddressOffsetEqual(
+                    Some(OldConditionTerm::AddressOffsetEqual(
                         Box::new(left.clone()),
                         Box::new(right.clone()),
                     ))
@@ -372,13 +372,13 @@ impl EqualityGraph {
 #[cfg(test)]
 mod read_trace_tests {
     use super::*;
-    use crate::kernel::{ConditionTerm, Proposition};
+    use crate::kernel::{OldConditionTerm, Proposition};
 
     fn pointer(id: u64) -> Address {
         Address::symbolic(Variable(id))
     }
     fn equality(left: Address, right: Address) -> Proposition {
-        Proposition::condition_is(ConditionTerm::address_equal(left, right), true)
+        Proposition::condition_is(OldConditionTerm::address_equal(left, right), true)
     }
 
     #[test]
@@ -493,7 +493,7 @@ mod read_trace_tests {
         assert_eq!(
             graph.read_equalities_since(&checkpoint).equalities,
             vec![Proposition::condition_is(
-                ConditionTerm::AddressOffsetEqual(Box::new(read), Box::new(target)),
+                OldConditionTerm::AddressOffsetEqual(Box::new(read), Box::new(target)),
                 true
             )]
         );

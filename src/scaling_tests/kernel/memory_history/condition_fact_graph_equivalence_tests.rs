@@ -13,7 +13,7 @@ fn condition_fact_graph_queries_scale_without_fact_index() {
         let mut context = PureFactContext::new();
         for index in 0..size {
             context =
-                context.assume_condition(ConditionTerm::equal(var(index), var(index + 1)), true);
+                context.assume_condition(OldConditionTerm::equal(var(index), var(index + 1)), true);
         }
         let _scope = context.enter_id_scope();
         PureFactContext::reset_bitvector_equality_index_fact_visits();
@@ -50,7 +50,7 @@ fn failed_check_cell_capture_is_bounded_and_ignores_unrelated_facts() {
         let mut context = PureFactContext::new();
         for index in 0..size {
             context = context.assume_condition(
-                ConditionTerm::equal(var(990_000 + index), OldMachineTerm::constant(7)),
+                OldConditionTerm::equal(var(990_000 + index), OldMachineTerm::constant(7)),
                 true,
             );
         }

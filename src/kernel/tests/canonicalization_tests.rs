@@ -233,7 +233,7 @@ fn assert_load_variables_have_defining_facts(
     for load_variable in load_variables {
         let defined = facts.fact_iter().any(|fact| {
             crate::kernel::is_load_variable_defining_fact(&fact.proposition)
-                && matches!(&fact.proposition(), condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right: _ }, _)) if (matches!(left.as_ref(), OldMachineTerm::Variable(variable) if variable == load_variable))))
+                && matches!(&fact.proposition(), condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right: _ }, _)) if (matches!(left.as_ref(), OldMachineTerm::Variable(variable) if variable == load_variable))))
         });
         assert!(
             defined,
@@ -415,7 +415,7 @@ fn canonical_term_is_idempotent_for_every_term_shape() {
         machine_binary!(Int32, BitwiseXor, load.clone(), u32_value.clone()),
         machine_unary!(Int32, BitwiseNot, load.clone()),
         OldMachineTerm::If {
-            condition: Box::new(ConditionTerm::Compare {
+            condition: Box::new(OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(load.clone()),
@@ -487,7 +487,7 @@ fn canonical_term_is_idempotent_at_multiple_term_depths() {
                 Int32,
                 Add,
                 Box::new(OldMachineTerm::If {
-                    condition: Box::new(ConditionTerm::Compare {
+                    condition: Box::new(OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(term),
@@ -524,7 +524,7 @@ fn canonical_term_is_independent_of_contextual_equalities() {
     let term = OldMachineTerm::Variable(Variable(30_004));
     let canonical = crate::kernel::eval::canonical_term(&term);
     let equal_to_one = PureFactContext::new().assume_condition(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(term.clone()),
@@ -533,7 +533,7 @@ fn canonical_term_is_independent_of_contextual_equalities() {
         true,
     );
     let equal_to_two = PureFactContext::new().assume_condition(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(term.clone()),
@@ -544,7 +544,7 @@ fn canonical_term_is_independent_of_contextual_equalities() {
 
     let equals = |value| {
         Proposition::condition_is(
-            ConditionTerm::equal(term.clone(), OldMachineTerm::constant(value)),
+            OldConditionTerm::equal(term.clone(), OldMachineTerm::constant(value)),
             true,
         )
     };
@@ -625,7 +625,7 @@ fn atomic_canonicalization_reaches_loads_in_every_condition_region() {
         crate::kernel::LoadKind::Int32,
     );
     let overflow = OldMachineTerm::If {
-        condition: Box::new(ConditionTerm::Overflows {
+        condition: Box::new(OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
             left: Box::new(load.clone()),
@@ -635,7 +635,7 @@ fn atomic_canonicalization_reaches_loads_in_every_condition_region() {
         else_term: Box::new(OldMachineTerm::constant(3)),
     };
     let pointer_offset = OldMachineTerm::If {
-        condition: Box::new(ConditionTerm::AddressOffsetEqual(
+        condition: Box::new(OldConditionTerm::AddressOffsetEqual(
             Box::new(AddressOffset::scaled_int32_node(load.clone(), 4)),
             Box::new(AddressOffset::Constant(28)),
         )),
@@ -649,7 +649,7 @@ fn atomic_canonicalization_reaches_loads_in_every_condition_region() {
     };
     assert!(matches!(
         condition.as_ref(),
-        ConditionTerm::Overflows { format: MachineIntegerType::Int32, op: OverflowOperation::Add, left, right: _ }
+        OldConditionTerm::Overflows { format: MachineIntegerType::Int32, op: OverflowOperation::Add, left, right: _ }
             if left.as_ref() == &OldMachineTerm::constant(7)
     ));
 
@@ -659,7 +659,7 @@ fn atomic_canonicalization_reaches_loads_in_every_condition_region() {
     };
     assert!(matches!(
         condition.as_ref(),
-        ConditionTerm::AddressOffsetEqual(left, _)
+        OldConditionTerm::AddressOffsetEqual(left, _)
             if left.as_ref() == &AddressOffset::scaled_int32_node(load.clone(), 4)
     ));
 }
@@ -704,7 +704,7 @@ fn representational_load_equality_holds_beyond_the_former_depth_preflight() {
     assert!(crate::kernel::search::ProofSearch::proves(
         &(PureFactContext::new()),
         &Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(left),
@@ -838,14 +838,14 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
     );
 
     let with_index_fact = PureFactContext::new().assume_condition(
-        ConditionTerm::equal(index, OldMachineTerm::constant(0)),
+        OldConditionTerm::equal(index, OldMachineTerm::constant(0)),
         true,
     );
     assert!(
         !with_index_fact.int32_values_known_equal(&indexed_load_variable, &first_load_variable)
     );
     let goal = Proposition::condition_is(
-        ConditionTerm::equal(indexed_load_variable.clone(), first_load_variable.clone()),
+        OldConditionTerm::equal(indexed_load_variable.clone(), first_load_variable.clone()),
         true,
     );
     let derivation =
@@ -855,7 +855,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
     assert!(!derivation.check(&without_index_fact));
     // A different constant index selects a different cell.
     let other = PureFactContext::new().assume_condition(
-        ConditionTerm::equal(
+        OldConditionTerm::equal(
             OldMachineTerm::Variable(Variable(7)),
             OldMachineTerm::constant(1),
         ),
@@ -885,7 +885,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
         crate::kernel::LoadKind::Int32,
     ));
     let other_epoch_goal = Proposition::condition_is(
-        ConditionTerm::equal(indexed_load_variable.clone(), other_epoch_load),
+        OldConditionTerm::equal(indexed_load_variable.clone(), other_epoch_load),
         true,
     );
     assert!(
@@ -905,7 +905,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
         crate::kernel::LoadKind::Int32,
     ));
     let other_block_goal = Proposition::condition_is(
-        ConditionTerm::equal(indexed_load_variable, other_block_load),
+        OldConditionTerm::equal(indexed_load_variable, other_block_load),
         true,
     );
     assert!(
@@ -989,11 +989,11 @@ fn load_variables_compare_as_loads_under_bounds_pinned_indices() {
 
     let pinned = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_less_equal(j.clone(), OldMachineTerm::constant(2)),
+            OldConditionTerm::signed_less_equal(j.clone(), OldMachineTerm::constant(2)),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_than(j.clone(), OldMachineTerm::constant(2)),
+            OldConditionTerm::signed_less_than(j.clone(), OldMachineTerm::constant(2)),
             false,
         );
     assert!(pinned.bitvector_terms_proven_equal(&indexed, &third));
@@ -1202,7 +1202,7 @@ fn variable_substitution_visits_each_state_once_per_rewrite() {
     let mut totals = Vec::new();
     for depth in [2, 4, 8, 16] {
         let goal = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(nested_state_load(depth)),
@@ -1366,11 +1366,11 @@ fn a_store_through_a_wrapping_index_sum_is_placed_by_the_word_itself() {
     let bounded = |word: &OldMachineTerm, low: u32| {
         PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_less_equal(OldMachineTerm::constant(low), word.clone()),
+                OldConditionTerm::signed_less_equal(OldMachineTerm::constant(low), word.clone()),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_than(word.clone(), OldMachineTerm::constant(8)),
+                OldConditionTerm::signed_less_than(word.clone(), OldMachineTerm::constant(8)),
                 true,
             )
     };

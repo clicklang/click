@@ -979,7 +979,7 @@ fn borrow_certificate_recheck_scales_with_explicit_transition_delta() {
 
 #[test]
 fn offset_alias_overlap_uses_exact_bytes_and_ignores_unrelated_facts() {
-    use crate::kernel::{Address, AddressOffset, ConditionTerm};
+    use crate::kernel::{Address, AddressOffset, OldConditionTerm};
     let p = Address {
         base: "overlap".into(),
         offset: AddressOffset::Constant(0),
@@ -1000,7 +1000,7 @@ fn offset_alias_overlap_uses_exact_bytes_and_ignores_unrelated_facts() {
         let mut assumptions = PureFactContext::new();
         for index in 0..size {
             assumptions = assumptions.assume_condition(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     OldMachineTerm::Variable(Variable(1000 + index)),
                     OldMachineTerm::constant(0),
                 ),
@@ -1013,7 +1013,7 @@ fn offset_alias_overlap_uses_exact_bytes_and_ignores_unrelated_facts() {
             (-1, 2, true),
             (4_294_967_297, 8, false),
         ] {
-            let equality = ConditionTerm::address_offset_equal(
+            let equality = OldConditionTerm::address_offset_equal(
                 q.offset.clone(),
                 AddressOffset::Constant(offset),
             );
@@ -1061,7 +1061,7 @@ fn offset_alias_overlap_uses_exact_bytes_and_ignores_unrelated_facts() {
 #[ignore = "nightly: 1.2s in the parallel gate"]
 fn joint_fragment_reservation_does_not_scan_ambient_memory_with_scalar_equalities() {
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::equal(
+        OldConditionTerm::equal(
             OldMachineTerm::Variable(Variable(944_023)),
             OldMachineTerm::constant(7),
         ),
@@ -1437,7 +1437,7 @@ fn writes_without_active_memory_borrows_do_not_walk_pointer_aliases() {
                 let mut facts = PureFactContext::new();
                 for index in 0..count {
                     facts = facts.assume_condition(
-                        ConditionTerm::address_equal(
+                        OldConditionTerm::address_equal(
                             base.clone(),
                             Address::symbolic(Variable(980_001 + index as u64)),
                         ),
@@ -1548,7 +1548,7 @@ fn returned_view_recovery_retains_the_constructed_frame_as_aliases_and_owners_gr
             for index in 0..count {
                 if aliases {
                     assumptions = assumptions.assume_condition(
-                        ConditionTerm::address_equal(
+                        OldConditionTerm::address_equal(
                             base.clone(),
                             Address::symbolic(Variable(8_799_000 + u64::from(index))),
                         ),

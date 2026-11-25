@@ -69,8 +69,8 @@ fn signed_maximum(bits: u32) -> i64 {
     i64::MAX >> (64 - bits)
 }
 
-fn comparison(condition: &ConditionTerm) -> Option<NativeComparisonView<'_>> {
-    if matches!(condition, ConditionTerm::Compare { .. }) {
+fn comparison(condition: &OldConditionTerm) -> Option<NativeComparisonView<'_>> {
+    if matches!(condition, OldConditionTerm::Compare { .. }) {
         comparison_view(condition, true)
     } else {
         structural_native_comparison_view(condition, true)
@@ -178,7 +178,7 @@ fn constant_on_the_right<'a>(view: &'a NativeComparisonView<'_>) -> Option<(R, V
     Some((mirrored, right, value))
 }
 
-fn bound(format: Ty, relation: R, operand: View<'_>, value: i64) -> ConditionTerm {
+fn bound(format: Ty, relation: R, operand: View<'_>, value: i64) -> OldConditionTerm {
     let value = match format {
         Ty::Int64 => OldMachineTerm::int64_constant(value),
         Ty::UInt64 => OldMachineTerm::uint64_constant(value as u64),
@@ -187,7 +187,7 @@ fn bound(format: Ty, relation: R, operand: View<'_>, value: i64) -> ConditionTer
     condition_for_operand_views(format, relation, [operand, View::Old(&value)])
 }
 
-fn sign_condition(format: Ty, operand: View<'_>, negative: bool) -> ConditionTerm {
+fn sign_condition(format: Ty, operand: View<'_>, negative: bool) -> OldConditionTerm {
     if negative {
         return bound(format, R::LessThan, operand, 0);
     }
@@ -229,7 +229,7 @@ impl PureFactContext {
     /// A signedness conversion's sign test, or its operand's half-range
     /// test, decided as the other (module docs). `None` when `condition` is
     /// neither, or its equivalent is undecided.
-    pub(super) fn decide_by_sign_bit(&self, condition: &ConditionTerm) -> Option<bool> {
+    pub(super) fn decide_by_sign_bit(&self, condition: &OldConditionTerm) -> Option<bool> {
         if DECIDING_SIGN_BIT.with(std::cell::Cell::get) {
             return None;
         }
@@ -248,8 +248,8 @@ impl PureFactContext {
     /// 8- or 16-bit cast two range decisions about its operand.
     pub(in crate::kernel::assumptions) fn sign_bit_equivalent_conditions(
         &self,
-        condition: &ConditionTerm,
-    ) -> Vec<ConditionTerm> {
+        condition: &OldConditionTerm,
+    ) -> Vec<OldConditionTerm> {
         if DECIDING_SIGN_BIT.with(std::cell::Cell::get) {
             return Vec::new();
         }
@@ -266,7 +266,7 @@ impl PureFactContext {
         assume()
     }
 
-    fn sign_bit_equivalents(&self, condition: &ConditionTerm) -> Option<Vec<ConditionTerm>> {
+    fn sign_bit_equivalents(&self, condition: &OldConditionTerm) -> Option<Vec<OldConditionTerm>> {
         let view = comparison(condition)?;
         let widened = view.widened();
         let view = widened.as_ref().unwrap_or(&view);
@@ -402,7 +402,7 @@ impl PureFactContext {
     }
 }
 
-impl ConditionTerm {
+impl OldConditionTerm {
     /// Root-only probes used when admitting signedness comparisons.
     pub(crate) fn names_sign_cast32(&self) -> bool {
         let Some(view) = comparison(self) else {
@@ -450,7 +450,7 @@ mod tests {
             right: Box::new(variable(189202)),
         }
     }
-    fn shape(condition: ConditionTerm) -> (Ty, Relation, [OldMachineTerm; 2]) {
+    fn shape(condition: OldConditionTerm) -> (Ty, Relation, [OldMachineTerm; 2]) {
         let view = comparison(&condition).unwrap();
         (
             view.format,
@@ -467,9 +467,9 @@ mod tests {
     }
     fn shared_equivalents(
         context: &PureFactContext,
-        native: &ConditionTerm,
-    ) -> Option<Vec<ConditionTerm>> {
-        let ConditionTerm::Compare {
+        native: &OldConditionTerm,
+    ) -> Option<Vec<OldConditionTerm>> {
+        let OldConditionTerm::Compare {
             format,
             relation,
             left,
@@ -543,7 +543,7 @@ mod tests {
                     let native = bound(format, relation, View::Old(&operand), threshold);
                     let result = shared_equivalents(&context, &native).unwrap();
                     assert_eq!(result.len(), if format == Ty::Int64 { 2 } else { 1 });
-                    let ConditionTerm::Compare { left, right, .. } = native else {
+                    let OldConditionTerm::Compare { left, right, .. } = native else {
                         unreachable!()
                     };
                     let mirrored = match relation {
@@ -555,7 +555,7 @@ mod tests {
                     };
                     shared_equivalents(
                         &context,
-                        &ConditionTerm::machine_compare(format, mirrored, *right, *left),
+                        &OldConditionTerm::machine_compare(format, mirrored, *right, *left),
                     )
                     .unwrap();
                 }
@@ -612,14 +612,18 @@ mod tests {
                 to: destination,
                 value: Box::new(operand.clone()),
             };
-            let query =
-                ConditionTerm::signed_greater_than(cast, OldMachineTerm::constant(maximum as u32));
-            let lower = ConditionTerm::signed_less_equal(
+            let query = OldConditionTerm::signed_greater_than(
+                cast,
+                OldMachineTerm::constant(maximum as u32),
+            );
+            let lower = OldConditionTerm::signed_less_equal(
                 OldMachineTerm::constant((-maximum - 1) as u32),
                 operand.clone(),
             );
-            let upper =
-                ConditionTerm::signed_less_equal(operand, OldMachineTerm::constant(maximum as u32));
+            let upper = OldConditionTerm::signed_less_equal(
+                operand,
+                OldMachineTerm::constant(maximum as u32),
+            );
             for (has_lower, has_upper) in
                 [(false, false), (true, false), (false, true), (true, true)]
             {
@@ -651,17 +655,17 @@ mod tests {
                 to: destination,
                 value: Box::new(operand.clone()),
             };
-            let query = ConditionTerm::signed_less_than(converted, OldMachineTerm::constant(0));
+            let query = OldConditionTerm::signed_less_than(converted, OldMachineTerm::constant(0));
             assert!(shared_equivalents(&PureFactContext::new(), &query).is_none());
             let source = Proposition::condition_is(
-                ConditionTerm::unsigned_less_equal(operand, OldMachineTerm::constant(max)),
+                OldConditionTerm::unsigned_less_equal(operand, OldMachineTerm::constant(max)),
                 true,
             );
             let facts = PureFactContext::new().assume_proposition(source.clone());
             assert!(shared_equivalents(&facts, &query).is_some());
             // Use an independently weaker context for the missing-bound control.
             let weak = PureFactContext::new().assume_condition(
-                ConditionTerm::unsigned_less_equal(
+                OldConditionTerm::unsigned_less_equal(
                     sum(Ty::Int32),
                     OldMachineTerm::constant(max + 1),
                 ),

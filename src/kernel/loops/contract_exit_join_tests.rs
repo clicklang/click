@@ -22,7 +22,7 @@ fn exit_disjunct_restates_model_getters_without_replacing_history() {
     let fresh = model(986_101);
     let fact = |model| {
         Proposition::condition_is(
-            ConditionTerm::equal(
+            OldConditionTerm::equal(
                 OldMachineTerm::ClickFunctionApplication {
                     name: "pending".into(),
                     arguments: vec![crate::kernel::PureFunctionArgument::Algebraic(model)],

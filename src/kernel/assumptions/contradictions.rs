@@ -36,7 +36,7 @@ use crate::kernel::MachineOperandView as V;
 use crate::kernel::OldMachineTerm;
 use crate::kernel::equality_graph::scalar_evidence_pair;
 use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
-use crate::kernel::{ConditionTerm, Variable};
+use crate::kernel::{OldConditionTerm, Variable};
 use crate::persistent::{PersistentMap, PersistentSet};
 
 /// The widest bounded interval whose values are checked one by one against
@@ -46,7 +46,7 @@ const EXHAUSTIBLE_RANGE: i64 = 256;
 /// A key whose entries can conflict.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Cell {
-    Polarity(ConditionTerm),
+    Polarity(OldConditionTerm),
     /// The order edges between two class roots, smaller root first.
     Order(Key, Key),
     Range(Variable),
@@ -109,7 +109,7 @@ impl Range {
 pub(crate) struct Contradictions {
     endpoints: EndpointKeys,
     /// Which of `[false, true]` is assumed under each canonical condition.
-    polarity: PersistentMap<ConditionTerm, [bool; 2]>,
+    polarity: PersistentMap<OldConditionTerm, [bool; 2]>,
     /// Union-find parents of non-root endpoint keys.
     parent: PersistentMap<Key, Key>,
     /// Member counts of class roots with more than one member.
@@ -129,14 +129,14 @@ impl Contradictions {
         !self.conflicts.is_empty()
     }
 
-    fn adjust(&mut self, condition: &ConditionTerm, value: bool) {
+    fn adjust(&mut self, condition: &OldConditionTerm, value: bool) {
         crate::instrumentation::record_deterministic_work(1);
         self.adjust_polarity(canonical_contradiction_condition(condition), value);
-        if value && let ConditionTerm::PointerEqual(left, right) = condition {
+        if value && let OldConditionTerm::PointerEqual(left, right) = condition {
             // Full pointer equality entails address equality, while its
             // negation makes no claim about addresses.
             let address =
-                ConditionTerm::address_equal(left.address().clone(), right.address().clone());
+                OldConditionTerm::address_equal(left.address().clone(), right.address().clone());
             self.adjust_polarity(canonical_contradiction_condition(&address), true);
         }
         let observation =
@@ -239,11 +239,11 @@ impl Contradictions {
         };
     }
 
-    fn adjust_polarity(&mut self, key: ConditionTerm, value: bool) {
+    fn adjust_polarity(&mut self, key: OldConditionTerm, value: bool) {
         let mut held = self.polarity.get(&key).copied().unwrap_or([false, false]);
         held[usize::from(value)] = true;
         let conflict = (held[0] && held[1])
-            || matches!(&key, ConditionTerm::Constant(actual) if held[usize::from(!*actual)]);
+            || matches!(&key, OldConditionTerm::Constant(actual) if held[usize::from(!*actual)]);
         self.polarity = self.polarity.with_inserted(key.clone(), held);
         self.set_conflict(Cell::Polarity(key), conflict);
     }
@@ -433,7 +433,7 @@ impl std::fmt::Debug for ContextContradictions {
 impl ContextContradictions {
     /// Follows the context assuming `condition` with `value`; a cleared
     /// index stays cleared until its rebuild.
-    pub(crate) fn adjust(&mut self, condition: &ConditionTerm, value: bool) {
+    pub(crate) fn adjust(&mut self, condition: &OldConditionTerm, value: bool) {
         if let Some(index) = self.0.get() {
             let mut index = index.clone();
             index.adjust(condition, value);
@@ -450,7 +450,7 @@ impl ContextContradictions {
     /// The index of the context's `facts`, rebuilt from them when cleared.
     pub(crate) fn index<'a>(
         &self,
-        facts: impl FnOnce() -> Vec<(&'a ConditionTerm, bool)>,
+        facts: impl FnOnce() -> Vec<(&'a OldConditionTerm, bool)>,
     ) -> &Contradictions {
         self.0.get_or_init(|| {
             let mut index = Contradictions::default();
@@ -491,41 +491,41 @@ mod tests {
                 _ => var(self.next() % 4),
             }
         }
-        fn fact(&mut self) -> (ConditionTerm, bool) {
+        fn fact(&mut self) -> (OldConditionTerm, bool) {
             let (left, right) = (Box::new(self.term()), Box::new(self.term()));
             let value = !self.next().is_multiple_of(3);
             let condition = match self.next() % 12 {
-                0..=2 => ConditionTerm::Compare {
+                0..=2 => OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left,
                     right,
                 },
-                3..=5 => ConditionTerm::Compare {
+                3..=5 => OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
                     left,
                     right,
                 },
-                6 | 7 => ConditionTerm::Compare {
+                6 | 7 => OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterThan,
                     left,
                     right,
                 },
-                8 => ConditionTerm::Compare {
+                8 => OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterEqual,
                     left,
                     right,
                 },
-                9 | 10 => ConditionTerm::Compare {
+                9 | 10 => OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left,
                     right,
                 },
-                _ => ConditionTerm::Compare {
+                _ => OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: Box::new(OldMachineTerm::Variable(Variable(
@@ -602,9 +602,9 @@ mod tests {
         );
     }
 
-    fn less(left: OldMachineTerm, right: OldMachineTerm) -> (ConditionTerm, bool) {
+    fn less(left: OldMachineTerm, right: OldMachineTerm) -> (OldConditionTerm, bool) {
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(left),
@@ -614,9 +614,9 @@ mod tests {
         )
     }
 
-    fn equal(left: OldMachineTerm, right: OldMachineTerm) -> (ConditionTerm, bool) {
+    fn equal(left: OldMachineTerm, right: OldMachineTerm) -> (OldConditionTerm, bool) {
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(left),
@@ -672,7 +672,7 @@ mod tests {
             let mut context = PureFactContext::new();
             for index in 0..size {
                 context = context.assume_condition(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
                         left: Box::new(var(index)),
@@ -681,7 +681,7 @@ mod tests {
                     true,
                 );
                 context = context.assume_condition(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(var(10_000 + index)),
@@ -693,7 +693,7 @@ mod tests {
             assert!(!context.is_inconsistent());
             let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
                 let next = context.assume_condition(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
                         left: Box::new(var(size + 1)),

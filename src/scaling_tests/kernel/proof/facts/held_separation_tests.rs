@@ -71,7 +71,10 @@ fn held_separation_transitive_alias_uses_the_shared_resource_index() {
             range.base().clone()
         };
         let link = |a, b| {
-            Proposition::condition_is(ConditionTerm::address_equal(pointer(a), pointer(b)), true)
+            Proposition::condition_is(
+                OldConditionTerm::address_equal(pointer(a), pointer(b)),
+                true,
+            )
         };
         let mut facts = PureFactStore::from_ordered(&[link(0, size + 1), link(size + 1, size + 2)]);
         for index in 0..size {

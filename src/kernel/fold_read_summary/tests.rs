@@ -429,12 +429,12 @@ fn application(
     )
 }
 
-fn fact(condition: ConditionTerm) -> Proposition {
+fn fact(condition: OldConditionTerm) -> Proposition {
     Proposition::condition_is(condition, true)
 }
 
 fn le(left: OldMachineTerm, right: OldMachineTerm) -> Proposition {
-    fact(ConditionTerm::Compare {
+    fact(OldConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::LessEqual,
         left: Box::new(left),
@@ -443,7 +443,7 @@ fn le(left: OldMachineTerm, right: OldMachineTerm) -> Proposition {
 }
 
 fn lt(left: OldMachineTerm, right: OldMachineTerm) -> Proposition {
-    fact(ConditionTerm::Compare {
+    fact(OldConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::LessThan,
         left: Box::new(left),
@@ -855,7 +855,7 @@ fn a_transport_rewrites_only_fold_application_states() {
         bv(HI),
     ));
     let equals = |term: &IntegerTerm, value: i64| {
-        fact(ConditionTerm::IntegerEqual(
+        fact(OldConditionTerm::IntegerEqual(
             term.clone().into(),
             IntegerTerm::constant_i64(value).into(),
         ))
@@ -875,11 +875,11 @@ fn a_transport_rewrites_only_fold_application_states() {
         Err(FoldFrameRefusal::NothingToFrame)
     );
     // The equality form: `old == old` carries to `old == new`.
-    let reflexive = fact(ConditionTerm::IntegerEqual(
+    let reflexive = fact(OldConditionTerm::IntegerEqual(
         old.clone().into(),
         old.clone().into(),
     ));
-    let bridged = fact(ConditionTerm::IntegerEqual(
+    let bridged = fact(OldConditionTerm::IntegerEqual(
         old.clone().into(),
         new.clone().into(),
     ));
@@ -1168,7 +1168,7 @@ fn shared_fold_indices_require_exact_bounds_without_export() {
         element_width: 4,
     };
     let bound = Proposition::condition_is(
-        ConditionTerm::signed_less_equal(OldMachineTerm::constant(4), native),
+        OldConditionTerm::signed_less_equal(OldMachineTerm::constant(4), native),
         true,
     );
     let empty = PureFactContext::new();

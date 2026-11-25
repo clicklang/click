@@ -340,7 +340,7 @@ fn shared_carrier_cache_preserves_current_registered_load_dependencies() {
     );
     let machine = SharedMachineIntegerTerm::from_shared(format, root).unwrap();
     let proposition = Proposition::condition_is(
-        ConditionTerm::IntegerEqual(
+        OldConditionTerm::IntegerEqual(
             IntegerTerm::Machine(machine.clone()).into(),
             IntegerTerm::constant_i64(0).into(),
         ),
@@ -489,7 +489,7 @@ fn fold_index_substitution_keeps_call_havoc_source() {
     );
     let count = OldMachineTerm::Variable(Variable(3_229_001));
     let facts = crate::kernel::PureFactContext::new().assume_condition(
-        ConditionTerm::signed_less_equal(OldMachineTerm::constant(1), count.clone()),
+        OldConditionTerm::signed_less_equal(OldMachineTerm::constant(1), count.clone()),
         true,
     );
     let range =

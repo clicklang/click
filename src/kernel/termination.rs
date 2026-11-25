@@ -868,7 +868,7 @@ fn call_passes_witness_child(
             let expected = expected.address();
             let actual = actual.address();
             if expected != actual
-                && assumptions.decide(&ConditionTerm::address_equal(
+                && assumptions.decide(&OldConditionTerm::address_equal(
                     actual.clone(),
                     expected.clone(),
                 )) != Some(true)
@@ -2516,21 +2516,21 @@ pub(super) fn ranking_nonnegative_proposition(value: &RankingMeasureValue) -> Pr
     Proposition::condition_is(
         match value {
             RankingMeasureValue::Machine(term) => {
-                ConditionTerm::signed_less_equal(OldMachineTerm::constant(0), term.clone())
+                OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), term.clone())
             }
             // A signed 64-bit reading owes its lower bound as an int32 does.
-            RankingMeasureValue::Signed64(term) => ConditionTerm::int64_signed_less_equal(
+            RankingMeasureValue::Signed64(term) => OldConditionTerm::int64_signed_less_equal(
                 OldMachineTerm::int64_constant(0),
                 term.clone(),
             ),
             RankingMeasureValue::Unsigned32(_) | RankingMeasureValue::Unsigned64(_) => {
-                ConditionTerm::Constant(true)
+                OldConditionTerm::Constant(true)
             }
             RankingMeasureValue::Integer(term) if crate::kernel::is_nat_integer_image(term) => {
-                ConditionTerm::Constant(true)
+                OldConditionTerm::Constant(true)
             }
             RankingMeasureValue::Integer(term) => {
-                ConditionTerm::integer_less_equal(IntegerTerm::constant_i64(0), term.clone())
+                OldConditionTerm::integer_less_equal(IntegerTerm::constant_i64(0), term.clone())
             }
         },
         true,
@@ -2552,26 +2552,26 @@ pub(super) fn ranking_decrease_proposition(
     Ok(Proposition::condition_is(
         match (post, pre) {
             (RankingMeasureValue::Machine(post), RankingMeasureValue::Machine(pre)) => {
-                ConditionTerm::signed_less_than(post.clone(), pre.clone())
+                OldConditionTerm::signed_less_than(post.clone(), pre.clone())
             }
             // Unsigned descent compares the two wrapped values C computes.
             // Strict `<` on the naturals below 2^32 (or 2^64) is well founded,
             // so a measure that wraps is still ranked soundly: a back edge
             // whose wrapped value grows simply fails this member.
             (RankingMeasureValue::Unsigned32(post), RankingMeasureValue::Unsigned32(pre)) => {
-                ConditionTerm::unsigned_less_than(post.clone(), pre.clone())
+                OldConditionTerm::unsigned_less_than(post.clone(), pre.clone())
             }
             (RankingMeasureValue::Unsigned64(post), RankingMeasureValue::Unsigned64(pre)) => {
-                ConditionTerm::uint64_less_than(post.clone(), pre.clone())
+                OldConditionTerm::uint64_less_than(post.clone(), pre.clone())
             }
             // Signed descent below a value that is at least zero: strict `<`
             // on the nonnegative int64 values is well founded, and the
             // bundle's `0 <= m` member keeps each reading among them.
             (RankingMeasureValue::Signed64(post), RankingMeasureValue::Signed64(pre)) => {
-                ConditionTerm::int64_signed_less_than(post.clone(), pre.clone())
+                OldConditionTerm::int64_signed_less_than(post.clone(), pre.clone())
             }
             (RankingMeasureValue::Integer(post), RankingMeasureValue::Integer(pre)) => {
-                ConditionTerm::integer_less_than(post.clone(), pre.clone())
+                OldConditionTerm::integer_less_than(post.clone(), pre.clone())
             }
             _ => return Err(mixed_ranking_carrier_message(component)),
         },
@@ -2589,16 +2589,16 @@ pub(super) fn ranking_tie_proposition(
         match (post, pre) {
             (RankingMeasureValue::Machine(post), RankingMeasureValue::Machine(pre))
             | (RankingMeasureValue::Unsigned32(post), RankingMeasureValue::Unsigned32(pre)) => {
-                ConditionTerm::equal(post.clone(), pre.clone())
+                OldConditionTerm::equal(post.clone(), pre.clone())
             }
             (RankingMeasureValue::Unsigned64(post), RankingMeasureValue::Unsigned64(pre)) => {
-                ConditionTerm::uint64_equal(post.clone(), pre.clone())
+                OldConditionTerm::uint64_equal(post.clone(), pre.clone())
             }
             (RankingMeasureValue::Signed64(post), RankingMeasureValue::Signed64(pre)) => {
-                ConditionTerm::int64_equal(post.clone(), pre.clone())
+                OldConditionTerm::int64_equal(post.clone(), pre.clone())
             }
             (RankingMeasureValue::Integer(post), RankingMeasureValue::Integer(pre)) => {
-                ConditionTerm::integer_equal(post.clone(), pre.clone())
+                OldConditionTerm::integer_equal(post.clone(), pre.clone())
             }
             _ => return Err(mixed_ranking_carrier_message(component)),
         },
@@ -3152,7 +3152,7 @@ fn ranking_measure_condition_term(
     expression: &ProgramExpression,
     state: &ExecutionState,
     reader: &mut RankingMeasureReader<'_>,
-) -> Result<(ConditionTerm, bool), String> {
+) -> Result<(OldConditionTerm, bool), String> {
     use ProgramExpression::*;
     use RankingMachineType::*;
     /// The relation `left < right` (or `<=`, or `==`) at the operands' common
@@ -3171,31 +3171,33 @@ fn ranking_measure_condition_term(
         state: &ExecutionState,
         reader: &mut RankingMeasureReader<'_>,
         relation: Relation,
-    ) -> Result<ConditionTerm, String> {
+    ) -> Result<OldConditionTerm, String> {
         let left = ranking_measure_term_unfolded(left, state, reader)?;
         let right = ranking_measure_term_unfolded(right, state, reader)?;
         let machine_type = RankingMachineTerm::common_type(&left, &right);
         let (left, right) = (left.convert(machine_type), right.convert(machine_type));
         Ok(match (machine_type, relation) {
-            (Int32, Relation::Less) => ConditionTerm::signed_less_than(left, right),
-            (Int32, Relation::LessEqual) => ConditionTerm::signed_less_equal(left, right),
-            (Int32, Relation::Greater) => ConditionTerm::signed_greater_than(left, right),
-            (Int32, Relation::GreaterEqual) => ConditionTerm::signed_greater_equal(left, right),
-            (UInt32, Relation::Less) => ConditionTerm::unsigned_less_than(left, right),
-            (UInt32, Relation::LessEqual) => ConditionTerm::unsigned_less_equal(left, right),
-            (UInt32, Relation::Greater) => ConditionTerm::unsigned_less_than(right, left),
-            (UInt32, Relation::GreaterEqual) => ConditionTerm::unsigned_less_equal(right, left),
-            (Int32 | UInt32, Relation::Equal) => ConditionTerm::equal(left, right),
-            (UInt64, Relation::Less) => ConditionTerm::uint64_less_than(left, right),
-            (UInt64, Relation::LessEqual) => ConditionTerm::uint64_less_equal(left, right),
-            (UInt64, Relation::Greater) => ConditionTerm::uint64_less_than(right, left),
-            (UInt64, Relation::GreaterEqual) => ConditionTerm::uint64_less_equal(right, left),
-            (UInt64, Relation::Equal) => ConditionTerm::uint64_equal(left, right),
-            (Int64, Relation::Less) => ConditionTerm::int64_signed_less_than(left, right),
-            (Int64, Relation::LessEqual) => ConditionTerm::int64_signed_less_equal(left, right),
-            (Int64, Relation::Greater) => ConditionTerm::int64_signed_less_than(right, left),
-            (Int64, Relation::GreaterEqual) => ConditionTerm::int64_signed_less_equal(right, left),
-            (Int64, Relation::Equal) => ConditionTerm::int64_equal(left, right),
+            (Int32, Relation::Less) => OldConditionTerm::signed_less_than(left, right),
+            (Int32, Relation::LessEqual) => OldConditionTerm::signed_less_equal(left, right),
+            (Int32, Relation::Greater) => OldConditionTerm::signed_greater_than(left, right),
+            (Int32, Relation::GreaterEqual) => OldConditionTerm::signed_greater_equal(left, right),
+            (UInt32, Relation::Less) => OldConditionTerm::unsigned_less_than(left, right),
+            (UInt32, Relation::LessEqual) => OldConditionTerm::unsigned_less_equal(left, right),
+            (UInt32, Relation::Greater) => OldConditionTerm::unsigned_less_than(right, left),
+            (UInt32, Relation::GreaterEqual) => OldConditionTerm::unsigned_less_equal(right, left),
+            (Int32 | UInt32, Relation::Equal) => OldConditionTerm::equal(left, right),
+            (UInt64, Relation::Less) => OldConditionTerm::uint64_less_than(left, right),
+            (UInt64, Relation::LessEqual) => OldConditionTerm::uint64_less_equal(left, right),
+            (UInt64, Relation::Greater) => OldConditionTerm::uint64_less_than(right, left),
+            (UInt64, Relation::GreaterEqual) => OldConditionTerm::uint64_less_equal(right, left),
+            (UInt64, Relation::Equal) => OldConditionTerm::uint64_equal(left, right),
+            (Int64, Relation::Less) => OldConditionTerm::int64_signed_less_than(left, right),
+            (Int64, Relation::LessEqual) => OldConditionTerm::int64_signed_less_equal(left, right),
+            (Int64, Relation::Greater) => OldConditionTerm::int64_signed_less_than(right, left),
+            (Int64, Relation::GreaterEqual) => {
+                OldConditionTerm::int64_signed_less_equal(right, left)
+            }
+            (Int64, Relation::Equal) => OldConditionTerm::int64_equal(left, right),
         })
     }
     match expression {
@@ -3225,9 +3227,9 @@ fn ranking_measure_condition_term(
             let value = ranking_measure_term_unfolded(expression, state, reader)?;
             Ok((
                 if matches!(value.machine_type, UInt64 | Int64) {
-                    ConditionTerm::uint64_equal(value.term, OldMachineTerm::uint64_constant(0))
+                    OldConditionTerm::uint64_equal(value.term, OldMachineTerm::uint64_constant(0))
                 } else {
-                    ConditionTerm::equal(value.term, OldMachineTerm::constant(0))
+                    OldConditionTerm::equal(value.term, OldMachineTerm::constant(0))
                 },
                 false,
             ))
@@ -5323,7 +5325,7 @@ mod ranking_member_tests {
             assert_eq!(
                 obligation.proposition(),
                 &Proposition::condition_is(
-                    ConditionTerm::signed_less_equal(OldMachineTerm::constant(0), post),
+                    OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), post),
                     true,
                 )
             );
@@ -5337,16 +5339,16 @@ mod ranking_member_tests {
         }
 
         let pivot_first = Proposition::condition_is(
-            ConditionTerm::signed_less_than(post_outer.clone(), outer.clone()),
+            OldConditionTerm::signed_less_than(post_outer.clone(), outer.clone()),
             true,
         );
         let pivot_second = Proposition::And(
             Box::new(Proposition::condition_is(
-                ConditionTerm::equal(post_outer, outer),
+                OldConditionTerm::equal(post_outer, outer),
                 true,
             )),
             Box::new(Proposition::condition_is(
-                ConditionTerm::signed_less_than(post_inner, inner),
+                OldConditionTerm::signed_less_than(post_inner, inner),
                 true,
             )),
         );
@@ -5379,7 +5381,7 @@ mod ranking_member_tests {
         assert_eq!(obligations.len(), 2);
         assert_eq!(
             obligations[1].proposition(),
-            &Proposition::condition_is(ConditionTerm::signed_less_than(post, value), true)
+            &Proposition::condition_is(OldConditionTerm::signed_less_than(post, value), true)
         );
     }
 
@@ -5442,14 +5444,14 @@ mod ranking_member_tests {
         assert_eq!(
             resolved(obligations[0].proposition()),
             Proposition::condition_is(
-                ConditionTerm::signed_less_equal(OldMachineTerm::constant(0), post.clone()),
+                OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), post.clone()),
                 true,
             ),
             "the nonnegativity member reads the back-edge state"
         );
         assert_eq!(
             resolved(obligations[1].proposition()),
-            Proposition::condition_is(ConditionTerm::signed_less_than(post, value), true),
+            Proposition::condition_is(OldConditionTerm::signed_less_than(post, value), true),
             "the decrease member compares the back edge against the iteration entry"
         );
         // A pure component has no source spelling of its own once lowered, so
@@ -5507,7 +5509,7 @@ mod ranking_member_tests {
         assert_eq!(
             obligations[0].proposition(),
             &Proposition::condition_is(
-                ConditionTerm::IntegerLessEqual(
+                OldConditionTerm::IntegerLessEqual(
                     observed_word(OldMachineTerm::constant(0)),
                     observed_word(post.clone())
                 ),
@@ -5518,7 +5520,7 @@ mod ranking_member_tests {
         assert_eq!(
             obligations[1].proposition(),
             &Proposition::condition_is(
-                ConditionTerm::IntegerLessThan(
+                OldConditionTerm::IntegerLessThan(
                     observed_word(post.clone()),
                     observed_word(value.clone())
                 ),
@@ -5571,14 +5573,17 @@ mod ranking_member_tests {
         assert_eq!(
             obligations[0].proposition(),
             &Proposition::condition_is(
-                ConditionTerm::signed_less_equal(OldMachineTerm::constant(0), post_outer.clone()),
+                OldConditionTerm::signed_less_equal(
+                    OldMachineTerm::constant(0),
+                    post_outer.clone()
+                ),
                 true,
             )
         );
         assert_eq!(
             obligations[1].proposition(),
             &Proposition::condition_is(
-                ConditionTerm::IntegerLessEqual(
+                OldConditionTerm::IntegerLessEqual(
                     observed_word(OldMachineTerm::constant(0)),
                     observed_word(post_inner.clone())
                 ),
@@ -5586,16 +5591,16 @@ mod ranking_member_tests {
             )
         );
         let pivot_first = Proposition::condition_is(
-            ConditionTerm::signed_less_than(post_outer.clone(), outer.clone()),
+            OldConditionTerm::signed_less_than(post_outer.clone(), outer.clone()),
             true,
         );
         let pivot_second = Proposition::And(
             Box::new(Proposition::condition_is(
-                ConditionTerm::equal(post_outer, outer),
+                OldConditionTerm::equal(post_outer, outer),
                 true,
             )),
             Box::new(Proposition::condition_is(
-                ConditionTerm::IntegerLessThan(observed_word(post_inner), observed_word(inner)),
+                OldConditionTerm::IntegerLessThan(observed_word(post_inner), observed_word(inner)),
                 true,
             )),
         );
@@ -5700,9 +5705,9 @@ mod ranking_member_tests {
         assert_eq!(
             members,
             vec![
-                Proposition::condition_is(ConditionTerm::Constant(true), true),
+                Proposition::condition_is(OldConditionTerm::Constant(true), true),
                 Proposition::condition_is(
-                    ConditionTerm::unsigned_less_than(
+                    OldConditionTerm::unsigned_less_than(
                         canonical_ranking_term(&OldMachineTerm::subtract(
                             OldMachineTerm::constant(3),
                             value.clone(),
@@ -5737,11 +5742,11 @@ mod ranking_member_tests {
         };
         assert_eq!(
             decrease(0, 1),
-            Proposition::condition_is(ConditionTerm::Constant(true), true)
+            Proposition::condition_is(OldConditionTerm::Constant(true), true)
         );
         assert_eq!(
             decrease(4, 5),
-            Proposition::condition_is(ConditionTerm::Constant(false), true)
+            Proposition::condition_is(OldConditionTerm::Constant(false), true)
         );
     }
 
@@ -5761,14 +5766,14 @@ mod ranking_member_tests {
         assert_eq!(
             down,
             vec![
-                Proposition::condition_is(ConditionTerm::Constant(true), true),
-                Proposition::condition_is(ConditionTerm::Constant(true), true),
+                Proposition::condition_is(OldConditionTerm::Constant(true), true),
+                Proposition::condition_is(OldConditionTerm::Constant(true), true),
             ]
         );
         let wrapped = ranking_members(&state(u64::MAX), &state(0), x()).expect("uint64 measure");
         assert_eq!(
             wrapped[1],
-            Proposition::condition_is(ConditionTerm::Constant(false), true)
+            Proposition::condition_is(OldConditionTerm::Constant(false), true)
         );
     }
 
@@ -5788,7 +5793,7 @@ mod ranking_member_tests {
         assert_eq!(
             members[0],
             Proposition::condition_is(
-                ConditionTerm::signed_less_equal(
+                OldConditionTerm::signed_less_equal(
                     OldMachineTerm::constant(0),
                     OldMachineTerm::machine_integer_cast(
                         MachineIntegerType::UInt8,
@@ -5822,12 +5827,12 @@ mod ranking_member_tests {
         .expect("a pure uint32 value reads at both ends");
         assert_eq!(
             obligations[0].proposition(),
-            &Proposition::condition_is(ConditionTerm::Constant(true), true)
+            &Proposition::condition_is(OldConditionTerm::Constant(true), true)
         );
         assert_eq!(
             obligations[1].proposition(),
             &Proposition::condition_is(
-                ConditionTerm::unsigned_less_than(value.clone(), value),
+                OldConditionTerm::unsigned_less_than(value.clone(), value),
                 true
             )
         );
@@ -5846,7 +5851,7 @@ mod ranking_member_tests {
             )
         };
         let x = || ProgramExpression::Variable(("x".to_string()).into());
-        let holds = |value| Proposition::condition_is(ConditionTerm::Constant(value), true);
+        let holds = |value| Proposition::condition_is(OldConditionTerm::Constant(value), true);
         let down = ranking_members(&state(4), &state(5), x()).expect("int64 measure");
         assert_eq!(down, vec![holds(true), holds(true)]);
         let negative = ranking_members(&state(-1), &state(5), x()).expect("int64 measure");
@@ -5866,14 +5871,14 @@ mod ranking_member_tests {
     #[test]
     fn structural_path_refuses_an_obligation_no_exact_route_settles() {
         let left = Proposition::condition_is(
-            ConditionTerm::signed_less_equal(
+            OldConditionTerm::signed_less_equal(
                 OldMachineTerm::constant(0),
                 OldMachineTerm::Variable(Variable(1)),
             ),
             true,
         );
         let right = Proposition::condition_is(
-            ConditionTerm::signed_less_equal(
+            OldConditionTerm::signed_less_equal(
                 OldMachineTerm::constant(0),
                 OldMachineTerm::Variable(Variable(2)),
             ),
@@ -5916,7 +5921,7 @@ mod local_descent_tests {
         crate::kernel::program_while(
             crate::kernel::program_expression::int32_literal(condition),
             vec![Proposition::condition_is(
-                ConditionTerm::Constant(true),
+                OldConditionTerm::Constant(true),
                 true,
             )],
             ProgramStatement::Skip,
@@ -6976,7 +6981,7 @@ mod local_descent_tests {
                 ),
                 update: None,
                 invariant: vec![Proposition::condition_is(
-                    ConditionTerm::Constant(true),
+                    OldConditionTerm::Constant(true),
                     true,
                 )],
                 invariant_checks: Vec::new(),

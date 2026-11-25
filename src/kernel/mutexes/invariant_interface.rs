@@ -368,7 +368,7 @@ mod tests {
             Some(MutexTransitionError::MissingInvariant(original))
         );
         let equality = assumptions.assume_condition(
-            crate::kernel::ConditionTerm::PointerEqual(
+            crate::kernel::OldConditionTerm::PointerEqual(
                 Box::new(crate::kernel::OldPointer::new(
                     Address::symbolic(Variable(70)),
                     ProgramType::Int32Pointer,

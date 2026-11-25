@@ -17,7 +17,7 @@ fn native_observation_guard_work_is_flat_beside_unrelated_ambient_conditions() {
             let mut context = PureFactContext::new().defer_non_exact_condition_reasoning();
             for index in 0..size {
                 context = context
-                    .assume_condition(ConditionTerm::Variable(Variable(913_000 + index)), true);
+                    .assume_condition(OldConditionTerm::Variable(Variable(913_000 + index)), true);
             }
             context = context.assume_condition(native, false);
             let no_path_facts = ExecutionFacts::new();
@@ -60,10 +60,10 @@ fn growing_arithmetic_guards(truth: Option<bool>) {
                     MachineBinaryOp::Add,
                     [root, zero.clone()],
                 );
-                context =
-                    context.assume_condition(ConditionTerm::Variable(Variable(985010 + n)), true);
+                context = context
+                    .assume_condition(OldConditionTerm::Variable(Variable(985010 + n)), true);
                 let goal =
-                    ConditionTerm::integer_equal(observe(root.clone()), observe(other.clone()));
+                    OldConditionTerm::integer_equal(observe(root.clone()), observe(other.clone()));
                 let path = truth.map_or_else(ExecutionFacts::new, |truth| {
                     ExecutionFacts::from(vec![ExecutionPureFact::new(Proposition::condition_is(
                         goal.clone(),
@@ -103,8 +103,8 @@ fn selected_obligation_lookup_ignores_unrelated_facts() {
         let (native, observed) = equalities(MachineIntegerType::Int32);
         let mut context = PureFactContext::new();
         for index in 0..size {
-            context =
-                context.assume_condition(ConditionTerm::Variable(Variable(914_000 + index)), true);
+            context = context
+                .assume_condition(OldConditionTerm::Variable(Variable(914_000 + index)), true);
         }
         let context = context.assume_condition(native, false);
         let query = Proposition::condition_is(observed, false);

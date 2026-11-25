@@ -20,7 +20,7 @@ fn fold_copied_wide_word_preserves_scope_width_and_scales() {
     );
     let packed = |word: &OldMachineTerm| {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: Box::new(word.clone()),
@@ -40,7 +40,7 @@ fn fold_copied_wide_word_preserves_scope_width_and_scales() {
         )
     };
     let alias = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: Box::new(copied.clone()),
@@ -74,7 +74,7 @@ fn fold_copied_wide_word_preserves_scope_width_and_scales() {
         let mut padded = context.clone();
         for index in 0..count {
             padded = padded.assume_proposition(Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
                     left: Box::new(OldMachineTerm::Variable(Variable(720_000 + index))),
@@ -113,7 +113,7 @@ fn a_narrow_equality_between_wide_words_is_not_an_alias() {
     );
     let packed = |word: &OldMachineTerm| {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: Box::new(word.clone()),
@@ -136,7 +136,7 @@ fn a_narrow_equality_between_wide_words_is_not_an_alias() {
         .defer_non_exact_condition_reasoning()
         .assume_proposition(packed(&word))
         .assume_proposition(Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(copied.clone()),
@@ -179,7 +179,7 @@ fn fold_nonnull_fact_uses_an_exact_composite_pointer_alias() {
     ));
     let parent_fact = |pointer: &Address, value: u32| {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::ClickFunctionApplication {
@@ -201,7 +201,7 @@ fn fold_nonnull_fact_uses_an_exact_composite_pointer_alias() {
     // A pure pointer argument observes the complete value; a numeric address
     // alias suffices for nonnull above, but cannot rewrite this argument.
     let context = context.assume_condition(
-        ConditionTerm::pointer_equal(
+        OldConditionTerm::pointer_equal(
             OldPointer::new(model.clone(), ProgramType::Int32Pointer),
             OldPointer::new(program.clone(), ProgramType::Int32Pointer),
         ),

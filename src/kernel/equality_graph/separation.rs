@@ -52,7 +52,7 @@ impl EqualityGraph {
         // Indexed condition applications already propagate operand unions and
         // retain exact source payloads. No independent alias graph is needed.
         for (a, b) in [(&anchors[0], &anchors[1]), (&anchors[1], &anchors[0])] {
-            let condition = ConditionTerm::uint64_equal(
+            let condition = OldConditionTerm::uint64_equal(
                 OldMachineTerm::integer_address(a.clone()),
                 OldMachineTerm::integer_address(b.clone()),
             );
@@ -76,11 +76,11 @@ impl EqualityGraph {
     /// inequality that could discard the numeric separation conclusion.
     pub(in crate::kernel) fn address_separation_source(
         &self,
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
     ) -> Option<Proposition> {
         let (a, b) = match condition {
-            ConditionTerm::AddressEqual(a, b) => (a.as_ref(), b.as_ref()),
-            ConditionTerm::Compare {
+            OldConditionTerm::AddressEqual(a, b) => (a.as_ref(), b.as_ref()),
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: a,
@@ -88,7 +88,7 @@ impl EqualityGraph {
             } => (a.address_pointer()?, b.address_pointer()?),
             _ => return None,
         };
-        let numeric = ConditionTerm::uint64_equal(
+        let numeric = OldConditionTerm::uint64_equal(
             OldMachineTerm::integer_address(a.clone()),
             OldMachineTerm::integer_address(b.clone()),
         );

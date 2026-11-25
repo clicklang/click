@@ -131,22 +131,22 @@ pub(in crate::kernel) fn explicit_frame(
     let new = observe(&exit);
     let condition = match (new.numeric_value(), old.numeric_value()) {
         (ProgramValue::Parameter(a), ProgramValue::Parameter(b)) => {
-            ConditionTerm::AlgebraicEqual(a.clone(), b.clone())
+            OldConditionTerm::AlgebraicEqual(a.clone(), b.clone())
         }
         (ProgramValue::Pointer(a), ProgramValue::Pointer(b)) => {
-            ConditionTerm::pointer_equal(a.clone(), b.clone())
+            OldConditionTerm::pointer_equal(a.clone(), b.clone())
         }
         (ProgramValue::Int32(a), ProgramValue::Int32(b)) => {
-            ConditionTerm::equal(a.clone(), b.clone())
+            OldConditionTerm::equal(a.clone(), b.clone())
         }
-        (ProgramValue::UInt8(a), ProgramValue::UInt8(b)) => ConditionTerm::machine_compare(
+        (ProgramValue::UInt8(a), ProgramValue::UInt8(b)) => OldConditionTerm::machine_compare(
             MachineIntegerType::UInt8,
             CompareRelation::Equal,
             a.clone(),
             b.clone(),
         ),
         (ProgramValue::UInt64(a), ProgramValue::UInt64(b)) => {
-            ConditionTerm::uint64_equal(a.clone(), b.clone())
+            OldConditionTerm::uint64_equal(a.clone(), b.clone())
         }
         other => panic!("unsupported test observation: {other:?}"),
     };

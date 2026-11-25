@@ -326,10 +326,10 @@ impl BitvectorUnaryOp {
 }
 
 /// A comparison or overflow test of two machine-integer operands, at the
-/// format that reads them: the shape of [`ConditionTerm::Compare`] and
-/// [`ConditionTerm::Overflows`]. Equality, hashing and order read a 32-bit
-/// equality's format as `int32` (rule K6, [`ConditionTerm::fact_format`]),
-/// as [`ConditionTerm`]'s do; the format itself is kept for presentation.
+/// format that reads them: the shape of [`OldConditionTerm::Compare`] and
+/// [`OldConditionTerm::Overflows`]. Equality, hashing and order read a 32-bit
+/// equality's format as `int32` (rule K6, [`OldConditionTerm::fact_format`]),
+/// as [`OldConditionTerm`]'s do; the format itself is kept for presentation.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum BitvectorComparisonOp {
     Compare(MachineIntegerType, CompareRelation),
@@ -346,7 +346,7 @@ impl BitvectorComparisonOp {
     fn identity(self) -> BitvectorComparisonIdentity {
         match self {
             Self::Compare(format, relation) => BitvectorComparisonIdentity::Compare(
-                ConditionTerm::fact_format(format, relation),
+                OldConditionTerm::fact_format(format, relation),
                 relation,
             ),
             Self::Overflows(format, op) => BitvectorComparisonIdentity::Overflows(format, op),
@@ -380,7 +380,7 @@ impl Ord for BitvectorComparisonOp {
     }
 }
 
-impl ConditionTerm {
+impl OldConditionTerm {
     /// The operator and operands of a machine comparison or overflow test,
     /// or `None` for every other condition.
     pub(crate) fn as_bitvector_comparison(
@@ -497,29 +497,29 @@ impl BitvectorComparisonOp {
     }
 
     /// Applies the comparison through its smart constructor.
-    pub(crate) fn build(self, left: OldMachineTerm, right: OldMachineTerm) -> ConditionTerm {
+    pub(crate) fn build(self, left: OldMachineTerm, right: OldMachineTerm) -> OldConditionTerm {
         match self {
             Self::Compare(format, relation) => {
-                ConditionTerm::machine_compare(format, relation, left, right)
+                OldConditionTerm::machine_compare(format, relation, left, right)
             }
             Self::Overflows(format, op) => {
-                ConditionTerm::machine_overflows(format, op, left, right)
+                OldConditionTerm::machine_overflows(format, op, left, right)
             }
         }
     }
 
     /// Applies the comparison as the bare node, without folding or
     /// normalization.
-    pub(crate) fn build_raw(self, left: OldMachineTerm, right: OldMachineTerm) -> ConditionTerm {
+    pub(crate) fn build_raw(self, left: OldMachineTerm, right: OldMachineTerm) -> OldConditionTerm {
         let (left, right) = (Box::new(left), Box::new(right));
         match self {
-            Self::Compare(format, relation) => ConditionTerm::Compare {
+            Self::Compare(format, relation) => OldConditionTerm::Compare {
                 format,
                 relation,
                 left,
                 right,
             },
-            Self::Overflows(format, op) => ConditionTerm::Overflows {
+            Self::Overflows(format, op) => OldConditionTerm::Overflows {
                 format,
                 op,
                 left,
@@ -684,7 +684,7 @@ mod tests {
             OldMachineTerm::uint64_constant(1),
             variable(1),
             OldMachineTerm::If {
-                condition: Box::new(ConditionTerm::Constant(true)),
+                condition: Box::new(OldConditionTerm::Constant(true)),
                 then_term: Box::new(variable(1)),
                 else_term: Box::new(variable(2)),
             },
@@ -778,7 +778,7 @@ mod tests {
         }
         assert_eq!(comparison_ops().len(), 24);
         assert_eq!(
-            ConditionTerm::Constant(true).as_bitvector_comparison(),
+            OldConditionTerm::Constant(true).as_bitvector_comparison(),
             None
         );
     }

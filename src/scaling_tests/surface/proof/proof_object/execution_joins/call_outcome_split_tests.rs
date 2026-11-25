@@ -99,7 +99,7 @@ fn call_outcome_split_does_not_copy_the_proofs_facts() {
         let facts = (0..size)
             .map(|index| {
                 Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
                         left: Box::new(OldMachineTerm::Variable(Variable(81_000 + index))),

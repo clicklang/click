@@ -8,11 +8,11 @@ fn signed_shift_headroom_uses_indexed_operand_extrema() {
         let samples = [4, 16, 64].map(|size| {
             let mut facts = PureFactContext::new()
                 .assume_condition(
-                    ConditionTerm::signed_less_equal(left.clone(), OldMachineTerm::constant(3)),
+                    OldConditionTerm::signed_less_equal(left.clone(), OldMachineTerm::constant(3)),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::signed_less_than(count.clone(), OldMachineTerm::constant(16)),
+                    OldConditionTerm::signed_less_than(count.clone(), OldMachineTerm::constant(16)),
                     true,
                 );
             for index in 0..size {
@@ -22,7 +22,10 @@ fn signed_shift_headroom_uses_indexed_operand_extrema() {
                     OldMachineTerm::var(Variable(974_100 + u64::from(index)))
                 };
                 facts = facts.assume_condition(
-                    ConditionTerm::signed_less_equal(value, OldMachineTerm::constant(100 + index)),
+                    OldConditionTerm::signed_less_equal(
+                        value,
+                        OldMachineTerm::constant(100 + index),
+                    ),
                     true,
                 );
             }
@@ -58,7 +61,7 @@ fn signed_shift_headroom_uses_indexed_expression_guards() {
             let mut guards = ExecutionFacts::new();
             guards.ensure_indexed();
             guards.push(ExecutionPureFact::new(Proposition::condition_is(
-                ConditionTerm::signed_less_than(count.clone(), OldMachineTerm::constant(16)),
+                OldConditionTerm::signed_less_than(count.clone(), OldMachineTerm::constant(16)),
                 true,
             )));
             for index in 0..size {
@@ -68,7 +71,10 @@ fn signed_shift_headroom_uses_indexed_expression_guards() {
                     OldMachineTerm::var(Variable(975_100 + u64::from(index)))
                 };
                 guards.push(ExecutionPureFact::new(Proposition::condition_is(
-                    ConditionTerm::signed_less_equal(value, OldMachineTerm::constant(100 + index)),
+                    OldConditionTerm::signed_less_equal(
+                        value,
+                        OldMachineTerm::constant(100 + index),
+                    ),
                     true,
                 )));
             }

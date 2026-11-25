@@ -7,7 +7,7 @@ fn checked_word_tag_addition_ignores_unrelated_facts() {
         let _session = crate::kernel::VerificationSession::enter();
         let (bits, value) = word();
         let mut context = PureFactContext::new().assume_condition(
-            ConditionTerm::uint64_equal(
+            OldConditionTerm::uint64_equal(
                 OldMachineTerm::uint64_bitwise_and(bits, OldMachineTerm::uint64_constant(1)),
                 OldMachineTerm::uint64_constant(0),
             ),
@@ -15,7 +15,7 @@ fn checked_word_tag_addition_ignores_unrelated_facts() {
         );
         for index in 0..size {
             context = context.assume_condition(
-                ConditionTerm::uint64_equal(
+                OldConditionTerm::uint64_equal(
                     OldMachineTerm::Variable(Variable(998_000 + index)),
                     OldMachineTerm::uint64_constant(index),
                 ),
@@ -54,12 +54,12 @@ fn commuted_word_tag_or_ignores_unrelated_facts() {
         let tag_value =
             ProgramValue::UInt64(tag.clone()).complete_word(Address::symbolic(Variable(997_081)));
         let mut context = PureFactContext::new().assume_condition(
-            ConditionTerm::uint64_less_equal(tag, OldMachineTerm::uint64_constant(1)),
+            OldConditionTerm::uint64_less_equal(tag, OldMachineTerm::uint64_constant(1)),
             true,
         );
         for index in 0..size {
             context = context.assume_condition(
-                ConditionTerm::uint64_equal(
+                OldConditionTerm::uint64_equal(
                     OldMachineTerm::Variable(Variable(998_000 + index)),
                     OldMachineTerm::uint64_constant(index),
                 ),
@@ -98,20 +98,20 @@ fn tag_clearing_equations_ignore_unrelated_and_looser_bounds() {
         let word = OldMachineTerm::Variable(Variable(997_090));
         let tag = OldMachineTerm::Variable(Variable(997_091));
         let mut context = PureFactContext::new().assume_condition(
-            ConditionTerm::uint64_less_equal(tag.clone(), OldMachineTerm::uint64_constant(1)),
+            OldConditionTerm::uint64_less_equal(tag.clone(), OldMachineTerm::uint64_constant(1)),
             true,
         );
         for index in 0..size {
             context = context
                 .assume_condition(
-                    ConditionTerm::uint64_equal(
+                    OldConditionTerm::uint64_equal(
                         OldMachineTerm::Variable(Variable(998_000 + index)),
                         OldMachineTerm::uint64_constant(index),
                     ),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::uint64_less_equal(
+                    OldConditionTerm::uint64_less_equal(
                         tag.clone(),
                         OldMachineTerm::uint64_constant(index + 8),
                     ),
@@ -127,7 +127,7 @@ fn tag_clearing_equations_ignore_unrelated_and_looser_bounds() {
         });
         assert_eq!(
             equation,
-            Some(ConditionTerm::uint64_equal(
+            Some(OldConditionTerm::uint64_equal(
                 masked,
                 OldMachineTerm::uint64_bitwise_and(word, OldMachineTerm::uint64_constant(!3))
             ))

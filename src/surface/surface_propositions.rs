@@ -15,7 +15,7 @@ use super::{
     ClickError, ClickType, ProgramPointSelector, SurfaceBinder, SyntaxProposition, SyntaxTerm,
     clone_click_proposition_iteratively, proof,
 };
-use crate::kernel::{Address, ConditionTerm, OldMachineTerm, Proposition, Sort, Variable};
+use crate::kernel::{Address, OldConditionTerm, OldMachineTerm, Proposition, Sort, Variable};
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::collections::HashMap;
@@ -80,13 +80,13 @@ impl StoreReadKey {
     fn of(equation: &Proposition) -> Option<(Self, &Address)> {
         use crate::kernel::{AddressBase, LoadKind};
         let Some((
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 relation: CompareRelation::Equal,
                 left,
                 ..
             },
             true,
-        )) = equation.condition_native()
+        )) = equation.old_condition()
         else {
             return None;
         };
@@ -968,20 +968,20 @@ impl SurfacePropositionMap {
                 if qualified.iter().any(Option::is_some) {
                     let resolved = crate::kernel::resolve_load_variables_from_registry(kernel);
                     if let Some((
-                        ConditionTerm::Compare {
+                        OldConditionTerm::Compare {
                             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                             relation: CompareRelation::Equal,
                             left: a,
                             right: b,
                         }
-                        | ConditionTerm::Compare {
+                        | OldConditionTerm::Compare {
                             format: MachineIntegerType::Int64,
                             relation: CompareRelation::Equal,
                             left: a,
                             right: b,
                         },
                         _,
-                    )) = resolved.condition_native()
+                    )) = resolved.old_condition()
                     {
                         for (expression, term) in qualified.into_iter().zip([a, b]) {
                             if let Some(expression) = expression
@@ -1362,7 +1362,7 @@ mod store_source_tests {
         );
         let equation = |word| {
             Arc::new(Proposition::condition_is(
-                ConditionTerm::uint32_equal(read.clone(), OldMachineTerm::constant(word)),
+                OldConditionTerm::uint32_equal(read.clone(), OldMachineTerm::constant(word)),
                 true,
             ))
         };
@@ -1418,7 +1418,7 @@ mod store_source_tests {
 
         let equation = |point| {
             Arc::new(Proposition::condition_is(
-                ConditionTerm::uint32_equal(
+                OldConditionTerm::uint32_equal(
                     OldMachineTerm::read_named(point, Box::new(address.clone()), LoadKind::UInt32),
                     OldMachineTerm::uint32_constant(7),
                 ),

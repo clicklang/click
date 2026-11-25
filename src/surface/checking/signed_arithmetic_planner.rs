@@ -13,8 +13,8 @@ use crate::kernel::proof::signed_arithmetic::{
     SignedArithmeticPlan, SignedArithmeticRelation, add_claim,
 };
 use crate::kernel::{CompareRelation, OverflowOperation};
-use crate::kernel::{ConditionTerm, OldMachineTerm, Proposition};
 use crate::kernel::{MachineCastSpelling, cast_term};
+use crate::kernel::{OldConditionTerm, OldMachineTerm, Proposition};
 use crate::kernel::{binary_term, unary_term};
 use crate::kernel::{bits32_constant, constant_u32, int64_constant, uint64_constant};
 use num_bigint::BigInt;
@@ -35,7 +35,7 @@ fn native_certificate_proposition(proposition: &Proposition) -> Option<Propositi
     let Proposition::ConditionIs(condition, truth) = &canonical else {
         return Some(canonical);
     };
-    if matches!(condition.old_form(), ConditionTerm::Compare { .. }) {
+    if matches!(condition.old_form(), OldConditionTerm::Compare { .. }) {
         return Some(canonical);
     }
     let Some(view) = crate::kernel::machine_integer::comparison::structural_native_comparison_view(
@@ -372,7 +372,7 @@ pub(in crate::surface) fn decomposed_signed_claim(
     };
     let (relation, left, right, strict) = match (condition.old_form(), value) {
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left,
@@ -381,7 +381,7 @@ pub(in crate::surface) fn decomposed_signed_claim(
             true,
         ) => (SignedArithmeticRelation::LessEqual, left, right, true),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left,
@@ -390,7 +390,7 @@ pub(in crate::surface) fn decomposed_signed_claim(
             true,
         ) => (SignedArithmeticRelation::LessEqual, left, right, false),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterThan,
                 left,
@@ -399,7 +399,7 @@ pub(in crate::surface) fn decomposed_signed_claim(
             true,
         ) => (SignedArithmeticRelation::LessEqual, right, left, true),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
                 left,
@@ -408,7 +408,7 @@ pub(in crate::surface) fn decomposed_signed_claim(
             true,
         ) => (SignedArithmeticRelation::LessEqual, right, left, false),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left,
@@ -417,7 +417,7 @@ pub(in crate::surface) fn decomposed_signed_claim(
             false,
         ) => (SignedArithmeticRelation::LessEqual, right, left, false),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left,
@@ -426,7 +426,7 @@ pub(in crate::surface) fn decomposed_signed_claim(
             false,
         ) => (SignedArithmeticRelation::LessEqual, right, left, true),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterThan,
                 left,
@@ -435,7 +435,7 @@ pub(in crate::surface) fn decomposed_signed_claim(
             false,
         ) => (SignedArithmeticRelation::LessEqual, left, right, false),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
                 left,
@@ -444,7 +444,7 @@ pub(in crate::surface) fn decomposed_signed_claim(
             false,
         ) => (SignedArithmeticRelation::LessEqual, left, right, true),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
@@ -461,7 +461,7 @@ pub(in crate::surface) fn decomposed_signed_claim(
             });
         }
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
@@ -1035,31 +1035,31 @@ fn definedness_parts_from_proposition(
         return None;
     };
     Some(match condition.old_form() {
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
             left,
             right,
         } => (0, left, right),
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Subtract,
             left,
             right,
         } => (1, left, right),
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Multiply,
             left,
             right,
         } => (2, left, right),
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::ShiftLeft,
             left,
             right,
         } => (3, left, right),
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Divide,
             left,
@@ -2730,7 +2730,7 @@ fn exact_definedness(proposition: &Proposition, term: &OldMachineTerm) -> bool {
     };
     match (condition.old_form(), term) {
         (
-            ConditionTerm::Overflows {
+            OldConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Add,
                 left,
@@ -2739,7 +2739,7 @@ fn exact_definedness(proposition: &Proposition, term: &OldMachineTerm) -> bool {
             binary_term!(Int32, Add, a, b),
         )
         | (
-            ConditionTerm::Overflows {
+            OldConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Subtract,
                 left,
@@ -2748,7 +2748,7 @@ fn exact_definedness(proposition: &Proposition, term: &OldMachineTerm) -> bool {
             binary_term!(Int32, Subtract, a, b),
         )
         | (
-            ConditionTerm::Overflows {
+            OldConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Multiply,
                 left,
@@ -2757,7 +2757,7 @@ fn exact_definedness(proposition: &Proposition, term: &OldMachineTerm) -> bool {
             binary_term!(Int32, Multiply, a, b),
         )
         | (
-            ConditionTerm::Overflows {
+            OldConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::ShiftLeft,
                 left,
@@ -2766,7 +2766,7 @@ fn exact_definedness(proposition: &Proposition, term: &OldMachineTerm) -> bool {
             binary_term!(Int32, ShiftLeft, a, b),
         )
         | (
-            ConditionTerm::Overflows {
+            OldConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Divide,
                 left,
@@ -2819,7 +2819,7 @@ fn plan_interval_goal(
 /// The operands of a held `uint32` order goal, as `(lower, upper, strict)`.
 fn unsigned_order_terms(goal: &Proposition) -> Option<(&OldMachineTerm, &OldMachineTerm, bool)> {
     let Some((
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt32,
             relation:
                 relation @ (crate::kernel::CompareRelation::LessThan
@@ -2830,7 +2830,7 @@ fn unsigned_order_terms(goal: &Proposition) -> Option<(&OldMachineTerm, &OldMach
             right,
         },
         value,
-    )) = goal.condition_native()
+    )) = goal.old_condition()
     else {
         return None;
     };
@@ -2945,7 +2945,7 @@ fn comparison_terms(
     };
     match (condition.old_form(), value) {
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left,
@@ -2954,7 +2954,7 @@ fn comparison_terms(
             true,
         ) => Some((left.as_ref(), right.as_ref(), Comparison::LessThan)),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left,
@@ -2963,7 +2963,7 @@ fn comparison_terms(
             true,
         ) => Some((left.as_ref(), right.as_ref(), Comparison::LessEqual)),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
@@ -2972,7 +2972,7 @@ fn comparison_terms(
             true,
         ) => Some((left.as_ref(), right.as_ref(), Comparison::Equal)),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
@@ -2983,7 +2983,7 @@ fn comparison_terms(
         // The remaining orderings are the same comparisons read from the
         // other side, in the orientation the kernel's evidence check uses.
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterThan,
                 left,
@@ -2992,7 +2992,7 @@ fn comparison_terms(
             true,
         )
         | (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left,
@@ -3001,7 +3001,7 @@ fn comparison_terms(
             false,
         )
         | (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
                 left: right,
@@ -3010,7 +3010,7 @@ fn comparison_terms(
             false,
         ) => Some((right.as_ref(), left.as_ref(), Comparison::LessThan)),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
                 left,
@@ -3019,7 +3019,7 @@ fn comparison_terms(
             true,
         )
         | (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left,
@@ -3028,7 +3028,7 @@ fn comparison_terms(
             false,
         )
         | (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterThan,
                 left: right,
@@ -3081,7 +3081,7 @@ mod tests {
 
     fn equal(left: OldMachineTerm, right: OldMachineTerm) -> Proposition {
         proposition(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(left),
@@ -3197,13 +3197,13 @@ mod tests {
         OldMachineTerm::constant(value as u32)
     }
 
-    fn proposition(condition: ConditionTerm, value: bool) -> Proposition {
+    fn proposition(condition: OldConditionTerm, value: bool) -> Proposition {
         Proposition::condition_is(condition, value)
     }
 
     fn le(left: OldMachineTerm, right: OldMachineTerm) -> Proposition {
         proposition(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left: Box::new(left),
@@ -3215,7 +3215,7 @@ mod tests {
 
     fn lt(left: OldMachineTerm, right: OldMachineTerm) -> Proposition {
         proposition(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(left),
@@ -3227,7 +3227,7 @@ mod tests {
 
     fn ge(left: OldMachineTerm, right: OldMachineTerm) -> Proposition {
         proposition(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
                 left: Box::new(left),
@@ -3239,7 +3239,7 @@ mod tests {
 
     fn neq(left: OldMachineTerm, right: OldMachineTerm) -> Proposition {
         proposition(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(left),
@@ -3251,7 +3251,7 @@ mod tests {
 
     fn defined_add(left: OldMachineTerm, right: OldMachineTerm) -> Proposition {
         proposition(
-            ConditionTerm::Overflows {
+            OldConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Add,
                 left: Box::new(left),
@@ -3275,7 +3275,7 @@ mod tests {
         let next = binary_node!(Int32, Add, Box::new(i.clone()), Box::new(constant(1)));
         let bound = |limit: i32| {
             proposition(
-                ConditionTerm::unsigned_less_equal(next.clone(), constant(limit)),
+                OldConditionTerm::unsigned_less_equal(next.clone(), constant(limit)),
                 true,
             )
         };
@@ -3336,7 +3336,7 @@ mod tests {
     fn affine_equality_to_strict_bound_is_explicit() {
         let x = var(1);
         let equality = proposition(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(x.clone()),
@@ -3402,7 +3402,7 @@ mod tests {
         let remainder = binary_node!(Int32, Remainder, Box::new(x.clone()), Box::new(constant(7)));
         let remainder_goal = le(remainder.clone(), constant(6));
         let remainder_defined = proposition(
-            ConditionTerm::Overflows {
+            OldConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Divide,
                 left: Box::new(x.clone()),
@@ -3424,7 +3424,7 @@ mod tests {
         let shift = binary_node!(Int32, ShiftLeft, Box::new(x.clone()), Box::new(constant(2)));
         let shift_goal = le(shift.clone(), constant(40));
         let shift_defined = proposition(
-            ConditionTerm::Overflows {
+            OldConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::ShiftLeft,
                 left: Box::new(x.clone()),
@@ -3458,7 +3458,7 @@ mod tests {
         let product = binary_node!(Int32, Multiply, Box::new(x.clone()), Box::new(x.clone()));
         let product_goal = le(product.clone(), constant(100));
         let product_defined = proposition(
-            ConditionTerm::Overflows {
+            OldConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Multiply,
                 left: Box::new(x.clone()),

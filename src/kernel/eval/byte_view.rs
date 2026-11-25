@@ -103,7 +103,7 @@ pub(in crate::kernel) fn declared_uint32_read_representation(
         );
     }
     Some(Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left: Box::new(value),

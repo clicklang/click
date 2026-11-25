@@ -14,7 +14,7 @@ fn symbolic_footprint_selection_does_not_scan_same_base_ranges() {
     let n = OldMachineTerm::Variable(Variable(920_002));
     let empty = PureFactContext::new();
     let facts = empty.clone().assume_condition(
-        ConditionTerm::address_equal(base.clone(), alias.clone()),
+        OldConditionTerm::address_equal(base.clone(), alias.clone()),
         true,
     );
     let mut samples = Vec::new();
@@ -83,14 +83,17 @@ fn symbolic_byte_read_consumer_refuses_ambiguous_suppliers_without_search() {
     let facts = empty
         .clone()
         .assume_condition(
-            ConditionTerm::address_equal(base.clone(), alias.clone()),
+            OldConditionTerm::address_equal(base.clone(), alias.clone()),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_equal(0u32.into(), m.clone()),
+            OldConditionTerm::signed_less_equal(0u32.into(), m.clone()),
             true,
         )
-        .assume_condition(ConditionTerm::signed_less_equal(m.clone(), n.clone()), true);
+        .assume_condition(
+            OldConditionTerm::signed_less_equal(m.clone(), n.clone()),
+            true,
+        );
     let mut samples = Vec::new();
     for size in [16u64, 64, 256, 1024] {
         let held = ResourceFact::view_memory(range(&base, 0u32.into(), n.clone()));

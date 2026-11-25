@@ -3288,13 +3288,13 @@ fn function_contract_group(name: &str, values: &[crate::kernel::Term]) -> String
 mod tests {
     use super::super::EqualityGraph;
     use super::*;
-    use crate::kernel::{Address, ConditionTerm, OldMachineTerm, PureFactContext};
+    use crate::kernel::{Address, OldConditionTerm, OldMachineTerm, PureFactContext};
 
     fn var(id: u64) -> AddressOffset {
         AddressOffset::Variable(Variable(id))
     }
-    fn equality(left: &AddressOffset, right: &AddressOffset) -> ConditionTerm {
-        ConditionTerm::address_offset_equal(left.clone(), right.clone())
+    fn equality(left: &AddressOffset, right: &AddressOffset) -> OldConditionTerm {
+        OldConditionTerm::address_offset_equal(left.clone(), right.clone())
     }
 
     fn add(left: AddressOffset, right: AddressOffset) -> AddressOffset {
@@ -3604,7 +3604,7 @@ mod tests {
         let bc = equality(&b, &c);
         let p = Address::symbolic(Variable(23));
         let q = Address::symbolic(Variable(24));
-        let pq = ConditionTerm::address_equal(p.clone(), q.clone());
+        let pq = OldConditionTerm::address_equal(p.clone(), q.clone());
         let context = PureFactContext::new()
             .assume_condition(ab.clone(), true)
             .assume_condition(bc.clone(), true)

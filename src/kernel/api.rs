@@ -137,7 +137,7 @@ pub fn int32(bits: impl Into<OldMachineTerm>) -> ProgramValue {
 /// `byte`: the byte rule (Stage 5), the `Bool` `byte != 0` at `uint8`,
 /// carried as its cast (rule C1).
 pub fn bool_value(byte: impl Into<OldMachineTerm>) -> ProgramValue {
-    ProgramValue::of_bool(ConditionTerm::truth_of_bool_word(
+    ProgramValue::of_bool(OldConditionTerm::truth_of_bool_word(
         &byte.into().in_narrow_format(MachineIntegerType::UInt8),
     ))
 }
@@ -177,7 +177,7 @@ pub(crate) fn program_bool_cast_range_facts(value: &ProgramValue) -> Option<Vec<
         let (zero, one) = (constant(0)?, constant(1)?);
         let compare = |relation, constant: &OldMachineTerm| {
             Proposition::condition_is(
-                ConditionTerm::machine_compare(*to, relation, cast.clone(), constant.clone()),
+                OldConditionTerm::machine_compare(*to, relation, cast.clone(), constant.clone()),
                 true,
             )
         };
@@ -211,12 +211,12 @@ pub(crate) fn program_bool_cast_range_facts(value: &ProgramValue) -> Option<Vec<
         Proposition::condition_is(
             if wide {
                 if to.format().is_signed() {
-                    ConditionTerm::int64_equal(cast.clone(), constant.clone())
+                    OldConditionTerm::int64_equal(cast.clone(), constant.clone())
                 } else {
-                    ConditionTerm::uint64_equal(cast.clone(), constant.clone())
+                    OldConditionTerm::uint64_equal(cast.clone(), constant.clone())
                 }
             } else {
-                ConditionTerm::equal(cast.clone(), constant.clone())
+                OldConditionTerm::equal(cast.clone(), constant.clone())
             },
             true,
         )
@@ -227,10 +227,10 @@ pub(crate) fn program_bool_cast_range_facts(value: &ProgramValue) -> Option<Vec<
     }
     Some(vec![
         Proposition::condition_is(
-            ConditionTerm::signed_greater_equal(cast.clone(), zero),
+            OldConditionTerm::signed_greater_equal(cast.clone(), zero),
             true,
         ),
-        Proposition::condition_is(ConditionTerm::signed_less_equal(cast.clone(), one), true),
+        Proposition::condition_is(OldConditionTerm::signed_less_equal(cast.clone(), one), true),
         disjunction,
     ])
 }
@@ -850,7 +850,7 @@ mod loop_exit_sharing_tests {
     #[test]
     fn retained_exit_context_records_opposite_truth_without_changing_parent() {
         use crate::kernel::proof::PureFactStore;
-        let condition = ConditionTerm::equal(
+        let condition = OldConditionTerm::equal(
             OldMachineTerm::Variable(Variable(9_901_100)),
             OldMachineTerm::constant(0),
         );
@@ -2019,79 +2019,79 @@ fn abstract_execution_state_for_join_across_with_policy(
                 .iter()
                 .all(|sibling| sibling.locals.get(name) == Some(value)),
         };
-        let abstract_value =
-            if stable {
-                value.clone()
-            } else {
-                match program_type {
-                    ProgramType::Void => continue,
-                    // A `Bool` the arms disagree on is a fresh `Bool` binder.
-                    ProgramType::Bool => ProgramValue::of_bool(ConditionTerm::Variable(
-                        join_variable(&mut variables, &mut budget)?,
-                    )),
-                    ProgramType::Int8 => int8(OldMachineTerm::Variable(join_variable(
-                        &mut variables,
-                        &mut budget,
-                    )?)),
-                    ProgramType::Int16 => int16(OldMachineTerm::Variable(join_variable(
-                        &mut variables,
-                        &mut budget,
-                    )?)),
-                    ProgramType::Int32 => int32(OldMachineTerm::Variable(join_variable(
-                        &mut variables,
-                        &mut budget,
-                    )?)),
-                    ProgramType::Int64 => ProgramValue::Int64(OldMachineTerm::Variable(
-                        join_variable(&mut variables, &mut budget)?,
-                    )),
-                    ProgramType::UInt32 => uint32(OldMachineTerm::Variable(join_variable(
-                        &mut variables,
-                        &mut budget,
-                    )?)),
-                    ProgramType::UInt8 => uint8(OldMachineTerm::Variable(join_variable(
-                        &mut variables,
-                        &mut budget,
-                    )?)),
-                    ProgramType::UInt16 => uint16(OldMachineTerm::Variable(join_variable(
-                        &mut variables,
-                        &mut budget,
-                    )?)),
-                    ProgramType::UInt64 => ProgramValue::UInt64(OldMachineTerm::Variable(
-                        join_variable(&mut variables, &mut budget)?,
-                    )),
-                    ProgramType::Float32 => ProgramValue::Float32(OldMachineTerm::Variable(
-                        join_variable(&mut variables, &mut budget)?,
-                    )),
-                    ProgramType::Float64 => ProgramValue::Float64(OldMachineTerm::Variable(
-                        join_variable(&mut variables, &mut budget)?,
-                    )),
-                    ProgramType::FunctionPointer(_) => ProgramValue::typed_pointer(
-                        Address::symbolic_function(join_variable(&mut variables, &mut budget)?),
-                        *program_type,
-                    ),
-                    ProgramType::Int8Array(_) => {
-                        unreachable!("array objects use LocalBinding::ArrayObject")
-                    }
-                    ProgramType::Int32Array(_)
-                    | ProgramType::UInt8Array(_)
-                    | ProgramType::Int16Array(_)
-                    | ProgramType::UInt16Array(_)
-                    | ProgramType::UInt32Array(_)
-                    | ProgramType::Int128Array(_)
-                    | ProgramType::Int64Array(_)
-                    | ProgramType::UInt128Array(_)
-                    | ProgramType::UInt64Array(_)
-                    | ProgramType::Float32Array(_)
-                    | ProgramType::Float64Array(_) => {
-                        unreachable!("array objects use LocalBinding::ArrayObject")
-                    }
-                    _ => ProgramValue::typed_pointer(
-                        Address::symbolic(join_variable(&mut variables, &mut budget)?),
-                        *program_type,
-                    ),
+        let abstract_value = if stable {
+            value.clone()
+        } else {
+            match program_type {
+                ProgramType::Void => continue,
+                // A `Bool` the arms disagree on is a fresh `Bool` binder.
+                ProgramType::Bool => ProgramValue::of_bool(OldConditionTerm::Variable(
+                    join_variable(&mut variables, &mut budget)?,
+                )),
+                ProgramType::Int8 => int8(OldMachineTerm::Variable(join_variable(
+                    &mut variables,
+                    &mut budget,
+                )?)),
+                ProgramType::Int16 => int16(OldMachineTerm::Variable(join_variable(
+                    &mut variables,
+                    &mut budget,
+                )?)),
+                ProgramType::Int32 => int32(OldMachineTerm::Variable(join_variable(
+                    &mut variables,
+                    &mut budget,
+                )?)),
+                ProgramType::Int64 => ProgramValue::Int64(OldMachineTerm::Variable(join_variable(
+                    &mut variables,
+                    &mut budget,
+                )?)),
+                ProgramType::UInt32 => uint32(OldMachineTerm::Variable(join_variable(
+                    &mut variables,
+                    &mut budget,
+                )?)),
+                ProgramType::UInt8 => uint8(OldMachineTerm::Variable(join_variable(
+                    &mut variables,
+                    &mut budget,
+                )?)),
+                ProgramType::UInt16 => uint16(OldMachineTerm::Variable(join_variable(
+                    &mut variables,
+                    &mut budget,
+                )?)),
+                ProgramType::UInt64 => ProgramValue::UInt64(OldMachineTerm::Variable(
+                    join_variable(&mut variables, &mut budget)?,
+                )),
+                ProgramType::Float32 => ProgramValue::Float32(OldMachineTerm::Variable(
+                    join_variable(&mut variables, &mut budget)?,
+                )),
+                ProgramType::Float64 => ProgramValue::Float64(OldMachineTerm::Variable(
+                    join_variable(&mut variables, &mut budget)?,
+                )),
+                ProgramType::FunctionPointer(_) => ProgramValue::typed_pointer(
+                    Address::symbolic_function(join_variable(&mut variables, &mut budget)?),
+                    *program_type,
+                ),
+                ProgramType::Int8Array(_) => {
+                    unreachable!("array objects use LocalBinding::ArrayObject")
                 }
-                .into()
-            };
+                ProgramType::Int32Array(_)
+                | ProgramType::UInt8Array(_)
+                | ProgramType::Int16Array(_)
+                | ProgramType::UInt16Array(_)
+                | ProgramType::UInt32Array(_)
+                | ProgramType::Int128Array(_)
+                | ProgramType::Int64Array(_)
+                | ProgramType::UInt128Array(_)
+                | ProgramType::UInt64Array(_)
+                | ProgramType::Float32Array(_)
+                | ProgramType::Float64Array(_) => {
+                    unreachable!("array objects use LocalBinding::ArrayObject")
+                }
+                _ => ProgramValue::typed_pointer(
+                    Address::symbolic(join_variable(&mut variables, &mut budget)?),
+                    *program_type,
+                ),
+            }
+            .into()
+        };
         preserved_blocks.insert(slot.base.clone());
         abstract_objects.push((name.clone(), abstract_value, *program_type));
     }
@@ -4778,7 +4778,7 @@ pub fn proposition_and(left: Proposition, right: Proposition) -> Proposition {
 
 pub fn proposition_and_all(mut propositions: Vec<Proposition>) -> Proposition {
     if propositions.is_empty() {
-        return Proposition::condition_is(ConditionTerm::Constant(true), true);
+        return Proposition::condition_is(OldConditionTerm::Constant(true), true);
     }
     while propositions.len() > 1 {
         let mut next = Vec::with_capacity(propositions.len().div_ceil(2));
@@ -4971,8 +4971,8 @@ pub fn program_max_state(a: ProgramValue, b: ProgramValue) -> ExecutionState {
 }
 
 #[cfg(test)]
-pub fn program_max_lt_condition(a: OldMachineTerm, b: OldMachineTerm) -> ConditionTerm {
-    ConditionTerm::signed_less_than(a, b)
+pub fn program_max_lt_condition(a: OldMachineTerm, b: OldMachineTerm) -> OldConditionTerm {
+    OldConditionTerm::signed_less_than(a, b)
 }
 
 #[cfg(test)]
@@ -6680,14 +6680,14 @@ fn checked_int32_reassociated_add_domain_as_written(
             .each_ref()
             .map(|operand| operand.operand_view())
     } else if let Some((
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
             left,
             right,
         },
         false,
-    )) = (goal).condition_native()
+    )) = (goal).old_condition()
     {
         [View::Old(left), View::Old(right)]
     } else {
@@ -6834,8 +6834,10 @@ pub fn checked_owned_resource_count_lower_bound(
         true,
     );
     {
-        let reversed =
-            Proposition::condition_is(ConditionTerm::signed_greater_equal(count, quantity), true);
+        let reversed = Proposition::condition_is(
+            OldConditionTerm::signed_greater_equal(count, quantity),
+            true,
+        );
         if !proposition_holds_without_facts(&conclusion)
             && !PureFactContext::settles_exactly(&checked_facts, &conclusion)
             && !checked_facts.proves_exact(&reversed)
@@ -6958,15 +6960,15 @@ pub fn prove_program_max_not_lt_returns_left(a: Variable, b: Variable) -> Option
 /// second and is not strictly less than it.
 pub fn prove_int32_le_antisymmetric(left: OldMachineTerm, right: OldMachineTerm) -> Theorem {
     let le_premise = Proposition::condition_is(
-        ConditionTerm::signed_less_equal(left.clone(), right.clone()),
+        OldConditionTerm::signed_less_equal(left.clone(), right.clone()),
         true,
     );
     let reverse_le_premise = Proposition::condition_is(
-        ConditionTerm::signed_less_equal(right.clone(), left.clone()),
+        OldConditionTerm::signed_less_equal(right.clone(), left.clone()),
         true,
     );
     let conclusion = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(left),
@@ -7031,11 +7033,11 @@ pub fn prove_population_member_count_zero(
     )?;
     Some(implication(
         [Proposition::condition_is(
-            ConditionTerm::equal(total, OldMachineTerm::constant(0)),
+            OldConditionTerm::equal(total, OldMachineTerm::constant(0)),
             true,
         )],
         Proposition::condition_is(
-            ConditionTerm::equal(member, OldMachineTerm::constant(0)),
+            OldConditionTerm::equal(member, OldMachineTerm::constant(0)),
             true,
         ),
     ))
@@ -7094,7 +7096,7 @@ fn fold_endpoint_order(
     relation: CompareRelation,
     left: &SharedIntegerRangeEndpoint,
     right: &SharedIntegerRangeEndpoint,
-) -> ConditionTerm {
+) -> OldConditionTerm {
     crate::kernel::machine_integer::comparison::condition_for_operand_views(
         format,
         relation,
@@ -7127,14 +7129,14 @@ pub fn prove_integer_range_fold_empty(
             start,
         ),
         IntegerRangeFoldIndex::Integer { start, end } => {
-            ConditionTerm::integer_less_equal(end.as_ref().clone(), start.as_ref().clone())
+            OldConditionTerm::integer_less_equal(end.as_ref().clone(), start.as_ref().clone())
         }
     };
     let fold = IntegerTerm::range_fold(index, initial.clone(), accumulator, item, body);
     implication(
         [Proposition::condition_is(guard, true)],
         Proposition::condition_is(
-            ConditionTerm::IntegerEqual(fold.into(), initial.into()),
+            OldConditionTerm::IntegerEqual(fold.into(), initial.into()),
             true,
         ),
     )
@@ -7231,7 +7233,7 @@ pub fn prove_integer_range_fold_append(
         IntegerRangeFoldIndex::Integer { start, end } => {
             let increment = IntegerTerm::add(end.as_ref().clone(), IntegerTerm::constant_i64(1));
             let guard =
-                ConditionTerm::integer_less_equal(start.as_ref().clone(), end.as_ref().clone());
+                OldConditionTerm::integer_less_equal(start.as_ref().clone(), end.as_ref().clone());
             let extended = IntegerRangeFoldIndex::Integer {
                 start: start.clone(),
                 end: increment.into(),
@@ -7260,7 +7262,7 @@ pub fn prove_integer_range_fold_append(
     Some(implication(
         [guard],
         Proposition::condition_is(
-            ConditionTerm::IntegerEqual(extended_fold.into(), stepped.into()),
+            OldConditionTerm::IntegerEqual(extended_fold.into(), stepped.into()),
             true,
         ),
     ))
@@ -7382,14 +7384,14 @@ pub fn substitute_integer_term_in_proposition(
     }
 
     fn walk_condition(
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
         from: &SharedIntegerTerm,
         to: &SharedIntegerTerm,
         changed: &mut bool,
         memo: &mut std::collections::HashMap<u64, SharedIntegerTerm>,
-    ) -> ConditionTerm {
+    ) -> OldConditionTerm {
         let mut rebuild =
-            |constructor: fn(SharedIntegerTerm, SharedIntegerTerm) -> ConditionTerm,
+            |constructor: fn(SharedIntegerTerm, SharedIntegerTerm) -> OldConditionTerm,
              left: &SharedIntegerTerm,
              right: &SharedIntegerTerm,
              changed: &mut bool| {
@@ -7399,23 +7401,23 @@ pub fn substitute_integer_term_in_proposition(
                 )
             };
         match condition {
-            ConditionTerm::IntegerLessThan(left, right) => {
-                rebuild(ConditionTerm::IntegerLessThan, left, right, changed)
+            OldConditionTerm::IntegerLessThan(left, right) => {
+                rebuild(OldConditionTerm::IntegerLessThan, left, right, changed)
             }
-            ConditionTerm::IntegerLessEqual(left, right) => {
-                rebuild(ConditionTerm::IntegerLessEqual, left, right, changed)
+            OldConditionTerm::IntegerLessEqual(left, right) => {
+                rebuild(OldConditionTerm::IntegerLessEqual, left, right, changed)
             }
-            ConditionTerm::IntegerGreaterThan(left, right) => {
-                rebuild(ConditionTerm::IntegerGreaterThan, left, right, changed)
+            OldConditionTerm::IntegerGreaterThan(left, right) => {
+                rebuild(OldConditionTerm::IntegerGreaterThan, left, right, changed)
             }
-            ConditionTerm::IntegerGreaterEqual(left, right) => {
-                rebuild(ConditionTerm::IntegerGreaterEqual, left, right, changed)
+            OldConditionTerm::IntegerGreaterEqual(left, right) => {
+                rebuild(OldConditionTerm::IntegerGreaterEqual, left, right, changed)
             }
-            ConditionTerm::IntegerEqual(left, right) => {
-                rebuild(ConditionTerm::IntegerEqual, left, right, changed)
+            OldConditionTerm::IntegerEqual(left, right) => {
+                rebuild(OldConditionTerm::IntegerEqual, left, right, changed)
             }
-            ConditionTerm::IntegerNotEqual(left, right) => {
-                rebuild(ConditionTerm::IntegerNotEqual, left, right, changed)
+            OldConditionTerm::IntegerNotEqual(left, right) => {
+                rebuild(OldConditionTerm::IntegerNotEqual, left, right, changed)
             }
             condition => condition.clone(),
         }
@@ -7468,7 +7470,7 @@ pub fn substitute_integer_term_in_proposition(
 /// that law; all of its guards still become ordinary checked obligations.
 pub(crate) fn integer_range_fold_predecessor_guard(
     index: &IntegerRangeFoldIndex,
-) -> Option<ConditionTerm> {
+) -> Option<OldConditionTerm> {
     let (prior, _) = integer_range_fold_predecessor_index(index)?;
     Some(match prior {
         IntegerRangeFoldIndex::Int32 { start, end } => fold_endpoint_order(
@@ -7484,7 +7486,7 @@ pub(crate) fn integer_range_fold_predecessor_guard(
             &end,
         ),
         IntegerRangeFoldIndex::Integer { start, end } => {
-            ConditionTerm::integer_less_equal(start.as_ref().clone(), end.as_ref().clone())
+            OldConditionTerm::integer_less_equal(start.as_ref().clone(), end.as_ref().clone())
         }
     })
 }
@@ -7605,7 +7607,7 @@ pub fn prove_integer_range_fold_over_equal_terms(
         body.clone(),
     );
     let whole_is_fold = Proposition::condition_is(
-        ConditionTerm::IntegerEqual(whole.clone().into(), fold.clone().into()),
+        OldConditionTerm::IntegerEqual(whole.clone().into(), fold.clone().into()),
         true,
     );
     let Some(prior) = prior else {
@@ -7619,7 +7621,7 @@ pub fn prove_integer_range_fold_over_equal_terms(
                 Box::new(guard.as_ref().clone()),
             )],
             Proposition::condition_is(
-                ConditionTerm::IntegerEqual(whole.into(), initial.into()),
+                OldConditionTerm::IntegerEqual(whole.into(), initial.into()),
                 true,
             ),
         ));
@@ -7639,8 +7641,8 @@ pub fn prove_integer_range_fold_over_equal_terms(
     let Proposition::Implies(guard, conclusion) = append.proposition() else {
         return Err("the Integer fold append law is not a guarded theorem");
     };
-    let Some((ConditionTerm::IntegerEqual(extended, _), true)) =
-        conclusion.as_ref().condition_native()
+    let Some((OldConditionTerm::IntegerEqual(extended, _), true)) =
+        conclusion.as_ref().old_condition()
     else {
         return Err("the Integer fold append law did not conclude an equation");
     };
@@ -7656,7 +7658,7 @@ pub fn prove_integer_range_fold_over_equal_terms(
     let prior_fold =
         IntegerTerm::range_fold(predecessor_index, initial, accumulator, item, body.clone());
     let prior_is_fold = Proposition::condition_is(
-        ConditionTerm::IntegerEqual(prior.clone().into(), prior_fold.into()),
+        OldConditionTerm::IntegerEqual(prior.clone().into(), prior_fold.into()),
         true,
     );
     let stepped = crate::kernel::reasoning::instantiate_integer_range_fold_step(
@@ -7679,7 +7681,7 @@ pub fn prove_integer_range_fold_over_equal_terms(
             Box::new(guard.as_ref().clone()),
         )],
         Proposition::condition_is(
-            ConditionTerm::IntegerEqual(whole.into(), stepped.into()),
+            OldConditionTerm::IntegerEqual(whole.into(), stepped.into()),
             true,
         ),
     ))
@@ -8500,26 +8502,26 @@ pub(crate) fn prove_universally_quantified_pure_implication_by_int32_rewrites(
     for rewrite in rewrites {
         crate::kernel::proof::fact_reasoning::exactly_available_fact(&rewrite, &requirements)?;
         let Some((
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left: from,
                 right: to,
             },
             true,
-        )) = rewrite.condition_native()
+        )) = rewrite.old_condition()
         else {
             return None;
         };
         let Some((
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
             },
             true,
-        )) = goal.condition_native()
+        )) = goal.old_condition()
         else {
             return None;
         };
@@ -8529,7 +8531,7 @@ pub(crate) fn prove_universally_quantified_pure_implication_by_int32_rewrites(
             return None;
         }
         goal = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(rewritten_left),
@@ -8564,11 +8566,11 @@ fn prove_uint32_integer_division_bridge(
     let dividend = observe(left.clone());
     let divisor = observe(right.clone());
     let native_nonzero = Proposition::condition_is(
-        ConditionTerm::equal(right.clone(), OldMachineTerm::constant(0)),
+        OldConditionTerm::equal(right.clone(), OldMachineTerm::constant(0)),
         false,
     );
     let integer_nonzero = Proposition::condition_is(
-        ConditionTerm::integer_not_equal(divisor.clone(), IntegerTerm::constant_i64(0)),
+        OldConditionTerm::integer_not_equal(divisor.clone(), IntegerTerm::constant_i64(0)),
         true,
     );
     let (machine, exact) = if remainder {
@@ -8583,7 +8585,7 @@ fn prove_uint32_integer_division_bridge(
         )
     };
     let conclusion = Proposition::condition_is(
-        ConditionTerm::IntegerEqual(observe(machine).into(), exact.into()),
+        OldConditionTerm::IntegerEqual(observe(machine).into(), exact.into()),
         true,
     );
     implication([native_nonzero, integer_nonzero], conclusion)
@@ -8629,16 +8631,22 @@ fn prove_unsigned_pack_u16_in_order_to_integer(
                 )
                 .into(),
             ),
-            ConditionTerm::unsigned_less_equal(low.clone(), OldMachineTerm::constant(65535)),
-            ConditionTerm::unsigned_less_equal(high.clone(), OldMachineTerm::constant(65535)),
+            OldConditionTerm::unsigned_less_equal(low.clone(), OldMachineTerm::constant(65535)),
+            OldConditionTerm::unsigned_less_equal(high.clone(), OldMachineTerm::constant(65535)),
         ),
         MachineIntegerType::UInt64 => (
             OldMachineTerm::uint64_bitwise_or(
                 low.clone(),
                 OldMachineTerm::uint64_shift_left(high.clone(), OldMachineTerm::int64_constant(16)),
             ),
-            ConditionTerm::uint64_less_equal(low.clone(), OldMachineTerm::uint64_constant(65535)),
-            ConditionTerm::uint64_less_equal(high.clone(), OldMachineTerm::uint64_constant(65535)),
+            OldConditionTerm::uint64_less_equal(
+                low.clone(),
+                OldMachineTerm::uint64_constant(65535),
+            ),
+            OldConditionTerm::uint64_less_equal(
+                high.clone(),
+                OldMachineTerm::uint64_constant(65535),
+            ),
         ),
         _ => return None,
     };
@@ -8679,7 +8687,10 @@ fn prove_unsigned_pack_u16_in_order_to_integer(
             Proposition::condition_is(low_bound, true),
             Proposition::condition_is(high_bound, true),
         ],
-        Proposition::condition_is(ConditionTerm::integer_equal(observe(packed)?, exact), true),
+        Proposition::condition_is(
+            OldConditionTerm::integer_equal(observe(packed)?, exact),
+            true,
+        ),
     ))
 }
 
@@ -8735,15 +8746,15 @@ fn prove_uint32_unpack_uint16_word(
     implication(
         [
             Proposition::condition_is(
-                ConditionTerm::unsigned_less_equal(low, OldMachineTerm::constant(65535)),
+                OldConditionTerm::unsigned_less_equal(low, OldMachineTerm::constant(65535)),
                 true,
             ),
             Proposition::condition_is(
-                ConditionTerm::unsigned_less_equal(high, OldMachineTerm::constant(65535)),
+                OldConditionTerm::unsigned_less_equal(high, OldMachineTerm::constant(65535)),
                 true,
             ),
         ],
-        Proposition::condition_is(ConditionTerm::uint32_equal(extracted, exact), true),
+        Proposition::condition_is(OldConditionTerm::uint32_equal(extracted, exact), true),
     )
 }
 
@@ -8769,15 +8780,15 @@ fn prove_uint64_unpack_uint16_word(
     implication(
         [
             Proposition::condition_is(
-                ConditionTerm::uint64_less_equal(low, OldMachineTerm::uint64_constant(65535)),
+                OldConditionTerm::uint64_less_equal(low, OldMachineTerm::uint64_constant(65535)),
                 true,
             ),
             Proposition::condition_is(
-                ConditionTerm::uint64_less_equal(high, OldMachineTerm::uint64_constant(65535)),
+                OldConditionTerm::uint64_less_equal(high, OldMachineTerm::uint64_constant(65535)),
                 true,
             ),
         ],
-        Proposition::condition_is(ConditionTerm::uint64_equal(extracted, exact), true),
+        Proposition::condition_is(OldConditionTerm::uint64_equal(extracted, exact), true),
     )
 }
 
@@ -8815,11 +8826,11 @@ pub fn prove_uint64_integer_bridge(
     let a = observe(left.clone());
     let b = observe(right.clone());
     let native_nonzero = Proposition::condition_is(
-        ConditionTerm::uint64_equal(right.clone(), OldMachineTerm::uint64_constant(0)),
+        OldConditionTerm::uint64_equal(right.clone(), OldMachineTerm::uint64_constant(0)),
         false,
     );
     let integer_nonzero = Proposition::condition_is(
-        ConditionTerm::integer_not_equal(b.clone(), IntegerTerm::constant_i64(0)),
+        OldConditionTerm::integer_not_equal(b.clone(), IntegerTerm::constant_i64(0)),
         true,
     );
     let (machine, exact) = if name == "click::integer::uint64_divide_to_integer" {
@@ -8844,7 +8855,7 @@ pub fn prove_uint64_integer_bridge(
         )
     };
     let conclusion = Proposition::condition_is(
-        ConditionTerm::IntegerEqual(observe(machine).into(), exact.into()),
+        OldConditionTerm::IntegerEqual(observe(machine).into(), exact.into()),
         true,
     );
     Some(implication([native_nonzero, integer_nonzero], conclusion))
@@ -8861,7 +8872,7 @@ pub fn prove_int32_remainder_to_integer(left: OldMachineTerm, right: OldMachineT
     let native_defined =
         Proposition::signed_division_defined(MachineIntegerType::Int32, &left, &right);
     let integer_nonzero = Proposition::condition_is(
-        ConditionTerm::integer_not_equal(observe(right.clone()), IntegerTerm::constant_i64(0)),
+        OldConditionTerm::integer_not_equal(observe(right.clone()), IntegerTerm::constant_i64(0)),
         true,
     );
     let exact = IntegerTerm::truncating_remainder(observe(left.clone()), observe(right.clone()));
@@ -8869,7 +8880,7 @@ pub fn prove_int32_remainder_to_integer(left: OldMachineTerm, right: OldMachineT
     implication(
         [native_defined, integer_nonzero],
         Proposition::condition_is(
-            ConditionTerm::IntegerEqual(observe(machine).into(), exact.into()),
+            OldConditionTerm::IntegerEqual(observe(machine).into(), exact.into()),
             true,
         ),
     )
@@ -8888,7 +8899,7 @@ fn implication<const N: usize>(premises: [Proposition; N], conclusion: Propositi
 }
 
 #[cfg(test)]
-fn uint32_implication(premise: ConditionTerm, conclusion: ConditionTerm) -> Theorem {
+fn uint32_implication(premise: OldConditionTerm, conclusion: OldConditionTerm) -> Theorem {
     implication(
         [Proposition::condition_is(premise, true)],
         Proposition::condition_is(conclusion, true),
@@ -8897,9 +8908,9 @@ fn uint32_implication(premise: ConditionTerm, conclusion: ConditionTerm) -> Theo
 
 #[cfg(test)]
 fn uint32_transitivity(
-    first: ConditionTerm,
-    second: ConditionTerm,
-    conclusion: ConditionTerm,
+    first: OldConditionTerm,
+    second: OldConditionTerm,
+    conclusion: OldConditionTerm,
 ) -> Theorem {
     implication(
         [
@@ -8918,9 +8929,9 @@ pub fn prove_uint32_le_lt_transitive(
     last: OldMachineTerm,
 ) -> Theorem {
     uint32_transitivity(
-        ConditionTerm::unsigned_less_equal(first.clone(), middle.clone()),
-        ConditionTerm::unsigned_less_than(middle, last.clone()),
-        ConditionTerm::unsigned_less_than(first, last),
+        OldConditionTerm::unsigned_less_equal(first.clone(), middle.clone()),
+        OldConditionTerm::unsigned_less_than(middle, last.clone()),
+        OldConditionTerm::unsigned_less_than(first, last),
     )
 }
 
@@ -8931,8 +8942,8 @@ pub fn prove_uint32_lt_implies_reversed_gt(
     greater: OldMachineTerm,
 ) -> Theorem {
     uint32_implication(
-        ConditionTerm::unsigned_less_than(lower.clone(), greater.clone()),
-        ConditionTerm::unsigned_greater_than(greater, lower),
+        OldConditionTerm::unsigned_less_than(lower.clone(), greater.clone()),
+        OldConditionTerm::unsigned_greater_than(greater, lower),
     )
 }
 
@@ -8943,8 +8954,8 @@ pub fn prove_uint32_ge_implies_reversed_le(
     lower: OldMachineTerm,
 ) -> Theorem {
     uint32_implication(
-        ConditionTerm::unsigned_greater_equal(greater.clone(), lower.clone()),
-        ConditionTerm::unsigned_less_equal(lower, greater),
+        OldConditionTerm::unsigned_greater_equal(greater.clone(), lower.clone()),
+        OldConditionTerm::unsigned_less_equal(lower, greater),
     )
 }
 

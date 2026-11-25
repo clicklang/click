@@ -10688,7 +10688,7 @@ pub(in crate::kernel) fn memory_range_is_proven_empty(
 ) -> bool {
     if let Some((start, end)) = range.wide_bounds() {
         return start == end
-            || assumptions.decide(&ConditionTerm::uint64_equal(start.clone(), end.clone()))
+            || assumptions.decide(&OldConditionTerm::uint64_equal(start.clone(), end.clone()))
                 == Some(true);
     }
     assumptions.int32_values_known_equal(range.start(), range.end())
@@ -10696,7 +10696,7 @@ pub(in crate::kernel) fn memory_range_is_proven_empty(
 
 pub(in crate::kernel) fn quantity_condition_holds(
     assumptions: &PureFactContext,
-    condition: ConditionTerm,
+    condition: OldConditionTerm,
 ) -> bool {
     assumptions.proves_exact(&Proposition::condition_is(condition.clone(), true))
         || assumptions.decide(&condition) == Some(true)
@@ -10710,7 +10710,7 @@ fn resource_quantity_at_least(
     available == required
         || quantity_condition_holds(
             assumptions,
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
                 left: Box::new(available.clone()),
@@ -10738,7 +10738,7 @@ pub(super) fn resource_quantity_is_positive(
     constant_quantity_is_positive(quantity)
         || quantity_condition_holds(
             assumptions,
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterThan,
                 left: Box::new(quantity.clone()),
@@ -10797,7 +10797,7 @@ pub(in crate::kernel) fn population_quantity_sum(
     {
         return Some(total.as_ref().clone());
     }
-    let no_overflow = ConditionTerm::Overflows {
+    let no_overflow = OldConditionTerm::Overflows {
         format: MachineIntegerType::Int32,
         op: OverflowOperation::Add,
         left: Box::new(left.clone()),
@@ -10828,7 +10828,7 @@ fn numeric_population_owned_units(fact: &ResourceFact) -> Option<u32> {
 fn resource_quantity_is_zero(quantity: &OldMachineTerm, assumptions: &PureFactContext) -> bool {
     quantity.as_const() == Some(0)
         || assumptions.proves_exact(&Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(quantity.clone()),
@@ -10958,8 +10958,9 @@ mod zero_quantity_graph_tests {
         let sum = |value| OldMachineTerm::add(value, OldMachineTerm::constant(1));
         let source = required(sum(load(&before, a.clone())));
         let later = required(sum(load(&after, b.clone())));
-        let address_premise = ConditionTerm::equal(a, b.clone());
-        let zero_premise = ConditionTerm::equal(sum(load(&before, b)), OldMachineTerm::constant(0));
+        let address_premise = OldConditionTerm::equal(a, b.clone());
+        let zero_premise =
+            OldConditionTerm::equal(sum(load(&before, b)), OldMachineTerm::constant(0));
         let parent = PureFactContext::new();
         let address_only = parent
             .clone()
@@ -11021,7 +11022,7 @@ fn consume_exact_resource_fact(
         let residual_is_zero = residual.as_const() == Some(0)
             || quantity_condition_holds(
                 assumptions,
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(residual.clone()),
@@ -11707,7 +11708,7 @@ pub(in crate::kernel) fn iterated_memories_proven_equal(
     }
     let term_equal = |a: &OldMachineTerm, b: &OldMachineTerm| {
         a == b
-            || assumptions.decide(&ConditionTerm::Compare {
+            || assumptions.decide(&OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(a.clone()),
@@ -11837,12 +11838,12 @@ fn owned_cell_access_uses_transitive_graph_address_equality() {
         MemoryRange::new_with_element_width(a.clone(), 0u32.into(), 1u32.into(), 4),
     ));
     let facts = PureFactContext::new()
-        .assume_condition(ConditionTerm::address_equal(a.clone(), b.clone()), true)
-        .assume_condition(ConditionTerm::address_equal(c.clone(), d.clone()), true);
+        .assume_condition(OldConditionTerm::address_equal(a.clone(), b.clone()), true)
+        .assume_condition(OldConditionTerm::address_equal(c.clone(), d.clone()), true);
     assert!(!owner.permits_memory_read(&d, 4, &facts));
     let connected = facts
         .clone()
-        .assume_condition(ConditionTerm::address_equal(b, c), true);
+        .assume_condition(OldConditionTerm::address_equal(b, c), true);
     assert!(connected.pointers_known_equal(&a, &d));
     assert!(owner.permits_memory_read(&d, 4, &connected));
     assert!(owner.memory_write_range(&d, 4, &connected).is_some());
@@ -12100,8 +12101,8 @@ pub(in crate::kernel) fn wide_memory_range_respelled(
 pub(in crate::kernel) fn wide_respelling_no_wrap_condition(
     count: &OldMachineTerm,
     factor: u64,
-) -> ConditionTerm {
-    ConditionTerm::uint64_less_equal(
+) -> OldConditionTerm {
+    OldConditionTerm::uint64_less_equal(
         count.clone(),
         OldMachineTerm::uint64_constant(u64::MAX / factor),
     )
@@ -12153,8 +12154,8 @@ pub(in crate::kernel) fn pointer_formation_in_range(
     }
     let width = range.element_width();
     let nonempty = match range.wide_bounds() {
-        Some((start, end)) => ConditionTerm::uint64_less_than(start.clone(), end.clone()),
-        None => ConditionTerm::signed_less_than(range.start().clone(), range.end().clone()),
+        Some((start, end)) => OldConditionTerm::uint64_less_than(start.clone(), end.clone()),
+        None => OldConditionTerm::signed_less_than(range.start().clone(), range.end().clone()),
     };
     // Re-spell only checked nonnegative endpoints. This does not
     // truncate a native index or a native range into 32 bits.
@@ -12512,7 +12513,7 @@ pub(in crate::kernel) fn memory_range_covers_interior_element(
         .map(|index| index as i32)
         && index >= 0
         && let Some(next) = index.checked_add(1)
-        && assumptions.exact_condition_value(&ConditionTerm::signed_less_equal(
+        && assumptions.exact_condition_value(&OldConditionTerm::signed_less_equal(
             OldMachineTerm::constant(next as u32),
             available.end().clone(),
         )) == Some(true)
@@ -12932,7 +12933,7 @@ pub(in crate::kernel) fn wide_memory_ranges_proven_overlapping(
         return false;
     };
     let below = |lower: &OldMachineTerm, upper: &OldMachineTerm| {
-        assumptions.decide(&ConditionTerm::uint64_less_than(
+        assumptions.decide(&OldConditionTerm::uint64_less_than(
             lower.clone(),
             upper.clone(),
         )) == Some(true)
@@ -14604,7 +14605,7 @@ fn bitvector_terms_proven_equal(
     assumptions: &PureFactContext,
 ) -> bool {
     left == right
-        || assumptions.decide(&ConditionTerm::equal(left.clone(), right.clone())) == Some(true)
+        || assumptions.decide(&OldConditionTerm::equal(left.clone(), right.clone())) == Some(true)
 }
 
 #[cfg(test)]
@@ -14727,7 +14728,7 @@ mod support_removal_tests {
         let left = MemoryRange::new(base.clone(), OldMachineTerm::constant(0), endpoint(a));
         let right = MemoryRange::new(base.clone(), endpoint(b), OldMachineTerm::constant(16));
         let premise =
-            ConditionTerm::equal(OldMachineTerm::Variable(a), OldMachineTerm::Variable(b));
+            OldConditionTerm::equal(OldMachineTerm::Variable(a), OldMachineTerm::Variable(b));
         let parent = PureFactContext::new();
         let branch = parent.clone().assume_condition(premise.clone(), true);
         let _scope = branch.enter_id_scope();
@@ -14983,12 +14984,13 @@ fn symbolic_struct_coverage_uses_exact_element_indices() {
         MemoryRange::new_with_element_width(pointer, 0u32.into(), bytes, 1)
     };
     let lower = PureFactContext::new().assume_condition(
-        ConditionTerm::signed_less_equal(0u32.into(), i.clone()),
+        OldConditionTerm::signed_less_equal(0u32.into(), i.clone()),
         true,
     );
-    let inside = lower
-        .clone()
-        .assume_condition(ConditionTerm::signed_less_than(i.clone(), n.clone()), true);
+    let inside = lower.clone().assume_condition(
+        OldConditionTerm::signed_less_than(i.clone(), n.clone()),
+        true,
+    );
     let at_i = base.offset_by_elements(i.clone(), 16);
     assert!(memory_range_covers(
         &owned,
@@ -15005,22 +15007,24 @@ fn symbolic_struct_coverage_uses_exact_element_indices() {
         &required(at_i.offset_by_bytes(12), 8u32.into()),
         &inside
     ));
-    let inclusive =
-        lower.assume_condition(ConditionTerm::signed_less_equal(i.clone(), n.clone()), true);
+    let inclusive = lower.assume_condition(
+        OldConditionTerm::signed_less_equal(i.clone(), n.clone()),
+        true,
+    );
     assert!(!memory_range_covers(
         &owned,
         &required(at_i.offset_by_bytes(8), 8u32.into()),
         &inclusive
     ));
     let upper_only = PureFactContext::new()
-        .assume_condition(ConditionTerm::signed_less_than(i, n.clone()), true);
+        .assume_condition(OldConditionTerm::signed_less_than(i, n.clone()), true);
     assert!(!memory_range_covers(
         &owned,
         &required(at_i.offset_by_bytes(8), 8u32.into()),
         &upper_only
     ));
     let first = PureFactContext::new()
-        .assume_condition(ConditionTerm::signed_less_equal(1u32.into(), n), true);
+        .assume_condition(OldConditionTerm::signed_less_equal(1u32.into(), n), true);
     assert!(memory_range_covers(
         &owned,
         &required(base.offset_by_bytes(8), 8u32.into()),
@@ -15150,7 +15154,7 @@ mod related_pointer_root_tests {
         let base = external(0);
         let assumptions = (1..=count).fold(PureFactContext::new(), |assumptions, index| {
             assumptions.assume_condition(
-                ConditionTerm::address_equal(external(index), base.clone()),
+                OldConditionTerm::address_equal(external(index), base.clone()),
                 true,
             )
         });
@@ -15258,14 +15262,17 @@ mod shared_wide_bound_tests {
         );
         let empty = PureFactContext::new();
         let complete = empty.clone().assume_condition(
-            ConditionTerm::uint64_less_equal(
+            OldConditionTerm::uint64_less_equal(
                 length.clone(),
                 OldMachineTerm::uint64_constant(i32::MAX as u64 - 1),
             ),
             true,
         );
         let truncated = empty.clone().assume_condition(
-            ConditionTerm::unsigned_less_equal(low, OldMachineTerm::constant(i32::MAX as u32 - 1)),
+            OldConditionTerm::unsigned_less_equal(
+                low,
+                OldMachineTerm::constant(i32::MAX as u32 - 1),
+            ),
             true,
         );
         let exports = KernelTermExport::machine_export_count();
@@ -15334,7 +15341,7 @@ mod constructed_normalization_tests {
         let pointer = Address::symbolic(Variable(8_853_001));
         let alias = Address::symbolic(Variable(8_853_002));
         let facts = PureFactContext::new().assume_condition(
-            ConditionTerm::address_equal(pointer.clone(), alias.clone()),
+            OldConditionTerm::address_equal(pointer.clone(), alias.clone()),
             true,
         );
         let pieces = [

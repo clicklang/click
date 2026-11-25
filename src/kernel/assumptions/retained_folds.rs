@@ -383,7 +383,7 @@ mod tests {
                 accumulator: Variable(991512),
                 item: Variable(991513),
                 body: IntegerTerm::If {
-                    condition: Box::new(ConditionTerm::Compare {
+                    condition: Box::new(OldConditionTerm::Compare {
                         format,
                         relation: CompareRelation::LessThan,
                         left: Box::new(OldMachineTerm::read_named(
@@ -505,7 +505,7 @@ mod offset_condition_tests {
                 kind,
             )
         };
-        let source = ConditionTerm::AddressOffsetEqual(
+        let source = OldConditionTerm::AddressOffsetEqual(
             Box::new(AddressOffset::scaled_int32_node(
                 read(998500, LoadKind::Int32),
                 4,
@@ -557,7 +557,7 @@ mod boolean_read_tests {
         };
         let byte =
             crate::kernel::eval::scalar_read_for_exact_cell(&memory, &address, LoadKind::UInt8, 1);
-        let source = ConditionTerm::nonzero_bool_word(&byte);
+        let source = OldConditionTerm::nonzero_bool_word(&byte);
         let root = crate::kernel::KernelTermImport::default().condition(&source);
         let mut expected = Vec::new();
         let mut actual = Vec::new();

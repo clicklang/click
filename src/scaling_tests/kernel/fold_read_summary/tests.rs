@@ -34,7 +34,7 @@ fn framing_is_linear_in_applications_and_ignores_unrelated_facts_and_interval_le
         let before = SymbolicMemory::new();
         let after = before.clone().store(element(&v, bv(HI)), one());
         let at = |memory: &SymbolicMemory, index: usize| {
-            fact(ConditionTerm::IntegerEqual(
+            fact(OldConditionTerm::IntegerEqual(
                 IntegerTerm::PureFunctionApplication(application(
                     memory,
                     &v,

@@ -2456,7 +2456,7 @@ fn synthesize_boolean_cell_read(
 #[inline(never)]
 /// Spell a logical Bool by its structure, including Bool operands of calls.
 fn synthesize_surface_bool(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
@@ -2473,12 +2473,12 @@ fn synthesize_surface_bool(
     {
         return Some(read);
     }
-    let operand = |condition: &ConditionTerm| {
+    let operand = |condition: &OldConditionTerm| {
         synthesize_surface_bool(condition, parameter_binding, state, bound_variables)
     };
     match condition {
-        ConditionTerm::Constant(value) => Some(bool_literal(*value)),
-        ConditionTerm::Variable(variable) => {
+        OldConditionTerm::Constant(value) => Some(bool_literal(*value)),
+        OldConditionTerm::Variable(variable) => {
             if let Some(name) = folds::binder_name(false, *variable)
                 .or_else(|| bound_variables.get(variable).cloned())
             {
@@ -2491,14 +2491,14 @@ fn synthesize_surface_bool(
                 bound_variables,
             )
         }
-        ConditionTerm::BoolApplication(application) => synthesize_surface_call(
+        OldConditionTerm::BoolApplication(application) => synthesize_surface_call(
             application.name(),
             application.arguments(),
             parameter_binding,
             state,
             bound_variables,
         ),
-        ConditionTerm::BoolIf {
+        OldConditionTerm::BoolIf {
             condition,
             then_condition,
             else_condition,
@@ -2507,13 +2507,13 @@ fn synthesize_surface_bool(
             then_branch: Box::new(operand(then_condition)?),
             else_branch: Box::new(operand(else_condition)?),
         }),
-        ConditionTerm::Float32(_) | ConditionTerm::Float64(_) => raise_kernel_term(
+        OldConditionTerm::Float32(_) | OldConditionTerm::Float64(_) => raise_kernel_term(
             &crate::kernel::KernelTermImport::default().condition(condition),
             parameter_binding,
             state,
             bound_variables,
         ),
-        ConditionTerm::BoolEqual(left, right) => {
+        OldConditionTerm::BoolEqual(left, right) => {
             proposition_bool_value(SyntaxProposition::Comparison {
                 left: operand(left)?,
                 operator: ComparisonOperator::Equal,
@@ -2632,14 +2632,14 @@ fn synthesize_surface_atomic_proposition(
     // the claim on the local, `w` or `not w`, which is what a claim on it
     // lowers to. Compared with an integer, as `w != 0`, it would not lower.
     if let Some((
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt8,
             relation: CompareRelation::Equal,
             left,
             right,
         },
         value,
-    )) = (proposition).condition_native()
+    )) = (proposition).old_condition()
         && right.bool_constant_value() == Some(false)
         && let Some(word) =
             synthesize_surface_bitvector(left, parameter_binding, state, bound_variables)
@@ -2653,14 +2653,14 @@ fn synthesize_surface_atomic_proposition(
         });
     }
     if let Some((
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
         },
         true,
-    )) = (proposition).condition_native()
+    )) = (proposition).old_condition()
         && let (
             OldMachineTerm::Variable(variable),
             OldMachineTerm::MemoryLoad(memory, pointer, kind),
@@ -3058,7 +3058,7 @@ fn synthesize_surface_atomic_proposition(
             SyntaxProposition::Not(Box::new(predicate))
         });
     }
-    if let ConditionTerm::AlgebraicEqual(left, right) = condition.old_form() {
+    if let OldConditionTerm::AlgebraicEqual(left, right) = condition.old_form() {
         return Some(SyntaxProposition::Comparison {
             left: synthesize_surface_algebraic(left, parameter_binding, state, bound_variables)?,
             operator: if *value {
@@ -3071,8 +3071,8 @@ fn synthesize_surface_atomic_proposition(
     }
     // A closed `bool` comparison is spelled as written: `true == false`
     // lowers back to exactly this retained comparison.
-    if let ConditionTerm::BoolEqual(left, right) = condition.old_form()
-        && let (ConditionTerm::Constant(left), ConditionTerm::Constant(right)) =
+    if let OldConditionTerm::BoolEqual(left, right) = condition.old_form()
+        && let (OldConditionTerm::Constant(left), OldConditionTerm::Constant(right)) =
             (left.as_ref(), right.as_ref())
     {
         return Some(SyntaxProposition::Comparison {
@@ -3087,10 +3087,10 @@ fn synthesize_surface_atomic_proposition(
     }
     if matches!(
         condition.old_form(),
-        ConditionTerm::Variable(_)
-            | ConditionTerm::BoolApplication(_)
-            | ConditionTerm::BoolIf { .. }
-            | ConditionTerm::BoolEqual(..)
+        OldConditionTerm::Variable(_)
+            | OldConditionTerm::BoolApplication(_)
+            | OldConditionTerm::BoolIf { .. }
+            | OldConditionTerm::BoolEqual(..)
     ) {
         let claim = bool_truth(synthesize_surface_bool(
             condition.old_form(),
@@ -3104,7 +3104,7 @@ fn synthesize_surface_atomic_proposition(
             SyntaxProposition::Not(Box::new(claim))
         });
     }
-    if let ConditionTerm::Overflows {
+    if let OldConditionTerm::Overflows {
         format: MachineIntegerType::Int32 | MachineIntegerType::Int64,
         op:
             op @ (OverflowOperation::Add | OverflowOperation::Subtract | OverflowOperation::Multiply),
@@ -3139,7 +3139,7 @@ fn synthesize_surface_atomic_proposition(
             defined
         });
     }
-    if let ConditionTerm::Constant(condition) = condition.old_form() {
+    if let OldConditionTerm::Constant(condition) = condition.old_form() {
         // The `bool` literal lowers to exactly this constant condition. A
         // closed comparison such as `0 == 1` does not: lowering retains it.
         let literal = SyntaxProposition::Value(crate::surface::bool_literal(*condition));
@@ -3149,7 +3149,7 @@ fn synthesize_surface_atomic_proposition(
             SyntaxProposition::Not(Box::new(literal))
         });
     }
-    if let ConditionTerm::AddressOffsetEqual(left, right) = condition.old_form() {
+    if let OldConditionTerm::AddressOffsetEqual(left, right) = condition.old_form() {
         return Some(SyntaxProposition::Comparison {
             left: synthesize_surface_pointer_offset(
                 left,
@@ -3170,7 +3170,7 @@ fn synthesize_surface_atomic_proposition(
             )?,
         });
     }
-    if let ConditionTerm::PointerEqual(left, right) = condition.old_form() {
+    if let OldConditionTerm::PointerEqual(left, right) = condition.old_form() {
         return Some(SyntaxProposition::Comparison {
             left: synthesize_pointer_equality_operand(
                 left,
@@ -3194,7 +3194,7 @@ fn synthesize_surface_atomic_proposition(
     // A pointer equality raises as contract `p == q`, which lowers to it; the
     // weaker `address(p) == address(q)` is the address-word equality a C
     // comparison states (`design/pointer-subobject-bounds.md`, Phase B).
-    if let ConditionTerm::AddressEqual(left, right) = condition.old_form() {
+    if let OldConditionTerm::AddressEqual(left, right) = condition.old_form() {
         let pointer = synthesize_surface_pointer_expression;
         return Some(SyntaxProposition::Comparison {
             left: pointer(left, parameter_binding, state, bound_variables)?,
@@ -3227,7 +3227,7 @@ fn synthesize_surface_atomic_proposition(
             bound_variables,
         );
     }
-    if let ConditionTerm::Compare {
+    if let OldConditionTerm::Compare {
         format,
         relation,
         left,
@@ -3298,7 +3298,7 @@ fn synthesize_surface_atomic_proposition(
     }
     // Keep the narrow interpretation even when rewriting removed the last
     // symbolic operand. Observing a literal as Integer would discard its type.
-    if let ConditionTerm::Compare {
+    if let OldConditionTerm::Compare {
         format:
             format @ (MachineIntegerType::Int8
             | MachineIntegerType::UInt8
@@ -3317,11 +3317,11 @@ fn synthesize_surface_atomic_proposition(
             };
             let (l, r) = (observe(left)?, observe(right)?);
             let integer = match relation {
-                CompareRelation::LessThan => ConditionTerm::IntegerLessThan(l, r),
-                CompareRelation::LessEqual => ConditionTerm::IntegerLessEqual(l, r),
-                CompareRelation::GreaterThan => ConditionTerm::IntegerGreaterThan(l, r),
-                CompareRelation::GreaterEqual => ConditionTerm::IntegerGreaterEqual(l, r),
-                CompareRelation::Equal => ConditionTerm::IntegerEqual(l, r),
+                CompareRelation::LessThan => OldConditionTerm::IntegerLessThan(l, r),
+                CompareRelation::LessEqual => OldConditionTerm::IntegerLessEqual(l, r),
+                CompareRelation::GreaterThan => OldConditionTerm::IntegerGreaterThan(l, r),
+                CompareRelation::GreaterEqual => OldConditionTerm::IntegerGreaterEqual(l, r),
+                CompareRelation::Equal => OldConditionTerm::IntegerEqual(l, r),
             };
             return synthesize_surface_atomic_proposition(
                 &Proposition::condition_is(integer, *value),
@@ -3362,85 +3362,85 @@ fn synthesize_surface_atomic_proposition(
         });
     }
     let (left, operator, right) = match condition.old_form() {
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::LessThan,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
             left,
             right,
         } => (left, ComparisonOperator::LessThan, right),
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::LessEqual,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessEqual,
             left,
             right,
         } => (left, ComparisonOperator::LessEqual, right),
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterThan,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::GreaterThan,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::GreaterThan,
             left,
             right,
         } => (left, ComparisonOperator::GreaterThan, right),
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::GreaterEqual,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::GreaterEqual,
             left,
             right,
         } => (left, ComparisonOperator::GreaterEqual, right),
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
         }
-        | ConditionTerm::Compare {
+        | OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left,
@@ -3454,7 +3454,7 @@ fn synthesize_surface_atomic_proposition(
     // different fact, so it is written converted, as `u as int32 < 0`.
     let signed_order = matches!(
         condition.old_form(),
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan
                 | CompareRelation::LessEqual
@@ -3465,14 +3465,14 @@ fn synthesize_surface_atomic_proposition(
     );
     let signed_word = matches!(
         condition.old_form(),
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             ..
         }
     );
     let unsigned_word_equality = matches!(
         condition.old_form(),
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             ..
@@ -3500,7 +3500,7 @@ fn synthesize_surface_atomic_proposition(
         |term: &OldMachineTerm| term.int64_as_const().is_some() || term.uint64_as_const().is_some();
     let narrow_operand = matches!(
         condition.old_form(),
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             ..
@@ -3539,7 +3539,7 @@ fn synthesize_surface_atomic_proposition(
         // Wide comparisons retain signedness at each read and operation.
         // Reconstruct their shared operands rather than defaulting a Bits64
         // read to int64 before an unsigned operation consumes it.
-        let expression = if let ConditionTerm::Compare {
+        let expression = if let OldConditionTerm::Compare {
             format: format @ (MachineIntegerType::Int64 | MachineIntegerType::UInt64),
             relation,
             ..
@@ -3781,7 +3781,7 @@ fn machine_spelling_lowers_to_integer(
     !comparison::retains_int32_match(format, operands)
         && !matches!(
             comparison::logical_condition_for_operand_views(format, relation, operands),
-            ConditionTerm::Compare { .. } | ConditionTerm::Constant(_)
+            OldConditionTerm::Compare { .. } | OldConditionTerm::Constant(_)
         )
 }
 
@@ -4426,7 +4426,7 @@ fn raise_constructor_field(
             ),
             Node::Variable(variable),
         ) => *variable,
-        _ => match term.boolean_native()? {
+        _ => match term.old_boolean_value()? {
             ProgramValue::Bool(OldMachineTerm::Variable(variable)) => *variable,
             _ => return None,
         },
@@ -4805,7 +4805,7 @@ fn raise_kernel_term_dispatch(
             raise_pointer_comparison(term, parameter_binding, state, bound_variables)?
         }
         Node::Variable(variable) if term.ty() == &KernelType::Bool => synthesize_surface_bool(
-            &ConditionTerm::Variable(*variable),
+            &OldConditionTerm::Variable(*variable),
             parameter_binding,
             state,
             bound_variables,
@@ -4889,7 +4889,7 @@ fn raise_kernel_term_dispatch(
         }
         Node::ImportedScalar(input) => match term.ty() {
             KernelType::Program(ProgramType::Bool) => synthesize_surface_bool(
-                &ConditionTerm::truth_of_bool_word(input.value()),
+                &OldConditionTerm::truth_of_bool_word(input.value()),
                 parameter_binding,
                 state,
                 bound_variables,
@@ -5148,12 +5148,12 @@ fn synthesize_observation_operand(
 /// order. A comparison with a state-relative operand has no spelling
 /// here.
 fn synthesize_unsigned_comparison(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     parameter_binding: ParameterBinding<'_>,
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SyntaxProposition> {
-    let ConditionTerm::Compare {
+    let OldConditionTerm::Compare {
         format: MachineIntegerType::UInt32,
         relation:
             relation @ (crate::kernel::CompareRelation::LessThan
@@ -6475,7 +6475,7 @@ fn synthesize_surface_bitvector(
             // unbound Bool variable. Naming above exhausted that route;
             // do not recurse back into the same unnamed variable.
             if *to == MachineIntegerType::UInt8
-                && matches!(value.as_ref(), ConditionTerm::Variable(variable) if !bound_variables.contains_key(variable))
+                && matches!(value.as_ref(), OldConditionTerm::Variable(variable) if !bound_variables.contains_key(variable))
             {
                 return None;
             }
@@ -7216,7 +7216,7 @@ fn synthesize_legacy_call_argument(
         }
         crate::kernel::PureFunctionArgument::Value(ProgramValue::Bool(word)) => {
             synthesize_surface_bool(
-                &ConditionTerm::truth_of_bool_word(word),
+                &OldConditionTerm::truth_of_bool_word(word),
                 parameter_binding,
                 state,
                 bound_variables,

@@ -7,8 +7,8 @@
 //! operation, comparison or overflow test at a format, or for the format
 //! and operation a node spells, and never match on a width themselves.
 //!
-//! Conditions carry their format (`ConditionTerm::Compare` and
-//! `ConditionTerm::Overflows`), so a comparison or overflow test exists at
+//! Conditions carry their format (`OldConditionTerm::Compare` and
+//! `OldConditionTerm::Overflows`), so a comparison or overflow test exists at
 //! every format. Where a format has no operator node the answer is `None`,
 //! and the rule is unavailable there: there are no 128-bit operators. That
 //! is the representation gap `design/machine-integers.md` Stage 3 removes;
@@ -17,7 +17,7 @@
 use super::{Operation, Relation};
 use crate::kernel::MachineBinaryOp;
 use crate::kernel::{CompareRelation, OverflowOperation};
-use crate::kernel::{ConditionTerm, MachineIntegerType, OldMachineTerm};
+use crate::kernel::{MachineIntegerType, OldConditionTerm, OldMachineTerm};
 
 /// The word a format's values ride in, which decides its nodes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -226,21 +226,21 @@ pub(crate) fn is_ring_operation(value: &OldMachineTerm) -> bool {
 
 /// The native comparison `left REL right` at `ty`, with the truth it is
 /// filed at (`!=` is a false equality), built by the folding constructor
-/// (`ConditionTerm::machine_compare`). A narrow comparison is native at its
+/// (`OldConditionTerm::machine_compare`). A narrow comparison is native at its
 /// own format.
 pub(crate) fn comparison(
     ty: MachineIntegerType,
     relation: Relation,
     left: OldMachineTerm,
     right: OldMachineTerm,
-) -> Option<(ConditionTerm, bool)> {
+) -> Option<(OldConditionTerm, bool)> {
     let compare = match relation {
         Relation::Less => CompareRelation::LessThan,
         Relation::LessEqual => CompareRelation::LessEqual,
         Relation::Equal | Relation::NotEqual => CompareRelation::Equal,
     };
     Some((
-        ConditionTerm::machine_compare(ty, compare, left, right),
+        OldConditionTerm::machine_compare(ty, compare, left, right),
         relation != Relation::NotEqual,
     ))
 }
@@ -260,14 +260,14 @@ pub(crate) fn spells_comparison_natively(ty: MachineIntegerType) -> bool {
 /// observation. An equality reads no sign, so it reads at both formats of
 /// its width.
 pub(crate) fn comparison_readings(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
 ) -> Option<(
     &OldMachineTerm,
     &OldMachineTerm,
     &'static [MachineIntegerType],
 )> {
     use MachineIntegerType as Ty;
-    let ConditionTerm::Compare {
+    let OldConditionTerm::Compare {
         format,
         relation,
         left,
@@ -329,8 +329,8 @@ pub(crate) fn overflow_condition(
     operation: Operation,
     left: Box<OldMachineTerm>,
     right: Box<OldMachineTerm>,
-) -> Option<ConditionTerm> {
-    has_overflow_test(ty).then(|| ConditionTerm::Overflows {
+) -> Option<OldConditionTerm> {
+    has_overflow_test(ty).then(|| OldConditionTerm::Overflows {
         format: ty,
         op: overflow_operation_of(operation),
         left,
@@ -341,14 +341,14 @@ pub(crate) fn overflow_condition(
 /// The format, operation and operands of an overflow test of `+`, `-` or
 /// `*`.
 pub(crate) fn overflow_operation(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
 ) -> Option<(
     MachineIntegerType,
     Operation,
     &OldMachineTerm,
     &OldMachineTerm,
 )> {
-    let ConditionTerm::Overflows {
+    let OldConditionTerm::Overflows {
         format,
         op,
         left,
@@ -616,7 +616,7 @@ mod mixed_observation_tests {
             assert!(super::super::identity::same_exact_value(&reading, &exact));
             assert_eq!(KernelTermExport::machine_export_count(), exports);
             let goal = Proposition::condition_is(
-                ConditionTerm::integer_less_than(exact, IntegerTerm::constant_i64(0)),
+                OldConditionTerm::integer_less_than(exact, IntegerTerm::constant_i64(0)),
                 true,
             );
             let premises: Vec<_> = bounds

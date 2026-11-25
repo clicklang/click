@@ -11,14 +11,14 @@ use crate::kernel::{
 
 fn is_positive_predecessor_goal(proposition: &crate::kernel::Proposition) -> bool {
     let Some((
-        crate::kernel::ConditionTerm::Compare {
+        crate::kernel::OldConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::Int32,
             relation: crate::kernel::CompareRelation::LessThan,
             left,
             right,
         },
         true,
-    )) = proposition.condition_native()
+    )) = proposition.old_condition()
     else {
         return false;
     };
@@ -198,69 +198,69 @@ fn signed_goal_shape_flags(goal: &crate::kernel::Proposition) -> Option<(bool, b
         _ => return None,
     };
     let (left, right) = match condition.old_form() {
-        crate::kernel::ConditionTerm::Compare {
+        crate::kernel::OldConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::Int32,
             relation: crate::kernel::CompareRelation::LessThan,
             left,
             right,
         }
-        | crate::kernel::ConditionTerm::Compare {
+        | crate::kernel::OldConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::Int32,
             relation: crate::kernel::CompareRelation::LessEqual,
             left,
             right,
         }
-        | crate::kernel::ConditionTerm::Compare {
+        | crate::kernel::OldConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::Int32,
             relation: crate::kernel::CompareRelation::GreaterThan,
             left,
             right,
         }
-        | crate::kernel::ConditionTerm::Compare {
+        | crate::kernel::OldConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::Int32,
             relation: crate::kernel::CompareRelation::GreaterEqual,
             left,
             right,
         }
-        | crate::kernel::ConditionTerm::Compare {
+        | crate::kernel::OldConditionTerm::Compare {
             format:
                 crate::kernel::MachineIntegerType::Int32 | crate::kernel::MachineIntegerType::UInt32,
             relation: crate::kernel::CompareRelation::Equal,
             left,
             right,
         } if value => (left.as_ref(), right.as_ref()),
-        crate::kernel::ConditionTerm::Compare {
+        crate::kernel::OldConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::Int32,
             relation: crate::kernel::CompareRelation::LessThan,
             left,
             right,
         }
-        | crate::kernel::ConditionTerm::Compare {
+        | crate::kernel::OldConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::Int32,
             relation: crate::kernel::CompareRelation::LessEqual,
             left,
             right,
         }
-        | crate::kernel::ConditionTerm::Compare {
+        | crate::kernel::OldConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::Int32,
             relation: crate::kernel::CompareRelation::GreaterThan,
             left,
             right,
         }
-        | crate::kernel::ConditionTerm::Compare {
+        | crate::kernel::OldConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::Int32,
             relation: crate::kernel::CompareRelation::GreaterEqual,
             left,
             right,
         }
-        | crate::kernel::ConditionTerm::Compare {
+        | crate::kernel::OldConditionTerm::Compare {
             format:
                 crate::kernel::MachineIntegerType::Int32 | crate::kernel::MachineIntegerType::UInt32,
             relation: crate::kernel::CompareRelation::Equal,
             left,
             right,
         } => (left.as_ref(), right.as_ref()),
-        crate::kernel::ConditionTerm::Compare {
+        crate::kernel::OldConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::UInt32,
             relation:
                 relation @ (crate::kernel::CompareRelation::LessThan
@@ -321,7 +321,7 @@ fn unsigned_order_names_a_variable(goal: &crate::kernel::Proposition) -> bool {
     matches!(&goal, condition_source_0 @ crate::kernel::Proposition::ConditionIs(
             _,
             true,
-        ) if matches!(condition_source_0.condition_native(), Some((crate::kernel::ConditionTerm::Compare {
+        ) if matches!(condition_source_0.old_condition(), Some((crate::kernel::OldConditionTerm::Compare {
                 format: crate::kernel::MachineIntegerType::UInt32,
                 relation: crate::kernel::CompareRelation::LessThan
                     | crate::kernel::CompareRelation::LessEqual
@@ -1586,7 +1586,7 @@ impl<'a> Proof<'a> {
         match context.theorem_context.values.get(parameter) {
             Some(ProgramValue::Int32(current)) => {
                 let nonnegative = Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
                         left: Box::new(current.clone()),
@@ -1940,12 +1940,12 @@ fn describe_known_goal(goal: &Proposition) -> &'static str {
         Proposition::Exists { .. } => "an existential proposition",
         Proposition::MemoryLoadable { .. } => "a memory-viewability fact",
         Proposition::ConditionIs(condition, _) => match condition.old_form() {
-            ConditionTerm::IntegerLessThan(..) => "an Integer less-than fact",
-            ConditionTerm::IntegerLessEqual(..) => "an Integer less-or-equal fact",
-            ConditionTerm::IntegerGreaterThan(..) => "an Integer greater-than fact",
-            ConditionTerm::IntegerGreaterEqual(..) => "an Integer greater-or-equal fact",
-            ConditionTerm::IntegerEqual(..) => "an Integer equality fact",
-            ConditionTerm::IntegerNotEqual(..) => "an Integer disequality fact",
+            OldConditionTerm::IntegerLessThan(..) => "an Integer less-than fact",
+            OldConditionTerm::IntegerLessEqual(..) => "an Integer less-or-equal fact",
+            OldConditionTerm::IntegerGreaterThan(..) => "an Integer greater-than fact",
+            OldConditionTerm::IntegerGreaterEqual(..) => "an Integer greater-or-equal fact",
+            OldConditionTerm::IntegerEqual(..) => "an Integer equality fact",
+            OldConditionTerm::IntegerNotEqual(..) => "an Integer disequality fact",
             _ => "a condition fact",
         },
         Proposition::Equal(Term::Integer(_), Term::Integer(_)) => "an Integer equality fact",

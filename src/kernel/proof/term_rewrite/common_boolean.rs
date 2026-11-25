@@ -86,7 +86,7 @@ pub(in crate::kernel) fn substitute_pointer_boolean_value(
         if rewrite.refusal().is_some() { return Err(()); }
         Ok(KernelTermImport::default().condition(&result))
     }, |original, children| {
-        let boolean = |value| KernelTermImport::default().condition(&ConditionTerm::Constant(value));
+        let boolean = |value| KernelTermImport::default().condition(&OldConditionTerm::Constant(value));
         match original.node() {
             KernelTermNode::BoolEqual { .. } => Ok(
                 if B::Shared(&children[0]).syntax_equal(B::Shared(&children[1])) {

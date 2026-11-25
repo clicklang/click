@@ -1006,7 +1006,7 @@ impl KernelTerm {
         }
         if let Some(value) = self
             .old_pointer_value()
-            .or_else(|| self.boolean_native())
+            .or_else(|| self.old_boolean_value())
             .or_else(|| self.algebraic_native_value())
             .or_else(|| self.float_native_value())
         {
@@ -1822,14 +1822,14 @@ impl KernelTermImport {
                     OldMachineTerm::Constant {
                         format: MachineIntegerType::UInt8,
                         bits,
-                    } if *bits <= 1 => self.condition(&ConditionTerm::Constant(*bits != 0)),
+                    } if *bits <= 1 => self.condition(&OldConditionTerm::Constant(*bits != 0)),
                     OldMachineTerm::Variable(variable) => {
                         KernelTerm::variable(KernelType::Program(ProgramType::Bool), *variable)
                     }
                     OldMachineTerm::BoolCast {
                         to: MachineIntegerType::UInt8,
                         value,
-                    } if !matches!(value.as_ref(), ConditionTerm::Constant(_)) => {
+                    } if !matches!(value.as_ref(), OldConditionTerm::Constant(_)) => {
                         self.condition(value)
                     }
                     // Other C-word carriers retain their original width and
@@ -1952,7 +1952,7 @@ mod tests {
     fn retained_integer_handles_have_constant_work_across_sessions() {
         use crate::instrumentation::measure_deterministic_work;
         let source: SharedIntegerTerm = IntegerTerm::If {
-            condition: Box::new(ConditionTerm::Variable(Variable(87654329))),
+            condition: Box::new(OldConditionTerm::Variable(Variable(87654329))),
             then_term: IntegerTerm::constant_i64(17).into(),
             else_term: IntegerTerm::constant_i64(18).into(),
         }
@@ -1992,7 +1992,7 @@ mod tests {
     #[test]
     fn integer_handles_share_the_same_root_without_a_native_view() {
         let source: SharedIntegerTerm = IntegerTerm::If {
-            condition: Box::new(ConditionTerm::Variable(Variable(87654321))),
+            condition: Box::new(OldConditionTerm::Variable(Variable(87654321))),
             then_term: IntegerTerm::constant_i64(19).into(),
             else_term: IntegerTerm::constant_i64(20).into(),
         }
@@ -2217,7 +2217,7 @@ mod tests {
     fn integer_conditional_has_common_children_after_source_drop() {
         let _session = crate::kernel::VerificationSession::enter();
         let source: SharedIntegerTerm = IntegerTerm::If {
-            condition: Box::new(ConditionTerm::Variable(Variable(993402))),
+            condition: Box::new(OldConditionTerm::Variable(Variable(993402))),
             then_term: IntegerTerm::Variable(Variable(993403)).into(),
             else_term: IntegerTerm::constant_i64(-1).into(),
         }
@@ -2283,7 +2283,7 @@ mod tests {
         assert_eq!(export.argument(&root_term).unwrap(), root);
         assert_eq!(export.argument(&member_term).unwrap(), member);
         let conditional: SharedIntegerTerm = IntegerTerm::If {
-            condition: Box::new(ConditionTerm::Constant(true)),
+            condition: Box::new(OldConditionTerm::Constant(true)),
             then_term: IntegerTerm::constant_i64(1).into(),
             else_term: IntegerTerm::constant_i64(2).into(),
         }
@@ -2371,7 +2371,7 @@ impl KernelTermExport {
         if FloatOperandView::from_shared(term).is_some() {
             return Self::float(term).map(PureFunctionArgument::Value);
         }
-        if let Some(value) = term.boolean_argument_native() {
+        if let Some(value) = term.old_boolean_argument() {
             return Ok(value.clone());
         }
         // A typed variable is already a complete native leaf descriptor.

@@ -3,7 +3,8 @@ fn selected_context_does_not_withdraw_ambient_pointer_facts() {
     let mut samples = Vec::new();
     for size in [8u64, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let selected = Proposition::condition_is(ConditionTerm::Variable(Variable(700_000)), true);
+        let selected =
+            Proposition::condition_is(OldConditionTerm::Variable(Variable(700_000)), true);
         let mut context = PureFactContext::new().assume_proposition(selected.clone());
         for index in 0..size {
             context = context.assume_proposition(Proposition::Predicate {
@@ -21,7 +22,10 @@ fn selected_context_does_not_withdraw_ambient_pointer_facts() {
             });
         }
         let (restricted, work) = crate::instrumentation::measure_deterministic_work(|| {
-            context.restricted_to_facts(&[(ConditionTerm::Variable(Variable(700_000)), true)], &[])
+            context.restricted_to_facts(
+                &[(OldConditionTerm::Variable(Variable(700_000)), true)],
+                &[],
+            )
         });
         assert!(restricted.contains_assumed_exact(&selected));
         assert_eq!(restricted.fact_counts(), (1, 0));
@@ -81,14 +85,14 @@ fn atom_memory_condition_miss_does_not_scan_open_fact_family() {
         let mut context = PureFactContext::new();
         for index in 0..size {
             context = context.assume_condition(
-                ConditionTerm::signed_less_than(
+                OldConditionTerm::signed_less_than(
                     OldMachineTerm::add(term(740_000 + index * 2), OldMachineTerm::constant(1)),
                     term(740_001 + index * 2),
                 ),
                 true,
             );
         }
-        let query = ConditionTerm::signed_less_than(term(750_000), term(750_001));
+        let query = OldConditionTerm::signed_less_than(term(750_000), term(750_001));
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..4 {
                 assert!(!context.has_matching_condition_fact_for_memory_resolution(&query, true));
@@ -382,14 +386,14 @@ fn numeric_comparison_view_queries_do_not_scan_supports() {
         let mut context = PureFactContext::new();
         let view = Proposition::Or(
             Box::new(Proposition::condition_is(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     OldMachineTerm::Variable(Variable(880000)),
                     OldMachineTerm::constant(i32::MIN as u32),
                 ),
                 false,
             )),
             Box::new(Proposition::condition_is(
-                ConditionTerm::Variable(Variable(880001)),
+                OldConditionTerm::Variable(Variable(880001)),
                 true,
             )),
         );
@@ -401,7 +405,7 @@ fn numeric_comparison_view_queries_do_not_scan_supports() {
             .into();
             let source = Proposition::Or(
                 Box::new(Proposition::condition_is(
-                    ConditionTerm::IntegerNotEqual(
+                    OldConditionTerm::IntegerNotEqual(
                         I::from_machine(
                             MachineIntegerType::Int32,
                             OldMachineTerm::Variable(Variable(880000)),
@@ -413,7 +417,7 @@ fn numeric_comparison_view_queries_do_not_scan_supports() {
                     true,
                 )),
                 Box::new(Proposition::condition_is(
-                    ConditionTerm::Variable(Variable(880001)),
+                    OldConditionTerm::Variable(Variable(880001)),
                     true,
                 )),
             );

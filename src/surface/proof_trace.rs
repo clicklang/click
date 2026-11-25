@@ -2,7 +2,7 @@
 //! The trace is diagnostic only; no recorded text participates in checking.
 
 use crate::kernel::proof::BranchId;
-use crate::kernel::{Address, ConditionTerm, OldMachineTerm, Proposition, SharedMemory};
+use crate::kernel::{Address, OldConditionTerm, OldMachineTerm, Proposition, SharedMemory};
 #[cfg(test)]
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::source::SourcePosition;
@@ -328,7 +328,7 @@ impl ChildArgumentTrace {
             );
             for pointer in &self.related {
                 let fact = Proposition::condition_is(
-                    ConditionTerm::address_equal(self.actual.clone(), pointer.clone()),
+                    OldConditionTerm::address_equal(self.actual.clone(), pointer.clone()),
                     true,
                 );
                 output.push_str(&format!(
@@ -1367,7 +1367,7 @@ mod tests {
         let read = Address::loaded_value(&memory, &address);
         let target = Address::function("callback");
         let fact = TraceFact {
-            kernel: Proposition::condition_is(ConditionTerm::address_equal(read, target), true),
+            kernel: Proposition::condition_is(OldConditionTerm::address_equal(read, target), true),
         };
         let mut labels = MemoryStateLabels::default();
         let mut ordinary = String::new();
@@ -1418,7 +1418,7 @@ mod tests {
         let rid = Address::symbolic(crate::kernel::Variable(700_002));
         let facts = [a.clone(), b.clone()].map(|value| TraceFact {
             kernel: Proposition::condition_is(
-                ConditionTerm::address_equal(value, rid.clone()),
+                OldConditionTerm::address_equal(value, rid.clone()),
                 true,
             ),
         });
@@ -1522,7 +1522,7 @@ mod tests {
         );
         let fact = |memory| {
             Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
                     left: Box::new(crate::kernel::OldMachineTerm::read_named(
@@ -1681,7 +1681,7 @@ mod tests {
         use crate::kernel::{IntegerTerm, MachineIntegerType, Variable};
         let fact = TraceFact {
             kernel: Proposition::condition_is(
-                ConditionTerm::integer_equal(
+                OldConditionTerm::integer_equal(
                     IntegerTerm::from_machine(
                         MachineIntegerType::UInt32,
                         OldMachineTerm::Variable(Variable(981_702)),
@@ -1778,7 +1778,7 @@ mod tests {
             .unwrap()
             .0;
         let defining = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::Variable(variable)),
@@ -1795,7 +1795,7 @@ mod tests {
             &mut output,
             &[
                 TraceFact {
-                    kernel: Proposition::condition_is(ConditionTerm::Constant(true), true),
+                    kernel: Proposition::condition_is(OldConditionTerm::Constant(true), true),
                 },
                 TraceFact { kernel: defining },
             ],
@@ -1840,7 +1840,7 @@ mod tests {
                             BranchId::ROOT,
                             vec![TraceFact {
                                 kernel: Proposition::condition_is(
-                                    ConditionTerm::Constant(true),
+                                    OldConditionTerm::Constant(true),
                                     true,
                                 ),
                             }],
@@ -1849,7 +1849,7 @@ mod tests {
                             BranchId::ROOT,
                             vec![TraceFact {
                                 kernel: Proposition::condition_is(
-                                    ConditionTerm::Constant(false),
+                                    OldConditionTerm::Constant(false),
                                     true,
                                 ),
                             }],
@@ -1872,7 +1872,7 @@ mod tests {
                         }],
                     ],
                     facts: vec![TraceFact {
-                        kernel: Proposition::condition_is(ConditionTerm::Constant(true), true),
+                        kernel: Proposition::condition_is(OldConditionTerm::Constant(true), true),
                     }],
                     more_facts: 0,
                     continuation_arm: None,
@@ -1923,7 +1923,7 @@ mod tests {
     #[test]
     fn completed_have_shows_only_its_exported_fact_unless_target_is_inside() {
         with_proof_trace("f", || {
-            let fact = Proposition::condition_is(ConditionTerm::Constant(true), true);
+            let fact = Proposition::condition_is(OldConditionTerm::Constant(true), true);
             record(
                 1,
                 TraceStep {
@@ -2045,7 +2045,7 @@ mod tests {
                     source_tactic_path: Some(vec![0]),
                     facts: vec![TraceFact {
                         kernel: Proposition::condition_is(
-                            ConditionTerm::address_equal(
+                            OldConditionTerm::address_equal(
                                 Address::loaded_value(
                                     &crate::kernel::intern_memory(SymbolicMemory::new()),
                                     &Address::null(),

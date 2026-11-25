@@ -200,7 +200,7 @@ fn allocation_size_graph_queries_scale_without_fact_index() {
         let mut context = PureFactContext::new();
         for index in 0..size {
             context =
-                context.assume_condition(ConditionTerm::equal(var(index), var(index + 1)), true);
+                context.assume_condition(OldConditionTerm::equal(var(index), var(index + 1)), true);
         }
         let _scope = context.enter_id_scope();
         PureFactContext::reset_bitvector_equality_index_fact_visits();
@@ -244,7 +244,7 @@ fn uint64_allocation_size_graph_queries_scale_without_fact_index() {
         let mut context = PureFactContext::new();
         for index in 0..size {
             context = context.assume_condition(
-                ConditionTerm::uint64_equal(var(index), var(index + 1)),
+                OldConditionTerm::uint64_equal(var(index), var(index + 1)),
                 true,
             );
         }
@@ -274,14 +274,14 @@ fn allocation_companion_alias_lookup_ignores_unrelated_storage_and_alias_stars()
             let mut facts = PureFactContext::new();
             for id in 0..size {
                 facts = facts.assume_condition(
-                    ConditionTerm::address_equal(
+                    OldConditionTerm::address_equal(
                         base.clone(),
                         Address::symbolic(Variable(10_000_000 + id)),
                     ),
                     true,
                 );
                 facts = facts.assume_condition(
-                    ConditionTerm::address_equal(
+                    OldConditionTerm::address_equal(
                         Address::symbolic(Variable(20_000_000 + id)),
                         Address::symbolic(Variable(30_000_000 + id)),
                     ),

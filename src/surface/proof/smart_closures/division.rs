@@ -320,12 +320,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 Proposition::Not(p) => has_division(p),
                 condition_source_0 @ Proposition::ConditionIs(_, _)
                     if let Some((
-                        ConditionTerm::IntegerLessEqual(a, b)
-                        | ConditionTerm::IntegerGreaterEqual(a, b)
-                        | ConditionTerm::IntegerLessThan(a, b)
-                        | ConditionTerm::IntegerGreaterThan(a, b),
+                        OldConditionTerm::IntegerLessEqual(a, b)
+                        | OldConditionTerm::IntegerGreaterEqual(a, b)
+                        | OldConditionTerm::IntegerLessThan(a, b)
+                        | OldConditionTerm::IntegerGreaterThan(a, b),
                         _,
-                    )) = condition_source_0.condition_native() =>
+                    )) = condition_source_0.old_condition() =>
                 {
                     [a, b].iter().any(|x| {
                         matches!(
@@ -352,7 +352,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let kernel = input.lower_integer_surface_proposition(&surface, "division bound")?;
-        let Some((ConditionTerm::IntegerLessEqual(left, right), true)) = kernel.condition_native()
+        let Some((OldConditionTerm::IntegerLessEqual(left, right), true)) = kernel.old_condition()
         else {
             return Ok(None);
         };
@@ -379,14 +379,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 continue;
             };
             let p = input.lower_integer_surface_proposition(&written, "division premise")?;
-            let readings = if matches!(&p, condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { .. }, _))))
+            let readings = if matches!(&p, condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Compare { .. }, _))))
             {
                 crate::kernel::machine_integer::comparison::integer_readings_with_promotions(&p)
             } else {
                 vec![p]
             };
             for p in readings {
-                if let Some((ConditionTerm::IntegerLessEqual(a, b), true)) = (p).condition_native()
+                if let Some((OldConditionTerm::IntegerLessEqual(a, b), true)) = (p).old_condition()
                 {
                     sources.push((source.clone(), wa.clone(), wb.clone(), a.clone(), b.clone()));
                 }

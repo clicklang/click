@@ -14,7 +14,7 @@ fn an_index_sum_offset_reads_only_the_cited_premise_and_its_own_terms() {
         let mut premises = vec![cited.clone()];
         premises.extend((0..size).map(|id| {
             Proposition::condition_is(
-                ConditionTerm::integer_equal(
+                OldConditionTerm::integer_equal(
                     observed(993_000 + id),
                     IntegerTerm::add(observed(994_000 + id), observed(995_000 + id)),
                 ),
@@ -44,8 +44,8 @@ fn an_index_sum_offset_reads_only_the_cited_premise_and_its_own_terms() {
     let mut shared = Vec::new();
     for size in [4, 16, 64] {
         let condition_source = address_goal(size, 1);
-        let Some((ConditionTerm::AddressEqual(left, right), true)) =
-            condition_source.condition_native()
+        let Some((OldConditionTerm::AddressEqual(left, right), true)) =
+            condition_source.old_condition()
         else {
             unreachable!("the goal is a pointer equality");
         };
@@ -72,8 +72,8 @@ fn offset_equality_work_is_linear_in_shared_offset_terms() {
     // sums with a constant byte added to one side.
     let pairs = |size: u64| {
         let condition_source = address_goal(size, 1);
-        let Some((ConditionTerm::AddressEqual(left, right), true)) =
-            condition_source.condition_native()
+        let Some((OldConditionTerm::AddressEqual(left, right), true)) =
+            condition_source.old_condition()
         else {
             unreachable!("the goal is a pointer equality");
         };

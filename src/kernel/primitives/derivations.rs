@@ -1243,14 +1243,14 @@ impl LoadAddressCongruenceEvidence {
         assumptions: &PureFactContext,
     ) -> bool {
         let Some((
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
             },
             true,
-        )) = proposition.condition_native()
+        )) = proposition.old_condition()
         else {
             return false;
         };

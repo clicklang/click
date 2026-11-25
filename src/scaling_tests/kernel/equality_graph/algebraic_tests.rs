@@ -80,7 +80,7 @@ fn scalar_conflict_queries_and_selected_merges_skip_ambient_facts() {
         let mut base = PureFactContext::new();
         for index in 0..size {
             base = base.assume_condition(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     OldMachineTerm::Variable(Variable(1000 + index)),
                     OldMachineTerm::constant(7),
                 ),
@@ -89,11 +89,11 @@ fn scalar_conflict_queries_and_selected_merges_skip_ambient_facts() {
         }
         base = base
             .assume_condition(
-                ConditionTerm::equal(getter(a.clone()), OldMachineTerm::constant(1)),
+                OldConditionTerm::equal(getter(a.clone()), OldMachineTerm::constant(1)),
                 true,
             )
             .assume_condition(
-                ConditionTerm::equal(getter(b.clone()), OldMachineTerm::constant(0)),
+                OldConditionTerm::equal(getter(b.clone()), OldMachineTerm::constant(0)),
                 true,
             );
         let (child, work) = crate::instrumentation::measure_deterministic_work(|| {

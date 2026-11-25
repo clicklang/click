@@ -12,7 +12,7 @@ fn solve_retains_recorded_equality_edges_instead_of_connected_aliases() {
         let term = |index| OldMachineTerm::Variable(Variable(9_320_000 + index));
         let equality = |left, right| {
             Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(term(left)),
@@ -59,7 +59,7 @@ fn solve_reduces_connected_pointer_premises_before_spelling() {
         let middle = pointer(2);
         let right = pointer(3);
         let equality = |left, right| {
-            Proposition::condition_is(ConditionTerm::address_equal(left, right), true)
+            Proposition::condition_is(OldConditionTerm::address_equal(left, right), true)
         };
         let first = equality(left.clone(), middle.clone());
         let second = equality(middle.clone(), right.clone());
@@ -128,7 +128,7 @@ fn solve_retains_recorded_load_address_equality_premises() {
         let first = load(AddressOffset::Constant(0));
         let equality = |left, right| {
             Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(left),
@@ -163,7 +163,7 @@ fn native_view_prefix_retains_only_its_order_path() {
         let n = OldMachineTerm::Variable(Variable(9_340_000));
         let middle = OldMachineTerm::Variable(Variable(9_340_001));
         let le = |left, right| {
-            Proposition::condition_is(ConditionTerm::uint64_less_equal(left, right), true)
+            Proposition::condition_is(OldConditionTerm::uint64_less_equal(left, right), true)
         };
         let first = le(OldMachineTerm::uint64_constant(1), middle.clone());
         let second = le(middle, n.clone());
@@ -231,7 +231,7 @@ fn solve_retains_common_base_pointer_equality_for_load_congruence() {
             ),
         };
         let equality = |left, right| {
-            Proposition::condition_is(ConditionTerm::address_equal(left, right), true)
+            Proposition::condition_is(OldConditionTerm::address_equal(left, right), true)
         };
         let required = equality(pointer(0), pointer(1));
         let mut context = PureFactContext::new().assume_proposition(required.clone());
@@ -250,7 +250,7 @@ fn solve_retains_common_base_pointer_equality_for_load_congruence() {
             ))
         };
         let goal = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(load(0)),

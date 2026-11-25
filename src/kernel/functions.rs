@@ -1674,7 +1674,7 @@ enum AllocationContinuity {
     Distinct,
     /// The blocks may be one, but the sizes have different formats (D5).
     CrossKind,
-    Undecided(ConditionTerm),
+    Undecided(OldConditionTerm),
     Inconsistent,
 }
 
@@ -4426,7 +4426,7 @@ fn execute_verified_function_applications_with_suspension(
             let exchange_quantity = if !events.owns_imported_population_member(&description)
                 && crate::kernel::quantity_condition_holds(
                     &effective_assumptions,
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(quantity.old_form().clone()),
@@ -5706,7 +5706,7 @@ fn source_load_state_for_proposition(
     const MAX_NODES: usize = 4096;
     enum Work<'a> {
         Proposition(&'a Proposition),
-        Condition(&'a ConditionTerm),
+        Condition(&'a OldConditionTerm),
         Bitvector(&'a OldMachineTerm),
     }
     let mut work = vec![Work::Proposition(proposition)];
@@ -5741,8 +5741,8 @@ fn source_load_state_for_proposition(
                 work.push(Work::Bitvector(right));
                 work.push(Work::Bitvector(left));
             }
-            Work::Condition(ConditionTerm::Constant(_))
-            | Work::Condition(ConditionTerm::Variable(_)) => {}
+            Work::Condition(OldConditionTerm::Constant(_))
+            | Work::Condition(OldConditionTerm::Variable(_)) => {}
             Work::Condition(_) => return Ok(None),
             Work::Bitvector(bits32_constant!(_))
             | Work::Bitvector(int64_constant!(_))
@@ -6851,8 +6851,8 @@ fn prepare_verified_function_call<'a>(
             continue;
         };
         let order = match range.wide_bounds() {
-            Some((start, end)) => ConditionTerm::uint64_less_equal(start.clone(), end.clone()),
-            None => ConditionTerm::signed_less_equal(range.start().clone(), range.end().clone()),
+            Some((start, end)) => OldConditionTerm::uint64_less_equal(start.clone(), end.clone()),
+            None => OldConditionTerm::signed_less_equal(range.start().clone(), range.end().clone()),
         };
         match guard_context.decide(&order) {
             Some(true) => {}
@@ -8206,7 +8206,7 @@ fn storage_write_within_owned_elements(
             && let Some(index) = pointer.shared_wide_element_index_from_base(range.base(), width)
             && index.operand_view().uint64_constant().is_none()
         {
-            let holds = |condition: ConditionTerm| assumptions.decide(&condition) == Some(true);
+            let holds = |condition: OldConditionTerm| assumptions.decide(&condition) == Some(true);
             if (start == 0
                 || holds(crate::kernel::assumptions::wide_index_comparison(
                     CompareRelation::LessEqual,
@@ -8232,7 +8232,7 @@ fn storage_write_within_owned_elements(
     };
     let elements = i64::from(write_bytes / width);
     let index = delta.index.clone();
-    let holds = |condition: ConditionTerm| assumptions.decide(&condition) == Some(true);
+    let holds = |condition: OldConditionTerm| assumptions.decide(&condition) == Some(true);
     // `constant <= index` (lower) or `index < constant` (upper), for a
     // constant computed exactly: a constant outside the int32 range is
     // decided by the range itself.
@@ -8572,7 +8572,7 @@ fn matched_instance_body_ownership(
     definitions: &[CompositeResourceDefinition],
     state: &ExecutionState,
     assumptions: &PureFactContext,
-) -> Option<(Vec<MemoryRange>, Vec<(ConditionTerm, bool)>)> {
+) -> Option<(Vec<MemoryRange>, Vec<(OldConditionTerm, bool)>)> {
     let ResourceFact::Own(Resource::Instance(instance), _) = fact else {
         return None;
     };
@@ -8626,7 +8626,7 @@ fn matched_instance_body_ownership(
         assumptions,
     );
     if clauses.iter().any(|clause| {
-        matches!(&clause.proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(false), _))))
+        matches!(&clause.proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Constant(false), _))))
     }) {
         return None;
     }
@@ -9938,17 +9938,17 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
                 let reversed_order = match premise.as_ref() {
                     condition_source_0 @ Proposition::ConditionIs(_, value)
                         if let Some((
-                            ConditionTerm::Compare {
+                            OldConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
                                 relation: CompareRelation::GreaterThan,
                                 left,
                                 right,
                             },
                             _,
-                        )) = condition_source_0.condition_native() =>
+                        )) = condition_source_0.old_condition() =>
                     {
                         Some(Proposition::condition_is(
-                            ConditionTerm::Compare {
+                            OldConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
                                 relation: CompareRelation::LessThan,
                                 left: right.clone(),
@@ -9959,17 +9959,17 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
                     }
                     condition_source_0 @ Proposition::ConditionIs(_, value)
                         if let Some((
-                            ConditionTerm::Compare {
+                            OldConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
                                 relation: CompareRelation::GreaterEqual,
                                 left,
                                 right,
                             },
                             _,
-                        )) = condition_source_0.condition_native() =>
+                        )) = condition_source_0.old_condition() =>
                     {
                         Some(Proposition::condition_is(
-                            ConditionTerm::Compare {
+                            OldConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
                                 relation: CompareRelation::LessEqual,
                                 left: right.clone(),
@@ -9980,17 +9980,17 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
                     }
                     condition_source_0 @ Proposition::ConditionIs(_, value)
                         if let Some((
-                            ConditionTerm::Compare {
+                            OldConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
                                 relation: CompareRelation::LessThan,
                                 left,
                                 right,
                             },
                             _,
-                        )) = condition_source_0.condition_native() =>
+                        )) = condition_source_0.old_condition() =>
                     {
                         Some(Proposition::condition_is(
-                            ConditionTerm::Compare {
+                            OldConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
                                 relation: CompareRelation::GreaterThan,
                                 left: right.clone(),
@@ -10001,17 +10001,17 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
                     }
                     condition_source_0 @ Proposition::ConditionIs(_, value)
                         if let Some((
-                            ConditionTerm::Compare {
+                            OldConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
                                 relation: CompareRelation::LessEqual,
                                 left,
                                 right,
                             },
                             _,
-                        )) = condition_source_0.condition_native() =>
+                        )) = condition_source_0.old_condition() =>
                     {
                         Some(Proposition::condition_is(
-                            ConditionTerm::Compare {
+                            OldConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
                                 relation: CompareRelation::GreaterEqual,
                                 left: right.clone(),
@@ -10122,7 +10122,7 @@ fn allocation_continuity(
         ) {
             return AllocationContinuity::Same;
         }
-        let condition = ConditionTerm::Compare {
+        let condition = OldConditionTerm::Compare {
             format,
             relation: CompareRelation::Equal,
             left: Box::new(input_bytes.clone()),
@@ -10144,7 +10144,7 @@ fn allocation_continuity(
     } else if pointers_proven_distinct_for_memory_resolution(input_base, output_base, assumptions) {
         AllocationContinuity::Distinct
     } else {
-        AllocationContinuity::Undecided(ConditionTerm::address_equal(
+        AllocationContinuity::Undecided(OldConditionTerm::address_equal(
             input_base.clone(),
             output_base.clone(),
         ))
@@ -14684,9 +14684,10 @@ fn held_child_witness(
         .filter(|pointer| {
             own_pointers.iter().all(|own| {
                 own.base != pointer.base
-                    || assumptions
-                        .decide(&ConditionTerm::address_equal(pointer.clone(), own.clone()))
-                        == Some(false)
+                    || assumptions.decide(&OldConditionTerm::address_equal(
+                        pointer.clone(),
+                        own.clone(),
+                    )) == Some(false)
             })
         });
     let first = candidates.next()?;
@@ -14908,43 +14909,43 @@ fn is_pure_undefined_behavior_condition(proposition: &Proposition) -> bool {
     };
     matches!(
         condition.old_form(),
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
             ..
-        } | ConditionTerm::Overflows {
+        } | OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Subtract,
             ..
-        } | ConditionTerm::Overflows {
+        } | OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Multiply,
             ..
-        } | ConditionTerm::Overflows {
+        } | OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Divide,
             ..
-        } | ConditionTerm::Overflows {
+        } | OldConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::ShiftLeft,
             ..
-        } | ConditionTerm::Overflows {
+        } | OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Add,
             ..
-        } | ConditionTerm::Overflows {
+        } | OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Subtract,
             ..
-        } | ConditionTerm::Overflows {
+        } | OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Multiply,
             ..
-        } | ConditionTerm::Overflows {
+        } | OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Divide,
             ..
-        } | ConditionTerm::Overflows {
+        } | OldConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::ShiftLeft,
             ..
@@ -15145,14 +15146,14 @@ fn resource_body_fact_is_established(
     // endpoints and captured variables, using checked equality substitution. A
     // candidate must still be established by the original context.
     if let Some((
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left,
             right,
         },
         true,
-    )) = (proposition).condition_native()
+    )) = (proposition).old_condition()
     {
         let mut variables = std::collections::BTreeSet::new();
         crate::kernel::reasoning::variable_collection::collect_proposition_capture_variables(
@@ -15166,7 +15167,7 @@ fn resource_body_fact_is_established(
             for (alias, evidence) in established.exact_uint64_equalities(&endpoint) {
                 crate::instrumentation::record_deterministic_work(1);
                 let equality = Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int64,
                         relation: CompareRelation::Equal,
                         left: Box::new(endpoint.clone()),
@@ -15193,7 +15194,7 @@ fn resource_body_fact_is_established(
     // logical read retains its own producer identity. Reuse only the exact
     // typed read relation already checked for contract facts: it requires
     // the same recorded state and address, or a checked stored value.
-    if let Some((ConditionTerm::AddressEqual(left, right), true)) = (proposition).condition_native()
+    if let Some((OldConditionTerm::AddressEqual(left, right), true)) = (proposition).old_condition()
         && crate::kernel::memory_history::pointer_read_has_recorded_value(left, right, established)
     {
         return true;
@@ -15201,7 +15202,7 @@ fn resource_body_fact_is_established(
     if matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(
         _,
         true,
-    ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::AddressOffsetEqual(left, right), _)) if (crate::kernel::memory_history::pointer_load_offset_proven_equal(
+    ) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::AddressOffsetEqual(left, right), _)) if (crate::kernel::memory_history::pointer_load_offset_proven_equal(
         left,
         right,
         established,
@@ -15831,7 +15832,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                 return Err("instance body quantity must have type int32".into());
             };
             let fact = Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterEqual,
                     left: Box::new(quantity),
@@ -16500,7 +16501,7 @@ pub(super) fn loop_instance_guard(
     instance: &ResourceInstance,
     definitions: &[CompositeResourceDefinition],
     assumptions: &PureFactContext,
-) -> Result<Option<(Address, ConditionTerm)>, String> {
+) -> Result<Option<(Address, OldConditionTerm)>, String> {
     let Ok(index) = definitions.binary_search_by(|d| {
         crate::instrumentation::record_deterministic_work(1);
         d.name().cmp(instance.name())
@@ -17609,7 +17610,7 @@ fn consume_returned_resource_unit(
 
     let unit = quantity_condition_holds(
         assumptions,
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(quantity.old_form().clone()),
@@ -20601,7 +20602,7 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                 };
                 if !quantity_condition_holds(
                     assumptions,
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
                         left: Box::new(quantity.old_form().clone()),
@@ -20817,7 +20818,7 @@ pub(crate) fn quantified_resource_requirement_assumptions(
             Err(error) => return Ok(Err(error)),
         };
         propositions.push(Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
                 left: Box::new(quantity.old_form().clone()),
@@ -22620,7 +22621,7 @@ fn contract_exit_outcome_with_boundary_transfer(
                                             (!produce
                                                 || crate::kernel::quantity_condition_holds(
                                                     assumptions,
-                                                    ConditionTerm::Compare {
+                                                    OldConditionTerm::Compare {
                                                         format: MachineIntegerType::Int32,
                                                         relation: CompareRelation::Equal,
                                                         left: Box::new(actual.clone()),
@@ -22631,7 +22632,7 @@ fn contract_exit_outcome_with_boundary_transfer(
                                                 ))
                                                 && crate::kernel::quantity_condition_holds(
                                                     assumptions,
-                                                    ConditionTerm::Compare {
+                                                    OldConditionTerm::Compare {
                                                         format: MachineIntegerType::Int32,
                                                         relation: CompareRelation::Equal,
                                                         left: Box::new(actual),
@@ -22652,7 +22653,7 @@ fn contract_exit_outcome_with_boundary_transfer(
                                 (actual_produce == produce
                                     || crate::kernel::quantity_condition_holds(
                                         assumptions,
-                                        ConditionTerm::Compare {
+                                        OldConditionTerm::Compare {
                                             format: MachineIntegerType::Int32,
                                             relation: CompareRelation::Equal,
                                             left: Box::new(actual_quantity.clone()),
@@ -22661,7 +22662,7 @@ fn contract_exit_outcome_with_boundary_transfer(
                                     ))
                                     && crate::kernel::quantity_condition_holds(
                                         assumptions,
-                                        ConditionTerm::Compare {
+                                        OldConditionTerm::Compare {
                                             format: MachineIntegerType::Int32,
                                             relation: CompareRelation::Equal,
                                             left: Box::new(actual_quantity),
@@ -23234,7 +23235,7 @@ impl From<u32> for OldMachineTerm {
     }
 }
 
-impl From<bool> for ConditionTerm {
+impl From<bool> for OldConditionTerm {
     fn from(value: bool) -> Self {
         Self::Constant(value)
     }

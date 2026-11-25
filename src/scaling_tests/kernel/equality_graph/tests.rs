@@ -633,7 +633,7 @@ fn separation_equality_query_uses_offset_classes_without_walking_aliases() {
         let mut context = PureFactContext::new();
         for i in 0..size {
             context = context.assume_condition(
-                ConditionTerm::address_offset_equal(offset(i), offset(i + 1)),
+                OldConditionTerm::address_offset_equal(offset(i), offset(i + 1)),
                 true,
             );
         }

@@ -351,7 +351,7 @@ mod tests {
                     shared.clone(),
                     KernelAddressOffset::import(b),
                 ]);
-                let expected = ConditionTerm::address_offset_equal(a.clone(), b.clone());
+                let expected = OldConditionTerm::address_offset_equal(a.clone(), b.clone());
                 assert_eq!(
                     KernelTermExport::condition(&root).unwrap(),
                     expected,
@@ -365,7 +365,7 @@ mod tests {
     fn offset_conditions_keep_raw_shape_and_substitution_policy() {
         let _session = crate::kernel::VerificationSession::enter();
         for offset in sources() {
-            let source = ConditionTerm::AddressOffsetEqual(
+            let source = OldConditionTerm::AddressOffsetEqual(
                 Box::new(AddressOffset::Add(
                     Box::new(AddressOffset::Constant(0)),
                     Box::new(offset),
@@ -439,7 +439,7 @@ mod tests {
                 } else {
                     AddressOffset::scaled_int32_node(value, 4)
                 };
-                ConditionTerm::AddressOffsetEqual(
+                OldConditionTerm::AddressOffsetEqual(
                     Box::new(offset),
                     Box::new(AddressOffset::Constant(0)),
                 )
@@ -488,7 +488,7 @@ mod identity_tests {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
         let _session = crate::kernel::VerificationSession::enter();
         let sources = [CScalarClass::Int, CScalarClass::Char].map(|class| {
-            ConditionTerm::AddressOffsetEqual(
+            OldConditionTerm::AddressOffsetEqual(
                 Box::new(AddressOffset::scaled_int64_node(
                     OldMachineTerm::IntegerAddress(
                         Box::new(Address::symbolic(Variable(998400))),
@@ -510,9 +510,9 @@ mod identity_tests {
                 .syntax_equal(BooleanOperandView::Shared(&roots[1]))
         );
         for source in &sources {
-            let source = ConditionTerm::BoolEqual(
+            let source = OldConditionTerm::BoolEqual(
                 Box::new(source.clone()),
-                Box::new(ConditionTerm::Constant(false)),
+                Box::new(OldConditionTerm::Constant(false)),
             );
             let root = KernelTermImport::default().condition(&source);
             let target = Address::symbolic(Variable(998401));

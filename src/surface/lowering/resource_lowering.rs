@@ -290,9 +290,9 @@ fn input_arguments(
             // A `Bool` parameter is a binder of the kernel sort (Stage 5).
             InterfaceType::Bool => {
                 arguments.push(ProgramExpression::Value(
-                    crate::kernel::ProgramValue::of_bool(crate::kernel::ConditionTerm::Variable(
-                        Variable(arguments.len() as u64),
-                    )),
+                    crate::kernel::ProgramValue::of_bool(
+                        crate::kernel::OldConditionTerm::Variable(Variable(arguments.len() as u64)),
+                    ),
                 ));
             }
             InterfaceType::VoidPointer
@@ -3319,8 +3319,8 @@ fn reject_impossible_range_guards(
 ) -> Result<(), ClickError> {
     if guards.iter().any(|guard| match guard {
         condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::Constant(false), _)) =
-                condition_source_0.condition_native() =>
+            if let Some((OldConditionTerm::Constant(false), _)) =
+                condition_source_0.old_condition() =>
         {
             true
         }

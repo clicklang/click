@@ -1,7 +1,7 @@
 //! Local Euclidean remainder identities for machine integers. Every signed
 //! identity carries nonnegative, non-wrapping guards; uint64 divisors are
 //! checked at their full width.
-use super::{ConditionTerm as C, OldMachineTerm as B};
+use super::{OldConditionTerm as C, OldMachineTerm as B};
 use crate::kernel::MachineBinaryOp;
 #[cfg(test)]
 use crate::kernel::binary_node;

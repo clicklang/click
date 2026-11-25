@@ -76,7 +76,7 @@ pub(in crate::kernel) fn wrap_local_proof_facts(
 pub(in crate::kernel) fn wrap_ambient_proof_facts(
     proposition: Proposition,
     propositions: &crate::kernel::fact_collections::FactSet<Proposition>,
-    conditions: &crate::kernel::fact_collections::FactMap<ConditionTerm, bool>,
+    conditions: &crate::kernel::fact_collections::FactMap<OldConditionTerm, bool>,
 ) -> Proposition {
     let proposition = propositions
         .scan_for_upkeep()
@@ -242,8 +242,8 @@ pub(crate) fn solve_builtin_prop(proposition: &Proposition) -> bool {
             actual == *expected
         }
         condition_source_0 @ Proposition::ConditionIs(_, expected)
-            if let Some((ConditionTerm::Constant(actual), _)) =
-                condition_source_0.condition_native() =>
+            if let Some((OldConditionTerm::Constant(actual), _)) =
+                condition_source_0.old_condition() =>
         {
             actual == expected
         }
@@ -311,8 +311,8 @@ pub(in crate::kernel) fn disprove_builtin_prop(proposition: &Proposition) -> boo
             actual != *expected
         }
         condition_source_0 @ Proposition::ConditionIs(_, expected)
-            if let Some((ConditionTerm::Constant(actual), _)) =
-                condition_source_0.condition_native() =>
+            if let Some((OldConditionTerm::Constant(actual), _)) =
+                condition_source_0.old_condition() =>
         {
             actual != expected
         }
@@ -1256,7 +1256,7 @@ pub(in crate::kernel) fn wide_index_bound_conditions(
     count: &OldMachineTerm,
     strict: bool,
     assumptions: &PureFactContext,
-) -> Vec<ConditionTerm> {
+) -> Vec<OldConditionTerm> {
     use crate::kernel::machine_integer::comparison::condition_for_operand_views as compare;
     use crate::kernel::{MachineIntegerType as Ty, MachineOperandView as View};
     let relation = if strict {
@@ -1350,7 +1350,7 @@ fn add_path_fact_with_visibility_after_effect(
 pub(in crate::kernel) fn add_condition_path_fact(
     facts: &mut ExecutionFacts,
     assumptions: &PureFactContext,
-    condition: ConditionTerm,
+    condition: OldConditionTerm,
     value: bool,
 ) -> Option<()> {
     add_condition_path_fact_with_visibility(facts, assumptions, condition, value, true, false)
@@ -1359,7 +1359,7 @@ pub(in crate::kernel) fn add_condition_path_fact(
 pub(in crate::kernel) fn add_internal_condition_path_fact(
     facts: &mut ExecutionFacts,
     assumptions: &PureFactContext,
-    condition: ConditionTerm,
+    condition: OldConditionTerm,
     value: bool,
 ) -> Option<()> {
     add_condition_path_fact_with_visibility(facts, assumptions, condition, value, false, false)
@@ -1373,7 +1373,7 @@ pub(in crate::kernel) fn add_internal_condition_path_fact(
 pub(in crate::kernel) fn add_decided_condition_path_fact(
     facts: &mut ExecutionFacts,
     assumptions: &PureFactContext,
-    condition: ConditionTerm,
+    condition: OldConditionTerm,
     value: bool,
 ) -> Option<()> {
     if assumptions.exact_condition_value(&condition) == Some(value) {
@@ -1385,7 +1385,7 @@ pub(in crate::kernel) fn add_decided_condition_path_fact(
 fn add_condition_path_fact_with_visibility(
     facts: &mut ExecutionFacts,
     assumptions: &PureFactContext,
-    condition: ConditionTerm,
+    condition: OldConditionTerm,
     value: bool,
     public: bool,
     certified_after_effect: bool,
@@ -1443,7 +1443,7 @@ pub(in crate::kernel) fn add_address_offset_equality_execution_pure_facts(
     add_condition_path_fact(
         facts,
         assumptions,
-        ConditionTerm::address_offset_equal(left.clone(), right.clone()),
+        OldConditionTerm::address_offset_equal(left.clone(), right.clone()),
         value,
     )?;
 
@@ -1632,7 +1632,7 @@ fn bare_condition_is_decided(assumptions: &PureFactContext, proposition: &Propos
     let Proposition::ConditionIs(condition, value) = proposition else {
         return false;
     };
-    if let ConditionTerm::Compare {
+    if let OldConditionTerm::Compare {
         format: MachineIntegerType::Int64,
         relation: CompareRelation::Equal,
         left,
@@ -1666,11 +1666,11 @@ pub(in crate::kernel) fn call_input_fact_is_already_known(
             || matches!(side, Proposition::ConditionIs(condition, value)
                 if PureFactContext::decide_intrinsically(condition.old_form()) == Some(*value)
                     || !matches!(condition.old_form(),
-                        ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, .. }
-                        | ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, .. }
-                        | ConditionTerm::PointerEqual(..)
-                    | ConditionTerm::AddressEqual(..)
-                        | ConditionTerm::AddressOffsetEqual(..))
+                        OldConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, .. }
+                        | OldConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, .. }
+                        | OldConditionTerm::PointerEqual(..)
+                    | OldConditionTerm::AddressEqual(..)
+                        | OldConditionTerm::AddressOffsetEqual(..))
                         && bare_condition_is_decided(assumptions, side))
     };
     crate::kernel::primitives::first_unavailable_connective_side(proposition, &available).is_none()
@@ -1967,7 +1967,7 @@ pub(in crate::kernel) fn append_required_proof_obligations_under_path_context(
 pub(in crate::kernel) fn add_condition_obligation(
     obligations: &mut Vec<ProofObligation>,
     assumptions: &PureFactContext,
-    condition: ConditionTerm,
+    condition: OldConditionTerm,
     value: bool,
     context: Option<&str>,
 ) -> Option<()> {
@@ -2282,7 +2282,7 @@ pub(in crate::kernel) fn merge_prepared_execution_path(
 pub(in crate::kernel) fn decide_with_facts(
     assumptions: &PureFactContext,
     facts: &(impl ExecutionFactSource + ?Sized),
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
 ) -> Option<bool> {
     [true, false]
         .into_iter()
@@ -2337,7 +2337,7 @@ pub(in crate::kernel) fn decide_with_facts(
                 // their two-holder separation projection. Keep the deferred
                 // policy; other comparisons retain their existing cheap path.
                 if !assumptions.should_defer_non_exact_condition_reasoning()
-                    || matches!(condition, ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, left: a, right: b }
+                    || matches!(condition, OldConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, left: a, right: b }
                         if a.address_pointer().is_some() && b.address_pointer().is_some())
                 {
                     assumptions.clone()
@@ -2627,7 +2627,7 @@ mod mandatory_integer_obligation_tests {
         let left_facts = ExecutionFacts::from(vec![old_fact]);
         let right_facts = ExecutionFacts::from(vec![upgraded.clone(), new_fact.clone()]);
         let mandatory = ProofObligation::verification_condition(Proposition::condition_is(
-            ConditionTerm::Constant(false),
+            OldConditionTerm::Constant(false),
             true,
         ))
         .with_context("still owed");
@@ -2690,7 +2690,7 @@ mod mandatory_integer_obligation_tests {
 
     #[test]
     fn prepared_path_effect_fragment_keeps_fresh_rebuild_ordering() {
-        let condition = ConditionTerm::equal(
+        let condition = OldConditionTerm::equal(
             OldMachineTerm::Variable(Variable(912_347)),
             OldMachineTerm::constant(3),
         );
@@ -2734,7 +2734,7 @@ mod mandatory_integer_obligation_tests {
 
     #[test]
     fn prepared_path_delta_rejects_a_conflicting_pure_successor() {
-        let condition = ConditionTerm::equal(
+        let condition = OldConditionTerm::equal(
             OldMachineTerm::Variable(Variable(912_345)),
             OldMachineTerm::constant(3),
         );
@@ -2760,7 +2760,7 @@ mod mandatory_integer_obligation_tests {
 
     #[test]
     fn integer_conversion_obligation_merge_preserves_kind_and_context() {
-        let proposition = Proposition::condition_is(ConditionTerm::Constant(false), true);
+        let proposition = Proposition::condition_is(OldConditionTerm::Constant(false), true);
         let required = ProofObligation::verification_condition(proposition.clone())
             .with_context("Integer argument definedness");
         let base = PureFactContext::new();
@@ -2819,7 +2819,7 @@ mod native_observation_guard_tests {
                 CompareRelation::LessThan,
                 CompareRelation::GreaterEqual,
             ] {
-                let native = ConditionTerm::machine_compare(
+                let native = OldConditionTerm::machine_compare(
                     format,
                     relation,
                     expression.clone(),
@@ -2874,7 +2874,7 @@ mod native_observation_guard_tests {
                         1
                     );
                     let missing = Proposition::condition_is(
-                        ConditionTerm::equal(variable(850_013), variable(850_014)),
+                        OldConditionTerm::equal(variable(850_013), variable(850_014)),
                         true,
                     );
                     assert_eq!(
@@ -2898,21 +2898,21 @@ mod native_observation_guard_tests {
         }
     }
 
-    fn equalities(ty: MachineIntegerType) -> (ConditionTerm, ConditionTerm) {
+    fn equalities(ty: MachineIntegerType) -> (OldConditionTerm, OldConditionTerm) {
         let value = OldMachineTerm::Variable(Variable(912_801));
         let native = match ty {
             MachineIntegerType::Int32 | MachineIntegerType::UInt32 => {
-                ConditionTerm::equal(value.clone(), OldMachineTerm::constant(0))
+                OldConditionTerm::equal(value.clone(), OldMachineTerm::constant(0))
             }
             MachineIntegerType::Int64 => {
-                ConditionTerm::int64_equal(value.clone(), OldMachineTerm::int64_constant(0))
+                OldConditionTerm::int64_equal(value.clone(), OldMachineTerm::int64_constant(0))
             }
             MachineIntegerType::UInt64 => {
-                ConditionTerm::uint64_equal(value.clone(), OldMachineTerm::uint64_constant(0))
+                OldConditionTerm::uint64_equal(value.clone(), OldMachineTerm::uint64_constant(0))
             }
             _ => unreachable!(),
         };
-        let observed = ConditionTerm::integer_equal(
+        let observed = OldConditionTerm::integer_equal(
             IntegerTerm::from_machine(ty, value).unwrap(),
             IntegerTerm::constant_i64(0),
         );
@@ -2932,12 +2932,12 @@ mod native_observation_guard_tests {
             let empty = PureFactContext::new().defer_non_exact_condition_reasoning();
             let no_path_facts = ExecutionFacts::new();
             assert_eq!(decide_with_facts(&empty, &no_path_facts, &observed), None);
-            let ConditionTerm::IntegerEqual(left, right) = &observed else {
+            let OldConditionTerm::IntegerEqual(left, right) = &observed else {
                 unreachable!()
             };
             let not_equal =
-                ConditionTerm::integer_not_equal(left.as_ref().clone(), right.as_ref().clone());
-            let other = ConditionTerm::integer_equal(
+                OldConditionTerm::integer_not_equal(left.as_ref().clone(), right.as_ref().clone());
+            let other = OldConditionTerm::integer_equal(
                 IntegerTerm::from_machine(ty, OldMachineTerm::Variable(Variable(912_802))).unwrap(),
                 IntegerTerm::constant_i64(0),
             );
@@ -2979,9 +2979,9 @@ mod native_observation_guard_tests {
             };
             let a = observed(product);
             let b = observed(variable(984003));
-            let goal = ConditionTerm::integer_equal(a.clone(), b.clone());
-            let opposite = ConditionTerm::integer_not_equal(a, b);
-            let source = ConditionTerm::machine_compare(
+            let goal = OldConditionTerm::integer_equal(a.clone(), b.clone());
+            let opposite = OldConditionTerm::integer_not_equal(a, b);
+            let source = OldConditionTerm::machine_compare(
                 ty,
                 CompareRelation::Equal,
                 OldMachineTerm::logical_machine_binary(
@@ -3205,11 +3205,11 @@ mod shared_reconstruction_tests {
         for v in [x, y] {
             bounded = bounded
                 .assume_condition(
-                    ConditionTerm::signed_greater_equal(v.clone(), OldMachineTerm::constant(0)),
+                    OldConditionTerm::signed_greater_equal(v.clone(), OldMachineTerm::constant(0)),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::signed_less_equal(v, OldMachineTerm::constant(100)),
+                    OldConditionTerm::signed_less_equal(v, OldMachineTerm::constant(100)),
                     true,
                 );
         }
@@ -3236,7 +3236,8 @@ mod certified_merge_tests {
 
     #[test]
     fn certified_outputs_do_not_become_path_guards() {
-        let condition = |id| Proposition::condition_is(ConditionTerm::Variable(Variable(id)), true);
+        let condition =
+            |id| Proposition::condition_is(OldConditionTerm::Variable(Variable(id)), true);
         let branch = condition(991_010);
         let produced = condition(991_011);
         let required = condition(991_012);
@@ -3272,7 +3273,7 @@ mod certified_merge_tests {
 
     #[test]
     fn certified_merge_keeps_already_known_facts_and_the_original_prefix() {
-        let condition = ConditionTerm::equal(
+        let condition = OldConditionTerm::equal(
             OldMachineTerm::Variable(Variable(1024000)),
             OldMachineTerm::constant(7),
         );

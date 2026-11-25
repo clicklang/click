@@ -10,7 +10,7 @@ fn free_retires_a_cached_interior_alias() {
     };
     let alias = Address::symbolic(Variable(945_001));
     let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
-        ConditionTerm::address_equal(alias.clone(), base.offset_by_bytes(8)),
+        OldConditionTerm::address_equal(alias.clone(), base.offset_by_bytes(8)),
         true,
     ));
     let memory = SymbolicMemory::new()
@@ -128,8 +128,10 @@ fn a_free_publishes_its_owned_pointer_frame_as_an_equality() {
         before_read, after_read,
         "fact-supported frames do not choose read names"
     );
-    let equality =
-        Proposition::condition_is(ConditionTerm::pointer_equal(before_read, after_read), true);
+    let equality = Proposition::condition_is(
+        OldConditionTerm::pointer_equal(before_read, after_read),
+        true,
+    );
     assert!(
         path.facts
             .iter()
@@ -213,7 +215,7 @@ fn successful_heap_allocation_state() -> ExecutionState {
         panic!("allocation should assign a pointer");
     };
     let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
-        ConditionTerm::address_equal(pointer.address().clone(), Address::null()),
+        OldConditionTerm::address_equal(pointer.address().clone(), Address::null()),
         false,
     ));
     resolve_pending_heap_allocations(pending, &assumptions)
@@ -304,7 +306,7 @@ fn heap_allocate_has_null_or_fresh_uninitialized_outcomes() {
     let null = resolve_pending_heap_allocations(
         pending,
         &PureFactContext::new().assume_proposition(Proposition::condition_is(
-            ConditionTerm::address_equal(pointer.address().clone(), Address::null()),
+            OldConditionTerm::address_equal(pointer.address().clone(), Address::null()),
             true,
         )),
     );
@@ -466,7 +468,7 @@ fn zeroed_heap_allocation_reads_zero_until_a_store() {
     let success = resolve_pending_heap_allocations(
         pending,
         &PureFactContext::new().assume_proposition(Proposition::condition_is(
-            ConditionTerm::address_equal(pending_pointer.address().clone(), Address::null()),
+            OldConditionTerm::address_equal(pending_pointer.address().clone(), Address::null()),
             false,
         )),
     );
@@ -736,7 +738,7 @@ fn pending_and_failed_heap_allocation_preserve_existing_memory() {
     let failed = resolve_pending_heap_allocations(
         pending,
         &PureFactContext::new().assume_proposition(Proposition::condition_is(
-            ConditionTerm::address_equal(pending_pointer.address().clone(), Address::null()),
+            OldConditionTerm::address_equal(pending_pointer.address().clone(), Address::null()),
             true,
         )),
     );
@@ -758,7 +760,7 @@ fn pending_and_failed_heap_allocation_preserve_existing_memory() {
     let succeeded = resolve_pending_heap_allocations(
         pending,
         &PureFactContext::new().assume_proposition(Proposition::condition_is(
-            ConditionTerm::address_equal(pending_pointer.address().clone(), Address::null()),
+            OldConditionTerm::address_equal(pending_pointer.address().clone(), Address::null()),
             false,
         )),
     );
@@ -833,7 +835,7 @@ fn successful_heap_allocation_is_fresh_from_every_existing_block() {
     let second = resolve_pending_heap_allocations(
         pending,
         &PureFactContext::new().assume_proposition(Proposition::condition_is(
-            ConditionTerm::address_equal(pending_pointer.address().clone(), Address::null()),
+            OldConditionTerm::address_equal(pending_pointer.address().clone(), Address::null()),
             false,
         )),
     );
@@ -1018,7 +1020,7 @@ fn consuming_a_whole_range_drops_state_equivalent_prefix_residues() {
         length,
     ));
     let assumptions = PureFactContext::new()
-        .assume_condition(ConditionTerm::equal(held_start, required_start), true);
+        .assume_condition(OldConditionTerm::equal(held_start, required_start), true);
     let remaining = ResourceContext::new()
         .unchecked_with_fact(held)
         .without_fact(&required, &assumptions)
@@ -1949,7 +1951,7 @@ fn free_resolves_an_owned_return_alias_without_losing_its_offset() {
             .unwrap()
             .clone();
         let facts = PureFactContext::new().assume_condition(
-            ConditionTerm::address_equal(
+            OldConditionTerm::address_equal(
                 alias.clone(),
                 base.address().offset_by_bytes(if interior { 4 } else { 0 }),
             ),
@@ -2167,7 +2169,7 @@ fn freeing_through_one_spelling_retires_the_equal_spelling_too() {
         offset: AddressOffset::Constant(0),
     };
     let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
-        ConditionTerm::address_equal(alias.clone(), base.clone()),
+        OldConditionTerm::address_equal(alias.clone(), base.clone()),
         true,
     ));
 
@@ -2239,7 +2241,7 @@ fn contract_retire_forgets_zeroed_reading_and_records_the_change() {
     let success = resolve_pending_heap_allocations(
         pending,
         &PureFactContext::new().assume_proposition(Proposition::condition_is(
-            ConditionTerm::address_equal(pending_pointer.address().clone(), Address::null()),
+            OldConditionTerm::address_equal(pending_pointer.address().clone(), Address::null()),
             false,
         )),
     );
@@ -2253,7 +2255,7 @@ fn contract_retire_forgets_zeroed_reading_and_records_the_change() {
         offset: AddressOffset::Constant(0),
     };
     let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
-        ConditionTerm::address_equal(alias.clone(), base.clone()),
+        OldConditionTerm::address_equal(alias.clone(), base.clone()),
         true,
     ));
     assert!(
@@ -2311,7 +2313,7 @@ fn store_union_forgets_aliased_raw_cell() {
         offset: AddressOffset::Constant(0),
     };
     let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
-        ConditionTerm::address_equal(alias.clone(), base.clone()),
+        OldConditionTerm::address_equal(alias.clone(), base.clone()),
         true,
     ));
     let memory = SymbolicMemory::new()
@@ -2322,7 +2324,7 @@ fn store_union_forgets_aliased_raw_cell() {
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
         &Proposition::condition_is(
-            ConditionTerm::address_equal(alias.clone(), base.clone()),
+            OldConditionTerm::address_equal(alias.clone(), base.clone()),
             true,
         )
     ));
@@ -2357,7 +2359,7 @@ fn logical_heap_value_does_not_initialize_a_c_read() {
     };
     assert!(path.obligations.is_empty());
     let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
-        ConditionTerm::equal(value.clone(), OldMachineTerm::constant(7)),
+        OldConditionTerm::equal(value.clone(), OldMachineTerm::constant(7)),
         true,
     ));
     assert!(!assumptions.proves_memory_read_defined(
@@ -2452,7 +2454,7 @@ fn read_validity_transports_checked_aliases_without_crossing_writes_or_retiremen
     let bare = PureFactContext::new().assume_proposition(validity);
     assert!(!bare.has_memory_read_defined_evidence(state.memory(), &alias, ProgramType::Int32));
     let assumptions = bare.assume_proposition(Proposition::condition_is(
-        ConditionTerm::address_equal(alias.clone(), address.clone()),
+        OldConditionTerm::address_equal(alias.clone(), address.clone()),
         true,
     ));
     assert!(assumptions.has_memory_read_defined_evidence(
@@ -2502,7 +2504,7 @@ fn read_validity_transports_field_offsets_through_equal_base_pointers() {
             value_type: ProgramType::Int32,
         })
         .assume_proposition(Proposition::condition_is(
-            ConditionTerm::address_equal(base.clone(), alias.clone()),
+            OldConditionTerm::address_equal(base.clone(), alias.clone()),
             true,
         ));
     assert!(assumptions.has_memory_read_defined_evidence(
@@ -2599,11 +2601,11 @@ fn an_unplaced_heap_store_keeps_the_elements_it_may_alias_initialized() {
     let index = OldMachineTerm::Variable(Variable(925_001));
     let assumptions = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_less_equal(OldMachineTerm::constant(0), index.clone()),
+            OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), index.clone()),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_than(index.clone(), OldMachineTerm::constant(2)),
+            OldConditionTerm::signed_less_than(index.clone(), OldMachineTerm::constant(2)),
             true,
         );
     let unplaced = Address {
@@ -2692,7 +2694,7 @@ fn fresh_heap_struct_binding_checks_size_alignment_and_resolution() {
                 panic!("pointer expected")
             };
             assert_eq!(pointer.object_class(), typed.then(|| class.clone()));
-            let null = ConditionTerm::address_equal(pointer.address().clone(), Address::null());
+            let null = OldConditionTerm::address_equal(pointer.address().clone(), Address::null());
             for succeeds in [false, true] {
                 let resolved = resolve_pending_heap_allocations(
                     pending,
@@ -2753,7 +2755,7 @@ fn an_allocation_that_ends_the_program_on_failure_continues_only_on_success() {
     let Some(ProgramValue::Pointer(pointer)) = local_native_output_2449.as_deref() else {
         panic!("pointer expected")
     };
-    let null = ConditionTerm::address_equal(pointer.address().clone(), Address::null());
+    let null = OldConditionTerm::address_equal(pointer.address().clone(), Address::null());
     let context = crate::kernel::reasoning::assumptions_with_path_context(
         &PureFactContext::new(),
         facts,
@@ -2774,7 +2776,7 @@ mod free_base_alias_tests;
 /// `p = malloc(n * 4)` with a `size_t` count `n`, under `facts`: its paths
 /// and, for its one pending outcome, the success state.
 fn size_t_heap_allocation(
-    facts: &[ConditionTerm],
+    facts: &[OldConditionTerm],
 ) -> (Vec<StatementExecutionPath>, Option<ExecutionState>) {
     size_t_heap_allocation_with_zeroed(facts, false)
 }
@@ -2783,7 +2785,7 @@ fn size_t_heap_allocation(
 /// `size_t` `n` under `facts`; with its success resolved when it has one
 /// normal path.
 fn size_t_heap_allocation_with_zeroed(
-    facts: &[ConditionTerm],
+    facts: &[OldConditionTerm],
     zeroed: bool,
 ) -> (Vec<StatementExecutionPath>, Option<ExecutionState>) {
     let n = OldMachineTerm::Variable(Variable(1 << 40));
@@ -2823,7 +2825,7 @@ fn size_t_heap_allocation_with_zeroed(
                 panic!("allocation should assign a pointer");
             };
             let not_null = assumptions.assume_proposition(Proposition::condition_is(
-                ConditionTerm::address_equal(pointer.address().clone(), Address::null()),
+                OldConditionTerm::address_equal(pointer.address().clone(), Address::null()),
                 false,
             ));
             Some(resolve_pending_heap_allocations(pending, &not_null))
@@ -2840,8 +2842,8 @@ fn size_t_heap_allocation_with_zeroed(
 fn a_bounded_size_t_element_count_makes_a_64_bit_block() {
     let n = OldMachineTerm::Variable(Variable(1 << 40));
     let (_, success) = size_t_heap_allocation(&[
-        ConditionTerm::uint64_greater_than(n.clone(), OldMachineTerm::uint64_constant(0)),
-        ConditionTerm::uint64_less_equal(n.clone(), OldMachineTerm::uint64_constant(100)),
+        OldConditionTerm::uint64_greater_than(n.clone(), OldMachineTerm::uint64_constant(0)),
+        OldConditionTerm::uint64_less_equal(n.clone(), OldMachineTerm::uint64_constant(100)),
     ]);
     let success = success.expect("a bounded count allocates");
     let local_native_output_2538 = success.locals().get_native("p");
@@ -2872,13 +2874,16 @@ fn a_bounded_size_t_element_count_makes_a_64_bit_block() {
 fn an_unbounded_size_t_element_count_is_refused() {
     let n = OldMachineTerm::Variable(Variable(1 << 40));
     for facts in [
-        vec![ConditionTerm::uint64_greater_than(
+        vec![OldConditionTerm::uint64_greater_than(
             n.clone(),
             OldMachineTerm::uint64_constant(0),
         )],
         vec![
-            ConditionTerm::uint64_greater_than(n.clone(), OldMachineTerm::uint64_constant(0)),
-            ConditionTerm::uint64_less_equal(n.clone(), OldMachineTerm::uint64_constant(1 << 62)),
+            OldConditionTerm::uint64_greater_than(n.clone(), OldMachineTerm::uint64_constant(0)),
+            OldConditionTerm::uint64_less_equal(
+                n.clone(),
+                OldMachineTerm::uint64_constant(1 << 62),
+            ),
         ],
     ] {
         let (paths, _) = size_t_heap_allocation(&facts);
@@ -2897,7 +2902,7 @@ fn an_unbounded_size_t_element_count_is_refused() {
 #[test]
 fn a_wrapping_size_t_product_is_the_wrapped_block() {
     let n = OldMachineTerm::Variable(Variable(1 << 40));
-    let (_, success) = size_t_heap_allocation(&[ConditionTerm::uint64_equal(
+    let (_, success) = size_t_heap_allocation(&[OldConditionTerm::uint64_equal(
         n,
         OldMachineTerm::uint64_constant((1 << 62) + 1),
     )]);
@@ -2920,8 +2925,8 @@ fn a_bounded_size_t_calloc_count_makes_a_zeroed_64_bit_block() {
     let n = OldMachineTerm::Variable(Variable(1 << 40));
     let (_, success) = size_t_heap_allocation_with_zeroed(
         &[
-            ConditionTerm::uint64_greater_than(n.clone(), OldMachineTerm::uint64_constant(0)),
-            ConditionTerm::uint64_less_equal(n.clone(), OldMachineTerm::uint64_constant(100)),
+            OldConditionTerm::uint64_greater_than(n.clone(), OldMachineTerm::uint64_constant(0)),
+            OldConditionTerm::uint64_less_equal(n.clone(), OldMachineTerm::uint64_constant(100)),
         ],
         true,
     );
@@ -2961,11 +2966,11 @@ fn a_bounded_size_t_calloc_count_makes_a_zeroed_64_bit_block() {
 fn a_size_t_calloc_count_whose_product_may_wrap_is_refused() {
     let n = OldMachineTerm::Variable(Variable(1 << 40));
     for facts in [
-        vec![ConditionTerm::uint64_equal(
+        vec![OldConditionTerm::uint64_equal(
             n.clone(),
             OldMachineTerm::uint64_constant((1 << 62) + 1),
         )],
-        vec![ConditionTerm::uint64_greater_than(
+        vec![OldConditionTerm::uint64_greater_than(
             n.clone(),
             OldMachineTerm::uint64_constant(0),
         )],
@@ -2992,10 +2997,10 @@ fn a_64_bit_block_reallocates_to_a_64_bit_size() {
     let n = OldMachineTerm::Variable(Variable(1 << 40));
     let m = OldMachineTerm::Variable(Variable((1 << 40) + 1));
     let facts = [
-        ConditionTerm::uint64_greater_than(n.clone(), OldMachineTerm::uint64_constant(0)),
-        ConditionTerm::uint64_less_equal(n.clone(), OldMachineTerm::uint64_constant(100)),
-        ConditionTerm::uint64_greater_than(m.clone(), OldMachineTerm::uint64_constant(0)),
-        ConditionTerm::uint64_less_equal(m.clone(), OldMachineTerm::uint64_constant(200)),
+        OldConditionTerm::uint64_greater_than(n.clone(), OldMachineTerm::uint64_constant(0)),
+        OldConditionTerm::uint64_less_equal(n.clone(), OldMachineTerm::uint64_constant(100)),
+        OldConditionTerm::uint64_greater_than(m.clone(), OldMachineTerm::uint64_constant(0)),
+        OldConditionTerm::uint64_less_equal(m.clone(), OldMachineTerm::uint64_constant(200)),
     ];
     let (_, allocated) = size_t_heap_allocation(&facts);
     let allocated = allocated

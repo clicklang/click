@@ -107,13 +107,13 @@ pub(in crate::kernel) enum MemoryDagHopJustification {
         write: Address,
     },
     StoreCommonBaseUnequalConstants {
-        condition: ConditionTerm,
+        condition: OldConditionTerm,
     },
     StoreCommonBaseExactInequality {
-        condition: ConditionTerm,
+        condition: OldConditionTerm,
     },
     StoreCommonBaseSignedOrder {
-        condition: ConditionTerm,
+        condition: OldConditionTerm,
         path: Vec<OrderDerivationStep>,
         reversed: bool,
     },
@@ -224,7 +224,7 @@ pub(in crate::kernel) enum PointerInRangeEvidence {
     },
     ExactAlias {
         alias: Address,
-        condition: ConditionTerm,
+        condition: OldConditionTerm,
         membership: Box<PointerInRangeEvidence>,
     },
     ShiftedExactAlias {
@@ -248,7 +248,7 @@ pub(in crate::kernel) enum PointerInRangeEvidence {
     /// index below the range's constant end ([`unsigned_index_in_range`]).
     UnsignedIndexed {
         index: SharedMachineIntegerTerm,
-        upper: ConditionTerm,
+        upper: OldConditionTerm,
     },
 }
 
@@ -265,7 +265,7 @@ pub(in crate::kernel) enum PointerInRangeEvidence {
 pub(in crate::kernel) fn unsigned_index_in_range(
     pointer: &Address,
     range: &MemoryRange,
-) -> Option<(SharedMachineIntegerTerm, Vec<ConditionTerm>)> {
+) -> Option<(SharedMachineIntegerTerm, Vec<OldConditionTerm>)> {
     crate::instrumentation::record_deterministic_work(1);
     let (start, end) = range.int32_bounds()?;
     let start = i64::from(start.as_const()? as i32);
@@ -306,7 +306,7 @@ pub(in crate::kernel) fn unsigned_index_in_range(
             } else {
                 (atom, bound.clone())
             };
-            return ConditionTerm::Compare {
+            return OldConditionTerm::Compare {
                 format: MachineIntegerType::UInt64,
                 relation,
                 left: Box::new(left),
@@ -543,8 +543,8 @@ impl BorrowPartitionRangeEvidence {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::kernel) enum PositiveTermEvidence {
     Constant,
-    ExactCondition(ConditionTerm),
-    OneLowerBound(ConditionTerm),
+    ExactCondition(OldConditionTerm),
+    OneLowerBound(OldConditionTerm),
 }
 
 impl MemoryDagHopJustification {
@@ -625,7 +625,7 @@ impl MemoryDagHopJustification {
                 };
                 pointer_offsets_with_common_base_distinctness_condition(write, pointer)
                     == Some(condition.clone())
-                    && condition == &ConditionTerm::Constant(false)
+                    && condition == &OldConditionTerm::Constant(false)
             }
             Self::StoreCommonBaseExactInequality { condition } => {
                 let Some((write, _)) = derivation.single_write() else {
@@ -643,7 +643,7 @@ impl MemoryDagHopJustification {
                 let Some((write, _)) = derivation.single_write() else {
                     return false;
                 };
-                let Some(ConditionTerm::Compare {
+                let Some(OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left,
@@ -653,7 +653,7 @@ impl MemoryDagHopJustification {
                     return false;
                 };
                 if *condition
-                    != (ConditionTerm::Compare {
+                    != (OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: left.clone(),
@@ -1179,14 +1179,14 @@ pub(in crate::kernel) fn memory_dag_cell_lookups_fingerprint() -> u64 {
 
 impl RangeBoundEvidence {
     fn for_true_condition(
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
         use crate::kernel::assumptions::{
             checked_scalar_facts::ScalarOperandKey as Key, order_view_at_format,
         };
         use crate::kernel::machine_integer::Relation;
-        if condition == &ConditionTerm::Constant(true) {
+        if condition == &OldConditionTerm::Constant(true) {
             return Some(Self::Intrinsic);
         }
         let view = order_view_at_format(condition, true, MachineIntegerType::Int32)?;
@@ -1228,13 +1228,13 @@ impl RangeBoundEvidence {
             .map(Self::SignedOrderPath)
     }
 
-    fn checks(&self, condition: &ConditionTerm, assumptions: &PureFactContext) -> bool {
+    fn checks(&self, condition: &OldConditionTerm, assumptions: &PureFactContext) -> bool {
         use crate::kernel::assumptions::{
             checked_scalar_facts::ScalarOperandKey as Key, order_view_at_format,
         };
         use crate::kernel::machine_integer::Relation;
         if matches!(self, Self::Intrinsic) {
-            return condition == &ConditionTerm::Constant(true);
+            return condition == &OldConditionTerm::Constant(true);
         }
         let Some(goal) = order_view_at_format(condition, true, MachineIntegerType::Int32) else {
             return false;
@@ -1300,7 +1300,7 @@ impl PointerInRangeEvidence {
                     .find_map(|alias| {
                         let membership = Self::for_pointer_direct(alias, range, assumptions)?;
                         let condition =
-                            ConditionTerm::address_equal(pointer.clone(), alias.clone());
+                            OldConditionTerm::address_equal(pointer.clone(), alias.clone());
                         crate::kernel::record_implicit_consulted_premises(
                             assumptions,
                             &Proposition::condition_is(condition.clone(), true),
@@ -1328,7 +1328,7 @@ impl PointerInRangeEvidence {
                         crate::kernel::record_implicit_consulted_premises(
                             assumptions,
                             &Proposition::condition_is(
-                                ConditionTerm::address_equal(base.clone(), range.base().clone()),
+                                OldConditionTerm::address_equal(base.clone(), range.base().clone()),
                                 true,
                             ),
                         );
@@ -1476,7 +1476,7 @@ impl PointerInRangeEvidence {
         } = self
         {
             return *pointer == base.offset_by_bytes(*bytes)
-                && assumptions.exact_condition_value(&ConditionTerm::address_equal(
+                && assumptions.exact_condition_value(&OldConditionTerm::address_equal(
                     base.clone(),
                     alias.clone(),
                 )) == Some(true)
@@ -1492,7 +1492,7 @@ impl PointerInRangeEvidence {
             membership,
         } = self
         {
-            return *condition == ConditionTerm::address_equal(pointer.clone(), alias.clone())
+            return *condition == OldConditionTerm::address_equal(pointer.clone(), alias.clone())
                 && assumptions.exact_condition_value(condition) == Some(true)
                 && matches!(
                     membership.as_ref(),
@@ -2125,17 +2125,23 @@ mod separated_range_frame_tests {
                 left: Box::new(Resource::Memory(backing)),
                 right: Box::new(Resource::Memory(descriptor)),
             },
-            Proposition::condition_is(ConditionTerm::equal(loaded_start, start.clone()), true),
+            Proposition::condition_is(OldConditionTerm::equal(loaded_start, start.clone()), true),
             Proposition::condition_is(
-                ConditionTerm::signed_less_equal(start.clone(), model_index.clone()),
+                OldConditionTerm::signed_less_equal(start.clone(), model_index.clone()),
                 true,
             ),
             Proposition::condition_is(
-                ConditionTerm::signed_less_than(model_index, end.clone()),
+                OldConditionTerm::signed_less_than(model_index, end.clone()),
                 true,
             ),
-            Proposition::condition_is(ConditionTerm::signed_less_equal(0u32.into(), start), true),
-            Proposition::condition_is(ConditionTerm::signed_less_equal(end, 1024u32.into()), true),
+            Proposition::condition_is(
+                OldConditionTerm::signed_less_equal(0u32.into(), start),
+                true,
+            ),
+            Proposition::condition_is(
+                OldConditionTerm::signed_less_equal(end, 1024u32.into()),
+                true,
+            ),
         ];
         let context = facts
             .iter()
@@ -2243,8 +2249,8 @@ mod unsigned_index_membership_tests {
         }
     }
 
-    fn below(index: Variable, end: u64) -> ConditionTerm {
-        ConditionTerm::Compare {
+    fn below(index: Variable, end: u64) -> OldConditionTerm {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
             left: Box::new(OldMachineTerm::Variable(index)),
@@ -2274,7 +2280,7 @@ mod unsigned_index_membership_tests {
         assert!(!membership.checks(&read, &range, &PureFactContext::new()));
         // `k <= 3` is the same bound written inclusively.
         let inclusive = PureFactContext::new().assume_condition(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::UInt64,
                 relation: CompareRelation::LessEqual,
                 left: Box::new(OldMachineTerm::Variable(k)),
@@ -2479,7 +2485,7 @@ mod shared_range_bound_evidence_tests {
         );
         let observed = SharedMachineIntegerTerm::from_shared(format, product.clone()).unwrap();
         let compare = |a, b| {
-            ConditionTerm::integer_less_than(
+            OldConditionTerm::integer_less_than(
                 IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(format, a).unwrap()),
                 IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(format, b).unwrap()),
             )

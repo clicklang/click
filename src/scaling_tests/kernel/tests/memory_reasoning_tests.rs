@@ -158,7 +158,7 @@ fn memory_range_endpoint_graph_matching_scales_without_fact_index() {
         let mut assumptions = PureFactContext::new();
         for index in 0..size {
             assumptions = assumptions.assume_condition(
-                ConditionTerm::equal(variable(index), variable(index + 1)),
+                OldConditionTerm::equal(variable(index), variable(index + 1)),
                 true,
             );
         }
@@ -198,7 +198,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
         offset: AddressOffset::Constant(0),
     };
     let equality = Proposition::condition_is(
-        ConditionTerm::address_equal(result.clone(), storage.clone()),
+        OldConditionTerm::address_equal(result.clone(), storage.clone()),
         true,
     );
     let view = Proposition::MemoryLoadable {
@@ -261,7 +261,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
     let after = before.without_local_block(&local.base);
     let context = PureFactContext::new()
         .assume_proposition(Proposition::condition_is(
-            ConditionTerm::address_equal(result.clone(), local.clone()),
+            OldConditionTerm::address_equal(result.clone(), local.clone()),
             true,
         ))
         .assume_proposition(Proposition::MemoryLoadable {
@@ -342,7 +342,7 @@ fn composition_store_separation_uses_checked_aliases_without_scanning_other_owne
     let write_base = parameter(95_001);
     let read = parameter(95_002);
     let owner = Address::symbolic(Variable(95_003));
-    let alias = ConditionTerm::address_equal(write_base.clone(), owner.clone());
+    let alias = OldConditionTerm::address_equal(write_base.clone(), owner.clone());
     for offset in [0, 8] {
         let write = write_base.offset_by_bytes(offset);
         let mut samples = Vec::new();
@@ -389,7 +389,7 @@ fn composition_store_separation_uses_checked_aliases_without_scanning_other_owne
             };
             assert!(!hop.checks(&wider_store, &read, 4, &assumptions));
             let equal = assumptions.assume_condition(
-                ConditionTerm::address_equal(write.clone(), read.clone()),
+                OldConditionTerm::address_equal(write.clone(), read.clone()),
                 true,
             );
             assert!(
@@ -499,7 +499,7 @@ fn shifted_constant_view_spans_match_without_ambient_search() {
             let mut context = PureFactContext::new().assume_proposition(source(bytes.clone()));
             for offset in 0..size {
                 context = context.assume_condition(
-                    ConditionTerm::equal(
+                    OldConditionTerm::equal(
                         OldMachineTerm::Variable(Variable(9_319_100 + offset)),
                         OldMachineTerm::constant(offset as u32),
                     ),
@@ -551,11 +551,11 @@ fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
     let wide = |n| AddressOffset::scaled_int64_node(n, 4, true);
     let projected = OldMachineTerm::uint32_from_64(last(native.clone()));
     let query = wide(last(alias.clone()));
-    let bound = ConditionTerm::uint64_less_equal(
+    let bound = OldConditionTerm::uint64_less_equal(
         last(native.clone()),
         OldMachineTerm::uint64_constant(1_073_741_822),
     );
-    let equality = ConditionTerm::uint64_equal(alias.clone(), native.clone());
+    let equality = OldConditionTerm::uint64_equal(alias.clone(), native.clone());
     let project = |facts: &PureFactContext| {
         crate::kernel::reasoning::element_index_from_offset_with_facts(&query, 4, facts)
     };
@@ -564,7 +564,7 @@ fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
     assert_eq!(project(&bounded), None);
     let equal_only = PureFactContext::new().assume_condition(equality.clone(), true);
     assert_eq!(project(&equal_only), None);
-    let low_bound = ConditionTerm::signed_less_equal(
+    let low_bound = OldConditionTerm::signed_less_equal(
         projected.clone(),
         OldMachineTerm::constant(1_073_741_822),
     );
@@ -572,7 +572,7 @@ fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
         project(&equal_only.clone().assume_condition(low_bound, true)),
         None
     );
-    let signed_bound = ConditionTerm::int64_signed_less_equal(
+    let signed_bound = OldConditionTerm::int64_signed_less_equal(
         last(native.clone()),
         OldMachineTerm::int64_constant(1_073_741_822),
     );
@@ -586,7 +586,7 @@ fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
         let mut facts = bounded.clone().assume_condition(equality.clone(), true);
         for i in 0..count {
             facts = facts.assume_condition(
-                ConditionTerm::uint64_less_equal(
+                OldConditionTerm::uint64_less_equal(
                     OldMachineTerm::Variable(Variable(984_000 + i)),
                     OldMachineTerm::uint64_constant(7),
                 ),
@@ -773,7 +773,7 @@ fn written_store_separation_and_alias_refusal_ignore_unrelated_objects() {
     let pointer = |index: u64| Address::symbolic(Variable(97_100 + index));
     let equal = |left: &Address, right: &Address| {
         Proposition::condition_is(
-            ConditionTerm::address_equal(left.clone(), right.clone()),
+            OldConditionTerm::address_equal(left.clone(), right.clone()),
             true,
         )
     };
@@ -835,7 +835,7 @@ fn stated_pointer_separation_lookup_visits_only_its_anchor_index() {
         };
         let left = pointer(1, false);
         let right = pointer(2, true);
-        let comparison = ConditionTerm::address_equal(left.clone(), right.clone());
+        let comparison = OldConditionTerm::address_equal(left.clone(), right.clone());
         let mut overhead = Vec::new();
         let mut proof_overhead = Vec::new();
         for size in [16u64, 64, 256, 1024] {
@@ -897,10 +897,10 @@ fn kept_frame_class_lookup_adds_only_selected_physical_coverage() {
     let owner = pointer(951_003);
     let assumptions = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::address_equal(queried.clone(), middle.clone()),
+            OldConditionTerm::address_equal(queried.clone(), middle.clone()),
             true,
         )
-        .assume_condition(ConditionTerm::address_equal(middle, owner.clone()), true);
+        .assume_condition(OldConditionTerm::address_equal(middle, owner.clone()), true);
     let fact = |base| {
         ResourceFact::own_memory(MemoryRange::new_with_element_width(
             base,
@@ -952,16 +952,16 @@ fn rechecked_kept_frame_checks_selected_equality_without_rebuilding_foreign_inpu
         let inputs = || {
             let mut facts = PureFactContext::new()
                 .assume_condition(
-                    ConditionTerm::address_equal(queried.clone(), middle.clone()),
+                    OldConditionTerm::address_equal(queried.clone(), middle.clone()),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::address_equal(middle.clone(), owner.clone()),
+                    OldConditionTerm::address_equal(middle.clone(), owner.clone()),
                     true,
                 );
             for index in 0..size {
                 facts = facts.assume_condition(
-                    ConditionTerm::address_equal(
+                    OldConditionTerm::address_equal(
                         pointer(955_000 + index),
                         pointer(957_000 + index),
                     ),
@@ -1030,7 +1030,7 @@ fn one_owned_member_does_not_trigger_store_alias_reasoning() {
         let mut context = PureFactContext::new()
             .assume_proposition(Proposition::ResourceComposition(resources))
             .assume_condition(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
                     left: Box::new(0.into()),
@@ -1039,7 +1039,7 @@ fn one_owned_member_does_not_trigger_store_alias_reasoning() {
                 true,
             )
             .assume_condition(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: Box::new(index.clone()),
@@ -1049,7 +1049,7 @@ fn one_owned_member_does_not_trigger_store_alias_reasoning() {
             );
         for unrelated in 0..size {
             context = context.assume_condition(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: Box::new(OldMachineTerm::Variable(Variable(100_000 + unrelated))),

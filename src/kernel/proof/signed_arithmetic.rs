@@ -1,6 +1,6 @@
 //! Signed-machine affine and interval computations for arithmetic planning.
 //! Internal plans expand into ordinary bounds and observation identities.
-use super::super::{BitvectorBinaryOp, ConditionTerm, OldMachineTerm, Proposition, Variable};
+use super::super::{BitvectorBinaryOp, OldConditionTerm, OldMachineTerm, Proposition, Variable};
 use crate::kernel::CompareRelation;
 use crate::kernel::MachineBinaryOp;
 use crate::kernel::MachineIntegerType;
@@ -876,7 +876,7 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
         },
         _ => return None,
     };
-    if !matches!(condition.old_form(), ConditionTerm::Compare { .. })
+    if !matches!(condition.old_form(), OldConditionTerm::Compare { .. })
         && let Some(view) =
             crate::kernel::machine_integer::comparison::structural_native_comparison_view(
                 condition.old_form(),
@@ -951,7 +951,7 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
     let condition = widened.as_ref().unwrap_or(condition.old_form());
     let (relation, left, right, strict) = match (condition, value) {
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left,
@@ -960,7 +960,7 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
             true,
         ) => (SignedArithmeticRelation::LessEqual, left, right, true),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left,
@@ -969,7 +969,7 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
             true,
         ) => (SignedArithmeticRelation::LessEqual, left, right, false),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterThan,
                 left,
@@ -978,7 +978,7 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
             true,
         ) => (SignedArithmeticRelation::LessEqual, right, left, true),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
                 left,
@@ -987,7 +987,7 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
             true,
         ) => (SignedArithmeticRelation::LessEqual, right, left, false),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left,
@@ -996,7 +996,7 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
             false,
         ) => (SignedArithmeticRelation::LessEqual, right, left, false),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left,
@@ -1005,7 +1005,7 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
             false,
         ) => (SignedArithmeticRelation::LessEqual, right, left, true),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterThan,
                 left,
@@ -1014,7 +1014,7 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
             false,
         ) => (SignedArithmeticRelation::LessEqual, left, right, false),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
                 left,
@@ -1023,7 +1023,7 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
             false,
         ) => (SignedArithmeticRelation::LessEqual, left, right, true),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
@@ -1040,7 +1040,7 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
             });
         }
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 left,
@@ -1056,7 +1056,7 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
                 constant,
             });
         }
-        (ConditionTerm::Constant(constant), value) => {
+        (OldConditionTerm::Constant(constant), value) => {
             return Some(SignedArithmeticClaim {
                 carrier: SignedArithmeticCarrier::SignedInt32,
                 relation: SignedArithmeticRelation::Equal,

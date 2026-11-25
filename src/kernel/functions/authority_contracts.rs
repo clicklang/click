@@ -1157,7 +1157,7 @@ pub(in crate::kernel) fn check_wildcard_consumption_at_return(
             term.as_const() == Some(0)
                 || crate::kernel::quantity_condition_holds(
                     assumptions,
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(term.clone()),
@@ -1176,7 +1176,7 @@ pub(in crate::kernel) fn check_wildcard_consumption_at_return(
                     && (actual_quantity == *quantity
                         || crate::kernel::quantity_condition_holds(
                             assumptions,
-                            ConditionTerm::Compare {
+                            OldConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
                                 relation: CompareRelation::Equal,
                                 left: Box::new(actual_quantity),
@@ -1295,7 +1295,7 @@ pub(super) fn check_quantity_exchange_at_return(
                     };
                     crate::kernel::quantity_condition_holds(
                         assumptions,
-                        ConditionTerm::Compare {
+                        OldConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::Equal,
                             left: Box::new(actual),

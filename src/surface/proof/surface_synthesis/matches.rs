@@ -239,7 +239,7 @@ mod tests {
             ] {
                 values.push(ProgramValue::Bool(OldMachineTerm::bool_cast(
                     MachineIntegerType::UInt8,
-                    ConditionTerm::bool_not(ConditionTerm::Compare {
+                    OldConditionTerm::bool_not(OldConditionTerm::Compare {
                         format,
                         relation: CompareRelation::Equal,
                         left: Box::new(word.clone()),
@@ -251,7 +251,7 @@ mod tests {
         for width in [MachineIntegerType::UInt8, MachineIntegerType::UInt32] {
             values.push(ProgramValue::Bool(OldMachineTerm::bool_cast(
                 width,
-                ConditionTerm::Variable(variable),
+                OldConditionTerm::Variable(variable),
             )));
         }
         for value in values {
@@ -282,7 +282,7 @@ mod tests {
                 AlgebraicValueType::Program(ProgramType::Bool),
                 PureFunctionArgument::Value(ProgramValue::Bool(OldMachineTerm::bool_cast(
                     MachineIntegerType::UInt8,
-                    ConditionTerm::Variable(variable),
+                    OldConditionTerm::Variable(variable),
                 ))),
             ),
             (

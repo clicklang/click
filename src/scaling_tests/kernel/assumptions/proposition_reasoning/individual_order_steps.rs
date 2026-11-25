@@ -17,7 +17,7 @@ fn individual_order_steps_keep_growing_shared_endpoints() {
                     [root.clone(), root.clone()],
                 );
                 let source = Proposition::condition_is(
-                    ConditionTerm::integer_less_than(
+                    OldConditionTerm::integer_less_than(
                         observed(root.clone()),
                         IntegerTerm::constant_i64(100),
                     ),
@@ -25,7 +25,7 @@ fn individual_order_steps_keep_growing_shared_endpoints() {
                 );
                 facts = facts
                     .assume_condition(
-                        ConditionTerm::signed_less_equal(
+                        OldConditionTerm::signed_less_equal(
                             0u32.into(),
                             OldMachineTerm::Variable(Variable(996000 + index)),
                         ),

@@ -276,7 +276,7 @@ pub(super) fn not(value: &SpecValue) -> Option<KernelTerm> {
 pub(super) fn tag_equation(
     value: &KernelTerm,
     assumptions: &PureFactContext,
-) -> Option<ConditionTerm> {
+) -> Option<OldConditionTerm> {
     use MachineBinaryOp as O;
     use MachineIntegerType as T;
     let view = MachineOperandView::Shared(value);
@@ -319,7 +319,7 @@ pub(super) fn tag_equation(
             };
             let low = and64(word.clone(), constant(T::UInt64, alignment - 1));
             let clear = compare(&low, &constant(T::UInt64, 0));
-            if clear != ConditionTerm::Constant(true)
+            if clear != OldConditionTerm::Constant(true)
                 && assumptions
                     .selected_comparison_source(&clear, true)
                     .is_none()

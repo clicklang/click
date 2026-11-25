@@ -371,7 +371,7 @@ mod tests {
         let before = PureFactContext::new();
         let after = before
             .clone()
-            .assume_condition(ConditionTerm::address_equal(a, b), true);
+            .assume_condition(OldConditionTerm::address_equal(a, b), true);
         for (facts, expected) in [(&before, false), (&after, true)] {
             let selected =
                 Selected::new(facts, &[(&left, &sl), (&right, &sr), (&wrong_width, &sw)]);
@@ -411,15 +411,15 @@ mod tests {
         }));
         let held = MemoryRange::new(base.clone(), 0u32.into(), 8u32.into());
         let before = PureFactContext::new().assume_condition(
-            ConditionTerm::address_equal(read.address().clone(), base),
+            OldConditionTerm::address_equal(read.address().clone(), base),
             true,
         );
         let after = before.clone().assume_condition(
-            ConditionTerm::pointer_equal(read.clone(), stored.clone()),
+            OldConditionTerm::pointer_equal(read.clone(), stored.clone()),
             true,
         );
         let bounded_facts = before.clone().assume_condition(
-            ConditionTerm::pointer_equal(read.clone(), bounded.clone()),
+            OldConditionTerm::pointer_equal(read.clone(), bounded.clone()),
             true,
         );
         let sr = SharedPointer::import(&read);
@@ -483,7 +483,10 @@ mod value_equality_tests {
                 &parameter, &block,
             ))
             .assume_proposition(Proposition::condition_is(
-                ConditionTerm::address_equal(parameter.address().clone(), block.address().clone()),
+                OldConditionTerm::address_equal(
+                    parameter.address().clone(),
+                    block.address().clone(),
+                ),
                 true,
             ));
         assert!(context.provenance_equal(parameter.provenance(), block.provenance()));
@@ -502,7 +505,7 @@ mod value_equality_tests {
             ProgramType::Int32Pointer,
         );
         let view = parameter.clone().with_root_bounds();
-        let condition = ConditionTerm::pointer_equal(parameter.clone(), view.clone());
+        let condition = OldConditionTerm::pointer_equal(parameter.clone(), view.clone());
         let context = PureFactContext::new();
         assert_ne!(context.decide(&condition), Some(true));
         assert!(!context.contains_known(&equal(&parameter, &view)));
@@ -518,13 +521,13 @@ mod value_equality_tests {
         );
         let view = parameter.clone().with_root_bounds();
         let context = PureFactContext::new().assume_proposition(Proposition::condition_is(
-            ConditionTerm::pointer_equal(parameter.clone(), view.clone()),
+            OldConditionTerm::pointer_equal(parameter.clone(), view.clone()),
             false,
         ));
-        let unrelated = ConditionTerm::Variable(Variable(4_211_022));
+        let unrelated = OldConditionTerm::Variable(Variable(4_211_022));
         assert_eq!(context.decide(&unrelated), None);
         assert_eq!(
-            context.decide(&ConditionTerm::address_equal(
+            context.decide(&OldConditionTerm::address_equal(
                 parameter.address().clone(),
                 view.address().clone()
             )),

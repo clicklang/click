@@ -5,7 +5,7 @@ use crate::kernel::{bits32_constant, constant_u32};
 
 #[cfg(test)]
 pub(in crate::kernel) fn condition_as_order_fact(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     value: bool,
 ) -> Option<(OldMachineTerm, OldMachineTerm, bool)> {
     if let Some(view) =
@@ -27,7 +27,7 @@ pub(in crate::kernel) fn condition_as_order_fact(
     }
     match (condition, value) {
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left,
@@ -36,7 +36,7 @@ pub(in crate::kernel) fn condition_as_order_fact(
             true,
         ) => Some((left.as_ref().clone(), right.as_ref().clone(), true)),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left,
@@ -45,7 +45,7 @@ pub(in crate::kernel) fn condition_as_order_fact(
             false,
         ) => Some((right.as_ref().clone(), left.as_ref().clone(), false)),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left,
@@ -54,7 +54,7 @@ pub(in crate::kernel) fn condition_as_order_fact(
             true,
         ) => Some((left.as_ref().clone(), right.as_ref().clone(), false)),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left,
@@ -63,7 +63,7 @@ pub(in crate::kernel) fn condition_as_order_fact(
             false,
         ) => Some((right.as_ref().clone(), left.as_ref().clone(), true)),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterThan,
                 left,
@@ -72,7 +72,7 @@ pub(in crate::kernel) fn condition_as_order_fact(
             true,
         ) => Some((right.as_ref().clone(), left.as_ref().clone(), true)),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterThan,
                 left,
@@ -81,7 +81,7 @@ pub(in crate::kernel) fn condition_as_order_fact(
             false,
         ) => Some((left.as_ref().clone(), right.as_ref().clone(), false)),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
                 left,
@@ -90,7 +90,7 @@ pub(in crate::kernel) fn condition_as_order_fact(
             true,
         ) => Some((right.as_ref().clone(), left.as_ref().clone(), false)),
         (
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
                 left,
@@ -107,11 +107,11 @@ pub(in crate::kernel) fn order_condition(
     lower: OldMachineTerm,
     upper: OldMachineTerm,
     strict: bool,
-) -> ConditionTerm {
+) -> OldConditionTerm {
     if strict {
-        ConditionTerm::signed_less_than(lower, upper)
+        OldConditionTerm::signed_less_than(lower, upper)
     } else {
-        ConditionTerm::signed_less_equal(lower, upper)
+        OldConditionTerm::signed_less_equal(lower, upper)
     }
 }
 
@@ -222,7 +222,7 @@ pub(in crate::kernel) fn finite_forall_ranges_allowing_empty(
         // vacuous at every point, as under an empty range of every binder,
         // and a binder no other leaf ranges is given that empty range.
         if matches!(&antecedent, condition_source @ Proposition::ConditionIs(_, _)
-            if matches!(condition_source.condition_native(), Some((ConditionTerm::Constant(false), true) | (ConditionTerm::Constant(true), false))))
+            if matches!(condition_source.old_condition(), Some((OldConditionTerm::Constant(false), true) | (OldConditionTerm::Constant(true), false))))
         {
             for variable in variables {
                 hull.entry(*variable).or_insert((0, -1));
@@ -948,11 +948,11 @@ pub(in crate::kernel) fn count_fold_split_parts_match(
         // [lo, hi] makes one side empty and the other over-count, so without
         // these bound checks the rule proves false equalities (e.g.
         // lo=0, mid=5, hi=2 gives 2 == 3).
-        && assumptions.decide(&ConditionTerm::signed_less_equal(
+        && assumptions.decide(&OldConditionTerm::signed_less_equal(
             first.start.clone(),
             first.end.clone(),
         )) == Some(true)
-        && assumptions.decide(&ConditionTerm::signed_less_equal(
+        && assumptions.decide(&OldConditionTerm::signed_less_equal(
             second.start.clone(),
             second.end.clone(),
         )) == Some(true)
@@ -1436,10 +1436,10 @@ fn integer_fold_endpoint_terms_proven_equal(
 ) -> bool {
     left == right
         || assumptions
-            .exact_condition_value(&ConditionTerm::IntegerEqual(left.clone(), right.clone()))
+            .exact_condition_value(&OldConditionTerm::IntegerEqual(left.clone(), right.clone()))
             == Some(true)
         || assumptions
-            .exact_condition_value(&ConditionTerm::IntegerEqual(right.clone(), left.clone()))
+            .exact_condition_value(&OldConditionTerm::IntegerEqual(right.clone(), left.clone()))
             == Some(true)
         || integer_affine_forms_equal(left.as_ref(), right.as_ref())
 }
@@ -1566,7 +1566,7 @@ mod shared_antecedent_tests {
         truth: bool,
     ) -> Proposition {
         Proposition::condition_is(
-            ConditionTerm::integer_less_equal(
+            OldConditionTerm::integer_less_equal(
                 observed(format, root),
                 IntegerTerm::constant(endpoint.into()),
             ),
@@ -1644,15 +1644,15 @@ mod retained_cycle_tests {
 
     fn cycle(left: IntegerTerm, right: IntegerTerm, strict: bool, mirrored: bool) -> Proposition {
         let first = Proposition::condition_is(
-            ConditionTerm::integer_less_equal(left.clone(), right.clone()),
+            OldConditionTerm::integer_less_equal(left.clone(), right.clone()),
             true,
         );
         let second = if strict && mirrored {
-            Proposition::condition_is(ConditionTerm::integer_less_equal(left, right), false)
+            Proposition::condition_is(OldConditionTerm::integer_less_equal(left, right), false)
         } else if strict {
-            Proposition::condition_is(ConditionTerm::integer_less_than(right, left), true)
+            Proposition::condition_is(OldConditionTerm::integer_less_than(right, left), true)
         } else {
-            Proposition::condition_is(ConditionTerm::integer_less_equal(right, left), true)
+            Proposition::condition_is(OldConditionTerm::integer_less_equal(right, left), true)
         };
         Proposition::And(Box::new(first), Box::new(second))
     }
@@ -1792,7 +1792,7 @@ mod retained_fold_endpoint_tests {
                 left: Box::new(OldMachineTerm::Variable(variable)),
                 right: Box::new(OldMachineTerm::Variable(variable)),
             };
-            let source = ConditionTerm::machine_compare(
+            let source = OldConditionTerm::machine_compare(
                 format,
                 CompareRelation::Equal,
                 native(Variable(999102)),

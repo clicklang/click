@@ -315,7 +315,7 @@ pub(super) fn incompatible_pointer_argument(
             if pointee.may_designate(&object) || pointer.is_null() {
                 return None;
             }
-            if assumptions.decide(&ConditionTerm::address_equal(
+            if assumptions.decide(&OldConditionTerm::address_equal(
                 pointer.address().clone(),
                 Address::null(),
             )) == Some(true)
@@ -357,7 +357,7 @@ pub(super) fn incompatible_pointer_return(
     if pointee.may_designate(&object) || pointer.is_null() {
         return None;
     }
-    if assumptions.decide(&ConditionTerm::address_equal(
+    if assumptions.decide(&OldConditionTerm::address_equal(
         pointer.address().clone(),
         Address::null(),
     )) == Some(true)
@@ -503,7 +503,7 @@ pub(crate) fn symbolic_call_result(program_type: ProgramType, variable: Variable
         // A `bool` is a binder of the kernel sort `Bool` (Stage 5), carried
         // as its cast (rule C1), so the binder is the parameter's own name.
         ProgramType::Bool => {
-            ProgramValue::of_bool(crate::kernel::ConditionTerm::Variable(variable))
+            ProgramValue::of_bool(crate::kernel::OldConditionTerm::Variable(variable))
         }
         ProgramType::VoidPointer | ProgramType::VoidPointerPointer | ProgramType::Pointer => {
             ProgramValue::typed_pointer(Address::symbolic(variable), program_type)
@@ -1525,7 +1525,7 @@ mod pointer_argument_tests {
         // Changed-type coercion uses the existing native conversion result.
         let converted = ProgramValue::Int32(OldMachineTerm::bool_cast(
             MachineIntegerType::Int32,
-            ConditionTerm::Constant(true),
+            OldConditionTerm::Constant(true),
         ));
         assert_eq!(
             source

@@ -144,7 +144,7 @@ fn machine_comparison_alpha_keys_retain_shared_dags() {
             Variable(98123),
             Sort::ProgramInteger(format),
             Proposition::condition_is(
-                ConditionTerm::IntegerLessThan(
+                OldConditionTerm::IntegerLessThan(
                     IntegerTerm::Machine(operand.clone()).into(),
                     IntegerTerm::Constant(BigInt::from(100)).into(),
                 ),

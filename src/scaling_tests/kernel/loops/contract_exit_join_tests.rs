@@ -350,7 +350,7 @@ fn exit_cache_reconciliation_reuses_the_joins_exit_contexts() {
         let mut facts = (0..count)
             .map(|k| {
                 ExecutionPureFact::new(Proposition::condition_is(
-                    ConditionTerm::signed_less_than(
+                    OldConditionTerm::signed_less_than(
                         OldMachineTerm::Variable(Variable(926_000 + k as u64)),
                         OldMachineTerm::constant(k as u32),
                     ),

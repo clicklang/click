@@ -5,8 +5,8 @@ impl TermRewrite<'_> {
     pub(super) fn shared_boolean_scalar_leaf(&mut self, root: &KernelTerm) -> Option<KernelTerm> {
         if let KernelTermNode::BoolLiteral(_) | KernelTermNode::Variable(_) = root.node() {
             let native = match root.node() {
-                KernelTermNode::BoolLiteral(value) => ConditionTerm::Constant(*value),
-                KernelTermNode::Variable(variable) => ConditionTerm::Variable(*variable),
+                KernelTermNode::BoolLiteral(value) => OldConditionTerm::Constant(*value),
+                KernelTermNode::Variable(variable) => OldConditionTerm::Variable(*variable),
                 _ => unreachable!(),
             };
             let result = self.condition(&native);
@@ -114,24 +114,24 @@ impl TermRewrite<'_> {
     }
 }
 
-fn scalar_boolean_profile(root: &ConditionTerm) -> bool {
+fn scalar_boolean_profile(root: &OldConditionTerm) -> bool {
     let mut pending = vec![root];
     while let Some(value) = pending.pop() {
         match value {
-            ConditionTerm::Constant(_)
-            | ConditionTerm::Variable(_)
-            | ConditionTerm::Compare { .. }
-            | ConditionTerm::Overflows { .. }
-            | ConditionTerm::IntegerLessThan(..)
-            | ConditionTerm::IntegerLessEqual(..)
-            | ConditionTerm::IntegerGreaterThan(..)
-            | ConditionTerm::IntegerGreaterEqual(..)
-            | ConditionTerm::IntegerEqual(..)
-            | ConditionTerm::IntegerNotEqual(..) => {}
-            ConditionTerm::BoolEqual(left, right) => {
+            OldConditionTerm::Constant(_)
+            | OldConditionTerm::Variable(_)
+            | OldConditionTerm::Compare { .. }
+            | OldConditionTerm::Overflows { .. }
+            | OldConditionTerm::IntegerLessThan(..)
+            | OldConditionTerm::IntegerLessEqual(..)
+            | OldConditionTerm::IntegerGreaterThan(..)
+            | OldConditionTerm::IntegerGreaterEqual(..)
+            | OldConditionTerm::IntegerEqual(..)
+            | OldConditionTerm::IntegerNotEqual(..) => {}
+            OldConditionTerm::BoolEqual(left, right) => {
                 pending.extend([left.as_ref(), right.as_ref()])
             }
-            ConditionTerm::BoolIf {
+            OldConditionTerm::BoolIf {
                 condition,
                 then_condition,
                 else_condition,
@@ -153,7 +153,7 @@ mod tests {
     fn assert_output(
         root: &KernelTerm,
         result: &KernelTerm,
-        expected: &ConditionTerm,
+        expected: &OldConditionTerm,
         exports: usize,
     ) {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
@@ -188,7 +188,7 @@ mod tests {
                 CompareRelation::GreaterThan,
                 CompareRelation::GreaterEqual,
             ] {
-                inputs.push(ConditionTerm::Compare {
+                inputs.push(OldConditionTerm::Compare {
                     format,
                     relation,
                     left: Box::new(source.clone()),
@@ -200,7 +200,7 @@ mod tests {
                 OverflowOperation::Subtract,
                 OverflowOperation::Multiply,
             ] {
-                inputs.push(ConditionTerm::Overflows {
+                inputs.push(OldConditionTerm::Overflows {
                     format,
                     op,
                     left: Box::new(source.clone()),
@@ -261,22 +261,22 @@ mod tests {
             let right = IntegerTerm::constant_i64(3).into();
             let input = match operator {
                 IntegerComparisonOperator::LessThan => {
-                    ConditionTerm::IntegerLessThan(left.clone(), right)
+                    OldConditionTerm::IntegerLessThan(left.clone(), right)
                 }
                 IntegerComparisonOperator::LessEqual => {
-                    ConditionTerm::IntegerLessEqual(left.clone(), right)
+                    OldConditionTerm::IntegerLessEqual(left.clone(), right)
                 }
                 IntegerComparisonOperator::GreaterThan => {
-                    ConditionTerm::IntegerGreaterThan(left.clone(), right)
+                    OldConditionTerm::IntegerGreaterThan(left.clone(), right)
                 }
                 IntegerComparisonOperator::GreaterEqual => {
-                    ConditionTerm::IntegerGreaterEqual(left.clone(), right)
+                    OldConditionTerm::IntegerGreaterEqual(left.clone(), right)
                 }
                 IntegerComparisonOperator::Equal => {
-                    ConditionTerm::IntegerEqual(left.clone(), right)
+                    OldConditionTerm::IntegerEqual(left.clone(), right)
                 }
                 IntegerComparisonOperator::NotEqual => {
-                    ConditionTerm::IntegerNotEqual(left.clone(), right)
+                    OldConditionTerm::IntegerNotEqual(left.clone(), right)
                 }
             };
             let root = KernelTermImport::for_exact_field_inputs().condition(&input);
@@ -321,7 +321,7 @@ mod tests {
             let zero = OldMachineTerm::machine_constant(
                 MachineIntegerConstant::from_signed(format.format(), 0).unwrap(),
             );
-            let predicate = ConditionTerm::Compare {
+            let predicate = OldConditionTerm::Compare {
                 format,
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::Variable(from)),
@@ -378,7 +378,7 @@ mod tests {
         let large = IntegerTerm::Constant(num_bigint::BigInt::from(1) << 1024usize);
         let predicates = [
             (
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(word.clone()),
@@ -387,7 +387,7 @@ mod tests {
                 true,
             ),
             (
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
                     left: Box::new(word.clone()),
@@ -396,7 +396,7 @@ mod tests {
                 false,
             ),
             (
-                ConditionTerm::Overflows {
+                OldConditionTerm::Overflows {
                     format: MachineIntegerType::Int32,
                     op: OverflowOperation::Add,
                     left: Box::new(word),
@@ -405,7 +405,7 @@ mod tests {
                 false,
             ),
             (
-                ConditionTerm::IntegerEqual(
+                OldConditionTerm::IntegerEqual(
                     IntegerTerm::Variable(integer_from).into(),
                     IntegerTerm::constant_i64(0).into(),
                 ),
@@ -421,7 +421,7 @@ mod tests {
             let root = KernelTermImport::for_exact_field_inputs().integer(&input.clone().into());
             let replacement = if matches!(
                 predicate,
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int64,
                     ..
                 }
@@ -468,7 +468,7 @@ mod tests {
     #[test]
     fn scalar_predicates_keep_contextual_lookup_and_other_leaf_boundaries_explicit() {
         let _session = VerificationSession::enter();
-        let input = ConditionTerm::Compare {
+        let input = OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(OldMachineTerm::Variable(Variable(998180))),
@@ -480,8 +480,8 @@ mod tests {
         assert!(rewrite.shared_boolean_operand(&root).is_none());
         assert!(rewrite.refusal().is_none());
         for unsupported in [
-            ConditionTerm::bool_application("unsupported_scalar_application", Vec::new()),
-            ConditionTerm::AddressEqual(
+            OldConditionTerm::bool_application("unsupported_scalar_application", Vec::new()),
+            OldConditionTerm::AddressEqual(
                 Box::new(Address::symbolic(Variable(998182))),
                 Box::new(Address::null()),
             ),

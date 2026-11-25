@@ -308,11 +308,11 @@ enum StoredCondition {
     Shared(KernelTerm),
 }
 struct NativeConditionInput {
-    value: ConditionTerm,
+    value: OldConditionTerm,
     connective_key: std::sync::OnceLock<ConditionStorageKey>,
 }
-impl From<ConditionTerm> for StoredConditionTerm {
-    fn from(value: ConditionTerm) -> Self {
+impl From<OldConditionTerm> for StoredConditionTerm {
+    fn from(value: OldConditionTerm) -> Self {
         Self(StoredCondition::Input(Arc::new(NativeConditionInput {
             value,
             connective_key: std::sync::OnceLock::new(),
@@ -330,9 +330,9 @@ impl StoredConditionTerm {
         (root.ty() == &KernelType::Bool).then(|| Self(StoredCondition::Shared(root)))
     }
     /// Already-evaluated scalar conditions produced by the loop guard checker.
-    pub(crate) fn from_minted(value: ConditionTerm) -> Self {
+    pub(crate) fn from_minted(value: OldConditionTerm) -> Self {
         let root = KernelTermImport::for_exact_field_inputs().condition(&value);
-        root.retain_native_condition_output(value);
+        root.retain_old_condition_output(value);
         Self::from_root(root).expect("logical condition")
     }
     pub(crate) fn root(&self) -> Option<&KernelTerm> {
@@ -341,19 +341,19 @@ impl StoredConditionTerm {
             StoredCondition::Shared(root) => Some(root),
         }
     }
-    pub(crate) fn old_form(&self) -> &ConditionTerm {
+    pub(crate) fn old_form(&self) -> &OldConditionTerm {
         match &self.0 {
             StoredCondition::Input(input) => &input.value,
             StoredCondition::Shared(root) => {
                 if let KernelTermNode::BoolLiteral(value) = root.node() {
                     return if *value {
-                        &ConditionTerm::Constant(true)
+                        &OldConditionTerm::Constant(true)
                     } else {
-                        &ConditionTerm::Constant(false)
+                        &OldConditionTerm::Constant(false)
                     };
                 }
                 let ProgramValue::Bool(OldMachineTerm::BoolCast { value, .. }) =
-                    root.boolean_native().expect("logical Bool output")
+                    root.old_boolean_value().expect("logical Bool output")
                 else {
                     unreachable!("condition output");
                 };
@@ -565,7 +565,7 @@ impl StoredConditionTerm {
             StoredCondition::Input(input)
                 if matches!(
                     input.value,
-                    ConditionTerm::BoolIf { .. } | ConditionTerm::BoolEqual(..)
+                    OldConditionTerm::BoolIf { .. } | OldConditionTerm::BoolEqual(..)
                 ) =>
             {
                 Some(
@@ -598,7 +598,7 @@ impl Ord for StoredConditionTerm {
         }
         match (self.connective_key(), other.connective_key()) {
             (Some(left), Some(right)) => left.cmp(&right),
-            // BoolIf and BoolEqual follow all atomic conditions in ConditionTerm.
+            // BoolIf and BoolEqual follow all atomic conditions in OldConditionTerm.
             (Some(_), None) => Ordering::Greater,
             (None, Some(_)) => Ordering::Less,
             (None, None) => self.old_form().cmp(other.old_form()),
@@ -760,23 +760,23 @@ mod protocol_value_tests {
             }
         }
         let conditions = [
-            ConditionTerm::Constant(false),
-            ConditionTerm::Constant(true),
-            ConditionTerm::Variable(Variable(10993642)),
-            ConditionTerm::Compare {
+            OldConditionTerm::Constant(false),
+            OldConditionTerm::Constant(true),
+            OldConditionTerm::Variable(Variable(10993642)),
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::Variable(Variable(10993643))),
                 right: Box::new(OldMachineTerm::constant(1)),
             },
-            ConditionTerm::BoolEqual(
-                Box::new(ConditionTerm::Compare {
+            OldConditionTerm::BoolEqual(
+                Box::new(OldConditionTerm::Compare {
                     format: MachineIntegerType::UInt32,
                     relation: CompareRelation::LessThan,
                     left: Box::new(OldMachineTerm::Variable(Variable(10993644))),
                     right: Box::new(OldMachineTerm::uint32_constant(1)),
                 }),
-                Box::new(ConditionTerm::Constant(false)),
+                Box::new(OldConditionTerm::Constant(false)),
             ),
         ];
         for value in &conditions {
@@ -859,10 +859,10 @@ mod protocol_value_tests {
     #[test]
     fn retained_condition_ordering_keeps_connectives_unboxed() {
         let _session = crate::kernel::VerificationSession::enter();
-        let input = |variable| ConditionTerm::BoolIf {
-            condition: Box::new(ConditionTerm::Variable(variable)),
-            then_condition: Box::new(ConditionTerm::Constant(true)),
-            else_condition: Box::new(ConditionTerm::Constant(false)),
+        let input = |variable| OldConditionTerm::BoolIf {
+            condition: Box::new(OldConditionTerm::Variable(variable)),
+            then_condition: Box::new(OldConditionTerm::Constant(true)),
+            else_condition: Box::new(OldConditionTerm::Constant(false)),
         };
         let values = [input(Variable(10993742)), input(Variable(10993743))];
         let roots = values
@@ -883,11 +883,11 @@ mod protocol_value_tests {
     fn minted_condition_native_views_reuse_the_produced_output_without_exports() {
         let _session = crate::kernel::VerificationSession::enter();
         let value = OldMachineTerm::if_then_else(
-            ConditionTerm::Variable(Variable(10993740)),
+            OldConditionTerm::Variable(Variable(10993740)),
             OldMachineTerm::Variable(Variable(10993741)),
             OldMachineTerm::constant(3),
         );
-        let native = ConditionTerm::Compare {
+        let native = OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
             left: Box::new(value),
@@ -908,10 +908,10 @@ mod protocol_value_tests {
     fn condition_proposition_storage_keeps_roots_and_native_fact_identity() {
         let _session = crate::kernel::VerificationSession::enter();
         for condition in [
-            ConditionTerm::Constant(false),
-            ConditionTerm::Constant(true),
-            ConditionTerm::Variable(Variable(10993711)),
-            ConditionTerm::Compare {
+            OldConditionTerm::Constant(false),
+            OldConditionTerm::Constant(true),
+            OldConditionTerm::Variable(Variable(10993711)),
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(OldMachineTerm::Variable(Variable(10993712))),
@@ -934,7 +934,7 @@ mod protocol_value_tests {
                 assert_eq!(shared.cmp(&native), std::cmp::Ordering::Equal);
                 assert_eq!(hash(&shared), hash(&native));
                 assert_eq!(format!("{shared:?}"), format!("{native:?}"));
-                assert_eq!(shared.condition_native(), native.condition_native());
+                assert_eq!(shared.old_condition(), native.old_condition());
             }
         }
     }
@@ -943,7 +943,7 @@ mod protocol_value_tests {
     fn condition_proposition_visitors_keep_shared_substitution_and_native_scope() {
         let _session = crate::kernel::VerificationSession::enter();
         let variable = Variable(10993713);
-        let condition = ConditionTerm::Compare {
+        let condition = OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(OldMachineTerm::Variable(variable)),

@@ -277,7 +277,7 @@ fn pure_pointer_capture_cache_does_not_hide_a_free_occurrence_after_a_fold() {
         body: Box::new(observed.clone()),
     };
     let proposition = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(fold),

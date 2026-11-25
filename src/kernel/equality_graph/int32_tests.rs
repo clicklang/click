@@ -6,8 +6,8 @@ fn var(id: u64) -> OldMachineTerm {
     OldMachineTerm::Variable(Variable(id))
 }
 
-fn eq(left: &OldMachineTerm, right: &OldMachineTerm) -> ConditionTerm {
-    ConditionTerm::equal(left.clone(), right.clone())
+fn eq(left: &OldMachineTerm, right: &OldMachineTerm) -> OldConditionTerm {
+    OldConditionTerm::equal(left.clone(), right.clone())
 }
 
 fn unsigned_composition(value: OldMachineTerm) -> OldMachineTerm {
@@ -156,8 +156,8 @@ fn shallow_scalar_decision_uses_graph_congruence_and_keeps_branch_scope() {
 fn fact_transport_uses_graph_int32_congruence_without_the_legacy_index() {
     let (a, b, limit) = (var(1), var(2), var(3));
     let sum = |value| OldMachineTerm::add(value, OldMachineTerm::constant(1));
-    let source = ConditionTerm::signed_less_than(sum(a.clone()), limit.clone());
-    let target = ConditionTerm::signed_less_than(sum(b.clone()), limit);
+    let source = OldConditionTerm::signed_less_than(sum(a.clone()), limit.clone());
+    let target = OldConditionTerm::signed_less_than(sum(b.clone()), limit);
     let premise = eq(&a, &b);
     let parent = PureFactContext::new().assume_condition(source.clone(), true);
     let branch = parent.clone().assume_condition(premise.clone(), true);
@@ -193,9 +193,9 @@ fn fact_transport_uses_registered_load_congruence_only_in_one_state() {
     let left = load(&before, a.clone());
     let right = load(&before, b.clone());
     let later = load(&after, b.clone());
-    let fact = ConditionTerm::signed_less_than(left, OldMachineTerm::constant(20));
-    let target = ConditionTerm::signed_less_than(right, OldMachineTerm::constant(20));
-    let later_target = ConditionTerm::signed_less_than(later, OldMachineTerm::constant(20));
+    let fact = OldConditionTerm::signed_less_than(left, OldMachineTerm::constant(20));
+    let target = OldConditionTerm::signed_less_than(right, OldMachineTerm::constant(20));
+    let later_target = OldConditionTerm::signed_less_than(later, OldMachineTerm::constant(20));
     let context = PureFactContext::new().assume_condition(eq(&a, &b), true);
     assert!(context.condition_matches(&fact, &target));
     assert!(!context.condition_matches(&fact, &later_target));
@@ -572,11 +572,11 @@ fn int32_restriction_and_contradiction_preserve_support() {
     let ab = eq(&a, &b);
     let bc = eq(&b, &c);
     let offset = |i| AddressOffset::Variable(Variable(i));
-    let pq = ConditionTerm::address_equal(
+    let pq = OldConditionTerm::address_equal(
         Address::symbolic(Variable(20)),
         Address::symbolic(Variable(21)),
     );
-    let xy = ConditionTerm::address_offset_equal(offset(30), offset(31));
+    let xy = OldConditionTerm::address_offset_equal(offset(30), offset(31));
     let context = PureFactContext::new()
         .assume_condition(ab.clone(), true)
         .assume_condition(bc.clone(), true)
@@ -649,7 +649,7 @@ fn int32_load_identity_keeps_states_separate() {
 fn offset_premises_support_scalar_graph_edges() {
     let (a, b, c) = (var(70), var(71), var(72));
     let offset_eq = |left: OldMachineTerm, right: OldMachineTerm| {
-        ConditionTerm::address_offset_equal(
+        OldConditionTerm::address_offset_equal(
             AddressOffset::scale_int32(left, 4),
             AddressOffset::scale_int32(right, 4),
         )
@@ -668,7 +668,7 @@ fn offset_premises_support_scalar_graph_edges() {
     let mut context = PureFactContext::new();
     for width in [0, 1, 8] {
         context = context.assume_condition(
-            ConditionTerm::address_offset_equal(
+            OldConditionTerm::address_offset_equal(
                 AddressOffset::scaled_int32_node(a.clone(), width),
                 AddressOffset::scaled_int32_node(b.clone(), width),
             ),
@@ -690,7 +690,7 @@ mod scaling_tests {
 fn parameter_shortcuts_notice_byte_coordinates_inside_an_alias_expression() {
     let _session = VerificationSession::enter();
     let offset = |i: u64| AddressOffset::Variable(Variable(995_000 + i));
-    let input = ConditionTerm::AddressOffsetEqual(
+    let input = OldConditionTerm::AddressOffsetEqual(
         Box::new(AddressOffset::Add(Box::new(offset(0)), Box::new(offset(1)))),
         Box::new(offset(2)),
     );
@@ -720,7 +720,7 @@ fn complete_pointer_equalities_supply_only_their_true_numeric_consequences() {
         )
     };
     let (left, right) = (pointer(941_001), pointer(941_002));
-    let equality = ConditionTerm::pointer_equal(left.clone(), right.clone());
+    let equality = OldConditionTerm::pointer_equal(left.clone(), right.clone());
     assert!(equality.pointer_offset_sides().is_none());
     let context = PureFactContext::new().assume_condition(equality.clone(), true);
     assert!(
@@ -762,7 +762,7 @@ fn recorded_shared_index_members_keep_source_order_without_exporting() {
     };
     let left = shared(&x);
     let right = shared(&y);
-    let equality = ConditionTerm::AddressOffsetEqual(
+    let equality = OldConditionTerm::AddressOffsetEqual(
         Box::new(AddressOffset::Int32Scaled {
             value: left.clone(),
             byte_width: 4,

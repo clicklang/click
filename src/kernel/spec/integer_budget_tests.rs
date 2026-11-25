@@ -154,7 +154,7 @@ fn integer_existential_scopes_definedness_with_its_witness() {
         contains(
             body,
             &Proposition::condition_is(
-                ConditionTerm::IntegerEqual(
+                OldConditionTerm::IntegerEqual(
                     IntegerTerm::var(**var).into(),
                     IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                         MachineIntegerType::Int32,
@@ -209,7 +209,7 @@ fn from_machine_keeps_signed_and_unsigned_values_distinct() {
 fn bitvector_substitution_reaches_machine_integer_proposition() {
     let variable = Variable(47);
     let proposition = Proposition::condition_is(
-        ConditionTerm::integer_equal(
+        OldConditionTerm::integer_equal(
             IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int32,
                 OldMachineTerm::Variable(variable),
@@ -230,7 +230,7 @@ fn bitvector_substitution_reaches_machine_integer_proposition() {
     // too, by the Integer equality's own smart constructor.
     assert_eq!(
         substituted,
-        Proposition::condition_is(ConditionTerm::Constant(true), true)
+        Proposition::condition_is(OldConditionTerm::Constant(true), true)
     );
 
     let expression = SpecIntegerExpression::FromMachine(Box::new(SpecExpression::Value(
@@ -457,7 +457,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
         crate::kernel::eval::registered_load_for_variable(&load)
             .expect("the load variable must retain its exact descriptor");
     let defining = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(OldMachineTerm::Variable(load)),
@@ -488,7 +488,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
     assert_eq!(retained_guard, guarded);
 
     let tampered_pointer = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(OldMachineTerm::Variable(load)),
@@ -513,7 +513,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
     let tampered_memory =
         crate::kernel::intern_memory(SymbolicMemory::new().with_block("other", 16));
     let tampered_state = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(OldMachineTerm::Variable(load)),
@@ -539,7 +539,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
 
     let unknown = Variable((1u64 << 40) + 123_456_789);
     let unknown_definition = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(OldMachineTerm::Variable(unknown)),
@@ -596,7 +596,7 @@ fn defined_memory_load_retains_typed_validity_after_dropping_registry_metadata()
         }
     ));
     assert!(!matches!(
-        &paths[0].proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(true), _)))));
+        &paths[0].proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Constant(true), _)))));
 }
 
 #[test]
@@ -634,7 +634,7 @@ fn defined_memory_load_retains_typed_validity_for_an_already_known_cell() {
         }
     ));
     assert!(!matches!(
-        &paths[0].proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(true), _)))));
+        &paths[0].proposition, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Constant(true), _)))));
 }
 
 #[test]
@@ -672,7 +672,7 @@ fn integer_existential_branch_filters_exact_load_definitions_only() {
             .expect("the exact load must have a registry descriptor");
     let defining = |memory: SharedMemory, pointer: Address, variable: Variable| {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::Variable(variable)),
@@ -692,7 +692,7 @@ fn integer_existential_branch_filters_exact_load_definitions_only() {
         bytes: (OldMachineTerm::constant(4)).into(),
         wide: false,
     };
-    let marker = Proposition::condition_is(ConditionTerm::Constant(true), true);
+    let marker = Proposition::condition_is(OldConditionTerm::Constant(true), true);
     let exact_path = SpecPropositionPath {
         proposition: marker.clone(),
         facts: vec![ExecutionPureFact::certified(exact.clone())].into(),
@@ -1079,14 +1079,14 @@ fn integer_to_machine_symbolic_values_keep_carrier_and_range_obligations() {
         assert!(paths[0].obligations.iter().any(|obligation| {
             *obligation.proposition()
                 == Proposition::condition_is(
-                    ConditionTerm::integer_greater_equal(value.clone(), lower.clone()),
+                    OldConditionTerm::integer_greater_equal(value.clone(), lower.clone()),
                     true,
                 )
         }));
         assert!(paths[0].obligations.iter().any(|obligation| {
             *obligation.proposition()
                 == Proposition::condition_is(
-                    ConditionTerm::integer_less_equal(value.clone(), upper.clone()),
+                    OldConditionTerm::integer_less_equal(value.clone(), upper.clone()),
                     true,
                 )
         }));

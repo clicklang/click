@@ -133,8 +133,8 @@ fn is_reflexive_pointer_equality(mut proposition: &Proposition) -> bool {
         proposition = inner;
         positive = !positive;
     }
-    matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(_, value) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::AddressEqual(left, right), _)) if (*value == positive && left == right)))
-        || matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(_, value) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::PointerEqual(left, right), _)) if (*value == positive && left == right)))
+    matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(_, value) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::AddressEqual(left, right), _)) if (*value == positive && left == right)))
+        || matches!(&proposition, condition_source_0 @ Proposition::ConditionIs(_, value) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::PointerEqual(left, right), _)) if (*value == positive && left == right)))
 }
 
 fn collect_signed_surface_terms<'a>(expression: &'a SyntaxTerm, terms: &mut Vec<&'a SyntaxTerm>) {
@@ -1336,7 +1336,7 @@ fn operation_identities(observations: Vec<crate::kernel::IntegerTerm>) -> Vec<Op
             {
                 let value = value.as_ref().clone();
                 let identity = Proposition::condition_is(
-                    ConditionTerm::integer_equal(observed.clone(), value.clone()),
+                    OldConditionTerm::integer_equal(observed.clone(), value.clone()),
                     true,
                 );
                 identities.push((observed, value, identity));
@@ -1383,7 +1383,7 @@ fn operation_identities(observations: Vec<crate::kernel::IntegerTerm>) -> Vec<Op
             }
         }
         let identity = Proposition::condition_is(
-            ConditionTerm::integer_equal(observed.clone(), value.clone()),
+            OldConditionTerm::integer_equal(observed.clone(), value.clone()),
             true,
         );
         identities.push((observed, value, identity));
@@ -2802,22 +2802,22 @@ impl<'a> Proof<'a> {
             return None;
         };
         let (left, operator, right) = match (condition.old_form(), truth) {
-            (ConditionTerm::IntegerLessEqual(left, right), true) => {
+            (OldConditionTerm::IntegerLessEqual(left, right), true) => {
                 (left, ComparisonOperator::LessEqual, right)
             }
-            (ConditionTerm::IntegerLessThan(left, right), true) => {
+            (OldConditionTerm::IntegerLessThan(left, right), true) => {
                 (left, ComparisonOperator::LessThan, right)
             }
-            (ConditionTerm::IntegerGreaterEqual(left, right), true) => {
+            (OldConditionTerm::IntegerGreaterEqual(left, right), true) => {
                 (left, ComparisonOperator::GreaterEqual, right)
             }
-            (ConditionTerm::IntegerGreaterThan(left, right), true) => {
+            (OldConditionTerm::IntegerGreaterThan(left, right), true) => {
                 (left, ComparisonOperator::GreaterThan, right)
             }
-            (ConditionTerm::IntegerEqual(left, right), true) => {
+            (OldConditionTerm::IntegerEqual(left, right), true) => {
                 (left, ComparisonOperator::Equal, right)
             }
-            (ConditionTerm::IntegerEqual(left, right), false) => {
+            (OldConditionTerm::IntegerEqual(left, right), false) => {
                 (left, ComparisonOperator::NotEqual, right)
             }
             _ => return None,
@@ -2932,8 +2932,8 @@ impl<'a> Proof<'a> {
                     .into_iter()
                     .next()
                     .unwrap_or(lowered);
-            let Some((ConditionTerm::IntegerLessEqual(value, _), true)) =
-                lowered.condition_native()
+            let Some((OldConditionTerm::IntegerLessEqual(value, _), true)) =
+                lowered.old_condition()
             else {
                 continue;
             };
@@ -3058,8 +3058,8 @@ impl<'a> Proof<'a> {
                 }
                 _ => continue,
             };
-            let Some((crate::kernel::ConditionTerm::IntegerLessEqual(left, right), true)) =
-                bound.condition_native()
+            let Some((crate::kernel::OldConditionTerm::IntegerLessEqual(left, right), true)) =
+                bound.old_condition()
             else {
                 return None;
             };
@@ -3867,14 +3867,14 @@ fn quantified_external_range_goal(goal: &Proposition) -> bool {
             }
             condition_source_0 @ Proposition::ConditionIs(_, _)
                 if let Some((
-                    ConditionTerm::Overflows {
+                    OldConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
                         left: _,
                         right: _,
                     },
                     _,
-                )) = condition_source_0.condition_native() =>
+                )) = condition_source_0.old_condition() =>
             {
                 return false;
             }
@@ -4024,8 +4024,8 @@ fn asserted_condition_proposition(condition: &ProgramExpression) -> SyntaxPropos
 fn literal_requirement_spelling(
     requirement: &UnresolvedRequirement,
 ) -> Option<RequirementSpelling> {
-    let Some((ConditionTerm::Constant(value), polarity)) =
-        requirement.proposition.condition_native()
+    let Some((OldConditionTerm::Constant(value), polarity)) =
+        requirement.proposition.old_condition()
     else {
         return None;
     };
@@ -4187,9 +4187,9 @@ fn same_canonical_word_comparison(left: &Proposition, right: &Proposition) -> bo
 // Both operands must name the same canonical addresses at the same polarity.
 fn same_reversed_address_comparison(left: &Proposition, right: &Proposition) -> bool {
     let (
-        Some((ConditionTerm::AddressEqual(left_a, left_b), left_value)),
-        Some((ConditionTerm::AddressEqual(right_a, right_b), right_value)),
-    ) = (left.condition_native(), right.condition_native())
+        Some((OldConditionTerm::AddressEqual(left_a, left_b), left_value)),
+        Some((OldConditionTerm::AddressEqual(right_a, right_b), right_value)),
+    ) = (left.old_condition(), right.old_condition())
     else {
         return false;
     };
@@ -4280,9 +4280,10 @@ use crate::kernel::machine_integer::comparison::closed_condition_value;
 fn literal_requirement_matching_respects_both_truth_and_polarity() {
     for value in [false, true] {
         for polarity in [false, true] {
-            let requirement = Proposition::condition_is(ConditionTerm::Constant(value), polarity);
+            let requirement =
+                Proposition::condition_is(OldConditionTerm::Constant(value), polarity);
             for written in [false, true] {
-                let spelling = Proposition::condition_is(ConditionTerm::Constant(written), true);
+                let spelling = Proposition::condition_is(OldConditionTerm::Constant(written), true);
                 assert_eq!(
                     propositions_match_after_canonical_loads(&spelling, &requirement),
                     written == (value == polarity),
@@ -5245,7 +5246,7 @@ fn mirrored_order_goal(goal: &Proposition) -> Option<Proposition> {
         return None;
     };
     let mirrored = match condition.old_form() {
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format,
             relation,
             left,
@@ -5258,24 +5259,24 @@ fn mirrored_order_goal(goal: &Proposition) -> Option<Proposition> {
                 CompareRelation::GreaterEqual => CompareRelation::LessEqual,
                 CompareRelation::Equal => return None,
             };
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: *format,
                 relation,
                 left: right.clone(),
                 right: left.clone(),
             }
         }
-        ConditionTerm::IntegerLessThan(left, right) => {
-            ConditionTerm::IntegerGreaterThan(right.clone(), left.clone())
+        OldConditionTerm::IntegerLessThan(left, right) => {
+            OldConditionTerm::IntegerGreaterThan(right.clone(), left.clone())
         }
-        ConditionTerm::IntegerLessEqual(left, right) => {
-            ConditionTerm::IntegerGreaterEqual(right.clone(), left.clone())
+        OldConditionTerm::IntegerLessEqual(left, right) => {
+            OldConditionTerm::IntegerGreaterEqual(right.clone(), left.clone())
         }
-        ConditionTerm::IntegerGreaterThan(left, right) => {
-            ConditionTerm::IntegerLessThan(right.clone(), left.clone())
+        OldConditionTerm::IntegerGreaterThan(left, right) => {
+            OldConditionTerm::IntegerLessThan(right.clone(), left.clone())
         }
-        ConditionTerm::IntegerGreaterEqual(left, right) => {
-            ConditionTerm::IntegerLessEqual(right.clone(), left.clone())
+        OldConditionTerm::IntegerGreaterEqual(left, right) => {
+            OldConditionTerm::IntegerLessEqual(right.clone(), left.clone())
         }
         _ => return None,
     };
@@ -5287,7 +5288,7 @@ fn swapped_bitvector_equality(fact: &Proposition) -> Option<Proposition> {
     // A 32-bit equality swaps at `int32` (rule K6); an 8- or 16-bit one at
     // its own format.
     let Some((
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format:
                 format @ (MachineIntegerType::Int32
                 | MachineIntegerType::UInt32
@@ -5300,13 +5301,13 @@ fn swapped_bitvector_equality(fact: &Proposition) -> Option<Proposition> {
             right,
         },
         value,
-    )) = fact.condition_native()
+    )) = fact.old_condition()
     else {
         return None;
     };
     Some(Proposition::condition_is(
-        ConditionTerm::Compare {
-            format: ConditionTerm::fact_format(*format, CompareRelation::Equal),
+        OldConditionTerm::Compare {
+            format: OldConditionTerm::fact_format(*format, CompareRelation::Equal),
             relation: CompareRelation::Equal,
             left: right.clone(),
             right: left.clone(),
@@ -5339,7 +5340,7 @@ mod synthesized_literal_tests {
     #[test]
     fn native_comparison_observation_preserves_synthesized_integer_alias() {
         let kernel = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left: Box::new(OldMachineTerm::Variable(Variable(991984))),
@@ -5382,7 +5383,7 @@ mod synthesized_literal_tests {
             statement_safety: false,
             surface: None,
         };
-        let less_equal = |left, right| ConditionTerm::Compare {
+        let less_equal = |left, right| OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
             left: Box::new(left),
@@ -5496,7 +5497,7 @@ mod synthesized_literal_tests {
             &retained(R::LessThan, &zero, &sum)
         ));
         let native = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: ty,
                 relation: R::Equal,
                 left: Box::new(sum.clone()),
@@ -5536,7 +5537,7 @@ mod synthesized_literal_tests {
         };
         let bound = |amount| {
             Proposition::condition_is(
-                ConditionTerm::integer_less_than(
+                OldConditionTerm::integer_less_than(
                     observe(OldMachineTerm::Variable(index)),
                     observe(OldMachineTerm::add_at(
                         MachineIntegerType::Int32,
@@ -5691,7 +5692,7 @@ fn unsigned_order_parts(
     proposition: &Proposition,
 ) -> Option<(UnsignedOrder, OldMachineTerm, OldMachineTerm)> {
     let Some((
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::UInt32,
             relation:
                 relation @ (crate::kernel::CompareRelation::LessThan
@@ -5702,7 +5703,7 @@ fn unsigned_order_parts(
             right,
         },
         true,
-    )) = proposition.condition_native()
+    )) = proposition.old_condition()
     else {
         return None;
     };
@@ -5752,14 +5753,14 @@ fn rewrite_equality_sides(equality: &Proposition) -> Option<(&OldMachineTerm, &O
     match equality {
         condition_source_0 @ Proposition::ConditionIs(_, true)
             if let Some((
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format,
                     relation: CompareRelation::Equal,
                     left,
                     right,
                 },
                 _,
-            )) = condition_source_0.condition_native()
+            )) = condition_source_0.old_condition()
                 && (format.format().bits() < 32
                     || matches!(
                         format,

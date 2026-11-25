@@ -507,7 +507,7 @@ mod producer_tests {
             accumulator: Variable(991132),
             item: Variable(991133),
             body: Box::new(OldMachineTerm::If {
-                condition: Box::new(ConditionTerm::Variable(Variable(guard))),
+                condition: Box::new(OldConditionTerm::Variable(Variable(guard))),
                 then_term: Box::new(OldMachineTerm::Variable(Variable(branch))),
                 else_term: Box::new(OldMachineTerm::Variable(Variable(991132))),
             }),

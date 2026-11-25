@@ -58,7 +58,7 @@ fn a_function_pointer_read_through_an_alias_requires_explicit_store_equation() {
     let query = Address::symbolic(Variable(992001));
     let read = function_read(&memory, &query);
     let empty = PureFactContext::new().assume_condition(
-        ConditionTerm::address_equal(slot.clone(), query.clone()),
+        OldConditionTerm::address_equal(slot.clone(), query.clone()),
         true,
     );
     assert!(
@@ -73,7 +73,7 @@ fn a_function_pointer_read_through_an_alias_requires_explicit_store_equation() {
     let before_alias = PureFactContext::new().assume_proposition(equation);
     assert!(!before_alias.pointers_known_equal(&read, &target));
     let after_alias = before_alias.assume_condition(
-        ConditionTerm::address_equal(slot.clone(), query.clone()),
+        OldConditionTerm::address_equal(slot.clone(), query.clone()),
         true,
     );
     assert!(after_alias.pointers_known_equal(&read, &target));

@@ -108,13 +108,19 @@ fn reassociated_signed_add_domain_requires_each_guard_and_scales() {
     let b = OldMachineTerm::Variable(Variable(960_171));
     let c = OldMachineTerm::Variable(Variable(960_172));
     let goal = Proposition::condition_is(
-        ConditionTerm::signed_add_overflows(a.clone(), OldMachineTerm::add(b.clone(), c.clone())),
+        OldConditionTerm::signed_add_overflows(
+            a.clone(),
+            OldMachineTerm::add(b.clone(), c.clone()),
+        ),
         false,
     );
     let guards = [
-        ConditionTerm::signed_add_overflows(a.clone(), b.clone()),
-        ConditionTerm::signed_add_overflows(OldMachineTerm::add(a.clone(), b.clone()), c.clone()),
-        ConditionTerm::signed_add_overflows(b.clone(), c.clone()),
+        OldConditionTerm::signed_add_overflows(a.clone(), b.clone()),
+        OldConditionTerm::signed_add_overflows(
+            OldMachineTerm::add(a.clone(), b.clone()),
+            c.clone(),
+        ),
+        OldConditionTerm::signed_add_overflows(b.clone(), c.clone()),
     ];
     for missing in 0..3 {
         let mut facts = PureFactContext::new();
@@ -132,7 +138,7 @@ fn reassociated_signed_add_domain_requires_each_guard_and_scales() {
         let mut facts = PureFactContext::new();
         for index in 0..size {
             facts = facts.assume_condition(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     OldMachineTerm::Variable(Variable(961_000 + index)),
                     OldMachineTerm::constant(index as u32),
                 ),
@@ -159,7 +165,7 @@ fn reassociated_signed_add_domain_requires_each_guard_and_scales() {
     let b = OldMachineTerm::constant(i32::MAX as u32);
     let c = OldMachineTerm::constant(1);
     let goal = Proposition::condition_is(
-        ConditionTerm::signed_add_overflows(a, OldMachineTerm::add(b, c)),
+        OldConditionTerm::signed_add_overflows(a, OldMachineTerm::add(b, c)),
         false,
     );
     assert!(!crate::kernel::api::checked_int32_reassociated_add_domain(
@@ -201,7 +207,7 @@ fn shared_reassociated_add_domains_keep_operands_and_required_guards() {
         let mut base = PureFactContext::new();
         for index in 0..size {
             base = base.assume_condition(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     OldMachineTerm::Variable(Variable(973_000 + index)),
                     OldMachineTerm::constant(index as u32),
                 ),

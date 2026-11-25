@@ -33,7 +33,7 @@ impl KernelTermImport {
     }
 }
 impl KernelTerm {
-    pub(crate) fn boolean_call_native(&self) -> Option<&ConditionTerm> {
+    pub(crate) fn old_boolean_call(&self) -> Option<&OldConditionTerm> {
         if self.ty() != &KernelType::Bool {
             return None;
         }
@@ -60,7 +60,7 @@ impl KernelTerm {
                 .collect();
             OldMachineTerm::BoolCast {
                 to: MachineIntegerType::UInt8,
-                value: Box::new(ConditionTerm::BoolApplication(
+                value: Box::new(OldConditionTerm::BoolApplication(
                     SharedPureApplication::intern(name.clone(), arguments),
                 )),
             }
@@ -99,11 +99,14 @@ mod tests {
         for (root, application) in roots.iter().zip(&applications) {
             assert_eq!(
                 format!("{:?}", KernelTermExport::condition(root).unwrap()),
-                format!("{:?}", ConditionTerm::BoolApplication(application.clone()))
+                format!(
+                    "{:?}",
+                    OldConditionTerm::BoolApplication(application.clone())
+                )
             );
             assert!(std::ptr::eq(
-                root.boolean_call_native().unwrap(),
-                root.boolean_call_native().unwrap()
+                root.old_boolean_call().unwrap(),
+                root.old_boolean_call().unwrap()
             ));
         }
         let observed = roots.map(|guard| {

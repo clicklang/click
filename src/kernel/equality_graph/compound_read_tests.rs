@@ -81,7 +81,7 @@ fn compound_read_queries_require_explicit_equations() {
             &through_alias,
             &expected
         ));
-        let facts = facts.assume_condition(ConditionTerm::address_equal(slot, alias), true);
+        let facts = facts.assume_condition(OldConditionTerm::address_equal(slot, alias), true);
         assert!(equal(
             &facts.equality_graph,
             format,

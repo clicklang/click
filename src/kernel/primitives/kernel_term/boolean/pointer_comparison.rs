@@ -82,10 +82,10 @@ mod tests {
         for a in &values {
             for b in &values {
                 let shared = [SharedAddress::import(a), SharedAddress::import(b)];
-                let expected = ConditionTerm::address_equal(a.clone(), b.clone());
+                let expected = OldConditionTerm::address_equal(a.clone(), b.clone());
                 let actual = KernelTerm::address_equal(shared);
                 assert_eq!(KernelTermExport::condition(&actual).unwrap(), expected);
-                let raw = ConditionTerm::AddressEqual(Box::new(a.clone()), Box::new(b.clone()));
+                let raw = OldConditionTerm::AddressEqual(Box::new(a.clone()), Box::new(b.clone()));
                 let root = KernelTermImport::default().condition(&raw);
                 assert!(matches!(root.node(), KernelTermNode::AddressEqual { .. }));
                 assert_eq!(
@@ -111,12 +111,13 @@ mod tests {
             ),
         };
         for pointer in pointers() {
-            let source = ConditionTerm::AddressEqual(Box::new(pointer), Box::new(Address::null()));
+            let source =
+                OldConditionTerm::AddressEqual(Box::new(pointer), Box::new(Address::null()));
             for source in [
                 source.clone(),
-                ConditionTerm::BoolEqual(
+                OldConditionTerm::BoolEqual(
                     Box::new(source),
-                    Box::new(ConditionTerm::Constant(false)),
+                    Box::new(OldConditionTerm::Constant(false)),
                 ),
             ] {
                 let root = KernelTermImport::default().condition(&source);
@@ -176,7 +177,7 @@ mod tests {
                     ),
                 ))],
             ));
-            let source = ConditionTerm::AddressEqual(
+            let source = OldConditionTerm::AddressEqual(
                 Box::new(Address {
                     base: block,
                     offset: AddressOffset::Constant(0),
@@ -236,7 +237,7 @@ mod tests {
                 } else {
                     AddressOffset::scaled_int32_node(value, 4)
                 };
-                ConditionTerm::AddressEqual(
+                OldConditionTerm::AddressEqual(
                     Box::new(Address {
                         base: AddressBase::Symbolic(Variable(999030)),
                         offset,

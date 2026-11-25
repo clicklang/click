@@ -104,8 +104,8 @@ impl SpecValue {
                 (right, left)
             };
             let result = match condition {
-                ConditionTerm::Constant(true) => left,
-                ConditionTerm::Constant(false) => right,
+                OldConditionTerm::Constant(true) => left,
+                OldConditionTerm::Constant(false) => right,
                 _ if !preserve_equal_arms
                     && crate::kernel::shared_machine_syntax_equal(&left, &right) =>
                 {
@@ -336,12 +336,12 @@ impl SpecValue {
             let condition = match folded {
                 Some((left, right)) => {
                     let native = match format {
-                        KernelFloatType::Float32 => ConditionTerm::float32_compare(
+                        KernelFloatType::Float32 => OldConditionTerm::float32_compare(
                             OldMachineTerm::uint32_constant(left as u32),
                             OldMachineTerm::uint32_constant(right as u32),
                             op,
                         ),
-                        KernelFloatType::Float64 => ConditionTerm::float64_compare(
+                        KernelFloatType::Float64 => OldConditionTerm::float64_compare(
                             OldMachineTerm::uint64_constant(left),
                             OldMachineTerm::uint64_constant(right),
                             op,
@@ -375,7 +375,7 @@ impl SpecValue {
         {
             // Lowering is structural: `p == p` keeps its comparison.
             return Ok(Some(Proposition::condition_is(
-                ConditionTerm::logical_pointer_equal(a.clone(), b.clone()),
+                OldConditionTerm::logical_pointer_equal(a.clone(), b.clone()),
                 held,
             )));
         }
@@ -387,7 +387,7 @@ impl SpecValue {
         // format, such as `address(p) + 3u64 == address(p) + 3u64`, keep
         // the comparison; checking decides it.
         if let Some(Proposition::ConditionIs(condition, _)) = &proposition
-            && matches!(condition.old_form(), ConditionTerm::Constant(_))
+            && matches!(condition.old_form(), OldConditionTerm::Constant(_))
             && let Some(retained) = retained_word_comparison(&left, op, &right)
         {
             return Ok(Some(retained));
@@ -437,7 +437,7 @@ fn retained_word_comparison(
             crate::kernel::MachineOperandView::Old(&right),
         ],
     );
-    (!matches!(condition, ConditionTerm::Constant(_)))
+    (!matches!(condition, OldConditionTerm::Constant(_)))
         .then(|| Proposition::condition_is(condition, op != ComparisonOperator::NotEqual))
 }
 
@@ -482,7 +482,7 @@ impl SpecCallArgument {
             Self::Native(value) => Some(value),
             Self::Shared(value) => value
                 .old_pointer_argument()
-                .or_else(|| value.boolean_argument_native()),
+                .or_else(|| value.old_boolean_argument()),
         }
     }
 
@@ -533,7 +533,7 @@ impl SpecCallArgument {
                 }
                 if let Some(descriptor) = value
                     .old_pointer_argument()
-                    .or_else(|| value.boolean_argument_native())
+                    .or_else(|| value.old_boolean_argument())
                 {
                     return descriptor.clone();
                 }
@@ -811,36 +811,37 @@ mod condition_output_tests {
                     IntegerComparisonOperator::GreaterEqual,
                 ] {
                     let native = match operator {
-                        IntegerComparisonOperator::Equal => {
-                            ConditionTerm::IntegerEqual(left.clone().into(), right.clone().into())
-                        }
-                        IntegerComparisonOperator::NotEqual => ConditionTerm::IntegerNotEqual(
+                        IntegerComparisonOperator::Equal => OldConditionTerm::IntegerEqual(
                             left.clone().into(),
                             right.clone().into(),
                         ),
-                        IntegerComparisonOperator::LessThan => ConditionTerm::IntegerLessThan(
+                        IntegerComparisonOperator::NotEqual => OldConditionTerm::IntegerNotEqual(
                             left.clone().into(),
                             right.clone().into(),
                         ),
-                        IntegerComparisonOperator::LessEqual => ConditionTerm::IntegerLessEqual(
+                        IntegerComparisonOperator::LessThan => OldConditionTerm::IntegerLessThan(
+                            left.clone().into(),
+                            right.clone().into(),
+                        ),
+                        IntegerComparisonOperator::LessEqual => OldConditionTerm::IntegerLessEqual(
                             left.clone().into(),
                             right.clone().into(),
                         ),
                         IntegerComparisonOperator::GreaterThan => {
-                            ConditionTerm::IntegerGreaterThan(
+                            OldConditionTerm::IntegerGreaterThan(
                                 left.clone().into(),
                                 right.clone().into(),
                             )
                         }
                         IntegerComparisonOperator::GreaterEqual => {
-                            ConditionTerm::IntegerGreaterEqual(
+                            OldConditionTerm::IntegerGreaterEqual(
                                 left.clone().into(),
                                 right.clone().into(),
                             )
                         }
                     };
                     let expected = match crate::kernel::machine_integer::comparison::structural_native_comparison_of_integer_observation(&native, true) {
-                        Some((ConditionTerm::Constant(_), _)) | None => (native, true),
+                        Some((OldConditionTerm::Constant(_), _)) | None => (native, true),
                         Some(result) => result,
                     };
                     let actual = retained_integer_comparison(
@@ -970,8 +971,8 @@ mod condition_output_tests {
             for _ in 0..depth {
                 root = KernelTerm::boolean_if_raw([
                     root,
-                    KernelTermImport::default().condition(&ConditionTerm::Constant(false)),
-                    KernelTermImport::default().condition(&ConditionTerm::Constant(true)),
+                    KernelTermImport::default().condition(&OldConditionTerm::Constant(false)),
+                    KernelTermImport::default().condition(&OldConditionTerm::Constant(true)),
                 ]);
             }
             for literal in [false, true] {
@@ -979,7 +980,7 @@ mod condition_output_tests {
                     let value = if shared_literal {
                         SpecValue::Shared(
                             KernelTermImport::default()
-                                .condition(&ConditionTerm::Constant(literal)),
+                                .condition(&OldConditionTerm::Constant(literal)),
                         )
                     } else {
                         SpecValue::Native(ProgramValue::bool_constant(literal))

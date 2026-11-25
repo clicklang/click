@@ -46,7 +46,7 @@ pub(crate) fn apply(
         preserve_field(separation, field).ok_or(
             "preserve requires the selected field of a resource separated from the footprint",
         )?
-    } else if matches!(&result, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Constant(true), _))))
+    } else if matches!(&result, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Constant(true), _))))
     {
         result.clone()
     } else {
@@ -99,35 +99,35 @@ fn read_type(result: &Proposition) -> Option<ReadType> {
     match result {
         Proposition::ConditionIs(_, true)
             if matches!(
-                result.condition_native(),
-                Some((ConditionTerm::BoolEqual(..), true))
+                result.old_condition(),
+                Some((OldConditionTerm::BoolEqual(..), true))
             ) =>
         {
             Some(ReadType::Boolean)
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::AlgebraicEqual(a, b), _)) =
-                condition_source_0.condition_native()
+            if let Some((OldConditionTerm::AlgebraicEqual(a, b), _)) =
+                condition_source_0.old_condition()
                 && (a.algebraic_type == b.algebraic_type) =>
         {
             Some(ReadType::Abstract)
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::AddressEqual(..), _)) =
-                condition_source_0.condition_native() =>
+            if let Some((OldConditionTerm::AddressEqual(..), _)) =
+                condition_source_0.old_condition() =>
         {
             Some(ReadType::IntegerAddress)
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::PointerEqual(a, b), _)) =
-                condition_source_0.condition_native()
+            if let Some((OldConditionTerm::PointerEqual(a, b), _)) =
+                condition_source_0.old_condition()
                 && (a.program_type() == b.program_type()) =>
         {
             Some(ReadType::Pointer(a.program_type()))
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::IntegerEqual(a, b), _)) =
-                condition_source_0.condition_native()
+            if let Some((OldConditionTerm::IntegerEqual(a, b), _)) =
+                condition_source_0.old_condition()
                 && let (IntegerTerm::Machine(a), IntegerTerm::Machine(b)) = (&**a, &**b)
                 && a.ty() == b.ty()
                 && matches!(
@@ -139,13 +139,13 @@ fn read_type(result: &Proposition) -> Option<ReadType> {
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
             if let Some((
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format,
                     relation: CompareRelation::Equal,
                     ..
                 },
                 _,
-            )) = condition_source_0.condition_native()
+            )) = condition_source_0.old_condition()
                 && (matches!(
                     format,
                     MachineIntegerType::Int8
@@ -285,21 +285,21 @@ fn preserve_field(
         (
             crate::kernel::ResourceFieldValue::Integer(a),
             crate::kernel::ResourceFieldValue::Integer(b),
-        ) => ConditionTerm::integer_equal(a.clone(), b.clone()),
+        ) => OldConditionTerm::integer_equal(a.clone(), b.clone()),
         (
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Parameter(a)),
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Parameter(b)),
         ) if a.algebraic_type == b.algebraic_type => {
-            ConditionTerm::AlgebraicEqual(a.clone(), b.clone())
+            OldConditionTerm::AlgebraicEqual(a.clone(), b.clone())
         }
         (
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(a)),
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Pointer(b)),
-        ) => ConditionTerm::logical_pointer_equal(a.clone(), b.clone()),
+        ) => OldConditionTerm::logical_pointer_equal(a.clone(), b.clone()),
         (
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Int32(a)),
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Int32(b)),
-        ) => ConditionTerm::equal(a.clone(), b.clone()),
+        ) => OldConditionTerm::equal(a.clone(), b.clone()),
         // An 8-bit field value is native: its equality is at its own format.
         (
             crate::kernel::ResourceFieldValue::Program(ProgramValue::UInt8(a)),
@@ -308,7 +308,7 @@ fn preserve_field(
         (
             crate::kernel::ResourceFieldValue::Program(ProgramValue::UInt32(a)),
             crate::kernel::ResourceFieldValue::Program(ProgramValue::UInt32(b)),
-        ) => ConditionTerm::uint32_equal(a.clone(), b.clone()),
+        ) => OldConditionTerm::uint32_equal(a.clone(), b.clone()),
         (
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Int64(a)),
             crate::kernel::ResourceFieldValue::Program(ProgramValue::Int64(b)),
@@ -328,7 +328,7 @@ fn preserve_field(
 fn observation_type(comparison: ReadType, bytes: u32, result: &Proposition) -> Option<ReadType> {
     match (comparison, bytes) {
         (ReadType::Integer(MachineIntegerType::Int32), 1 | 2) => {
-            let (ConditionTerm::Compare { left, right, .. }, true) = result.condition_native()?
+            let (OldConditionTerm::Compare { left, right, .. }, true) = result.old_condition()?
             else {
                 return None;
             };
@@ -358,27 +358,27 @@ fn observation_equality(
         let widen =
             |value| OldMachineTerm::machine_integer_cast(narrow, MachineIntegerType::Int32, value);
         return Some(Proposition::condition_is(
-            ConditionTerm::equal(widen(integer_bits(after)?), widen(integer_bits(before)?)),
+            OldConditionTerm::equal(widen(integer_bits(after)?), widen(integer_bits(before)?)),
             true,
         ));
     }
     let condition = match (kind, after, before) {
         (ReadType::Boolean, ProgramValue::Bool(a), ProgramValue::Bool(b)) => {
-            ConditionTerm::bool_equal(
-                ConditionTerm::truth_of_bool_word(&a),
-                ConditionTerm::truth_of_bool_word(&b),
+            OldConditionTerm::bool_equal(
+                OldConditionTerm::truth_of_bool_word(&a),
+                OldConditionTerm::truth_of_bool_word(&b),
             )
         }
         (ReadType::Pointer(_), ProgramValue::Pointer(a), ProgramValue::Pointer(b)) => {
-            ConditionTerm::logical_pointer_equal(a, b)
+            OldConditionTerm::logical_pointer_equal(a, b)
         }
         (ReadType::IntegerAddress, ProgramValue::Pointer(a), ProgramValue::Pointer(b)) => {
-            ConditionTerm::address_equal(a.address().clone(), b.address().clone())
+            OldConditionTerm::address_equal(a.address().clone(), b.address().clone())
         }
         (ReadType::Abstract, ProgramValue::Parameter(a), ProgramValue::Parameter(b))
             if a.algebraic_type == b.algebraic_type =>
         {
-            ConditionTerm::AlgebraicEqual(a, b)
+            OldConditionTerm::AlgebraicEqual(a, b)
         }
         (ReadType::Integer(format), a, b) => {
             integer_equality(format, integer_bits(a)?, integer_bits(b)?)?
@@ -408,16 +408,16 @@ fn integer_equality(
     format: MachineIntegerType,
     left: OldMachineTerm,
     right: OldMachineTerm,
-) -> Option<ConditionTerm> {
+) -> Option<OldConditionTerm> {
     Some(match format {
         MachineIntegerType::Int8
         | MachineIntegerType::UInt8
         | MachineIntegerType::Int16
         | MachineIntegerType::UInt16 => {
-            ConditionTerm::machine_compare(format, CompareRelation::Equal, left, right)
+            OldConditionTerm::machine_compare(format, CompareRelation::Equal, left, right)
         }
-        MachineIntegerType::Int32 => ConditionTerm::equal(left, right),
-        MachineIntegerType::UInt32 => ConditionTerm::uint32_equal(left, right),
+        MachineIntegerType::Int32 => OldConditionTerm::equal(left, right),
+        MachineIntegerType::UInt32 => OldConditionTerm::uint32_equal(left, right),
         MachineIntegerType::Int64 | MachineIntegerType::UInt64 => {
             // The produced equality must have the same shape as its logical
             // goal, including reflexive variables and closed literal operands.
@@ -430,10 +430,12 @@ fn integer_equality(
                 ],
             )
         }
-        MachineIntegerType::Int128 | MachineIntegerType::UInt128 => ConditionTerm::integer_equal(
-            IntegerTerm::from_machine(format, left)?,
-            IntegerTerm::from_machine(format, right)?,
-        ),
+        MachineIntegerType::Int128 | MachineIntegerType::UInt128 => {
+            OldConditionTerm::integer_equal(
+                IntegerTerm::from_machine(format, left)?,
+                IntegerTerm::from_machine(format, right)?,
+            )
+        }
     })
 }
 
@@ -709,13 +711,15 @@ mod tests {
         };
         let goal = Proposition::condition_is(
             match format {
-                MachineIntegerType::Int64 | MachineIntegerType::UInt64 => ConditionTerm::Compare {
-                    format: MachineIntegerType::Int64,
-                    relation: CompareRelation::Equal,
-                    left: Box::new(after_value),
-                    right: Box::new(before_value),
-                },
-                _ => ConditionTerm::equal(after_value, before_value),
+                MachineIntegerType::Int64 | MachineIntegerType::UInt64 => {
+                    OldConditionTerm::Compare {
+                        format: MachineIntegerType::Int64,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(after_value),
+                        right: Box::new(before_value),
+                    }
+                }
+                _ => OldConditionTerm::equal(after_value, before_value),
             },
             true,
         );
@@ -756,13 +760,11 @@ mod tests {
                 let separation = preservation.separation.clone();
                 assert_eq!(preservation.apply(|p| p == &separation).unwrap(), goal);
                 assert!(preservation.apply(|_| false).is_err());
-                let (condition, truth) = preservation
-                    .result
-                    .condition_native()
-                    .expect("wide equality");
+                let (condition, truth) =
+                    preservation.result.old_condition().expect("wide equality");
                 let mut condition = condition.clone();
                 let truth = *truth;
-                let ConditionTerm::Compare { left, .. } = &mut condition else {
+                let OldConditionTerm::Compare { left, .. } = &mut condition else {
                     panic!("wide equality")
                 };
                 **left = OldMachineTerm::Variable(Variable(8_390_999));
@@ -829,7 +831,7 @@ mod tests {
         let (mut preservation, _) = resource_fixture(8);
         let result = &mut preservation.result;
         *result = Proposition::condition_is(
-            ConditionTerm::equal(OldMachineTerm::Variable(Variable(8_390_902)), 99u32.into()),
+            OldConditionTerm::equal(OldMachineTerm::Variable(Variable(8_390_902)), 99u32.into()),
             true,
         );
         assert!(
@@ -928,7 +930,7 @@ mod tests {
             unreachable!()
         };
         let result = Proposition::condition_is(
-            ConditionTerm::pointer_equal(after_value, before_value),
+            OldConditionTerm::pointer_equal(after_value, before_value),
             true,
         );
         (
@@ -952,7 +954,7 @@ mod tests {
         let ProgramValue::Parameter(b) = observe_point(before, &address, ty) else {
             unreachable!()
         };
-        let goal = Proposition::condition_is(ConditionTerm::AlgebraicEqual(a, b), true);
+        let goal = Proposition::condition_is(OldConditionTerm::AlgebraicEqual(a, b), true);
         let result = &mut preservation.result;
         *result = goal.clone();
         (preservation, goal)
@@ -965,11 +967,11 @@ mod tests {
         let (mut preservation, goal) = abstract_fixture(8);
         assert_eq!(preservation.apply(|_| true).unwrap(), goal);
         let result = &mut preservation.result;
-        let Some((condition, true)) = result.condition_native() else {
+        let Some((condition, true)) = result.old_condition() else {
             unreachable!()
         };
         let mut condition = condition.clone();
-        let ConditionTerm::AlgebraicEqual(_, old) = &mut condition else {
+        let OldConditionTerm::AlgebraicEqual(_, old) = &mut condition else {
             unreachable!()
         };
         old.algebraic_type = TypeParameterName::intern("WrongTransportValue").algebraic_type();
@@ -996,11 +998,11 @@ mod tests {
             Some(goal)
         );
         let mut wrong_domain = preservation.clone();
-        let Some((condition, true)) = wrong_domain.result.condition_native() else {
+        let Some((condition, true)) = wrong_domain.result.old_condition() else {
             panic!("distinct complete read domains");
         };
         let mut condition = condition.clone();
-        let ConditionTerm::PointerEqual(left, _) = &mut condition else {
+        let OldConditionTerm::PointerEqual(left, _) = &mut condition else {
             panic!("distinct complete read domains");
         };
         **left = (**left)
@@ -1015,7 +1017,7 @@ mod tests {
         );
         let result = &mut preservation.result;
         *result = Proposition::condition_is(
-            ConditionTerm::AddressEqual(
+            OldConditionTerm::AddressEqual(
                 Box::new(Address::symbolic(Variable(8_399_000))),
                 Box::new(Address::symbolic(Variable(8_399_001))),
             ),
@@ -1229,17 +1231,17 @@ mod tests {
         let comparison_type = ReadType::Integer(comparison);
         let operand = |bits| OldMachineTerm::machine_integer_cast(format, comparison, bits);
         let condition = match bytes {
-            16 => ConditionTerm::integer_equal(
+            16 => OldConditionTerm::integer_equal(
                 IntegerTerm::from_machine(format, after_read.clone()).unwrap(),
                 IntegerTerm::from_machine(format, before_read.clone()).unwrap(),
             ),
-            8 => ConditionTerm::Compare {
+            8 => OldConditionTerm::Compare {
                 format: comparison,
                 relation: CompareRelation::Equal,
                 left: Box::new(after_read.clone()),
                 right: Box::new(before_read.clone()),
             },
-            _ => ConditionTerm::machine_compare(
+            _ => OldConditionTerm::machine_compare(
                 comparison,
                 CompareRelation::Equal,
                 operand(after_read.clone()),
@@ -1273,7 +1275,7 @@ mod tests {
                 _ => unreachable!("narrow test format"),
             };
             let mixed = Proposition::condition_is(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     operand(after_read),
                     OldMachineTerm::machine_integer_cast(other_format, comparison, before_read),
                 ),

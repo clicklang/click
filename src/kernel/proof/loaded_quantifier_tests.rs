@@ -23,12 +23,12 @@ fn loaded_fact_of_format(
         right: Box::new(OldMachineTerm::Variable(Variable(910_002))),
     };
     let guard = if shared {
-        ConditionTerm::IntegerLessThan(
+        OldConditionTerm::IntegerLessThan(
             IntegerTerm::from_machine(format, left).unwrap().into(),
             IntegerTerm::from_machine(format, right).unwrap().into(),
         )
     } else {
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format,
             relation: CompareRelation::LessThan,
             left: Box::new(left),
@@ -63,7 +63,7 @@ fn loaded_fact_of_format(
         Proposition::Implies(
             Box::new(Proposition::condition_is(guard, true)),
             Box::new(Proposition::condition_is(
-                ConditionTerm::equal(read, OldMachineTerm::constant(0)),
+                OldConditionTerm::equal(read, OldMachineTerm::constant(0)),
                 true,
             )),
         ),
@@ -112,10 +112,10 @@ fn loaded_quantifier_matches_shared_guard_but_keeps_exact_read_and_binder() {
         if change == 1 {
             *truth = false;
         }
-        let (condition, truth) = conclusion.condition_native().unwrap();
+        let (condition, truth) = conclusion.old_condition().unwrap();
         let mut condition = condition.clone();
         let truth = *truth;
-        let ConditionTerm::Compare { left, right, .. } = &mut condition else {
+        let OldConditionTerm::Compare { left, right, .. } = &mut condition else {
             unreachable!()
         };
         if change == 2 {

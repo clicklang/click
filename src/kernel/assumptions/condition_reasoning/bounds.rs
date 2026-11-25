@@ -18,7 +18,7 @@ pub(in crate::kernel::assumptions) fn retain_order_operand(view: V<'_>) -> Order
 }
 
 pub(in crate::kernel::assumptions) fn retained_order_fact(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     truth: bool,
 ) -> Option<OrderFact> {
     let view = order_view_at_format(condition, truth, MachineIntegerType::Int32)?;
@@ -65,11 +65,11 @@ impl OrderKind {
         lower: OldMachineTerm,
         upper: OldMachineTerm,
         strict: bool,
-    ) -> ConditionTerm {
+    ) -> OldConditionTerm {
         match (self, strict) {
             (Self::Signed32, _) => order_condition(lower, upper, strict),
-            (Self::Unsigned32, true) => ConditionTerm::unsigned_less_than(lower, upper),
-            (Self::Unsigned32, false) => ConditionTerm::unsigned_less_equal(lower, upper),
+            (Self::Unsigned32, true) => OldConditionTerm::unsigned_less_than(lower, upper),
+            (Self::Unsigned32, false) => OldConditionTerm::unsigned_less_equal(lower, upper),
         }
     }
 }
@@ -773,9 +773,9 @@ impl PureFactContext {
         let literal = OldMachineTerm::constant(offset);
         if let V::Old(base) = base {
             let condition = if subtract {
-                ConditionTerm::signed_subtract_overflows(base.clone(), literal)
+                OldConditionTerm::signed_subtract_overflows(base.clone(), literal)
             } else {
-                ConditionTerm::signed_add_overflows(base.clone(), literal)
+                OldConditionTerm::signed_add_overflows(base.clone(), literal)
             };
             return self.decide(&condition);
         }
@@ -865,7 +865,7 @@ impl PureFactContext {
 
     pub(super) fn decide_signed_constant_offset_order(
         &self,
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
     ) -> Option<bool> {
         use crate::kernel::machine_integer::comparison::comparison_view;
         let view = comparison_view(condition, true)?;
@@ -1100,15 +1100,15 @@ mod shared_bound_tests {
         let operand = SharedMachineIntegerTerm::from_shared(ty, root).unwrap();
         let facts = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::equal(OldMachineTerm::Variable(a), OldMachineTerm::constant(1)),
+                OldConditionTerm::equal(OldMachineTerm::Variable(a), OldMachineTerm::constant(1)),
                 true,
             )
             .assume_condition(
-                ConditionTerm::equal(OldMachineTerm::Variable(b), OldMachineTerm::constant(2)),
+                OldConditionTerm::equal(OldMachineTerm::Variable(b), OldMachineTerm::constant(2)),
                 true,
             );
         for (limit, expected) in [(4, true), (3, false)] {
-            let query = ConditionTerm::integer_less_than(
+            let query = OldConditionTerm::integer_less_than(
                 IntegerTerm::Machine(operand.clone()),
                 IntegerTerm::constant(limit.into()),
             );
@@ -1144,9 +1144,9 @@ mod shared_bound_tests {
             let b = IntegerTerm::Machine(base.clone());
             let t = IntegerTerm::Machine(term.clone());
             let query = if op == Op::Add {
-                ConditionTerm::integer_less_than(b.clone(), t)
+                OldConditionTerm::integer_less_than(b.clone(), t)
             } else {
-                ConditionTerm::integer_less_than(t, b.clone())
+                OldConditionTerm::integer_less_than(t, b.clone())
             };
             let parent = PureFactContext::new();
             assert_eq!(parent.decide_signed_constant_offset_order(&query), None);
@@ -1175,7 +1175,7 @@ mod shared_bound_tests {
             }
             if op == Op::Subtract {
                 let excluded = parent.clone().assume_condition(
-                    ConditionTerm::equal(
+                    OldConditionTerm::equal(
                         OldMachineTerm::Variable(variable),
                         OldMachineTerm::constant(i32::MIN as u32),
                     ),
@@ -1187,12 +1187,12 @@ mod shared_bound_tests {
             let endpoint = if op == Op::Add { i32::MAX } else { i32::MIN };
             let safe = parent.clone().assume_condition(
                 if op == Op::Add {
-                    ConditionTerm::signed_less_than(
+                    OldConditionTerm::signed_less_than(
                         OldMachineTerm::Variable(variable),
                         OldMachineTerm::constant(endpoint as u32),
                     )
                 } else {
-                    ConditionTerm::signed_greater_than(
+                    OldConditionTerm::signed_greater_than(
                         OldMachineTerm::Variable(variable),
                         OldMachineTerm::constant(endpoint as u32),
                     )
@@ -1202,7 +1202,7 @@ mod shared_bound_tests {
             assert_eq!(safe.decide(&query), Some(true));
             assert!(!term.has_boxed_operand());
             let overflowing = parent.assume_condition(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     OldMachineTerm::Variable(variable),
                     OldMachineTerm::constant(endpoint as u32),
                 ),
@@ -1235,11 +1235,11 @@ mod shared_bound_tests {
         let x = OldMachineTerm::Variable(Variable(994103));
         let y = OldMachineTerm::Variable(Variable(994104));
         let observe = |term| IntegerTerm::from_machine(ty, term).unwrap();
-        let first = ConditionTerm::integer_less_equal(
+        let first = OldConditionTerm::integer_less_equal(
             observe(x.clone()),
             IntegerTerm::Machine(operand.clone()),
         );
-        let second = ConditionTerm::integer_less_equal(
+        let second = OldConditionTerm::integer_less_equal(
             IntegerTerm::Machine(operand.clone()),
             observe(y.clone()),
         );
@@ -1292,11 +1292,11 @@ mod shared_offset_bound_consumers {
         let sub = shifted(MachineBinaryOp::Subtract);
         let parent = PureFactContext::new();
         let upper_only = parent.clone().assume_condition(
-            ConditionTerm::signed_less_equal(written.clone(), OldMachineTerm::constant(10)),
+            OldConditionTerm::signed_less_equal(written.clone(), OldMachineTerm::constant(10)),
             true,
         );
         let bounded = upper_only.clone().assume_condition(
-            ConditionTerm::signed_greater_equal(written, OldMachineTerm::constant(0)),
+            OldConditionTerm::signed_greater_equal(written, OldMachineTerm::constant(0)),
             true,
         );
         let eight = OldMachineTerm::constant(8);

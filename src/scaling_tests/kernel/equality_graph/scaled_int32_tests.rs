@@ -66,7 +66,7 @@ fn learning_a_literal_does_not_revisit_unrelated_boolean_parents() {
         let mut graph = EqualityGraph::default();
         for value in 0..size {
             graph.add_condition(
-                &ConditionTerm::equal(scalar(1), OldMachineTerm::constant(value as u32)),
+                &OldConditionTerm::equal(scalar(1), OldMachineTerm::constant(value as u32)),
                 false,
             );
         }
@@ -78,7 +78,7 @@ fn learning_a_literal_does_not_revisit_unrelated_boolean_parents() {
         });
         assert!(!sibling.are_offsets_equal(&offset(10), &AddressOffset::Constant(8192)));
         assert!(graph.knows_condition(
-            &ConditionTerm::equal(scalar(1), OldMachineTerm::constant(0)),
+            &OldConditionTerm::equal(scalar(1), OldMachineTerm::constant(0)),
             false
         ));
         samples.push((size, work));

@@ -124,7 +124,7 @@ impl ChainGraph {
 }
 
 impl VariableChains {
-    pub(super) fn adjust(&mut self, condition: &ConditionTerm, value: bool) {
+    pub(super) fn adjust(&mut self, condition: &OldConditionTerm, value: bool) {
         let Some(view) = retained_order_bounds::order_view(condition, value) else {
             return;
         };
@@ -188,7 +188,7 @@ impl VariableChains {
 }
 
 impl PureFactContext {
-    pub(super) fn decide_from_variable_chain(&self, condition: &ConditionTerm) -> Option<bool> {
+    pub(super) fn decide_from_variable_chain(&self, condition: &OldConditionTerm) -> Option<bool> {
         if implicit_consulted_premises_capturing() {
             return None;
         }
@@ -294,7 +294,7 @@ mod tests {
                 edges.reverse();
             }
             for pair in edges {
-                let edge = ConditionTerm::signed_less_than(
+                let edge = OldConditionTerm::signed_less_than(
                     OldMachineTerm::Variable(pair[0]),
                     OldMachineTerm::Variable(pair[1]),
                 );
@@ -310,7 +310,7 @@ mod tests {
                 assert_eq!(span.root, first.root);
                 assert_eq!(span.rank, position);
             }
-            let query = ConditionTerm::signed_less_than(
+            let query = OldConditionTerm::signed_less_than(
                 OldMachineTerm::Variable(variables[0]),
                 OldMachineTerm::Variable(variables[4]),
             );
@@ -324,22 +324,22 @@ mod tests {
         let variable = |id| OldMachineTerm::Variable(Variable(id));
         let context = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_less_than(variable(1), variable(3)),
+                OldConditionTerm::signed_less_than(variable(1), variable(3)),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_than(variable(2), variable(3)),
+                OldConditionTerm::signed_less_than(variable(2), variable(3)),
                 true,
             );
         assert_eq!(
-            context.decide_from_variable_chain(&ConditionTerm::signed_less_than(
+            context.decide_from_variable_chain(&OldConditionTerm::signed_less_than(
                 variable(1),
                 variable(2)
             )),
             None
         );
         assert_eq!(
-            context.decide_from_variable_chain(&ConditionTerm::signed_less_than(
+            context.decide_from_variable_chain(&OldConditionTerm::signed_less_than(
                 variable(2),
                 variable(1)
             )),
@@ -368,7 +368,7 @@ mod memory_tests {
         let mut context = PureFactContext::new();
         for pair in variables.windows(2) {
             context = context.assume_condition(
-                ConditionTerm::signed_less_than(
+                OldConditionTerm::signed_less_than(
                     OldMachineTerm::Variable(pair[0]),
                     OldMachineTerm::Variable(pair[1]),
                 ),
@@ -377,7 +377,7 @@ mod memory_tests {
         }
         for (index, variable) in variables.iter().enumerate() {
             context = context.assume_condition(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     OldMachineTerm::Variable(*variable),
                     OldMachineTerm::constant(index as u32 + 1),
                 ),

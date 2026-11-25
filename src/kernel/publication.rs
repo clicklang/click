@@ -237,7 +237,7 @@ fn initialize(
             "the published resource must have no fields in the one-shot publication subset",
         ));
     }
-    if assumptions.decide(&ConditionTerm::pointer_aligned(
+    if assumptions.decide(&OldConditionTerm::pointer_aligned(
         flag.clone(),
         u64::from(FLAG_BYTES),
     )) != Some(true)
@@ -312,7 +312,7 @@ fn release_store(
     let ProgramValue::Int32(desired) = desired else {
         return Ok(Err(refusal("atomic_store_explicit stores an int")));
     };
-    if assumptions.decide(&ConditionTerm::Compare {
+    if assumptions.decide(&OldConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::Equal,
         left: Box::new(desired.clone()),
@@ -468,7 +468,7 @@ pub(crate) fn resolve_observed_publications(
         let Some(ProgramValue::Int32(term)) = right.observed() else {
             continue;
         };
-        let zero = ConditionTerm::Compare {
+        let zero = OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(term.clone()),
@@ -612,7 +612,7 @@ mod tests {
                     unreachable!()
                 };
                 facts.assume_proposition(Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(term),

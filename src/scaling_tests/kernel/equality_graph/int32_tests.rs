@@ -44,12 +44,12 @@ fn fact_transport_graph_queries_scale_without_building_the_legacy_index() {
             context = context.assume_condition(eq(&var(index), &var(index + 1)), true);
         }
         let sum = |value| OldMachineTerm::add(value, OldMachineTerm::constant(1));
-        let source = ConditionTerm::signed_less_than(sum(var(0)), var(size + 2));
+        let source = OldConditionTerm::signed_less_than(sum(var(0)), var(size + 2));
         let _scope = context.enter_id_scope();
         PureFactContext::reset_bitvector_equality_index_fact_visits();
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 1..=size {
-                let target = ConditionTerm::signed_less_than(sum(var(index)), var(size + 2));
+                let target = OldConditionTerm::signed_less_than(sum(var(index)), var(size + 2));
                 assert!(context.condition_matches(&source, &target));
             }
         });
@@ -392,7 +392,7 @@ fn offset_premise_shallow_decision_and_forks_scale() {
             crate::instrumentation::measure_deterministic_work(|| {
                 for i in 0..size {
                     parent = parent.clone().assume_condition(
-                        ConditionTerm::address_offset_equal(
+                        OldConditionTerm::address_offset_equal(
                             AddressOffset::scale_int32(var(i), 4),
                             AddressOffset::scale_int32(var(i + 1), 4),
                         ),
@@ -459,10 +459,10 @@ fn exact_alias_enumeration_ignores_unrelated_sources() {
         let a = Address::symbolic(Variable(960_000));
         let b = Address::symbolic(Variable(960_001));
         let mut context = PureFactContext::new()
-            .assume_condition(ConditionTerm::address_equal(a.clone(), b.clone()), true);
+            .assume_condition(OldConditionTerm::address_equal(a.clone(), b.clone()), true);
         for i in 0..size {
             context = context.assume_condition(
-                ConditionTerm::address_equal(
+                OldConditionTerm::address_equal(
                     Address::symbolic(Variable(970_000 + 2 * i)),
                     Address::symbolic(Variable(970_001 + 2 * i)),
                 ),
@@ -491,16 +491,18 @@ fn unrelated_wide_inputs_do_not_disable_selected_atomic_matching() {
         let mut context = PureFactContext::new()
             .assume_condition(eq(&var(980_000), &var(980_001)), true)
             .assume_condition(
-                ConditionTerm::signed_less_than(var(980_001), var(980_002)),
+                OldConditionTerm::signed_less_than(var(980_001), var(980_002)),
                 true,
             );
         for i in 0..size {
-            context = context
-                .assume_condition(ConditionTerm::uint64_equal(var(i), var(i + 10_000)), true);
+            context = context.assume_condition(
+                OldConditionTerm::uint64_equal(var(i), var(i + 10_000)),
+                true,
+            );
         }
         let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
             context.has_matching_condition_fact_for_memory_resolution(
-                &ConditionTerm::signed_less_than(var(980_000), var(980_002)),
+                &OldConditionTerm::signed_less_than(var(980_000), var(980_002)),
                 true,
             )
         });
@@ -530,7 +532,7 @@ fn unrelated_offset_inputs_preserve_the_selected_parameter_partition() {
             PureFactContext::new().assume_proposition(Proposition::ResourceComposition(resources));
         for i in 0..size {
             context = context.assume_condition(
-                ConditionTerm::address_offset_equal(
+                OldConditionTerm::address_offset_equal(
                     AddressOffset::scale_int32(var(i), 4),
                     AddressOffset::scale_int32(var(i + 10_000), 4),
                 ),
@@ -568,8 +570,10 @@ fn complete_pointer_scalar_evidence_ignores_unrelated_inputs() {
             )
         };
         for (a, b) in [(941_010, 941_011), (941_011, 941_012)] {
-            context = context
-                .assume_condition(ConditionTerm::pointer_equal(pointer(a), pointer(b)), true);
+            context = context.assume_condition(
+                OldConditionTerm::pointer_equal(pointer(a), pointer(b)),
+                true,
+            );
         }
         let (class, work) = crate::instrumentation::measure_deterministic_work(|| {
             context.recorded_equality_class(&var(941_010))

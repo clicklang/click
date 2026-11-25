@@ -117,11 +117,11 @@ pub(super) fn check(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::ConditionTerm;
+    use crate::kernel::OldConditionTerm;
     use crate::kernel::Variable;
 
     fn le(a: IntegerTerm, b: IntegerTerm) -> Proposition {
-        Proposition::condition_is(ConditionTerm::IntegerLessEqual(a.into(), b.into()), true)
+        Proposition::condition_is(OldConditionTerm::IntegerLessEqual(a.into(), b.into()), true)
     }
     fn inputs(ends: [i64; 4]) -> (Vec<Proposition>, IntegerTerm, IntegerTerm) {
         let a = IntegerTerm::var(Variable(181_001));

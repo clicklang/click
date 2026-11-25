@@ -6,8 +6,8 @@ use crate::kernel::MachineBinaryOp;
 use crate::kernel::MachineIntegerType;
 use crate::kernel::machine_integer::representation;
 use crate::kernel::{
-    BitvectorUnaryOp as U, CarrierWidth as W, ConditionTerm as C, OldMachineTerm as T, ProgramType,
-    ProgramValue, PureFunctionArgument as A, SharedPureApplication,
+    BitvectorUnaryOp as U, CarrierWidth as W, OldConditionTerm as C, OldMachineTerm as T,
+    ProgramType, ProgramValue, PureFunctionArgument as A, SharedPureApplication,
 };
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{MachineCastSpelling, cast_op};

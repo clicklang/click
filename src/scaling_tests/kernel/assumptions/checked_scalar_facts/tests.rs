@@ -24,7 +24,7 @@ fn shared_scalar_sources_keep_identity_and_branch_locality() {
         let operand =
             SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, root).unwrap();
         let observed = IntegerTerm::Machine(operand.clone());
-        let source = ConditionTerm::IntegerNotEqual(
+        let source = OldConditionTerm::IntegerNotEqual(
             observed.clone().into(),
             IntegerTerm::constant(7.into()).into(),
         );
@@ -48,7 +48,7 @@ fn shared_scalar_sources_keep_identity_and_branch_locality() {
         previous = Some((size, work));
         let parent = index.clone();
         for value in 1..=size {
-            let excluded = ConditionTerm::IntegerEqual(
+            let excluded = OldConditionTerm::IntegerEqual(
                 observed.clone().into(),
                 IntegerTerm::constant(value.into()).into(),
             );
@@ -79,14 +79,14 @@ fn scalar_sources_preserve_truth_and_format() {
         term.clone(),
     ));
     let ordinary =
-        ConditionTerm::IntegerNotEqual(observed.into(), IntegerTerm::constant(7.into()).into());
+        OldConditionTerm::IntegerNotEqual(observed.into(), IntegerTerm::constant(7.into()).into());
     let mut index = CheckedScalarFacts::default();
     index.adjust(&ordinary, false);
     assert_eq!(
         index.literal_equality(view),
         Some(&(ordinary.clone(), false))
     );
-    let wide = ConditionTerm::int64_equal(term, OldMachineTerm::int64_constant(7));
+    let wide = OldConditionTerm::int64_equal(term, OldMachineTerm::int64_constant(7));
     let mut index = CheckedScalarFacts::default();
     index.adjust(&wide, true);
     assert!(index.literals.is_empty());
@@ -100,14 +100,14 @@ fn shared_scalar_premise_selection_keeps_written_truth() {
         x,
     ));
     let source = Proposition::condition_is(
-        ConditionTerm::IntegerNotEqual(
+        OldConditionTerm::IntegerNotEqual(
             observed.clone().into(),
             IntegerTerm::constant(7.into()).into(),
         ),
         false,
     );
     let goal = Proposition::condition_is(
-        ConditionTerm::IntegerEqual(observed.into(), IntegerTerm::constant(7.into()).into()),
+        OldConditionTerm::IntegerEqual(observed.into(), IntegerTerm::constant(7.into()).into()),
         true,
     );
     let facts = PureFactContext::new().assume_proposition(source);

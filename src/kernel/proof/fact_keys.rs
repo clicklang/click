@@ -11,8 +11,8 @@ use crate::kernel::MachineUnaryOp;
 use crate::kernel::unary_term;
 use crate::kernel::{
     Address, AddressBase, AddressOffset, BitvectorBinaryOp, BitvectorComparisonOp,
-    BitvectorUnaryOp, ComparisonOperator, ConditionTerm, FloatClassification, FloatCondition,
-    MemoryRange, OldMachineTerm, Proposition, Variable,
+    BitvectorUnaryOp, ComparisonOperator, FloatClassification, FloatCondition, MemoryRange,
+    OldConditionTerm, OldMachineTerm, Proposition, Variable,
 };
 use crate::kernel::{
     AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, IntegerComparisonOperator, IntegerTerm,
@@ -367,7 +367,7 @@ fn memory_erased_proposition_key_one(proposition: &Proposition) -> MemoryErasedP
     match proposition {
         condition_source_0 @ Proposition::ConditionIs(_, value)
             if let Some((condition @ crate::kernel::integer_comparison_condition!(_, _), _)) =
-                condition_source_0.condition_native() =>
+                condition_source_0.old_condition() =>
         {
             native_comparison_view(condition, *value)
                 .map(state_observation_key)
@@ -520,7 +520,7 @@ fn memory_erased_boolean_operand_key(
     memory_erased_condition_key(&condition.native())
 }
 
-fn memory_erased_condition_key(condition: &ConditionTerm) -> MemoryErasedConditionKey {
+fn memory_erased_condition_key(condition: &OldConditionTerm) -> MemoryErasedConditionKey {
     // Keyed at the fact identity: a native 8- or 16-bit comparison and the
     // `int32` comparison of its widenings are one fact.
     if let Some((operator, left, right)) = condition.as_fact_comparison() {
@@ -531,42 +531,42 @@ fn memory_erased_condition_key(condition: &ConditionTerm) -> MemoryErasedConditi
         );
     }
     match condition {
-        ConditionTerm::PointerEqual(left, right) => MemoryErasedConditionKey::PointerEqual(
+        OldConditionTerm::PointerEqual(left, right) => MemoryErasedConditionKey::PointerEqual(
             memory_erased_pointer_key(left),
             memory_erased_pointer_key(right),
         ),
 
-        ConditionTerm::Constant(value) => MemoryErasedConditionKey::Constant(*value),
-        ConditionTerm::AlgebraicEqual(left, right) => {
+        OldConditionTerm::Constant(value) => MemoryErasedConditionKey::Constant(*value),
+        OldConditionTerm::AlgebraicEqual(left, right) => {
             MemoryErasedConditionKey::AlgebraicEqual(left.clone(), right.clone())
         }
-        ConditionTerm::Variable(variable) => MemoryErasedConditionKey::Variable(*variable),
-        ConditionTerm::Float32(float_condition) => {
+        OldConditionTerm::Variable(variable) => MemoryErasedConditionKey::Variable(*variable),
+        OldConditionTerm::Float32(float_condition) => {
             MemoryErasedConditionKey::Float32(memory_erased_float_condition_key(float_condition))
         }
-        ConditionTerm::Float64(float_condition) => {
+        OldConditionTerm::Float64(float_condition) => {
             MemoryErasedConditionKey::Float64(memory_erased_float_condition_key(float_condition))
         }
-        ConditionTerm::AddressOffsetEqual(left, right) => {
+        OldConditionTerm::AddressOffsetEqual(left, right) => {
             MemoryErasedConditionKey::AddressOffsetEqual(
                 memory_erased_address_offset_key(left),
                 memory_erased_address_offset_key(right),
             )
         }
-        ConditionTerm::AddressEqual(left, right) => MemoryErasedConditionKey::AddressEqual(
+        OldConditionTerm::AddressEqual(left, right) => MemoryErasedConditionKey::AddressEqual(
             memory_erased_address_key(left),
             memory_erased_address_key(right),
         ),
-        crate::kernel::ConditionTerm::Compare { .. }
-        | crate::kernel::ConditionTerm::Overflows { .. } => {
+        crate::kernel::OldConditionTerm::Compare { .. }
+        | crate::kernel::OldConditionTerm::Overflows { .. } => {
             unreachable!("bitvector comparisons are keyed above")
         }
         crate::kernel::integer_comparison_condition!(_, _) => {
             unreachable!("integer conditions use the exact proposition index")
         }
-        ConditionTerm::BoolApplication(_)
-        | ConditionTerm::BoolIf { .. }
-        | ConditionTerm::BoolEqual(..) => {
+        OldConditionTerm::BoolApplication(_)
+        | OldConditionTerm::BoolIf { .. }
+        | OldConditionTerm::BoolEqual(..) => {
             unreachable!("`Bool` values use the exact proposition index")
         }
     }
@@ -899,7 +899,7 @@ pub(crate) fn integer_equality_alpha_key(
             *operator == IntegerComparisonOperator::Equal
         }
         None => {
-            matches!(condition.old_form(), ConditionTerm::IntegerEqual(_, _))
+            matches!(condition.old_form(), OldConditionTerm::IntegerEqual(_, _))
         }
         _ => false,
     };
@@ -2914,7 +2914,7 @@ fn alpha_bitvector_key<const ALLOW_LOADS: bool>(
 // Alpha identity preserves the written relation and truth. In particular,
 // `obtain` must not silently mirror a named existential's body.
 fn alpha_comparison_view(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
 ) -> Option<(
     crate::kernel::machine_integer::comparison::NativeComparisonView<'_>,
     u8,
@@ -2923,22 +2923,22 @@ fn alpha_comparison_view(
         comparison_view, structural_native_comparison_view,
     };
     let relation = match condition {
-        ConditionTerm::Compare { relation, .. } => match relation {
+        OldConditionTerm::Compare { relation, .. } => match relation {
             crate::kernel::CompareRelation::Equal => 0,
             crate::kernel::CompareRelation::LessThan => 2,
             crate::kernel::CompareRelation::LessEqual => 3,
             crate::kernel::CompareRelation::GreaterThan => 4,
             crate::kernel::CompareRelation::GreaterEqual => 5,
         },
-        ConditionTerm::IntegerEqual(..) => 0,
-        ConditionTerm::IntegerNotEqual(..) => 1,
-        ConditionTerm::IntegerLessThan(..) => 2,
-        ConditionTerm::IntegerLessEqual(..) => 3,
-        ConditionTerm::IntegerGreaterThan(..) => 4,
-        ConditionTerm::IntegerGreaterEqual(..) => 5,
+        OldConditionTerm::IntegerEqual(..) => 0,
+        OldConditionTerm::IntegerNotEqual(..) => 1,
+        OldConditionTerm::IntegerLessThan(..) => 2,
+        OldConditionTerm::IntegerLessEqual(..) => 3,
+        OldConditionTerm::IntegerGreaterThan(..) => 4,
+        OldConditionTerm::IntegerGreaterEqual(..) => 5,
         _ => return None,
     };
-    let view = if matches!(condition, ConditionTerm::Compare { .. }) {
+    let view = if matches!(condition, OldConditionTerm::Compare { .. }) {
         comparison_view(condition, true)?
     } else {
         structural_native_comparison_view(condition, true)?
@@ -2977,7 +2977,7 @@ fn alpha_comparison_key<const ALLOW_LOADS: bool>(
 }
 
 fn alpha_condition_key_with_bindings<const ALLOW_LOADS: bool>(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     bindings: &mut AlphaBindings,
     next_binder: &mut usize,
 ) -> Option<AlphaConditionKey> {
@@ -2995,19 +2995,19 @@ fn alpha_condition_key_with_bindings<const ALLOW_LOADS: bool>(
         ));
     }
     Some(match condition {
-        ConditionTerm::Constant(value) => AlphaConditionKey::Constant(*value),
-        ConditionTerm::Variable(variable) => {
+        OldConditionTerm::Constant(value) => AlphaConditionKey::Constant(*value),
+        OldConditionTerm::Variable(variable) => {
             AlphaConditionKey::Variable(alpha_variable_key_with_bindings::<ALLOW_LOADS>(
                 *variable,
                 bindings,
                 &bindings.bitvector,
             )?)
         }
-        ConditionTerm::AddressOffsetEqual(left, right) => AlphaConditionKey::AddressOffsetEqual(
+        OldConditionTerm::AddressOffsetEqual(left, right) => AlphaConditionKey::AddressOffsetEqual(
             alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(left, bindings, next_binder)?,
             alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(right, bindings, next_binder)?,
         ),
-        ConditionTerm::PointerEqual(left, right) => AlphaConditionKey::PointerEqual(
+        OldConditionTerm::PointerEqual(left, right) => AlphaConditionKey::PointerEqual(
             Box::new(alpha_program_value_key_with_bindings::<ALLOW_LOADS>(
                 &ProgramValue::Pointer((**left).clone()),
                 bindings,
@@ -3019,41 +3019,41 @@ fn alpha_condition_key_with_bindings<const ALLOW_LOADS: bool>(
                 next_binder,
             )?),
         ),
-        ConditionTerm::AddressEqual(left, right) => AlphaConditionKey::AddressEqual(
+        OldConditionTerm::AddressEqual(left, right) => AlphaConditionKey::AddressEqual(
             alpha_pointer_key_with_bindings::<ALLOW_LOADS>(left, bindings, next_binder)?,
             alpha_pointer_key_with_bindings::<ALLOW_LOADS>(right, bindings, next_binder)?,
         ),
-        ConditionTerm::IntegerLessThan(left, right) => AlphaConditionKey::IntegerComparison(
+        OldConditionTerm::IntegerLessThan(left, right) => AlphaConditionKey::IntegerComparison(
             IntegerComparisonOperator::LessThan,
             alpha_integer_key_with_bindings(left, bindings, next_binder)?,
             alpha_integer_key_with_bindings(right, bindings, next_binder)?,
         ),
-        ConditionTerm::IntegerLessEqual(left, right) => AlphaConditionKey::IntegerComparison(
+        OldConditionTerm::IntegerLessEqual(left, right) => AlphaConditionKey::IntegerComparison(
             IntegerComparisonOperator::LessEqual,
             alpha_integer_key_with_bindings(left, bindings, next_binder)?,
             alpha_integer_key_with_bindings(right, bindings, next_binder)?,
         ),
-        ConditionTerm::IntegerGreaterThan(left, right) => AlphaConditionKey::IntegerComparison(
+        OldConditionTerm::IntegerGreaterThan(left, right) => AlphaConditionKey::IntegerComparison(
             IntegerComparisonOperator::GreaterThan,
             alpha_integer_key_with_bindings(left, bindings, next_binder)?,
             alpha_integer_key_with_bindings(right, bindings, next_binder)?,
         ),
-        ConditionTerm::IntegerGreaterEqual(left, right) => AlphaConditionKey::IntegerComparison(
+        OldConditionTerm::IntegerGreaterEqual(left, right) => AlphaConditionKey::IntegerComparison(
             IntegerComparisonOperator::GreaterEqual,
             alpha_integer_key_with_bindings(left, bindings, next_binder)?,
             alpha_integer_key_with_bindings(right, bindings, next_binder)?,
         ),
-        ConditionTerm::IntegerEqual(left, right) => AlphaConditionKey::IntegerComparison(
+        OldConditionTerm::IntegerEqual(left, right) => AlphaConditionKey::IntegerComparison(
             IntegerComparisonOperator::Equal,
             alpha_integer_key_with_bindings(left, bindings, next_binder)?,
             alpha_integer_key_with_bindings(right, bindings, next_binder)?,
         ),
-        ConditionTerm::IntegerNotEqual(left, right) => AlphaConditionKey::IntegerComparison(
+        OldConditionTerm::IntegerNotEqual(left, right) => AlphaConditionKey::IntegerComparison(
             IntegerComparisonOperator::NotEqual,
             alpha_integer_key_with_bindings(left, bindings, next_binder)?,
             alpha_integer_key_with_bindings(right, bindings, next_binder)?,
         ),
-        ConditionTerm::AlgebraicEqual(left, right) => AlphaConditionKey::AlgebraicEqual(
+        OldConditionTerm::AlgebraicEqual(left, right) => AlphaConditionKey::AlgebraicEqual(
             Box::new(alpha_algebraic_key_with_bindings::<ALLOW_LOADS>(
                 left,
                 bindings,
@@ -3065,7 +3065,7 @@ fn alpha_condition_key_with_bindings<const ALLOW_LOADS: bool>(
                 next_binder,
             )?),
         ),
-        ConditionTerm::BoolApplication(application) => AlphaConditionKey::BoolApplication {
+        OldConditionTerm::BoolApplication(application) => AlphaConditionKey::BoolApplication {
             name: application.name().to_owned(),
             arguments: application
                 .arguments()
@@ -3079,7 +3079,7 @@ fn alpha_condition_key_with_bindings<const ALLOW_LOADS: bool>(
                 })
                 .collect::<Option<Vec<_>>>()?,
         },
-        ConditionTerm::BoolIf {
+        OldConditionTerm::BoolIf {
             condition,
             then_condition,
             else_condition,
@@ -3100,7 +3100,7 @@ fn alpha_condition_key_with_bindings<const ALLOW_LOADS: bool>(
                 next_binder,
             )?),
         ),
-        ConditionTerm::BoolEqual(left, right) => AlphaConditionKey::BoolEqual(
+        OldConditionTerm::BoolEqual(left, right) => AlphaConditionKey::BoolEqual(
             Box::new(alpha_condition_key_with_bindings::<ALLOW_LOADS>(
                 left,
                 bindings,
@@ -3283,7 +3283,7 @@ mod proposition_identity_tests {
 
     fn equal(left: OldMachineTerm, right: OldMachineTerm) -> Proposition {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(left),
@@ -3679,7 +3679,7 @@ mod proposition_identity_tests {
         let (load_memory, load_pointer) = crate::kernel::registered_load_for_variable(&load)
             .expect("registered load should retain its exact version");
         let spelled = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::read_named(
@@ -3713,7 +3713,7 @@ mod proposition_identity_tests {
             crate::kernel::registered_load_for_variable(&changed_load)
                 .expect("changed registered load should retain its version");
         let changed_spelled = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::read_named(
@@ -4287,7 +4287,7 @@ mod integer_alpha_scaling_tests {
                 Variable(binder),
                 Sort::Integer,
                 Proposition::condition_is(
-                    ConditionTerm::IntegerGreaterEqual(
+                    OldConditionTerm::IntegerGreaterEqual(
                         applied.into(),
                         IntegerTerm::constant_i64(0).into(),
                     ),
@@ -4668,7 +4668,7 @@ mod memory_state_alpha_tests {
 
     fn equality(term: IntegerTerm) -> Proposition {
         Proposition::condition_is(
-            ConditionTerm::IntegerEqual(IntegerTerm::constant_i64(9).into(), term.into()),
+            OldConditionTerm::IntegerEqual(IntegerTerm::constant_i64(9).into(), term.into()),
             true,
         )
     }
@@ -4846,7 +4846,7 @@ mod memory_state_alpha_tests {
                 binder,
                 Sort::ProgramInt32,
                 Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(OldMachineTerm::Variable(element_load)),
@@ -5290,7 +5290,7 @@ mod machine_quantifier_identity_tests {
                 CompareRelation::GreaterEqual,
             ] {
                 for truth in [false, true] {
-                    let native = ConditionTerm::Compare {
+                    let native = OldConditionTerm::Compare {
                         format,
                         relation,
                         left: Box::new(OldMachineTerm::Variable(Variable(981))),
@@ -5305,14 +5305,16 @@ mod machine_quantifier_identity_tests {
                             .unwrap()
                             .into();
                     let shared = match relation {
-                        CompareRelation::Equal => ConditionTerm::IntegerEqual(left, right),
-                        CompareRelation::LessThan => ConditionTerm::IntegerLessThan(left, right),
-                        CompareRelation::LessEqual => ConditionTerm::IntegerLessEqual(left, right),
+                        CompareRelation::Equal => OldConditionTerm::IntegerEqual(left, right),
+                        CompareRelation::LessThan => OldConditionTerm::IntegerLessThan(left, right),
+                        CompareRelation::LessEqual => {
+                            OldConditionTerm::IntegerLessEqual(left, right)
+                        }
                         CompareRelation::GreaterThan => {
-                            ConditionTerm::IntegerGreaterThan(left, right)
+                            OldConditionTerm::IntegerGreaterThan(left, right)
                         }
                         CompareRelation::GreaterEqual => {
-                            ConditionTerm::IntegerGreaterEqual(left, right)
+                            OldConditionTerm::IntegerGreaterEqual(left, right)
                         }
                     };
                     let quantified = |condition, truth| {
@@ -5351,14 +5353,14 @@ mod machine_quantifier_identity_tests {
                 Sort::ProgramInt64,
                 Proposition::condition_is(
                     if wide {
-                        ConditionTerm::Compare {
+                        OldConditionTerm::Compare {
                             format: MachineIntegerType::Int64,
                             relation: CompareRelation::Equal,
                             left: Box::new(OldMachineTerm::Variable(Variable(variable))),
                             right: Box::new(OldMachineTerm::int64_constant(bound)),
                         }
                     } else {
-                        ConditionTerm::Compare {
+                        OldConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::Equal,
                             left: Box::new(OldMachineTerm::Variable(Variable(variable))),
@@ -5402,7 +5404,7 @@ mod offset_condition_tests {
         let mut keys = Vec::new();
         for width in [1, 8] {
             for unsigned in [false, true] {
-                let source = ConditionTerm::AddressOffsetEqual(
+                let source = OldConditionTerm::AddressOffsetEqual(
                     Box::new(AddressOffset::Add(
                         Box::new(AddressOffset::Constant(0)),
                         Box::new(AddressOffset::scaled_int64_node(
@@ -5438,7 +5440,7 @@ mod raw_pointer_condition_tests {
             AddressBase::ExternalObject(Variable(998610)),
             AddressBase::FunctionSymbolic(Variable(998610)),
         ] {
-            let source = ConditionTerm::AddressEqual(
+            let source = OldConditionTerm::AddressEqual(
                 Box::new(Address {
                     base: block,
                     offset: AddressOffset::scaled_int64_node(
@@ -5479,7 +5481,7 @@ mod complete_pointer_condition_tests {
                 width: OldMachineTerm::constant(4),
             })),
         ] {
-            let source = ConditionTerm::PointerEqual(Box::new(value), Box::new(a.clone()));
+            let source = OldConditionTerm::PointerEqual(Box::new(value), Box::new(a.clone()));
             let root = crate::kernel::KernelTermImport::default().condition(&source);
             let actual =
                 memory_erased_boolean_operand_key(crate::kernel::BooleanOperandView::Shared(&root));
@@ -5505,7 +5507,7 @@ mod overflow_condition_tests {
                 crate::kernel::OverflowOperation::Divide,
                 crate::kernel::OverflowOperation::ShiftLeft,
             ] {
-                let source = ConditionTerm::Overflows {
+                let source = OldConditionTerm::Overflows {
                     format,
                     op,
                     left: Box::new(OldMachineTerm::Variable(Variable(998630))),

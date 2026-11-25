@@ -20,7 +20,7 @@ fn value_path(paths: Vec<ExpressionPath>) -> Option<ExpressionPath> {
 
 #[test]
 fn impossible_arithmetic_keeps_its_term_without_scanning_the_parent() {
-    let zero = ConditionTerm::uint32_equal(
+    let zero = OldConditionTerm::uint32_equal(
         OldMachineTerm::Variable(Variable(690_000)),
         OldMachineTerm::uint32_constant(0),
     );
@@ -33,7 +33,7 @@ fn impossible_arithmetic_keeps_its_term_without_scanning_the_parent() {
         let mut base = PureFactContext::new();
         for index in 0..size {
             base = base.assume_condition(
-                ConditionTerm::signed_less_than(
+                OldConditionTerm::signed_less_than(
                     OldMachineTerm::Variable(Variable(691_000 + index)),
                     OldMachineTerm::constant(1000),
                 ),
@@ -60,7 +60,7 @@ fn impossible_arithmetic_keeps_its_term_without_scanning_the_parent() {
                 assert_eq!(unreachable.obligations.len(), 1);
                 assert!(
                     impossible.contains_assumed_exact(&Proposition::condition_is(
-                        ConditionTerm::Constant(false),
+                        OldConditionTerm::Constant(false),
                         true
                     ))
                 );
@@ -81,7 +81,7 @@ fn native_existential_domains_scale_with_claims_not_ambient_facts() {
         let mut context = PureFactContext::new();
         for i in 0..unrelated {
             context = context.assume_condition(
-                ConditionTerm::signed_less_than(
+                OldConditionTerm::signed_less_than(
                     OldMachineTerm::Variable(Variable(695_000 + i)),
                     1000u32.into(),
                 ),
@@ -140,20 +140,20 @@ fn structural_signed_addition_keeps_its_debt_independent_of_ambient_facts() {
         let mut context = PureFactContext::new();
         for i in 0..related {
             context = context.assume_condition(
-                ConditionTerm::signed_less_than(variable.clone(), (1000 + i as u32).into()),
+                OldConditionTerm::signed_less_than(variable.clone(), (1000 + i as u32).into()),
                 true,
             );
         }
         for i in 0..unrelated {
             context = context.assume_condition(
-                ConditionTerm::signed_less_than(
+                OldConditionTerm::signed_less_than(
                     OldMachineTerm::Variable(Variable(697_000 + i)),
                     1000u32.into(),
                 ),
                 true,
             );
         }
-        let overflow = ConditionTerm::signed_add_overflows(variable.clone(), 1u32.into());
+        let overflow = OldConditionTerm::signed_add_overflows(variable.clone(), 1u32.into());
         context = context.assume_condition(overflow.clone(), false);
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..claims {
@@ -212,7 +212,7 @@ fn structural_signed_addition_keeps_its_debt_independent_of_ambient_facts() {
 fn logical_shift_shape_and_work_ignore_ambient_count_facts() {
     let count = OldMachineTerm::Variable(Variable(696_000));
     let invalid =
-        ConditionTerm::uint64_greater_equal(count.clone(), OldMachineTerm::uint64_constant(32));
+        OldConditionTerm::uint64_greater_equal(count.clone(), OldMachineTerm::uint64_constant(32));
     let lower = |context: &PureFactContext| {
         apply_spec_arithmetic(
             crate::kernel::MachineBinaryOp::ShiftRight,
@@ -232,7 +232,7 @@ fn logical_shift_shape_and_work_ignore_ambient_count_facts() {
         let mut base = PureFactContext::new();
         for i in 0..size {
             base = base.assume_condition(
-                ConditionTerm::signed_less_than(
+                OldConditionTerm::signed_less_than(
                     OldMachineTerm::Variable(Variable(697_000 + i)),
                     OldMachineTerm::constant(1000),
                 ),
@@ -285,7 +285,7 @@ fn wide_logical_product_keeps_operands_when_equalities_grow() {
         let mut context = PureFactContext::new();
         for i in 0..size {
             context = context.assume_condition(
-                ConditionTerm::int64_equal(
+                OldConditionTerm::int64_equal(
                     OldMachineTerm::Variable(Variable(699_000 + i)),
                     OldMachineTerm::int64_constant(i as i64),
                 ),
@@ -293,7 +293,7 @@ fn wide_logical_product_keeps_operands_when_equalities_grow() {
             );
         }
         context = context.assume_condition(
-            ConditionTerm::int64_equal(operand.clone(), OldMachineTerm::int64_constant(0)),
+            OldConditionTerm::int64_equal(operand.clone(), OldMachineTerm::int64_constant(0)),
             true,
         );
         let (actual, work) = crate::instrumentation::measure_deterministic_work(|| lower(&context));
@@ -319,7 +319,7 @@ fn complete_arithmetic_domain_checks_ignore_related_alias_stars() {
             let mut context = PureFactContext::new();
             for i in 0..size {
                 context = context.assume_condition(
-                    ConditionTerm::equal(
+                    OldConditionTerm::equal(
                         value.clone(),
                         OldMachineTerm::Variable(Variable(790_000 + i)),
                     ),
@@ -328,7 +328,7 @@ fn complete_arithmetic_domain_checks_ignore_related_alias_stars() {
             }
             if established {
                 context = context.assume_condition(
-                    ConditionTerm::signed_less_than(
+                    OldConditionTerm::signed_less_than(
                         value.clone(),
                         OldMachineTerm::constant(i32::MAX as u32),
                     ),

@@ -256,7 +256,7 @@ fn wide_scalar_truthiness_uses_all_bits_and_retains_symbolic_guards() {
             path.outcome,
             ExpressionOutcome::Value(ProgramValue::Int32(_))
         ));
-        assert!(path.facts.iter().any(|fact| matches!(&fact.proposition(), condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerEqual(_, _), _))))));
+        assert!(path.facts.iter().any(|fact| matches!(&fact.proposition(), condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::IntegerEqual(_, _), _))))));
     }
 }
 
@@ -490,9 +490,9 @@ fn wide_cast_specification_signed_narrowing_keeps_both_range_obligations() {
     assert_eq!(obligations.len(), 2);
     for kind in [true, false] {
         assert!(obligations.iter().any(|obligation| {
-            match obligation.proposition().condition_native() {
-                Some((ConditionTerm::IntegerGreaterEqual(_, _), true)) => kind,
-                Some((ConditionTerm::IntegerLessEqual(_, _), true)) => !kind,
+            match obligation.proposition().old_condition() {
+                Some((OldConditionTerm::IntegerGreaterEqual(_, _), true)) => kind,
+                Some((OldConditionTerm::IntegerLessEqual(_, _), true)) => !kind,
                 _ => false,
             }
         }));
@@ -673,7 +673,7 @@ fn uint64_to_int64_specification_cast_requires_exact_representable_range() {
             )
         };
     let bound = Proposition::condition_is(
-        ConditionTerm::uint64_less_equal(
+        OldConditionTerm::uint64_less_equal(
             bits.clone(),
             OldMachineTerm::uint64_constant(i64::MAX as u64),
         ),
@@ -707,7 +707,7 @@ fn uint64_to_int64_specification_cast_requires_exact_representable_range() {
     );
     assert!(remaining.is_empty());
     let weaker = Proposition::condition_is(
-        ConditionTerm::uint64_less_equal(
+        OldConditionTerm::uint64_less_equal(
             bits.clone(),
             OldMachineTerm::uint64_constant((i64::MAX as u64) + 1),
         ),

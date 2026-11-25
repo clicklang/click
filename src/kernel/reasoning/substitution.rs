@@ -27,7 +27,7 @@ trait VariableSubstitution {
     /// The address of a local's storage slot.
     fn local_slot(&self, pointer: &Address) -> Address;
     fn term(&self, term: &Term) -> Term;
-    fn condition(&self, condition: &ConditionTerm) -> ConditionTerm;
+    fn condition(&self, condition: &OldConditionTerm) -> OldConditionTerm;
     fn condition_root(&self, condition: &KernelTerm) -> Option<KernelTerm>;
     fn stored_condition(&self, condition: &StoredConditionTerm) -> StoredConditionTerm {
         if let Some(root) = condition.root().and_then(|root| self.condition_root(root)) {
@@ -129,7 +129,7 @@ impl VariableSubstitution for BitvectorSubstitution<'_> {
     fn term(&self, term: &Term) -> Term {
         substitute_bitvector_variable_in_term(term, self.from, self.to)
     }
-    fn condition(&self, condition: &ConditionTerm) -> ConditionTerm {
+    fn condition(&self, condition: &OldConditionTerm) -> OldConditionTerm {
         substitute_bitvector_variable_in_condition(condition, self.from, self.to)
     }
     fn condition_root(&self, condition: &KernelTerm) -> Option<KernelTerm> {
@@ -204,7 +204,7 @@ impl VariableSubstitution for PointerSubstitution<'_> {
     fn term(&self, term: &Term) -> Term {
         substitute_pointer_variable_in_term(term, self.from, self.to)
     }
-    fn condition(&self, condition: &ConditionTerm) -> ConditionTerm {
+    fn condition(&self, condition: &OldConditionTerm) -> OldConditionTerm {
         substitute_pointer_variable_in_condition(condition, self.from, self.to)
     }
     fn condition_root(&self, condition: &KernelTerm) -> Option<KernelTerm> {
@@ -3048,7 +3048,7 @@ fn collect_pointer_bound_variables(pointer: &Address, variables: &mut BTreeSet<V
         AddressBase::PureFunctionApplication(_) => {
             collect_proposition_capture_variables(
                 &Proposition::condition_is(
-                    ConditionTerm::AddressEqual(
+                    OldConditionTerm::AddressEqual(
                         Box::new(pointer.clone()),
                         Box::new(pointer.clone()),
                     ),
@@ -3548,17 +3548,17 @@ fn collect_algebraic_bound_variables(term: &AlgebraicTerm, variables: &mut BTree
 }
 
 fn collect_condition_bound_variables(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     variables: &mut BTreeSet<Variable>,
 ) {
     match condition {
-        ConditionTerm::PointerEqual(left, right) => {
+        OldConditionTerm::PointerEqual(left, right) => {
             for pointer in left.pointers().chain(right.pointers()) {
                 collect_pointer_offset_bound_variables(&pointer.offset, variables);
             }
         }
 
-        ConditionTerm::AlgebraicEqual(left, right) => {
+        OldConditionTerm::AlgebraicEqual(left, right) => {
             left.for_each_machine_operand(|view| {
                 visit_machine_operand_scoped_leaves(view, |term| {
                     collect_scoped_leaf_bound_variables(term, variables)
@@ -3570,7 +3570,7 @@ fn collect_condition_bound_variables(
                 })
             });
         }
-        ConditionTerm::Constant(_) | ConditionTerm::Variable(_) => {}
+        OldConditionTerm::Constant(_) | OldConditionTerm::Variable(_) => {}
         crate::kernel::binary_bitvector_condition!(left, right) => {
             collect_bitvector_bound_variables(left, variables);
             collect_bitvector_bound_variables(right, variables);
@@ -3579,19 +3579,19 @@ fn collect_condition_bound_variables(
             collect_integer_bound_variables(left, variables);
             collect_integer_bound_variables(right, variables);
         }
-        ConditionTerm::Float32(float_condition) | ConditionTerm::Float64(float_condition) => {
+        OldConditionTerm::Float32(float_condition) | OldConditionTerm::Float64(float_condition) => {
             float_condition
                 .for_each_bitvector_term(|term| collect_bitvector_bound_variables(term, variables));
         }
-        ConditionTerm::AddressOffsetEqual(left, right) => {
+        OldConditionTerm::AddressOffsetEqual(left, right) => {
             collect_pointer_offset_bound_variables(left, variables);
             collect_pointer_offset_bound_variables(right, variables);
         }
-        ConditionTerm::AddressEqual(left, right) => {
+        OldConditionTerm::AddressEqual(left, right) => {
             collect_pointer_offset_bound_variables(&left.offset, variables);
             collect_pointer_offset_bound_variables(&right.offset, variables);
         }
-        ConditionTerm::BoolApplication(application) => {
+        OldConditionTerm::BoolApplication(application) => {
             for argument in application.arguments() {
                 match argument {
                     PureFunctionArgument::SharedMachine(value) => {
@@ -3613,7 +3613,7 @@ fn collect_condition_bound_variables(
                 }
             }
         }
-        ConditionTerm::BoolIf {
+        OldConditionTerm::BoolIf {
             condition,
             then_condition,
             else_condition,
@@ -3622,7 +3622,7 @@ fn collect_condition_bound_variables(
                 collect_condition_bound_variables(condition, variables);
             }
         }
-        ConditionTerm::BoolEqual(left, right) => {
+        OldConditionTerm::BoolEqual(left, right) => {
             collect_condition_bound_variables(left, variables);
             collect_condition_bound_variables(right, variables);
         }
@@ -4171,7 +4171,7 @@ fn validate_integer_pure_proposition(
 }
 
 fn validate_integer_pure_condition(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     collector: &mut crate::kernel::proof::term_rewrite::IntegerSubstitutionVariableCollector,
 ) -> Result<(), IntegerPureSubstitutionError> {
     validate_integer_atomic_proposition(
@@ -4569,9 +4569,9 @@ fn queue_integer_quantifier_rewrite<'a>(
 }
 
 fn substitute_integer_pure_condition_with_walker(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     walker: &mut crate::kernel::proof::term_rewrite::TermRewrite<'_>,
-) -> Result<ConditionTerm, IntegerPureSubstitutionError> {
+) -> Result<OldConditionTerm, IntegerPureSubstitutionError> {
     let Proposition::ConditionIs(result, _) = rewrite_integer_atomic_proposition_with_walker(
         &Proposition::condition_is(condition.clone(), true),
         walker,
@@ -5423,7 +5423,7 @@ mod machine_integer_substitution_tests {
         };
         let equation = |pointer| {
             Proposition::condition_is(
-                ConditionTerm::machine_compare(
+                OldConditionTerm::machine_compare(
                     MachineIntegerType::Int32,
                     CompareRelation::Equal,
                     read(pointer),
@@ -5458,13 +5458,13 @@ mod machine_integer_substitution_tests {
                 crate::kernel::machine_integer::range::constant_word(format, &n.into()).unwrap()
             };
             for relation in [R::LessThan, R::LessEqual, R::GreaterThan, R::GreaterEqual] {
-                let condition = ConditionTerm::Compare {
+                let condition = OldConditionTerm::Compare {
                     format,
                     relation,
                     left: Box::new(OldMachineTerm::Variable(variable)),
                     right: Box::new(word(5)),
                 };
-                let expected = ConditionTerm::Compare {
+                let expected = OldConditionTerm::Compare {
                     format,
                     relation,
                     left: Box::new(word(9)),
@@ -5752,13 +5752,13 @@ pub(in crate::kernel) fn substitute_pointer_variable_in_common_condition(
 }
 
 pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     from: Variable,
     to: &OldMachineTerm,
-) -> ConditionTerm {
+) -> OldConditionTerm {
     match condition {
-        ConditionTerm::Constant(value) => ConditionTerm::Constant(*value),
-        ConditionTerm::AlgebraicEqual(left, right) => ConditionTerm::AlgebraicEqual(
+        OldConditionTerm::Constant(value) => OldConditionTerm::Constant(*value),
+        OldConditionTerm::AlgebraicEqual(left, right) => OldConditionTerm::AlgebraicEqual(
             Box::new(substitute_bitvector_variable_in_algebraic_term(
                 left, from, to,
             )),
@@ -5768,16 +5768,16 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
         ),
         // A `Bool` binder (Stage 5) instantiated with a `bool` value's word
         // takes that value's truth.
-        ConditionTerm::Variable(variable) if *variable == from => {
-            ConditionTerm::truth_of_bool_word(to)
+        OldConditionTerm::Variable(variable) if *variable == from => {
+            OldConditionTerm::truth_of_bool_word(to)
         }
-        ConditionTerm::Variable(variable) => ConditionTerm::Variable(*variable),
-        ConditionTerm::Compare {
+        OldConditionTerm::Variable(variable) => OldConditionTerm::Variable(*variable),
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left,
             right,
-        } => ConditionTerm::Compare {
+        } => OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: Box::new(substitute_bitvector_variable(left, from, to)),
@@ -5787,68 +5787,70 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
             let rewrite =
                 |term: &IntegerTerm| substitute_bitvector_variable_in_integer(term, from, to);
             match condition {
-                ConditionTerm::IntegerLessThan(_, _) => {
-                    ConditionTerm::integer_less_than(rewrite(left), rewrite(right))
+                OldConditionTerm::IntegerLessThan(_, _) => {
+                    OldConditionTerm::integer_less_than(rewrite(left), rewrite(right))
                 }
-                ConditionTerm::IntegerLessEqual(_, _) => {
-                    ConditionTerm::integer_less_equal(rewrite(left), rewrite(right))
+                OldConditionTerm::IntegerLessEqual(_, _) => {
+                    OldConditionTerm::integer_less_equal(rewrite(left), rewrite(right))
                 }
-                ConditionTerm::IntegerGreaterThan(_, _) => {
-                    ConditionTerm::integer_greater_than(rewrite(left), rewrite(right))
+                OldConditionTerm::IntegerGreaterThan(_, _) => {
+                    OldConditionTerm::integer_greater_than(rewrite(left), rewrite(right))
                 }
-                ConditionTerm::IntegerGreaterEqual(_, _) => {
-                    ConditionTerm::integer_greater_equal(rewrite(left), rewrite(right))
+                OldConditionTerm::IntegerGreaterEqual(_, _) => {
+                    OldConditionTerm::integer_greater_equal(rewrite(left), rewrite(right))
                 }
-                ConditionTerm::IntegerEqual(_, _) => {
-                    ConditionTerm::integer_equal(rewrite(left), rewrite(right))
+                OldConditionTerm::IntegerEqual(_, _) => {
+                    OldConditionTerm::integer_equal(rewrite(left), rewrite(right))
                 }
-                ConditionTerm::IntegerNotEqual(_, _) => {
-                    ConditionTerm::integer_not_equal(rewrite(left), rewrite(right))
+                OldConditionTerm::IntegerNotEqual(_, _) => {
+                    OldConditionTerm::integer_not_equal(rewrite(left), rewrite(right))
                 }
                 _ => unreachable!(),
             }
         }
-        ConditionTerm::Float32(FloatCondition::Comparison {
+        OldConditionTerm::Float32(FloatCondition::Comparison {
             operator,
             left,
             right,
-        }) => ConditionTerm::float32_compare(
+        }) => OldConditionTerm::float32_compare(
             substitute_bitvector_variable(left, from, to),
             substitute_bitvector_variable(right, from, to),
             *operator,
         ),
-        ConditionTerm::Float32(FloatCondition::Classification {
+        OldConditionTerm::Float32(FloatCondition::Classification {
             classification,
             value,
-        }) => ConditionTerm::float32_classification(
+        }) => OldConditionTerm::float32_classification(
             substitute_bitvector_variable(value, from, to),
             *classification,
         ),
-        ConditionTerm::Float64(FloatCondition::Comparison {
+        OldConditionTerm::Float64(FloatCondition::Comparison {
             operator,
             left,
             right,
-        }) => ConditionTerm::float64_compare(
+        }) => OldConditionTerm::float64_compare(
             substitute_bitvector_variable(left, from, to),
             substitute_bitvector_variable(right, from, to),
             *operator,
         ),
-        ConditionTerm::Float64(FloatCondition::Classification {
+        OldConditionTerm::Float64(FloatCondition::Classification {
             classification,
             value,
-        }) => ConditionTerm::float64_classification(
+        }) => OldConditionTerm::float64_classification(
             substitute_bitvector_variable(value, from, to),
             *classification,
         ),
-        ConditionTerm::AddressOffsetEqual(left, right) => ConditionTerm::address_offset_equal(
-            substitute_bitvector_variable_in_pointer_offset(left, from, to),
-            substitute_bitvector_variable_in_pointer_offset(right, from, to),
-        ),
-        ConditionTerm::PointerEqual(left, right) => ConditionTerm::PointerEqual(
+        OldConditionTerm::AddressOffsetEqual(left, right) => {
+            OldConditionTerm::address_offset_equal(
+                substitute_bitvector_variable_in_pointer_offset(left, from, to),
+                substitute_bitvector_variable_in_pointer_offset(right, from, to),
+            )
+        }
+        OldConditionTerm::PointerEqual(left, right) => OldConditionTerm::PointerEqual(
             Box::new(left.map_pointers(|p| substitute_bitvector_variable_in_pointer(p, from, to))),
             Box::new(right.map_pointers(|p| substitute_bitvector_variable_in_pointer(p, from, to))),
         ),
-        ConditionTerm::AddressEqual(left, right) => ConditionTerm::address_equal(
+        OldConditionTerm::AddressEqual(left, right) => OldConditionTerm::address_equal(
             substitute_bitvector_variable_in_pointer(left, from, to),
             substitute_bitvector_variable_in_pointer(right, from, to),
         ),
@@ -5860,7 +5862,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
                 },
             )
             .expect("a `Bool` value form maps"),
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format,
             relation,
             left,
@@ -7038,21 +7040,21 @@ fn substitute_pointer_variable_in_algebraic_term(
 }
 
 fn substitute_pointer_variable_in_condition(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     from: Variable,
     to: &Address,
-) -> ConditionTerm {
+) -> OldConditionTerm {
     match condition {
-        ConditionTerm::IntegerLessThan(..)
-        | ConditionTerm::IntegerLessEqual(..)
-        | ConditionTerm::IntegerGreaterThan(..)
-        | ConditionTerm::IntegerGreaterEqual(..)
-        | ConditionTerm::IntegerEqual(..)
-        | ConditionTerm::IntegerNotEqual(..) => {
+        OldConditionTerm::IntegerLessThan(..)
+        | OldConditionTerm::IntegerLessEqual(..)
+        | OldConditionTerm::IntegerGreaterThan(..)
+        | OldConditionTerm::IntegerGreaterEqual(..)
+        | OldConditionTerm::IntegerEqual(..)
+        | OldConditionTerm::IntegerNotEqual(..) => {
             crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(from, to)
                 .condition(condition)
         }
-        ConditionTerm::AlgebraicEqual(left, right) => ConditionTerm::AlgebraicEqual(
+        OldConditionTerm::AlgebraicEqual(left, right) => OldConditionTerm::AlgebraicEqual(
             Box::new(substitute_pointer_variable_in_algebraic_term(
                 left, from, to,
             )),
@@ -7060,11 +7062,11 @@ fn substitute_pointer_variable_in_condition(
                 right, from, to,
             )),
         ),
-        ConditionTerm::PointerEqual(..) => {
+        OldConditionTerm::PointerEqual(..) => {
             crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_variable(from, to)
                 .condition(condition)
         }
-        ConditionTerm::AddressEqual(left, right) => ConditionTerm::address_equal(
+        OldConditionTerm::AddressEqual(left, right) => OldConditionTerm::address_equal(
             substitute_pointer_variable_in_pointer(left, from, to),
             substitute_pointer_variable_in_pointer(right, from, to),
         ),
@@ -8534,12 +8536,12 @@ mod machine_integer_pointer_substitution_tests {
             IntegerTerm::from_machine(crate::kernel::MachineIntegerType::UInt64, bits.clone())
                 .unwrap();
         let proposition = Proposition::condition_is(
-            ConditionTerm::integer_equal(term, IntegerTerm::constant_i64(0)),
+            OldConditionTerm::integer_equal(term, IntegerTerm::constant_i64(0)),
             true,
         );
         let rewritten =
             substitute_pointer_variable_in_proposition(&proposition, binder, &replacement);
-        let Some((ConditionTerm::IntegerEqual(left, _), true)) = rewritten.condition_native()
+        let Some((OldConditionTerm::IntegerEqual(left, _), true)) = rewritten.old_condition()
         else {
             panic!("unexpected proposition")
         };

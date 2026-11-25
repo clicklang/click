@@ -1,5 +1,5 @@
 use super::*;
-use crate::kernel::{Address, AddressOffset, ConditionTerm, Resource, ResourceFact, Variable};
+use crate::kernel::{Address, AddressOffset, OldConditionTerm, Resource, ResourceFact, Variable};
 
 fn owned(name: &str) -> ResourceFact {
     ResourceFact::own(Resource::Token {
@@ -3864,7 +3864,7 @@ fn joint_planner_proven_empty_owners_need_no_supplier_or_effect() {
     let range = symbolic_memory(0u32.into(), end.clone(), true);
     let empty = assumptions
         .clone()
-        .assume_condition(ConditionTerm::equal(end, 0u32.into()), true);
+        .assume_condition(OldConditionTerm::equal(end, 0u32.into()), true);
     for role in [ResourceTransferRole::Borrow, ResourceTransferRole::Consume] {
         let mut requirement = checked(range.clone());
         requirement.role = role;
@@ -4347,18 +4347,18 @@ fn nested_view_reborrow_accepts_checked_offset_alias_and_preserves_authority() {
     let assumptions = empty
         .clone()
         .assume_condition(
-            crate::kernel::ConditionTerm::address_equal(
+            crate::kernel::OldConditionTerm::address_equal(
                 alias.clone(),
                 base.offset_by_elements(offset.clone(), 1),
             ),
             true,
         )
         .assume_condition(
-            crate::kernel::ConditionTerm::signed_less_equal(0u32.into(), offset.clone()),
+            crate::kernel::OldConditionTerm::signed_less_equal(0u32.into(), offset.clone()),
             true,
         )
         .assume_condition(
-            crate::kernel::ConditionTerm::signed_less_equal(
+            crate::kernel::OldConditionTerm::signed_less_equal(
                 OldMachineTerm::add(offset, 4u32.into()),
                 16u32.into(),
             ),
@@ -4574,13 +4574,13 @@ fn contract_entry_overlap_does_not_walk_pointer_aliases() {
         let mut work = Vec::new();
         for aliases in [4, 16, 64] {
             let mut facts = PureFactContext::new().assume_condition(
-                ConditionTerm::address_equal(viewed_base.clone(), owned_base.offset_by_bytes(8)),
+                OldConditionTerm::address_equal(viewed_base.clone(), owned_base.offset_by_bytes(8)),
                 true,
             );
             for i in 0..aliases {
                 for (base, id) in [(&owned_base, 11_000 + i), (&viewed_base, 12_000 + i)] {
                     facts = facts.assume_condition(
-                        ConditionTerm::address_equal(base.clone(), pointer(id)),
+                        OldConditionTerm::address_equal(base.clone(), pointer(id)),
                         true,
                     );
                 }
@@ -4637,7 +4637,7 @@ fn indexed_borrow_blocks_write_through_exact_pointer_alias() {
         offset: AddressOffset::Constant(0),
     };
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::address_equal(query_base.clone(), protected_base.clone()),
+        OldConditionTerm::address_equal(query_base.clone(), protected_base.clone()),
         true,
     );
     assert!(
@@ -4685,7 +4685,7 @@ fn symbolic_borrow_fallback_checks_equal_pointer_alias_buckets() {
         offset: AddressOffset::Variable(Variable(701)),
     };
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::address_equal(query_base.clone(), protected_base.clone()),
+        OldConditionTerm::address_equal(query_base.clone(), protected_base.clone()),
         true,
     );
     assert!(
@@ -4863,7 +4863,7 @@ fn indexed_write_witness_keeps_the_least_borrow_across_buckets_and_aliases() {
         offset: AddressOffset::Constant(0),
     };
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::address_equal(
+        OldConditionTerm::address_equal(
             alias.clone(),
             original.memory_range().unwrap().base().clone(),
         ),

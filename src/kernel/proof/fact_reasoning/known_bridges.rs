@@ -6,7 +6,7 @@ use num_bigint::BigInt;
 use num_traits::Zero;
 
 fn le(a: IntegerTerm, b: IntegerTerm) -> Proposition {
-    Proposition::condition_is(ConditionTerm::IntegerLessEqual(a.into(), b.into()), true)
+    Proposition::condition_is(OldConditionTerm::IntegerLessEqual(a.into(), b.into()), true)
 }
 
 fn holds(p: &Proposition, available: &impl Fn(&Proposition) -> bool) -> bool {
@@ -14,7 +14,7 @@ fn holds(p: &Proposition, available: &impl Fn(&Proposition) -> bool) -> bool {
 }
 
 fn comparison_holds(
-    condition: ConditionTerm,
+    condition: OldConditionTerm,
     truth: bool,
     available: &impl Fn(&Proposition) -> bool,
 ) -> bool {
@@ -31,7 +31,7 @@ fn comparison_holds(
 
 /// Compare the result of a retained fold against the same written operand.
 /// The reduced comparison names a single premise for the exact-fact lookup.
-fn trivial_fold_comparison(condition: &ConditionTerm) -> Option<ConditionTerm> {
+fn trivial_fold_comparison(condition: &OldConditionTerm) -> Option<OldConditionTerm> {
     super::computation::map_integer_comparison(condition, |operand| {
         let machine = operand.root().exact_shared_integer_observation()?;
         super::computation::observe_trivial_int32_fold(&machine)
@@ -50,7 +50,7 @@ fn in_range(
 
 // A native guard is already explicit input. Shared comparisons retain their
 // operand DAGs through observation handles; never export a shared guard tree.
-fn written_guard(view: BooleanOperandView<'_>) -> Option<ConditionTerm> {
+fn written_guard(view: BooleanOperandView<'_>) -> Option<OldConditionTerm> {
     if let Some(native) = view.native_leaf() {
         return Some(native.clone());
     }
@@ -63,8 +63,8 @@ fn written_guard(view: BooleanOperandView<'_>) -> Option<ConditionTerm> {
     }
     if let BooleanOperandView::Shared(root) = view {
         return match root.node() {
-            KernelTermNode::Variable(variable) => Some(ConditionTerm::Variable(*variable)),
-            KernelTermNode::BoolLiteral(value) => Some(ConditionTerm::Constant(*value)),
+            KernelTermNode::Variable(variable) => Some(OldConditionTerm::Variable(*variable)),
+            KernelTermNode::BoolLiteral(value) => Some(OldConditionTerm::Constant(*value)),
             // These guards keep their exact scalar or pointer operands.
             KernelTermNode::IntegerCompare { .. }
             | KernelTermNode::PointerEqual(_)
@@ -357,11 +357,14 @@ fn unsigned_remainder_bound(
     let divisor: SharedIntegerTerm = divisor.into();
     [
         (
-            ConditionTerm::IntegerEqual(divisor.clone(), zero.clone()),
+            OldConditionTerm::IntegerEqual(divisor.clone(), zero.clone()),
             false,
         ),
-        (ConditionTerm::IntegerLessThan(zero, divisor.clone()), true),
-        (ConditionTerm::IntegerLessEqual(one, divisor), true),
+        (
+            OldConditionTerm::IntegerLessThan(zero, divisor.clone()),
+            true,
+        ),
+        (OldConditionTerm::IntegerLessEqual(one, divisor), true),
     ]
     .into_iter()
     .any(|(guard, truth)| comparison_holds(guard, truth, available))
@@ -411,21 +414,21 @@ fn signed_division_sign(
     let zero: SharedIntegerTerm = IntegerTerm::constant_i64(0).into();
     let ordered = |a: &SharedIntegerTerm, b: &SharedIntegerTerm| {
         comparison_holds(
-            ConditionTerm::IntegerLessEqual(a.clone(), b.clone()),
+            OldConditionTerm::IntegerLessEqual(a.clone(), b.clone()),
             true,
             available,
         )
     };
     let strict = |a: &SharedIntegerTerm, b: &SharedIntegerTerm| {
         comparison_holds(
-            ConditionTerm::IntegerLessThan(a.clone(), b.clone()),
+            OldConditionTerm::IntegerLessThan(a.clone(), b.clone()),
             true,
             available,
         )
     };
     let nonzero = || {
         comparison_holds(
-            ConditionTerm::IntegerEqual(divisor.clone(), zero.clone()),
+            OldConditionTerm::IntegerEqual(divisor.clone(), zero.clone()),
             false,
             available,
         )
@@ -470,11 +473,11 @@ fn signed_division_sign(
 }
 
 fn bool_arm(
-    value: &ConditionTerm,
-    matches_arm: impl Fn(&ConditionTerm) -> bool,
+    value: &OldConditionTerm,
+    matches_arm: impl Fn(&OldConditionTerm) -> bool,
     available: &impl Fn(&Proposition) -> bool,
 ) -> bool {
-    let ConditionTerm::BoolIf {
+    let OldConditionTerm::BoolIf {
         condition,
         then_condition,
         else_condition,
@@ -512,7 +515,7 @@ fn algebraic_arm(
 }
 
 pub(crate) fn is_quotient_remainder_order(goal: &Proposition) -> bool {
-    let Some((condition, true)) = goal.condition_native() else {
+    let Some((condition, true)) = goal.old_condition() else {
         return false;
     };
     let machine_division = |operand: MachineOperandView<'_>| {
@@ -522,7 +525,7 @@ pub(crate) fn is_quotient_remainder_order(goal: &Proposition) -> bool {
         )
     };
     match condition {
-        ConditionTerm::IntegerLessEqual(a, b) | ConditionTerm::IntegerGreaterEqual(a, b) => {
+        OldConditionTerm::IntegerLessEqual(a, b) | OldConditionTerm::IntegerGreaterEqual(a, b) => {
             [a.as_ref(), b.as_ref()]
                 .into_iter()
                 .any(|operand| match operand {
@@ -533,7 +536,7 @@ pub(crate) fn is_quotient_remainder_order(goal: &Proposition) -> bool {
                     _ => false,
                 })
         }
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             relation: CompareRelation::LessEqual | CompareRelation::GreaterEqual,
             left,
             right,
@@ -557,7 +560,7 @@ fn adjacent_range_separation(
     first.wide_bounds().is_none()
         && first.end_pointer() == second.start_pointer()
         && comparison_holds(
-            ConditionTerm::signed_less_equal(first.start().clone(), first.end().clone()),
+            OldConditionTerm::signed_less_equal(first.start().clone(), first.end().clone()),
             true,
             available,
         )
@@ -595,7 +598,7 @@ pub(in crate::kernel) fn known_uint32_from_defined_bytes(
 fn signed_product_bound(goal: &Proposition, available: &impl Fn(&Proposition) -> bool) -> bool {
     super::super::arithmetic_special::signed_product_guard_candidates(goal).any(|guards| {
         guards.into_iter().all(|guard| {
-            guard.condition_native().is_some_and(|(condition, truth)| {
+            guard.old_condition().is_some_and(|(condition, truth)| {
                 comparison_holds(condition.clone(), *truth, available)
             })
         })
@@ -653,7 +656,7 @@ pub(crate) fn known_bridge_leaf(
     if promoted_right_shift_bound(goal) == Some(true)
         || shift_count_mask_requirements(goal).is_some_and(|bounds| {
             bounds.iter().all(|bound| {
-                bound.condition_native().is_some_and(|(condition, truth)| {
+                bound.old_condition().is_some_and(|(condition, truth)| {
                     comparison_holds(condition.clone(), *truth, available)
                 })
             })
@@ -673,11 +676,9 @@ pub(crate) fn known_bridge_leaf(
     if rounded_integer_float_bound(goal, None)
         || finite_integer_conversion(goal)
         || odd_product_nonzero_requirement(goal).is_some_and(|premise| {
-            premise
-                .condition_native()
-                .is_some_and(|(condition, truth)| {
-                    comparison_holds(condition.clone(), *truth, available)
-                })
+            premise.old_condition().is_some_and(|(condition, truth)| {
+                comparison_holds(condition.clone(), *truth, available)
+            })
         })
         || float_finiteness_source(goal).is_some_and(|source| holds(&source, available))
         || super::super::arithmetic_special::float_zero_product_premise(goal)
@@ -716,7 +717,7 @@ pub(crate) fn known_bridge_leaf(
             if let Some(wide) = pointer_projection_source(condition.old_form()) =>
         {
             comparison_holds(
-                ConditionTerm::IntegerLessEqual(
+                OldConditionTerm::IntegerLessEqual(
                     wide.into(),
                     IntegerTerm::constant_i64(i64::from(i32::MAX)).into(),
                 ),
@@ -751,8 +752,8 @@ pub(crate) fn known_bridge_leaf(
             })
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::IntegerEqual(a, b), _)) =
-                condition_source_0.condition_native() =>
+            if let Some((OldConditionTerm::IntegerEqual(a, b), _)) =
+                condition_source_0.old_condition() =>
         {
             integer_arm(a, b, available)
                 || integer_arm(b, a, available)
@@ -763,9 +764,10 @@ pub(crate) fn known_bridge_leaf(
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
             if let Some((
-                ConditionTerm::IntegerLessEqual(a, b) | ConditionTerm::IntegerGreaterEqual(b, a),
+                OldConditionTerm::IntegerLessEqual(a, b)
+                | OldConditionTerm::IntegerGreaterEqual(b, a),
                 _,
-            )) = condition_source_0.condition_native() =>
+            )) = condition_source_0.old_condition() =>
         {
             mask_bound(a, b, available)
                 || ((matches!(a.as_ref(), IntegerTerm::Multiply(..)) && b.as_const().is_some()
@@ -774,7 +776,7 @@ pub(crate) fn known_bridge_leaf(
                 || unsigned_remainder_bound(a, b, available)
                 || signed_division_sign(a, b, available)
                 || condition_source_0
-                    .condition_native()
+                    .old_condition()
                     .is_some_and(|(condition, _)| {
                         condition
                             .nonnegative_division_bound_guards()
@@ -786,15 +788,15 @@ pub(crate) fn known_bridge_leaf(
                     })
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::BoolEqual(a, b), _)) =
-                condition_source_0.condition_native() =>
+            if let Some((OldConditionTerm::BoolEqual(a, b), _)) =
+                condition_source_0.old_condition() =>
         {
             bool_arm(a, |arm| arm == b.as_ref(), available)
                 || bool_arm(b, |arm| arm == a.as_ref(), available)
         }
         condition_source_0 @ Proposition::ConditionIs(_, truth)
-            if let Some((condition @ ConditionTerm::BoolIf { .. }, _)) =
-                condition_source_0.condition_native() =>
+            if let Some((condition @ OldConditionTerm::BoolIf { .. }, _)) =
+                condition_source_0.old_condition() =>
         {
             bool_arm(
                 condition,
@@ -807,8 +809,8 @@ pub(crate) fn known_bridge_leaf(
                 || algebraic_arm(b.old_form(), a.old_form(), available)
         }
         condition_source_0 @ Proposition::ConditionIs(_, true)
-            if let Some((ConditionTerm::AlgebraicEqual(a, b), _)) =
-                condition_source_0.condition_native() =>
+            if let Some((OldConditionTerm::AlgebraicEqual(a, b), _)) =
+                condition_source_0.old_condition() =>
         {
             algebraic_arm(a, b, available) || algebraic_arm(b, a, available)
         }
@@ -820,10 +822,10 @@ pub(crate) fn known_bridge_leaf(
 /// Read the full-width source of a signed low-word projection at the same
 /// base and stride. A bound on that source gives equality of the offsets.
 /// Raw complete pointer comparisons retain their own domain requirements.
-pub(crate) fn pointer_projection_source(condition: &ConditionTerm) -> Option<IntegerTerm> {
+pub(crate) fn pointer_projection_source(condition: &OldConditionTerm) -> Option<IntegerTerm> {
     if !matches!(
         condition,
-        ConditionTerm::AddressEqual(..) | ConditionTerm::AddressOffsetEqual(..)
+        OldConditionTerm::AddressEqual(..) | OldConditionTerm::AddressOffsetEqual(..)
     ) {
         return None;
     }
@@ -875,7 +877,7 @@ mod tests {
         known_bridge_leaf(goal, &|p| facts.pure_known_available(p))
     }
     fn equality(a: IntegerTerm, b: IntegerTerm) -> Proposition {
-        Proposition::condition_is(ConditionTerm::IntegerEqual(a.into(), b.into()), true)
+        Proposition::condition_is(OldConditionTerm::IntegerEqual(a.into(), b.into()), true)
     }
     fn operation(ty: MachineIntegerType, op: Operation) -> Option<(IntegerTerm, IntegerTerm)> {
         let a = OldMachineTerm::Variable(Variable(995701));
@@ -1009,7 +1011,7 @@ mod tests {
         ));
         let boundary = base.offset_by_elements(endpoint.clone(), 4);
         let held = Proposition::condition_is(
-            ConditionTerm::signed_less_equal(0u32.into(), endpoint),
+            OldConditionTerm::signed_less_equal(0u32.into(), endpoint),
             true,
         );
         let check = |offset, facts: &PureFactStore| {
@@ -1034,7 +1036,7 @@ mod tests {
             let unrelated = (0..count)
                 .map(|i| {
                     Proposition::condition_is(
-                        ConditionTerm::signed_less_equal(
+                        OldConditionTerm::signed_less_equal(
                             0u32.into(),
                             OldMachineTerm::Variable(Variable(997500 + i)),
                         ),
@@ -1107,7 +1109,7 @@ mod tests {
     #[test]
     fn known_conditional_equations_require_the_chosen_guard() {
         let _session = VerificationSession::enter();
-        let guard = ConditionTerm::Variable(Variable(995707));
+        let guard = OldConditionTerm::Variable(Variable(995707));
         let a = IntegerTerm::var(Variable(995708));
         let b = IntegerTerm::var(Variable(995709));
         let value = IntegerTerm::If {
@@ -1130,7 +1132,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let a = IntegerTerm::var(Variable(995708));
         let value = IntegerTerm::If {
-            condition: Box::new(ConditionTerm::Variable(Variable(995707))),
+            condition: Box::new(OldConditionTerm::Variable(Variable(995707))),
             then_term: a.clone().into(),
             else_term: a.clone().into(),
         };

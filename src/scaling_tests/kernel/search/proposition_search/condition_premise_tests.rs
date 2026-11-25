@@ -11,7 +11,7 @@ fn refused_integer_equality_does_not_rebuild_connected_order_facts() {
     let left = IntegerTerm::var(Variable(791_001));
     let right = IntegerTerm::var(Variable(791_002));
     let goal = Proposition::condition_is(
-        ConditionTerm::IntegerEqual(left.clone().into(), right.into()),
+        OldConditionTerm::IntegerEqual(left.clone().into(), right.into()),
         true,
     );
     for size in [4u64, 16, 64, 256] {
@@ -19,7 +19,7 @@ fn refused_integer_equality_does_not_rebuild_connected_order_facts() {
         for index in 0..size {
             let sum = IntegerTerm::add(left.clone(), IntegerTerm::var(Variable(792_000 + index)));
             context = context.assume_condition(
-                ConditionTerm::integer_less_equal(IntegerTerm::constant_i64(0), sum),
+                OldConditionTerm::integer_less_equal(IntegerTerm::constant_i64(0), sum),
                 true,
             );
         }
@@ -59,7 +59,7 @@ fn wide_condition_index_construction_charges_its_variable_entries() {
                 })
                 .collect();
         }
-        let condition = ConditionTerm::Compare {
+        let condition = OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(terms.pop().unwrap()),
@@ -109,7 +109,7 @@ fn state_condition_index_builds_once_and_survives_scalar_updates() {
         let (mut context, goal) = chain(8, 0);
         let memory = intern_memory(SymbolicMemory::new().with_block("other", size as u32 * 4));
         for index in 0..size {
-            let condition = ConditionTerm::Compare {
+            let condition = OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(term(20_000 + index as u64)),
@@ -147,7 +147,7 @@ fn state_condition_index_builds_once_and_survives_scalar_updates() {
             branch_work, warm,
             "scalar insertion must share the completed state index"
         );
-        let extra = ConditionTerm::Compare {
+        let extra = OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(term(90_000)),
@@ -281,7 +281,7 @@ fn covering_loadability_avoids_unrelated_adjacency_search() {
                 wide: false,
             });
             context = context.assume_condition(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: Box::new(term(10_000 + index)),
@@ -329,7 +329,7 @@ fn arithmetic_candidates_omit_registered_read_definitions() {
             );
             let (variable, load) = load_variable_for_term(&read).unwrap();
             context = context.assume_condition(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(OldMachineTerm::Variable(variable)),
@@ -342,7 +342,7 @@ fn arithmetic_candidates_omit_registered_read_definitions() {
         // An equation between different reads is useful, even when its left
         // operand is a reserved load name. It must remain a candidate.
         let alias = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::Variable(reads[0].0)),
@@ -360,7 +360,7 @@ fn arithmetic_candidates_omit_registered_read_definitions() {
             )
         });
         let goal = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(sum),

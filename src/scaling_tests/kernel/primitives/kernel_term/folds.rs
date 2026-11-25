@@ -129,7 +129,7 @@ fn empty_machine_fold_check_skips_growing_callback() {
         let mut facts = PureFactContext::new();
         for index in 0..unrelated {
             facts = facts.assume_condition(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     OldMachineTerm::Variable(Variable(990_000 + index)),
                     OldMachineTerm::constant(13),
                 ),
@@ -189,7 +189,7 @@ fn literal_range_projection_check_ignores_trip_count() {
         let mut facts = PureFactContext::new();
         for index in 0..unrelated {
             facts = facts.assume_condition(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     OldMachineTerm::Variable(Variable(981_300 + index)),
                     OldMachineTerm::constant(7),
                 ),

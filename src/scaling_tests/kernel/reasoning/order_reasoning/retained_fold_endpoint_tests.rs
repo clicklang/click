@@ -84,7 +84,7 @@ fn fold_endpoint_constant_spines_do_not_rewalk_growing_prefixes() {
                 let left = SharedMachineIntegerTerm::from_shared(format, wrapped).unwrap();
                 let right = SharedMachineIntegerTerm::from_shared(format, root.clone()).unwrap();
                 let context = PureFactContext::new()
-                    .assume_condition(ConditionTerm::Variable(Variable(999600 + index)), true);
+                    .assume_condition(OldConditionTerm::Variable(Variable(999600 + index)), true);
                 assert!(fold_endpoint_terms_proven_equal(&left, &right, &context));
             }
         });
@@ -143,7 +143,7 @@ fn selected_endpoint_equality_looks_up_one_pair_in_growing_source_stars() {
             let mut context = PureFactContext::new();
             for index in 0..count {
                 context = context.assume_condition(
-                    ConditionTerm::machine_compare(
+                    OldConditionTerm::machine_compare(
                         format,
                         CompareRelation::Equal,
                         OldMachineTerm::Variable(anchor),
@@ -173,7 +173,7 @@ fn selected_endpoint_equality_looks_up_one_pair_in_growing_source_stars() {
                 ));
                 if format == MachineIntegerType::UInt64 {
                     let low_word = PureFactContext::new().assume_condition(
-                        ConditionTerm::equal(
+                        OldConditionTerm::equal(
                             OldMachineTerm::Variable(anchor),
                             OldMachineTerm::Variable(Variable(1001500)),
                         ),

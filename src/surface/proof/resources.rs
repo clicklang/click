@@ -41,7 +41,7 @@ fn fold_resource_quantity_activity(
     let zero = holds_by_lookup_or_decision(
         assumptions,
         &Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(quantity.clone()),
@@ -53,7 +53,7 @@ fn fold_resource_quantity_activity(
     let positive = holds_by_lookup_or_decision(
         assumptions,
         &Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterThan,
                 left: Box::new(quantity.clone()),
@@ -1803,7 +1803,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             || holds_by_lookup_or_decision(
                 &assumptions,
                 &Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterThan,
                         left: Box::new(quantity.clone()),
@@ -2291,7 +2291,7 @@ fn owned_quantity_is_positive(quantity: &OldMachineTerm, assumptions: &PureFactC
         || holds_by_lookup_or_decision(
             assumptions,
             &Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterThan,
                     left: Box::new(quantity.clone()),
@@ -3434,7 +3434,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         // own; only a symbolic one needs a fact about it.
         let final_by_constant = quantity.as_const() == Some(1);
         let final_unit = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(count),
@@ -5917,7 +5917,7 @@ void child_release(struct child* obj) {
         let index_term = || Box::new(OldMachineTerm::Variable(index));
         let below = |end: u32| {
             Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: index_term(),
@@ -5927,7 +5927,7 @@ void child_release(struct child* obj) {
             )
         };
         let at_least_zero = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left: Box::new(OldMachineTerm::constant(0)),
@@ -6032,7 +6032,7 @@ void child_release(struct child* obj) {
             ProgramValue::Int32(OldMachineTerm::constant(0)),
         );
         let retained_state = crate::kernel::intern_memory_ref(&memory);
-        let condition = ConditionTerm::Compare {
+        let condition = OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(OldMachineTerm::read_named(
@@ -6058,7 +6058,7 @@ void child_release(struct child* obj) {
             OldMachineTerm::constant(1)
         };
         let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(span.clone()),
@@ -6834,7 +6834,7 @@ mod fold_quantity_activity_tests {
             let mut assumptions = PureFactContext::new();
             for index in 0..size {
                 assumptions = assumptions.assume_condition(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
                         left: Box::new(OldMachineTerm::Variable(Variable(9_810_000 + index))),
@@ -6876,7 +6876,7 @@ mod fold_quantity_activity_tests {
             (u32::MAX, (false, false)),
         ] {
             let assumptions = PureFactContext::new().assume_condition(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(count.clone()),

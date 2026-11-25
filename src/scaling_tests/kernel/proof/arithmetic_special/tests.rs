@@ -182,7 +182,7 @@ fn intrinsic_alignment_known_work_ignores_other_blocks_and_related_facts() {
             crate::kernel::primitives::register_block_alignment(&other, 16);
             for related in [block.clone(), other] {
                 context = context.assume_proposition(Proposition::condition_is(
-                    ConditionTerm::pointer_aligned(
+                    OldConditionTerm::pointer_aligned(
                         Address {
                             base: related,
                             offset: AddressOffset::Constant(i * 8),
@@ -196,7 +196,7 @@ fn intrinsic_alignment_known_work_ignores_other_blocks_and_related_facts() {
         let goals =
             [(0, 8, true), (4, 8, false), (0, 16, true)].map(|(offset, alignment, truth)| {
                 Proposition::condition_is(
-                    ConditionTerm::pointer_aligned(
+                    OldConditionTerm::pointer_aligned(
                         Address {
                             base: block.clone(),
                             offset: AddressOffset::Constant(offset),
@@ -229,7 +229,7 @@ fn symbolic_alignment_known_work_ignores_other_recorded_alignments() {
     let base: AddressBase = "symbolic-alignment-target".into();
     let at = |base, offset, alignment| {
         Proposition::condition_is(
-            ConditionTerm::pointer_aligned(Address { base, offset }, alignment),
+            OldConditionTerm::pointer_aligned(Address { base, offset }, alignment),
             true,
         )
     };

@@ -49,7 +49,7 @@ fn eq(a: &AlgebraicTerm, b: &AlgebraicTerm) -> Proposition {
 }
 fn condition(a: &AlgebraicTerm, b: &AlgebraicTerm, truth: bool) -> Proposition {
     Proposition::condition_is(
-        ConditionTerm::AlgebraicEqual(Box::new(a.clone()), Box::new(b.clone())),
+        OldConditionTerm::AlgebraicEqual(Box::new(a.clone()), Box::new(b.clone())),
         truth,
     )
 }
@@ -265,7 +265,7 @@ fn scalar_conflicts_follow_model_congruence() {
     };
     let value = |v, n| {
         Proposition::condition_is(
-            ConditionTerm::equal(getter(v), OldMachineTerm::constant(n)),
+            OldConditionTerm::equal(getter(v), OldMachineTerm::constant(n)),
             true,
         )
     };
@@ -282,7 +282,7 @@ fn scalar_conflicts_follow_model_congruence() {
     assert!(child.equality_graph.has_scalar_constant_conflict());
     assert!(child.is_inconsistent());
     assert!(child.contains_known(&Proposition::condition_is(
-        ConditionTerm::Constant(false),
+        OldConditionTerm::Constant(false),
         true
     )));
     assert!(!base.equality_graph.has_scalar_constant_conflict());
@@ -340,7 +340,7 @@ fn scalar_read_conflicts_require_the_same_state() {
     };
     let value = |term, n| {
         Proposition::condition_is(
-            ConditionTerm::equal(term, OldMachineTerm::constant(n)),
+            OldConditionTerm::equal(term, OldMachineTerm::constant(n)),
             true,
         )
     };
@@ -436,7 +436,7 @@ fn constructor_classes_join_fields_and_refute_distinct_variants() {
     let first = eq(&model, &constructor(&ty, "Node", vec![scalar(92)]));
     let second = eq(&constructor(&ty, "Node", vec![scalar(93)]), &alias);
     let fields = Proposition::condition_is(
-        ConditionTerm::equal(
+        OldConditionTerm::equal(
             OldMachineTerm::Variable(Variable(92)),
             OldMachineTerm::Variable(Variable(93)),
         ),

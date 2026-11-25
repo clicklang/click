@@ -40,7 +40,7 @@ the constant's shape, a load's kind, or the enclosing `CValue` tag.
 | Conversions | 6 legacy (`Int64From32`, `UInt32From64`, ...), plus `MachineIntegerCast` and `IntegerToMachine` |
 | 128-bit operators | none: a 128-bit value is only a constant, variable, load or cast |
 
-`ConditionTerm` has a 32-bit family (4 signed orders, equality, 5 signed
+`OldConditionTerm` has a 32-bit family (4 signed orders, equality, 5 signed
 overflow tests) and a 64-bit family (4 signed orders, 4 unsigned orders,
 equality, 5 signed overflow tests). It has no 32-bit unsigned order: a
 `uint32` order is the signed order of operands XORed with `0x8000_0000`,
@@ -169,7 +169,7 @@ Conditions become `Compare { format, relation, left, right }` and
 every width, beside the existing `Integer*` comparisons. The XOR encoding of
 `uint32` order goes away.
 
-The existing constructors (`ConditionTerm::signed_less_than`,
+The existing constructors (`OldConditionTerm::signed_less_than`,
 `OldMachineTerm::add`, ...) and the uniform views in `term_shape.rs` stay as
 the API most code uses. They then build or read the format-carrying nodes,
 so most call sites do not change.
@@ -273,7 +273,7 @@ The ruling in `typed-indices.md` gave four reasons. Measured now:
   11,600 times in 147 non-test files. About 3,200 of those are leaves
   (`Variable`, constants), which a merge of the typed operators does not
   touch. The per-width operators and conversions account for about 2,700
-  mentions. The `ConditionTerm::Bitvector32*` and `Bitvector64*` families
+  mentions. The `OldConditionTerm::Bitvector32*` and `Bitvector64*` families
   account for about 1,900. Most of those go through constructors and
   uniform views that can keep their signatures. The work is large but
   mostly mechanical, and it can be done one operator family at a time.
@@ -411,7 +411,7 @@ Done 2026-10-24, for every gap that needs no new node. What changed:
 
 Done 2026-10-24. What changed:
 
-- `ConditionTerm` has `Compare { format, relation, left, right }` and
+- `OldConditionTerm` has `Compare { format, relation, left, right }` and
   `Overflows { format, op, left, right }` (`CompareRelation`,
   `OverflowOperation`) in place of its 24 per-width variants. The format
   is a `MachineIntegerType`, `Copy` and part of the derived order and hash.
@@ -420,7 +420,7 @@ Done 2026-10-24. What changed:
   compare exactly. So every fact keeps one spelling.
 - The per-width constructors (`signed_less_than`, `uint64_less_equal`,
   `int64_signed_add_overflows`, ...) build the new nodes, and
-  `ConditionTerm::machine_compare` and `machine_overflows` dispatch to them
+  `OldConditionTerm::machine_compare` and `machine_overflows` dispatch to them
   by format. `as_bitvector_comparison` reports the format with the relation
   or operation. Readers were rewritten to the new nodes; traversals that
   listed every variant (substitution, variable and load collection, the
@@ -535,11 +535,11 @@ Progress:
 - A `uint32` equality is filed at `uint32` (2026-10-25, rule K6,
   [Decisions](#decisions)). C `==` on `unsigned` operands, a specification
   `==` of `uint32` values and `machine_compare(UInt32, Equal)` build
-  `Compare { UInt32, Equal }` (`ConditionTerm::uint32_equal`); every other
+  `Compare { UInt32, Equal }` (`OldConditionTerm::uint32_equal`); every other
   equality stays at `int32`. The operands are words, as for any 32-bit
-  comparison. `ConditionTerm` and `BitvectorComparisonOp` compare, hash
+  comparison. `OldConditionTerm` and `BitvectorComparisonOp` compare, hash
   and order by an identity that reads a 32-bit equality's format as
-  `int32` (`ConditionTerm::fact_format`), one match on the root, so the
+  `int32` (`OldConditionTerm::fact_format`), one match on the root, so the
   fact indexes, fact and alpha keys and every equality lookup see one fact;
   the patterns that read a 32-bit equality accept either format, and those
   that read a `uint32` order exclude equality. Diagnostics and traces print
@@ -862,7 +862,7 @@ Progress:
      comparison; an untyped or `int32` literal compared with a narrow value
      takes the value's format when it fits. A native comparison and the
      `int32` comparison of its operands' widenings are one fact at the
-     fact-identity and lookup-key level only (`ConditionTerm::comparison_fact`,
+     fact-identity and lookup-key level only (`OldConditionTerm::comparison_fact`,
      O(1)): identity, hashing and order, the state-blind, alpha and
      identity keys, `condition_match_key`, and the structural condition
      matchers read both as one. A native fact is also filed, inside each
@@ -1011,7 +1011,7 @@ every language, and no {0, 1} integer format ([Decisions](#decisions),
 Progress:
 
 - The kernel sort (2026-10-26). Click `Bool` is the kernel's condition
-  sort: a `Bool` term is a `ConditionTerm`, whose `Constant` and
+  sort: a `Bool` term is a `OldConditionTerm`, whose `Constant` and
   `Variable` are its literals and binders and whose comparisons are `Bool`
   values. Four value forms that are not comparisons join it, after every
   other variant so the derived order of the existing conditions is
@@ -1028,7 +1028,7 @@ Progress:
   merges its operands' classes, which then share their truth, and a false
   one contradicts the merge; applications of one function to equal
   arguments are congruent; an unfolding files `application == body`
-  (`ConditionTerm::bool_unfold_equation`). A binder's truth reaches its
+  (`OldConditionTerm::bool_unfold_equation`). A binder's truth reaches its
   class whichever was filed first (`bool_binder_truth`). Nothing outside
   the kernel's tests builds the new forms yet, so no verdict, output or
   work unit changed: every mdtest and example gives the same `click
@@ -1063,7 +1063,7 @@ Progress:
   two `bool`s is logical equality.
 - Memory (2026-10-27). The byte rule: a store writes C1's byte, and a read
   of a `bool` cell is `byte != 0` over the ordinary byte load
-  (`ConditionTerm::BoolLoad` stays unbuilt, since the byte load already
+  (`OldConditionTerm::BoolLoad` stays unbuilt, since the byte load already
   names the read by its version). A write into a `bool` cell at another
   kind, or a byte view of one, is refused
   (`mdtests/a_bool_cell_is_not_written_through_another_type.md`,
@@ -1214,7 +1214,7 @@ Maintainer direction, 2026-10-25:
   whichever signedness it is filed at: `Compare { UInt32, Equal }` and
   `Compare { Int32, Equal }` over the same words are one fact, so the
   e-graph, the difference graph, the fact keys and indexes, and every
-  equality lookup treat them as one (`ConditionTerm::fact_format`), and the
+  equality lookup treat them as one (`OldConditionTerm::fact_format`), and the
   `uint32` format is kept for presentation. Soundness: word equality does
   not depend on the reading of the bits.
 - **Printing shows σ where the signedness changes.** A value, fact or step
@@ -1465,7 +1465,7 @@ Maintainer direction, 2026-11-01 (native narrow comparisons, PR 3):
   are the same fact for fact identity and lookup keys. This is a
   reasoning-level equivalence, not a lowering collapse: terms are built and
   printed as written. It is centralized in one O(1) reading,
-  `ConditionTerm::comparison_fact`, which identity, hashing, order and every
+  `OldConditionTerm::comparison_fact`, which identity, hashing, order and every
   structural fact key use, as K6 makes a 32-bit equality one fact at either
   signedness. The 32-bit indexes also file a native fact under its `int32`
   spelling, each inside its own adjuster so that assuming, forgetting and

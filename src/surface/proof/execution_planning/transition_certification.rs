@@ -1469,7 +1469,7 @@ mod condition_transition_tests {
         };
         assert!(crate::kernel::proposition_mentions_scalar_read(
             &Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: crate::kernel::MachineIntegerType::UInt32,
                     relation: crate::kernel::CompareRelation::Equal,
                     left: Box::new(value),

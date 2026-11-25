@@ -62,7 +62,7 @@ fn ordinary_authority_wrapper_checks_only_its_delta() {
                 1.into(),
             )));
             facts = facts.with_fact(Proposition::condition_is(
-                crate::kernel::ConditionTerm::Compare {
+                crate::kernel::OldConditionTerm::Compare {
                     format: crate::kernel::MachineIntegerType::Int32,
                     relation: crate::kernel::CompareRelation::Equal,
                     left: Box::new(OldMachineTerm::Variable(Variable(index as u64 + 100))),

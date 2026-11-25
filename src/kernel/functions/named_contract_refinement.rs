@@ -548,7 +548,7 @@ pub(in crate::kernel) fn prepare_contract_refinement_obligations(
             .into_iter()
             .reduce(|a, b| Proposition::And(Box::new(a), Box::new(b)))
             .unwrap_or(Proposition::condition_is(
-                ConditionTerm::Constant(true),
+                OldConditionTerm::Constant(true),
                 true,
             ))
     }

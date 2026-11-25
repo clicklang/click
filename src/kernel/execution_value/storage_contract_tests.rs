@@ -65,7 +65,7 @@ fn nonnumeric_storage_keys_preserve_native_pairwise_order_and_hash_classes() {
         OldMachineTerm::Variable(Variable(998601)),
         OldMachineTerm::bool_cast(
             MachineIntegerType::UInt8,
-            ConditionTerm::Variable(Variable(998602)),
+            OldConditionTerm::Variable(Variable(998602)),
         ),
     ] {
         values.push(ProgramValue::Bool(word));
@@ -142,18 +142,18 @@ fn float_storage_preserves_exact_call_argument_carrier_distinctions() {
 #[test]
 fn boolean_connective_keys_keep_native_condition_identity_and_order() {
     let _session = VerificationSession::enter();
-    let a = ConditionTerm::Variable(Variable(998670));
-    let b = ConditionTerm::Variable(Variable(998671));
+    let a = OldConditionTerm::Variable(Variable(998670));
+    let b = OldConditionTerm::Variable(Variable(998671));
     let cases = [
-        ConditionTerm::Constant(false),
+        OldConditionTerm::Constant(false),
         a.clone(),
-        ConditionTerm::BoolEqual(Box::new(a.clone()), Box::new(b.clone())),
-        ConditionTerm::BoolIf {
+        OldConditionTerm::BoolEqual(Box::new(a.clone()), Box::new(b.clone())),
+        OldConditionTerm::BoolIf {
             condition: Box::new(a.clone()),
             then_condition: Box::new(b.clone()),
             else_condition: Box::new(a.clone()),
         },
-        ConditionTerm::BoolApplication(SharedPureApplication::intern("key_bool".into(), vec![])),
+        OldConditionTerm::BoolApplication(SharedPureApplication::intern("key_bool".into(), vec![])),
     ];
     let roots = cases
         .iter()
@@ -233,7 +233,7 @@ fn float_operation_keys_preserve_native_order_and_payloads() {
             &OldMachineTerm::ThreadHandle(crate::kernel::primitives::ThreadHandleId(998696)),
         ));
         let native = OldMachineTerm::If {
-            condition: Box::new(ConditionTerm::Variable(Variable(998692))),
+            condition: Box::new(OldConditionTerm::Variable(Variable(998692))),
             then_term: Box::new(OldMachineTerm::constant(1)),
             else_term: Box::new(OldMachineTerm::constant(2)),
         };
@@ -342,7 +342,7 @@ fn algebraic_storage_keys_preserve_native_order_and_carrier_classes() {
             pointer: Box::new(Address::symbolic(Variable(address))),
         }));
     }
-    let condition = ConditionTerm::Variable(Variable(998736));
+    let condition = OldConditionTerm::Variable(Variable(998736));
     let branches = values[..3].to_vec();
     for branch in branches {
         values.push(make(AlgebraicTermNode::If {

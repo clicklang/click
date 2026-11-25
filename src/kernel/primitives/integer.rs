@@ -79,7 +79,7 @@ pub enum IntegerTerm {
     /// `OldMachineTerm::If`. Built by [`IntegerTerm::if_then_else`], so a
     /// constant condition or equal branches never stand.
     If {
-        condition: Box<ConditionTerm>,
+        condition: Box<OldConditionTerm>,
         then_term: SharedIntegerTerm,
         else_term: SharedIntegerTerm,
     },
@@ -1578,7 +1578,7 @@ pub(super) enum IntegerShallowKey {
         scrutinee: Box<AlgebraicTerm>,
         arms: Vec<AlgebraicIntegerMatchArm>,
     },
-    If(Box<ConditionTerm>, u64, u64),
+    If(Box<OldConditionTerm>, u64, u64),
     RangeFold(IntegerRangeIdentity, u64, Variable, Variable, u64),
 }
 
@@ -2118,11 +2118,15 @@ impl IntegerTerm {
     /// `if condition { then_term } else { else_term }`: one branch when the
     /// condition is a constant or both branches are the same term, as
     /// `AlgebraicTerm::if_then_else` builds an algebraic conditional.
-    pub(crate) fn if_then_else(condition: ConditionTerm, then_term: Self, else_term: Self) -> Self {
+    pub(crate) fn if_then_else(
+        condition: OldConditionTerm,
+        then_term: Self,
+        else_term: Self,
+    ) -> Self {
         crate::instrumentation::record_deterministic_work(1);
         match condition {
-            ConditionTerm::Constant(true) => then_term,
-            ConditionTerm::Constant(false) => else_term,
+            OldConditionTerm::Constant(true) => then_term,
+            OldConditionTerm::Constant(false) => else_term,
             condition => {
                 let then_term = SharedIntegerTerm::intern(then_term);
                 let else_term = SharedIntegerTerm::intern(else_term);
@@ -2381,7 +2385,7 @@ fn fmt_integer_shared(
     fmt_integer_term(term.as_ref(), formatter, seen)
 }
 
-impl ConditionTerm {
+impl OldConditionTerm {
     pub(crate) fn integer_less_than(left: IntegerTerm, right: IntegerTerm) -> Self {
         match (left.as_const(), right.as_const()) {
             (Some(left), Some(right)) => {
@@ -2674,7 +2678,7 @@ mod tests {
             next_id: 0,
         };
         let child: SharedIntegerTerm = IntegerTerm::If {
-            condition: Box::new(ConditionTerm::Variable(Variable(790_100))),
+            condition: Box::new(OldConditionTerm::Variable(Variable(790_100))),
             then_term: IntegerTerm::constant_i64(31).into(),
             else_term: IntegerTerm::constant_i64(32).into(),
         }
@@ -2823,8 +2827,8 @@ mod tests {
         let Proposition::Implies(_, conclusion) = empty.proposition() else {
             unreachable!()
         };
-        let Some((ConditionTerm::IntegerEqual(left, right), true)) =
-            conclusion.as_ref().condition_native()
+        let Some((OldConditionTerm::IntegerEqual(left, right), true)) =
+            conclusion.as_ref().old_condition()
         else {
             unreachable!()
         };
@@ -2842,8 +2846,8 @@ mod tests {
             unreachable!()
         };
         assert!(matches!(guard.as_ref(), Proposition::ConditionIs(_, true)));
-        let Some((ConditionTerm::IntegerEqual(left, _), true)) =
-            conclusion.as_ref().condition_native()
+        let Some((OldConditionTerm::IntegerEqual(left, _), true)) =
+            conclusion.as_ref().old_condition()
         else {
             unreachable!()
         };
@@ -2896,21 +2900,21 @@ mod tests {
             unreachable!("the empty form carries the defining equation beside its guard")
         };
         assert!(
-            matches!(&defining.as_ref(), condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerEqual(_, _), _))))
+            matches!(&defining.as_ref(), condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::IntegerEqual(_, _), _))))
         );
         assert!(
             matches!(&ordering.as_ref(), condition_source_0 @ Proposition::ConditionIs(
                 _,
                 true
-            ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare {
+            ) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
                     left: _,
                     right: _
                 }, _))))
         );
-        let Some((ConditionTerm::IntegerEqual(left, right), true)) =
-            conclusion.as_ref().condition_native()
+        let Some((OldConditionTerm::IntegerEqual(left, right), true)) =
+            conclusion.as_ref().old_condition()
         else {
             unreachable!()
         };
@@ -2948,13 +2952,13 @@ mod tests {
         let defining = premises
             .iter()
             .filter(|premise| {
-                matches!(&premise, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerEqual(_, _), _))))
+                matches!(&premise, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::IntegerEqual(_, _), _))))
             })
             .count();
         assert_eq!(defining, 2, "both defining equations must be premises");
-        assert!(premises.iter().any(|premise| matches!(&premise, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerEqual(left, _), _)) if (left.as_ref() == &prior)))));
-        let Some((ConditionTerm::IntegerEqual(left, right), true)) =
-            conclusion.as_ref().condition_native()
+        assert!(premises.iter().any(|premise| matches!(&premise, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::IntegerEqual(left, _), _)) if (left.as_ref() == &prior)))));
+        let Some((OldConditionTerm::IntegerEqual(left, right), true)) =
+            conclusion.as_ref().old_condition()
         else {
             unreachable!()
         };
@@ -2971,7 +2975,7 @@ mod tests {
         ));
         let replacement = SharedIntegerTerm::from(IntegerTerm::constant_i64(7));
         let goal = Proposition::condition_is(
-            ConditionTerm::IntegerLessEqual(
+            OldConditionTerm::IntegerLessEqual(
                 SharedIntegerTerm::from(IntegerTerm::constant_i64(0)),
                 SharedIntegerTerm::from(IntegerTerm::Add(
                     application.clone(),
@@ -2986,7 +2990,7 @@ mod tests {
             &replacement,
         )
         .expect("the application occurs on the arithmetic spine");
-        let Some((ConditionTerm::IntegerLessEqual(_, right), true)) = rewritten.condition_native()
+        let Some((OldConditionTerm::IntegerLessEqual(_, right), true)) = rewritten.old_condition()
         else {
             unreachable!()
         };
@@ -3139,8 +3143,8 @@ mod tests {
             let Proposition::Implies(_, conclusion) = theorem.proposition() else {
                 unreachable!()
             };
-            let Some((ConditionTerm::IntegerEqual(left, right), true)) =
-                conclusion.as_ref().condition_native()
+            let Some((OldConditionTerm::IntegerEqual(left, right), true)) =
+                conclusion.as_ref().old_condition()
             else {
                 unreachable!()
             };
@@ -3166,8 +3170,8 @@ mod tests {
         let Proposition::Implies(_, conclusion) = theorem.proposition() else {
             unreachable!()
         };
-        let Some((ConditionTerm::IntegerEqual(left, right), true)) =
-            conclusion.as_ref().condition_native()
+        let Some((OldConditionTerm::IntegerEqual(left, right), true)) =
+            conclusion.as_ref().old_condition()
         else {
             unreachable!()
         };
@@ -3197,8 +3201,8 @@ mod tests {
         let Proposition::Implies(_, conclusion) = theorem.proposition() else {
             unreachable!()
         };
-        let Some((ConditionTerm::IntegerEqual(left, _), true)) =
-            conclusion.as_ref().condition_native()
+        let Some((OldConditionTerm::IntegerEqual(left, _), true)) =
+            conclusion.as_ref().old_condition()
         else {
             unreachable!()
         };
@@ -3331,16 +3335,16 @@ mod tests {
     #[test]
     fn comparison_constructors_fold_only_root_constants() {
         assert_eq!(
-            ConditionTerm::integer_less_than(
+            OldConditionTerm::integer_less_than(
                 IntegerTerm::constant_i64(2),
                 IntegerTerm::constant_i64(3)
             ),
-            ConditionTerm::Constant(true)
+            OldConditionTerm::Constant(true)
         );
         let x = IntegerTerm::var(Variable(17));
         assert!(matches!(
-            ConditionTerm::integer_equal(x.clone(), x),
-            ConditionTerm::IntegerEqual(_, _)
+            OldConditionTerm::integer_equal(x.clone(), x),
+            OldConditionTerm::IntegerEqual(_, _)
         ));
     }
 
@@ -3446,7 +3450,7 @@ mod tests {
                 IntegerTerm::TruncatingQuotient(x.clone(), y.clone())
             };
             let proposition = Proposition::condition_is(
-                ConditionTerm::IntegerEqual(term.into(), IntegerTerm::constant_i64(99).into()),
+                OldConditionTerm::IntegerEqual(term.into(), IntegerTerm::constant_i64(99).into()),
                 true,
             );
             let first = crate::kernel::substitute_integer_term_in_proposition(
@@ -3461,7 +3465,7 @@ mod tests {
                 &IntegerTerm::constant_i64(3).into(),
             )
             .unwrap();
-            let Some((ConditionTerm::IntegerEqual(left, _), true)) = rewritten.condition_native()
+            let Some((OldConditionTerm::IntegerEqual(left, _), true)) = rewritten.old_condition()
             else {
                 unreachable!()
             };
@@ -3475,7 +3479,7 @@ mod tests {
                 &IntegerTerm::constant_i64(0).into(),
             )
             .unwrap();
-            let Some((ConditionTerm::IntegerEqual(left, _), true)) = zero.condition_native() else {
+            let Some((OldConditionTerm::IntegerEqual(left, _), true)) = zero.old_condition() else {
                 unreachable!()
             };
             assert!(left.as_const().is_none(), "zero substitution stays opaque");

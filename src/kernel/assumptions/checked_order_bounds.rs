@@ -5,12 +5,12 @@ use crate::kernel::MachineOperandView;
 use crate::kernel::equality_graph::MachineAtom;
 use crate::persistent::{PersistentMap, PersistentSet};
 
-type Bound = (i64, ConditionTerm, bool);
+type Bound = (i64, OldConditionTerm, bool);
 
 #[derive(Clone, Debug, Default)]
 struct EndpointBounds {
-    symbolic_lower: PersistentSet<(ConditionTerm, bool)>,
-    symbolic_upper: PersistentSet<(ConditionTerm, bool)>,
+    symbolic_lower: PersistentSet<(OldConditionTerm, bool)>,
+    symbolic_upper: PersistentSet<(OldConditionTerm, bool)>,
     strict_lower: bool,
     strict_upper: bool,
     lower: PersistentSet<Bound>,
@@ -20,13 +20,13 @@ struct EndpointBounds {
 #[derive(Clone, Debug, Default)]
 pub(in crate::kernel) struct CheckedOrderBounds {
     signed_wide: PersistentMap<MachineAtom, EndpointBounds>,
-    unsigned_wide_upper: PersistentMap<MachineAtom, PersistentSet<(u64, ConditionTerm, bool)>>,
+    unsigned_wide_upper: PersistentMap<MachineAtom, PersistentSet<(u64, OldConditionTerm, bool)>>,
     endpoints: [PersistentMap<MachineAtom, EndpointBounds>; 2],
-    strict_upper: PersistentMap<MachineAtom, PersistentSet<(ConditionTerm, bool)>>,
+    strict_upper: PersistentMap<MachineAtom, PersistentSet<(OldConditionTerm, bool)>>,
 }
 
 impl CheckedOrderBounds {
-    pub(super) fn adjust(&mut self, condition: &ConditionTerm, value: bool) {
+    pub(super) fn adjust(&mut self, condition: &OldConditionTerm, value: bool) {
         if self.adjust_wide(condition, value) {
             return;
         }
@@ -63,7 +63,7 @@ impl CheckedOrderBounds {
         left: MachineOperandView<'_>,
         right: MachineOperandView<'_>,
         strict: bool,
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
         value: bool,
     ) {
         if kind == 0 && strict {
@@ -145,7 +145,7 @@ impl CheckedOrderBounds {
         }
     }
 
-    fn adjust_wide(&mut self, condition: &ConditionTerm, value: bool) -> bool {
+    fn adjust_wide(&mut self, condition: &OldConditionTerm, value: bool) -> bool {
         use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
         if let Some(view) = comparison_view(condition, value)
             && matches!(
@@ -226,7 +226,7 @@ impl CheckedOrderBounds {
         key: MachineAtom,
         number: i64,
         upper: bool,
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
         value: bool,
     ) {
         crate::instrumentation::record_deterministic_work(1);
@@ -348,7 +348,7 @@ impl CheckedOrderBounds {
     /// maintained extrema. No additional admission index or bucket scan.
     pub(super) fn exact_observation_source(
         &self,
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
         truth: bool,
     ) -> Option<Proposition> {
         use crate::kernel::machine_integer::{
@@ -393,7 +393,7 @@ impl CheckedOrderBounds {
         };
         let proposition =
             |(_, condition, value): &Bound| Proposition::condition_is(condition.clone(), *value);
-        let singleton = |sources: &PersistentSet<(ConditionTerm, bool)>| {
+        let singleton = |sources: &PersistentSet<(OldConditionTerm, bool)>| {
             if sources.len() != 1 {
                 return None;
             }
@@ -492,7 +492,7 @@ mod tests {
             };
             let left = observe(&x);
             let right = observe(&bound);
-            let condition = ConditionTerm::integer_less_equal(
+            let condition = OldConditionTerm::integer_less_equal(
                 IntegerTerm::Machine(left.clone()),
                 IntegerTerm::Machine(right.clone()),
             );
@@ -515,8 +515,9 @@ mod tests {
     fn signed_wide_extrema_keep_strictness_and_branches() {
         let _session = crate::kernel::VerificationSession::enter();
         let x = OldMachineTerm::Variable(Variable(982000));
-        let less =
-            |n| ConditionTerm::int64_signed_less_than(x.clone(), OldMachineTerm::int64_constant(n));
+        let less = |n| {
+            OldConditionTerm::int64_signed_less_than(x.clone(), OldMachineTerm::int64_constant(n))
+        };
         let mut index = CheckedOrderBounds::default();
         index.adjust(&less(10), true);
         index.adjust(&less(0), false);

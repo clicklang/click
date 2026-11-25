@@ -21,8 +21,12 @@ fn constant(format: MachineIntegerType, value: i64) -> OldMachineTerm {
     OldMachineTerm::narrow_constant(format, value as u128)
 }
 
-fn equal(format: MachineIntegerType, left: OldMachineTerm, right: OldMachineTerm) -> ConditionTerm {
-    ConditionTerm::narrow_compare(format, CompareRelation::Equal, left, right)
+fn equal(
+    format: MachineIntegerType,
+    left: OldMachineTerm,
+    right: OldMachineTerm,
+) -> OldConditionTerm {
+    OldConditionTerm::narrow_compare(format, CompareRelation::Equal, left, right)
 }
 
 /// The signed/unsigned pairs every byte test checks: both halves of the

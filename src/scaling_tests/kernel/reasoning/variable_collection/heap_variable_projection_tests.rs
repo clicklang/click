@@ -64,7 +64,7 @@ fn shared_machine_variable_bookkeeping_reuses_prefixes_in_each_collection_mode()
                     [root.clone(), root.clone()],
                 );
                 let machine = SharedMachineIntegerTerm::from_shared(format, root.clone()).unwrap();
-                let condition = ConditionTerm::IntegerEqual(
+                let condition = OldConditionTerm::IntegerEqual(
                     IntegerTerm::Machine(machine.clone()).into(),
                     IntegerTerm::constant_i64(0).into(),
                 );
@@ -109,17 +109,17 @@ fn shared_machine_variable_collection_keeps_state_deferral_and_load_addresses() 
         KernelTerm::machine_binary_shared(format, MachineBinaryOp::Add, [leaf.clone(), leaf]),
     )
     .unwrap();
-    let shared = ConditionTerm::IntegerEqual(
+    let shared = OldConditionTerm::IntegerEqual(
         IntegerTerm::Machine(machine.clone()).into(),
         IntegerTerm::constant_i64(0).into(),
     );
-    let written = ConditionTerm::IntegerEqual(
+    let written = OldConditionTerm::IntegerEqual(
         IntegerTerm::from_machine(format, OldMachineTerm::Variable(load))
             .unwrap()
             .into(),
         IntegerTerm::constant_i64(0).into(),
     );
-    let collect = |condition: &ConditionTerm| {
+    let collect = |condition: &OldConditionTerm| {
         let mut variables = BTreeSet::new();
         let deferred = collect_condition_index_variables(condition, &mut variables);
         (variables, deferred)

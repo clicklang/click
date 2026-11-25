@@ -1495,18 +1495,21 @@ fn claim_is_integer_trivial(claim: &IntegerAffineClaim) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{ConditionTerm, IntegerTerm, Variable};
+    use crate::kernel::{IntegerTerm, OldConditionTerm, Variable};
 
-    fn proposition(condition: ConditionTerm) -> Proposition {
+    fn proposition(condition: OldConditionTerm) -> Proposition {
         Proposition::condition_is(condition, true)
     }
 
     fn less_equal(left: IntegerTerm, right: IntegerTerm) -> Proposition {
-        proposition(ConditionTerm::IntegerLessEqual(left.into(), right.into()))
+        proposition(OldConditionTerm::IntegerLessEqual(
+            left.into(),
+            right.into(),
+        ))
     }
 
     fn equal(left: IntegerTerm, right: IntegerTerm) -> Proposition {
-        proposition(ConditionTerm::IntegerEqual(left.into(), right.into()))
+        proposition(OldConditionTerm::IntegerEqual(left.into(), right.into()))
     }
 
     fn times(coefficient: i64, term: IntegerTerm) -> IntegerTerm {

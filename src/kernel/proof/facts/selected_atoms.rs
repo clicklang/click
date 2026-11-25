@@ -232,7 +232,7 @@ mod tests {
                 bindings: vec![],
                 binding_names: Default::default(),
                 body: OldMachineTerm::If {
-                    condition: Box::new(ConditionTerm::equal(
+                    condition: Box::new(OldConditionTerm::equal(
                         OldMachineTerm::Variable(Variable(1005397)),
                         OldMachineTerm::Variable(Variable(1005398)),
                     )),

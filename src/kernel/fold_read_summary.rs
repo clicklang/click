@@ -825,12 +825,12 @@ fn zip_proposition(
 }
 
 fn zip_condition(
-    source: &ConditionTerm,
-    target: &ConditionTerm,
+    source: &OldConditionTerm,
+    target: &OldConditionTerm,
     assumptions: &PureFactContext,
     checked: &mut CheckedFoldFrameTransport,
 ) -> Result<(), FoldFrameRefusal> {
-    use ConditionTerm as C;
+    use OldConditionTerm as C;
     crate::instrumentation::record_deterministic_work(1);
     match (source, target) {
         (C::IntegerLessThan(a, b), C::IntegerLessThan(c, d))

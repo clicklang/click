@@ -182,7 +182,7 @@ fn exact_predecessor_equal_zero_base(
     }
 }
 
-pub(super) fn canonical_contradiction_condition(condition: &ConditionTerm) -> ConditionTerm {
+pub(super) fn canonical_contradiction_condition(condition: &OldConditionTerm) -> OldConditionTerm {
     fn ordered<T: Ord + Clone>(left: &T, right: &T) -> (T, T) {
         if left <= right {
             (left.clone(), right.clone())
@@ -192,35 +192,35 @@ pub(super) fn canonical_contradiction_condition(condition: &ConditionTerm) -> Co
     }
 
     match condition {
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
             relation: CompareRelation::Equal,
             left,
             right,
         } => {
             let (left, right) = ordered(left.as_ref(), right.as_ref());
-            ConditionTerm::machine_compare(*format, CompareRelation::Equal, left, right)
+            OldConditionTerm::machine_compare(*format, CompareRelation::Equal, left, right)
         }
-        ConditionTerm::AddressOffsetEqual(left, right) => {
+        OldConditionTerm::AddressOffsetEqual(left, right) => {
             let (left, right) = ordered(left.as_ref(), right.as_ref());
-            ConditionTerm::address_offset_equal(left, right)
+            OldConditionTerm::address_offset_equal(left, right)
         }
-        ConditionTerm::AddressEqual(left, right) => {
+        OldConditionTerm::AddressEqual(left, right) => {
             let (left, right) = ordered(left.as_ref(), right.as_ref());
-            ConditionTerm::address_equal(left, right)
+            OldConditionTerm::address_equal(left, right)
         }
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterThan,
             left,
             right,
-        } => ConditionTerm::signed_less_than(right.as_ref().clone(), left.as_ref().clone()),
-        ConditionTerm::Compare {
+        } => OldConditionTerm::signed_less_than(right.as_ref().clone(), left.as_ref().clone()),
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
             left,
             right,
-        } => ConditionTerm::signed_less_equal(right.as_ref().clone(), left.as_ref().clone()),
+        } => OldConditionTerm::signed_less_equal(right.as_ref().clone(), left.as_ref().clone()),
         _ => condition.clone(),
     }
 }
@@ -515,7 +515,7 @@ impl PureFactContext {
                     || *value
                         && matches!(
                             condition.old_form(),
-                            ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right }
+                            OldConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right }
                                 if crate::kernel::api::atomic_loads_equal_along_memory_derivations(
                                     left, right, self,
                                 )
@@ -534,7 +534,7 @@ impl PureFactContext {
                     || *value
                         && matches!(
                             condition.old_form(),
-                            ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right }
+                            OldConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right }
                                 if crate::kernel::api::canonicalize_atomic_loads(left)
                                         == crate::kernel::api::canonicalize_atomic_loads(right)
                                     && !crate::kernel::reasoning::load_equality_lacks_recorded_evidence(
@@ -824,14 +824,14 @@ impl PureFactContext {
                     Sort::ProgramInt64 | Sort::ProgramInteger(MachineIntegerType::UInt64),
                     condition_source_0 @ Proposition::ConditionIs(_, true),
                 ) if let Some((
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int64,
                         relation: CompareRelation::Equal,
                         left,
                         right,
                     },
                     _,
-                )) = condition_source_0.condition_native() =>
+                )) = condition_source_0.old_condition() =>
                 {
                     (left, right)
                 }
@@ -847,14 +847,14 @@ impl PureFactContext {
                     ),
                     condition_source_0 @ Proposition::ConditionIs(_, true),
                 ) if let Some((
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                         relation: CompareRelation::Equal,
                         left,
                         right,
                     },
                     _,
-                )) = condition_source_0.condition_native() =>
+                )) = condition_source_0.old_condition() =>
                 {
                     (left, right)
                 }
@@ -1001,21 +1001,21 @@ impl PureFactContext {
 
     fn conditions_equal_modulo_proven_terms(
         &self,
-        left: &ConditionTerm,
-        right: &ConditionTerm,
+        left: &OldConditionTerm,
+        right: &OldConditionTerm,
     ) -> bool {
         if left == right {
             return true;
         }
         let operands = match (left, right) {
             (
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: a,
                     right: b,
                 },
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: c,
@@ -1023,13 +1023,13 @@ impl PureFactContext {
                 },
             )
             | (
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
                     left: a,
                     right: b,
                 },
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
                     left: c,
@@ -1037,13 +1037,13 @@ impl PureFactContext {
                 },
             )
             | (
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterThan,
                     left: a,
                     right: b,
                 },
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterThan,
                     left: c,
@@ -1051,13 +1051,13 @@ impl PureFactContext {
                 },
             )
             | (
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterEqual,
                     left: a,
                     right: b,
                 },
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterEqual,
                     left: c,
@@ -1065,13 +1065,13 @@ impl PureFactContext {
                 },
             )
             | (
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left: a,
                     right: b,
                 },
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left: c,
@@ -1084,16 +1084,16 @@ impl PureFactContext {
             return false;
         };
         let le_holds = |x: &OldMachineTerm, y: &OldMachineTerm| {
-            let condition = ConditionTerm::signed_less_equal(x.clone(), y.clone());
+            let condition = OldConditionTerm::signed_less_equal(x.clone(), y.clone());
             self.decide(&condition) == Some(true)
                 || self.condition_facts.get(&condition) == Some(&true)
         };
         let terms_equal = |x: &OldMachineTerm, y: &OldMachineTerm| {
             x == y
-                || self.decide(&ConditionTerm::equal(x.clone(), y.clone())) == Some(true)
+                || self.decide(&OldConditionTerm::equal(x.clone(), y.clone())) == Some(true)
                 || self
                     .condition_facts
-                    .get(&ConditionTerm::equal(x.clone(), y.clone()))
+                    .get(&OldConditionTerm::equal(x.clone(), y.clone()))
                     == Some(&true)
                 // Antisymmetry: mutual non-strict bounds prove equality.
                 || (le_holds(x, y) && le_holds(y, x))
@@ -1155,20 +1155,20 @@ impl SelectedFacts<'_> {
             // nor refuted by the recorded history.
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                         relation: CompareRelation::Equal,
                         left,
                         right,
                     }
-                    | ConditionTerm::Compare {
+                    | OldConditionTerm::Compare {
                         format: MachineIntegerType::Int64,
                         relation: CompareRelation::Equal,
                         left,
                         right,
                     },
                     _,
-                )) = condition_source_0.condition_native() =>
+                )) = condition_source_0.old_condition() =>
             {
                 crate::kernel::api::atomic_memory_load_equality_evidence(left, right, self)
                     .filter(AtomicMemoryLoadEqualityEvidence::is_fully_typed)
@@ -1176,8 +1176,8 @@ impl SelectedFacts<'_> {
                     .map(AtomicPropositionDerivationEvidence::MemoryDag)
             }
             condition_source_0 @ Proposition::ConditionIs(_, true)
-                if let Some((ConditionTerm::AddressOffsetEqual(left, right), _)) =
-                    condition_source_0.condition_native() =>
+                if let Some((OldConditionTerm::AddressOffsetEqual(left, right), _)) =
+                    condition_source_0.old_condition() =>
             {
                 crate::kernel::api::address_offset_equality_evidence(left, right, self)
                     .map(Box::new)
@@ -1188,14 +1188,14 @@ impl SelectedFacts<'_> {
         let load_address_congruence_evidence = match proposition {
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                         relation: CompareRelation::Equal,
                         left,
                         right,
                     },
                     _,
-                )) = condition_source_0.condition_native() =>
+                )) = condition_source_0.old_condition() =>
             {
                 self.load_address_congruence_evidence(left, right)
                     .map(Box::new)
@@ -1247,14 +1247,14 @@ impl SelectedFacts<'_> {
         let equality_path_evidence = match proposition {
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                         relation: CompareRelation::Equal,
                         left,
                         right,
                     },
                     _,
-                )) = condition_source_0.condition_native() =>
+                )) = condition_source_0.old_condition() =>
             {
                 self.exact_bitvector_equality_path_evidence(left, right)
                     .map(AtomicPropositionDerivationEvidence::BitvectorEqualityPath)
@@ -1264,14 +1264,14 @@ impl SelectedFacts<'_> {
         let pinned_constant_equality_evidence = match proposition {
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                         relation: CompareRelation::Equal,
                         left,
                         right,
                     },
                     _,
-                )) = condition_source_0.condition_native()
+                )) = condition_source_0.old_condition()
                     && (self
                         .equality_graph
                         .exact_literal_sources(left.as_ref())
@@ -1290,19 +1290,23 @@ impl SelectedFacts<'_> {
         let le_and_not_lt_equality_evidence = match proposition {
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                         relation: CompareRelation::Equal,
                         left,
                         right,
                     },
                     _,
-                )) = condition_source_0.condition_native() =>
+                )) = condition_source_0.old_condition() =>
             {
-                let less_equal =
-                    ConditionTerm::signed_less_equal(left.as_ref().clone(), right.as_ref().clone());
-                let less_than =
-                    ConditionTerm::signed_less_than(left.as_ref().clone(), right.as_ref().clone());
+                let less_equal = OldConditionTerm::signed_less_equal(
+                    left.as_ref().clone(),
+                    right.as_ref().clone(),
+                );
+                let less_than = OldConditionTerm::signed_less_than(
+                    left.as_ref().clone(),
+                    right.as_ref().clone(),
+                );
                 let less_equal = Proposition::condition_is(less_equal, true);
                 let not_less_than = Proposition::condition_is(less_than, false);
                 (self.contains_assumed_exact(&less_equal)
@@ -1321,20 +1325,20 @@ impl SelectedFacts<'_> {
         let ge_and_not_gt_equality_evidence = match proposition {
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                         relation: CompareRelation::Equal,
                         left,
                         right,
                     },
                     _,
-                )) = condition_source_0.condition_native() =>
+                )) = condition_source_0.old_condition() =>
             {
-                let greater_equal = ConditionTerm::signed_greater_equal(
+                let greater_equal = OldConditionTerm::signed_greater_equal(
                     left.as_ref().clone(),
                     right.as_ref().clone(),
                 );
-                let greater_than = ConditionTerm::signed_greater_than(
+                let greater_than = OldConditionTerm::signed_greater_than(
                     left.as_ref().clone(),
                     right.as_ref().clone(),
                 );
@@ -1356,21 +1360,24 @@ impl SelectedFacts<'_> {
         let le_and_neq_strict_evidence = match proposition {
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
                         left,
                         right,
                     },
                     _,
-                )) = condition_source_0.condition_native() =>
+                )) = condition_source_0.old_condition() =>
             {
                 let less_equal = Proposition::condition_is(
-                    ConditionTerm::signed_less_equal(left.as_ref().clone(), right.as_ref().clone()),
+                    OldConditionTerm::signed_less_equal(
+                        left.as_ref().clone(),
+                        right.as_ref().clone(),
+                    ),
                     true,
                 );
                 let not_equal = Proposition::condition_is(
-                    ConditionTerm::equal(left.as_ref().clone(), right.as_ref().clone()),
+                    OldConditionTerm::equal(left.as_ref().clone(), right.as_ref().clone()),
                     false,
                 );
                 (self.contains_assumed_exact(&less_equal)
@@ -1389,14 +1396,14 @@ impl SelectedFacts<'_> {
         let increment_upper_bound_evidence = match proposition {
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
                         left: incremented,
                         right: upper,
                     },
                     _,
-                )) = condition_source_0.condition_native() =>
+                )) = condition_source_0.old_condition() =>
             {
                 incremented
                     .add_const_base(1)
@@ -1409,14 +1416,14 @@ impl SelectedFacts<'_> {
         let increment_constant_upper_bound_evidence = match proposition {
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
                         left: incremented,
                         right: goal_upper,
                     },
                     _,
-                )) = condition_source_0.condition_native() =>
+                )) = condition_source_0.old_condition() =>
             {
                 incremented
                     .add_const_base(1)
@@ -1458,14 +1465,14 @@ impl SelectedFacts<'_> {
                 // tie is canonical, while the selected premise cites the
                 // exact fact.
             ) if let Some((
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: base,
                     right: incremented,
                 },
                 _,
-            )) = condition_source_0.condition_native()
+            )) = condition_source_0.old_condition()
                 && (incremented
                     .add_const_base(1)
                     .as_ref()
@@ -1482,14 +1489,14 @@ impl SelectedFacts<'_> {
         let one_plus_strictly_increases_evidence = match proposition {
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
                         left: value,
                         right: sum,
                     },
                     _,
-                )) = condition_source_0.condition_native() =>
+                )) = condition_source_0.old_condition() =>
             {
                 match sum.as_ref() {
                     binary_term!(Int32, Add, left, right)
@@ -1538,14 +1545,14 @@ impl SelectedFacts<'_> {
         let increment_lower_bound_evidence = match proposition {
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
                         left: lower,
                         right: incremented,
                     },
                     _,
-                )) = condition_source_0.condition_native() =>
+                )) = condition_source_0.old_condition() =>
             {
                 incremented.add_const_base(1).and_then(|base| {
                     self.exact_increment_bounds_evidence(lower, &base)
@@ -1557,14 +1564,14 @@ impl SelectedFacts<'_> {
         let increment_greater_equal_lower_bound_evidence = match proposition {
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
                         left: incremented,
                         right: lower,
                     },
                     _,
-                )) = condition_source_0.condition_native() =>
+                )) = condition_source_0.old_condition() =>
             {
                 incremented.add_const_base(1).and_then(|base| {
                     self.exact_increment_bounds_evidence(lower, &base).map(
@@ -1577,14 +1584,14 @@ impl SelectedFacts<'_> {
         let increment_strict_greater_lower_bound_evidence = match proposition {
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterThan,
                         left: incremented,
                         right: lower,
                     },
                     _,
-                )) = condition_source_0.condition_native() =>
+                )) = condition_source_0.old_condition() =>
             {
                 incremented.add_const_base(1).and_then(|base| {
                     self.exact_increment_bounds_evidence(lower, &base).map(
@@ -1597,14 +1604,14 @@ impl SelectedFacts<'_> {
         let increment_strict_greater_from_strict_lower_evidence = match proposition {
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterThan,
                         left: incremented,
                         right: lower,
                     },
                     _,
-                )) = condition_source_0.condition_native() =>
+                )) = condition_source_0.old_condition() =>
             {
                 incremented.add_const_base(1).and_then(|base| {
                     self.exact_strict_increment_bounds_evidence(lower, &base).map(|bounds| {
@@ -1619,14 +1626,14 @@ impl SelectedFacts<'_> {
         let increment_preserves_order_evidence = match proposition {
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
                         left: incremented_lower,
                         right: incremented_value,
                     },
                     _,
-                )) = condition_source_0.condition_native() =>
+                )) = condition_source_0.old_condition() =>
             {
                 incremented_lower
                     .add_const_base(1)
@@ -1643,20 +1650,20 @@ impl SelectedFacts<'_> {
         let positive_is_nonnegative_evidence = match proposition {
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
                         left: lower,
                         right: value,
                     }
-                    | ConditionTerm::Compare {
+                    | OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
                         left: value,
                         right: lower,
                     },
                     _,
-                )) = condition_source_0.condition_native()
+                )) = condition_source_0.old_condition()
                     && (lower.as_ref() == &OldMachineTerm::constant(0)) =>
             {
                 self.exact_direct_order_step(&OldMachineTerm::constant(0), value, true)
@@ -1669,7 +1676,7 @@ impl SelectedFacts<'_> {
             condition_source @ Proposition::ConditionIs(_, true)
                 if let Some(
                     (
-                        ConditionTerm::Compare {
+                        OldConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::LessThan,
                             left: lower,
@@ -1678,7 +1685,7 @@ impl SelectedFacts<'_> {
                         true,
                     )
                     | (
-                        ConditionTerm::Compare {
+                        OldConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::GreaterThan,
                             left: value,
@@ -1686,7 +1693,7 @@ impl SelectedFacts<'_> {
                         },
                         true,
                     ),
-                ) = condition_source.condition_native() =>
+                ) = condition_source.old_condition() =>
             {
                 match lower.as_ref() {
                     bits32_constant!(lower_bits) => (constant_u32(*lower_bits) as i32)
@@ -1708,14 +1715,14 @@ impl SelectedFacts<'_> {
         let constant_lower_bound_weakening_evidence = match proposition {
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
                         left: goal_lower,
                         right: value,
                     },
                     _,
-                )) = condition_source_0.condition_native() =>
+                )) = condition_source_0.old_condition() =>
             {
                 match goal_lower.as_ref() {
                     bits32_constant!(goal_bits) => self
@@ -1748,14 +1755,14 @@ impl SelectedFacts<'_> {
         let negated_strict_successor_bound_evidence = match proposition {
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
                         left: value,
                         right: lower,
                     },
                     _,
-                )) = condition_source_0.condition_native() =>
+                )) = condition_source_0.old_condition() =>
             {
                 match lower.as_ref() {
                     bits32_constant!(lower_bits) => (constant_u32(*lower_bits) as i32)
@@ -1763,7 +1770,7 @@ impl SelectedFacts<'_> {
                         .and_then(|upper| {
                             let upper = OldMachineTerm::constant(upper as u32);
                             let premise = Proposition::condition_is(
-                                ConditionTerm::signed_less_than(
+                                OldConditionTerm::signed_less_than(
                                     value.as_ref().clone(),
                                     upper.clone(),
                                 ),
@@ -1788,14 +1795,14 @@ impl SelectedFacts<'_> {
         let positive_predecessor_is_nonnegative_evidence = match proposition {
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
                         left: lower,
                         right: predecessor,
                     },
                     _,
-                )) = condition_source_0.condition_native()
+                )) = condition_source_0.old_condition()
                     && (lower.as_ref() == &OldMachineTerm::constant(0)) =>
             {
                 exact_predecessor_base(predecessor).and_then(|value| {
@@ -1810,7 +1817,7 @@ impl SelectedFacts<'_> {
             condition_source_0 @ Proposition::ConditionIs(
                 _,
                 true,
-            ) if let Some((ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::LessThan, left: predecessor, right: value }, _)) = condition_source_0.condition_native() => exact_predecessor_base(predecessor)
+            ) if let Some((OldConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::LessThan, left: predecessor, right: value }, _)) = condition_source_0.old_condition() => exact_predecessor_base(predecessor)
                 .filter(|base| base == value.as_ref())
                 .and_then(|base| {
                     self.exact_direct_order_step(
@@ -1825,14 +1832,14 @@ impl SelectedFacts<'_> {
         let nonnegative_predecessor_upper_bound_evidence = match proposition {
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
                         left: predecessor,
                         right: upper,
                     },
                     _,
-                )) = condition_source_0.condition_native() =>
+                )) = condition_source_0.old_condition() =>
             {
                 exact_predecessor_base(predecessor).and_then(|value| {
                     let nonnegative =
@@ -1853,14 +1860,14 @@ impl SelectedFacts<'_> {
         let one_le_predecessor_is_nonnegative_evidence = match proposition {
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
                         left: lower,
                         right: predecessor,
                     },
                     _,
-                )) = condition_source_0.condition_native()
+                )) = condition_source_0.old_condition()
                     && (lower.as_ref() == &OldMachineTerm::constant(0)) =>
             {
                 exact_predecessor_base(predecessor).and_then(|value| {
@@ -1874,14 +1881,14 @@ impl SelectedFacts<'_> {
         let one_le_predecessor_strictly_decreases_evidence = match proposition {
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
                         left: predecessor,
                         right: value,
                     },
                     _,
-                )) = condition_source_0.condition_native() =>
+                )) = condition_source_0.old_condition() =>
             {
                 exact_predecessor_base(predecessor)
                     .filter(|base| base == value.as_ref())
@@ -1896,14 +1903,14 @@ impl SelectedFacts<'_> {
         let equal_one_predecessor_is_zero_evidence = match proposition {
             condition_source_0 @ Proposition::ConditionIs(_, true)
                 if let Some((
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                         relation: CompareRelation::Equal,
                         left,
                         right,
                     },
                     _,
-                )) = condition_source_0.condition_native() =>
+                )) = condition_source_0.old_condition() =>
             {
                 exact_predecessor_equal_zero_base(left, right).and_then(|value| {
                     self.exact_bitvector_equality_path_evidence(
@@ -2097,8 +2104,8 @@ impl SelectedFacts<'_> {
             return evidence.checks(proposition, self);
         }
         if let AtomicPropositionDerivationEvidence::PointerOffsetMemoryDag(evidence) = evidence {
-            let Some((ConditionTerm::AddressOffsetEqual(left, right), true)) =
-                proposition.condition_native()
+            let Some((OldConditionTerm::AddressOffsetEqual(left, right), true)) =
+                proposition.old_condition()
             else {
                 return false;
             };
@@ -2106,14 +2113,14 @@ impl SelectedFacts<'_> {
         }
         if let AtomicPropositionDerivationEvidence::BitvectorEqualityPath(path) = evidence {
             let Some((
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left,
                     right,
                 },
                 true,
-            )) = proposition.condition_native()
+            )) = proposition.old_condition()
             else {
                 return false;
             };
@@ -2257,14 +2264,14 @@ impl SelectedFacts<'_> {
         }
         if let AtomicPropositionDerivationEvidence::Int32IncrementUpperBound(step) = evidence {
             let Some((
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
                     left: incremented,
                     right: upper,
                 },
                 true,
-            )) = proposition.condition_native()
+            )) = proposition.old_condition()
             else {
                 return false;
             };
@@ -2280,14 +2287,14 @@ impl SelectedFacts<'_> {
             evidence
         {
             let Some((
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
                     left: incremented,
                     right: goal_upper,
                 },
                 true,
-            )) = proposition.condition_native()
+            )) = proposition.old_condition()
             else {
                 return false;
             };
@@ -2308,14 +2315,14 @@ impl SelectedFacts<'_> {
         if let AtomicPropositionDerivationEvidence::Int32IncrementStrictlyIncreases(step) = evidence
         {
             let Some((
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: base,
                     right: incremented,
                 },
                 true,
-            )) = proposition.condition_native()
+            )) = proposition.old_condition()
             else {
                 return false;
             };
@@ -2340,14 +2347,14 @@ impl SelectedFacts<'_> {
         }
         if let AtomicPropositionDerivationEvidence::Int32OnePlusStrictlyIncreases(step) = evidence {
             let Some((
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: value,
                     right: sum,
                 },
                 true,
-            )) = proposition.condition_native()
+            )) = proposition.old_condition()
             else {
                 return false;
             };
@@ -2393,14 +2400,14 @@ impl SelectedFacts<'_> {
         }
         if let AtomicPropositionDerivationEvidence::Int32IncrementLowerBound(bounds) = evidence {
             let Some((
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
                     left: lower,
                     right: incremented,
                 },
                 true,
-            )) = proposition.condition_native()
+            )) = proposition.old_condition()
             else {
                 return false;
             };
@@ -2413,14 +2420,14 @@ impl SelectedFacts<'_> {
             evidence
         {
             let Some((
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterEqual,
                     left: incremented,
                     right: lower,
                 },
                 true,
-            )) = proposition.condition_native()
+            )) = proposition.old_condition()
             else {
                 return false;
             };
@@ -2433,14 +2440,14 @@ impl SelectedFacts<'_> {
             evidence
         {
             let Some((
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterThan,
                     left: incremented,
                     right: lower,
                 },
                 true,
-            )) = proposition.condition_native()
+            )) = proposition.old_condition()
             else {
                 return false;
             };
@@ -2454,14 +2461,14 @@ impl SelectedFacts<'_> {
         ) = evidence
         {
             let Some((
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterThan,
                     left: incremented,
                     right: lower,
                 },
                 true,
-            )) = proposition.condition_native()
+            )) = proposition.old_condition()
             else {
                 return false;
             };
@@ -2473,14 +2480,14 @@ impl SelectedFacts<'_> {
         if let AtomicPropositionDerivationEvidence::Int32IncrementPreservesOrder(bounds) = evidence
         {
             let Some((
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
                     left: incremented_lower,
                     right: incremented_value,
                 },
                 true,
-            )) = proposition.condition_native()
+            )) = proposition.old_condition()
             else {
                 return false;
             };
@@ -2494,20 +2501,20 @@ impl SelectedFacts<'_> {
         }
         if let AtomicPropositionDerivationEvidence::Int32PositiveIsNonnegative(step) = evidence {
             let Some((
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
                     left: lower,
                     right: value,
                 }
-                | ConditionTerm::Compare {
+                | OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterEqual,
                     left: value,
                     right: lower,
                 },
                 true,
-            )) = proposition.condition_native()
+            )) = proposition.old_condition()
             else {
                 return false;
             };
@@ -2522,7 +2529,7 @@ impl SelectedFacts<'_> {
                 condition_source @ Proposition::ConditionIs(_, true)
                     if let Some(
                         (
-                            ConditionTerm::Compare {
+                            OldConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
                                 relation: CompareRelation::LessThan,
                                 left: lower,
@@ -2531,7 +2538,7 @@ impl SelectedFacts<'_> {
                             true,
                         )
                         | (
-                            ConditionTerm::Compare {
+                            OldConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
                                 relation: CompareRelation::GreaterThan,
                                 left: value,
@@ -2539,7 +2546,7 @@ impl SelectedFacts<'_> {
                             },
                             true,
                         ),
-                    ) = condition_source.condition_native() =>
+                    ) = condition_source.old_condition() =>
                 {
                     (lower, value)
                 }
@@ -2560,14 +2567,14 @@ impl SelectedFacts<'_> {
             evidence
         {
             let Some((
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
                     left: goal_lower,
                     right: value,
                 },
                 true,
-            )) = proposition.condition_native()
+            )) = proposition.old_condition()
             else {
                 return false;
             };
@@ -2586,14 +2593,14 @@ impl SelectedFacts<'_> {
             evidence
         {
             let Some((
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterEqual,
                     left: value,
                     right: lower,
                 },
                 true,
-            )) = proposition.condition_native()
+            )) = proposition.old_condition()
             else {
                 return false;
             };
@@ -2611,7 +2618,7 @@ impl SelectedFacts<'_> {
                     &step.premise, condition_source_0 @ Proposition::ConditionIs(
                         _,
                         false,
-                    ) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::LessThan, left: premise_value, right: premise_upper }, _)) if (premise_value.as_ref() == value.as_ref()
+                    ) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::LessThan, left: premise_value, right: premise_upper }, _)) if (premise_value.as_ref() == value.as_ref()
                         && step.lower_is(premise_upper.as_ref()))))
                 && self.checks_exact_order_step(step);
         }
@@ -2619,14 +2626,14 @@ impl SelectedFacts<'_> {
             evidence
         {
             let Some((
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
                     left: lower,
                     right: predecessor,
                 },
                 true,
-            )) = proposition.condition_native()
+            )) = proposition.old_condition()
             else {
                 return false;
             };
@@ -2644,14 +2651,14 @@ impl SelectedFacts<'_> {
         ) = evidence
         {
             let Some((
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: predecessor,
                     right: value,
                 },
                 true,
-            )) = proposition.condition_native()
+            )) = proposition.old_condition()
             else {
                 return false;
             };
@@ -2668,14 +2675,14 @@ impl SelectedFacts<'_> {
             evidence
         {
             let Some((
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
                     left: predecessor,
                     right: upper,
                 },
                 true,
-            )) = proposition.condition_native()
+            )) = proposition.old_condition()
             else {
                 return false;
             };
@@ -2695,14 +2702,14 @@ impl SelectedFacts<'_> {
             evidence
         {
             let Some((
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
                     left: lower,
                     right: predecessor,
                 },
                 true,
-            )) = proposition.condition_native()
+            )) = proposition.old_condition()
             else {
                 return false;
             };
@@ -2716,14 +2723,14 @@ impl SelectedFacts<'_> {
             evidence
         {
             let Some((
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: predecessor,
                     right: value,
                 },
                 true,
-            )) = proposition.condition_native()
+            )) = proposition.old_condition()
             else {
                 return false;
             };
@@ -2735,14 +2742,14 @@ impl SelectedFacts<'_> {
         if let AtomicPropositionDerivationEvidence::Int32EqualOnePredecessorIsZero(path) = evidence
         {
             let Some((
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left,
                     right,
                 },
                 true,
-            )) = proposition.condition_native()
+            )) = proposition.old_condition()
             else {
                 return false;
             };
@@ -2758,14 +2765,14 @@ impl SelectedFacts<'_> {
         if let AtomicPropositionDerivationEvidence::Int32PinnedConstantEquality(evidence) = evidence
         {
             let Some((
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left,
                     right,
                 },
                 true,
-            )) = proposition.condition_native()
+            )) = proposition.old_condition()
             else {
                 return false;
             };
@@ -2775,21 +2782,21 @@ impl SelectedFacts<'_> {
             evidence
         {
             let Some((
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left,
                     right,
                 },
                 true,
-            )) = proposition.condition_native()
+            )) = proposition.old_condition()
             else {
                 return false;
             };
             let less_equal =
-                ConditionTerm::signed_less_equal(left.as_ref().clone(), right.as_ref().clone());
+                OldConditionTerm::signed_less_equal(left.as_ref().clone(), right.as_ref().clone());
             let less_than =
-                ConditionTerm::signed_less_than(left.as_ref().clone(), right.as_ref().clone());
+                OldConditionTerm::signed_less_than(left.as_ref().clone(), right.as_ref().clone());
             return evidence.less_equal == Proposition::condition_is(less_equal, true)
                 && evidence.not_less_than == Proposition::condition_is(less_than, false)
                 && self.contains_assumed_exact(&evidence.less_equal)
@@ -2799,21 +2806,25 @@ impl SelectedFacts<'_> {
             evidence
         {
             let Some((
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left,
                     right,
                 },
                 true,
-            )) = proposition.condition_native()
+            )) = proposition.old_condition()
             else {
                 return false;
             };
-            let greater_equal =
-                ConditionTerm::signed_greater_equal(left.as_ref().clone(), right.as_ref().clone());
-            let greater_than =
-                ConditionTerm::signed_greater_than(left.as_ref().clone(), right.as_ref().clone());
+            let greater_equal = OldConditionTerm::signed_greater_equal(
+                left.as_ref().clone(),
+                right.as_ref().clone(),
+            );
+            let greater_than = OldConditionTerm::signed_greater_than(
+                left.as_ref().clone(),
+                right.as_ref().clone(),
+            );
             return evidence.greater_equal == Proposition::condition_is(greater_equal, true)
                 && evidence.not_greater_than == Proposition::condition_is(greater_than, false)
                 && self.contains_assumed_exact(&evidence.greater_equal)
@@ -2822,23 +2833,23 @@ impl SelectedFacts<'_> {
         if let AtomicPropositionDerivationEvidence::Int32LeAndNeqImpliesStrict(evidence) = evidence
         {
             let Some((
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left,
                     right,
                 },
                 true,
-            )) = proposition.condition_native()
+            )) = proposition.old_condition()
             else {
                 return false;
             };
             let less_equal = Proposition::condition_is(
-                ConditionTerm::signed_less_equal(left.as_ref().clone(), right.as_ref().clone()),
+                OldConditionTerm::signed_less_equal(left.as_ref().clone(), right.as_ref().clone()),
                 true,
             );
             let not_equal = Proposition::condition_is(
-                ConditionTerm::equal(left.as_ref().clone(), right.as_ref().clone()),
+                OldConditionTerm::equal(left.as_ref().clone(), right.as_ref().clone()),
                 false,
             );
             return evidence.less_equal == less_equal
@@ -3091,15 +3102,15 @@ impl PureFactContext {
         let candidates = if strict {
             [
                 (
-                    ConditionTerm::signed_less_than(lower.clone(), upper.clone()),
+                    OldConditionTerm::signed_less_than(lower.clone(), upper.clone()),
                     true,
                 ),
                 (
-                    ConditionTerm::signed_less_equal(upper.clone(), lower.clone()),
+                    OldConditionTerm::signed_less_equal(upper.clone(), lower.clone()),
                     false,
                 ),
                 (
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterThan,
                         left: Box::new(upper.clone()),
@@ -3108,7 +3119,7 @@ impl PureFactContext {
                     true,
                 ),
                 (
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
                         left: Box::new(lower.clone()),
@@ -3120,15 +3131,15 @@ impl PureFactContext {
         } else {
             [
                 (
-                    ConditionTerm::signed_less_equal(lower.clone(), upper.clone()),
+                    OldConditionTerm::signed_less_equal(lower.clone(), upper.clone()),
                     true,
                 ),
                 (
-                    ConditionTerm::signed_less_than(upper.clone(), lower.clone()),
+                    OldConditionTerm::signed_less_than(upper.clone(), lower.clone()),
                     false,
                 ),
                 (
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
                         left: Box::new(upper.clone()),
@@ -3137,7 +3148,7 @@ impl PureFactContext {
                     true,
                 ),
                 (
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterThan,
                         left: Box::new(lower.clone()),
@@ -3397,7 +3408,7 @@ impl PureFactContext {
     pub(crate) fn proves_condition_from_facts(
         &self,
         permission: crate::SearchPermission,
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
         value: bool,
     ) -> bool {
         self.condition_facts
@@ -3413,7 +3424,7 @@ impl PureFactContext {
     }
 
     /// [`Self::proves_condition_from_facts`] over a step's explicit premises.
-    fn proves_condition_from_premises(&self, condition: &ConditionTerm, value: bool) -> bool {
+    fn proves_condition_from_premises(&self, condition: &OldConditionTerm, value: bool) -> bool {
         self.condition_facts
             .scan_explicit_input()
             .any(|(fact_condition, fact_value)| {
@@ -3428,7 +3439,7 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn proves_condition_from_derived_order_facts(
         &self,
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
         value: bool,
     ) -> bool {
         let Some(view) = order_view_at_format(condition, value, MachineIntegerType::Int32) else {
@@ -3452,7 +3463,7 @@ impl PureFactContext {
 impl SelectedFacts<'_> {
     pub(super) fn collect_quantified_order_facts_for_condition(
         &self,
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
         order_facts: &mut Vec<condition_reasoning::OrderFact>,
     ) {
         // Only `solve` reaches this.
@@ -3472,7 +3483,7 @@ impl PureFactContext {
     pub(crate) fn proposition_proves_condition(
         &self,
         proposition: &Proposition,
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
         value: bool,
     ) -> bool {
         match proposition {
@@ -3538,14 +3549,14 @@ impl PureFactContext {
             return;
         };
         let Some((
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left,
                 right,
             },
             truth,
-        )) = consequent.as_ref().condition_native()
+        )) = consequent.as_ref().old_condition()
         else {
             return;
         };
@@ -3555,7 +3566,7 @@ impl PureFactContext {
                 (antecedent.as_ref().clone(), other, *truth),
                 (antecedent.as_ref().clone(), selected, true),
                 (
-                    Proposition::condition_is(ConditionTerm::Constant(true), true),
+                    Proposition::condition_is(OldConditionTerm::Constant(true), true),
                     selected,
                     true,
                 ),
@@ -3594,7 +3605,7 @@ impl PureFactContext {
             &Proposition::Implies(
                 Box::new(antecedent),
                 Box::new(Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(left),
@@ -3622,7 +3633,7 @@ impl PureFactContext {
             (antecedent.clone(), expected, false, false, true),
             (antecedent, cell, true, false, false),
             (
-                Proposition::condition_is(ConditionTerm::Constant(true), true),
+                Proposition::condition_is(OldConditionTerm::Constant(true), true),
                 cell,
                 true,
                 true,
@@ -3665,8 +3676,8 @@ impl PureFactContext {
             {
                 continue;
             }
-            let Some((ConditionTerm::Compare { left, right, .. }, truth)) =
-                consequent.as_ref().condition_native()
+            let Some((OldConditionTerm::Compare { left, right, .. }, truth)) =
+                consequent.as_ref().old_condition()
             else {
                 unreachable!()
             };
@@ -3683,7 +3694,7 @@ impl PureFactContext {
     pub(in crate::kernel) fn forall_instantiations_for_condition(
         &self,
         proposition: &Proposition,
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
     ) -> Vec<Proposition> {
         let Proposition::ForAll { var, body, .. } = proposition else {
             return Vec::new();
@@ -3700,7 +3711,7 @@ impl PureFactContext {
     pub(crate) fn guided_forall_condition_candidates(
         var: Variable,
         body: &Proposition,
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
     ) -> BTreeSet<OldMachineTerm> {
         fn collect_offset_candidates(
             pattern: &AddressOffset,
@@ -3950,20 +3961,20 @@ impl PureFactContext {
             }
         }
         fn collect_condition_candidates(
-            pattern: &ConditionTerm,
-            target: &ConditionTerm,
+            pattern: &OldConditionTerm,
+            target: &OldConditionTerm,
             bound: Variable,
             candidates: &mut BTreeSet<OldMachineTerm>,
         ) {
             match (pattern, target) {
                 (
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
                         left: pattern_left,
                         right: pattern_right,
                     },
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
                         left: target_left,
@@ -3971,13 +3982,13 @@ impl PureFactContext {
                     },
                 )
                 | (
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
                         left: pattern_left,
                         right: pattern_right,
                     },
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
                         left: target_left,
@@ -3985,13 +3996,13 @@ impl PureFactContext {
                     },
                 )
                 | (
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterThan,
                         left: pattern_left,
                         right: pattern_right,
                     },
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterThan,
                         left: target_left,
@@ -3999,13 +4010,13 @@ impl PureFactContext {
                     },
                 )
                 | (
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
                         left: pattern_left,
                         right: pattern_right,
                     },
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
                         left: target_left,
@@ -4013,13 +4024,13 @@ impl PureFactContext {
                     },
                 )
                 | (
-                    ConditionTerm::Overflows {
+                    OldConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
                         left: pattern_left,
                         right: pattern_right,
                     },
-                    ConditionTerm::Overflows {
+                    OldConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
                         left: target_left,
@@ -4027,13 +4038,13 @@ impl PureFactContext {
                     },
                 )
                 | (
-                    ConditionTerm::Overflows {
+                    OldConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Subtract,
                         left: pattern_left,
                         right: pattern_right,
                     },
-                    ConditionTerm::Overflows {
+                    OldConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Subtract,
                         left: target_left,
@@ -4041,13 +4052,13 @@ impl PureFactContext {
                     },
                 )
                 | (
-                    ConditionTerm::Overflows {
+                    OldConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Multiply,
                         left: pattern_left,
                         right: pattern_right,
                     },
-                    ConditionTerm::Overflows {
+                    OldConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Multiply,
                         left: target_left,
@@ -4055,13 +4066,13 @@ impl PureFactContext {
                     },
                 )
                 | (
-                    ConditionTerm::Overflows {
+                    OldConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Divide,
                         left: pattern_left,
                         right: pattern_right,
                     },
-                    ConditionTerm::Overflows {
+                    OldConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Divide,
                         left: target_left,
@@ -4069,13 +4080,13 @@ impl PureFactContext {
                     },
                 )
                 | (
-                    ConditionTerm::Overflows {
+                    OldConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::ShiftLeft,
                         left: pattern_left,
                         right: pattern_right,
                     },
-                    ConditionTerm::Overflows {
+                    OldConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::ShiftLeft,
                         left: target_left,
@@ -4086,13 +4097,13 @@ impl PureFactContext {
                     collect_term_candidates(pattern_right, target_right, bound, candidates);
                 }
                 (
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                         relation: CompareRelation::Equal,
                         left: pattern_left,
                         right: pattern_right,
                     },
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                         relation: CompareRelation::Equal,
                         left: target_left,
@@ -4105,8 +4116,8 @@ impl PureFactContext {
                     collect_term_candidates(pattern_right, target_left, bound, candidates);
                 }
                 (
-                    ConditionTerm::AddressOffsetEqual(pattern_left, pattern_right),
-                    ConditionTerm::AddressOffsetEqual(target_left, target_right),
+                    OldConditionTerm::AddressOffsetEqual(pattern_left, pattern_right),
+                    OldConditionTerm::AddressOffsetEqual(target_left, target_right),
                 ) => {
                     collect_offset_candidates(pattern_left, target_left, bound, candidates);
                     collect_offset_candidates(pattern_right, target_right, bound, candidates);
@@ -4114,8 +4125,8 @@ impl PureFactContext {
                     collect_offset_candidates(pattern_right, target_left, bound, candidates);
                 }
                 (
-                    ConditionTerm::AddressEqual(pattern_left, pattern_right),
-                    ConditionTerm::AddressEqual(target_left, target_right),
+                    OldConditionTerm::AddressEqual(pattern_left, pattern_right),
+                    OldConditionTerm::AddressEqual(target_left, target_right),
                 ) => {
                     collect_pointer_candidates(pattern_left, target_left, bound, candidates);
                     collect_pointer_candidates(pattern_right, target_right, bound, candidates);
@@ -4127,7 +4138,7 @@ impl PureFactContext {
         }
         fn collect_proposition_condition_candidates(
             proposition: &Proposition,
-            target: &ConditionTerm,
+            target: &OldConditionTerm,
             bound: Variable,
             candidates: &mut BTreeSet<OldMachineTerm>,
         ) {
@@ -4165,7 +4176,7 @@ impl PureFactContext {
         // every unrelated scalar as an array index.
         if !matches!(
             condition,
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 relation: CompareRelation::Equal,
                 format,
                 ..
@@ -4185,8 +4196,8 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn condition_matches(
         &self,
-        fact: &ConditionTerm,
-        target: &ConditionTerm,
+        fact: &OldConditionTerm,
+        target: &OldConditionTerm,
     ) -> bool {
         if fact == target {
             return true;
@@ -4207,8 +4218,8 @@ impl PureFactContext {
 
         // A retained comparison has the same transport rules as its native
         // spelling. Only the two selected operand pairs are inspected.
-        if !(matches!(fact, ConditionTerm::Compare { .. })
-            && matches!(target, ConditionTerm::Compare { .. }))
+        if !(matches!(fact, OldConditionTerm::Compare { .. })
+            && matches!(target, OldConditionTerm::Compare { .. }))
             && let (Some(a), Some(b)) = (
                 crate::kernel::machine_integer::comparison::comparison_view(fact, true),
                 crate::kernel::machine_integer::comparison::comparison_view(target, true),
@@ -4231,17 +4242,17 @@ impl PureFactContext {
 
         match (fact, target) {
             (
-                ConditionTerm::IntegerEqual(fact_left, fact_right),
-                ConditionTerm::IntegerEqual(target_left, target_right),
+                OldConditionTerm::IntegerEqual(fact_left, fact_right),
+                OldConditionTerm::IntegerEqual(target_left, target_right),
             ) => fact_left == target_right && fact_right == target_left,
             (
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left: fact_left,
                     right: fact_right,
                 },
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left: target_left,
@@ -4271,8 +4282,8 @@ impl PureFactContext {
             // across the frame (`n->right` before a call, `old(n)->right`
             // after it).
             (
-                ConditionTerm::PointerEqual(fact_left, fact_right),
-                ConditionTerm::PointerEqual(target_left, target_right),
+                OldConditionTerm::PointerEqual(fact_left, fact_right),
+                OldConditionTerm::PointerEqual(target_left, target_right),
             ) => {
                 let same = |fact: &crate::kernel::OldPointer,
                             target: &crate::kernel::OldPointer| {
@@ -4293,8 +4304,8 @@ impl PureFactContext {
                     || same(fact_left, target_right) && same(fact_right, target_left)
             }
             (
-                ConditionTerm::AddressOffsetEqual(fact_left, fact_right),
-                ConditionTerm::AddressOffsetEqual(target_left, target_right),
+                OldConditionTerm::AddressOffsetEqual(fact_left, fact_right),
+                OldConditionTerm::AddressOffsetEqual(target_left, target_right),
             ) => {
                 let fact_left = fact_left.as_ref();
                 let fact_right = fact_right.as_ref();
@@ -4314,13 +4325,13 @@ impl PureFactContext {
                         && self.address_offsets_state_equivalent(fact_right, target_left)
             }
             (
-                ConditionTerm::Overflows {
+                OldConditionTerm::Overflows {
                     format: MachineIntegerType::Int32,
                     op: OverflowOperation::Add,
                     left: fact_left,
                     right: fact_right,
                 },
-                ConditionTerm::Overflows {
+                OldConditionTerm::Overflows {
                     format: MachineIntegerType::Int32,
                     op: OverflowOperation::Add,
                     left: target_left,
@@ -4333,13 +4344,13 @@ impl PureFactContext {
                         && self.bitvector_terms_equal_for_transport(fact_right, target_left)
             }
             (
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: fact_left,
                     right: fact_right,
                 },
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: target_left,
@@ -4347,13 +4358,13 @@ impl PureFactContext {
                 },
             )
             | (
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
                     left: fact_left,
                     right: fact_right,
                 },
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
                     left: target_left,
@@ -4361,13 +4372,13 @@ impl PureFactContext {
                 },
             )
             | (
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterThan,
                     left: fact_left,
                     right: fact_right,
                 },
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterThan,
                     left: target_left,
@@ -4375,13 +4386,13 @@ impl PureFactContext {
                 },
             )
             | (
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterEqual,
                     left: fact_left,
                     right: fact_right,
                 },
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterEqual,
                     left: target_left,
@@ -4394,13 +4405,13 @@ impl PureFactContext {
                 target_right,
             ),
             (
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: fact_left,
                     right: fact_right,
                 },
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterThan,
                     left: target_left,
@@ -4408,13 +4419,13 @@ impl PureFactContext {
                 },
             )
             | (
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterThan,
                     left: fact_left,
                     right: fact_right,
                 },
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: target_left,
@@ -4422,13 +4433,13 @@ impl PureFactContext {
                 },
             )
             | (
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
                     left: fact_left,
                     right: fact_right,
                 },
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterEqual,
                     left: target_left,
@@ -4436,13 +4447,13 @@ impl PureFactContext {
                 },
             )
             | (
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterEqual,
                     left: fact_left,
                     right: fact_right,
                 },
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
                     left: target_left,
@@ -4457,7 +4468,7 @@ impl PureFactContext {
             // A `uint32` order carries as a signed one does: in the same
             // relation side by side, or mirrored with its sides swapped.
             (
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::UInt32,
                     relation:
                         fact_relation @ (crate::kernel::CompareRelation::LessThan
@@ -4467,7 +4478,7 @@ impl PureFactContext {
                     left: fact_left,
                     right: fact_right,
                 },
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::UInt32,
                     relation:
                         target_relation @ (crate::kernel::CompareRelation::LessThan
@@ -4890,8 +4901,8 @@ impl PureFactContext {
         // Keep this deliberately structural and one-hop. Callers use it only
         // to move an already-certified address equality between framed memory
         // states, never to synthesize a new alias relationship.
-        let matches = |condition: &ConditionTerm| {
-            let ConditionTerm::AddressOffsetEqual(fact_left, fact_right) = condition else {
+        let matches = |condition: &OldConditionTerm| {
+            let OldConditionTerm::AddressOffsetEqual(fact_left, fact_right) = condition else {
                 return false;
             };
             self.address_offsets_state_equivalent(fact_left, left)
@@ -5133,7 +5144,7 @@ impl PureFactContext {
         // Exact opposite assumptions construct this fact directly, without
         // deleting the original condition or invalidating derived indexes.
         if self.prop_facts.contains(&Proposition::condition_is(
-            ConditionTerm::Constant(false),
+            OldConditionTerm::Constant(false),
             true,
         )) {
             return true;
@@ -5185,7 +5196,7 @@ impl PureFactContext {
             crate::instrumentation::record_deterministic_work(1);
             let key = canonical_contradiction_condition(condition);
             // Canonicalization folds a comparison of constants to its value.
-            if matches!(&key, ConditionTerm::Constant(actual) if actual != value) {
+            if matches!(&key, OldConditionTerm::Constant(actual) if actual != value) {
                 return true;
             }
             if condition_polarities
@@ -5196,11 +5207,13 @@ impl PureFactContext {
             }
             // Full pointer equality entails address equality, while its
             // negation makes no claim about addresses.
-            if let ConditionTerm::PointerEqual(left, right) = condition
+            if let OldConditionTerm::PointerEqual(left, right) = condition
                 && *value
             {
-                let address =
-                    ConditionTerm::address_equal(left.address().clone(), right.address().clone());
+                let address = OldConditionTerm::address_equal(
+                    left.address().clone(),
+                    right.address().clone(),
+                );
                 if condition_polarities.insert(canonical_contradiction_condition(&address), true)
                     == Some(false)
                 {
@@ -5208,9 +5221,11 @@ impl PureFactContext {
                 }
             }
             match (condition, value) {
-                (ConditionTerm::Constant(actual), expected) if actual != expected => return true,
+                (OldConditionTerm::Constant(actual), expected) if actual != expected => {
+                    return true;
+                }
                 (
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                         relation: CompareRelation::Equal,
                         left,
@@ -5227,7 +5242,7 @@ impl PureFactContext {
                     exact_equal_pairs.insert(pair);
                 }
                 (
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                         relation: CompareRelation::Equal,
                         left,
@@ -5492,7 +5507,7 @@ pub(super) fn order_endpoint_key(term: &OldMachineTerm) -> OldMachineTerm {
             count: usize,
             constant: u32,
         },
-        RebuildIf(ConditionTerm),
+        RebuildIf(OldConditionTerm),
     }
 
     let mut tasks = vec![Task::Visit(term.clone())];
@@ -5581,7 +5596,7 @@ mod constant_prefix_certificate_tests {
     #[test]
     fn order_path_checks_normalized_constant_prefix_and_live_premise() {
         let upper = OldMachineTerm::Variable(Variable(999_481));
-        let premise = ConditionTerm::signed_less_equal(2u32.into(), upper.clone());
+        let premise = OldConditionTerm::signed_less_equal(2u32.into(), upper.clone());
         let context = PureFactContext::new().assume_condition(premise.clone(), true);
         let path = context
             .exact_signed_order_path_evidence(&1u32.into(), &upper, true)
@@ -5652,7 +5667,7 @@ mod guided_condition_instantiation_tests {
 
     fn body() -> Proposition {
         Proposition::condition_is(
-            ConditionTerm::equal(array_read(variable(998_100), LoadKind::Int32), 0u32.into()),
+            OldConditionTerm::equal(array_read(variable(998_100), LoadKind::Int32), 0u32.into()),
             true,
         )
     }
@@ -5661,7 +5676,7 @@ mod guided_condition_instantiation_tests {
     fn guided_condition_instantiation_keeps_matching_cell_index() {
         let _session = crate::kernel::VerificationSession::enter();
         let target =
-            ConditionTerm::equal(array_read(variable(998_101), LoadKind::Int32), 0u32.into());
+            OldConditionTerm::equal(array_read(variable(998_101), LoadKind::Int32), 0u32.into());
         assert_eq!(
             PureFactContext::guided_forall_condition_candidates(
                 Variable(998_100),
@@ -5671,7 +5686,7 @@ mod guided_condition_instantiation_tests {
             BTreeSet::from([variable(998_101)])
         );
         let wrong_kind =
-            ConditionTerm::equal(array_read(variable(998_101), LoadKind::UInt8), 0u32.into());
+            OldConditionTerm::equal(array_read(variable(998_101), LoadKind::UInt8), 0u32.into());
         assert!(
             PureFactContext::guided_forall_condition_candidates(
                 Variable(998_100),
@@ -5700,7 +5715,7 @@ mod annotated_alignment_conflict_tests {
             crate::kernel::effective_type::CStructClass::opaque("node"),
         );
         let aligned =
-            Proposition::condition_is(ConditionTerm::pointer_aligned(pointer.clone(), 8), true);
+            Proposition::condition_is(OldConditionTerm::pointer_aligned(pointer.clone(), 8), true);
         let masked_address = OldMachineTerm::uint64_bitwise_and(
             OldMachineTerm::object_pointer_address(pointer, Some(class)),
             OldMachineTerm::uint64_constant(7),
@@ -5709,20 +5724,20 @@ mod annotated_alignment_conflict_tests {
         assert_eq!(
             aligned,
             Proposition::condition_is(
-                ConditionTerm::uint64_equal(masked_address.clone(), zero.clone()),
+                OldConditionTerm::uint64_equal(masked_address.clone(), zero.clone()),
                 true
             ),
         );
         // An address's class is not part of its identity, so the classed
         // spelling is the same term as the bare one and cannot hide a fact.
         assert_eq!(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: Box::new(masked_address.clone()),
                 right: Box::new(zero.clone())
             },
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::uint64_bitwise_and(
@@ -5740,7 +5755,7 @@ mod annotated_alignment_conflict_tests {
         // conflict handling; the factory's canonical spelling was checked
         // above.
         let not_aligned = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: Box::new(zero),
@@ -5769,9 +5784,9 @@ mod congruent_condition_conflict_tests {
         let p = Address::symbolic(Variable(971_001));
         let q = Address::symbolic(Variable(971_002));
         let equality =
-            Proposition::condition_is(ConditionTerm::address_equal(p.clone(), q.clone()), true);
-        let aligned = Proposition::condition_is(ConditionTerm::pointer_aligned(p, 8), true);
-        let not_aligned = Proposition::condition_is(ConditionTerm::pointer_aligned(q, 8), false);
+            Proposition::condition_is(OldConditionTerm::address_equal(p.clone(), q.clone()), true);
+        let aligned = Proposition::condition_is(OldConditionTerm::pointer_aligned(p, 8), true);
+        let not_aligned = Proposition::condition_is(OldConditionTerm::pointer_aligned(q, 8), false);
         for facts in [
             [equality.clone(), aligned.clone(), not_aligned.clone()],
             [aligned.clone(), not_aligned.clone(), equality.clone()],
@@ -5835,18 +5850,18 @@ mod comparison_operand_order_tests {
         let bound = OldMachineTerm::Variable(Variable(9_991_002));
         let limit = OldMachineTerm::constant(2147483646);
         let value_alias =
-            Proposition::condition_is(ConditionTerm::equal(value.clone(), x.clone()), true);
+            Proposition::condition_is(OldConditionTerm::equal(value.clone(), x.clone()), true);
         let bound_alias =
-            Proposition::condition_is(ConditionTerm::equal(bound.clone(), limit.clone()), true);
-        let fact = ConditionTerm::signed_less_equal(value, limit);
+            Proposition::condition_is(OldConditionTerm::equal(bound.clone(), limit.clone()), true);
+        let fact = OldConditionTerm::signed_less_equal(value, limit);
         let parent = PureFactContext::new().assume_condition(fact.clone(), true);
         let child = parent
             .clone()
             .assume_proposition(value_alias.clone())
             .assume_proposition(bound_alias.clone());
         for goal in [
-            ConditionTerm::signed_less_equal(x.clone(), bound.clone()),
-            ConditionTerm::signed_greater_equal(bound.clone(), x.clone()),
+            OldConditionTerm::signed_less_equal(x.clone(), bound.clone()),
+            OldConditionTerm::signed_greater_equal(bound.clone(), x.clone()),
         ] {
             assert!(child.condition_matches(&fact, &goal));
             assert!(!parent.condition_matches(&fact, &goal));
@@ -5936,7 +5951,7 @@ mod shared_domain_evidence_tests {
                     x.clone(),
                     one.clone(),
                     vec![Proposition::condition_is(
-                        ConditionTerm::integer_greater_than(max.clone(), x.clone()),
+                        OldConditionTerm::integer_greater_than(max.clone(), x.clone()),
                         true,
                     )],
                 ),
@@ -5945,7 +5960,7 @@ mod shared_domain_evidence_tests {
                     one.clone(),
                     x.clone(),
                     vec![Proposition::condition_is(
-                        ConditionTerm::integer_less_equal(max.clone(), x.clone()),
+                        OldConditionTerm::integer_less_equal(max.clone(), x.clone()),
                         false,
                     )],
                 ),
@@ -5966,14 +5981,14 @@ mod shared_domain_evidence_tests {
                         y.clone(),
                         vec![
                             Proposition::condition_is(
-                                ConditionTerm::integer_greater_equal(
+                                OldConditionTerm::integer_greater_equal(
                                     y.clone(),
                                     IntegerTerm::constant((0).into()),
                                 ),
                                 true,
                             ),
                             Proposition::condition_is(
-                                ConditionTerm::integer_less_than(observe(&headroom), x.clone()),
+                                OldConditionTerm::integer_less_than(observe(&headroom), x.clone()),
                                 false,
                             ),
                         ],
@@ -5985,14 +6000,14 @@ mod shared_domain_evidence_tests {
                     y.clone(),
                     vec![
                         Proposition::condition_is(
-                            ConditionTerm::integer_greater_equal(
+                            OldConditionTerm::integer_greater_equal(
                                 y.clone(),
                                 IntegerTerm::constant((0).into()),
                             ),
                             true,
                         ),
                         Proposition::condition_is(
-                            ConditionTerm::integer_greater_equal(x.clone(), y.clone()),
+                            OldConditionTerm::integer_greater_equal(x.clone(), y.clone()),
                             true,
                         ),
                     ],
@@ -6074,7 +6089,7 @@ mod shared_wide_order_evidence_tests {
             OldMachineTerm::uint64_constant(1),
         );
         let source =
-            Proposition::condition_is(ConditionTerm::uint64_equal(x.clone(), tagged), true);
+            Proposition::condition_is(OldConditionTerm::uint64_equal(x.clone(), tagged), true);
         let context = SelectedFacts::from_propositions(&[source]);
         let next = OldMachineTerm::uint64_add(x.clone(), OldMachineTerm::uint64_constant(1));
         let roots = [&x, &next].map(|term| {
@@ -6150,23 +6165,23 @@ mod shared_wide_order_evidence_tests {
                 let observe = |t: &SharedMachineIntegerTerm| IntegerTerm::Machine(t.clone());
                 let first = Proposition::condition_is(
                     if mixed {
-                        ConditionTerm::machine_compare(
+                        OldConditionTerm::machine_compare(
                             ty,
                             CompareRelation::LessEqual,
                             native(987001),
                             native(987002),
                         )
                     } else {
-                        ConditionTerm::integer_less_equal(observe(&a), observe(&b))
+                        OldConditionTerm::integer_less_equal(observe(&a), observe(&b))
                     },
                     true,
                 );
                 let second = Proposition::condition_is(
-                    ConditionTerm::integer_less_equal(observe(&c), observe(&b)),
+                    OldConditionTerm::integer_less_equal(observe(&c), observe(&b)),
                     false,
                 );
                 let goal = Proposition::condition_is(
-                    ConditionTerm::integer_less_than(observe(&a), observe(&c)),
+                    OldConditionTerm::integer_less_than(observe(&a), observe(&c)),
                     true,
                 );
                 let exports = KernelTermExport::machine_export_count();
@@ -6212,7 +6227,7 @@ mod shared_wide_order_evidence_tests {
                 | AtomicPropositionDerivationEvidence::SignedOrderPath(path) = &mut forged
                 {
                     path[0].premise = Proposition::condition_is(
-                        ConditionTerm::integer_less_than(observe(&a), observe(&b)),
+                        OldConditionTerm::integer_less_than(observe(&a), observe(&b)),
                         true,
                     );
                 }
@@ -6241,7 +6256,7 @@ mod shared_wide_order_evidence_tests {
             [variable(987121), variable(987122)],
         );
         let source = Proposition::condition_is(
-            ConditionTerm::integer_greater_equal(observe(variable(987120)), observe(bound)),
+            OldConditionTerm::integer_greater_equal(observe(variable(987120)), observe(bound)),
             true,
         );
         let facts = PureFactStore::from_ordered(std::slice::from_ref(&source));
@@ -6251,7 +6266,7 @@ mod shared_wide_order_evidence_tests {
         let facts = PureFactStore::from_ordered(&[
             source,
             Proposition::condition_is(
-                ConditionTerm::signed_greater_equal(measure.clone(), 0u32.into()),
+                OldConditionTerm::signed_greater_equal(measure.clone(), 0u32.into()),
                 true,
             ),
         ]);
@@ -6272,14 +6287,14 @@ mod shared_wide_order_evidence_tests {
         let observed =
             IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, root.clone()).unwrap());
         let source = Proposition::condition_is(
-            ConditionTerm::integer_less_equal(observed.clone(), IntegerTerm::constant_i64(5)),
+            OldConditionTerm::integer_less_equal(observed.clone(), IntegerTerm::constant_i64(5)),
             true,
         );
         let context = SelectedFacts::from_propositions(std::slice::from_ref(&source));
         let exports = KernelTermExport::machine_export_count();
         for (limit, expected) in [(7, true), (5, false), (4, false)] {
             let goal = Proposition::condition_is(
-                ConditionTerm::integer_less_than(
+                OldConditionTerm::integer_less_than(
                     observed.clone(),
                     IntegerTerm::constant_i64(limit),
                 ),
@@ -6335,15 +6350,20 @@ mod shared_wide_order_evidence_tests {
             let a = OldMachineTerm::Variable(Variable(987011));
             let b = OldMachineTerm::Variable(Variable(987012));
             let first = Proposition::condition_is(
-                ConditionTerm::machine_compare(ty, CompareRelation::LessEqual, a.clone(), native),
+                OldConditionTerm::machine_compare(
+                    ty,
+                    CompareRelation::LessEqual,
+                    a.clone(),
+                    native,
+                ),
                 true,
             );
             let second = Proposition::condition_is(
-                ConditionTerm::integer_less_than(observe(&named), observe(&b)),
+                OldConditionTerm::integer_less_than(observe(&named), observe(&b)),
                 true,
             );
             let goal = Proposition::condition_is(
-                ConditionTerm::integer_less_than(observe(&a), observe(&b)),
+                OldConditionTerm::integer_less_than(observe(&a), observe(&b)),
                 true,
             );
             let exports = KernelTermExport::machine_export_count();
@@ -6363,7 +6383,7 @@ mod shared_wide_order_evidence_tests {
             );
             let different = crate::kernel::eval::canonical_term(&different);
             let unrelated = Proposition::condition_is(
-                ConditionTerm::integer_less_than(observe(&different), observe(&b)),
+                OldConditionTerm::integer_less_than(observe(&different), observe(&b)),
                 true,
             );
             let branch = SelectedFacts::from_propositions(&[first, unrelated]);
@@ -6399,12 +6419,12 @@ mod retained_individual_order_tests {
         let upper = OldMachineTerm::constant(100);
         for truth in [false, true] {
             let condition = if truth {
-                ConditionTerm::integer_less_than(
+                OldConditionTerm::integer_less_than(
                     observed(value.clone()),
                     IntegerTerm::constant_i64(100),
                 )
             } else {
-                ConditionTerm::integer_greater_equal(
+                OldConditionTerm::integer_greater_equal(
                     observed(value.clone()),
                     IntegerTerm::constant_i64(100),
                 )

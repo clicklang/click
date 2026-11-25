@@ -36,14 +36,14 @@ mod tests {
         let left = KernelMatch::test_scrutinee(vec![]);
         let mut right = left.clone();
         right.node = AlgebraicTermNode::Variable(Variable(999721));
-        let guard = ConditionTerm::integer_equal(
+        let guard = OldConditionTerm::integer_equal(
             IntegerTerm::var(Variable(999722)),
             IntegerTerm::constant_i64(0),
         );
         for (condition, right) in [
             (guard.clone(), right),
             (guard, left.clone()),
-            (ConditionTerm::Constant(true), left.clone()),
+            (OldConditionTerm::Constant(true), left.clone()),
         ] {
             let raw = AlgebraicTerm {
                 algebraic_type: left.algebraic_type.clone(),
@@ -89,7 +89,7 @@ mod tests {
         let native = AlgebraicTerm {
             algebraic_type: source.algebraic_type.clone(),
             node: AlgebraicTermNode::If {
-                condition: Box::new(ConditionTerm::Variable(Variable(999729))),
+                condition: Box::new(OldConditionTerm::Variable(Variable(999729))),
                 then_term: Box::new(source),
                 else_term: Box::new(variable.clone()),
             },
@@ -107,7 +107,8 @@ mod tests {
             KernelTermImport::default().algebraic(&variable),
         ]);
         let format = MachineIntegerType::Int32;
-        let native_condition = ConditionTerm::AlgebraicEqual(Box::new(native), Box::new(variable));
+        let native_condition =
+            OldConditionTerm::AlgebraicEqual(Box::new(native), Box::new(variable));
         let a = OldMachineTerm::constant(1);
         let b = OldMachineTerm::constant(2);
         let common = KernelTerm::machine_if_shared(
@@ -200,7 +201,7 @@ mod tests {
                     *source
                 );
             }
-            let condition = ConditionTerm::Variable(Variable(999731));
+            let condition = OldConditionTerm::Variable(Variable(999731));
             let reduced = KernelTerm::algebraic_if([
                 KernelTermImport::default().condition(&condition),
                 roots[0].clone(),

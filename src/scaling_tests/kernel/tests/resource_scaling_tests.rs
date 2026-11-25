@@ -70,8 +70,8 @@ fn frame_with_unrelated_allocations(unrelated: usize) -> ResourceContext {
         ])
 }
 
-fn address_equal(left: Address, right: Address) -> ConditionTerm {
-    ConditionTerm::AddressEqual(Box::new(left), Box::new(right))
+fn address_equal(left: Address, right: Address) -> OldConditionTerm {
+    OldConditionTerm::AddressEqual(Box::new(left), Box::new(right))
 }
 
 fn symbolic_base(identity: u64) -> Address {
@@ -207,7 +207,7 @@ fn private_owner_projection_does_not_republish_discarded_pairings() {
         let mut assumptions = PureFactContext::new();
         for index in 0..size {
             assumptions = assumptions.assume_condition(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     OldMachineTerm::Variable(Variable(93_800 + index as u64)),
                     OldMachineTerm::constant(index as u32),
                 ),
@@ -859,8 +859,8 @@ fn variable_range(base: Address, start: OldMachineTerm, end: OldMachineTerm) -> 
     ResourceFact::own_memory(MemoryRange::new(base, start, end))
 }
 
-fn int32_equal(left: u64, right: u64) -> ConditionTerm {
-    ConditionTerm::Compare {
+fn int32_equal(left: u64, right: u64) -> OldConditionTerm {
+    OldConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::Equal,
         left: Box::new(OldMachineTerm::Variable(Variable(left))),
@@ -1163,14 +1163,14 @@ fn parameter_validity_still_refuses_related_overlaps() {
     // the two roots, and the endpoints then decide the overlap.
     let pinned = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::equal(
+            OldConditionTerm::equal(
                 OldMachineTerm::Variable(Variable(other)),
                 OldMachineTerm::constant(7),
             ),
             true,
         )
         .assume_condition(
-            ConditionTerm::equal(
+            OldConditionTerm::equal(
                 OldMachineTerm::Variable(Variable(target)),
                 OldMachineTerm::constant(7),
             ),
@@ -1181,7 +1181,7 @@ fn parameter_validity_still_refuses_related_overlaps() {
         "a parameter pinned to the address of an owned one"
     );
     let equal_pointer = PureFactContext::new().assume_condition(
-        ConditionTerm::address_equal(parameter_base(other), parameter_base(target)),
+        OldConditionTerm::address_equal(parameter_base(other), parameter_base(target)),
         true,
     );
     assert!(
@@ -1921,11 +1921,14 @@ fn shared_view_offset_alias_lookup_is_indexed_and_preserves_occurrences() {
     let facts = PureFactContext::new()
         .assume_condition(address_equal(alias.clone(), displaced), true)
         .assume_condition(
-            ConditionTerm::signed_less_equal(0u32.into(), index.clone()),
+            OldConditionTerm::signed_less_equal(0u32.into(), index.clone()),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_equal(OldMachineTerm::add(index, 4u32.into()), 16u32.into()),
+            OldConditionTerm::signed_less_equal(
+                OldMachineTerm::add(index, 4u32.into()),
+                16u32.into(),
+            ),
             true,
         );
     let view = |pointer, end| {
@@ -2312,7 +2315,7 @@ fn footprint_composition_does_not_decide_every_alias_pair() {
                 997_000 + index - 1
             };
             facts.assume_condition(
-                ConditionTerm::signed_less_than(
+                OldConditionTerm::signed_less_than(
                     OldMachineTerm::Variable(Variable(below)),
                     OldMachineTerm::Variable(Variable(997_000 + index)),
                 ),
@@ -2758,14 +2761,14 @@ fn respelling_a_wide_struct_range_is_logarithmic_in_unrelated_and_same_block_ran
     let index = OldMachineTerm::Variable(Variable(1 << 42));
     let bounded = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::uint64_less_equal(
+            OldConditionTerm::uint64_less_equal(
                 count(TARGET_HEAP),
                 OldMachineTerm::uint64_constant(100),
             ),
             true,
         )
         .assume_condition(
-            ConditionTerm::uint64_less_than(index.clone(), count(TARGET_HEAP)),
+            OldConditionTerm::uint64_less_than(index.clone(), count(TARGET_HEAP)),
             true,
         );
     let unbounded = PureFactContext::new();

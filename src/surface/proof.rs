@@ -251,7 +251,7 @@ mod certificate_tests {
             );
         }
         let proposition = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(term),

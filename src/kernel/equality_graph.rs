@@ -123,13 +123,13 @@ pub(in crate::kernel) struct MachineAtom(crate::kernel::SharedMachineIntegerTerm
 /// check holds in shared form. A constant-size match on the condition;
 /// `None` for any other condition.
 pub(in crate::kernel) fn byte_product_offsets(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
 ) -> Option<(
     crate::kernel::SharedMachineIntegerTerm,
     crate::kernel::SharedMachineIntegerTerm,
     i64,
 )> {
-    let ConditionTerm::Overflows {
+    let OldConditionTerm::Overflows {
         format: MachineIntegerType::Int32,
         op: crate::kernel::OverflowOperation::Multiply,
         left,
@@ -2321,7 +2321,7 @@ impl EqualityGraph {
         let changed = state.terms.add_integer_equality(left, right);
         let modular = state.terms.add_modular_integer_equality(left, right);
         let observation = crate::kernel::machine_integer::comparison::native_comparison_view(
-            &ConditionTerm::IntegerEqual(left.clone(), right.clone()),
+            &OldConditionTerm::IntegerEqual(left.clone(), right.clone()),
             true,
         );
         let native = observation
@@ -2340,15 +2340,15 @@ impl EqualityGraph {
         changed
     }
 
-    fn prepare_condition(&self, state: &mut EqualityGraphState, condition: &ConditionTerm) {
+    fn prepare_condition(&self, state: &mut EqualityGraphState, condition: &OldConditionTerm) {
         match condition {
             crate::kernel::integer_comparison_condition!(a, b) => {
                 self.register_expression_operands(state, [], [], [a.as_ref(), b.as_ref()]);
             }
-            ConditionTerm::AlgebraicEqual(a, b) => {
+            OldConditionTerm::AlgebraicEqual(a, b) => {
                 self.register_expression_operands(state, [], [a.as_ref(), b.as_ref()], []);
             }
-            ConditionTerm::PointerEqual(a, b) => {
+            OldConditionTerm::PointerEqual(a, b) => {
                 self.register_logical_read_values(state, a.pointers().chain(b.pointers()));
                 state.register_blocks(a.pointers().chain(b.pointers()).map(|p| p.base.clone()));
                 // Late value queries need the current address-class bridges,
@@ -2357,7 +2357,7 @@ impl EqualityGraph {
                 state.register_pointer_address(b.address());
                 state.close(Vec::new());
             }
-            ConditionTerm::AddressEqual(a, b) => {
+            OldConditionTerm::AddressEqual(a, b) => {
                 self.register_logical_read_values(state, [a.as_ref(), b.as_ref()]);
                 state.register_blocks([a.base.clone(), b.base.clone()]);
                 state.register_pointer_address(a);
@@ -2374,7 +2374,7 @@ impl EqualityGraph {
 
     pub(in crate::kernel) fn add_condition(
         &mut self,
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
         value: bool,
     ) -> bool {
         // `x * K` does not wrap: the byte offset of the product and the
@@ -2397,13 +2397,13 @@ impl EqualityGraph {
         {
             self.add_condition(&widened, value);
         }
-        if let ConditionTerm::IntegerEqual(a, b) = condition
+        if let OldConditionTerm::IntegerEqual(a, b) = condition
             && value
         {
             self.add_integer_equality(a, b);
             return true;
         }
-        if let ConditionTerm::IntegerNotEqual(a, b) = condition
+        if let OldConditionTerm::IntegerNotEqual(a, b) = condition
             && !value
         {
             self.add_integer_equality(a, b);
@@ -2414,18 +2414,18 @@ impl EqualityGraph {
         if value
             && matches!(
                 condition,
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     ..
-                } | ConditionTerm::Compare {
+                } | OldConditionTerm::Compare {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
                     ..
-                } | ConditionTerm::AddressEqual(..)
-                    | ConditionTerm::PointerEqual(..)
-                    | ConditionTerm::AddressOffsetEqual(..)
-                    | ConditionTerm::AlgebraicEqual(..)
+                } | OldConditionTerm::AddressEqual(..)
+                    | OldConditionTerm::PointerEqual(..)
+                    | OldConditionTerm::AddressOffsetEqual(..)
+                    | OldConditionTerm::AlgebraicEqual(..)
             )
         {
             return false;
@@ -2440,12 +2440,13 @@ impl EqualityGraph {
         // A `Bool` value or binder (`design/machine-integers.md`, Stage 5):
         // its class's truth, and for a true equality the merge of its
         // operands (rule L-Eq).
-        let supported =
-            if condition.is_bool_value_form() || matches!(condition, ConditionTerm::Variable(_)) {
-                state.terms.admit_bool_condition(condition, value)
-            } else {
-                state.terms.admit_condition(condition, value)
-            };
+        let supported = if condition.is_bool_value_form()
+            || matches!(condition, OldConditionTerm::Variable(_))
+        {
+            state.terms.admit_bool_condition(condition, value)
+        } else {
+            state.terms.admit_condition(condition, value)
+        };
         state.close(Vec::new());
         // Predicate truth is scoped state, not a value equality. Resource
         // indexes apply only admitted equations; unrelated comparisons must
@@ -2482,38 +2483,38 @@ impl EqualityGraph {
 
     pub(in crate::kernel) fn knows_condition(
         &self,
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
         value: bool,
     ) -> bool {
         // True equations are represented directly by classes, never truth
         // nodes. A miss must not register an unrelated condition application.
         if value {
             match condition {
-                ConditionTerm::PointerEqual(a, b) => {
+                OldConditionTerm::PointerEqual(a, b) => {
                     let mut state = self.state.lock().expect("equality graph");
                     self.prepare_condition(&mut state, condition);
                     return state.terms.pointer_values_equal(a, b);
                 }
-                ConditionTerm::IntegerEqual(a, b) => return self.are_integer_equal(a, b),
-                ConditionTerm::AlgebraicEqual(a, b) => return self.are_algebraic_equal(a, b),
-                ConditionTerm::Compare {
+                OldConditionTerm::IntegerEqual(a, b) => return self.are_integer_equal(a, b),
+                OldConditionTerm::AlgebraicEqual(a, b) => return self.are_algebraic_equal(a, b),
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                     relation: CompareRelation::Equal,
                     left: a,
                     right: b,
                 } => return self.are_int32_equal(a, b),
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
                     left: a,
                     right: b,
                 } => return self.are_uint64_equal(a, b),
-                ConditionTerm::AddressEqual(a, b) => return self.are_equal(a, b),
-                ConditionTerm::AddressOffsetEqual(a, b) => return self.are_offsets_equal(a, b),
+                OldConditionTerm::AddressEqual(a, b) => return self.are_equal(a, b),
+                OldConditionTerm::AddressOffsetEqual(a, b) => return self.are_offsets_equal(a, b),
                 _ => {}
             }
         }
-        if let ConditionTerm::IntegerNotEqual(a, b) = condition
+        if let OldConditionTerm::IntegerNotEqual(a, b) = condition
             && !value
         {
             return self.are_integer_equal(a, b);
@@ -2550,7 +2551,7 @@ impl EqualityGraph {
             state.close(Vec::new());
             return known;
         }
-        if let ConditionTerm::Variable(variable) = condition {
+        if let OldConditionTerm::Variable(variable) = condition {
             return state.terms.knows_bool_binder(*variable, value);
         }
         if !state.terms.may_know_condition(condition, value) {
@@ -3698,22 +3699,22 @@ mod tests {
                 .are_offsets_equal(&reordered, &nested)
         );
         assert_eq!(
-            context
-                .selected_for_test()
-                .decide_selected_condition(&ConditionTerm::address_equal(
+            context.selected_for_test().decide_selected_condition(
+                &OldConditionTerm::address_equal(
                     at_offset(base.clone(), nested.clone()),
                     at_offset(base.clone(), reordered.clone()),
-                )),
+                )
+            ),
             Some(true)
         );
         assert!(!context.equality_graph.are_offsets_equal(&nested, &wrong));
         assert_ne!(
-            context
-                .selected_for_test()
-                .decide_selected_condition(&ConditionTerm::address_equal(
+            context.selected_for_test().decide_selected_condition(
+                &OldConditionTerm::address_equal(
                     at_offset(base.clone(), nested),
                     at_offset(base, wrong),
-                )),
+                )
+            ),
             Some(true)
         );
     }
@@ -3743,8 +3744,8 @@ mod tests {
         let z = AddressOffset::Variable(Variable(11_023));
         let left = at_offset(block.clone(), x.clone());
         let middle = at_offset(block, y.clone());
-        let pointer_fact = ConditionTerm::address_equal(left.clone(), middle.clone());
-        let offset_fact = ConditionTerm::address_offset_equal(y.clone(), z.clone());
+        let pointer_fact = OldConditionTerm::address_equal(left.clone(), middle.clone());
+        let offset_fact = OldConditionTerm::address_offset_equal(y.clone(), z.clone());
         let trunk = PureFactContext::new().assume_condition(offset_fact.clone(), true);
         let branch = trunk.clone().assume_condition(pointer_fact.clone(), true);
         assert!(!trunk.equality_graph.are_offsets_equal(&x, &z));
@@ -3774,9 +3775,9 @@ mod tests {
         let c = symbolic(11_042);
         let x = AddressOffset::Variable(Variable(11_043));
         let y = AddressOffset::Variable(Variable(11_044));
-        let offset_fact = ConditionTerm::address_offset_equal(x.clone(), y.clone());
-        let ab = ConditionTerm::address_equal(at(a.clone(), 0), at(b.clone(), 0));
-        let bc = ConditionTerm::address_equal(at(b.clone(), 0), at(c.clone(), 0));
+        let offset_fact = OldConditionTerm::address_offset_equal(x.clone(), y.clone());
+        let ab = OldConditionTerm::address_equal(at(a.clone(), 0), at(b.clone(), 0));
+        let bc = OldConditionTerm::address_equal(at(b.clone(), 0), at(c.clone(), 0));
         let trunk = PureFactContext::new().assume_condition(offset_fact.clone(), true);
         let branch = trunk
             .clone()
@@ -3802,8 +3803,8 @@ mod tests {
         let x = AddressOffset::Variable(Variable(11_062));
         let y = AddressOffset::Variable(Variable(11_063));
         let translated = AddressOffset::add(x.clone(), AddressOffset::Constant(8));
-        let offset_fact = ConditionTerm::address_offset_equal(translated, y.clone());
-        let pointer_fact = ConditionTerm::address_equal(at(a.clone(), 0), at(b.clone(), 8));
+        let offset_fact = OldConditionTerm::address_offset_equal(translated, y.clone());
+        let pointer_fact = OldConditionTerm::address_equal(at(a.clone(), 0), at(b.clone(), 8));
         let trunk = PureFactContext::new().assume_condition(offset_fact.clone(), true);
         let branch = trunk.clone().assume_condition(pointer_fact.clone(), true);
         let left = at_offset(a.clone(), x.clone());
@@ -3812,7 +3813,10 @@ mod tests {
         assert!(branch.equality_graph.are_equal(&left, &right));
         assert!(branch.equality_graph.are_equal(&right, &left));
         assert_eq!(
-            branch.decide(&ConditionTerm::address_equal(left.clone(), right.clone())),
+            branch.decide(&OldConditionTerm::address_equal(
+                left.clone(),
+                right.clone()
+            )),
             Some(true)
         );
         assert!(
@@ -4264,7 +4268,7 @@ mod tests {
         // separate frame derivation could prove the cell unchanged.
         assert!(!classes.are_equal(&left, &right));
         let separated = PureFactContext::new()
-            .assume_condition(ConditionTerm::address_equal(other, cell.clone()), false);
+            .assume_condition(OldConditionTerm::address_equal(other, cell.clone()), false);
         let load = |pointer: &Address| {
             let AddressBase::Symbolic(variable) = &pointer.base else {
                 unreachable!()
@@ -4283,7 +4287,7 @@ mod tests {
         // Separation alone is not an implicit request to reconstruct a frame.
         // An explicit preservation proof supplies the read equality itself.
         let supplied =
-            separated.assume_condition(ConditionTerm::equal(load(&left), load(&right)), true);
+            separated.assume_condition(OldConditionTerm::equal(load(&left), load(&right)), true);
         assert!(crate::kernel::reasoning::memory_resolution::bitvector_terms_proven_equal_for_memory_resolution(
             &load(&left), &load(&right), &supplied,
         ));
@@ -4409,10 +4413,10 @@ mod tests {
         let y = at(symbolic(805), 0);
         let lp = named_load(&memory, &p);
         let lq = named_load(&memory, &q);
-        let address = ConditionTerm::address_equal(p, q);
+        let address = OldConditionTerm::address_equal(p, q);
         let selected = [
-            (ConditionTerm::address_equal(lp, x.clone()), true),
-            (ConditionTerm::address_equal(lq, y.clone()), true),
+            (OldConditionTerm::address_equal(lp, x.clone()), true),
+            (OldConditionTerm::address_equal(lq, y.clone()), true),
         ];
         let mut context = PureFactContext::new().assume_condition(address.clone(), true);
         for (condition, value) in &selected {
@@ -4646,7 +4650,7 @@ mod boolean_cast_dependency_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let native = OldMachineTerm::bool_cast(
             MachineIntegerType::Int32,
-            ConditionTerm::AddressEqual(
+            OldConditionTerm::AddressEqual(
                 Box::new(Address::symbolic(Variable(999462))),
                 Box::new(Address::symbolic(Variable(999463))),
             ),

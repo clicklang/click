@@ -56,7 +56,7 @@ fn separation_candidates_preserve_derived_aliases_and_loaded_bases() {
     };
     assert!(!separated(&holds(PureFactContext::new())));
     let one_order = PureFactContext::new().assume_condition(
-        ConditionTerm::signed_less_equal(a.clone(), alias.clone()),
+        OldConditionTerm::signed_less_equal(a.clone(), alias.clone()),
         true,
     );
     assert!(
@@ -64,21 +64,21 @@ fn separation_candidates_preserve_derived_aliases_and_loaded_bases() {
         "one bound is not an alias"
     );
     let both_orders = one_order.assume_condition(
-        ConditionTerm::signed_less_equal(alias.clone(), a.clone()),
+        OldConditionTerm::signed_less_equal(alias.clone(), a.clone()),
         true,
     );
     assert!(separated(&holds(both_orders)));
     let pinned = PureFactContext::new()
-        .assume_condition(ConditionTerm::equal(a.clone(), 7u32.into()), true)
-        .assume_condition(ConditionTerm::equal(alias.clone(), 7u32.into()), true);
+        .assume_condition(OldConditionTerm::equal(a.clone(), 7u32.into()), true)
+        .assume_condition(OldConditionTerm::equal(alias.clone(), 7u32.into()), true);
     assert!(separated(&holds(pinned)));
     let transitive = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::address_equal(base(alias.clone()), base(middle.clone())),
+            OldConditionTerm::address_equal(base(alias.clone()), base(middle.clone())),
             true,
         )
         .assume_condition(
-            ConditionTerm::address_equal(base(middle), base(a.clone())),
+            OldConditionTerm::address_equal(base(middle), base(a.clone())),
             true,
         );
     assert!(separated(&holds(transitive)));
@@ -130,7 +130,7 @@ fn separation_candidates_follow_a_block_alias_to_the_owner() {
         PureFactContext::new().assume_proposition(Proposition::ResourceComposition(frame.clone()));
     assert!(!query(&unrelated), "an unowned range proves nothing");
     let aliased = unrelated.assume_condition(
-        ConditionTerm::address_equal(loaded.clone(), parameter.clone()),
+        OldConditionTerm::address_equal(loaded.clone(), parameter.clone()),
         true,
     );
     assert!(query(&aliased));
@@ -386,7 +386,7 @@ fn owned_range_access_survives_learning_a_symbolic_pointer_alias() {
     );
     let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(range));
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::address_equal(cell.clone(), slot.clone()),
+        OldConditionTerm::address_equal(cell.clone(), slot.clone()),
         true,
     );
     for pointer in [&cell, &slot] {
@@ -430,7 +430,7 @@ fn owned_range_read_survives_learning_a_symbolic_pointer_alias() {
     );
     let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(range));
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::address_equal(slot.clone(), cell.clone()),
+        OldConditionTerm::address_equal(slot.clone(), cell.clone()),
         true,
     );
     for pointer in [&cell, &slot] {
@@ -476,8 +476,8 @@ fn owned_memory_consumption_survives_a_late_transitive_displaced_alias() {
     );
     for reverse in [false, true] {
         let links = [
-            ConditionTerm::address_equal(owner_root.clone(), middle.clone()),
-            ConditionTerm::address_equal(middle.clone(), Address::symbolic(Variable(212))),
+            OldConditionTerm::address_equal(owner_root.clone(), middle.clone()),
+            OldConditionTerm::address_equal(middle.clone(), Address::symbolic(Variable(212))),
         ];
         let mut assumptions = empty.clone();
         for link in if reverse {
@@ -539,13 +539,18 @@ fn paired_memory_index_tracks_resource_deltas_and_displaced_merges() {
     let mut assumptions = empty.clone();
     for i in 2..20 {
         assumptions = assumptions.assume_condition(
-            ConditionTerm::address_equal(alias.clone(), Address::symbolic(Variable(810_000 + i))),
+            OldConditionTerm::address_equal(
+                alias.clone(),
+                Address::symbolic(Variable(810_000 + i)),
+            ),
             true,
         );
         resources.synchronize_memory_equalities(&assumptions);
     }
-    assumptions =
-        assumptions.assume_condition(ConditionTerm::address_equal(alias.clone(), shifted), true);
+    assumptions = assumptions.assume_condition(
+        OldConditionTerm::address_equal(alias.clone(), shifted),
+        true,
+    );
     resources.synchronize_memory_equalities(&assumptions);
     let required = cell(alias.clone());
     let consumed = resources
@@ -602,7 +607,7 @@ fn paired_memory_index_consumes_inside_a_displaced_aliased_range() {
             OldMachineTerm::constant(4),
         )));
     let assumptions = PureFactContext::new()
-        .assume_condition(ConditionTerm::address_equal(owner, alias.clone()), true);
+        .assume_condition(OldConditionTerm::address_equal(owner, alias.clone()), true);
     let required = ResourceFact::own_memory(MemoryRange::new(
         Address {
             base: alias.base.clone(),
@@ -663,7 +668,7 @@ fn owned_fragment_reservation_checks_aliases_gaps_and_linear_consumption() {
             .is_none()
     );
     let facts = empty.clone().assume_condition(
-        ConditionTerm::address_equal(
+        OldConditionTerm::address_equal(
             Address {
                 base: base.base.clone(),
                 offset: AddressOffset::Constant(8),
@@ -918,7 +923,7 @@ fn inactive_instance_quantity_does_not_imply_nonnegativity() {
         rewrite_resource_instance(&folded, &instance, &definition, &assumptions, true).unwrap();
     assert!(opened.resources().is_empty());
     assert!(!facts.contains(&Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
             left: Box::new(OldMachineTerm::constant(u32::MAX)),
@@ -1388,7 +1393,7 @@ fn instance_memory_guard_requires_a_proved_case_and_exposes_only_that_case() {
     else {
         panic!("fixture pointer");
     };
-    let guard = ConditionTerm::address_equal(pointer.address().clone(), Address::null());
+    let guard = OldConditionTerm::address_equal(pointer.address().clone(), Address::null());
     let unknown = PureFactContext::new();
     assert!(rewrite_resource_instance(&state, &instance, &definition, &unknown, true).is_err());
     for is_null in [false, true] {
@@ -2211,7 +2216,7 @@ fn symbolic_resource_indices_preserve_types_equality_and_linear_transfer() {
                 Term::Algebraic(m.clone().into()),
             ),
             Proposition::condition_is(
-                ConditionTerm::AlgebraicEqual(Box::new(m.clone()), Box::new(n.clone())),
+                OldConditionTerm::AlgebraicEqual(Box::new(m.clone()), Box::new(n.clone())),
                 true,
             ),
         ] {
@@ -2360,7 +2365,7 @@ fn unrelated_token_context(size: usize) -> ResourceContext {
 
 fn equality(left: OldMachineTerm, right: OldMachineTerm) -> Proposition {
     Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(left),
@@ -3265,7 +3270,7 @@ fn symbolic_declared_resource_quantity_splits_without_materializing_units() {
     let symbolic = ResourceFact::own_quantity(resource.clone(), quantity.clone());
     let unit = ResourceFact::own(resource.clone());
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
             left: Box::new(quantity.clone()),
@@ -3307,7 +3312,7 @@ fn declared_resource_quantity_work_ignores_the_numeric_coefficient() {
     .into_iter()
     .map(|(label, quantity)| {
         let assumptions = PureFactContext::new().assume_condition(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
                 left: Box::new(quantity.clone()),
@@ -3316,7 +3321,7 @@ fn declared_resource_quantity_work_ignores_the_numeric_coefficient() {
             true,
         );
         let assumptions = assumptions.assume_condition(
-            ConditionTerm::signed_add_overflows(quantity.clone(), OldMachineTerm::constant(1)),
+            OldConditionTerm::signed_add_overflows(quantity.clone(), OldMachineTerm::constant(1)),
             false,
         );
         let context = ResourceContext::new().unchecked_with_facts([
@@ -3706,7 +3711,7 @@ fn composite_resource_arguments_respect_proven_pointer_equality() {
         arguments: vec![ProgramValue::pointer(right_pointer.clone()).into()].into(),
     });
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::PointerEqual(
+        OldConditionTerm::PointerEqual(
             Box::new(OldPointer::new(left_pointer, ProgramType::Int32Pointer)),
             Box::new(OldPointer::new(right_pointer, ProgramType::Int32Pointer)),
         ),
@@ -3777,10 +3782,10 @@ fn resource_separation_transports_across_equal_memory_ranges() {
             right: Box::new(original_resource),
         })
         .assume_condition(
-            ConditionTerm::address_equal(original_data, equal_data),
+            OldConditionTerm::address_equal(original_data, equal_data),
             true,
         )
-        .assume_condition(ConditionTerm::equal(original_length, equal_length), true);
+        .assume_condition(OldConditionTerm::equal(original_length, equal_length), true);
 
     assert!(crate::kernel::search::ProofSearch::proves(
         &(assumptions),
@@ -3881,7 +3886,7 @@ fn equal_cross_block_pointer_bases_cannot_be_owned_twice() {
         OldMachineTerm::constant(1),
     );
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::address_equal(symbolic.clone(), argument.clone()),
+        OldConditionTerm::address_equal(symbolic.clone(), argument.clone()),
         true,
     );
 
@@ -3940,8 +3945,8 @@ fn equal_content_string_literals_remain_readable_without_separation_evidence() {
     };
     let first_range = range(first.clone());
     let second_range = range(second.clone());
-    let assumptions =
-        PureFactContext::new().assume_condition(ConditionTerm::address_equal(first, second), true);
+    let assumptions = PureFactContext::new()
+        .assume_condition(OldConditionTerm::address_equal(first, second), true);
 
     assert!(memory_ranges_proven_overlapping(
         &first_range,
@@ -4186,7 +4191,7 @@ fn matched_resource_integer_binding_does_not_capture_free_integer_field() {
     let (_, unfolded_facts) =
         rewrite_resource_instance(&state, &instance, &definition, &assumptions, true).unwrap();
     let free_field_fact = unfolded_facts.iter().any(|fact| {
-        let Some((ConditionTerm::IntegerEqual(left, right), true)) = fact.condition_native() else {
+        let Some((OldConditionTerm::IntegerEqual(left, right), true)) = fact.old_condition() else {
             return false;
         };
         (left.as_ref() == &IntegerTerm::var(binding)
@@ -4206,7 +4211,7 @@ fn matched_resource_integer_binding_does_not_capture_free_integer_field() {
         "folding must require the free field equality rather than reducing it to 7 == 7"
     );
     let valid_fold_assumptions = assumptions.assume_proposition(Proposition::condition_is(
-        ConditionTerm::IntegerEqual(
+        OldConditionTerm::IntegerEqual(
             IntegerTerm::var(binding).into(),
             IntegerTerm::constant_i64(7).into(),
         ),
@@ -4233,14 +4238,14 @@ fn unrelated_order_fact_context(size: usize) -> PureFactContext {
     for index in 0..size {
         assumptions = assumptions
             .assume_condition(
-                ConditionTerm::signed_less_equal(
+                OldConditionTerm::signed_less_equal(
                     OldMachineTerm::Variable(Variable(960_100 + index as u64)),
                     OldMachineTerm::constant(1_000),
                 ),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_greater_equal(
+                OldConditionTerm::signed_greater_equal(
                     OldMachineTerm::Variable(Variable(960_100 + index as u64)),
                     OldMachineTerm::constant(0),
                 ),
@@ -4687,7 +4692,7 @@ fn symbolic_supplied_range_wakes_concrete_pending_dependency() {
         .store(seed, ProgramValue::pointer(intermediate.clone()))
         .store(intermediate, ProgramValue::pointer(target));
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::signed_less_equal(OldMachineTerm::constant(1), length),
+        OldConditionTerm::signed_less_equal(OldMachineTerm::constant(1), length),
         true,
     );
     let result = crate::kernel::functions::evaluate_function_resource_context(
@@ -5738,7 +5743,7 @@ fn distinct_heap_allocations_never_merge_under_contradictory_assumptions() {
     // A contradictory `false`-is-true fact must not let normalization merge
     // distinct heap authorities. Heap identities are unique by construction.
     let poisoned = PureFactContext::new().assume_proposition(Proposition::condition_is(
-        ConditionTerm::Constant(false),
+        OldConditionTerm::Constant(false),
         true,
     ));
     let normalized = ResourceContext::new()
@@ -5860,7 +5865,7 @@ mod constant_range_containment {
         );
         let pinned = |value: i32| {
             PureFactContext::new().assume_condition(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(index.clone()),
@@ -6041,7 +6046,7 @@ mod population_quantity_totals {
                 None
             );
             let assumptions = PureFactContext::new().assume_condition(
-                ConditionTerm::signed_add_overflows(quantity.clone(), right.clone()),
+                OldConditionTerm::signed_add_overflows(quantity.clone(), right.clone()),
                 false,
             );
             assert_eq!(
@@ -6322,11 +6327,11 @@ mod residue_bounds {
         assert_eq!(split(&available, &required, &PureFactContext::new()), None);
         let no_carry = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_add_overflows(index.clone(), constant(1)),
+                OldConditionTerm::signed_add_overflows(index.clone(), constant(1)),
                 false,
             )
             .assume_condition(
-                ConditionTerm::signed_add_overflows(index.clone(), constant(2)),
+                OldConditionTerm::signed_add_overflows(index.clone(), constant(2)),
                 false,
             );
         assert!(split(&available, &required, &no_carry).is_some());
@@ -6624,21 +6629,21 @@ fn wide_shifted_suffix_coverage_checks_span_and_identity() {
         4,
     );
     let bounded = PureFactContext::new().assume_condition(
-        ConditionTerm::uint64_less_equal(
+        OldConditionTerm::uint64_less_equal(
             whole.clone(),
             OldMachineTerm::uint64_constant(i64::MAX as u64 / 4),
         ),
         true,
     );
     let facts = bounded.clone().assume_condition(
-        ConditionTerm::uint64_less_equal(taken.clone(), whole.clone()),
+        OldConditionTerm::uint64_less_equal(taken.clone(), whole.clone()),
         true,
     );
     let covers = |a, b, f| crate::kernel::primitives::wide_memory_range_covers(a, b, f);
     assert!(covers(&available, &required, &facts));
     assert!(!covers(&available, &required, &bounded));
     let only_count = PureFactContext::new().assume_condition(
-        ConditionTerm::uint64_less_equal(taken.clone(), whole.clone()),
+        OldConditionTerm::uint64_less_equal(taken.clone(), whole.clone()),
         true,
     );
     assert!(!covers(&available, &required, &only_count));
@@ -6652,7 +6657,7 @@ fn wide_shifted_suffix_coverage_checks_span_and_identity() {
     assert!(!covers(&available, &offset_suffix, &bounded));
     assert!(!covers(&available, &offset_suffix, &only_count));
     let low_words = bounded.clone().assume_condition(
-        ConditionTerm::signed_less_equal(
+        OldConditionTerm::signed_less_equal(
             OldMachineTerm::uint32_from_64(taken.clone()),
             OldMachineTerm::uint32_from_64(whole),
         ),
@@ -6718,7 +6723,7 @@ fn wide_range_observer_transport_rejects_changed_cells_and_low_word_equalities()
     );
     let observer = OldMachineTerm::Variable(Variable(983_201));
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::uint64_equal(observer.clone(), old.clone()),
+        OldConditionTerm::uint64_equal(observer.clone(), old.clone()),
         true,
     );
     assert!(facts.uint64_values_equal_for_range_resolution(&observer, &old));
@@ -6733,8 +6738,10 @@ fn wide_range_observer_transport_rejects_changed_cells_and_low_word_equalities()
     );
     assert!(!facts.uint64_values_equal_for_range_resolution(&observer, &changed));
     let other = OldMachineTerm::Variable(Variable(983_202));
-    let narrow = PureFactContext::new()
-        .assume_condition(ConditionTerm::equal(observer.clone(), other.clone()), true);
+    let narrow = PureFactContext::new().assume_condition(
+        OldConditionTerm::equal(observer.clone(), other.clone()),
+        true,
+    );
     assert!(!narrow.uint64_values_equal_for_range_resolution(&observer, &other));
 }
 
@@ -6805,11 +6812,11 @@ fn a_field_access_in_a_wide_struct_array_byte_range_is_placed_over_elements() {
     let assume = |facts: PureFactContext, condition| facts.assume_condition(condition, true);
     let bounded = assume(
         PureFactContext::new(),
-        ConditionTerm::uint64_less_equal(count.clone(), OldMachineTerm::uint64_constant(100)),
+        OldConditionTerm::uint64_less_equal(count.clone(), OldMachineTerm::uint64_constant(100)),
     );
     let below = assume(
         bounded.clone(),
-        ConditionTerm::uint64_less_than(index.clone(), count.clone()),
+        OldConditionTerm::uint64_less_than(index.clone(), count.clone()),
     );
     for scaled in [&unsigned, &signed] {
         assert!(below.pointer_access_in_wide_range(&field(scaled.clone(), 4), 4, &range));
@@ -6820,14 +6827,14 @@ fn a_field_access_in_a_wide_struct_array_byte_range_is_placed_over_elements() {
     // `i <= m` admits `&p[m]`, whose fields lie past the block.
     let at_most = assume(
         bounded.clone(),
-        ConditionTerm::uint64_less_equal(index.clone(), count.clone()),
+        OldConditionTerm::uint64_less_equal(index.clone(), count.clone()),
     );
     assert!(!at_most.pointer_access_in_wide_range(&field(unsigned.clone(), 4), 4, &range));
     // Without `m <= PTRDIFF_MAX / 8` the product may wrap: `i < m` places
     // nothing in `m * 8u64` bytes.
     let unbounded = assume(
         PureFactContext::new(),
-        ConditionTerm::uint64_less_than(index.clone(), count.clone()),
+        OldConditionTerm::uint64_less_than(index.clone(), count.clone()),
     );
     assert!(!unbounded.pointer_access_in_wide_range(&field(unsigned.clone(), 4), 4, &range));
     // A constant field of the first element needs one element.
@@ -6835,7 +6842,7 @@ fn a_field_access_in_a_wide_struct_array_byte_range_is_placed_over_elements() {
     assert!(!bounded.pointer_access_in_wide_range(&first, 4, &range));
     let nonempty = assume(
         bounded,
-        ConditionTerm::uint64_less_equal(OldMachineTerm::uint64_constant(1), count.clone()),
+        OldConditionTerm::uint64_less_equal(OldMachineTerm::uint64_constant(1), count.clone()),
     );
     assert!(nonempty.pointer_access_in_wide_range(&first, 4, &range));
 }
@@ -6853,7 +6860,7 @@ fn a_wide_struct_range_and_its_byte_range_are_respelled_under_no_wrap() {
     let block = MemoryRange::new_wide(base.clone(), zero.clone(), bytes, 1);
     let structs = MemoryRange::new_wide(base.clone(), zero.clone(), count.clone(), 8);
     let bounded = PureFactContext::new().assume_condition(
-        ConditionTerm::uint64_less_equal(count.clone(), OldMachineTerm::uint64_constant(100)),
+        OldConditionTerm::uint64_less_equal(count.clone(), OldMachineTerm::uint64_constant(100)),
         true,
     );
     let unbounded = PureFactContext::new();
@@ -6878,7 +6885,7 @@ fn a_wide_struct_range_and_its_byte_range_are_respelled_under_no_wrap() {
     // width: the requirement's bytes `0..8` are not decided inside
     // `n * 8u64`, so the owner is re-spelled as structs instead.
     let nonempty = bounded.clone().assume_condition(
-        ConditionTerm::uint64_less_equal(OldMachineTerm::uint64_constant(1), count.clone()),
+        OldConditionTerm::uint64_less_equal(OldMachineTerm::uint64_constant(1), count.clone()),
         true,
     );
     let first = MemoryRange::new_wide(
@@ -6914,7 +6921,7 @@ fn a_wide_respelling_refusal_names_the_undecided_product() {
     let held = MemoryRange::new_wide(base.clone(), zero.clone(), bytes, 1);
     let required = MemoryRange::new_wide(base, zero, count.clone(), 8);
     let bounded = PureFactContext::new().assume_condition(
-        ConditionTerm::uint64_less_equal(count.clone(), OldMachineTerm::uint64_constant(100)),
+        OldConditionTerm::uint64_less_equal(count.clone(), OldMachineTerm::uint64_constant(100)),
         true,
     );
     let refusal = |facts: &PureFactContext| {
@@ -6962,11 +6969,11 @@ fn a_field_access_in_a_wide_struct_range_is_placed_over_its_count() {
     let assume = |facts: PureFactContext, condition| facts.assume_condition(condition, true);
     let bounded = assume(
         PureFactContext::new(),
-        ConditionTerm::uint64_less_equal(count.clone(), OldMachineTerm::uint64_constant(100)),
+        OldConditionTerm::uint64_less_equal(count.clone(), OldMachineTerm::uint64_constant(100)),
     );
     let below = assume(
         bounded.clone(),
-        ConditionTerm::uint64_less_than(index.clone(), count.clone()),
+        OldConditionTerm::uint64_less_than(index.clone(), count.clone()),
     );
     assert!(below.pointer_access_in_wide_range(&field(4), 4, &range));
     assert!(below.position_in_wide_struct_array(&field(4), &range));
@@ -6974,7 +6981,7 @@ fn a_field_access_in_a_wide_struct_range_is_placed_over_its_count() {
     // `i <= m` forms `&p[m]` but no field of it.
     let at_most = assume(
         bounded,
-        ConditionTerm::uint64_less_equal(index.clone(), count.clone()),
+        OldConditionTerm::uint64_less_equal(index.clone(), count.clone()),
     );
     assert!(at_most.position_in_wide_struct_array(&field(0), &range));
     assert!(!at_most.position_in_wide_struct_array(&field(4), &range));
@@ -6982,7 +6989,7 @@ fn a_field_access_in_a_wide_struct_range_is_placed_over_its_count() {
     // Without `m <= PTRDIFF_MAX / 8` nothing is placed.
     let unbounded = assume(
         PureFactContext::new(),
-        ConditionTerm::uint64_less_than(index, count),
+        OldConditionTerm::uint64_less_than(index, count),
     );
     assert!(!unbounded.pointer_access_in_wide_range(&field(4), 4, &range));
     assert!(!unbounded.position_in_wide_struct_array(&field(4), &range));
@@ -7003,10 +7010,10 @@ fn wide_byte_range_covers_a_word_through_a_checked_alias() {
         1,
     );
     let alias = PureFactContext::new()
-        .assume_condition(ConditionTerm::address_equal(bytes, word.clone()), true);
+        .assume_condition(OldConditionTerm::address_equal(bytes, word.clone()), true);
     assert!(!alias.pointer_access_in_wide_range(&word, 4, &range));
     let four = alias.assume_condition(
-        ConditionTerm::uint64_less_equal(OldMachineTerm::uint64_constant(4), length),
+        OldConditionTerm::uint64_less_equal(OldMachineTerm::uint64_constant(4), length),
         true,
     );
     assert!(four.pointer_access_in_wide_range(&word, 4, &range));
@@ -7027,12 +7034,12 @@ fn native_range_coverage_checks_complete_signed_observations() {
         OldMachineTerm::add(narrow.clone(), OldMachineTerm::constant(1)),
     );
     let bounded = PureFactContext::new().assume_condition(
-        ConditionTerm::uint64_less_than(index.clone(), OldMachineTerm::uint64_constant(3)),
+        OldConditionTerm::uint64_less_than(index.clone(), OldMachineTerm::uint64_constant(3)),
         true,
     );
     let covers = crate::kernel::primitives::wide_memory_range_covers;
     let access_facts = bounded.clone().assume_condition(
-        ConditionTerm::uint64_less_equal(
+        OldConditionTerm::uint64_less_equal(
             next.clone(),
             OldMachineTerm::uint64_constant(i64::MAX as u64 / 4),
         ),
@@ -7054,12 +7061,12 @@ fn native_range_coverage_checks_complete_signed_observations() {
     assert!(covers(&available, &required, &bounded));
     assert!(!covers(&available, &required, &PureFactContext::new()));
     let low_only = PureFactContext::new().assume_condition(
-        ConditionTerm::signed_less_than(narrow.clone(), OldMachineTerm::constant(3)),
+        OldConditionTerm::signed_less_than(narrow.clone(), OldMachineTerm::constant(3)),
         true,
     );
     assert!(!covers(&available, &required, &low_only));
     let signed_edge = PureFactContext::new().assume_condition(
-        ConditionTerm::uint64_equal(
+        OldConditionTerm::uint64_equal(
             index.clone(),
             OldMachineTerm::uint64_constant(i32::MAX as u64),
         ),
@@ -7067,7 +7074,7 @@ fn native_range_coverage_checks_complete_signed_observations() {
     );
     assert!(!covers(&available, &required, &signed_edge));
     let native_wrap = PureFactContext::new().assume_condition(
-        ConditionTerm::uint64_equal(index.clone(), OldMachineTerm::uint64_constant(u64::MAX)),
+        OldConditionTerm::uint64_equal(index.clone(), OldMachineTerm::uint64_constant(u64::MAX)),
         true,
     );
     assert!(!covers(&available, &required, &native_wrap));
@@ -7574,7 +7581,7 @@ fn owned_root_neighbors_keep_alias_and_duplicate_refusals() {
     );
     let aliases = assumptions
         .clone()
-        .assume_condition(ConditionTerm::address_equal(p, q), true);
+        .assume_condition(OldConditionTerm::address_equal(p, q), true);
     assert!(context.is_valid(&aliases));
     assert!(
         !context
@@ -7629,14 +7636,14 @@ fn owned_root_neighbors_require_complete_coordinate_coverage() {
         let assumptions = assumptions
             .clone()
             .assume_condition(
-                ConditionTerm::signed_less_than(
+                OldConditionTerm::signed_less_than(
                     available.start().clone(),
                     OldMachineTerm::add(delta.clone(), requested.end().clone()),
                 ),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_than(
+                OldConditionTerm::signed_less_than(
                     OldMachineTerm::add(delta, requested.start().clone()),
                     available.end().clone(),
                 ),
@@ -7684,7 +7691,7 @@ fn exact_alias_owned_neighbors_preserve_translations_and_branch_isolation() {
     let p = Address::symbolic(Variable(995_650));
     let q = Address::symbolic(Variable(995_651));
     let assumptions = PureFactContext::new()
-        .assume_condition(ConditionTerm::address_equal(p.clone(), q.clone()), true);
+        .assume_condition(OldConditionTerm::address_equal(p.clone(), q.clone()), true);
     let owned = |base, start: u32, end: u32| {
         ResourceFact::own_memory(MemoryRange::new_with_element_width(
             base,
@@ -7737,13 +7744,13 @@ fn exact_alias_owned_neighbors_retain_symbolic_ranges() {
     let index = OldMachineTerm::var(Variable(995_662));
     let end = OldMachineTerm::add(index.clone(), 1u32.into());
     let assumptions = PureFactContext::new()
-        .assume_condition(ConditionTerm::address_equal(p.clone(), q.clone()), true)
+        .assume_condition(OldConditionTerm::address_equal(p.clone(), q.clone()), true)
         .assume_condition(
-            ConditionTerm::signed_less_than(index.clone(), 6u32.into()),
+            OldConditionTerm::signed_less_than(index.clone(), 6u32.into()),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_than(5u32.into(), end.clone()),
+            OldConditionTerm::signed_less_than(5u32.into(), end.clone()),
             true,
         );
     let owned = |base, start, end| {
@@ -7778,7 +7785,7 @@ fn exact_alias_owned_neighbors_keep_nonzero_displacements() {
         offset: AddressOffset::add(q.offset.clone(), AddressOffset::Constant(8)),
     };
     let assumptions = PureFactContext::new()
-        .assume_condition(ConditionTerm::address_equal(p.clone(), displaced), true);
+        .assume_condition(OldConditionTerm::address_equal(p.clone(), displaced), true);
     let owned = |base, start: u32| {
         ResourceFact::own_memory(MemoryRange::new_with_element_width(
             base,
@@ -7807,13 +7814,13 @@ fn owner_only_base_buckets_follow_persistent_consumption_and_reinsertion() {
     let index = OldMachineTerm::var(Variable(995_712));
     let end = OldMachineTerm::add(index.clone(), 1u32.into());
     let assumptions = PureFactContext::new()
-        .assume_condition(ConditionTerm::address_equal(p.clone(), q.clone()), true)
+        .assume_condition(OldConditionTerm::address_equal(p.clone(), q.clone()), true)
         .assume_condition(
-            ConditionTerm::signed_less_than(4u32.into(), end.clone()),
+            OldConditionTerm::signed_less_than(4u32.into(), end.clone()),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_than(index.clone(), 5u32.into()),
+            OldConditionTerm::signed_less_than(index.clone(), 5u32.into()),
             true,
         );
     let held_range = MemoryRange::new_with_element_width(q, 4u32.into(), 5u32.into(), 4);
@@ -7848,7 +7855,7 @@ fn skipping_unowned_alias_blocks_keeps_local_and_cross_block_refusals() {
     let p = Address::symbolic(Variable(995_800));
     let q = Address::symbolic(Variable(995_801));
     let assumptions = PureFactContext::new()
-        .assume_condition(ConditionTerm::address_equal(p.clone(), q.clone()), true);
+        .assume_condition(OldConditionTerm::address_equal(p.clone(), q.clone()), true);
     for native in [false, true] {
         let range = |base, start: u32| {
             if native {
@@ -7936,7 +7943,7 @@ fn direct_constant_overlap_keeps_byte_widths_translations_and_alias_refusals() {
     let p = Address::symbolic(Variable(995_950));
     let q = Address::symbolic(Variable(995_951));
     let assumptions = PureFactContext::new()
-        .assume_condition(ConditionTerm::address_equal(p.clone(), q.clone()), true);
+        .assume_condition(OldConditionTerm::address_equal(p.clone(), q.clone()), true);
     for native in [false, true] {
         let range = |base, start: u32, end: u32, width| {
             if native {

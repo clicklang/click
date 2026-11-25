@@ -23,7 +23,7 @@
 use crate::kernel::MachineIntegerType;
 use crate::kernel::binary_term;
 use crate::kernel::integer_exclusions::ExcludedIntegers;
-use crate::kernel::{Address, AddressOffset, ConditionTerm, OldMachineTerm};
+use crate::kernel::{Address, AddressOffset, OldConditionTerm, OldMachineTerm};
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{MachineBinaryOp, MachineUnaryOp};
 use crate::kernel::{MachineCastSpelling, cast_term};
@@ -245,7 +245,7 @@ impl DifferenceGraph {
 
     /// Records a true or false condition fact. A fact difference logic does
     /// not express is ignored.
-    pub(crate) fn assume_condition(&mut self, condition: &ConditionTerm, value: bool) {
+    pub(crate) fn assume_condition(&mut self, condition: &OldConditionTerm, value: bool) {
         if let Some(view) = shared_narrow_comparison(condition, value) {
             // Widening is injective. Share fresh aliases in their original
             // narrow domain before introducing the widening links, so each
@@ -267,16 +267,16 @@ impl DifferenceGraph {
         {
             return self.assume_condition(&widened, value);
         }
-        if let ConditionTerm::PointerEqual(a, b) = condition {
+        if let OldConditionTerm::PointerEqual(a, b) = condition {
             if value {
                 self.assume_condition(
-                    &ConditionTerm::address_equal(a.address().clone(), b.address().clone()),
+                    &OldConditionTerm::address_equal(a.address().clone(), b.address().clone()),
                     true,
                 );
             }
             return;
         }
-        if let ConditionTerm::AddressEqual(a, b) = condition {
+        if let OldConditionTerm::AddressEqual(a, b) = condition {
             if !self.pointers.assume(a, b, value) {
                 self.contradictory = true;
             }
@@ -1245,8 +1245,8 @@ impl DifferenceGraph {
     /// What the inserted facts decide about `condition`: its truth value,
     /// or `None` when difference logic leaves it open or the facts are
     /// contradictory.
-    pub(crate) fn decide(&self, condition: &ConditionTerm) -> Option<bool> {
-        use ConditionTerm as C;
+    pub(crate) fn decide(&self, condition: &OldConditionTerm) -> Option<bool> {
+        use OldConditionTerm as C;
         if let C::Constant(value) = condition {
             return Some(*value);
         }
@@ -1447,7 +1447,7 @@ impl DifferenceGraph {
         {
             // `a / b` overflows when `a` is the domain's least value and `b`
             // is `-1`. The `int64` condition also holds for a zero divisor
-            // (`ConditionTerm::int64_signed_divide_overflows`); the `int32`
+            // (`OldConditionTerm::int64_signed_divide_overflows`); the `int32`
             // one leaves zero to a separate check. As above, only the
             // absence is answered.
             let int64 = matches!(
@@ -2088,7 +2088,7 @@ impl std::fmt::Debug for ContextDifferenceGraph {
 impl ContextDifferenceGraph {
     /// Follows the context assuming `condition` with `value`; a cleared
     /// graph stays cleared until its rebuild.
-    pub(crate) fn assume(&mut self, condition: &ConditionTerm, value: bool) {
+    pub(crate) fn assume(&mut self, condition: &OldConditionTerm, value: bool) {
         if !expresses(condition) {
             return;
         }
@@ -2113,7 +2113,7 @@ impl ContextDifferenceGraph {
     /// The graph of the context's `facts`, rebuilt from them when cleared.
     pub(crate) fn graph<'a>(
         &self,
-        facts: impl FnOnce() -> Vec<(&'a ConditionTerm, bool)>,
+        facts: impl FnOnce() -> Vec<(&'a OldConditionTerm, bool)>,
     ) -> &DifferenceGraph {
         self.0.get_or_init(|| {
             let mut graph = DifferenceGraph::new();
@@ -2139,10 +2139,10 @@ fn equality_domains(format: MachineIntegerType) -> &'static [Domain] {
 // Keep the existing native widening boundary for explicitly written inputs.
 // Shared inputs add only the two cast roots, retaining the operand DAGs.
 fn shared_narrow_comparison(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     truth: bool,
 ) -> Option<crate::kernel::machine_integer::comparison::NativeComparisonView<'_>> {
-    if matches!(condition, ConditionTerm::Compare { .. }) {
+    if matches!(condition, OldConditionTerm::Compare { .. }) {
         return None;
     }
     let view = crate::kernel::machine_integer::comparison::comparison_view(condition, truth)?;
@@ -2150,8 +2150,8 @@ fn shared_narrow_comparison(
 }
 
 /// Whether difference logic reads anything from a fact about `condition`.
-fn expresses(condition: &ConditionTerm) -> bool {
-    use ConditionTerm as C;
+fn expresses(condition: &OldConditionTerm) -> bool {
+    use OldConditionTerm as C;
     // The context cache must observe every order source accepted by
     // `assume_condition`, including retained Integer observations. Otherwise a
     // graph built before the source was added misses its incremental update.
@@ -2198,9 +2198,9 @@ enum Operation {
 /// The parts of an overflow condition: its operation, the operands'
 /// domain, the operands, and whether the operation is commutative.
 fn overflow_parts(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
 ) -> Option<(u8, Domain, &OldMachineTerm, &OldMachineTerm, bool)> {
-    use ConditionTerm as C;
+    use OldConditionTerm as C;
     Some(match condition {
         C::Overflows {
             format: MachineIntegerType::Int32,
@@ -2420,14 +2420,14 @@ fn scaled_offset(offset: &crate::kernel::AddressOffset) -> Option<ScaledOffset<'
 /// `a == b` for two pointer offsets as an index-domain equality: equal widths
 /// compare their values, and a constant byte offset that is a whole
 /// number of elements compares the value with that count.
-fn offset_equality(condition: &ConditionTerm) -> Option<ConditionTerm> {
-    let ConditionTerm::AddressOffsetEqual(a, b) = condition else {
+fn offset_equality(condition: &OldConditionTerm) -> Option<OldConditionTerm> {
+    let OldConditionTerm::AddressOffsetEqual(a, b) = condition else {
         return None;
     };
     // Field offsets from equal bases (`p->size`, `q->size`) are equal
     // exactly when the bases are.
     if let Some((a, b)) = same_field_bases(a, b) {
-        return offset_equality(&ConditionTerm::AddressOffsetEqual(
+        return offset_equality(&OldConditionTerm::AddressOffsetEqual(
             Box::new(a.clone()),
             Box::new(b.clone()),
         ));
@@ -3132,10 +3132,10 @@ fn link_parts(
 /// a true equality is two. Empty for a fact difference logic does not
 /// express.
 fn condition_orders(
-    condition: &ConditionTerm,
+    condition: &OldConditionTerm,
     value: bool,
 ) -> Vec<(Domain, OldMachineTerm, OldMachineTerm, bool)> {
-    use ConditionTerm as C;
+    use OldConditionTerm as C;
     let (domain, left, right, strict) = match condition {
         C::Compare {
             format: MachineIntegerType::Int32,

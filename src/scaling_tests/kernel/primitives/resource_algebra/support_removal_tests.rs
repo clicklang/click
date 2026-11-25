@@ -123,11 +123,11 @@ fn returned_symbolic_cell_rejoins_without_scanning_unrelated_ownership() {
         };
         let facts = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_less_equal(0u32.into(), index.clone()),
+                OldConditionTerm::signed_less_equal(0u32.into(), index.clone()),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_than(index.clone(), 100u32.into()),
+                OldConditionTerm::signed_less_than(index.clone(), 100u32.into()),
                 true,
             );
         let mut resources = ResourceContext::new_with_equalities(&facts);

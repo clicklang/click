@@ -217,8 +217,8 @@ mod tests {
         let exports = KernelTermExport::machine_export_count();
         assert!(ar.algebraic_syntax_equal(&br));
         let conditions = [
-            ConditionTerm::AlgebraicEqual(Box::new(a.clone()), Box::new(b.clone())),
-            ConditionTerm::AlgebraicEqual(Box::new(b.clone()), Box::new(a.clone())),
+            OldConditionTerm::AlgebraicEqual(Box::new(a.clone()), Box::new(b.clone())),
+            OldConditionTerm::AlgebraicEqual(Box::new(b.clone()), Box::new(a.clone())),
         ];
         let roots = conditions
             .each_ref()
@@ -257,8 +257,8 @@ mod tests {
         let a = KernelMatch::test_scrutinee(vec![]);
         let mut b = a.clone();
         b.node = AlgebraicTermNode::Variable(Variable(999673));
-        let condition = ConditionTerm::AlgebraicEqual(Box::new(a.clone()), Box::new(b.clone()));
-        let reversed = ConditionTerm::AlgebraicEqual(Box::new(b), Box::new(a));
+        let condition = OldConditionTerm::AlgebraicEqual(Box::new(a.clone()), Box::new(b.clone()));
+        let reversed = OldConditionTerm::AlgebraicEqual(Box::new(b), Box::new(a));
         assert_ne!(condition, reversed);
         let root = KernelTermImport::default().condition(&condition);
         let reverse = KernelTermImport::default().condition(&reversed);
@@ -278,7 +278,7 @@ mod tests {
             Address::symbolic(Variable(999672)),
             ProgramType::Int32Pointer,
         );
-        let native = ConditionTerm::AlgebraicEqual(
+        let native = OldConditionTerm::AlgebraicEqual(
             Box::new(constructor(pointer.clone())),
             Box::new(constructor(pointer)),
         );

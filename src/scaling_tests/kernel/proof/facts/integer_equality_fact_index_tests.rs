@@ -15,7 +15,7 @@ fn wide_equality_decision_uses_only_its_indexed_component() {
     let middle = OldMachineTerm::Variable(Variable(211_001));
     let equality = |a: OldMachineTerm, b: OldMachineTerm| {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: Box::new(a),
@@ -61,7 +61,7 @@ fn a_narrow_equality_does_not_decide_a_wide_one() {
     let left = OldMachineTerm::Variable(Variable(211_000));
     let middle = OldMachineTerm::Variable(Variable(211_001));
     let required = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: Box::new(left.clone()),
@@ -71,7 +71,7 @@ fn a_narrow_equality_does_not_decide_a_wide_one() {
     );
     let narrow = PureFactStore::from_ordered(&[
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(left),
@@ -80,7 +80,7 @@ fn a_narrow_equality_does_not_decide_a_wide_one() {
             true,
         ),
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: Box::new(middle),
@@ -320,7 +320,7 @@ fn integer_alpha_index_keeps_one_source_for_renamed_fold_restatements() {
 #[test]
 fn proper_conjunct_index_walks_deep_conjunction_iteratively() {
     let leaf = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(OldMachineTerm::constant(0)),
@@ -465,7 +465,7 @@ fn memory_erased_same_bucket_lookup_scales_without_deep_dedup() {
             .iter()
             .map(|memory| {
                 Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(load(memory)),
@@ -476,7 +476,7 @@ fn memory_erased_same_bucket_lookup_scales_without_deep_dedup() {
             })
             .collect::<Vec<_>>();
         let required = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(load(memories.last().unwrap())),
@@ -510,7 +510,7 @@ fn proper_conjunct_observation_keys_ignore_unrelated_facts() {
         OldMachineTerm::Variable(Variable(992_801)),
         OldMachineTerm::uint64_constant(1),
     );
-    let condition = ConditionTerm::uint64_less_equal(sum, OldMachineTerm::uint64_constant(127));
+    let condition = OldConditionTerm::uint64_less_equal(sum, OldMachineTerm::uint64_constant(127));
     let native = Proposition::condition_is(condition.clone(), true);
     let retained_condition = retained_arithmetic_comparison(&condition).unwrap();
     let retained = Proposition::condition_is(retained_condition.clone(), true);
@@ -520,7 +520,7 @@ fn proper_conjunct_observation_keys_ignore_unrelated_facts() {
         let unrelated: Vec<_> = (0..size)
             .map(|i| {
                 Proposition::condition_is(
-                    ConditionTerm::uint64_equal(
+                    OldConditionTerm::uint64_equal(
                         OldMachineTerm::Variable(Variable(993_000 + i)),
                         OldMachineTerm::uint64_constant(i),
                     ),
@@ -533,7 +533,7 @@ fn proper_conjunct_observation_keys_ignore_unrelated_facts() {
                 PureFactStore::from_ordered(&unrelated).with_kernel_checked_fact(Proposition::And(
                     Box::new(source.clone()),
                     Box::new(Proposition::condition_is(
-                        ConditionTerm::Constant(true),
+                        OldConditionTerm::Constant(true),
                         true,
                     )),
                 ));
@@ -621,7 +621,7 @@ fn exact_call_lookup_retains_shared_argument_prefixes() {
         };
         let fact = |term| {
             Proposition::condition_is(
-                ConditionTerm::equal(term, OldMachineTerm::constant(0)),
+                OldConditionTerm::equal(term, OldMachineTerm::constant(0)),
                 true,
             )
         };

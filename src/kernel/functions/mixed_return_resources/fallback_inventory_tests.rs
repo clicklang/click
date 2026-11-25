@@ -11,11 +11,11 @@ fn partition() -> (PureFactContext, ResourceFact, ResourceFact) {
     let n = OldMachineTerm::Variable(Variable(8_915_001));
     let facts = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_less_equal(1u32.into(), n.clone()),
+            OldConditionTerm::signed_less_equal(1u32.into(), n.clone()),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_equal(n.clone(), 8u32.into()),
+            OldConditionTerm::signed_less_equal(n.clone(), 8u32.into()),
             true,
         );
     let range = |start, end| {
@@ -167,8 +167,10 @@ fn selected_frontier_returns_keep_output_carriers_and_refuse_reuse() {
     let p = Address::symbolic(Variable(8_915_100));
     let q = Address::symbolic(Variable(8_915_101));
     let alias = Address::symbolic(Variable(8_915_102));
-    let facts = PureFactContext::new()
-        .assume_condition(ConditionTerm::address_equal(p.clone(), alias.clone()), true);
+    let facts = PureFactContext::new().assume_condition(
+        OldConditionTerm::address_equal(p.clone(), alias.clone()),
+        true,
+    );
     let range = |base| MemoryRange::new(base, 0u32.into(), 2u32.into());
     let mut plan = ConsumedCellReturns::default();
     plan.retain_frontier([range(p.clone()), range(q.clone())], &facts);

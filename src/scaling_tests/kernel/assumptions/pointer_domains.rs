@@ -21,7 +21,10 @@ fn pointer_domain_queries_read_cached_classes_without_alias_discovery() {
             let mut facts = PureFactContext::new();
             for i in 0..unrelated {
                 facts = facts.assume_condition(
-                    ConditionTerm::pointer_equal(opaque(998_100 + 2 * i), opaque(998_101 + 2 * i)),
+                    OldConditionTerm::pointer_equal(
+                        opaque(998_100 + 2 * i),
+                        opaque(998_101 + 2 * i),
+                    ),
                     true,
                 );
             }
@@ -29,12 +32,14 @@ fn pointer_domain_queries_read_cached_classes_without_alias_discovery() {
             let mut previous = first.clone();
             for i in 1..related {
                 let next = opaque(999_000 + i);
-                facts = facts
-                    .assume_condition(ConditionTerm::pointer_equal(previous, next.clone()), true);
+                facts = facts.assume_condition(
+                    OldConditionTerm::pointer_equal(previous, next.clone()),
+                    true,
+                );
                 previous = next;
             }
             facts = facts.assume_condition(
-                ConditionTerm::pointer_equal(previous, selected.clone()),
+                OldConditionTerm::pointer_equal(previous, selected.clone()),
                 true,
             );
             let ((domain, work), map_work) = crate::persistent::measure_persistent_work(|| {

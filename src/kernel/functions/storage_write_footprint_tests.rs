@@ -53,11 +53,14 @@ fn a_symbolic_index_write_is_placed_by_its_element_bounds() {
     let bounded = |upper: i32| {
         PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_less_equal(OldMachineTerm::constant(0), j.clone()),
+                OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), j.clone()),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_than(j.clone(), OldMachineTerm::constant(upper as u32)),
+                OldConditionTerm::signed_less_than(
+                    j.clone(),
+                    OldMachineTerm::constant(upper as u32),
+                ),
                 true,
             )
     };
@@ -81,15 +84,18 @@ fn a_symbolic_index_write_is_placed_by_its_element_bounds() {
     // A symbolic end.
     let up_to_n = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_less_equal(OldMachineTerm::constant(0), j.clone()),
+            OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), j.clone()),
             true,
         )
-        .assume_condition(ConditionTerm::signed_less_than(j.clone(), n.clone()), true);
+        .assume_condition(
+            OldConditionTerm::signed_less_than(j.clone(), n.clone()),
+            true,
+        );
     assert!(within(&at_j, 4, &owned(n.clone()), &up_to_n));
     assert!(!within(&at_j, 4, &owned(n.clone()), &bounded(1000)));
     // The lower edge: nothing bounds `j` below.
     let upper_only = PureFactContext::new().assume_condition(
-        ConditionTerm::signed_less_than(j.clone(), OldMachineTerm::constant(10)),
+        OldConditionTerm::signed_less_than(j.clone(), OldMachineTerm::constant(10)),
         true,
     );
     assert!(!within(&at_j, 4, &thousand, &upper_only));

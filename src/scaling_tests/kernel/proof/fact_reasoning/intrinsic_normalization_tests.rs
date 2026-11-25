@@ -21,11 +21,11 @@ fn intrinsic_integer_normalization_reads_only_selected_bounds() {
     .unwrap()
     .into();
     let le = |a: SharedIntegerTerm, b: SharedIntegerTerm| {
-        Proposition::condition_is(ConditionTerm::IntegerLessEqual(a, b), true)
+        Proposition::condition_is(OldConditionTerm::IntegerLessEqual(a, b), true)
     };
     let literal = |n: i64| SharedIntegerTerm::from(IntegerTerm::constant_i64(n));
     let identity =
-        Proposition::condition_is(ConditionTerm::IntegerEqual(actual, sum.clone()), true);
+        Proposition::condition_is(OldConditionTerm::IntegerEqual(actual, sum.clone()), true);
     let bridge_bounds = vec![
         le(literal(0), sum.clone()),
         le(sum, IntegerTerm::constant(BigInt::from(u64::MAX)).into()),

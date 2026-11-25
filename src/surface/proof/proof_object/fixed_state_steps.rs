@@ -2813,8 +2813,8 @@ impl<'a> Proof<'a> {
                         ref condition_source_0 @ Proposition::ConditionIs(
                             _,
                             true,
-                        ) if let Some((ConditionTerm::IntegerLessEqual(left, right), _)) = condition_source_0.condition_native() => Some(Proposition::condition_is(
-                            ConditionTerm::integer_equal(left.as_ref().clone(), right.as_ref().clone()),
+                        ) if let Some((OldConditionTerm::IntegerLessEqual(left, right), _)) = condition_source_0.old_condition() => Some(Proposition::condition_is(
+                            OldConditionTerm::integer_equal(left.as_ref().clone(), right.as_ref().clone()),
                             true,
                         )),
                         _ => None,

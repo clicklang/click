@@ -6,8 +6,8 @@ fn var(id: u64) -> OldMachineTerm {
 fn add(left: OldMachineTerm, right: OldMachineTerm) -> OldMachineTerm {
     binary_node!(Int32, Add, Box::new(left), Box::new(right))
 }
-fn eq(left: OldMachineTerm, right: OldMachineTerm) -> ConditionTerm {
-    ConditionTerm::equal(left, right)
+fn eq(left: OldMachineTerm, right: OldMachineTerm) -> OldConditionTerm {
+    OldConditionTerm::equal(left, right)
 }
 
 #[test]

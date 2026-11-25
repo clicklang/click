@@ -22,12 +22,12 @@ fn automatic_storage_lookup_does_not_walk_alias_history() {
     let mut samples = Vec::new();
     for size in [16u64, 64, 256, 1024] {
         let mut facts = PureFactContext::new().assume_condition(
-            ConditionTerm::address_equal(root.clone(), storage.clone()),
+            OldConditionTerm::address_equal(root.clone(), storage.clone()),
             true,
         );
         for id in 1..=size {
             facts = facts.assume_condition(
-                ConditionTerm::address_equal(
+                OldConditionTerm::address_equal(
                     root.clone(),
                     Address::symbolic(Variable(897_000 + id)),
                 ),
@@ -61,7 +61,7 @@ fn declared_alignment_lookup_does_not_walk_alias_history() {
         let mut facts = PureFactContext::new();
         for id in 1..=size {
             facts = facts.assume_condition(
-                ConditionTerm::address_equal(
+                OldConditionTerm::address_equal(
                     root.clone(),
                     Address::symbolic(Variable(900_000 + id)),
                 ),
@@ -69,15 +69,15 @@ fn declared_alignment_lookup_does_not_walk_alias_history() {
             );
         }
         // Register after all equality merges as well as before them above.
-        facts = facts.assume_condition(ConditionTerm::pointer_aligned(root.clone(), 16), true);
+        facts = facts.assume_condition(OldConditionTerm::pointer_aligned(root.clone(), 16), true);
         let query = Address::symbolic(Variable(900_000 + size)).offset_by_bytes(8);
         let (_, units) = crate::instrumentation::measure_deterministic_work(|| {
             assert_eq!(
-                facts.decide(&ConditionTerm::pointer_aligned(query.clone(), 8)),
+                facts.decide(&OldConditionTerm::pointer_aligned(query.clone(), 8)),
                 Some(true)
             );
             assert_eq!(
-                facts.decide(&ConditionTerm::pointer_aligned(query, 16)),
+                facts.decide(&OldConditionTerm::pointer_aligned(query, 16)),
                 Some(false)
             );
         });

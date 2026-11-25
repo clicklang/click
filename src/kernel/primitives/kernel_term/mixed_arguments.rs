@@ -36,7 +36,7 @@ fn mixed_call_arguments_import_structurally_and_keep_exact_native_forms() {
         )))),
         PureFunctionArgument::Value(ProgramValue::Bool(OldMachineTerm::bool_cast(
             MachineIntegerType::UInt8,
-            ConditionTerm::bool_application("mixed_bool", vec![]),
+            OldConditionTerm::bool_application("mixed_bool", vec![]),
         ))),
         PureFunctionArgument::Value(ProgramValue::Float64(
             OldMachineTerm::ClickFunctionApplication {
@@ -101,7 +101,7 @@ fn mixed_call_arguments_import_structurally_and_keep_exact_native_forms() {
     );
     assert_eq!(
         format!("{:?}", KernelTermExport::condition(&boolean).unwrap()),
-        format!("{:?}", ConditionTerm::BoolApplication(application))
+        format!("{:?}", OldConditionTerm::BoolApplication(application))
     );
     let float = KernelTerm::float_call(
         KernelFloatType::Float64,
@@ -130,11 +130,11 @@ fn noncanonical_boolean_carriers_keep_exact_native_payloads() {
         },
         OldMachineTerm::BoolCast {
             to: MachineIntegerType::UInt16,
-            value: Box::new(ConditionTerm::Variable(Variable(1008506))),
+            value: Box::new(OldConditionTerm::Variable(Variable(1008506))),
         },
         OldMachineTerm::BoolCast {
             to: MachineIntegerType::UInt8,
-            value: Box::new(ConditionTerm::Constant(true)),
+            value: Box::new(OldConditionTerm::Constant(true)),
         },
     ] {
         let source = PureFunctionArgument::Value(ProgramValue::Bool(word));

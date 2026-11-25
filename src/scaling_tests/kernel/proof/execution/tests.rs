@@ -7,12 +7,12 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
 fn balanced_unit_sum_domain_uses_only_indexed_related_bounds() {
-    use crate::kernel::ConditionTerm;
+    use crate::kernel::OldConditionTerm;
     let a = OldMachineTerm::Variable(Variable(200));
     let b = OldMachineTerm::Variable(Variable(201));
     let one = OldMachineTerm::constant(1);
     let goal = Proposition::condition_is(
-        ConditionTerm::signed_add_overflows(
+        OldConditionTerm::signed_add_overflows(
             OldMachineTerm::add(a.clone(), one.clone()),
             OldMachineTerm::subtract(b.clone(), one),
         ),
@@ -22,23 +22,23 @@ fn balanced_unit_sum_domain_uses_only_indexed_related_bounds() {
     for n in [8, 32, 128, 512] {
         let mut facts = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_add_overflows(a.clone(), b.clone()),
+                OldConditionTerm::signed_add_overflows(a.clone(), b.clone()),
                 false,
             )
             .assume_condition(
-                ConditionTerm::signed_less_than(
+                OldConditionTerm::signed_less_than(
                     a.clone(),
                     OldMachineTerm::constant(i32::MAX as u32),
                 ),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_greater_equal(b.clone(), OldMachineTerm::constant(1)),
+                OldConditionTerm::signed_greater_equal(b.clone(), OldMachineTerm::constant(1)),
                 true,
             );
         for i in 0..n {
             facts = facts.assume_condition(
-                ConditionTerm::signed_less_equal(
+                OldConditionTerm::signed_less_equal(
                     OldMachineTerm::Variable(Variable(1000 + i)),
                     OldMachineTerm::constant(100),
                 ),
@@ -50,7 +50,10 @@ fn balanced_unit_sum_domain_uses_only_indexed_related_bounds() {
         assert!(valid);
         // Removing the old domain must fail without searching the frame.
         let missing_old = PureFactContext::new().assume_condition(
-            ConditionTerm::signed_less_than(a.clone(), OldMachineTerm::constant(i32::MAX as u32)),
+            OldConditionTerm::signed_less_than(
+                a.clone(),
+                OldMachineTerm::constant(i32::MAX as u32),
+            ),
             true,
         );
         assert!(!missing_old.settles_exactly(&goal));
@@ -118,7 +121,7 @@ fn constructor_partition_transports_pointer_payloads_without_scanning_ambient_fa
         )],
     };
     let alias = Proposition::condition_is(
-        crate::kernel::ConditionTerm::address_equal(payload.clone(), program.clone()),
+        crate::kernel::OldConditionTerm::address_equal(payload.clone(), program.clone()),
         true,
     );
     let env = crate::kernel::ExecutionEnvironment::new();
@@ -138,7 +141,7 @@ fn constructor_partition_transports_pointer_payloads_without_scanning_ambient_fa
             });
         let witness = Address::symbolic(fields[0][0].0);
         let transported = Proposition::condition_is(
-            crate::kernel::ConditionTerm::address_equal(program.clone(), witness),
+            crate::kernel::OldConditionTerm::address_equal(program.clone(), witness),
             true,
         );
         assert!(partition.facts_for_case(0).unwrap().available(&transported));
@@ -358,7 +361,7 @@ fn return_proposition_context_validation_scales_with_introductions() {
         let premises: Vec<_> = (0..size)
             .map(|i| {
                 Proposition::condition_is(
-                    crate::kernel::ConditionTerm::equal(
+                    crate::kernel::OldConditionTerm::equal(
                         OldMachineTerm::Variable(Variable(i)),
                         OldMachineTerm::constant(i as u32),
                     ),
@@ -557,7 +560,7 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
             .collect_return_resource_rewrites(&core, size / 2)
             .unwrap();
         let extra = Proposition::condition_is(
-            crate::kernel::ConditionTerm::equal(
+            crate::kernel::OldConditionTerm::equal(
                 OldMachineTerm::Variable(Variable(1000)),
                 OldMachineTerm::constant(9),
             ),
@@ -698,7 +701,7 @@ fn instance_rewrite_certificate_rejects_unrelated_state_and_fact_changes() {
         "a rewrite cannot retain scratch field bindings as a handle"
     );
     let forged_facts = facts.with_fact(Proposition::condition_is(
-        crate::kernel::ConditionTerm::Constant(false),
+        crate::kernel::OldConditionTerm::Constant(false),
         true,
     ));
     assert!(
@@ -837,18 +840,18 @@ fn interface_abstraction_work_scales_with_unrelated_locals_and_memory() {
 
 #[test]
 fn branch_fact_availability_is_exact_and_independent_of_ambient_history() {
-    use crate::kernel::ConditionTerm;
+    use crate::kernel::OldConditionTerm;
     let x = OldMachineTerm::Variable(Variable(910_000));
     let strong = Proposition::condition_is(
-        ConditionTerm::signed_greater_than(x.clone(), OldMachineTerm::constant(0)),
+        OldConditionTerm::signed_greater_than(x.clone(), OldMachineTerm::constant(0)),
         true,
     );
     let weak = Proposition::condition_is(
-        ConditionTerm::signed_greater_equal(x.clone(), OldMachineTerm::constant(0)),
+        OldConditionTerm::signed_greater_equal(x.clone(), OldMachineTerm::constant(0)),
         true,
     );
     let reflexive = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(x.clone()),
@@ -861,7 +864,7 @@ fn branch_fact_availability_is_exact_and_independent_of_ambient_history() {
         let mut facts = PureFactStore::default().with_fact(strong.clone());
         for index in 0..size {
             facts = facts.with_fact(Proposition::condition_is(
-                ConditionTerm::signed_less_than(
+                OldConditionTerm::signed_less_than(
                     OldMachineTerm::Variable(Variable(920_000 + index)),
                     OldMachineTerm::constant(100),
                 ),
@@ -897,7 +900,7 @@ fn branch_fact_availability_is_exact_and_independent_of_ambient_history() {
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
-    use crate::kernel::{ConditionTerm, OldPointer, SpecPoint};
+    use crate::kernel::{OldConditionTerm, OldPointer, SpecPoint};
     let _session = crate::kernel::VerificationSession::enter();
     let owner = Address::symbolic(Variable(951_000));
     let alias = Address::symbolic(Variable(951_001));
@@ -922,7 +925,7 @@ fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
         for index in 0..count {
             memory = memory.store(owner.offset_by_bytes((index + 1) * 8), int32(index));
             parent = parent.with_fact(Proposition::condition_is(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     OldMachineTerm::Variable(Variable(952_000 + u64::from(index))),
                     OldMachineTerm::constant(index),
                 ),
@@ -932,7 +935,7 @@ fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
         memory = memory.store(owner.clone(), ProgramValue::UInt64(value.clone()));
         let state = ExecutionState::new().with_memory(memory.clone());
         let arm = parent.with_fact(Proposition::condition_is(
-            ConditionTerm::address_equal(alias.clone(), owner.clone()),
+            OldConditionTerm::address_equal(alias.clone(), owner.clone()),
             true,
         ));
         let check = |state: &ExecutionState, facts: &PureFactStore, spec: &SpecProposition| {

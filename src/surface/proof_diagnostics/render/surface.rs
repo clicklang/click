@@ -802,7 +802,7 @@ impl Printer<'_> {
 
     fn condition(
         &mut self,
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
         polarity: bool,
         depth: usize,
     ) -> Option<Spelled> {
@@ -828,8 +828,10 @@ impl Printer<'_> {
             }
         };
         match condition {
-            ConditionTerm::Constant(value) => return Some(atom((value == &polarity).to_string())),
-            ConditionTerm::Variable(variable) => {
+            OldConditionTerm::Constant(value) => {
+                return Some(atom((value == &polarity).to_string()));
+            }
+            OldConditionTerm::Variable(variable) => {
                 let name = match self.variable_name(*variable) {
                     Some(name) => name,
                     None if self.source_mode() => self.unnamed_variable(*variable),
@@ -837,7 +839,7 @@ impl Printer<'_> {
                 };
                 return Some(negate(name, polarity));
             }
-            ConditionTerm::PointerEqual(left, right) => {
+            OldConditionTerm::PointerEqual(left, right) => {
                 if self.source_mode() && distinct_pointers_at_one_address(left, right) {
                     if let Some(naming) = &self.labels.naming
                         && let (Some(left), Some(right)) = (
@@ -867,7 +869,7 @@ impl Printer<'_> {
                     operand(right, SHIFT)
                 )));
             }
-            ConditionTerm::AddressEqual(left, right) => {
+            OldConditionTerm::AddressEqual(left, right) => {
                 if !self.source_mode() {
                     if self.mode == Mode::ExactIdentity
                         && [left, right]
@@ -914,7 +916,7 @@ impl Printer<'_> {
                     }
                 )));
             }
-            ConditionTerm::AddressOffsetEqual(left, right) => {
+            OldConditionTerm::AddressOffsetEqual(left, right) => {
                 if !self.source_mode() {
                     return None;
                 }
@@ -925,7 +927,7 @@ impl Printer<'_> {
                     if polarity { "==" } else { "!=" }
                 )));
             }
-            ConditionTerm::AlgebraicEqual(left, right) => {
+            OldConditionTerm::AlgebraicEqual(left, right) => {
                 let left = self.algebraic(left, depth)?;
                 let right = self.algebraic(right, depth)?;
                 return Some(atom(format!(
@@ -937,11 +939,11 @@ impl Printer<'_> {
             }
             crate::kernel::integer_comparison_condition!(a, b) => {
                 let operator = match condition {
-                    ConditionTerm::IntegerEqual(..) => "==",
-                    ConditionTerm::IntegerNotEqual(..) => "!=",
-                    ConditionTerm::IntegerLessThan(..) => "<",
-                    ConditionTerm::IntegerLessEqual(..) => "<=",
-                    ConditionTerm::IntegerGreaterThan(..) => ">",
+                    OldConditionTerm::IntegerEqual(..) => "==",
+                    OldConditionTerm::IntegerNotEqual(..) => "!=",
+                    OldConditionTerm::IntegerLessThan(..) => "<",
+                    OldConditionTerm::IntegerLessEqual(..) => "<=",
+                    OldConditionTerm::IntegerGreaterThan(..) => ">",
                     _ => ">=",
                 };
                 let left = self.integer(a, depth)?;
@@ -953,11 +955,11 @@ impl Printer<'_> {
                     operand(right, SHIFT)
                 )));
             }
-            ConditionTerm::Float32(float) | ConditionTerm::Float64(float) => {
+            OldConditionTerm::Float32(float) | OldConditionTerm::Float64(float) => {
                 if !self.source_mode() {
                     return None;
                 }
-                let single = matches!(condition, ConditionTerm::Float32(_));
+                let single = matches!(condition, OldConditionTerm::Float32(_));
                 return match float {
                     crate::kernel::FloatCondition::Comparison {
                         operator,
@@ -1006,17 +1008,17 @@ impl Printer<'_> {
             // in their Surface spellings: an application `f(x)`, a
             // conditional `if c { a } else { b }`, an equality `a == b`, a
             // read the place it reads.
-            ConditionTerm::BoolApplication(application) => {
+            OldConditionTerm::BoolApplication(application) => {
                 let call = self.call(application.name(), application.arguments(), depth)?;
                 return Some(if polarity { call } else { negation(call) });
             }
             // A negation, `if c { false } else { true }`, is `not c`: an
             // integer converted to `Bool` prints `x != 0`.
-            ConditionTerm::BoolIf { .. } if condition.bool_negation_operand().is_some() => {
+            OldConditionTerm::BoolIf { .. } if condition.bool_negation_operand().is_some() => {
                 let operand = condition.bool_negation_operand()?;
                 return self.condition(operand, !polarity, depth);
             }
-            ConditionTerm::BoolIf {
+            OldConditionTerm::BoolIf {
                 condition,
                 then_condition,
                 else_condition,
@@ -1034,7 +1036,7 @@ impl Printer<'_> {
                     negation(spelled_if)
                 });
             }
-            ConditionTerm::BoolEqual(left, right) => {
+            OldConditionTerm::BoolEqual(left, right) => {
                 let left = self.condition(left, true, depth)?;
                 let right = self.condition(right, true, depth)?;
                 return Some(atom(format!(
@@ -1138,7 +1140,7 @@ impl Printer<'_> {
     /// right operand reads as the bound it puts on the left one.
     fn overflow(
         &mut self,
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
         operator: crate::kernel::BitvectorComparisonOp,
         a: &OldMachineTerm,
         b: &OldMachineTerm,
@@ -1146,12 +1148,12 @@ impl Printer<'_> {
         depth: usize,
     ) -> Option<Spelled> {
         if let (
-            ConditionTerm::Overflows {
+            OldConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Add,
                 ..
             }
-            | ConditionTerm::Overflows {
+            | OldConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Subtract,
                 ..
@@ -1165,7 +1167,7 @@ impl Printer<'_> {
             }
             let addition = matches!(
                 condition,
-                ConditionTerm::Overflows {
+                OldConditionTerm::Overflows {
                     format: MachineIntegerType::Int32,
                     op: OverflowOperation::Add,
                     ..
@@ -1448,7 +1450,7 @@ impl Printer<'_> {
             Term::Bitvector32(value) => self.bitvector(value.old_form(), None, depth + 1),
             Term::Integer(value) => self.integer(value.old_form(), depth + 1),
             term_source_0 @ Term::Condition(_)
-                if let Some(ConditionTerm::Constant(value)) = term_source_0.condition_native() =>
+                if let Some(OldConditionTerm::Constant(value)) = term_source_0.old_condition() =>
             {
                 Some(atom(value.to_string()))
             }
@@ -1773,9 +1775,9 @@ impl Printer<'_> {
                     // comparison together.
                     let condition = if matches!(
                         value.as_ref(),
-                        ConditionTerm::Variable(_)
-                            | ConditionTerm::Constant(_)
-                            | ConditionTerm::BoolApplication(_)
+                        OldConditionTerm::Variable(_)
+                            | OldConditionTerm::Constant(_)
+                            | OldConditionTerm::BoolApplication(_)
                     ) {
                         condition
                     } else {
@@ -3217,7 +3219,7 @@ mod tests {
 
     fn equality(value: OldMachineTerm) -> Proposition {
         Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(value),
@@ -3264,7 +3266,7 @@ mod tests {
             (1.5, "d >= float64_from_bits(0x3ff8000000000000u64)"),
         ] {
             let fact = Proposition::condition_is(
-                ConditionTerm::Float64(crate::kernel::FloatCondition::Comparison {
+                OldConditionTerm::Float64(crate::kernel::FloatCondition::Comparison {
                     operator: crate::kernel::ComparisonOperator::GreaterEqual,
                     left: Box::new(OldMachineTerm::Variable(Variable(7))),
                     right: Box::new(OldMachineTerm::uint64_constant(value.to_bits())),
@@ -3274,7 +3276,7 @@ mod tests {
             assert_eq!(source(&fact, &mut labels), expected);
         }
         let fact = Proposition::condition_is(
-            ConditionTerm::Float32(crate::kernel::FloatCondition::Comparison {
+            OldConditionTerm::Float32(crate::kernel::FloatCondition::Comparison {
                 operator: crate::kernel::ComparisonOperator::LessThan,
                 left: Box::new(OldMachineTerm::Float32Binary {
                     operator: crate::kernel::FloatBinaryOperator::Add,
@@ -3290,7 +3292,7 @@ mod tests {
             "f + float32_from_bits(0x3fc00000) < float32_from_bits(0x40000000)"
         );
         let widened = Proposition::condition_is(
-            ConditionTerm::float64_compare(
+            OldConditionTerm::float64_compare(
                 OldMachineTerm::PureFunctionApplication {
                     name: "c_float32_to_float64".into(),
                     arguments: vec![OldMachineTerm::Float32Binary {
@@ -3309,7 +3311,7 @@ mod tests {
             "(f * float32_from_bits(0x40000000)) as double < float64_from_bits(0x4030000000000000u64)"
         );
         let integer = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::uint64_constant(1.5_f64.to_bits())),
@@ -3419,7 +3421,7 @@ mod tests {
             Box::new(OldMachineTerm::Variable(Variable(94))),
         );
         let fact = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(value),
@@ -3441,7 +3443,7 @@ mod tests {
         labels.source_name(Variable(8), "u".into());
         labels.source_types.insert(Variable(8), ProgramType::UInt32);
         let signed = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::Variable(Variable(7))),
@@ -3451,7 +3453,7 @@ mod tests {
         );
         assert_eq!(source(&signed, &mut labels), "a == -56");
         let unsigned = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::Variable(Variable(8))),
@@ -3462,7 +3464,7 @@ mod tests {
         assert_eq!(source(&unsigned, &mut labels), "u != 4294967240u32");
         // An unsigned order over an `int32` value converts it.
         let order = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::UInt32,
                 relation: CompareRelation::LessEqual,
                 left: Box::new(OldMachineTerm::Variable(Variable(7))),
@@ -3502,7 +3504,7 @@ mod tests {
                     right: Box::new(OldMachineTerm::Variable(Variable(8))),
                 };
                 let fact = Proposition::condition_is(
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format,
                         relation: CompareRelation::LessThan,
                         left: Box::new(arithmetic.clone()),
@@ -3533,7 +3535,7 @@ mod tests {
             Box::new(binary_node!(Int32, Subtract, a(), b())),
         );
         let less = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(product),
@@ -3542,7 +3544,7 @@ mod tests {
             false,
         );
         let masked = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(binary_node!(Int32, BitwiseAnd, a(), b())),

@@ -3,7 +3,7 @@ use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
 use crate::kernel::assumptions::{parameter_alias_bucket, parameter_partition_variable};
 use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
 use crate::kernel::{
-    Address, AddressBase, AddressOffset, ConditionTerm, MachineIntegerType, MachineOperandView,
+    Address, AddressBase, AddressOffset, MachineIntegerType, MachineOperandView, OldConditionTerm,
     OldMachineTerm, Proposition, Variable,
 };
 use crate::persistent::{PersistentComponents, PersistentMap, PersistentSet};
@@ -361,7 +361,7 @@ pub(in crate::kernel) struct WideEqualitySources {
 impl WideEqualitySources {
     pub(in crate::kernel) fn adjust(
         &mut self,
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
         truth: bool,
         admitted_endpoints: Option<&(super::MachineAtom, super::MachineAtom)>,
     ) {

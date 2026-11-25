@@ -244,14 +244,14 @@ mod tests {
         let operand = SharedMachineIntegerTerm::from_shared(ty, root.clone()).unwrap();
         let alias = SharedMachineIntegerTerm::from_shared(ty, var(995872)).unwrap();
         let source = Proposition::condition_is(
-            ConditionTerm::integer_equal(
+            OldConditionTerm::integer_equal(
                 IntegerTerm::Machine(operand.clone()),
                 IntegerTerm::Machine(alias.clone()),
             ),
             true,
         );
         let literal = Proposition::condition_is(
-            ConditionTerm::integer_equal(
+            OldConditionTerm::integer_equal(
                 IntegerTerm::Machine(alias),
                 IntegerTerm::constant(7.into()),
             ),
@@ -306,7 +306,7 @@ mod tests {
         )
         .unwrap();
         let source = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: Box::new(written),

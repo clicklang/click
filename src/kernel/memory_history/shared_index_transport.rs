@@ -106,7 +106,7 @@ pub(in crate::kernel) fn map_index_with_fold_and_cache(
                 condition.clone()
             } else {
                 crate::kernel::KernelTermImport::default()
-                    .condition(&ConditionTerm::truth_of_bool_word(&mapped))
+                    .condition(&OldConditionTerm::truth_of_bool_word(&mapped))
             })
         },
         results,
@@ -694,7 +694,7 @@ mod tests {
     fn framed_index_transport_keeps_opaque_refusals() {
         let _session = VerificationSession::enter();
         let term = OldMachineTerm::If {
-            condition: Box::new(ConditionTerm::Constant(true)),
+            condition: Box::new(OldConditionTerm::Constant(true)),
             then_term: Box::new(OldMachineTerm::constant(1)),
             else_term: Box::new(OldMachineTerm::constant(2)),
         };
@@ -796,7 +796,7 @@ mod tests {
                 right: y.clone().into(),
             };
             let opaque = OldMachineTerm::If {
-                condition: ConditionTerm::Variable(Variable(1018962)).into(),
+                condition: OldConditionTerm::Variable(Variable(1018962)).into(),
                 then_term: x.clone().into(),
                 else_term: y.clone().into(),
             };
@@ -929,7 +929,7 @@ mod tests {
                     load.clone(),
                     OldMachineTerm::add(load.clone(), load.clone()),
                     OldMachineTerm::If {
-                        condition: ConditionTerm::Variable(Variable(1018951)).into(),
+                        condition: OldConditionTerm::Variable(Variable(1018951)).into(),
                         then_term: load.clone().into(),
                         else_term: OldMachineTerm::constant(3).into(),
                     },
@@ -962,7 +962,7 @@ mod tests {
         );
         let parent = normalize_exact_index(&value, &empty).unwrap();
         let child = empty.clone().assume_condition(
-            ConditionTerm::equal(index, OldMachineTerm::constant(0)),
+            OldConditionTerm::equal(index, OldMachineTerm::constant(0)),
             true,
         );
         normalization_parity(MachineIntegerType::Int32, value.structural_value(), &child);
@@ -988,7 +988,7 @@ mod tests {
         let value = retained(
             ty,
             &OldMachineTerm::If {
-                condition: Box::new(ConditionTerm::address_equal(
+                condition: Box::new(OldConditionTerm::address_equal(
                     Address::symbolic(Variable(1007510)),
                     Address::symbolic(Variable(1007511)),
                 )),

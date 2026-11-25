@@ -35,7 +35,7 @@ use super::borrows::MutexUseBorrow;
 use super::borrows::{BorrowHoldId, BorrowLedger, BorrowParticipantId, MutexUseBinding};
 use crate::persistent::PersistentMap;
 
-use super::{Address, ConditionTerm, ExecutionState, PureFactContext, Resource, ResourceFact};
+use super::{Address, ExecutionState, OldConditionTerm, PureFactContext, Resource, ResourceFact};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum MutexTransitionError {
@@ -870,7 +870,7 @@ pub(super) fn initialization_storage_refusal(
             resource: Box::new(ResourceFact::own_memory(range)),
         });
     }
-    if assumptions.decide(&ConditionTerm::pointer_aligned(
+    if assumptions.decide(&OldConditionTerm::pointer_aligned(
         mutex.clone(),
         u64::from(alignment),
     )) != Some(true)
@@ -2154,10 +2154,10 @@ impl MutexLedger {
         }
     }
 
-    pub(super) fn held_condition(&self, mutex: &Address) -> ConditionTerm {
+    pub(super) fn held_condition(&self, mutex: &Address) -> OldConditionTerm {
         match self.get(mutex) {
             Some(MutexEntry::ConditionalLoop { held, .. }) => held.old_form().clone(),
-            entry => ConditionTerm::Constant(matches!(entry, Some(MutexEntry::Locked { .. }))),
+            entry => OldConditionTerm::Constant(matches!(entry, Some(MutexEntry::Locked { .. }))),
         }
     }
 
@@ -2803,7 +2803,7 @@ mod tests {
                 .as_ref()
                 .unwrap()
                 .held_condition(&mutex),
-            ConditionTerm::Constant(true)
+            OldConditionTerm::Constant(true)
         );
         assert_eq!(
             missing.release_current(&mutex, &assumptions).err(),
@@ -3672,7 +3672,7 @@ mod tests {
         use super::super::*;
         let pointer = Address::symbolic(Variable(91_000));
         let aligned = PureFactContext::new()
-            .assume_condition(ConditionTerm::pointer_aligned(pointer.clone(), 8), true);
+            .assume_condition(OldConditionTerm::pointer_aligned(pointer.clone(), 8), true);
         let state_for = |bytes, owned| {
             let range = allocation_range(pointer.clone(), bytes);
             ExecutionState::new().with_resource_context(ResourceContext::new().unchecked_with_fact(

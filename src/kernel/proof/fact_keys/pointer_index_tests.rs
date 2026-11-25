@@ -30,7 +30,10 @@ fn offset(value: SharedMachineIntegerTerm, width: i64, unsigned: bool) -> Addres
 }
 fn fact(offset: AddressOffset) -> Proposition {
     Proposition::condition_is(
-        ConditionTerm::AddressOffsetEqual(Box::new(offset), Box::new(AddressOffset::Constant(0))),
+        OldConditionTerm::AddressOffsetEqual(
+            Box::new(offset),
+            Box::new(AddressOffset::Constant(0)),
+        ),
         true,
     )
 }
@@ -84,7 +87,7 @@ fn pointer_index_keys_match_native_arithmetic_and_opaque_binders() {
             x.clone(),
             fold.clone(),
             OldMachineTerm::If {
-                condition: ConditionTerm::Variable(Variable(1019004)).into(),
+                condition: OldConditionTerm::Variable(Variable(1019004)).into(),
                 then_term: x.clone().into(),
                 else_term: OldMachineTerm::constant(3).into(),
             },

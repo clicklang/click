@@ -47,14 +47,14 @@ fn domain(value: &Proposition) -> Proposition {
         Proposition::Or(a, b) => Proposition::Or(Box::new(domain(a)), Box::new(domain(b))),
         Proposition::ConditionIs(c, t) => Proposition::condition_is(
             match c.old_form() {
-                ConditionTerm::IntegerEqual(a, b) => {
-                    ConditionTerm::integer_equal(integer(a), integer(b))
+                OldConditionTerm::IntegerEqual(a, b) => {
+                    OldConditionTerm::integer_equal(integer(a), integer(b))
                 }
-                ConditionTerm::IntegerLessEqual(a, b) => {
-                    ConditionTerm::integer_less_equal(integer(a), integer(b))
+                OldConditionTerm::IntegerLessEqual(a, b) => {
+                    OldConditionTerm::integer_less_equal(integer(a), integer(b))
                 }
-                ConditionTerm::IntegerGreaterEqual(a, b) => {
-                    ConditionTerm::integer_greater_equal(integer(a), integer(b))
+                OldConditionTerm::IntegerGreaterEqual(a, b) => {
+                    OldConditionTerm::integer_greater_equal(integer(a), integer(b))
                 }
                 c => c.clone(),
             },

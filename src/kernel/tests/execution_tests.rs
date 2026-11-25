@@ -537,11 +537,14 @@ fn final_iteration_condition_can_use_the_pre_body_bound() {
     );
     let assumptions = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_greater_equal(original_bits.clone(), OldMachineTerm::constant(0)),
+            OldConditionTerm::signed_greater_equal(
+                original_bits.clone(),
+                OldMachineTerm::constant(0),
+            ),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_than(original_bits, OldMachineTerm::constant(1)),
+            OldConditionTerm::signed_less_than(original_bits, OldMachineTerm::constant(1)),
             true,
         );
 
@@ -715,7 +718,7 @@ fn symbolic_address_bases_do_not_imply_non_aliasing() {
     };
 
     assert_eq!(
-        PureFactContext::new().decide(&ConditionTerm::address_equal(symbolic, concrete)),
+        PureFactContext::new().decide(&OldConditionTerm::address_equal(symbolic, concrete)),
         None
     );
 }
@@ -1456,7 +1459,7 @@ fn loop_semantics_explicitly_select_verification_or_verified_rules() {
         statement.clone(),
         assumptions
             .clone()
-            .assume_condition(ConditionTerm::Constant(true), true),
+            .assume_condition(OldConditionTerm::Constant(true), true),
         ExecutionEnvironment::new().with_verified_loop_rules([loop_rule.clone()]),
         ExecutionSemantics::APPLY_VERIFIED_RULES,
     );
@@ -2230,8 +2233,9 @@ fn verified_loop_rule_prerequisites_are_not_reproved_from_ambient_facts() {
     let (statement, base_rule) = prerequisite_loop_rule_fixture();
     let state = ExecutionState::new().with_local("i", int32(0));
     let bound = OldMachineTerm::Variable(Variable(900_001));
-    let required = ConditionTerm::signed_greater_equal(bound.clone(), OldMachineTerm::constant(0));
-    let stronger = ConditionTerm::signed_greater_equal(bound, OldMachineTerm::constant(1));
+    let required =
+        OldConditionTerm::signed_greater_equal(bound.clone(), OldMachineTerm::constant(0));
+    let stronger = OldConditionTerm::signed_greater_equal(bound, OldMachineTerm::constant(1));
     let mut rule = base_rule;
     rule.required_assumptions = PureFactContext::new().assume_condition(required.clone(), true);
     let environment = ExecutionEnvironment::new().with_verified_loop_rules([rule]);
@@ -2260,8 +2264,8 @@ fn verified_loop_rule_prerequisites_are_not_reproved_from_ambient_facts() {
     assert!(!exact.paths().is_empty());
 }
 
-fn loop_rule_guard(value: u32) -> ConditionTerm {
-    ConditionTerm::equal(
+fn loop_rule_guard(value: u32) -> OldConditionTerm {
+    OldConditionTerm::equal(
         OldMachineTerm::Variable(Variable(900_000)),
         OldMachineTerm::constant(value),
     )
@@ -2463,7 +2467,7 @@ fn loop_entry_goals_retain_satisfied_duplicate_declarations() {
         goals.declarations()[1][0].proposition()
     );
     assert!(
-        matches!(&goals.declarations()[0][0].proposition(), condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Compare { .. }, _))))
+        matches!(&goals.declarations()[0][0].proposition(), condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Compare { .. }, _))))
     );
     assert!(
         loop_invariant_obligations_at_entry(&state, &checks, &assumptions)
@@ -2515,7 +2519,7 @@ fn loop_entry_goals_preserve_guarded_judgments() {
 /// `a != 0` as the kernel spells a short-circuit guard operand's fact.
 fn guard_operand_fact(variable: u64, nonzero: bool) -> Proposition {
     Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(OldMachineTerm::Variable(Variable(variable))),
@@ -3415,7 +3419,7 @@ fn loop_join_accepts_null_without_restoring_an_object_class() {
     let null = OldPointer::new(Address::null(), ProgramType::Int32Pointer);
     let empty = PureFactContext::new();
     let known_null = empty.clone().assume_condition(
-        ConditionTerm::address_equal(unknown.address().clone(), Address::null()),
+        OldConditionTerm::address_equal(unknown.address().clone(), Address::null()),
         true,
     );
     for (pointer, facts) in [(null, &empty), (unknown.clone(), &known_null)] {
@@ -3428,7 +3432,7 @@ fn loop_join_accepts_null_without_restoring_an_object_class() {
     let back = ExecutionState::new().with_local("parent", ProgramValue::Pointer(unknown.clone()));
     assert!(loop_state_components_match_at_back_edge(&head, &back, &empty, &[]).is_err());
     let nonnull = empty.assume_condition(
-        ConditionTerm::address_equal(unknown.address().clone(), Address::null()),
+        OldConditionTerm::address_equal(unknown.address().clone(), Address::null()),
         false,
     );
     assert!(loop_state_components_match_at_back_edge(&head, &back, &nonnull, &[]).is_err());

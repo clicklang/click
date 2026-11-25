@@ -82,21 +82,21 @@ pub(in crate::surface::proof) fn check_fixed_state_theorem_application_using_fac
             // neither which `using` entry was refused nor why.
             let constant_note = match &premise {
                 condition_source_0 @ Proposition::ConditionIs(_, _)
-                    if let Some((ConditionTerm::Constant(_), _)) =
-                        condition_source_0.condition_native() =>
+                    if let Some((OldConditionTerm::Constant(_), _)) =
+                        condition_source_0.old_condition() =>
                 {
                     " (it is false at this instance)"
                 }
                 condition_source_0 @ Proposition::ConditionIs(_, expected)
                     if let Some((
-                        condition @ ConditionTerm::Compare {
+                        condition @ OldConditionTerm::Compare {
                             format,
                             left,
                             right,
                             ..
                         },
                         _,
-                    )) = condition_source_0.condition_native()
+                    )) = condition_source_0.old_condition()
                         && (format.constant_from_term(left).is_some()
                             && format.constant_from_term(right).is_some()
                             && PureFactContext::new().decide(condition) == Some(!expected)) =>

@@ -416,7 +416,7 @@ fn consumed_scalar_transfer_preserves_output_spelling_and_partial_residual() {
             original.clone()
         };
         let facts = PureFactContext::new().assume_condition(
-            ConditionTerm::address_equal(original.clone(), returned.clone()),
+            OldConditionTerm::address_equal(original.clone(), returned.clone()),
             true,
         );
         let caller =
@@ -1555,7 +1555,7 @@ fn flat_body_admission_keeps_selected_alias_diagnostics_and_branch_isolation() {
     let pointer = Address::symbolic(Variable(8_819_100));
     let alias = Address::symbolic(Variable(8_819_101));
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::address_equal(pointer.clone(), alias.clone()),
+        OldConditionTerm::address_equal(pointer.clone(), alias.clone()),
         true,
     );
     let (evaluated, bodies) = constructed_flat_return(&pointer, 2, &facts);
@@ -2553,7 +2553,7 @@ fn cached_composite_expansion_reuses_symbolic_endpoint_fragments() {
     let pointer = Address::symbolic(Variable(9_831_200));
     let end = OldMachineTerm::Variable(Variable(9_831_201));
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::signed_less_than(2u32.into(), end.clone()),
+        OldConditionTerm::signed_less_than(2u32.into(), end.clone()),
         true,
     );
     let owned = |start, end| {

@@ -86,7 +86,7 @@ fn retained_call_argument_congruence_is_linear_cold_and_constant_warm() {
         }
         let exact = SharedMachineIntegerTerm::from_shared(M::UInt64, root.clone()).unwrap();
         let bound = |argument| {
-            ConditionTerm::narrow_compare(
+            OldConditionTerm::narrow_compare(
                 M::UInt8,
                 crate::kernel::CompareRelation::LessEqual,
                 OldMachineTerm::Constant {

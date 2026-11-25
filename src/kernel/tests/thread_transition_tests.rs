@@ -1116,7 +1116,7 @@ fn thread_guarantees_are_withheld_until_join() {
         )
         .unwrap();
     let postcondition = Proposition::condition_is(
-        ConditionTerm::equal(
+        OldConditionTerm::equal(
             OldMachineTerm::read_named(
                 ProgramPoint::at(&(intern_memory_ref(spawned.parent().memory()))),
                 Box::new(pointer(0)),

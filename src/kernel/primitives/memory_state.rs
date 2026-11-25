@@ -33,7 +33,7 @@ enum HavocIdentityTask {
     Pointer(Address),
     PointerOffset(AddressOffset),
     Bitvector(OldMachineTerm),
-    Condition(ConditionTerm),
+    Condition(OldConditionTerm),
     FloatCondition {
         condition: FloatCondition,
         is_float64: bool,
@@ -260,7 +260,7 @@ fn havoc_range_identity(range: &MemoryRange) -> String {
 
 /// The structural key of one condition premise, in the havoc identity
 /// encoding.
-fn havoc_condition_identity(condition: &ConditionTerm, value: bool) -> String {
+fn havoc_condition_identity(condition: &OldConditionTerm, value: bool) -> String {
     write_havoc_identity(
         format!("condition{value}("),
         vec![
@@ -614,20 +614,20 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
             HavocIdentityTask::Condition(condition) => {
                 crate::instrumentation::record_deterministic_work(1);
                 match condition {
-                    ConditionTerm::PointerEqual(left, right) => {
+                    OldConditionTerm::PointerEqual(left, right) => {
                         let _ = write!(identity, "pveq({left:?},{right:?});");
                     }
 
-                    ConditionTerm::AlgebraicEqual(left, right) => {
+                    OldConditionTerm::AlgebraicEqual(left, right) => {
                         let _ = write!(identity, "aeq({left:?},{right:?});");
                     }
-                    ConditionTerm::Constant(value) => {
+                    OldConditionTerm::Constant(value) => {
                         let _ = write!(identity, "cc{value};");
                     }
-                    ConditionTerm::Variable(variable) => {
+                    OldConditionTerm::Variable(variable) => {
                         let _ = write!(identity, "cv{};", variable.0);
                     }
-                    ConditionTerm::Compare {
+                    OldConditionTerm::Compare {
                         format,
                         relation,
                         left,
@@ -639,7 +639,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         *left,
                         *right,
                     ),
-                    ConditionTerm::Overflows {
+                    OldConditionTerm::Overflows {
                         format,
                         op,
                         left,
@@ -654,26 +654,26 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                     crate::kernel::integer_comparison_condition!(_, _) => {
                         let _ = write!(identity, "icond{condition:?};");
                     }
-                    ConditionTerm::Float32(condition) => {
+                    OldConditionTerm::Float32(condition) => {
                         tasks.push(HavocIdentityTask::FloatCondition {
                             condition,
                             is_float64: false,
                         });
                     }
-                    ConditionTerm::Float64(condition) => {
+                    OldConditionTerm::Float64(condition) => {
                         tasks.push(HavocIdentityTask::FloatCondition {
                             condition,
                             is_float64: true,
                         });
                     }
-                    ConditionTerm::AddressOffsetEqual(left, right) => {
+                    OldConditionTerm::AddressOffsetEqual(left, right) => {
                         identity.push_str("coe(");
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::PointerOffset(*right));
                         tasks.push(HavocIdentityTask::Text(","));
                         tasks.push(HavocIdentityTask::PointerOffset(*left));
                     }
-                    ConditionTerm::AddressEqual(left, right) => {
+                    OldConditionTerm::AddressEqual(left, right) => {
                         identity.push_str("cpe(");
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::Pointer(*right));
@@ -681,13 +681,13 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         tasks.push(HavocIdentityTask::Pointer(*left));
                     }
                     // As a word-valued Click application: by its hash.
-                    ConditionTerm::BoolApplication(application) => {
+                    OldConditionTerm::BoolApplication(application) => {
                         use std::hash::{Hash, Hasher};
                         let mut hasher = std::collections::hash_map::DefaultHasher::new();
                         application.hash(&mut hasher);
                         let _ = write!(identity, "bclick:{:x};", hasher.finish());
                     }
-                    ConditionTerm::BoolIf {
+                    OldConditionTerm::BoolIf {
                         condition,
                         then_condition,
                         else_condition,
@@ -700,7 +700,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         tasks.push(HavocIdentityTask::Text(","));
                         tasks.push(HavocIdentityTask::Condition(*condition));
                     }
-                    ConditionTerm::BoolEqual(left, right) => {
+                    OldConditionTerm::BoolEqual(left, right) => {
                         identity.push_str("beq(");
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::Condition(*right));
@@ -869,7 +869,7 @@ mod call_havoc_local_retention_tests {
                 ProgramValue::Int32(OldMachineTerm::constant(7)),
             );
         let facts = PureFactContext::new().assume_condition(
-            ConditionTerm::address_equal(alias.clone(), pointer.offset_by_bytes(1)),
+            OldConditionTerm::address_equal(alias.clone(), pointer.offset_by_bytes(1)),
             true,
         );
         let range = MemoryRange::new_with_element_width(alias, 0u32.into(), 1u32.into(), 1);
@@ -915,7 +915,7 @@ mod call_havoc_local_retention_tests {
             OldMachineTerm::constant(1),
         );
         let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
-            ConditionTerm::address_equal(symbolic, local.clone()),
+            OldConditionTerm::address_equal(symbolic, local.clone()),
             true,
         ));
         let unrelated_range = MemoryRange::new(
@@ -2311,7 +2311,7 @@ fn held_kernel_term_fingerprint(term: &KernelTerm) -> Option<u64> {
             } => OldMachineTerm::cast_node(*encoding, *source, *destination, *zero()),
             N::BoolCast { destination, .. } => OldMachineTerm::BoolCast {
                 to: *destination,
-                value: Box::new(ConditionTerm::Constant(false)),
+                value: Box::new(OldConditionTerm::Constant(false)),
             },
             N::IntegerToMachine { destination, .. } => OldMachineTerm::IntegerToMachine {
                 destination: *destination,
@@ -2322,7 +2322,7 @@ fn held_kernel_term_fingerprint(term: &KernelTerm) -> Option<u64> {
                 arguments: Vec::new(),
             },
             N::MachineIf { .. } => OldMachineTerm::If {
-                condition: Box::new(ConditionTerm::Constant(false)),
+                condition: Box::new(OldConditionTerm::Constant(false)),
                 then_term: zero(),
                 else_term: zero(),
             },
@@ -2938,7 +2938,7 @@ pub struct CallKeptRanges {
     ranges: ResourceContext,
     residual: Option<ResourceContext>,
     identity: std::sync::Arc<KeptRangeSet>,
-    premises: Vec<(ConditionTerm, bool)>,
+    premises: Vec<(OldConditionTerm, bool)>,
     /// Shared definitions, sorted by name. A query first selects a residual
     /// composite by address, then looks up its definition to open an
     /// argument-direct body ([`Self::range_holding`]).
@@ -3094,7 +3094,7 @@ impl CallKeptRanges {
 
     pub(in crate::kernel) fn new(
         ranges: ResourceContext,
-        premises: Vec<(ConditionTerm, bool)>,
+        premises: Vec<(OldConditionTerm, bool)>,
         direct: Option<std::sync::Arc<[CompositeResourceDefinition]>>,
     ) -> Self {
         let identity = intern_kept_range_set(
@@ -3205,7 +3205,7 @@ impl CallKeptRanges {
     }
 
     /// Recorded placement premises, for state diagnostics.
-    pub(crate) fn diagnostic_premises(&self) -> &[(ConditionTerm, bool)] {
+    pub(crate) fn diagnostic_premises(&self) -> &[(OldConditionTerm, bool)] {
         &self.premises
     }
 
@@ -12012,7 +12012,7 @@ mod contract_retirement_tests {
         };
         let assumptions = aliases.iter().fold(PureFactContext::new(), |facts, alias| {
             facts.assume_proposition(Proposition::condition_is(
-                ConditionTerm::address_equal(alias.clone(), base.clone()),
+                OldConditionTerm::address_equal(alias.clone(), base.clone()),
                 true,
             ))
         });
@@ -12172,7 +12172,7 @@ mod join_allocation_spelling_tests {
             offset: AddressOffset::Constant(0),
         };
         let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
-            ConditionTerm::address_equal(p.clone(), q.clone()),
+            OldConditionTerm::address_equal(p.clone(), q.clone()),
             true,
         ));
         assert!(!assumptions.is_inconsistent());
@@ -12195,11 +12195,11 @@ mod join_allocation_spelling_tests {
         let p = heap_base(924_021);
         let q = heap_base(924_025);
         assert_eq!(
-            ConditionTerm::address_equal(p.clone(), q.clone()),
-            ConditionTerm::Constant(false)
+            OldConditionTerm::address_equal(p.clone(), q.clone()),
+            OldConditionTerm::Constant(false)
         );
         let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
-            ConditionTerm::address_equal(p, q),
+            OldConditionTerm::address_equal(p, q),
             true,
         ));
         assert!(assumptions.is_inconsistent());
@@ -12539,11 +12539,14 @@ mod initialization_record_tests {
         let bounded = |high: u32| {
             PureFactContext::new()
                 .assume_condition(
-                    ConditionTerm::signed_less_equal(OldMachineTerm::constant(0), index.clone()),
+                    OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), index.clone()),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::signed_less_equal(index.clone(), OldMachineTerm::constant(high)),
+                    OldConditionTerm::signed_less_equal(
+                        index.clone(),
+                        OldMachineTerm::constant(high),
+                    ),
                     true,
                 )
         };
@@ -12555,11 +12558,11 @@ mod initialization_record_tests {
     fn index_between(index: &OldMachineTerm, low: u32, high: u32) -> PureFactContext {
         PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_less_equal(OldMachineTerm::constant(low), index.clone()),
+                OldConditionTerm::signed_less_equal(OldMachineTerm::constant(low), index.clone()),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_equal(index.clone(), OldMachineTerm::constant(high)),
+                OldConditionTerm::signed_less_equal(index.clone(), OldMachineTerm::constant(high)),
                 true,
             )
     }

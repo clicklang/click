@@ -100,7 +100,7 @@ fn selected_wide_read_value_keeps_alias_authority_and_scales_with_unrelated_cell
     let read_pointer = Address::symbolic(Variable(78_100));
     let owned_pointer = Address::symbolic(Variable(78_101));
     let callee = Address::symbolic(Variable(78_102));
-    let alias = ConditionTerm::address_equal(read_pointer.clone(), owned_pointer.clone());
+    let alias = OldConditionTerm::address_equal(read_pointer.clone(), owned_pointer.clone());
     let selected = PureFactContext::new().assume_condition(alias, true);
     let bits = OldMachineTerm::uint64_add(
         OldMachineTerm::Variable(Variable(78_103)),
@@ -181,7 +181,7 @@ fn selected_wide_read_value_bounds_unselected_call_history() {
     let owner = Address::symbolic(Variable(81_101));
     let callee = Address::symbolic(Variable(81_102));
     let selected = PureFactContext::new().assume_condition(
-        ConditionTerm::address_equal(pointer.clone(), owner.clone()),
+        OldConditionTerm::address_equal(pointer.clone(), owner.clone()),
         true,
     );
     let kept = CallKeptOwnership::new(
@@ -232,7 +232,7 @@ fn selected_wide_read_congruence_preserves_history_width_and_scales() {
     let read_pointer = Address::symbolic(Variable(81_100));
     let owned_pointer = Address::symbolic(Variable(81_103));
     let callee = Address::symbolic(Variable(81_104));
-    let alias = ConditionTerm::address_equal(read_pointer.clone(), owned_pointer.clone());
+    let alias = OldConditionTerm::address_equal(read_pointer.clone(), owned_pointer.clone());
     let matches = crate::kernel::memory_history::wide_read_has_recorded_value;
     let mut previous_work = None;
     for count in [4u32, 16, 64, 256] {
@@ -244,7 +244,7 @@ fn selected_wide_read_congruence_preserves_history_width_and_scales() {
                 ProgramValue::UInt64(OldMachineTerm::uint64_constant(u64::from(index))),
             );
             selected = selected.assume_condition(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     OldMachineTerm::Variable(Variable(82_000 + u64::from(index))),
                     OldMachineTerm::constant(index),
                 ),

@@ -79,8 +79,8 @@ fn division_at(format: Ty, op: Op, left: OldMachineTerm, right: OldMachineTerm) 
     }
 }
 
-fn comparison(condition: &ConditionTerm) -> Option<NativeComparisonView<'_>> {
-    let view = if matches!(condition, ConditionTerm::Compare { .. }) {
+fn comparison(condition: &OldConditionTerm) -> Option<NativeComparisonView<'_>> {
+    let view = if matches!(condition, OldConditionTerm::Compare { .. }) {
         comparison_view(condition, true)?
     } else {
         structural_native_comparison_view(condition, true)?
@@ -152,7 +152,7 @@ fn division_at_views(format: Ty, op: Op, operands: [View<'_>; 2]) -> ComparisonO
     )
 }
 
-impl ConditionTerm {
+impl OldConditionTerm {
     /// Whether this is a 32-bit comparison with a side that is σ of a
     /// quotient or remainder, which rule C reads. One match on the root and
     /// each side.
@@ -171,7 +171,10 @@ impl PureFactContext {
     /// operands are known nonnegative and its divisor positive. `None` when
     /// no side is one, an operand's sign is not decided, or the rewritten
     /// comparison is undecided.
-    pub(super) fn decide_by_sign_cast_division(&self, condition: &ConditionTerm) -> Option<bool> {
+    pub(super) fn decide_by_sign_cast_division(
+        &self,
+        condition: &OldConditionTerm,
+    ) -> Option<bool> {
         let rewritten = self.sign_cast_division_equivalent(condition)?;
         let _deciding = Deciding::enter();
         self.decide(&rewritten)
@@ -184,27 +187,27 @@ impl PureFactContext {
     /// so a fact and its reading meet in every index.
     pub(in crate::kernel::assumptions) fn sign_cast_division_equivalent(
         &self,
-        condition: &ConditionTerm,
-    ) -> Option<ConditionTerm> {
+        condition: &OldConditionTerm,
+    ) -> Option<OldConditionTerm> {
         if DECIDING_SIGN_CAST_DIVISION.with(std::cell::Cell::get) {
             return None;
         }
         let mut view = comparison(condition)?;
         // Keep native written directions, including greater-than spellings.
         let relation = match condition {
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 relation: CompareRelation::GreaterThan,
                 ..
             }
-            | ConditionTerm::IntegerGreaterThan(..) => {
+            | OldConditionTerm::IntegerGreaterThan(..) => {
                 view.operands.swap(0, 1);
                 CompareRelation::GreaterThan
             }
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 relation: CompareRelation::GreaterEqual,
                 ..
             }
-            | ConditionTerm::IntegerGreaterEqual(..) => {
+            | OldConditionTerm::IntegerGreaterEqual(..) => {
                 view.operands.swap(0, 1);
                 CompareRelation::GreaterEqual
             }
@@ -239,7 +242,7 @@ impl PureFactContext {
         ];
         let operands = results.each_ref().map(ComparisonOperand::operand_view);
         if view.relation == Relation::NotEqual {
-            return Some(ConditionTerm::integer_not_equal(
+            return Some(OldConditionTerm::integer_not_equal(
                 operands[0].observe(view.format)?,
                 operands[1].observe(view.format)?,
             ));
@@ -295,19 +298,19 @@ mod tests {
         OldMachineTerm::sign_cast32(source, other(source), value)
     }
 
-    fn signed_nonnegative(value: OldMachineTerm) -> ConditionTerm {
-        ConditionTerm::signed_less_equal(OldMachineTerm::constant(0), value)
+    fn signed_nonnegative(value: OldMachineTerm) -> OldConditionTerm {
+        OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), value)
     }
 
-    fn signed_positive(value: OldMachineTerm) -> ConditionTerm {
-        ConditionTerm::signed_less_than(OldMachineTerm::constant(0), value)
+    fn signed_positive(value: OldMachineTerm) -> OldConditionTerm {
+        OldConditionTerm::signed_less_than(OldMachineTerm::constant(0), value)
     }
 
     #[test]
     fn shared_sign_division_readings_preserve_guards_directions_and_sources() {
         use crate::kernel::{KernelTermExport, KernelTermImport};
         let _session = crate::kernel::VerificationSession::enter();
-        let shape = |condition: ConditionTerm| {
+        let shape = |condition: OldConditionTerm| {
             let view = comparison(&condition).expect("machine comparison");
             (
                 view.format,
@@ -352,7 +355,7 @@ mod tests {
                         CompareRelation::GreaterThan,
                         CompareRelation::GreaterEqual,
                     ] {
-                        let native = ConditionTerm::machine_compare(
+                        let native = OldConditionTerm::machine_compare(
                             format,
                             relation,
                             left.clone(),
@@ -428,7 +431,7 @@ mod tests {
             Op::Divide,
             [cast_n, literal(Ty::Int32, 2)],
         );
-        let query = ConditionTerm::integer_not_equal(
+        let query = OldConditionTerm::integer_not_equal(
             View::Shared(&left).observe(Ty::Int32).unwrap(),
             View::Shared(&right).observe(Ty::Int32).unwrap(),
         );
@@ -467,7 +470,7 @@ mod tests {
             .each_ref()
             .map(|root| View::Shared(root).observe(Ty::Int32).unwrap());
         let [left, right] = observed;
-        let query = ConditionTerm::integer_not_equal(left, right);
+        let query = OldConditionTerm::integer_not_equal(left, right);
         let exports = KernelTermExport::machine_export_count();
         assert_eq!(context.decide_by_sign_cast_division(&query), Some(false));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
@@ -529,14 +532,14 @@ mod tests {
         let context = PureFactContext::new()
             .assume_condition(signed_positive(sigma(Ty::UInt32, d.clone())), true);
         assert_eq!(
-            context.decide(&ConditionTerm::uint32_equal(
+            context.decide(&OldConditionTerm::uint32_equal(
                 d.clone(),
                 OldMachineTerm::uint32_constant(0)
             )),
             Some(false)
         );
         assert_eq!(
-            context.decide(&ConditionTerm::unsigned_less_equal(
+            context.decide(&OldConditionTerm::unsigned_less_equal(
                 d,
                 OldMachineTerm::uint32_constant(i32::MAX as u32)
             )),
@@ -567,7 +570,7 @@ mod tests {
                     sigma(source, n.clone()),
                     sigma(source, d.clone()),
                 );
-                let equality = ConditionTerm::machine_compare(
+                let equality = OldConditionTerm::machine_compare(
                     other(source),
                     crate::kernel::CompareRelation::Equal,
                     cast,
@@ -589,7 +592,7 @@ mod tests {
         let (n, d) = (var(189_020), var(189_021));
         let context = PureFactContext::new()
             .assume_condition(signed_positive(sigma(Ty::UInt32, d.clone())), true);
-        let equality = ConditionTerm::equal(
+        let equality = OldConditionTerm::equal(
             sigma(
                 Ty::UInt32,
                 OldMachineTerm::unsigned_divide(n.clone(), d.clone()),

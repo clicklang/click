@@ -190,7 +190,7 @@ mod tests {
             (load.clone(), false),
             (
                 OldMachineTerm::If {
-                    condition: Box::new(ConditionTerm::Compare {
+                    condition: Box::new(OldConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(load.clone()),
@@ -203,7 +203,7 @@ mod tests {
             ),
             (
                 OldMachineTerm::If {
-                    condition: Box::new(ConditionTerm::Variable(Variable(1014002))),
+                    condition: Box::new(OldConditionTerm::Variable(Variable(1014002))),
                     then_term: Box::new(variable.clone()),
                     else_term: Box::new(load.clone()),
                 },

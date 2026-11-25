@@ -20,14 +20,14 @@ fn rewrite_observation(
         SharedMachineIntegerTerm::intern(format, expression)
     };
     let goal = Proposition::condition_is(
-        ConditionTerm::IntegerLessEqual(
+        OldConditionTerm::IntegerLessEqual(
             IntegerTerm::Machine(machine).into(),
             IntegerTerm::constant_i64(5).into(),
         ),
         true,
     );
     let equality = Proposition::condition_is(
-        ConditionTerm::machine_compare(
+        OldConditionTerm::machine_compare(
             format,
             CompareRelation::Equal,
             variable.clone(),
@@ -85,7 +85,7 @@ fn newly_closed_word32_arithmetic_has_the_same_value_for_native_and_shared_sourc
                 assert_eq!(
                     rewrite_observation(format, expression, &variable, word(value), shared),
                     Proposition::condition_is(
-                        ConditionTerm::IntegerLessEqual(
+                        OldConditionTerm::IntegerLessEqual(
                             IntegerTerm::constant_i64(expected).into(),
                             IntegerTerm::constant_i64(5).into()
                         ),
@@ -125,7 +125,7 @@ fn newly_closed_word32_arithmetic_keeps_undefined_values_opaque() {
                 right: Box::new(word(operand)),
             };
             let result = rewrite_observation(format, expression, &variable, word(value), shared);
-            let Some((ConditionTerm::IntegerLessEqual(left, _), true)) = result.condition_native()
+            let Some((OldConditionTerm::IntegerLessEqual(left, _), true)) = result.old_condition()
             else {
                 panic!("{result:?}");
             };
@@ -159,7 +159,7 @@ fn selected_literal_comparison_operands_keep_their_native_encoding() {
                 let literal =
                     crate::kernel::machine_integer::range::constant_word(format, &value.into())
                         .unwrap();
-                let flag = ConditionTerm::Variable(Variable(992597));
+                let flag = OldConditionTerm::Variable(Variable(992597));
                 let choice = OldMachineTerm::If {
                     condition: Box::new(flag.clone()),
                     then_term: Box::new(OldMachineTerm::Variable(Variable(992598))),
@@ -171,14 +171,14 @@ fn selected_literal_comparison_operands_keep_their_native_encoding() {
                     } else {
                         [choice.clone(), literal.clone()]
                     };
-                    let input = ConditionTerm::Compare {
+                    let input = OldConditionTerm::Compare {
                         format,
                         relation,
                         left: Box::new(left),
                         right: Box::new(right),
                     };
                     let result =
-                        TermRewrite::for_condition_exact(&flag, &ConditionTerm::Constant(false))
+                        TermRewrite::for_condition_exact(&flag, &OldConditionTerm::Constant(false))
                             .condition(&input);
                     let expected = if format.format().bits() == 32 {
                         literal.clone().into_word32()
@@ -187,7 +187,7 @@ fn selected_literal_comparison_operands_keep_their_native_encoding() {
                     };
                     assert_eq!(
                         result,
-                        ConditionTerm::Compare {
+                        OldConditionTerm::Compare {
                             format,
                             relation,
                             left: Box::new(expected.clone()),
@@ -207,11 +207,11 @@ fn selected_word32_literal_goal(format: MachineIntegerType, literal: u32) -> Pro
         crate::kernel::machine_integer::range::constant_word(format, &i64::from(n).into()).unwrap()
     };
     Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format,
             relation: CompareRelation::LessEqual,
             left: Box::new(OldMachineTerm::If {
-                condition: Box::new(ConditionTerm::machine_compare(
+                condition: Box::new(OldConditionTerm::machine_compare(
                     format,
                     CompareRelation::Equal,
                     variable.clone(),
@@ -228,7 +228,7 @@ fn selected_word32_literal_goal(format: MachineIntegerType, literal: u32) -> Pro
 
 fn selected_word32_literal_equality(format: MachineIntegerType) -> Proposition {
     Proposition::condition_is(
-        ConditionTerm::machine_compare(
+        OldConditionTerm::machine_compare(
             format,
             CompareRelation::Equal,
             OldMachineTerm::Variable(Variable(992599)),

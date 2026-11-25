@@ -35,7 +35,7 @@ reuse the original address comparison without reconstructing a cancelled
 base from an arbitrary class representative.
 
 A consumer that accepts an offset equality reads a same-block pointer
-equality through `ConditionTerm::pointer_offset_sides`, not by matching
+equality through `OldConditionTerm::pointer_offset_sides`, not by matching
 `AddressOffsetEqual` alone. In particular, a `have` at an execution frontier
 whose goal compares two loads of one pointer-valued field takes the
 load-equality bridge in either form

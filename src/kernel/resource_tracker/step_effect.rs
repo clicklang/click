@@ -737,12 +737,12 @@ fn store_cell_effect(
     {
         let condition = pointer_offsets_with_common_base_distinctness_condition(write, pointer)
             .expect("a successful common-base check has a cancellation condition");
-        let unequal_constants = condition == ConditionTerm::Constant(false);
+        let unequal_constants = condition == OldConditionTerm::Constant(false);
         if unequal_constants {
             hop(MemoryDagHopJustification::StoreCommonBaseUnequalConstants { condition })
         } else if assumptions.exact_condition_value(&condition) == Some(false) {
             hop(MemoryDagHopJustification::StoreCommonBaseExactInequality { condition })
-        } else if let ConditionTerm::Compare {
+        } else if let OldConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
@@ -759,7 +759,7 @@ fn store_cell_effect(
                 path,
                 reversed: false,
             })
-        } else if let ConditionTerm::Compare {
+        } else if let OldConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
@@ -860,7 +860,7 @@ pub(in crate::kernel) fn write_is_at_read_address(
                 assumptions,
             )
         || write.base == pointer.base
-            && assumptions.exact_condition_value(&ConditionTerm::address_offset_equal(
+            && assumptions.exact_condition_value(&OldConditionTerm::address_offset_equal(
                 write.offset.clone(),
                 pointer.offset.clone(),
             )) == Some(true)

@@ -145,7 +145,7 @@ fn preservation_scalar_names_do_not_walk_prior_memory_history() {
                 })
             };
             let goal = Proposition::condition_is(
-                ConditionTerm::Compare {
+                OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: read(&after),
@@ -161,7 +161,7 @@ fn preservation_scalar_names_do_not_walk_prior_memory_history() {
                 // A one-byte separation must not preserve a four-byte read,
                 // even when both read types are present at the same address.
                 let wider = Proposition::condition_is(
-                    ConditionTerm::equal(
+                    OldConditionTerm::equal(
                         integer_bits(tests::observe_point(&after, &address, ProgramType::Int32))
                             .unwrap(),
                         integer_bits(tests::observe_point(&before, &address, ProgramType::Int32))

@@ -1572,7 +1572,7 @@ fn diagnostic_value_variable(value: &ProgramValue) -> Option<Variable> {
             OldMachineTerm::Variable(variable) => Some(*variable),
             // A `Bool` binder (Stage 5), carried as its cast.
             OldMachineTerm::BoolCast { value, .. } => match value.as_ref() {
-                crate::kernel::ConditionTerm::Variable(variable) => Some(*variable),
+                crate::kernel::OldConditionTerm::Variable(variable) => Some(*variable),
                 _ => None,
             },
             _ => None,

@@ -168,7 +168,7 @@ fn narrow_equal(
     right: &OldMachineTerm,
 ) -> bool {
     graph.knows_condition(
-        &ConditionTerm::machine_compare(
+        &OldConditionTerm::machine_compare(
             format,
             CompareRelation::Equal,
             left.clone(),
@@ -222,7 +222,7 @@ fn check_narrow_store_equation(format: Ty) {
             .machine_arithmetic(format, &read)
             .unwrap();
         let empty = PureFactContext::new().assume_condition(
-            ConditionTerm::address_equal(pointer.clone(), query.clone()),
+            OldConditionTerm::address_equal(pointer.clone(), query.clone()),
             true,
         );
         assert!(
@@ -263,7 +263,7 @@ fn check_narrow_store_equation(format: Ty) {
                 &stored
             ));
             let after_alias = before_alias.assume_condition(
-                ConditionTerm::address_equal(pointer.clone(), query.clone()),
+                OldConditionTerm::address_equal(pointer.clone(), query.clone()),
                 true,
             );
             assert!(narrow_equal(

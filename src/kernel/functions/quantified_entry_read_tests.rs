@@ -110,7 +110,7 @@ fn sample(unrelated: usize, quantities: usize) -> usize {
     assert_eq!(guards.len(), quantities);
     assert!(guards.iter().all(|guard| guard
         == &Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
                 left: Box::new(OldMachineTerm::constant(4)),

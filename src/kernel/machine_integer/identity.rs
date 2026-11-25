@@ -16,7 +16,7 @@ use super::{Operation, definedness, range, representation};
 #[cfg(test)]
 use crate::kernel::OldMachineTerm;
 use crate::kernel::{
-    ConditionTerm, IntegerTerm, MachineIntegerType, Proposition, SharedMachineIntegerTerm,
+    IntegerTerm, MachineIntegerType, OldConditionTerm, Proposition, SharedMachineIntegerTerm,
 };
 use num_bigint::BigInt;
 
@@ -116,13 +116,13 @@ impl IntegerOperationRangeBound {
         let bound = IntegerTerm::constant(self.bound.clone());
         let forms = if self.lower {
             [
-                ConditionTerm::integer_greater_equal(self.exact.clone(), bound.clone()),
-                ConditionTerm::integer_less_equal(bound, self.exact.clone()),
+                OldConditionTerm::integer_greater_equal(self.exact.clone(), bound.clone()),
+                OldConditionTerm::integer_less_equal(bound, self.exact.clone()),
             ]
         } else {
             [
-                ConditionTerm::integer_less_equal(self.exact.clone(), bound.clone()),
-                ConditionTerm::integer_greater_equal(bound, self.exact.clone()),
+                OldConditionTerm::integer_less_equal(self.exact.clone(), bound.clone()),
+                OldConditionTerm::integer_greater_equal(bound, self.exact.clone()),
             ]
         };
         let mut facts = forms
@@ -487,7 +487,7 @@ fn shared_operation_bounds_keep_legacy_overflow_authority_without_export() {
         lower: false,
     };
     let source = Proposition::condition_is(
-        ConditionTerm::Overflows {
+        OldConditionTerm::Overflows {
             format,
             op: OverflowOperation::Add,
             left: Box::new(written),

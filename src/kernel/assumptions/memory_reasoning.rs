@@ -521,7 +521,7 @@ impl PureFactContext {
             && (bytes
                 .uint64_as_const()
                 .is_some_and(|count| count <= u64::from(held))
-                || self.decide(&ConditionTerm::uint64_less_equal(
+                || self.decide(&OldConditionTerm::uint64_less_equal(
                     bytes.clone(),
                     OldMachineTerm::uint64_constant(u64::from(held)),
                 )) == Some(true))
@@ -544,7 +544,7 @@ impl PureFactContext {
                 crate::instrumentation::record_deterministic_work(1);
                 source_base == base
                     && (source_bytes.old_form() == bytes
-                        || self.decide(&ConditionTerm::uint64_less_equal(
+                        || self.decide(&OldConditionTerm::uint64_less_equal(
                             bytes.clone(),
                             source_bytes.old_form().clone(),
                         )) == Some(true))
@@ -670,7 +670,7 @@ impl PureFactContext {
                 delta,
                 MachineOperandView::Old(end),
             )) == Some(true)
-            && self.decide(&ConditionTerm::uint64_less_equal(
+            && self.decide(&OldConditionTerm::uint64_less_equal(
                 end.as_ref().clone(),
                 held.clone(),
             )) == Some(true)
@@ -808,8 +808,10 @@ impl PureFactContext {
                         index.operand_view(),
                         MachineOperandView::Old(elements),
                     )) == Some(true)
-                    && self.decide(&ConditionTerm::uint64_less_equal(elements.clone(), limit))
-                        == Some(true)
+                    && self.decide(&OldConditionTerm::uint64_less_equal(
+                        elements.clone(),
+                        limit,
+                    )) == Some(true)
             })
         {
             return true;
@@ -880,7 +882,7 @@ impl PureFactContext {
             let left = self.simplify_bitvector_under_assumptions(left);
             let right = self.simplify_bitvector_under_assumptions(right);
             left == right
-                || self.decide(&ConditionTerm::Compare {
+                || self.decide(&OldConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(left.clone()),
@@ -1524,14 +1526,14 @@ impl PureFactContext {
                     .all(|guard| match guard {
                         condition_source_0 @ Proposition::ConditionIs(_, true)
                             if let Some((
-                                ConditionTerm::Compare {
+                                OldConditionTerm::Compare {
                                     format: MachineIntegerType::Int32,
                                     relation: CompareRelation::LessEqual,
                                     left: lower,
                                     right: upper,
                                 },
                                 _,
-                            )) = condition_source_0.condition_native() =>
+                            )) = condition_source_0.old_condition() =>
                         {
                             self.proves_element_endpoint_order(lower, upper)
                         }
@@ -1603,14 +1605,14 @@ impl PureFactContext {
             .all(|guard| match guard {
                 condition_source_0 @ Proposition::ConditionIs(_, true)
                     if let Some((
-                        ConditionTerm::Compare {
+                        OldConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::LessEqual,
                             left: lower,
                             right: upper,
                         },
                         _,
-                    )) = condition_source_0.condition_native() =>
+                    )) = condition_source_0.old_condition() =>
                 {
                     self.proves_element_endpoint_order(lower, upper)
                 }
@@ -3111,7 +3113,7 @@ impl PureFactContext {
         }
 
         let offsets_equal = |left: &AddressOffset, right: &AddressOffset| {
-            self.decide(&ConditionTerm::address_offset_equal(
+            self.decide(&OldConditionTerm::address_offset_equal(
                 left.clone(),
                 right.clone(),
             )) == Some(true)
@@ -3225,7 +3227,7 @@ impl PureFactContext {
 
     /// One endpoint bound of a range-membership question, by the exact
     /// routes first and the decision procedure last.
-    fn proves_range_bound(&self, condition: ConditionTerm) -> bool {
+    fn proves_range_bound(&self, condition: OldConditionTerm) -> bool {
         self.selected_comparison_value(&condition) == Some(true)
             || self.exact_ordering_modulo_canonical_atoms(&condition)
             || self.nonnegative_successor_by_exact_facts(&condition)
@@ -3258,7 +3260,7 @@ impl PureFactContext {
         {
             return true;
         }
-        let proves = |condition: ConditionTerm| self.proves_range_bound(condition);
+        let proves = |condition: OldConditionTerm| self.proves_range_bound(condition);
         let range_base = base.offset_by_elements(start.clone(), element_width);
         if let Some(index) =
             self.pointer_element_index_from_base_with_width(pointer, &range_base, element_width)
@@ -3300,16 +3302,16 @@ impl PureFactContext {
     /// the exact fact set and term size.
     pub(in crate::kernel) fn exact_ordering_modulo_canonical_atoms(
         &self,
-        condition: &ConditionTerm,
+        condition: &OldConditionTerm,
     ) -> bool {
         if !matches!(
             condition,
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left: _,
                 right: _
-            } | ConditionTerm::Compare {
+            } | OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: _,
@@ -3344,8 +3346,8 @@ impl PureFactContext {
     /// membership over successor indices (`data[len + 1]` under
     /// `0 <= len` and `len < cap` requires) decides without the general
     /// prover.
-    fn nonnegative_successor_by_exact_facts(&self, condition: &ConditionTerm) -> bool {
-        let ConditionTerm::Compare {
+    fn nonnegative_successor_by_exact_facts(&self, condition: &OldConditionTerm) -> bool {
+        let OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
             left: low,
@@ -3375,7 +3377,7 @@ impl PureFactContext {
         }
         forms.iter().any(|form| {
             let nonnegative =
-                ConditionTerm::signed_less_equal(OldMachineTerm::constant(0), form.clone());
+                OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), form.clone());
             (self.selected_comparison_value(&nonnegative) == Some(true)
                 || self.exact_ordering_modulo_canonical_atoms(&nonnegative))
                 // A true `left < _` fact is an order fact filed under the
@@ -3387,7 +3389,7 @@ impl PureFactContext {
                         self.condition_facts.get(fact) == Some(&true)
                             && matches!(
                                 fact,
-                                ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::LessThan, left, right: _ }
+                                OldConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::LessThan, left, right: _ }
                                     if crate::kernel::eval::terms_have_same_canonical_form(
                                         left, form,
                                     )
@@ -3522,11 +3524,11 @@ impl PureFactContext {
                 )) == Some(true));
         }
         if left.element_width() == right.element_width()
-            && (self.decide(&ConditionTerm::signed_less_equal(
+            && (self.decide(&OldConditionTerm::signed_less_equal(
                 left.end().clone(),
                 right.start().clone(),
             )) == Some(true)
-                || self.decide(&ConditionTerm::signed_less_equal(
+                || self.decide(&OldConditionTerm::signed_less_equal(
                     right.end().clone(),
                     left.start().clone(),
                 )) == Some(true))
@@ -4768,9 +4770,9 @@ impl PureFactContext {
             return false;
         };
         let bytes = i64::from(byte_width);
-        let holds = |condition: ConditionTerm| self.decide(&condition) == Some(true);
+        let holds = |condition: OldConditionTerm| self.decide(&condition) == Some(true);
         let exact = || {
-            holds(ConditionTerm::uint64_less_equal(
+            holds(OldConditionTerm::uint64_less_equal(
                 count.clone(),
                 OldMachineTerm::uint64_constant((i64::MAX / stride) as u64),
             ))
@@ -4788,7 +4790,7 @@ impl PureFactContext {
                 return false;
             };
             let bound = OldMachineTerm::uint64_constant(last.div_ceil(stride as u64));
-            return exact() && holds(ConditionTerm::uint64_less_equal(bound, count.clone()));
+            return exact() && holds(OldConditionTerm::uint64_less_equal(bound, count.clone()));
         }
         let Some(element) = crate::kernel::reasoning::scaled_element_offset(&offset) else {
             return false;
@@ -5033,7 +5035,7 @@ impl PureFactContext {
                             && (bytes > 0
                                 || contains(address, 0)
                                 || contains(position, 1)
-                                || self.decide(&ConditionTerm::signed_less_than(
+                                || self.decide(&OldConditionTerm::signed_less_than(
                                     OldMachineTerm::constant(0),
                                     count,
                                 )) == Some(true))
@@ -5710,13 +5712,13 @@ impl PureFactContext {
         // decides only what the layers above could not name, and each
         // attempt costs two decisions.
         if let AddressOffset::Add(left, right) = &range.base.offset {
-            let forward_offset = if self.decide(&ConditionTerm::address_offset_equal(
+            let forward_offset = if self.decide(&OldConditionTerm::address_offset_equal(
                 pointer.offset.clone(),
                 left.as_ref().clone(),
             )) == Some(true)
             {
                 shared_element_index_from_offset(right, range.element_width())
-            } else if self.decide(&ConditionTerm::address_offset_equal(
+            } else if self.decide(&OldConditionTerm::address_offset_equal(
                 pointer.offset.clone(),
                 right.as_ref().clone(),
             )) == Some(true)
@@ -6135,7 +6137,7 @@ mod nonnegative_successor_tests {
     #[test]
     fn successor_rule_ignores_unrelated_condition_facts() {
         let term = OldMachineTerm::Variable(Variable(96_000));
-        let goal = ConditionTerm::signed_less_equal(
+        let goal = OldConditionTerm::signed_less_equal(
             OldMachineTerm::constant(0),
             OldMachineTerm::add(term.clone(), OldMachineTerm::constant(1)),
         );
@@ -6143,12 +6145,12 @@ mod nonnegative_successor_tests {
             .into_iter()
             .map(|unrelated| {
                 let mut context = PureFactContext::new().assume_condition(
-                    ConditionTerm::signed_less_equal(OldMachineTerm::constant(0), term.clone()),
+                    OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), term.clone()),
                     true,
                 );
                 for index in 0..unrelated {
                     context = context.assume_condition(
-                        ConditionTerm::signed_less_than(
+                        OldConditionTerm::signed_less_than(
                             OldMachineTerm::Variable(Variable(96_100 + index)),
                             OldMachineTerm::Variable(Variable(96_600 + index)),
                         ),
@@ -6607,14 +6609,14 @@ mod shared_range_index_tests {
             crate::kernel::KernelTermImport::default().machine(MachineIntegerType::Int32, &narrow);
         let empty = PureFactContext::new();
         let bounded = empty.clone().assume_condition(
-            ConditionTerm::uint64_less_equal(
+            OldConditionTerm::uint64_less_equal(
                 wide.clone(),
                 OldMachineTerm::uint64_constant(i32::MAX as u64 - 1),
             ),
             true,
         );
         let truncated = empty.clone().assume_condition(
-            ConditionTerm::unsigned_less_equal(
+            OldConditionTerm::unsigned_less_equal(
                 OldMachineTerm::uint32_from_64(wide.clone()),
                 OldMachineTerm::constant(i32::MAX as u32 - 1),
             ),
@@ -6751,8 +6753,8 @@ mod shared_range_index_tests {
         };
         let pointer = base.offset_by_int32_elements(absolute.clone());
         let range = MemoryRange::new(base.clone(), start.clone(), end.clone());
-        let lower = ConditionTerm::signed_less_equal(start.clone(), absolute.clone());
-        let upper = ConditionTerm::signed_less_than(absolute, end.clone());
+        let lower = OldConditionTerm::signed_less_equal(start.clone(), absolute.clone());
+        let upper = OldConditionTerm::signed_less_than(absolute, end.clone());
         let lower_only = PureFactContext::new().assume_condition(lower, true);
         let facts = lower_only.clone().assume_condition(upper, true);
         let delta = pointer
@@ -6867,7 +6869,7 @@ mod separation_pointer_copy_tests {
         let root = PureFactContext::new().assume_proposition(stated);
         let branch = root
             .clone()
-            .assume_condition(ConditionTerm::address_equal(copied.clone(), p), true);
+            .assume_condition(OldConditionTerm::address_equal(copied.clone(), p), true);
         assert!(branch.proves_resource_separate(&bytes(copied.clone(), 1), &bytes(q.clone(), 4)));
         assert!(branch.contains_known(&Proposition::ResourceSeparate {
             left: Box::new(bytes(copied.clone(), 1)),
@@ -6885,14 +6887,18 @@ mod separation_pointer_copy_tests {
         let q = Address::symbolic(Variable(9_924_003));
         let context = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::address_equal(early.clone(), Address::symbolic(Variable(9_924_004))),
+                OldConditionTerm::address_equal(
+                    early.clone(),
+                    Address::symbolic(Variable(9_924_004)),
+                ),
                 true,
             )
             .assume_proposition(Proposition::ResourceSeparate {
                 left: Box::new(bytes(p.clone(), 1)),
                 right: Box::new(bytes(q.clone(), 4)),
             });
-        let branch = context.assume_condition(ConditionTerm::address_equal(q, early.clone()), true);
+        let branch =
+            context.assume_condition(OldConditionTerm::address_equal(q, early.clone()), true);
         assert!(branch.proves_resource_separate(&bytes(p.clone(), 1), &bytes(early.clone(), 4)));
         assert!(branch.proves_resource_separate(&bytes(early, 4), &bytes(p, 1)));
     }
@@ -6918,13 +6924,13 @@ mod separation_pointer_copy_tests {
                 ))),
             })
             .assume_condition(
-                ConditionTerm::address_equal(copied.clone(), p.clone()),
+                OldConditionTerm::address_equal(copied.clone(), p.clone()),
                 true,
             );
         assert!(context.proves_resource_separate(&bytes(copied.clone(), 4), &bytes(q.clone(), 8)));
         assert!(!context.proves_resource_separate(&bytes(copied, 5), &bytes(q.clone(), 8)));
         let conflicting =
-            context.assume_condition(ConditionTerm::address_equal(p.clone(), q.clone()), true);
+            context.assume_condition(OldConditionTerm::address_equal(p.clone(), q.clone()), true);
         assert!(!conflicting.proves_resource_separate(&bytes(p, 4), &bytes(q, 8)));
     }
 }

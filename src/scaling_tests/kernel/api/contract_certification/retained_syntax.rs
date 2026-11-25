@@ -140,7 +140,7 @@ fn logical_argument_refusals_do_not_convert_growing_boolean_or_algebraic_trees()
     let mut previous = None;
     for depth in [8, 32, 128] {
         let _session = VerificationSession::enter();
-        let atom = ConditionTerm::Variable(Variable(995955));
+        let atom = OldConditionTerm::Variable(Variable(995955));
         let mut condition = atom.clone();
         let variable = AlgebraicTerm {
             algebraic_type: AlgebraicType::parameter("T".into()),
@@ -148,10 +148,10 @@ fn logical_argument_refusals_do_not_convert_growing_boolean_or_algebraic_trees()
         };
         let mut algebraic = variable.clone();
         for _ in 0..depth {
-            condition = ConditionTerm::BoolIf {
+            condition = OldConditionTerm::BoolIf {
                 condition: Box::new(atom.clone()),
                 then_condition: Box::new(condition),
-                else_condition: Box::new(ConditionTerm::Constant(false)),
+                else_condition: Box::new(OldConditionTerm::Constant(false)),
             };
             algebraic = AlgebraicTerm {
                 algebraic_type: variable.algebraic_type.clone(),

@@ -168,7 +168,7 @@ fn kept_call_reads_do_not_scan_same_block_owners_or_aliases() {
         let hit = argument(0);
         let assumptions = (0..size).fold(PureFactContext::new(), |facts, index| {
             facts.assume_condition(
-                ConditionTerm::address_equal(
+                OldConditionTerm::address_equal(
                     hit.clone(),
                     Address::symbolic(Variable(786_000 + index)),
                 ),

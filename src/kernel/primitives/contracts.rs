@@ -3051,7 +3051,7 @@ impl MemoryRange {
                 Proposition::ConditionIs(condition, true) => match (kind, condition.old_form()) {
                     (
                         RangeIndexKind::Int32,
-                        ConditionTerm::Compare {
+                        OldConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::LessEqual,
                             left: lo,
@@ -3060,7 +3060,7 @@ impl MemoryRange {
                     )
                     | (
                         RangeIndexKind::UInt64,
-                        ConditionTerm::Compare {
+                        OldConditionTerm::Compare {
                             format: MachineIntegerType::UInt64,
                             relation: CompareRelation::LessEqual,
                             left: lo,
@@ -3071,7 +3071,7 @@ impl MemoryRange {
                     }
                     (
                         RangeIndexKind::Int32,
-                        ConditionTerm::Compare {
+                        OldConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::LessThan,
                             left: v,
@@ -3080,7 +3080,7 @@ impl MemoryRange {
                     )
                     | (
                         RangeIndexKind::UInt64,
-                        ConditionTerm::Compare {
+                        OldConditionTerm::Compare {
                             format: MachineIntegerType::UInt64,
                             relation: CompareRelation::LessThan,
                             left: v,
@@ -3344,12 +3344,12 @@ pub(crate) fn memory_range_element_count_guards(
 ) -> Vec<Proposition> {
     assert!(element_width > 0, "memory element width must be positive");
     let mut guards = vec![Proposition::condition_is(
-        ConditionTerm::signed_less_equal(OldMachineTerm::constant(0), element_count.clone()),
+        OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), element_count.clone()),
         true,
     )];
     if element_count_limit_constrains_int32(element_width) {
         guards.push(Proposition::condition_is(
-            ConditionTerm::signed_less_equal(
+            OldConditionTerm::signed_less_equal(
                 element_count,
                 OldMachineTerm::constant(memory_range_element_count_limit(element_width)),
             ),
@@ -3404,7 +3404,7 @@ pub(crate) fn memory_range_byte_count_span(
             byte_limit: u32::MAX,
         };
     }
-    let forward = ConditionTerm::signed_less_equal(start.clone(), end.clone());
+    let forward = OldConditionTerm::signed_less_equal(start.clone(), end.clone());
     // The count is the `int32` difference of the endpoints; `fits` reads
     // its bits as a `uint32` count, which is σ of it. Given `start <= end`
     // the true difference lies in `[0, 2^32)`, and σ of the wrapped `int32`
@@ -3412,7 +3412,7 @@ pub(crate) fn memory_range_byte_count_span(
     // the count's own `int32` order is not (it wraps past `2^31 - 1`, which
     // the one-byte limit exceeds).
     let element_count = canonical_subtract(end, start);
-    let fits = ConditionTerm::unsigned_less_equal(
+    let fits = OldConditionTerm::unsigned_less_equal(
         OldMachineTerm::sign_cast32(
             MachineIntegerType::Int32,
             MachineIntegerType::UInt32,
@@ -3539,7 +3539,7 @@ fn collect_stated_loadable_span_guards(
                 _ => (bytes.old_form(), 1),
             };
             let guard = Proposition::condition_is(
-                ConditionTerm::uint64_less_equal(
+                OldConditionTerm::uint64_less_equal(
                     elements.clone(),
                     OldMachineTerm::uint64_constant(i64::MAX as u64 / u64::from(width)),
                 ),
@@ -3596,13 +3596,13 @@ pub(crate) fn memory_range_span_guards(range: &MemoryRange) -> Vec<Proposition> 
     ) {
         MemoryRangeSpan::ConstantValid => Vec::new(),
         MemoryRangeSpan::ConstantInvalid { .. } => vec![Proposition::condition_is(
-            ConditionTerm::Constant(false),
+            OldConditionTerm::Constant(false),
             true,
         )],
         MemoryRangeSpan::Guards(guards) if range.element_width() == 1 => guards,
         MemoryRangeSpan::Guards(_) => {
             let mut guards = vec![Proposition::condition_is(
-                ConditionTerm::signed_less_equal(range.start().clone(), range.end().clone()),
+                OldConditionTerm::signed_less_equal(range.start().clone(), range.end().clone()),
                 true,
             )];
             for guard in memory_range_element_count_guards(
@@ -3731,11 +3731,14 @@ fn wide_memory_range_span_guards(range: &MemoryRange) -> Option<Vec<Proposition>
     let limit = i64::MAX as u64 / u64::from(range.element_width());
     Some(vec![
         Proposition::condition_is(
-            ConditionTerm::uint64_less_equal(start.clone(), end.clone()),
+            OldConditionTerm::uint64_less_equal(start.clone(), end.clone()),
             true,
         ),
         Proposition::condition_is(
-            ConditionTerm::uint64_less_equal(end.clone(), OldMachineTerm::uint64_constant(limit)),
+            OldConditionTerm::uint64_less_equal(
+                end.clone(),
+                OldMachineTerm::uint64_constant(limit),
+            ),
             true,
         ),
     ])
@@ -3784,7 +3787,7 @@ pub(crate) fn memory_range_byte_count_guards(
     match memory_range_byte_count_span(start, end, element_width) {
         MemoryRangeSpan::ConstantValid => Vec::new(),
         MemoryRangeSpan::ConstantInvalid { .. } => vec![Proposition::condition_is(
-            ConditionTerm::Constant(false),
+            OldConditionTerm::Constant(false),
             true,
         )],
         MemoryRangeSpan::Guards(guards) => guards,
@@ -4488,7 +4491,7 @@ mod guarded_quantified_cell_tests {
         Variable(2_000_000)
     }
 
-    fn holds(condition: ConditionTerm) -> Proposition {
+    fn holds(condition: OldConditionTerm) -> Proposition {
         Proposition::condition_is(condition, true)
     }
 
@@ -4512,7 +4515,7 @@ mod guarded_quantified_cell_tests {
     fn an_unsigned_guard_names_the_range_from_zero() {
         let base = parameter();
         let length = OldMachineTerm::Variable(Variable(8));
-        let guard = holds(ConditionTerm::Compare {
+        let guard = holds(OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
             left: variable(index()),
@@ -4535,7 +4538,7 @@ mod guarded_quantified_cell_tests {
         let cell = wide_cell(&base);
         let length = Box::new(OldMachineTerm::Variable(Variable(8)));
         // A signed comparison does not bound an unsigned 64-bit index.
-        let signed = holds(ConditionTerm::Compare {
+        let signed = holds(OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left: variable(index()),
@@ -4546,7 +4549,7 @@ mod guarded_quantified_cell_tests {
             None
         );
         // An upper bound that mentions the binder is not one fixed range.
-        let circular = holds(ConditionTerm::Compare {
+        let circular = holds(OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
             left: variable(index()),
@@ -4562,7 +4565,7 @@ mod guarded_quantified_cell_tests {
             None
         );
         // A stride other than the read's width is not that range's element.
-        let bound = holds(ConditionTerm::Compare {
+        let bound = holds(OldConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
             left: variable(index()),

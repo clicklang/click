@@ -57,11 +57,11 @@ pub(super) fn native_domain(value: &Proposition) -> Proposition {
         }
         Proposition::ConditionIs(condition, truth) => {
             let condition = match condition.old_form() {
-                ConditionTerm::IntegerLessEqual(a, b) => {
-                    ConditionTerm::integer_less_equal(native_integer(a), native_integer(b))
+                OldConditionTerm::IntegerLessEqual(a, b) => {
+                    OldConditionTerm::integer_less_equal(native_integer(a), native_integer(b))
                 }
-                ConditionTerm::IntegerGreaterEqual(a, b) => {
-                    ConditionTerm::integer_greater_equal(native_integer(a), native_integer(b))
+                OldConditionTerm::IntegerGreaterEqual(a, b) => {
+                    OldConditionTerm::integer_greater_equal(native_integer(a), native_integer(b))
                 }
                 _ => return boxed_domain(value),
             };

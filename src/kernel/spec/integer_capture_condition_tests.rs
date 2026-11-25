@@ -40,7 +40,10 @@ fn zero() -> SpecIntegerExpression {
 
 fn hi_is_positive() -> PureFactContext {
     PureFactContext::new().assume_proposition(Proposition::condition_is(
-        ConditionTerm::signed_less_equal(OldMachineTerm::constant(1), OldMachineTerm::Variable(HI)),
+        OldConditionTerm::signed_less_equal(
+            OldMachineTerm::constant(1),
+            OldMachineTerm::Variable(HI),
+        ),
         true,
     ))
 }

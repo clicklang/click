@@ -25,14 +25,14 @@ fn arithmetic_guard_classification_keeps_shared_prefixes() {
                         IntegerTerm::constant(1.into()),
                     );
                     let upper = Proposition::condition_is(
-                        ConditionTerm::integer_less_equal(
+                        OldConditionTerm::integer_less_equal(
                             exact.clone(),
                             IntegerTerm::constant(maximum.clone()),
                         ),
                         true,
                     );
                     let lower = Proposition::condition_is(
-                        ConditionTerm::integer_greater_equal(
+                        OldConditionTerm::integer_greater_equal(
                             exact,
                             IntegerTerm::constant(minimum.clone()),
                         ),

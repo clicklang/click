@@ -1288,7 +1288,7 @@ fn cell_value_is_exactly_load(value: &ProgramValue, load: &OldMachineTerm) -> bo
         | ProgramValue::Float64(term) => term == load,
         ProgramValue::Bool(term) => {
             term == &OldMachineTerm::if_then_else(
-                crate::kernel::ConditionTerm::equal(load.clone(), OldMachineTerm::constant(0)),
+                crate::kernel::OldConditionTerm::equal(load.clone(), OldMachineTerm::constant(0)),
                 OldMachineTerm::constant(0),
                 OldMachineTerm::constant(1),
             )
@@ -1595,7 +1595,7 @@ impl CheckedResourceRewrite {
         let mut evaluation_assumptions = assumptions.clone();
         for imported in imported_counts.into_iter().flatten() {
             let bound = Proposition::condition_is(
-                crate::kernel::ConditionTerm::signed_greater_equal(
+                crate::kernel::OldConditionTerm::signed_greater_equal(
                     imported.entry_count,
                     imported
                         .entry_symbolic_members
@@ -3365,8 +3365,8 @@ impl OpenedContractEntry {
             // equations being admitted as independent premises.
             let selected = match fact {
                 condition_source_0 @ Proposition::ConditionIs(_, _)
-                    if let Some((crate::kernel::ConditionTerm::PointerEqual(..), _)) =
-                        condition_source_0.condition_native() =>
+                    if let Some((crate::kernel::OldConditionTerm::PointerEqual(..), _)) =
+                        condition_source_0.old_condition() =>
                 {
                     contract.explicitly_states(fact)
                 }
@@ -5892,7 +5892,7 @@ pub(super) struct CheckedInterfaceLoadDefinition {
 impl CheckedInterfaceLoadDefinition {
     fn check(proposition: &Proposition) -> Option<Self> {
         let Some((
-            crate::kernel::ConditionTerm::Compare {
+            crate::kernel::OldConditionTerm::Compare {
                 format:
                     crate::kernel::MachineIntegerType::Int32 | crate::kernel::MachineIntegerType::UInt32,
                 relation: crate::kernel::CompareRelation::Equal,
@@ -5900,7 +5900,7 @@ impl CheckedInterfaceLoadDefinition {
                 right,
             },
             true,
-        )) = proposition.condition_native()
+        )) = proposition.old_condition()
         else {
             return None;
         };
@@ -6824,11 +6824,11 @@ pub(crate) fn checked_branch_fact_is_available(facts: &PureFactStore, fact: &Pro
         // does not derive a weaker bound or search for a missing premise.
         || matches!(fact, Proposition::ConditionIs(condition, truth)
             if facts.assumptions().selected_comparison_source(condition.old_form(), *truth).is_some())
-        || matches!(&fact, condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.condition_native(), Some((crate::kernel::ConditionTerm::Compare { .. }, _)) if crate::kernel::proposition_holds_without_facts(fact)))
+        || matches!(&fact, condition_source_0 @ Proposition::ConditionIs(_, _) if matches!(condition_source_0.old_condition(), Some((crate::kernel::OldConditionTerm::Compare { .. }, _)) if crate::kernel::proposition_holds_without_facts(fact)))
         || matches!(fact, Proposition::And(left, right)
             if checked_branch_fact_is_available(facts, left)
                 && checked_branch_fact_is_available(facts, right))
-        || matches!(&fact, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((crate::kernel::ConditionTerm::Compare { format: crate::kernel::MachineIntegerType::Int32 | crate::kernel::MachineIntegerType::UInt32, relation: crate::kernel::CompareRelation::Equal, left, right }, _)) if (left == right)))
+        || matches!(&fact, condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((crate::kernel::OldConditionTerm::Compare { format: crate::kernel::MachineIntegerType::Int32 | crate::kernel::MachineIntegerType::UInt32, relation: crate::kernel::CompareRelation::Equal, left, right }, _)) if (left == right)))
 }
 
 /// The pointer congruence fragment may give a field read another spelling
@@ -6841,9 +6841,9 @@ pub(super) fn checked_interface_pointer_equality(
     matches!(&goal, condition_source_0 @ Proposition::ConditionIs(
             _,
             true
-        ) if matches!(condition_source_0.condition_native(), Some((crate::kernel::ConditionTerm::AddressEqual(_, _)
-                | crate::kernel::ConditionTerm::PointerEqual(_, _)
-                | crate::kernel::ConditionTerm::AddressOffsetEqual(_, _), _))))
+        ) if matches!(condition_source_0.old_condition(), Some((crate::kernel::OldConditionTerm::AddressEqual(_, _)
+                | crate::kernel::OldConditionTerm::PointerEqual(_, _)
+                | crate::kernel::OldConditionTerm::AddressOffsetEqual(_, _), _))))
         && super::fact_reasoning::normalize_using_conditions(goal, &[], facts).is_ok()
 }
 

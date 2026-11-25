@@ -1938,7 +1938,7 @@ fn records_checked_surface_forms_for_lowered_propositions() {
 fn surface_synthesis_qualifies_a_c_local_named_result() {
     let local = OldMachineTerm::Variable(Variable(42));
     let proposition = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(local.clone()),
@@ -2072,7 +2072,7 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
         offset: AddressOffset::Constant(0),
     };
     let proposition = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(OldMachineTerm::read_named(
@@ -2116,7 +2116,7 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
         offset: AddressOffset::scaled_int32_node(data_pointer, 4),
     };
     let proposition = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(OldMachineTerm::read_named(
@@ -2501,8 +2501,8 @@ fn retains_distinct_surface_spellings_for_the_same_kernel_fact() {
         operator: ComparisonOperator::Equal,
         right: current_int(1),
     };
-    let kernel = Proposition::condition_is(ConditionTerm::Constant(true), true);
-    let wrong = Proposition::condition_is(ConditionTerm::Constant(false), true);
+    let kernel = Proposition::condition_is(OldConditionTerm::Constant(true), true);
+    let wrong = Proposition::condition_is(OldConditionTerm::Constant(false), true);
     let mut spellings = SurfacePropositionMap::default();
     spellings.record_lowering(&current, &kernel).unwrap();
     spellings.record_lowering(&retained_state, &kernel).unwrap();
@@ -2530,8 +2530,8 @@ fn recorded_surface_fact_resolves_only_one_available_kernel_fact() {
         operator: ComparisonOperator::Equal,
         right: current_int(1),
     };
-    let first = Proposition::condition_is(ConditionTerm::Constant(true), true);
-    let second = Proposition::condition_is(ConditionTerm::Constant(false), false);
+    let first = Proposition::condition_is(OldConditionTerm::Constant(true), true);
+    let second = Proposition::condition_is(OldConditionTerm::Constant(false), false);
     let mut spellings = SurfacePropositionMap::default();
     spellings.record_lowering(&surface, &first).unwrap();
     spellings.record_lowering(&surface, &second).unwrap();
@@ -2553,7 +2553,7 @@ fn surface_lowering_map_forks_and_local_updates_scale_logarithmically() {
                 operator: ComparisonOperator::Equal,
                 right: current_int(index),
             },
-            Proposition::condition_is(ConditionTerm::Variable(Variable(index.into())), true),
+            Proposition::condition_is(OldConditionTerm::Variable(Variable(index.into())), true),
         )
     }
 
@@ -5240,7 +5240,7 @@ fn a_conjunct_of_one_source_facts_lowering_finds_that_fact() {
         right: current_int(1),
     };
     let stated = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(OldMachineTerm::Variable(Variable(984_500))),
@@ -5249,7 +5249,7 @@ fn a_conjunct_of_one_source_facts_lowering_finds_that_fact() {
         true,
     );
     let side = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left: Box::new(OldMachineTerm::Variable(Variable(984_501))),
@@ -5272,7 +5272,7 @@ fn a_conjunct_of_one_source_facts_lowering_finds_that_fact() {
         forms.kernels_containing_conjunct(&side).collect::<Vec<_>>(),
         vec![&lowered]
     );
-    let unrelated = Proposition::condition_is(ConditionTerm::Constant(true), true);
+    let unrelated = Proposition::condition_is(OldConditionTerm::Constant(true), true);
     assert_eq!(forms.kernels_containing_conjunct(&unrelated).count(), 0);
     // A written conjunction records its conjuncts as pairs, not containment.
     let left = SyntaxProposition::Comparison {
@@ -5281,7 +5281,7 @@ fn a_conjunct_of_one_source_facts_lowering_finds_that_fact() {
         right: current_int(2),
     };
     let left_kernel = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(OldMachineTerm::Variable(Variable(984_502))),
@@ -5350,7 +5350,7 @@ fn printed_machine_arithmetic_keeps_exact_transport_premises() {
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_34")]
 fn synthesized_signed_difference_preserves_its_type_without_literals() {
-    let less_equal = |left, right| ConditionTerm::Compare {
+    let less_equal = |left, right| OldConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::LessEqual,
         left: Box::new(left),

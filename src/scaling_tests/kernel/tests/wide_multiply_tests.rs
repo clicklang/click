@@ -12,7 +12,7 @@ fn wide_multiply_known_bounds_work_does_not_scan_unrelated_ambient_facts() {
         let mut assumptions = PureFactContext::new();
         for index in 0..size {
             assumptions = assumptions
-                .assume_condition(ConditionTerm::Variable(Variable(151_000 + index)), true);
+                .assume_condition(OldConditionTerm::Variable(Variable(151_000 + index)), true);
         }
         for bound in &bounds {
             assumptions = assumptions.assume_condition(bound.clone(), true);
@@ -27,7 +27,7 @@ fn wide_multiply_known_bounds_work_does_not_scan_unrelated_ambient_facts() {
             )
         });
         assert_eq!(paths.len(), 1);
-        assert!(paths[0].facts.iter().any(|fact| matches!(&fact.proposition(), condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::IntegerEqual(_, _), _))))));
+        assert!(paths[0].facts.iter().any(|fact| matches!(&fact.proposition(), condition_source_0 @ Proposition::ConditionIs(_, true) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::IntegerEqual(_, _), _))))));
         assert!(work < 4096, "{size}: {work}");
         samples.push(work);
     }
@@ -53,16 +53,16 @@ fn wide_multiply_resolves_indexed_narrow_inputs_with_their_signedness() {
     ] {
         let variable = OldMachineTerm::Variable(Variable(153_000));
         let condition = if ty == MachineIntegerType::Int64 {
-            ConditionTerm::int64_equal(variable.clone(), input)
+            OldConditionTerm::int64_equal(variable.clone(), input)
         } else {
-            ConditionTerm::uint64_equal(variable.clone(), input)
+            OldConditionTerm::uint64_equal(variable.clone(), input)
         };
         let mut samples = Vec::new();
         for size in [16, 64, 256, 1024] {
             let mut assumptions = PureFactContext::new();
             for index in 0..size {
                 assumptions = assumptions
-                    .assume_condition(ConditionTerm::Variable(Variable(154_000 + index)), true);
+                    .assume_condition(OldConditionTerm::Variable(Variable(154_000 + index)), true);
             }
             assumptions = assumptions.assume_condition(condition.clone(), true);
             let widened = OldMachineTerm::machine_integer_cast(

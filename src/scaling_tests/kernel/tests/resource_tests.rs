@@ -76,8 +76,10 @@ fn aliased_memory_consumption_does_not_walk_the_pointer_class() {
         let mut resources = ResourceContext::new()
             .unchecked_with_fact(ResourceFact::own_memory(cell(pointer(size))));
         for i in 1..=size {
-            assumptions = assumptions
-                .assume_condition(ConditionTerm::address_equal(pointer(0), pointer(i)), true);
+            assumptions = assumptions.assume_condition(
+                OldConditionTerm::address_equal(pointer(0), pointer(i)),
+                true,
+            );
         }
         // Establish the paired state once. Subsequent queries and forks
         // must share its persistent index, rather than enumerate aliases.
@@ -120,7 +122,7 @@ fn paired_memory_index_updates_move_the_smaller_resource_payload() {
         let (assumptions, work) = crate::instrumentation::measure_deterministic_work(|| {
             for i in 1..=size {
                 assumptions = assumptions.assume_condition(
-                    ConditionTerm::address_equal(
+                    OldConditionTerm::address_equal(
                         root.clone(),
                         Address::symbolic(Variable(820_000 + i)),
                     ),
@@ -168,7 +170,7 @@ fn paired_memory_consumption_indexes_disjoint_spans_at_one_base() {
             )));
         }
         let assumptions = PureFactContext::new()
-            .assume_condition(ConditionTerm::address_equal(owner, alias.clone()), true);
+            .assume_condition(OldConditionTerm::address_equal(owner, alias.clone()), true);
         resources.synchronize_memory_equalities(&assumptions);
         let required = ResourceFact::own_memory(MemoryRange::new(
             alias,
@@ -227,10 +229,13 @@ fn indexed_memory_lookup_ignores_unrelated_pointer_parameters() {
         )));
         let facts = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_less_equal(0u32.into(), index.clone()),
+                OldConditionTerm::signed_less_equal(0u32.into(), index.clone()),
                 true,
             )
-            .assume_condition(ConditionTerm::signed_less_than(index.clone(), limit), true);
+            .assume_condition(
+                OldConditionTerm::signed_less_than(index.clone(), limit),
+                true,
+            );
         symbolic.synchronize_memory_equalities(&facts);
         let query = at(size).offset_by_elements(index, 4);
         let required =
@@ -276,7 +281,7 @@ fn write_candidates_do_not_scan_unrelated_memory_ranges() {
         resources.synchronize_memory_equalities(&empty);
         let facts = empty
             .clone()
-            .assume_condition(ConditionTerm::address_equal(owner, alias.clone()), true);
+            .assume_condition(OldConditionTerm::address_equal(owner, alias.clone()), true);
         resources.synchronize_memory_equalities(&facts);
         let at = |offset| Address {
             base: alias.base.clone(),
@@ -396,7 +401,7 @@ fn specification_read_candidates_do_not_scan_unrelated_memory_ranges() {
         let facts = PureFactContext::new();
         resources.synchronize_memory_equalities(&facts);
         let facts =
-            facts.assume_condition(ConditionTerm::address_equal(owner, alias.clone()), true);
+            facts.assume_condition(OldConditionTerm::address_equal(owner, alias.clone()), true);
         resources.synchronize_memory_equalities(&facts);
         let at = |index| Address {
             base: alias.base.clone(),
@@ -1192,7 +1197,7 @@ fn nonexact_composite_entailment_ignores_unrelated_instances_of_the_shape() {
         let context = ResourceContext::new()
             .unchecked_with_facts((0..size).map(|index| boxed(object(index))));
         let assumptions = PureFactContext::new().assume_condition(
-            ConditionTerm::pointer_equal(
+            OldConditionTerm::pointer_equal(
                 OldPointer::new(alias.clone(), ProgramType::Int32Pointer),
                 OldPointer::new(object(size - 1), ProgramType::Int32Pointer),
             ),
@@ -1548,7 +1553,7 @@ fn constant_neighbor_overlap_checks_do_not_walk_pointer_alias_pairs() {
             let mut assumptions = PureFactContext::new();
             for i in 0..size {
                 assumptions = assumptions.assume_condition(
-                    ConditionTerm::address_equal(
+                    OldConditionTerm::address_equal(
                         p.clone(),
                         Address::symbolic(Variable(995_851 + i as u64)),
                     ),
@@ -1615,7 +1620,7 @@ fn owner_insertion_does_not_walk_aliases_into_unowned_blocks() {
         let mut assumptions = PureFactContext::new();
         for i in 0..size {
             assumptions = assumptions.assume_condition(
-                ConditionTerm::address_equal(
+                OldConditionTerm::address_equal(
                     p.clone(),
                     Address::symbolic(Variable(995_731 + i as u64)),
                 ),
@@ -1675,13 +1680,13 @@ fn ownership_alias_checks_do_not_filter_read_only_views() {
             let index = OldMachineTerm::var(Variable(995_702));
             let end = OldMachineTerm::add(index.clone(), 1u32.into());
             let assumptions = PureFactContext::new()
-                .assume_condition(ConditionTerm::address_equal(p.clone(), q.clone()), true)
+                .assume_condition(OldConditionTerm::address_equal(p.clone(), q.clone()), true)
                 .assume_condition(
-                    ConditionTerm::signed_less_than(4u32.into(), end.clone()),
+                    OldConditionTerm::signed_less_than(4u32.into(), end.clone()),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::signed_less_than(index.clone(), 5u32.into()),
+                    OldConditionTerm::signed_less_than(index.clone(), 5u32.into()),
                     true,
                 );
             let range = |base, start, end| MemoryRange::new_with_element_width(base, start, end, 4);
@@ -1739,7 +1744,7 @@ fn exact_pointer_alias_ownership_checks_select_interval_neighbors() {
             let p = Address::symbolic(Variable(995_600));
             let q = Address::symbolic(Variable(995_601));
             let assumptions = PureFactContext::new()
-                .assume_condition(ConditionTerm::address_equal(p.clone(), q.clone()), true);
+                .assume_condition(OldConditionTerm::address_equal(p.clone(), q.clone()), true);
             let owned = |base: Address, start: u32| {
                 ResourceFact::own_memory(if native {
                     MemoryRange::new_wide(
@@ -2058,7 +2063,7 @@ fn cross_block_alias_owner_lookup_ignores_unrelated_bases() {
         offset: AddressOffset::Constant(0),
     };
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::address_equal(target.clone(), argument.clone()),
+        OldConditionTerm::address_equal(target.clone(), argument.clone()),
         true,
     );
     let query = ResourceFact::own_memory(memory_range(argument, 0, 1));
@@ -2184,7 +2189,7 @@ fn composite_exposure_finds_held_cells_by_structure_near_linearly() {
             let mut assumptions = PureFactContext::new();
             for index in 0..size - 1 {
                 assumptions = assumptions.assume_proposition(Proposition::condition_is(
-                    ConditionTerm::signed_less_than(
+                    OldConditionTerm::signed_less_than(
                         OldMachineTerm::Variable(Variable(900_000 + index)),
                         OldMachineTerm::Variable(Variable(900_000 + index + 1)),
                     ),
@@ -2230,7 +2235,7 @@ fn quantity_relations_ignore_unrelated_facts() {
         .into_iter()
         .map(|size| {
             let assumptions = unrelated_order_fact_context(size).assume_condition(
-                ConditionTerm::equal(count.clone(), OldMachineTerm::constant(3)),
+                OldConditionTerm::equal(count.clone(), OldMachineTerm::constant(3)),
                 true,
             );
             let (decided, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -2238,7 +2243,7 @@ fn quantity_relations_ignore_unrelated_facts() {
                     // `resource_quantity_is_positive`
                     quantity_condition_holds(
                         &assumptions,
-                        ConditionTerm::signed_greater_than(
+                        OldConditionTerm::signed_greater_than(
                             count.clone(),
                             OldMachineTerm::constant(0),
                         ),
@@ -2246,7 +2251,7 @@ fn quantity_relations_ignore_unrelated_facts() {
                     // `resource_quantity_at_least`
                     quantity_condition_holds(
                         &assumptions,
-                        ConditionTerm::signed_greater_equal(
+                        OldConditionTerm::signed_greater_equal(
                             count.clone(),
                             OldMachineTerm::constant(2),
                         ),
@@ -2254,13 +2259,13 @@ fn quantity_relations_ignore_unrelated_facts() {
                     // An exact quantity equality
                     quantity_condition_holds(
                         &assumptions,
-                        ConditionTerm::equal(count.clone(), OldMachineTerm::constant(3)),
+                        OldConditionTerm::equal(count.clone(), OldMachineTerm::constant(3)),
                     ),
                     // A relation that does not follow: the miss must also be
                     // flat, and must not be repaired by a broader search.
                     quantity_condition_holds(
                         &assumptions,
-                        ConditionTerm::equal(count.clone(), OldMachineTerm::constant(4)),
+                        OldConditionTerm::equal(count.clone(), OldMachineTerm::constant(4)),
                     ),
                 ]
             });
@@ -2303,21 +2308,21 @@ fn symbolic_quantity_consumption_ignores_unrelated_facts() {
         .map(|size| {
             let assumptions = unrelated_order_fact_context(size)
                 .assume_condition(
-                    ConditionTerm::signed_greater_equal(
+                    OldConditionTerm::signed_greater_equal(
                         available_quantity.clone(),
                         required_quantity.clone(),
                     ),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::signed_greater_than(
+                    OldConditionTerm::signed_greater_than(
                         available_quantity.clone(),
                         OldMachineTerm::constant(0),
                     ),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::equal(empty_quantity.clone(), OldMachineTerm::constant(0)),
+                    OldConditionTerm::equal(empty_quantity.clone(), OldMachineTerm::constant(0)),
                     true,
                 );
             let context = ResourceContext::new().unchecked_with_fact(available.clone());
@@ -3139,7 +3144,7 @@ fn known_resource_constructor_skips_predicate_refutation_work() {
         let mut assumptions = PureFactContext::new();
         for index in 0..size {
             assumptions = assumptions.assume_proposition(Proposition::condition_is(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     OldMachineTerm::ClickFunctionApplication {
                         name: format!("predicate{index}"),
                         arguments: vec![PureFunctionArgument::Algebraic(model.clone())],
@@ -3241,7 +3246,7 @@ fn known_exclusion_skips_refutation_of_unpublishable_arms() {
         let mut assumptions = PureFactContext::new();
         for index in 0..size {
             assumptions = assumptions.assume_proposition(Proposition::condition_is(
-                ConditionTerm::equal(
+                OldConditionTerm::equal(
                     OldMachineTerm::ClickFunctionApplication {
                         name: format!("predicate{index}"),
                         arguments: vec![PureFunctionArgument::Algebraic(model.clone())],
@@ -3390,7 +3395,10 @@ fn owned_range_validity_is_linear_in_stated_aliases_of_its_base() {
             let owned = parameter(41_000);
             let assumptions = (0..size).fold(PureFactContext::new(), |assumptions, index| {
                 assumptions.assume_condition(
-                    ConditionTerm::address_equal(parameter(41_100 + index as u64), owned.clone()),
+                    OldConditionTerm::address_equal(
+                        parameter(41_100 + index as u64),
+                        owned.clone(),
+                    ),
                     true,
                 )
             });
@@ -3436,7 +3444,7 @@ fn checked_child_read_definitions_scale_with_exchanges_not_ambient_facts() {
         let mut context = PureFactContext::new();
         for i in 0..unrelated {
             context = context.assume_condition(
-                ConditionTerm::address_equal(
+                OldConditionTerm::address_equal(
                     Address::symbolic(Variable(980_000 + i * 2)),
                     Address::symbolic(Variable(980_001 + i * 2)),
                 ),
@@ -3906,16 +3914,18 @@ fn memory_split_origin_ignores_incident_bounds() {
         let required = ResourceFact::own_memory(slice(0, 1));
         let mut facts = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_less_than(128u32.into(), i.clone()),
+                OldConditionTerm::signed_less_than(128u32.into(), i.clone()),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_than(i.clone(), 256u32.into()),
+                OldConditionTerm::signed_less_than(i.clone(), 256u32.into()),
                 true,
             );
         for k in 0..count {
-            facts =
-                facts.assume_condition(ConditionTerm::signed_less_than(k.into(), i.clone()), true);
+            facts = facts.assume_condition(
+                OldConditionTerm::signed_less_than(k.into(), i.clone()),
+                true,
+            );
         }
         let context = ResourceContext::new_with_equalities(&facts)
             .unchecked_with_fact(owner.clone())
@@ -4305,7 +4315,7 @@ fn native_symbolic_partition_ignores_unrelated_fragments() {
             let n = OldMachineTerm::Variable(Variable(989_973));
             let c = OldMachineTerm::uint64_constant;
             let facts = PureFactContext::new()
-                .assume_condition(ConditionTerm::uint64_less_than(n.clone(), c(32)), true);
+                .assume_condition(OldConditionTerm::uint64_less_than(n.clone(), c(32)), true);
             let range = |lo, hi| MemoryRange::new_wide(p.clone(), lo, hi, 1);
             let first = ResourceFact::own_memory(range(c(0), n.clone()));
             let start = if case == "gap" {
@@ -4419,14 +4429,14 @@ fn symbolic_fold_consumption_ignores_unselected_fragments() {
             };
             let facts = PureFactContext::new()
                 .assume_condition(
-                    ConditionTerm::uint64_less_than(
+                    OldConditionTerm::uint64_less_than(
                         OldMachineTerm::uint64_constant(2),
                         endpoint.clone(),
                     ),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::uint64_less_than(
+                    OldConditionTerm::uint64_less_than(
                         endpoint.clone(),
                         OldMachineTerm::uint64_constant(1024),
                     ),
@@ -4525,14 +4535,14 @@ fn symbolic_offset_fold_stops_at_first_gap() {
             };
             let facts = PureFactContext::new()
                 .assume_condition(
-                    ConditionTerm::uint64_less_than(
+                    OldConditionTerm::uint64_less_than(
                         OldMachineTerm::uint64_constant(2),
                         endpoint.clone(),
                     ),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::uint64_less_than(
+                    OldConditionTerm::uint64_less_than(
                         endpoint.clone(),
                         OldMachineTerm::uint64_constant(1024),
                     ),
@@ -4628,11 +4638,14 @@ fn symbolic_fold_does_not_scan_incident_order_bounds() {
             };
             let mut facts = PureFactContext::new()
                 .assume_condition(
-                    ConditionTerm::signed_less_than(OldMachineTerm::constant(2), endpoint.clone()),
+                    OldConditionTerm::signed_less_than(
+                        OldMachineTerm::constant(2),
+                        endpoint.clone(),
+                    ),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::signed_less_than(
+                    OldConditionTerm::signed_less_than(
                         endpoint.clone(),
                         OldMachineTerm::constant(1024),
                     ),
@@ -4664,7 +4677,7 @@ fn symbolic_fold_does_not_scan_incident_order_bounds() {
             }
             for index in 0..count {
                 facts = facts.assume_condition(
-                    ConditionTerm::signed_less_than(
+                    OldConditionTerm::signed_less_than(
                         OldMachineTerm::Variable(Variable(990_000 + u64::from(index))),
                         endpoint.clone(),
                     ),
@@ -4713,11 +4726,11 @@ fn symbolic_consumption_scales_with_selected_pieces() {
         let index = OldMachineTerm::Variable(Variable(989_981));
         let facts = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_less_than(0u32.into(), index.clone()),
+                OldConditionTerm::signed_less_than(0u32.into(), index.clone()),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_than(index.clone(), 1024u32.into()),
+                OldConditionTerm::signed_less_than(index.clone(), 1024u32.into()),
                 true,
             );
         let p = Address::symbolic(Variable(989_971));
@@ -4784,11 +4797,14 @@ fn symbolic_ownership_query_does_not_scan_incident_order_bounds() {
             };
             let mut facts = PureFactContext::new()
                 .assume_condition(
-                    ConditionTerm::signed_less_than(OldMachineTerm::constant(2), endpoint.clone()),
+                    OldConditionTerm::signed_less_than(
+                        OldMachineTerm::constant(2),
+                        endpoint.clone(),
+                    ),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::signed_less_than(
+                    OldConditionTerm::signed_less_than(
                         endpoint.clone(),
                         OldMachineTerm::constant(1024),
                     ),
@@ -4820,7 +4836,7 @@ fn symbolic_ownership_query_does_not_scan_incident_order_bounds() {
             }
             for index in 0..count {
                 facts = facts.assume_condition(
-                    ConditionTerm::signed_less_than(
+                    OldConditionTerm::signed_less_than(
                         OldMachineTerm::Variable(Variable(990_000 + u64::from(index))),
                         endpoint.clone(),
                     ),
@@ -4871,11 +4887,11 @@ fn symbolic_ownership_query_scales_with_selected_pieces() {
         let index = OldMachineTerm::Variable(Variable(989_981));
         let facts = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_less_than(0u32.into(), index.clone()),
+                OldConditionTerm::signed_less_than(0u32.into(), index.clone()),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_than(index.clone(), 1024u32.into()),
+                OldConditionTerm::signed_less_than(index.clone(), 1024u32.into()),
                 true,
             );
         let p = Address::symbolic(Variable(989_971));
@@ -4935,7 +4951,7 @@ fn instance_unfold_alias_work() -> Vec<[(usize, usize, usize, usize); 3]> {
             let mut assumptions = PureFactContext::new();
             for index in 0..size {
                 assumptions = assumptions.assume_condition(
-                    ConditionTerm::address_equal(
+                    OldConditionTerm::address_equal(
                         pointer.clone(),
                         Address::symbolic(Variable(9_810_000 + index)),
                     ),

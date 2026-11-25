@@ -298,7 +298,7 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
             )),
         ));
     let fact = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(first_value),
@@ -340,7 +340,7 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
         panic!("expected a normal transition")
     };
     let transported = Proposition::condition_is(
-        ConditionTerm::Compare {
+        OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(OldMachineTerm::read_named(
@@ -1115,7 +1115,7 @@ fn synthesizes_loaded_pointer_equality_as_pointer_comparison() {
     };
     let read = Address::loaded_value(&crate::kernel::intern_memory(SymbolicMemory::new()), &owner);
     let proposition = Proposition::condition_is(
-        ConditionTerm::pointer_equal(
+        OldConditionTerm::pointer_equal(
             crate::kernel::OldPointer::new(read, ProgramType::Int32Pointer),
             crate::kernel::OldPointer::new(data.clone(), ProgramType::Int32Pointer),
         ),
@@ -1173,7 +1173,7 @@ fn synthesizes_a_reassigned_pointer_parameter_at_entry() {
     };
     let current = Address::symbolic(Variable(44));
     let proposition = Proposition::condition_is(
-        ConditionTerm::pointer_equal(
+        OldConditionTerm::pointer_equal(
             crate::kernel::OldPointer::new(passed.clone(), ProgramType::Int32Pointer),
             crate::kernel::OldPointer::new(current.clone(), ProgramType::Int32Pointer),
         ),
@@ -1211,7 +1211,7 @@ fn synthesizes_dynamically_indexed_pointer_offset_equality() {
     let data_offset = AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(42)), 4);
     let index = OldMachineTerm::Variable(Variable(43));
     let proposition = Proposition::condition_is(
-        ConditionTerm::AddressOffsetEqual(
+        OldConditionTerm::AddressOffsetEqual(
             Box::new(AddressOffset::Add(
                 Box::new(data_offset.clone()),
                 Box::new(AddressOffset::scaled_int32_node(index.clone(), 4)),

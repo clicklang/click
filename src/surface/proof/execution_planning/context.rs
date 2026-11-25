@@ -754,7 +754,7 @@ fn source_range_capability_is_supported(proposition: &Proposition) -> Option<boo
             return None;
         };
         let guard = |p: &Proposition| {
-            matches!(&p, condition_source_0 @ Proposition::ConditionIs(_, false) if matches!(condition_source_0.condition_native(), Some((ConditionTerm::Overflows { format: MachineIntegerType::Int32, op: OverflowOperation::Add, left, right }, _)) if (left.as_ref() == &OldMachineTerm::Variable(**var)
+            matches!(&p, condition_source_0 @ Proposition::ConditionIs(_, false) if matches!(condition_source_0.old_condition(), Some((OldConditionTerm::Overflows { format: MachineIntegerType::Int32, op: OverflowOperation::Add, left, right }, _)) if (left.as_ref() == &OldMachineTerm::Variable(**var)
                     && right.as_ref() == &OldMachineTerm::constant(1))))
         };
         let range = if guard(left) {
@@ -880,7 +880,7 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
     };
     enum Work<'a> {
         Proposition(&'a Proposition, usize),
-        Condition(&'a ConditionTerm),
+        Condition(&'a OldConditionTerm),
         Bitvector(&'a OldMachineTerm),
         Shared(&'a crate::kernel::KernelTerm),
         PointerOffset(&'a AddressOffset),
@@ -901,14 +901,14 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
         match item {
             Work::Proposition(condition_source_0 @ Proposition::ConditionIs(_, true), _)
                 if let Some((
-                    ConditionTerm::Overflows {
+                    OldConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
                         left: _,
                         right: _,
                     },
                     _,
-                )) = condition_source_0.condition_native()
+                )) = condition_source_0.old_condition()
                     && (quantified_external_range) =>
             {
                 return Ok(false);
@@ -959,8 +959,8 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
                 work.push(Work::Bitvector(right));
                 work.push(Work::Bitvector(left));
             }
-            Work::Condition(ConditionTerm::Constant(_)) => {}
-            Work::Condition(ConditionTerm::Variable(variable))
+            Work::Condition(OldConditionTerm::Constant(_)) => {}
+            Work::Condition(OldConditionTerm::Variable(variable))
                 if !crate::kernel::is_load_variable(variable) => {}
             Work::Condition(_) => return Ok(false),
             Work::Shared(root) => {
@@ -1233,7 +1233,7 @@ mod tests {
 
     #[test]
     fn source_capability_walk_is_iterative_and_bounded() {
-        let leaf = Proposition::condition_is(ConditionTerm::Constant(true), true);
+        let leaf = Proposition::condition_is(OldConditionTerm::Constant(true), true);
         for depth in [1, 16, 128, 1024] {
             let supported =
                 (0..depth).fold(leaf.clone(), |body, _| Proposition::Not(Box::new(body)));
@@ -1248,7 +1248,7 @@ mod tests {
         assert!(error.message().contains("structural limit"));
 
         let load_variable = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::Variable(Variable(1 << 40))),
@@ -1288,7 +1288,7 @@ mod tests {
             &memory,
         );
         let proposition = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::Variable(variable)),
@@ -1307,7 +1307,7 @@ mod tests {
             .unwrap()
         );
         let memory_load = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::read_named(
@@ -1341,7 +1341,7 @@ mod tests {
             &memory,
         );
         let dynamic_load = Proposition::condition_is(
-            ConditionTerm::Compare {
+            OldConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::Variable(dynamic_variable)),
@@ -1397,7 +1397,7 @@ mod tests {
             Sort::ProgramInt32,
             Proposition::Implies(
                 Box::new(Proposition::condition_is(
-                    ConditionTerm::Constant(true),
+                    OldConditionTerm::Constant(true),
                     true,
                 )),
                 Box::new(range.clone()),
@@ -1414,7 +1414,7 @@ mod tests {
             Sort::ProgramInt32,
             Proposition::And(
                 Box::new(Proposition::condition_is(
-                    ConditionTerm::Overflows {
+                    OldConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
                         left: Box::new(OldMachineTerm::Variable(Variable(3_100_001))),
@@ -1448,7 +1448,7 @@ mod tests {
             Sort::ProgramInt32,
             Proposition::And(
                 Box::new(Proposition::condition_is(
-                    ConditionTerm::Overflows {
+                    OldConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
                         left: Box::new(OldMachineTerm::Variable(Variable(3_100_001))),
@@ -1471,7 +1471,7 @@ mod tests {
             Sort::ProgramInt32,
             *Box::new(Proposition::And(
                 Box::new(Proposition::condition_is(
-                    ConditionTerm::Overflows {
+                    OldConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
                         left: Box::new(OldMachineTerm::Variable(Variable(1 << 40))),
@@ -1515,7 +1515,7 @@ mod tests {
             Sort::ProgramInt32,
             Proposition::And(
                 Box::new(Proposition::condition_is(
-                    ConditionTerm::Overflows {
+                    OldConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
                         left: Box::new(OldMachineTerm::Variable(Variable(3_100_001))),
@@ -1544,7 +1544,7 @@ mod tests {
             Sort::ProgramInt32,
             Proposition::And(
                 Box::new(Proposition::condition_is(
-                    ConditionTerm::Overflows {
+                    OldConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
                         left: Box::new(OldMachineTerm::Variable(Variable(3_100_001))),
@@ -1566,7 +1566,7 @@ mod tests {
             Sort::ProgramInt32,
             Proposition::And(
                 Box::new(Proposition::condition_is(
-                    ConditionTerm::Overflows {
+                    OldConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
                         left: Box::new(OldMachineTerm::Variable(Variable(3_100_001))),
@@ -1577,7 +1577,7 @@ mod tests {
                 Box::new(Proposition::And(
                     Box::new(quantified.clone()),
                     Box::new(Proposition::condition_is(
-                        ConditionTerm::Constant(true),
+                        OldConditionTerm::Constant(true),
                         true,
                     )),
                 )),

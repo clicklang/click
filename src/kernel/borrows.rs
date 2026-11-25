@@ -3517,10 +3517,12 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                     (Some((required_start, required_end)), Some((caller_start, caller_end))) => {
                         let same = |left: &OldMachineTerm, right: &OldMachineTerm| {
                             left == right
-                                || assumptions.decide(&crate::kernel::ConditionTerm::uint64_equal(
-                                    left.clone(),
-                                    right.clone(),
-                                )) == Some(true)
+                                || assumptions.decide(
+                                    &crate::kernel::OldConditionTerm::uint64_equal(
+                                        left.clone(),
+                                        right.clone(),
+                                    ),
+                                ) == Some(true)
                         };
                         required.element_width() == caller.element_width()
                             && same(required_start, caller_start)

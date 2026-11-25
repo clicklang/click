@@ -36,7 +36,7 @@ fn exact_coordinate_reconstruction_preserves_native_signed_shapes() {
             raw(variable.clone(), constant(0)),
             raw(
                 OldMachineTerm::If {
-                    condition: Box::new(ConditionTerm::Constant(true)),
+                    condition: Box::new(OldConditionTerm::Constant(true)),
                     then_term: Box::new(constant(2)),
                     else_term: Box::new(constant(3)),
                 },
@@ -44,7 +44,7 @@ fn exact_coordinate_reconstruction_preserves_native_signed_shapes() {
             ),
             raw(
                 OldMachineTerm::If {
-                    condition: Box::new(ConditionTerm::Variable(Variable(993102))),
+                    condition: Box::new(OldConditionTerm::Variable(Variable(993102))),
                     then_term: Box::new(constant(2)),
                     else_term: Box::new(constant(3)),
                 },
@@ -90,9 +90,10 @@ fn exact_coordinate_reconstruction_preserves_native_signed_shapes() {
                     "{ty:?} {value:?} * {stride}"
                 );
                 assert!(
-                    guards
-                        .iter()
-                        .all(|guard| !matches!(guard.condition, ConditionTerm::Overflows { .. }))
+                    guards.iter().all(|guard| !matches!(
+                        guard.condition,
+                        OldConditionTerm::Overflows { .. }
+                    ))
                 );
             }
         }
@@ -189,7 +190,7 @@ fn retained_block_bounds_require_the_full_index_and_preserve_missing_bounds() {
                 OldMachineTerm::int64_constant(n)
             };
             let context = root.clone().assume_condition(
-                ConditionTerm::machine_compare(
+                OldConditionTerm::machine_compare(
                     ty,
                     CompareRelation::Equal,
                     variable.clone(),
@@ -270,7 +271,7 @@ fn wide_block_bounds_keep_signed_extension_and_opaque_offset_refusals() {
     assert_eq!(KernelTermExport::machine_export_count(), exports);
     for n in [-1, 0, 16, 17] {
         let context = PureFactContext::new().assume_condition(
-            ConditionTerm::equal(index.clone(), OldMachineTerm::constant(n as u32)),
+            OldConditionTerm::equal(index.clone(), OldMachineTerm::constant(n as u32)),
             true,
         );
         assert_eq!(
@@ -343,18 +344,20 @@ fn widened_index_order_keeps_its_common_format_with_separate_bounds() {
         MachineOperandView::Old(&n),
     );
     assert_eq!(comparison_view(&query, true).unwrap().format, T::Int64);
-    let native =
-        ConditionTerm::int64_signed_less_equal(OldMachineTerm::int64_from_32(i.clone()), n.clone());
+    let native = OldConditionTerm::int64_signed_less_equal(
+        OldMachineTerm::int64_from_32(i.clone()),
+        n.clone(),
+    );
     let bounds = [
-        ConditionTerm::signed_less_equal(OldMachineTerm::constant(0), i.clone()),
-        ConditionTerm::signed_less_than(i, OldMachineTerm::constant(10)),
-        ConditionTerm::machine_compare(
+        OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), i.clone()),
+        OldConditionTerm::signed_less_than(i, OldMachineTerm::constant(10)),
+        OldConditionTerm::machine_compare(
             T::UInt64,
             CompareRelation::LessEqual,
             OldMachineTerm::uint64_constant(10),
             n.clone(),
         ),
-        ConditionTerm::machine_compare(
+        OldConditionTerm::machine_compare(
             T::UInt64,
             CompareRelation::LessEqual,
             n,

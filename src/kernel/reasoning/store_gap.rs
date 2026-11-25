@@ -252,7 +252,7 @@ fn anchor_shift_is_small(anchor: &AddressOffset) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{ConditionTerm, ProgramValue, SymbolicMemory, Variable};
+    use crate::kernel::{OldConditionTerm, ProgramValue, SymbolicMemory, Variable};
 
     fn variable(id: u64) -> OldMachineTerm {
         OldMachineTerm::Variable(Variable(id))
@@ -289,7 +289,7 @@ mod tests {
             let other = pointer(958_002);
             let field = store.offset_by_bytes(8);
             let connected = PureFactContext::new().assume_condition(
-                ConditionTerm::uint64_equal(
+                OldConditionTerm::uint64_equal(
                     OldMachineTerm::integer_address(store.clone()),
                     OldMachineTerm::integer_address(other.clone()),
                 ),
@@ -316,7 +316,7 @@ mod tests {
             );
             let aliased_field = other.offset_by_bytes(8);
             let overlaps = PureFactContext::new().assume_condition(
-                ConditionTerm::uint64_equal(
+                OldConditionTerm::uint64_equal(
                     OldMachineTerm::integer_address(store.clone()),
                     OldMachineTerm::integer_address(aliased_field.clone()),
                 ),
@@ -353,20 +353,20 @@ mod tests {
         vec![
             PureFactContext::new(),
             PureFactContext::new().assume_condition(
-                ConditionTerm::equal(index.clone(), OldMachineTerm::constant(2)),
+                OldConditionTerm::equal(index.clone(), OldMachineTerm::constant(2)),
                 true,
             ),
             PureFactContext::new()
                 .assume_condition(
-                    ConditionTerm::signed_less_equal(OldMachineTerm::constant(0), index.clone()),
+                    OldConditionTerm::signed_less_equal(OldMachineTerm::constant(0), index.clone()),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::signed_less_than(index, OldMachineTerm::constant(3)),
+                    OldConditionTerm::signed_less_than(index, OldMachineTerm::constant(3)),
                     true,
                 ),
             PureFactContext::new().assume_condition(
-                ConditionTerm::equal(variable(900), OldMachineTerm::constant(1)),
+                OldConditionTerm::equal(variable(900), OldMachineTerm::constant(1)),
                 true,
             ),
         ]

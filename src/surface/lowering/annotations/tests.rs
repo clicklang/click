@@ -537,7 +537,7 @@ fn fixed_contract_result_is_separate_from_lexical_result_in_old_states() {
 
 #[test]
 fn common_integer_comparisons_keep_operands_and_native_fact_shape() {
-    use crate::kernel::{ConditionTerm, IntegerTerm, KernelTermNode, SpecIntegerExpression};
+    use crate::kernel::{IntegerTerm, KernelTermNode, OldConditionTerm, SpecIntegerExpression};
     let _session = crate::kernel::VerificationSession::enter();
     let variable = Variable(999995);
     let bindings = PersistentBinderMap::default().with_inserted(
@@ -558,27 +558,27 @@ fn common_integer_comparisons_keep_operands_and_native_fact_shape() {
     for (operator, expected) in [
         (
             ComparisonOperator::Equal,
-            ConditionTerm::IntegerEqual(a.clone(), b.clone()),
+            OldConditionTerm::IntegerEqual(a.clone(), b.clone()),
         ),
         (
             ComparisonOperator::NotEqual,
-            ConditionTerm::IntegerNotEqual(a.clone(), b.clone()),
+            OldConditionTerm::IntegerNotEqual(a.clone(), b.clone()),
         ),
         (
             ComparisonOperator::LessThan,
-            ConditionTerm::IntegerLessThan(a.clone(), b.clone()),
+            OldConditionTerm::IntegerLessThan(a.clone(), b.clone()),
         ),
         (
             ComparisonOperator::LessEqual,
-            ConditionTerm::IntegerLessEqual(a.clone(), b.clone()),
+            OldConditionTerm::IntegerLessEqual(a.clone(), b.clone()),
         ),
         (
             ComparisonOperator::GreaterThan,
-            ConditionTerm::IntegerGreaterThan(a.clone(), b.clone()),
+            OldConditionTerm::IntegerGreaterThan(a.clone(), b.clone()),
         ),
         (
             ComparisonOperator::GreaterEqual,
-            ConditionTerm::IntegerGreaterEqual(a.clone(), b.clone()),
+            OldConditionTerm::IntegerGreaterEqual(a.clone(), b.clone()),
         ),
     ] {
         let root = lower_surface_integer_comparison(&left, operator, &right, &bindings).unwrap();
