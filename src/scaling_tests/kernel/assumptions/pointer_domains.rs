@@ -1,7 +1,10 @@
 use super::*;
 
 fn opaque(id: u64) -> OldPointer {
-    OldPointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
+    OldPointer::new(
+        OldAddress::symbolic(Variable(id)),
+        ProgramType::Int32Pointer,
+    )
 }
 
 /// The witness arrives after the entire related class has been built. Each
@@ -109,14 +112,14 @@ fn an_unregistered_pointer_domain_does_not_recover_memory_history() {
         let mut memory = SymbolicMemory::new();
         for i in 0..stores {
             memory = memory.store(
-                Address::symbolic(Variable(1_000_000 + i)),
+                OldAddress::symbolic(Variable(1_000_000 + i)),
                 ProgramValue::Int32(7u32.into()),
             );
         }
         let memory = crate::kernel::intern_memory(memory);
-        let cell = Address::symbolic(Variable(1_001_000));
+        let cell = OldAddress::symbolic(Variable(1_001_000));
         let read = OldPointer::from_read(
-            Address::loaded_value(&memory, &cell),
+            OldAddress::loaded_value(&memory, &cell),
             ProgramType::Int32Pointer,
             &memory,
             &cell,

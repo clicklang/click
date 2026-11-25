@@ -22,8 +22,8 @@ use crate::persistent::PersistentMap;
 use super::borrows::{BorrowBinding, BorrowBindings, BorrowLedger, StableViewTransferPlan};
 use super::functions::suspend_verified_worker;
 use super::{
-    Address, AddressBase, ExecutionBudget, ExecutionEnvironment, ExecutionPureFact,
-    ExecutionResult, ExecutionState, MemoryRange, OldConditionTerm, OldMachineTerm, ProgramValue,
+    AddressBase, ExecutionBudget, ExecutionEnvironment, ExecutionPureFact, ExecutionResult,
+    ExecutionState, MemoryRange, OldAddress, OldConditionTerm, OldMachineTerm, ProgramValue,
     Proposition, PureFactContext, ResourceContext, ResourceFact, RuntimeError, SymbolicMemory,
     VerifiedFunctionRule, VerifiedFunctionTerminationRule,
 };
@@ -135,7 +135,7 @@ pub(super) enum PendingThreadMemoryDelta {
         bytes: u32,
     },
     Store {
-        pointer: Address,
+        pointer: OldAddress,
         value: ProgramValue,
     },
 }
@@ -186,7 +186,7 @@ impl PendingCreateAuthority {
 struct PendingThreadCreateStorage {
     identity: u64,
     status: OldMachineTerm,
-    handle_slot: Address,
+    handle_slot: OldAddress,
     handle_value: ProgramValue,
     success_memory: SymbolicMemory,
     /// Where the success memory was made: the point a created thread's
@@ -218,7 +218,7 @@ impl PendingThreadCreate {
 
     pub(super) fn new(
         status: OldMachineTerm,
-        handle_slot: Address,
+        handle_slot: OldAddress,
         handle_value: ProgramValue,
         success: &ExecutionState,
         failure: &ExecutionState,
@@ -283,7 +283,7 @@ impl PendingThreadCreate {
         &self,
         status: impl Fn(&OldMachineTerm) -> OldMachineTerm,
         resources: impl Fn(&ResourceContext) -> ResourceContext,
-        pointer: impl Fn(&Address) -> Address,
+        pointer: impl Fn(&OldAddress) -> OldAddress,
         value: impl Fn(&ProgramValue) -> ProgramValue,
         memory: impl Fn(&SymbolicMemory) -> SymbolicMemory,
     ) -> Self {
@@ -486,7 +486,7 @@ struct ThreadLedgerStorage {
     rights: PersistentMap<ThreadHandle, Arc<CompletionRight>>,
     borrow_trace: Option<ThreadBorrowTrace>,
     local_views: PersistentMap<ResourceFact, BorrowBinding>,
-    mutex_workers: PersistentMap<Address, usize>,
+    mutex_workers: PersistentMap<OldAddress, usize>,
     parent_partition: Option<ParentOwnershipPartition>,
 }
 
@@ -575,7 +575,7 @@ impl ThreadLedger {
         })
     }
 
-    pub(super) fn has_mutex_workers(&self, mutex: &Address) -> bool {
+    pub(super) fn has_mutex_workers(&self, mutex: &OldAddress) -> bool {
         self.storage.mutex_workers.contains_key(mutex)
     }
 
@@ -1319,7 +1319,7 @@ mod ownership_partition_tests {
         ]));
         let own = |block| {
             ResourceFact::own_memory(super::super::MemoryRange::new(
-                Address {
+                OldAddress {
                     base: block,
                     offset: OldAddressOffset::Constant(0),
                 },

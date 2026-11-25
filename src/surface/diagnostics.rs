@@ -739,7 +739,7 @@ pub(super) fn concrete_named_contract_fact(fact: &Proposition) -> Option<(&str, 
     let (Some(ProgramValue::Pointer(pointer)),) = (term_source_0.program_value_native(),) else {
         return None;
     };
-    let Address {
+    let OldAddress {
         base: AddressBase::Function(target),
         offset: OldAddressOffset::Constant(0),
     } = pointer.address()
@@ -2962,7 +2962,7 @@ fn describe_indexed_base_range(
         }
         _ => return None,
     };
-    let root = Address {
+    let root = OldAddress {
         base: range.base().base.clone(),
         offset: rest.as_ref().clone(),
     };
@@ -4035,7 +4035,7 @@ pub(in crate::surface) fn describe_store_separation_miss(
 /// pointer local `q`), the way a memory-history explanation spells a cell
 /// through the function's parameters.
 pub(in crate::surface) fn describe_source_cell_at_state(
-    pointer: &Address,
+    pointer: &OldAddress,
     state: &ExecutionState,
 ) -> Option<String> {
     let (parameters, arguments) = local_naming_tables(state);
@@ -4287,7 +4287,7 @@ fn recorded_store_byte_width(at: Option<&resource_tracker::ProgramPoint>) -> Opt
 
 /// One cell, and the step that ended the stretch its version was known over.
 fn describe_cell_version_stop(
-    pointer: &Address,
+    pointer: &OldAddress,
     widths: AccessWidths,
     stop: &resource_tracker::Stop,
     since: &str,
@@ -4432,7 +4432,7 @@ fn describe_cell_cause(
 /// [`describe_wide_store_byte_reach`] instead.
 fn describe_store_cause(
     cell: Option<&SourceCell>,
-    written: &Address,
+    written: &OldAddress,
     widths: AccessWidths,
     certain: bool,
     stated: &[&Proposition],
@@ -4567,7 +4567,7 @@ fn states_terms_differ(
 /// Exact named cell for a diagnostic. Never offer a verifier-owned index as
 /// a source expression.
 pub(in crate::surface) fn diagnostic_source_cell(
-    pointer: &Address,
+    pointer: &OldAddress,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
     let cell = describe_source_cell(pointer, parameter_binding)?;
@@ -4576,7 +4576,7 @@ pub(in crate::surface) fn diagnostic_source_cell(
 }
 
 pub(in crate::surface) fn diagnostic_model_load_cell(
-    pointer: &Address,
+    pointer: &OldAddress,
     kind: crate::kernel::LoadKind,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
@@ -4592,7 +4592,7 @@ pub(in crate::surface) fn diagnostic_model_load_cell(
 /// byte-typed, so its field layout, rather than its pointee type, determines
 /// which source place the read names.
 pub(in crate::surface) fn diagnostic_aggregate_parameter_load_cell(
-    pointer: &Address,
+    pointer: &OldAddress,
     kind: crate::kernel::LoadKind,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<(String, crate::kernel::ProgramType)> {
@@ -4642,7 +4642,7 @@ pub(in crate::surface) fn diagnostic_aggregate_parameter_load_cell(
 }
 
 pub(in crate::surface) fn diagnostic_source_load_cell(
-    pointer: &Address,
+    pointer: &OldAddress,
     kind: crate::kernel::LoadKind,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
@@ -4664,7 +4664,7 @@ pub(in crate::surface) fn diagnostic_source_load_cell(
 /// check here: the internal pointer-read registry uses a scalar carrier whose
 /// load kind alone does not describe the source C type.
 pub(in crate::surface) fn diagnostic_source_pointer_cell(
-    pointer: &Address,
+    pointer: &OldAddress,
     parameter_binding: ParameterBinding<'_>,
     base_point: Option<&str>,
 ) -> Option<String> {
@@ -4712,7 +4712,7 @@ pub(in crate::surface) fn diagnostic_source_pointer_cell(
 /// surface tests.
 #[cfg(test)]
 pub(in crate::surface) fn source_cell_text_for_tests(
-    pointer: &Address,
+    pointer: &OldAddress,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
     describe_source_cell(pointer, parameter_binding).map(|cell| cell.text())
@@ -5037,7 +5037,7 @@ impl SourceCell {
 /// and a name that could only be a verifier-owned one is refused instead of
 /// shown.
 fn describe_source_cell(
-    pointer: &Address,
+    pointer: &OldAddress,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<SourceCell> {
     describe_source_cell_of_width(pointer, None, parameter_binding)
@@ -5047,7 +5047,7 @@ fn describe_source_cell(
 /// known: a constant offset into a struct-typed global is then the field
 /// that occupies exactly those bytes, where exactly one does.
 fn describe_source_cell_of_width(
-    pointer: &Address,
+    pointer: &OldAddress,
     width: Option<u32>,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<SourceCell> {
@@ -5280,7 +5280,7 @@ pub(super) fn describe_memory_block(
 /// Spell mutex storage as an address, including a field at offset zero, rather
 /// than rendering the containing object or an array-element value.
 pub(in crate::surface) fn describe_mutex_pointer(
-    pointer: &Address,
+    pointer: &OldAddress,
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
     for (parameter, argument) in parameter_binding
@@ -5384,7 +5384,7 @@ fn describe_address_index(
 }
 
 pub(in crate::surface) fn describe_pointer(
-    pointer: &Address,
+    pointer: &OldAddress,
     parameter_binding: ParameterBinding<'_>,
 ) -> String {
     if matches!(
@@ -5559,9 +5559,9 @@ pub(in crate::surface) fn describe_pointer(
 /// source-level metadata needed to recover that spelling without printing the
 /// lowered block, load, or version terms.
 fn describe_parameter_struct_field_pointer(
-    pointer: &Address,
+    pointer: &OldAddress,
     parameter: &crate::languages::interface::ImportedParameter,
-    base: &Address,
+    base: &OldAddress,
 ) -> Option<String> {
     let layout = parameter
         .pointee_struct_layout()
@@ -5616,9 +5616,9 @@ fn describe_parameter_struct_field_pointer(
 ///
 /// The index is spelled by [`describe_address_index`].
 fn describe_parameter_struct_member(
-    pointer: &Address,
+    pointer: &OldAddress,
     parameter: &crate::languages::interface::ImportedParameter,
-    base: &Address,
+    base: &OldAddress,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
     describe_struct_member_from(
@@ -5635,9 +5635,9 @@ fn describe_parameter_struct_member(
 /// whose members are selected with `select` (`->` through a pointer, `.` on
 /// a value).
 fn describe_struct_member_from(
-    pointer: &Address,
+    pointer: &OldAddress,
     parameter: &crate::languages::interface::ImportedParameter,
-    base: &Address,
+    base: &OldAddress,
     name: &str,
     select: &str,
     parameter_binding: ParameterBinding<'_>,
@@ -5822,7 +5822,7 @@ pub(super) fn diagnostic_parameter_element_width(
 /// offset. A 64-bit index term carries no signedness, so `p + k` and
 /// `p + (k as int64)` for a `uint64` `k` share it: only this flag separates
 /// the two addresses.
-fn scaled_index_signedness(pointer: &Address, base: &Address) -> Option<bool> {
+fn scaled_index_signedness(pointer: &OldAddress, base: &OldAddress) -> Option<bool> {
     if pointer.base != base.base {
         return None;
     }
@@ -5876,8 +5876,8 @@ fn describe_scaled_index(
 }
 
 pub(super) fn diagnostic_pointer_element_index_from_base(
-    pointer: &Address,
-    base: &Address,
+    pointer: &OldAddress,
+    base: &OldAddress,
     byte_width: i64,
 ) -> Option<OldMachineTerm> {
     if pointer.base != base.base {
@@ -6736,7 +6736,7 @@ pub(super) fn describe_program_expression(expression: &ProgramExpression) -> Str
 /// `o->b->len`, where `o->b` is that load. The field's declared type must
 /// be read with exactly this kind.
 pub(in crate::surface) fn diagnostic_loaded_field_load_cell(
-    pointer: &Address,
+    pointer: &OldAddress,
     kind: crate::kernel::LoadKind,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
@@ -6753,7 +6753,7 @@ pub(in crate::surface) fn diagnostic_loaded_field_load_cell(
         return None;
     };
     let base = describe_pointer(
-        &Address {
+        &OldAddress {
             base: pointer.base.clone(),
             offset: OldAddressOffset::Constant(0),
         },
@@ -6764,7 +6764,7 @@ pub(in crate::surface) fn diagnostic_loaded_field_load_cell(
 
 /// The place a load of `pointer` reads, when it has a source spelling.
 pub(in crate::surface) fn diagnostic_load_place(
-    pointer: &Address,
+    pointer: &OldAddress,
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
     let place = describe_load_at(pointer, parameter_binding);
@@ -6790,7 +6790,7 @@ pub(super) fn describe_contract_entry_resource_error(
     message
 }
 
-fn describe_load_at(pointer: &Address, parameter_binding: ParameterBinding<'_>) -> String {
+fn describe_load_at(pointer: &OldAddress, parameter_binding: ParameterBinding<'_>) -> String {
     if let Some(field) = describe_struct_field_load(pointer, parameter_binding, None) {
         return field;
     }
@@ -6851,7 +6851,7 @@ fn is_cell_spelling(text: &str) -> bool {
 /// field of its layout starts there. The load carries no width here, so a
 /// nested struct or a union whose members share that offset stays a load.
 fn describe_struct_field_load(
-    pointer: &Address,
+    pointer: &OldAddress,
     parameter_binding: ParameterBinding<'_>,
     struct_layouts: Option<&BTreeMap<String, crate::languages::interface::RecordLayout>>,
 ) -> Option<String> {
@@ -6904,14 +6904,14 @@ fn describe_struct_field_load(
 }
 
 /// `(a, c)` for the address `c` bytes past the pointer a load of `a` read.
-fn loaded_pointer_base(address: &Address) -> Option<(Address, u64)> {
+fn loaded_pointer_base(address: &OldAddress) -> Option<(OldAddress, u64)> {
     let (loaded_from, bytes) = loaded_pointer_split(address)?;
     Some((loaded_from, u64::from(bytes.as_const()?)))
 }
 
 /// `(a, bytes)` for an address past the pointer a load of `a` read, with
 /// the rest of its offset as a byte count, which may be symbolic.
-fn loaded_pointer_split(address: &Address) -> Option<(Address, OldMachineTerm)> {
+fn loaded_pointer_split(address: &OldAddress) -> Option<(OldAddress, OldMachineTerm)> {
     if let Some(read) = address.as_loaded_value() {
         return Some((
             read.defining_address,
@@ -6961,12 +6961,15 @@ fn loaded_pointer_split(address: &Address) -> Option<(Address, OldMachineTerm)> 
 /// The struct a pointer field at `address` points at, by name: a pointer
 /// field of the struct a parameter points at, or of a struct reached
 /// through such a field. Display only.
-fn pointee_struct_at(address: &Address, parameter_binding: ParameterBinding<'_>) -> Option<String> {
+fn pointee_struct_at(
+    address: &OldAddress,
+    parameter_binding: ParameterBinding<'_>,
+) -> Option<String> {
     pointee_struct_at_depth(address, parameter_binding, 0)
 }
 
 fn pointee_struct_at_depth(
-    address: &Address,
+    address: &OldAddress,
     parameter_binding: ParameterBinding<'_>,
     depth: usize,
 ) -> Option<String> {
@@ -9153,7 +9156,7 @@ mod wide_range_reader_tests {
     // Native missing resources can reach both source-spelling and repair hints.
     #[test]
     fn wide_missing_ranges_are_rendered_or_omitted_without_signed_readers() {
-        let base = Address::symbolic(Variable(985_400));
+        let base = OldAddress::symbolic(Variable(985_400));
         let wide = MemoryRange::new_wide(
             base,
             OldMachineTerm::uint64_constant(0),
@@ -9179,7 +9182,7 @@ mod assembly_fact_tests {
     #[test]
     fn a_folded_false_body_fact_keeps_its_clause_and_call_bindings() {
         let parsed = syntax::parse_function("void caller(int32* actual) {}").unwrap();
-        let pointer = ProgramValue::pointer(Address::symbolic(Variable(985_410)));
+        let pointer = ProgramValue::pointer(OldAddress::symbolic(Variable(985_410)));
         let arguments = vec![ProgramExpression::Value(pointer.clone())];
         let binding = ParameterBinding::new(parsed.parameters(), &arguments);
         let mut error = crate::kernel::RuntimeError::UnestablishedAssemblyFact {

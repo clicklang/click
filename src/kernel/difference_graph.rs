@@ -23,10 +23,10 @@
 use crate::kernel::MachineIntegerType;
 use crate::kernel::binary_term;
 use crate::kernel::integer_exclusions::ExcludedIntegers;
-use crate::kernel::{Address, OldAddressOffset, OldConditionTerm, OldMachineTerm};
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{MachineBinaryOp, MachineUnaryOp};
 use crate::kernel::{MachineCastSpelling, cast_term};
+use crate::kernel::{OldAddress, OldAddressOffset, OldConditionTerm, OldMachineTerm};
 use crate::kernel::{
     bits32_constant, constant_i64, constant_u32, constant_u64, int32_constant, int64_constant,
     native_constant, uint64_constant,
@@ -2764,7 +2764,7 @@ impl Residues {
 
     /// `addr(p + o)` is `addr(p) + o`: the address of a pointer whose
     /// offset is a sum, read through the address of one summand's pointer.
-    fn address_residue(&self, pointer: &Address, depth: u32) -> Option<Residue> {
+    fn address_residue(&self, pointer: &OldAddress, depth: u32) -> Option<Residue> {
         use crate::kernel::OldAddressOffset as O;
         let O::Add(left, right) = &pointer.offset else {
             return None;
@@ -2772,7 +2772,7 @@ impl Residues {
         let mut best = None;
         for (base, offset) in [(left, right), (right, left)] {
             let base = OldMachineTerm::IntegerAddress(
-                Box::new(Address {
+                Box::new(OldAddress {
                     base: pointer.base.clone(),
                     offset: base.as_ref().clone(),
                 }),
@@ -2817,8 +2817,8 @@ fn offset_residue(offset: &OldAddressOffset) -> Option<Residue> {
 /// smaller class's disequalities into the larger's.
 #[derive(Clone, Debug, Default)]
 struct PointerClasses {
-    ids: PersistentMap<Address, NodeId>,
-    terms: PersistentMap<NodeId, Address>,
+    ids: PersistentMap<OldAddress, NodeId>,
+    terms: PersistentMap<NodeId, OldAddress>,
     /// The ids of the pointers with each offset, for an offset question.
     by_offset: PersistentMap<OldAddressOffset, crate::persistent::PersistentSet<NodeId>>,
     parent: PersistentMap<NodeId, NodeId>,
@@ -2828,7 +2828,7 @@ struct PointerClasses {
 }
 
 impl PointerClasses {
-    fn id(&mut self, pointer: &Address) -> NodeId {
+    fn id(&mut self, pointer: &OldAddress) -> NodeId {
         if let Some(id) = self.ids.get(pointer) {
             return *id;
         }
@@ -2877,7 +2877,7 @@ impl PointerClasses {
 
     /// Records `a == b` (`value`) or `a != b`; false when that contradicts
     /// what is recorded.
-    fn assume(&mut self, a: &Address, b: &Address, value: bool) -> bool {
+    fn assume(&mut self, a: &OldAddress, b: &OldAddress, value: bool) -> bool {
         let (a, b) = (self.id(a), self.id(b));
         let (root_a, root_b) = (self.find(a), self.find(b));
         if !value {
@@ -2917,7 +2917,7 @@ impl PointerClasses {
         true
     }
 
-    fn decide(&self, a: &Address, b: &Address) -> Option<bool> {
+    fn decide(&self, a: &OldAddress, b: &OldAddress) -> Option<bool> {
         let (a, b) = (self.ids.get(a)?, self.ids.get(b)?);
         let (root_a, root_b) = (self.find(*a), self.find(*b));
         if root_a == root_b {

@@ -3,12 +3,12 @@ fn read_validity_misses_do_not_walk_pointer_aliases() {
     let mut samples = Vec::new();
     for size in [8u64, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Address::symbolic(Variable(880_000));
+        let base = OldAddress::symbolic(Variable(880_000));
         let mut context = PureFactContext::new();
         for index in 0..size {
             context
                 .equality_graph
-                .add_equality(&base, &Address::symbolic(Variable(880_001 + index)));
+                .add_equality(&base, &OldAddress::symbolic(Variable(880_001 + index)));
         }
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..4 {
@@ -34,7 +34,7 @@ fn kept_frame_misses_do_not_walk_aliases_or_unrelated_ranges() {
         let mut samples = Vec::new();
         for size in [8u64, 32, 128] {
             let _session = crate::kernel::VerificationSession::enter();
-            let pointer = |id| Address {
+            let pointer = |id| OldAddress {
                 base: AddressBase::ExternalArgument,
                 offset: OldAddressOffset::Variable(Variable(890_000 + id)),
             };
@@ -84,7 +84,7 @@ fn selected_read_validity_and_kept_frames_ignore_large_alias_classes() {
     let mut samples = Vec::new();
     for size in [8u64, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let source = Address {
+        let source = OldAddress {
             base: AddressBase::Heap(900_000),
             offset: OldAddressOffset::Constant(0),
         };
@@ -101,7 +101,7 @@ fn selected_read_validity_and_kept_frames_ignore_large_alias_classes() {
             });
         let mut query = source.clone();
         for index in 0..size {
-            query = Address::symbolic(Variable(900_001 + index));
+            query = OldAddress::symbolic(Variable(900_001 + index));
             context = context.assume_condition(
                 OldConditionTerm::address_equal(source.clone(), query.clone()),
                 true,
@@ -109,7 +109,7 @@ fn selected_read_validity_and_kept_frames_ignore_large_alias_classes() {
             context = context.assume_proposition(Proposition::MemoryReadDefined {
                 at: None,
                 memory: memory.clone(),
-                pointer: Address::symbolic(Variable(910_000 + index)),
+                pointer: OldAddress::symbolic(Variable(910_000 + index)),
                 value_type: ProgramType::Int32,
             });
         }
@@ -155,8 +155,8 @@ fn read_validity_state_buckets_keep_exact_hits_and_bounded_misses() {
     let mut samples = Vec::new();
     for size in [8u64, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let source = Address::symbolic(Variable(920_000));
-        let other = Address::symbolic(Variable(920_001));
+        let source = OldAddress::symbolic(Variable(920_000));
+        let other = OldAddress::symbolic(Variable(920_001));
         let mut memory = SymbolicMemory::new();
         let mut context = PureFactContext::new();
         for index in 0..size {

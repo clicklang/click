@@ -28,7 +28,7 @@ fn havoc_write_set_identity_scales_near_linearly_with_term_size() {
 
 #[test]
 fn call_frame_retains_a_view_without_scanning_other_views() {
-    let pointer = |index| Address {
+    let pointer = |index| OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(index)), 1),
     };

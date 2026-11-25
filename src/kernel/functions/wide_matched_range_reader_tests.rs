@@ -2,7 +2,7 @@ use super::*;
 // A selected matched arm publishes native liveness for its actual range.
 #[test]
 fn wide_matched_instance_projection_keeps_native_loadability() {
-    let base = Address::symbolic(Variable(985_700));
+    let base = OldAddress::symbolic(Variable(985_700));
     let variants: Arc<[AlgebraicVariantType]> = vec![AlgebraicVariantType {
         name: "Held".into(),
         fields: vec![],

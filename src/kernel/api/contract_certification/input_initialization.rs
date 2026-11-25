@@ -130,7 +130,7 @@ mod tests {
     use super::*;
 
     fn fixture() -> (ExecutionState, ProgramFunction, MemorySegment, MemoryRange) {
-        let base = Address {
+        let base = OldAddress {
             base: AddressBase::Concrete("initialized-input".into()),
             offset: OldAddressOffset::Constant(0),
         };

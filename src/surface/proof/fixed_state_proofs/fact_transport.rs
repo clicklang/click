@@ -949,7 +949,7 @@ pub(in crate::surface::proof) fn memory_erased_comparison(
                     crate::kernel::ProgramPoint::unplaced(
                         &(crate::kernel::intern_memory(SymbolicMemory::default())),
                     ),
-                    Address {
+                    OldAddress {
                         base: pointer.base.clone(),
                         offset: erase_offset(&pointer.offset),
                     },
@@ -1418,7 +1418,7 @@ mod path_condition_tests {
     #[test]
     fn compound_read_transport_requires_every_address_guard_and_range() {
         let memory = SymbolicMemory::new();
-        let base = Address {
+        let base = OldAddress {
             base: "bytes".into(),
             offset: OldAddressOffset::Constant(0),
         };

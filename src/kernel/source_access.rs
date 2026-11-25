@@ -85,7 +85,7 @@ impl PartialOrd for StatementAssignSource {
 #[derive(Debug)]
 struct ReferenceBorrowObservation {
     source: Arc<ReferenceBorrowSourceId>,
-    pointer: Address,
+    pointer: OldAddress,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub(crate) enum ReferenceAccessKind {
@@ -141,14 +141,14 @@ impl PartialOrd for StatementStoreSource {
 #[derive(Debug)]
 pub(crate) struct ExecutedReferenceAccess<'a> {
     source: &'a ReferenceAccessSourceId,
-    pointer: &'a Address,
+    pointer: &'a OldAddress,
 }
 
 #[derive(Debug)]
 pub(crate) enum ExecutedReferenceBoundary<'a> {
     Borrow {
         source: &'a ReferenceBorrowSourceId,
-        pointer: &'a Address,
+        pointer: &'a OldAddress,
     },
     Store(ExecutedReferenceAccess<'a>),
 }
@@ -162,7 +162,7 @@ pub(crate) struct ReferenceObservationSource(Option<Arc<ReferenceObservation>>);
 enum ReferenceObservation {
     Read {
         source: Arc<ReferenceAccessSourceId>,
-        pointer: Address,
+        pointer: OldAddress,
         retained_state: MemoryStateIdentity,
         at: Option<super::program_point::ProgramPointId>,
         value_type: ProgramType,
@@ -172,7 +172,7 @@ enum ReferenceObservation {
 impl ReferenceObservationSource {
     pub(super) fn new(
         source: Arc<ReferenceAccessSourceId>,
-        pointer: Address,
+        pointer: OldAddress,
         memory: &SymbolicMemory,
         at: Option<super::program_point::ProgramPointId>,
         value_type: ProgramType,
@@ -224,7 +224,7 @@ impl ExecutedReferenceAccess<'_> {
     pub(crate) fn source(&self) -> &ReferenceAccessSourceId {
         self.source
     }
-    pub(crate) fn address(&self) -> &Address {
+    pub(crate) fn address(&self) -> &OldAddress {
         self.pointer
     }
 }
@@ -310,7 +310,7 @@ impl SymbolicExecution {
 mod tests {
     use super::*;
     fn borrow_fact() -> ExecutionPureFact {
-        let pointer = Address {
+        let pointer = OldAddress {
             base: "birth".into(),
             offset: OldAddressOffset::Constant(0),
         };
@@ -359,7 +359,7 @@ mod tests {
     }
     #[test]
     fn source_reference_birth_requires_the_completed_parent_pointer_and_type() {
-        let pointer = Address {
+        let pointer = OldAddress {
             base: "birth".into(),
             offset: OldAddressOffset::Constant(0),
         };
@@ -409,7 +409,7 @@ mod tests {
         );
     }
     fn read_fact() -> ExecutionPureFact {
-        let pointer = Address {
+        let pointer = OldAddress {
             base: "source-read".into(),
             offset: OldAddressOffset::Constant(0),
         };

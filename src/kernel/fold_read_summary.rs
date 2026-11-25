@@ -173,7 +173,7 @@ impl std::fmt::Display for FoldReadDecline {
 #[derive(Clone, Debug)]
 pub(crate) struct FoldReadInterval {
     pub(crate) memory: SymbolicMemory,
-    pub(crate) base: Address,
+    pub(crate) base: OldAddress,
     pub(crate) start: SharedMachineIntegerTerm,
     pub(crate) end: SharedMachineIntegerTerm,
     pub(crate) element_width: u32,
@@ -1177,8 +1177,8 @@ impl LinearOffset {
 /// `element_width * sext(index) + constant` for `pointer` relative to `base`,
 /// when both are in one block and the delta has that exact form.
 fn scaled_index_from(
-    pointer: &Address,
-    base: &Address,
+    pointer: &OldAddress,
+    base: &OldAddress,
     element_width: u32,
 ) -> Option<(SharedMachineIntegerTerm, i128)> {
     if pointer.base != base.base {
@@ -1261,7 +1261,7 @@ fn interval_proven_empty(interval: &FoldReadInterval, assumptions: &PureFactCont
 
 /// Whether the `bytes` bytes at `pointer` miss every cell of the interval.
 fn access_misses_interval(
-    pointer: &Address,
+    pointer: &OldAddress,
     bytes: u32,
     interval: &FoldReadInterval,
     assumptions: &PureFactContext,
@@ -1402,7 +1402,7 @@ fn range_contains_interval(
 /// The `bytes` bytes at `pointer` lie inside one cell of `range`.
 fn range_contains_access(
     range: &MemoryRange,
-    pointer: &Address,
+    pointer: &OldAddress,
     bytes: u32,
     assumptions: &PureFactContext,
 ) -> bool {

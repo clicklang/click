@@ -269,7 +269,7 @@ fn dynamic_body_fact_dependency(
     temporary_views: &DynamicViewDependencyIndex,
 ) -> Result<Option<crate::kernel::BorrowBinding>, String> {
     fn check_load(
-        pointer: Address,
+        pointer: OldAddress,
         width: u32,
         state: &ExecutionState,
         assumptions: &PureFactContext,
@@ -407,7 +407,7 @@ fn dynamic_body_fact_dependency(
         )
     }
     fn walk_loads(
-        loads: Vec<(Address, u32)>,
+        loads: Vec<(OldAddress, u32)>,
         state: &ExecutionState,
         assumptions: &PureFactContext,
         temporary_views: &DynamicViewDependencyIndex,
@@ -5890,7 +5890,7 @@ void child_release(struct child* obj) {
             let fact = Proposition::MemoryReadDefined {
                 at,
                 memory: earlier.memory().clone(),
-                pointer: Address {
+                pointer: OldAddress {
                     base: AddressBase::ExternalArgument,
                     offset: OldAddressOffset::Constant(0),
                 },
@@ -5908,7 +5908,7 @@ void child_release(struct child* obj) {
     /// admits, not on the one symbolic cell `p[k]`, which no view contains.
     #[test]
     fn dynamic_quantified_definedness_depends_on_the_guarded_range() {
-        let base = Address {
+        let base = OldAddress {
             base: AddressBase::ExternalArgument,
             offset: OldAddressOffset::Constant(0),
         };
@@ -5945,7 +5945,7 @@ void child_release(struct child* obj) {
                     Box::new(Proposition::MemoryReadDefined {
                         at: None,
                         memory: memory.clone(),
-                        pointer: Address {
+                        pointer: OldAddress {
                             base: AddressBase::ExternalArgument,
                             offset: OldAddressOffset::Int32Scaled {
                                 value: crate::kernel::SharedMachineIntegerTerm::index(
@@ -6023,7 +6023,7 @@ void child_release(struct child* obj) {
     }
 
     fn check_dynamic_current_fact_dependencies(definedness: bool, symbolic_range: bool) {
-        let pointer = Address {
+        let pointer = OldAddress {
             base: AddressBase::ExternalArgument,
             offset: OldAddressOffset::Constant(0),
         };
@@ -6247,7 +6247,7 @@ mod wide_range_reader_tests {
     // A wide composite span must not be enumerated as signed constant cells.
     #[test]
     fn wide_composite_materialization_keeps_the_state_without_enumerating_cells() {
-        let base = Address::symbolic(Variable(985_600));
+        let base = OldAddress::symbolic(Variable(985_600));
         let wide = MemoryRange::new_wide(
             base.clone(),
             OldMachineTerm::uint64_constant(0),
@@ -6311,7 +6311,7 @@ mod guarded_unmatched_materialization_tests {
     #[test]
     fn ordinary_composite_cell_naming_keeps_the_entry_point() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Address::symbolic(crate::kernel::Variable(88_026));
+        let pointer = OldAddress::symbolic(crate::kernel::Variable(88_026));
         let memory = SymbolicMemory::new().with_block(pointer.base.clone(), 4);
         let state = ExecutionState::new().with_memory(memory);
         check_composite_cell_naming(pointer, state, false);
@@ -6320,7 +6320,7 @@ mod guarded_unmatched_materialization_tests {
     #[test]
     fn a_held_composite_names_an_unwritten_scalar_at_function_entry() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Address {
+        let pointer = OldAddress {
             base: crate::kernel::AddressBase::ExternalArgument,
             offset: crate::kernel::OldAddressOffset::Constant(0),
         };
@@ -6329,7 +6329,7 @@ mod guarded_unmatched_materialization_tests {
     }
 
     fn check_composite_cell_naming(
-        pointer: Address,
+        pointer: OldAddress,
         state: ExecutionState,
         names_entry_version: bool,
     ) {
@@ -6399,7 +6399,7 @@ mod guarded_unmatched_materialization_tests {
         let resources = ResourceEnvironment::new(&file.resource_definitions);
         let functions = ClickFunctionEnvironment::new(&[]);
         let predicates = PredicateEnvironment::new(&[]);
-        let pointer = Address::symbolic(crate::kernel::Variable(88_027));
+        let pointer = OldAddress::symbolic(crate::kernel::Variable(88_027));
         let held = ResourceFact::own_composite(
             "link".into(),
             vec![ProgramValue::typed_pointer(
@@ -6460,7 +6460,7 @@ mod guarded_unmatched_materialization_tests {
         let functions = ClickFunctionEnvironment::new(&[]);
         let predicates = PredicateEnvironment::new(&[]);
         let specs = SpecDefinitions::new(&predicates, &functions);
-        let pointer = Address::symbolic(crate::kernel::Variable(88_023));
+        let pointer = OldAddress::symbolic(crate::kernel::Variable(88_023));
         let arguments = [ProgramExpression::Value(ProgramValue::typed_pointer(
             pointer.clone(),
             ProgramType::Int32Pointer,
@@ -6539,7 +6539,7 @@ mod guarded_unmatched_materialization_tests {
         let functions = ClickFunctionEnvironment::new(&[]);
         let predicates = PredicateEnvironment::new(&[]);
         let specs = SpecDefinitions::new(&predicates, &functions);
-        let pointer = crate::kernel::Address::symbolic(crate::kernel::Variable(88_021));
+        let pointer = crate::kernel::OldAddress::symbolic(crate::kernel::Variable(88_021));
         let held = ResourceFact::own_composite(
             "initialized_cell".into(),
             vec![ProgramValue::typed_pointer(
@@ -6616,7 +6616,7 @@ mod guarded_unmatched_materialization_tests {
         let [definition] = definitions.as_slice() else {
             panic!("expected the cell resource definition");
         };
-        let pointer = Address::symbolic(crate::kernel::Variable(88_024));
+        let pointer = OldAddress::symbolic(crate::kernel::Variable(88_024));
         let instance = ResourceInstance::new(
             crate::kernel::InstanceId::from_variable(crate::kernel::Variable(88_025)),
             "cell".into(),
@@ -6703,7 +6703,7 @@ mod guarded_unmatched_materialization_tests {
         )
         .unwrap();
         let definition = &file.resource_definitions[0];
-        let pointer = Address::symbolic(crate::kernel::Variable(88_028));
+        let pointer = OldAddress::symbolic(crate::kernel::Variable(88_028));
         let substitutions = resource_value_substitutions(
             definition,
             &[AlgebraicValue::Program(ProgramValue::typed_pointer(
@@ -6712,7 +6712,7 @@ mod guarded_unmatched_materialization_tests {
             ))],
         )
         .unwrap();
-        let slot = Address {
+        let slot = OldAddress {
             base: "local:slot".into(),
             offset: crate::kernel::OldAddressOffset::Constant(0),
         };
@@ -6771,13 +6771,13 @@ resource cell(p: int32*) {
         )])
         .unwrap();
         for (pointer, active) in [
-            (crate::kernel::Address::null(), false),
+            (crate::kernel::OldAddress::null(), false),
             (
-                crate::kernel::Address::symbolic(crate::kernel::Variable(88_001)),
+                crate::kernel::OldAddress::symbolic(crate::kernel::Variable(88_001)),
                 false,
             ),
             (
-                crate::kernel::Address {
+                crate::kernel::OldAddress {
                     base: "object".into(),
                     offset: crate::kernel::OldAddressOffset::Constant(0),
                 },
@@ -6915,7 +6915,7 @@ mod declared_scalar_field_observation_tests {
 
     #[test]
     fn scalar_field_observations_do_not_initialize_owned_padding() {
-        let base = Address::symbolic(Variable(985_801));
+        let base = OldAddress::symbolic(Variable(985_801));
         for viewed in [false, true] {
             let mut samples = Vec::new();
             for padding in [0u32, 16, 64, 256] {
@@ -6969,7 +6969,7 @@ mod declared_scalar_field_observation_tests {
     #[test]
     fn pointer_field_observation_is_one_complete_typed_read() {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Address::symbolic(Variable(985_803));
+        let base = OldAddress::symbolic(Variable(985_803));
         let memory = SymbolicMemory::new();
         let segment = field(
             ProgramExpression::Value(ProgramValue::pointer(base.clone())),
@@ -6990,7 +6990,7 @@ mod declared_scalar_field_observation_tests {
             matches!(value, ProgramValue::Pointer(_)),
             "a pointer field must not be cached as an integer prefix"
         );
-        let expected = Address::loaded(&OldMachineTerm::read_named(
+        let expected = OldAddress::loaded(&OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
             Box::new(base.clone()),
             crate::kernel::LoadKind::Int32,
@@ -7010,14 +7010,14 @@ mod declared_scalar_field_observation_tests {
     #[test]
     fn declared_pointer_field_retains_its_recorded_store() {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Address {
+        let base = OldAddress {
             base: AddressBase::ExternalArgument,
             offset: OldAddressOffset::Constant(0),
         };
         let ty = ProgramType::Int32Pointer;
         let stored = ExecutionState::new().with_memory(SymbolicMemory::new().store(
             base.clone(),
-            ProgramValue::typed_pointer(Address::symbolic(Variable(985_804)), ty),
+            ProgramValue::typed_pointer(OldAddress::symbolic(Variable(985_804)), ty),
         ));
         let source = stored.program_point();
         let segment = field(
@@ -7045,7 +7045,7 @@ mod declared_scalar_field_observation_tests {
     fn declared_float_field_retains_its_resource_source_point() {
         use crate::kernel::KernelFloatType;
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Address {
+        let base = OldAddress {
             base: AddressBase::ExternalArgument,
             offset: OldAddressOffset::Constant(0),
         };
@@ -7086,7 +7086,7 @@ mod declared_scalar_field_observation_tests {
 
     #[test]
     fn declared_array_elements_exclude_trailing_padding() {
-        let base = Address::symbolic(Variable(985_802));
+        let base = OldAddress::symbolic(Variable(985_802));
         for count in [0, 16, 64, 256] {
             let segment = field(
                 crate::kernel::program_expression::typed_load(

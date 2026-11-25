@@ -317,7 +317,7 @@ pub(super) fn incompatible_pointer_argument(
             }
             if assumptions.decide(&OldConditionTerm::address_equal(
                 pointer.address().clone(),
-                Address::null(),
+                OldAddress::null(),
             )) == Some(true)
             {
                 return None;
@@ -359,7 +359,7 @@ pub(super) fn incompatible_pointer_return(
     }
     if assumptions.decide(&OldConditionTerm::address_equal(
         pointer.address().clone(),
-        Address::null(),
+        OldAddress::null(),
     )) == Some(true)
     {
         return None;
@@ -469,7 +469,7 @@ pub(super) fn symbolic_contract_result(
     // about a returned struct can state.
     if interface.return_aggregate_layout().is_some() {
         return ProgramValue::typed_pointer(
-            Address::verifier_temporary(variable),
+            OldAddress::verifier_temporary(variable),
             interface.return_type(),
         );
     }
@@ -480,7 +480,7 @@ pub(super) fn symbolic_contract_result(
     // allocator, so no other block has this one.
     if interface.fresh_result_allocation() && interface.return_type().is_pointer() {
         return ProgramValue::typed_pointer(
-            Address {
+            OldAddress {
                 base: AddressBase::Heap(variable.0),
                 offset: OldAddressOffset::Constant(0),
             },
@@ -489,7 +489,7 @@ pub(super) fn symbolic_contract_result(
         .with_pointer_declared_object_class(interface.return_pointee_class());
     }
     symbolic_call_result(interface.return_type(), variable)
-        .complete_word(Address::symbolic(variable))
+        .complete_word(OldAddress::symbolic(variable))
         .with_pointer_declared_object_class(interface.return_pointee_class())
 }
 
@@ -506,7 +506,7 @@ pub(crate) fn symbolic_call_result(program_type: ProgramType, variable: Variable
             ProgramValue::of_bool(crate::kernel::OldConditionTerm::Variable(variable))
         }
         ProgramType::VoidPointer | ProgramType::VoidPointerPointer | ProgramType::Pointer => {
-            ProgramValue::typed_pointer(Address::symbolic(variable), program_type)
+            ProgramValue::typed_pointer(OldAddress::symbolic(variable), program_type)
         }
         ProgramType::Int8 => ProgramValue::Int8(OldMachineTerm::Variable(variable)),
         ProgramType::Int16 => ProgramValue::Int16(OldMachineTerm::Variable(variable)),
@@ -521,7 +521,7 @@ pub(crate) fn symbolic_call_result(program_type: ProgramType, variable: Variable
         ProgramType::Float32 => ProgramValue::Float32(OldMachineTerm::Variable(variable)),
         ProgramType::Float64 => ProgramValue::Float64(OldMachineTerm::Variable(variable)),
         ProgramType::Int8Pointer | ProgramType::Int8PointerPointer => {
-            ProgramValue::typed_pointer(Address::symbolic(variable), program_type)
+            ProgramValue::typed_pointer(OldAddress::symbolic(variable), program_type)
         }
         ProgramType::ParameterPointer(_)
         | ProgramType::Int16Pointer
@@ -546,10 +546,10 @@ pub(crate) fn symbolic_call_result(program_type: ProgramType, variable: Variable
         | ProgramType::Float64Pointer
         | ProgramType::Float32PointerPointer
         | ProgramType::Float64PointerPointer => {
-            ProgramValue::typed_pointer(Address::symbolic(variable), program_type)
+            ProgramValue::typed_pointer(OldAddress::symbolic(variable), program_type)
         }
         ProgramType::FunctionPointer(_) => {
-            ProgramValue::typed_pointer(Address::symbolic_function(variable), program_type)
+            ProgramValue::typed_pointer(OldAddress::symbolic_function(variable), program_type)
         }
         ProgramType::Int8Array(_) => {
             unreachable!("C functions cannot return array values")
@@ -575,7 +575,7 @@ pub(crate) fn symbolic_call_result(program_type: ProgramType, variable: Variable
 
 pub(in crate::kernel) fn add_memory_store_obligation(
     memory: &SymbolicMemory,
-    pointer: &Address,
+    pointer: &OldAddress,
     value: &ProgramValue,
     mut obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
@@ -816,7 +816,7 @@ pub(super) fn append_string_literal_loadable_facts(
 /// by-value copy inside the callee cannot reuse its parameter.
 pub(super) fn is_prepared_aggregate_argument(
     caller: &ExecutionState,
-    address: &Address,
+    address: &OldAddress,
     layout: &AggregateLayout,
 ) -> bool {
     let Some(binding) = address.base.prepared_argument_binding() else {
@@ -1549,7 +1549,7 @@ mod pointer_argument_tests {
     fn pointer_execution_arguments_keep_selected_roots_and_native_bindings() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = OldPointer::new(
-            Address::symbolic(Variable(1027100)),
+            OldAddress::symbolic(Variable(1027100)),
             ProgramType::Int32Pointer,
         );
         let root = KernelTerm::shared_pointer_call(
@@ -1622,7 +1622,7 @@ mod pointer_return_tests {
     fn pointer_returns_keep_complete_payload() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = OldPointer::new(
-            Address::symbolic(Variable(1027400)),
+            OldAddress::symbolic(Variable(1027400)),
             ProgramType::Int32Pointer,
         );
         let root = KernelTerm::shared_pointer_call(
@@ -1663,7 +1663,7 @@ mod pointer_return_tests {
         assert!(bound.shared().is_some());
         state.locals.set_typed(
             "mutable",
-            ProgramValue::typed_pointer(Address::null(), ProgramType::Int32Pointer),
+            ProgramValue::typed_pointer(OldAddress::null(), ProgramType::Int32Pointer),
             ProgramType::Int32Pointer,
         );
         crate::kernel::loops::assign_call_result(

@@ -4,8 +4,8 @@
 
 use super::*;
 
-fn object_slot(name: &str) -> Address {
-    Address {
+fn object_slot(name: &str) -> OldAddress {
+    OldAddress {
         base: AddressBase::Concrete(format!("local:{name}")),
         offset: crate::kernel::OldAddressOffset::Constant(0),
     }

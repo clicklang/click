@@ -5,7 +5,7 @@
 fn store_equation_work(unrelated: usize, stores: usize) -> usize {
     use crate::kernel::{ExecutionFacts, ExecutionPureFact};
     let _session = crate::kernel::VerificationSession::enter();
-    let cell = |index: u64| Address {
+    let cell = |index: u64| OldAddress {
         base: "array".into(),
         offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(index)), 4),
     };

@@ -2550,7 +2550,7 @@ mod tests {
         );
         let read = OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&memory),
-            Box::new(crate::kernel::Address {
+            Box::new(crate::kernel::OldAddress {
                 base: crate::kernel::AddressBase::Concrete("cells".into()),
                 offset: crate::kernel::OldAddressOffset::Constant(4),
             }),

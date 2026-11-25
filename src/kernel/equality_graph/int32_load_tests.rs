@@ -4,13 +4,13 @@ use crate::kernel::binary_node;
 fn var(id: u64) -> OldMachineTerm {
     OldMachineTerm::Variable(Variable(id))
 }
-fn address(id: u64) -> Address {
-    Address {
+fn address(id: u64) -> OldAddress {
+    OldAddress {
         base: "array".into(),
         offset: OldAddressOffset::scale_int32(var(id), 4),
     }
 }
-fn load(memory: &SharedMemory, pointer: &Address, bytes: u32) -> OldMachineTerm {
+fn load(memory: &SharedMemory, pointer: &OldAddress, bytes: u32) -> OldMachineTerm {
     OldMachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
         memory,
         pointer,
@@ -240,11 +240,11 @@ fn reads_at_equal_addresses_are_equal_without_equal_pointers() {
             .with_block("left", 64)
             .with_block("right", 64),
     );
-    let at = |block: &str, bytes: i64| Address {
+    let at = |block: &str, bytes: i64| OldAddress {
         base: block.into(),
         offset: OldAddressOffset::Constant(bytes),
     };
-    let address_of = |pointer: Address| OldMachineTerm::integer_address(pointer);
+    let address_of = |pointer: OldAddress| OldMachineTerm::integer_address(pointer);
     let after = intern_memory(memory.memory().clone().store(
         at("left", 8),
         ProgramValue::Int32(OldMachineTerm::constant(9)),
@@ -272,12 +272,12 @@ fn native_pointer_aliases_reach_named_nested_pointer_reads() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = memory();
     let field = address(940_061);
-    let arena = Address::symbolic(Variable(940_062));
-    let native = Address::loaded_value(&memory, &field);
+    let arena = OldAddress::symbolic(Variable(940_062));
+    let native = OldAddress::loaded_value(&memory, &field);
     let mut graph = EqualityGraph::default();
     graph.add_equality(&native, &arena);
-    let named_read = |address: &Address| {
-        let value = Address::loaded(&load(&memory, address, 8)).unwrap();
+    let named_read = |address: &OldAddress| {
+        let value = OldAddress::loaded(&load(&memory, address, 8)).unwrap();
         graph.register_pointer_read_definition(&value, &memory, address);
         value
     };
@@ -299,7 +299,7 @@ fn native_pointer_aliases_reach_named_nested_pointer_reads() {
     // The pointee width does not enter a read's identity: the same read
     // with another stride names the same pointer, and its displacement
     // still distinguishes it.
-    let other_stride = Address::loaded(&load(&memory, &field, 8)).unwrap();
+    let other_stride = OldAddress::loaded(&load(&memory, &field, 8)).unwrap();
     assert_eq!(other_stride, named_arena);
     assert!(graph.are_equal(&other_stride, &arena));
     assert!(!graph.are_equal(&other_stride.offset_by_bytes(8), &arena));
@@ -372,7 +372,7 @@ fn a_late_zero_index_alias_transfers_an_admitted_read_order() {
 fn reads_of_one_cell_at_both_signednesses_are_related() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = memory();
-    let read = |pointer: &Address, kind| {
+    let read = |pointer: &OldAddress, kind| {
         OldMachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
             &memory, pointer, kind, 4,
         ))
@@ -433,7 +433,7 @@ fn signed_16_and_128_bit_reads_are_the_sign_cast_of_their_unsigned_reads() {
     ] {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = memory();
-        let read = |pointer: &Address, kind| {
+        let read = |pointer: &OldAddress, kind| {
             OldMachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
                 &memory, pointer, kind, bytes,
             ))
@@ -617,7 +617,7 @@ fn structural_read_graph_registration_keeps_native_version_identity() {
     let named =
         crate::kernel::canonical_form_of_load(before.clone(), pointer.clone(), LoadKind::Int32);
     let beside = intern_memory(before.memory().clone().store(
-        Address {
+        OldAddress {
             base: "beside-array".into(),
             offset: OldAddressOffset::Constant(0),
         },

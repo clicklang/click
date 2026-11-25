@@ -6,7 +6,7 @@ use super::*;
 
 #[test]
 fn local_initialization_havoc_checks_scale_with_changed_cells() {
-    let target = Address {
+    let target = OldAddress {
         base: "local:target".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -21,7 +21,7 @@ fn local_initialization_havoc_checks_scale_with_changed_cells() {
                 ProgramValue::Int32(OldMachineTerm::constant(7)),
             );
         for index in 0..count {
-            let pointer = Address {
+            let pointer = OldAddress {
                 base: format!("local:ambient-{index}").into(),
                 offset: OldAddressOffset::Constant(0),
             };
@@ -63,7 +63,7 @@ fn one_byte_call_havoc_ignores_disjoint_cells_in_its_block() {
                 &facts,
             )
         });
-        let at = |offset| Address {
+        let at = |offset| OldAddress {
             base: "local:byte-havoc".into(),
             offset: OldAddressOffset::Constant(offset),
         };
@@ -123,7 +123,7 @@ fn one_byte_call_havoc_ignores_disjoint_cells_in_its_block() {
 
 #[test]
 fn exact_call_havoc_ignores_disjoint_run_slots_and_holes() {
-    let at = |offset: u32| Address {
+    let at = |offset: u32| OldAddress {
         base: "local:call-run-havoc".into(),
         offset: OldAddressOffset::Constant(i64::from(offset)),
     };

@@ -170,7 +170,7 @@ impl RegionFootprint {
                     }
                     extra_effect = true;
                     members.push_back(Resource::Memory(contents.allocation_size().byte_range(
-                        Address {
+                        OldAddress {
                             base: block.clone(),
                             offset: OldAddressOffset::Constant(0),
                         },
@@ -268,7 +268,7 @@ impl RegionFootprint {
     pub(crate) fn viewability_survives_return_cleanup(
         &self,
         outcome: &SymbolicMemory,
-        selected: &Address,
+        selected: &OldAddress,
     ) -> bool {
         if !self.ends_with_return || !self.preserves_separate_viewability {
             return false;

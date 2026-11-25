@@ -2758,7 +2758,7 @@ fn integer_range_fold_index_is_empty(index: &IntegerFoldIndexResult) -> bool {
     index.is_empty()
 }
 
-fn integer_carrier_in_pointer(pointer: &Address, variable: Variable) -> bool {
+fn integer_carrier_in_pointer(pointer: &OldAddress, variable: Variable) -> bool {
     // Like an opaque algebraic application, a pointer call can carry the
     // accumulator through its arguments, and a loaded pointer through its
     // defining read's address. Retain the scope without expanding a shared
@@ -5725,7 +5725,7 @@ fn lower_spec_memory_loadable_at_state_in(
         {
             let (start, end) = crate::kernel::wide_range_bounds(start, end)?;
             let range = MemoryRange::new_wide(
-                Address {
+                OldAddress {
                     base: base.base.clone(),
                     offset: crate::kernel::eval::canonical_offset_term(&base.offset),
                 },
@@ -5755,7 +5755,7 @@ fn lower_spec_memory_loadable_at_state_in(
             ProgramValue::UInt64(end),
         ] => {
             let range = MemoryRange::new_wide(
-                Address {
+                OldAddress {
                     base: base.base.clone(),
                     offset: crate::kernel::eval::canonical_offset_term(&base.offset),
                 },
@@ -5788,7 +5788,7 @@ fn lower_spec_memory_loadable_at_state_in(
             let mut discarded_facts = ExecutionFacts::new();
             let start =
                 crate::kernel::canonicalized_offset_index_term(start.clone(), &mut discarded_facts);
-            let base = Address {
+            let base = OldAddress {
                 base: base.base.clone(),
                 offset: canonical_offset_sum(
                     base.offset.clone(),
@@ -6899,7 +6899,7 @@ fn evaluate_spec_add_chain_paths_in(
 fn aggregate_projection_pointer(
     expression: &SpecExpression,
     parameter: &BindingName,
-    slot: &Address,
+    slot: &OldAddress,
 ) -> Option<SpecExpression> {
     match expression {
         SpecExpression::ProgramExpression(ProgramExpression::Variable(name))
@@ -8626,9 +8626,9 @@ fn evaluate_spec_pure_function_application_paths_in(
                 .then(|| SharedPureApplication::intern(name.to_owned(), call_arguments(arguments)));
             let value = OldPointer::new(
                 if all_null {
-                    Address::null()
+                    OldAddress::null()
                 } else {
-                    Address {
+                    OldAddress {
                         base: AddressBase::PureFunctionApplication(
                             application.as_ref().unwrap().clone(),
                         ),
@@ -8787,7 +8787,7 @@ pub(crate) fn refine_object_pointer_argument(
         |facts, pointer| {
             facts.decide(&OldConditionTerm::address_equal(
                 pointer.clone(),
-                Address::null(),
+                OldAddress::null(),
             )) == Some(true)
         },
     )
@@ -8809,7 +8809,7 @@ pub(crate) fn refine_object_pointer_argument_using_facts(
         |facts, pointer| {
             facts.exact_condition_value(&OldConditionTerm::address_equal(
                 pointer.clone(),
-                Address::null(),
+                OldAddress::null(),
             )) == Some(true)
         },
     )
@@ -8820,7 +8820,7 @@ fn refine_object_pointer_argument_with_null(
     object_class: &crate::kernel::effective_type::CAccessClass,
     memory: &SymbolicMemory,
     assumptions: &PureFactContext,
-    proves_null: impl FnOnce(&PureFactContext, &Address) -> bool,
+    proves_null: impl FnOnce(&PureFactContext, &OldAddress) -> bool,
 ) -> bool {
     let ProgramValue::Pointer(pointer) = value else {
         return false;
@@ -11501,7 +11501,7 @@ mod pointer_integer_observation_tests {
     fn integer_specifications_observe_bits_without_a_pointer_record() {
         let context = PureFactContext::new();
         let pointer = OldPointer::new(
-            Address::symbolic(Variable(994_001)),
+            OldAddress::symbolic(Variable(994_001)),
             ProgramType::Int32Pointer,
         );
         let word = crate::kernel::eval::cast_program_value_to_type(

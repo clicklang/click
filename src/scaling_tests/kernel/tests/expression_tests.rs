@@ -44,7 +44,7 @@ fn wide_equality_bounds_use_incremental_index_and_preserve_branches() {
 
 #[test]
 fn loadable_object_provenance_lookup_ignores_unrelated_external_pointers() {
-    let external = |variable| Address {
+    let external = |variable| OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scaled_int32_node(
             OldMachineTerm::Variable(Variable(variable)),
@@ -174,7 +174,7 @@ fn exact_signed_mirror_normalization_ignores_unrelated_facts() {
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn resource_object_provenance_does_not_scan_same_raw_block() {
-    let pointer = |id| Address {
+    let pointer = |id| OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::Variable(Variable(895_000 + id)),
     };
@@ -220,7 +220,7 @@ fn resource_object_provenance_does_not_scan_same_raw_block() {
 fn stored_pointer_bounds_ignore_unrelated_numeric_classes() {
     for size in [8u64, 32, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let field = Address::symbolic(Variable(96_311));
+        let field = OldAddress::symbolic(Variable(96_311));
         let stored = subobject_pointer(0, 0, 4);
         let memory =
             SymbolicMemory::new().store(field.clone(), ProgramValue::Pointer(stored.clone()));

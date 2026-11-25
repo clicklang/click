@@ -14,7 +14,7 @@ fn retained_range_and_allocation_handoffs_ignore_growing_operand_dags() {
                 );
             }
             let pointer = OldPointer::new(
-                Address::symbolic(Variable(10993615)),
+                OldAddress::symbolic(Variable(10993615)),
                 ProgramType::Int32Pointer,
             );
             let exports = KernelTermExport::machine_export_count();

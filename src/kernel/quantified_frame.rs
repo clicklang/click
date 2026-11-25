@@ -403,7 +403,7 @@ mod wide_condition_tests {
     #[test]
     fn wide_equality_frame_checks_read_kind_history_and_other_operand() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Address {
+        let pointer = OldAddress {
             base: "wide-equality-frame".into(),
             offset: OldAddressOffset::Constant(0),
         };

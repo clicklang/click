@@ -9,7 +9,7 @@ fn fixture(
     Vec<ResourceSpec>,
     Vec<CompositeResourceDefinition>,
 ) {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: AddressBase::Concrete("quantity-pool".into()),
         offset: OldAddressOffset::Constant(0),
     };
@@ -186,7 +186,7 @@ fn quantity_read_projection_ignores_unrelated_definitions() {
 #[test]
 fn symbolic_quantity_keeps_the_entry_field_read_through_materialization() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pool = Address {
+    let pool = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(38_500)), 4),
     };

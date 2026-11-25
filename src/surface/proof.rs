@@ -215,7 +215,7 @@ mod certificate_tests {
 
     #[test]
     fn local_index_surface_candidates_reject_nested_loads() {
-        let pointer = Address {
+        let pointer = OldAddress {
             base: "data".into(),
             offset: OldAddressOffset::Constant(0),
         };

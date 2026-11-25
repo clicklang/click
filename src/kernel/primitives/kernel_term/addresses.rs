@@ -192,7 +192,7 @@ pub struct SharedAddress(Arc<SharedAddressData>);
 
 struct SharedAddressData {
     node: KernelAddress,
-    cell_key: std::sync::OnceLock<Address>,
+    cell_key: std::sync::OnceLock<OldAddress>,
 }
 
 impl std::fmt::Debug for SharedAddress {
@@ -231,13 +231,13 @@ impl SharedAddress {
     pub(crate) fn node(&self) -> &KernelAddress {
         &self.0.node
     }
-    pub(crate) fn import(pointer: &Address) -> Self {
+    pub(crate) fn import(pointer: &OldAddress) -> Self {
         Self::new(
             SharedAddressBase::import(&pointer.base),
             KernelAddressOffset::import(&pointer.offset),
         )
     }
-    pub(crate) fn import_produced(pointer: &Address) -> Self {
+    pub(crate) fn import_produced(pointer: &OldAddress) -> Self {
         Self::new(
             SharedAddressBase::import_with_upkeep(&pointer.base, true),
             KernelAddressOffset::import(&pointer.offset),
@@ -249,14 +249,14 @@ impl SharedAddress {
             && self.node().offset.syntax_equal(&other.node().offset)
     }
 
-    pub(crate) fn export(&self) -> Result<Address, &'static str> {
-        Ok(Address {
+    pub(crate) fn export(&self) -> Result<OldAddress, &'static str> {
+        Ok(OldAddress {
             base: self.node().base.native_atom().clone(),
             offset: KernelAddressOffset::export(&self.node().offset)?,
         })
     }
 
-    pub(crate) fn exact_cell_key(&self) -> &Address {
+    pub(crate) fn exact_cell_key(&self) -> &OldAddress {
         self.0
             .cell_key
             .get_or_init(|| self.export().expect("retained read address"))
@@ -279,9 +279,9 @@ mod tests {
             AddressBase::ExternalArgument,
             AddressBase::ExternalObject(Variable(998002)),
             AddressBase::Symbolic(Variable(998003)),
-            Address::loaded_value(
+            OldAddress::loaded_value(
                 &crate::kernel::intern_memory(SymbolicMemory::new()),
-                &Address::symbolic(Variable(998004)),
+                &OldAddress::symbolic(Variable(998004)),
             )
             .base,
             AddressBase::PureFunctionApplication(SharedPureApplication::intern(
@@ -292,7 +292,7 @@ mod tests {
             AddressBase::Temporary(998006),
         ];
         for block in blocks {
-            let source = Address {
+            let source = OldAddress {
                 base: block,
                 offset: OldAddressOffset::Add(
                     Box::new(OldAddressOffset::Constant(0)),
@@ -315,7 +315,7 @@ mod tests {
         assert_eq!(a, b);
         assert_ne!(a.payload_id(), b.payload_id());
         let address = |call| {
-            SharedAddress::import(&Address {
+            SharedAddress::import(&OldAddress {
                 base: AddressBase::PureFunctionApplication(call),
                 offset: OldAddressOffset::Constant(0),
             })

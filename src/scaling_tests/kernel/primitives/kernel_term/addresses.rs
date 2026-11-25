@@ -104,7 +104,7 @@ fn raw_pointer_conditions_keep_shared_displacements_through_rewrites_and_transpo
                     crate::kernel::reasoning::substitute_pointer_variable_in_common_condition(
                         &nested,
                         Variable(999700),
-                        &Address::symbolic(Variable(999703)),
+                        &OldAddress::symbolic(Variable(999703)),
                     )
                     .unwrap();
                 let transported = crate::kernel::memory_history::transport_framed_common_condition(
@@ -150,7 +150,7 @@ fn complete_pointer_conditions_keep_shared_domains_through_rewrites_and_observat
         }
         let values = [999802, 999803].map(|variable| {
             let source = SharedPointer::import(&OldPointer::new(
-                Address::symbolic(Variable(variable)),
+                OldAddress::symbolic(Variable(variable)),
                 ProgramType::Int32Pointer,
             ));
             let mut value = source.node().clone();
@@ -174,7 +174,7 @@ fn complete_pointer_conditions_keep_shared_domains_through_rewrites_and_observat
                 crate::kernel::reasoning::substitute_pointer_variable_in_common_condition(
                     &root,
                     Variable(999809),
-                    &Address::null(),
+                    &OldAddress::null(),
                 )
                 .unwrap();
             assert_eq!(

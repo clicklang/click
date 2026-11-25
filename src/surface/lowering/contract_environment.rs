@@ -262,23 +262,23 @@ pub(in crate::surface) fn program_value_matches_allocation_size(value: &ProgramV
 
 #[cfg(test)]
 pub(in crate::surface) fn offset_pointer_by_int32_elements(
-    pointer: Address,
+    pointer: OldAddress,
     elements: OldMachineTerm,
-) -> Address {
+) -> OldAddress {
     offset_pointer_by_elements(pointer, elements, 4)
 }
 
 pub(in crate::surface) fn offset_pointer_by_elements(
-    pointer: Address,
+    pointer: OldAddress,
     elements: OldMachineTerm,
     element_width: u32,
-) -> Address {
+) -> OldAddress {
     // Contract and execution indices retain the same shared structure,
     // including a loaded index's state and read kind. The common producer
     // unwraps transitional registered names before constructing that index.
     let mut discarded_facts = crate::kernel::ExecutionFacts::new();
     let elements = crate::kernel::canonicalized_offset_index_term(elements, &mut discarded_facts);
-    Address {
+    OldAddress {
         base: pointer.base,
         offset: add_pointer_offset(
             pointer.offset,
@@ -358,7 +358,7 @@ mod tests {
     fn parameter_array_binding_hides_global_and_follows_reassignment() {
         let state = globals(0);
         let value = ProgramValue::typed_pointer(
-            Address {
+            OldAddress {
                 base: "parameter-bytes".into(),
                 offset: OldAddressOffset::Constant(0),
             },
@@ -375,7 +375,7 @@ mod tests {
         let arrays = array_refs_for_parameters(&parameters, &values, &state.program_point());
         let names = BTreeSet::from(["bytes".to_string()]);
         let reassigned = ProgramValue::typed_pointer(
-            Address {
+            OldAddress {
                 base: "reassigned-bytes".into(),
                 offset: OldAddressOffset::Constant(0),
             },

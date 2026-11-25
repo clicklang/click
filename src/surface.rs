@@ -14,15 +14,15 @@ use std::fmt;
 use crate::instrumentation::{self, TacticEvent, VerificationEvent};
 use crate::kernel::proof::PropositionSource;
 use crate::kernel::{
-    Address, AddressBase, AlgebraicValue, BitvectorEqualityDerivationStep,
-    CheckedFunctionExecution, CheckedFunctionProposition,
-    ComparisonOperator as KernelComparisonOperator, CompositeResourceDefinition, ConditionOutcome,
-    ExecutionBudget, ExecutionEnvironment, ExecutionPureFact, ExecutionSemantics, ExecutionState,
-    ExpressionOutcome, FunctionContract, FunctionContractClaim, FunctionContractClaimKey,
-    FunctionContractClaimTarget, FunctionContractExecutionMode, FunctionExecutionCandidates,
-    FunctionOutcome, FunctionSpecification, LoopEarlyExit, LoopEffect, LoopEffectCheck,
-    LoopEffectSpan, LoopFinalExitCandidate, LoopInvariantCheck, LoopReturnExit, MemoryRange,
-    MemorySegment, OldAddressOffset, OldConditionTerm, OldMachineTerm, ProgramExpression,
+    AddressBase, AlgebraicValue, BitvectorEqualityDerivationStep, CheckedFunctionExecution,
+    CheckedFunctionProposition, ComparisonOperator as KernelComparisonOperator,
+    CompositeResourceDefinition, ConditionOutcome, ExecutionBudget, ExecutionEnvironment,
+    ExecutionPureFact, ExecutionSemantics, ExecutionState, ExpressionOutcome, FunctionContract,
+    FunctionContractClaim, FunctionContractClaimKey, FunctionContractClaimTarget,
+    FunctionContractExecutionMode, FunctionExecutionCandidates, FunctionOutcome,
+    FunctionSpecification, LoopEarlyExit, LoopEffect, LoopEffectCheck, LoopEffectSpan,
+    LoopFinalExitCandidate, LoopInvariantCheck, LoopReturnExit, MemoryRange, MemorySegment,
+    OldAddress, OldAddressOffset, OldConditionTerm, OldMachineTerm, ProgramExpression,
     ProgramFunction, ProgramStatement, ProgramType, ProgramValue, ProofObligation, Proposition,
     PropositionDerivation, PureFactContext, Resource,
     ResourceAccessMode as KernelResourceAccessMode, ResourceContext, ResourceContextValidityError,
@@ -3615,7 +3615,7 @@ pub(crate) use binary_contract_expression;
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ClickArrayRef {
     point: crate::kernel::ProgramPoint,
-    pointer: Address,
+    pointer: OldAddress,
     element_type: ProgramType,
 }
 
@@ -3845,7 +3845,7 @@ struct RecordedStates {
     >,
     /// Allocation results keep the region that introduced them, independently
     /// of later pointer reads or assignments to the result local.
-    allocation_results: crate::persistent::PersistentMap<crate::kernel::Address, CodeRegionRef>,
+    allocation_results: crate::persistent::PersistentMap<crate::kernel::OldAddress, CodeRegionRef>,
     /// Values produced at call exits, independent of destination locals.
     call_results: RecordedCallResults,
     /// Prelowered result steps retain their result table at each citable
@@ -3860,14 +3860,14 @@ struct RecordedStates {
     read_event_counts: crate::persistent::PersistentMap<usize, usize>,
     read_event_names: ReadEventNames<ProgramValue>,
     read_event_scalar_names: ReadEventNames<crate::kernel::OldMachineTerm>,
-    read_event_pointer_names: ReadEventNames<crate::kernel::Address>,
+    read_event_pointer_names: ReadEventNames<crate::kernel::OldAddress>,
     /// The call that produced each algebraic value a call returned, a Rust
     /// enum's: the value is spelled `<region>.result`.
     algebraic_call_results: crate::persistent::PersistentMap<crate::kernel::AlgebraicTerm, usize>,
     /// The call that produced each pointer a call returned, by the
     /// pointer's address: the value is spelled `<region>.result`, which
     /// lowers to the exact returned value.
-    pointer_call_results: crate::persistent::PersistentMap<crate::kernel::Address, usize>,
+    pointer_call_results: crate::persistent::PersistentMap<crate::kernel::OldAddress, usize>,
     /// Each exited loop's pass count, the head's `iterations`, which the
     /// facts past the loop state over: spelled `loop(i).iterations`.
     loop_iterations: crate::persistent::PersistentMap<usize, crate::kernel::KernelTerm>,
@@ -4402,7 +4402,10 @@ impl RecordedStates {
         Some(self.read_event_region(index, event))
     }
 
-    fn read_event_naming_pointer(&self, value: &crate::kernel::Address) -> Option<CodeRegionRef> {
+    fn read_event_naming_pointer(
+        &self,
+        value: &crate::kernel::OldAddress,
+    ) -> Option<CodeRegionRef> {
         crate::instrumentation::record_deterministic_work(1);
         let &(index, event) = self.read_event_pointer_names.get(value)?.last()?;
         Some(self.read_event_region(index, event))
@@ -4854,7 +4857,7 @@ impl RecordedStates {
     /// lookup, checked against the recorded value.
     fn call_result_naming_pointer(
         &self,
-        pointer: &crate::kernel::Address,
+        pointer: &crate::kernel::OldAddress,
     ) -> Option<CodeRegionRef> {
         crate::instrumentation::record_deterministic_work(1);
         let index = *self.pointer_call_results.get(pointer)?;
@@ -5116,7 +5119,7 @@ impl RecordedStates {
     fn point_reading_load(
         &self,
         point: &crate::kernel::ProgramPoint,
-        pointer: &crate::kernel::Address,
+        pointer: &crate::kernel::OldAddress,
     ) -> Option<(&ProgramPointSelector, &ExecutionState)> {
         if point.id().is_some() {
             return self.point_naming_read(point);
@@ -5312,13 +5315,16 @@ impl RecordedStates {
         }
     }
 
-    fn allocation_result(&self, pointer: &crate::kernel::Address) -> Option<CodeRegionRef> {
+    fn allocation_result(&self, pointer: &crate::kernel::OldAddress) -> Option<CodeRegionRef> {
         crate::instrumentation::record_deterministic_work(1);
         self.allocation_results.get(pointer).cloned()
     }
 
     /// Name the address of frontend-owned storage by its producing region.
-    fn produced_address_expression(&self, pointer: &crate::kernel::Address) -> Option<SyntaxTerm> {
+    fn produced_address_expression(
+        &self,
+        pointer: &crate::kernel::OldAddress,
+    ) -> Option<SyntaxTerm> {
         use crate::kernel::AddressBase;
         match &pointer.base {
             AddressBase::AutomaticLocal { binding, .. } if binding.is_temporary() => {
@@ -5333,7 +5339,7 @@ impl RecordedStates {
 
     fn call_result_address_expression(
         &self,
-        pointer: &crate::kernel::Address,
+        pointer: &crate::kernel::OldAddress,
     ) -> Option<SyntaxTerm> {
         if let Some(region) = self.call_result_naming_pointer(pointer) {
             return Some(SyntaxTerm::RegionResult(region));
@@ -5346,10 +5352,10 @@ impl RecordedStates {
     }
 
     fn displaced_result_address(
-        pointer: &crate::kernel::Address,
-        name_base: impl FnOnce(&crate::kernel::Address) -> Option<SyntaxTerm>,
+        pointer: &crate::kernel::OldAddress,
+        name_base: impl FnOnce(&crate::kernel::OldAddress) -> Option<SyntaxTerm>,
     ) -> Option<SyntaxTerm> {
-        use crate::kernel::{Address, OldAddressOffset};
+        use crate::kernel::{OldAddress, OldAddressOffset};
         let OldAddressOffset::Constant(bytes) = pointer.offset else {
             return None;
         };
@@ -5357,7 +5363,7 @@ impl RecordedStates {
         if bytes == 0 {
             return name_base(pointer);
         }
-        let base = Address {
+        let base = OldAddress {
             base: pointer.base.clone(),
             offset: OldAddressOffset::Constant(0),
         };
@@ -8039,7 +8045,7 @@ impl<'a> ParameterBinding<'a> {
 pub(crate) struct ParameterNaming {
     pub(crate) parameters: std::sync::Arc<[crate::languages::interface::ImportedParameter]>,
     pub(crate) arguments: std::sync::Arc<[ProgramExpression]>,
-    pointer_sources: BTreeMap<Address, usize>,
+    pointer_sources: BTreeMap<OldAddress, usize>,
     float_sources: BTreeMap<(ProgramType, Variable), usize>,
 }
 
@@ -8092,7 +8098,7 @@ impl ParameterNaming {
 
     pub(crate) fn pointer_source(
         &self,
-        pointer: &Address,
+        pointer: &OldAddress,
     ) -> Option<(
         &crate::languages::interface::ImportedParameter,
         &ProgramExpression,

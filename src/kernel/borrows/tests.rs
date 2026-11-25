@@ -1,6 +1,6 @@
 use super::*;
 use crate::kernel::{
-    Address, OldAddressOffset, OldConditionTerm, Resource, ResourceFact, Variable,
+    OldAddress, OldAddressOffset, OldConditionTerm, Resource, ResourceFact, Variable,
 };
 
 fn owned(name: &str) -> ResourceFact {
@@ -38,7 +38,7 @@ fn participants() -> (BorrowLedger, BorrowParticipantId, BorrowParticipantId) {
 
 fn opaque_memory_borrow_fixture() -> (ResourceFact, CheckedResourceFact) {
     let pointer = crate::kernel::OldPointer::new(
-        Address::symbolic(Variable(9_819_001)),
+        OldAddress::symbolic(Variable(9_819_001)),
         crate::kernel::ProgramType::Int32Pointer,
     );
     let owner =
@@ -186,7 +186,7 @@ fn borrowed_contract_input_is_read_only_and_cannot_be_closed_or_recovered() {
 
 fn parameter_range(variable: u64, start: u32, end: u32, width: u32) -> MemoryRange {
     MemoryRange::new_with_element_width(
-        crate::kernel::Address {
+        crate::kernel::OldAddress {
             base: AddressBase::ExternalArgument,
             offset: crate::kernel::OldAddressOffset::Variable(Variable(variable)),
         },
@@ -198,7 +198,7 @@ fn parameter_range(variable: u64, start: u32, end: u32, width: u32) -> MemoryRan
 
 fn local_job_range() -> MemoryRange {
     MemoryRange::new_with_element_width(
-        crate::kernel::Address {
+        crate::kernel::OldAddress {
             base: "local:job".into(),
             offset: crate::kernel::OldAddressOffset::Constant(0),
         },
@@ -394,7 +394,7 @@ fn symbolic_and_concrete_borrows_fail_closed_across_the_index_boundary() {
 /// A concrete block range at one offset, at an explicit element width.
 fn buffer_range(start: u32, end: u32, width: u32) -> MemoryRange {
     MemoryRange::new_with_element_width(
-        crate::kernel::Address {
+        crate::kernel::OldAddress {
             base: "buffer".into(),
             offset: crate::kernel::OldAddressOffset::Constant(0),
         },
@@ -958,7 +958,7 @@ fn ending_a_reborrow_of_a_byteless_composite_borrow_keeps_the_barrier_armed() {
 
 fn mutex_owner(epoch: Option<u64>) -> ResourceFact {
     ResourceFact::own(Resource::MutexLive(crate::kernel::MutexIdentity {
-        mutex: crate::kernel::Address {
+        mutex: crate::kernel::OldAddress {
             base: "mutex".into(),
             offset: crate::kernel::OldAddressOffset::Constant(0),
         },
@@ -997,7 +997,7 @@ fn assumed_use_initializations_cannot_be_exchanged_between_sibling_roots() {
     let ledger = BorrowLedger::new();
     let holder = ledger.fresh_participant().unwrap();
     let support = backing(&owned("same principal input"));
-    let mutex = Address::symbolic(Variable(901));
+    let mutex = OldAddress::symbolic(Variable(901));
     let (left, left_input) = ledger
         .borrowed_mutex_use_input(holder, support, mutex.clone())
         .unwrap();
@@ -1316,7 +1316,7 @@ fn mutex_contract_input_evidence_checks_anchor_freshness_and_predecessor() {
     let mut evidence = BorrowTransitionEvidence::BorrowedMutexUseRoot {
         holder,
         support: backing(&owned("input")),
-        mutex: Address::symbolic(Variable(4321)),
+        mutex: OldAddress::symbolic(Variable(4321)),
         protected: None,
         initialization: super::super::mutexes::MutexInitializationId::fresh().unwrap(),
         scope: BorrowScopeId {
@@ -1348,7 +1348,7 @@ fn mutex_contract_input_evidence_checks_anchor_freshness_and_predecessor() {
             .borrowed_mutex_use_input(
                 foreign,
                 backing(&owned("input")),
-                Address::symbolic(Variable(4321))
+                OldAddress::symbolic(Variable(4321))
             )
             .is_err()
     );
@@ -2851,7 +2851,7 @@ pub(super) fn checked(fact: ResourceFact) -> CheckedResourceFact {
 
 pub(super) fn memory(start: u32, end: u32, own: bool) -> ResourceFact {
     let range = crate::kernel::MemoryRange::new(
-        crate::kernel::Address {
+        crate::kernel::OldAddress {
             base: "buffer".into(),
             offset: crate::kernel::OldAddressOffset::Constant(0),
         },
@@ -3626,7 +3626,7 @@ fn composite_backing_tamper_and_instance_frontier_are_refused() {
 
 fn symbolic_memory(start: OldMachineTerm, end: OldMachineTerm, own: bool) -> ResourceFact {
     let range = crate::kernel::MemoryRange::new(
-        crate::kernel::Address {
+        crate::kernel::OldAddress {
             base: "buffer".into(),
             offset: crate::kernel::OldAddressOffset::Constant(0),
         },
@@ -4342,8 +4342,8 @@ fn nested_view_reborrow_pins_parent_and_restores_exact_binding() {
 
 #[test]
 fn nested_view_reborrow_accepts_checked_offset_alias_and_preserves_authority() {
-    let base = crate::kernel::Address::symbolic(Variable(72_000));
-    let alias = crate::kernel::Address::symbolic(Variable(72_001));
+    let base = crate::kernel::OldAddress::symbolic(Variable(72_000));
+    let alias = crate::kernel::OldAddress::symbolic(Variable(72_001));
     let offset = OldMachineTerm::Variable(Variable(72_002));
     let empty = PureFactContext::new();
     let assumptions = empty
@@ -4556,12 +4556,12 @@ fn contract_entry_overlap_does_not_walk_pointer_aliases() {
     for same_block in [false, true] {
         let pointer = |id| {
             if same_block {
-                Address {
+                OldAddress {
                     base: AddressBase::ExternalArgument,
                     offset: OldAddressOffset::Variable(Variable(id)),
                 }
             } else {
-                Address::symbolic(Variable(id))
+                OldAddress::symbolic(Variable(id))
             }
         };
         let owned_base = pointer(10_001);
@@ -4622,7 +4622,7 @@ fn contract_entry_overlap_does_not_walk_pointer_aliases() {
 #[test]
 fn indexed_borrow_blocks_write_through_exact_pointer_alias() {
     let (ledger, owner, reader) = participants();
-    let protected_base = Address {
+    let protected_base = OldAddress {
         base: AddressBase::Symbolic(Variable(702)),
         offset: OldAddressOffset::Constant(0),
     };
@@ -4634,7 +4634,7 @@ fn indexed_borrow_blocks_write_through_exact_pointer_alias() {
     let opening = lend_test(&ledger, owner, reader, protected);
     let ledger = ledger.apply(&opening.transition).unwrap();
 
-    let query_base = Address {
+    let query_base = OldAddress {
         base: AddressBase::Symbolic(Variable(703)),
         offset: OldAddressOffset::Constant(0),
     };
@@ -4669,7 +4669,7 @@ fn indexed_borrow_blocks_write_through_exact_pointer_alias() {
 #[test]
 fn symbolic_borrow_fallback_checks_equal_pointer_alias_buckets() {
     let (ledger, owner, reader) = participants();
-    let protected_base = Address {
+    let protected_base = OldAddress {
         base: AddressBase::Symbolic(Variable(704)),
         offset: OldAddressOffset::Variable(Variable(700)),
     };
@@ -4682,7 +4682,7 @@ fn symbolic_borrow_fallback_checks_equal_pointer_alias_buckets() {
     let opening = lend_test(&ledger, owner, reader, ResourceFact::own_memory(protected));
     let ledger = ledger.apply(&opening.transition).unwrap();
 
-    let query_base = Address {
+    let query_base = OldAddress {
         base: AddressBase::Symbolic(Variable(705)),
         offset: OldAddressOffset::Variable(Variable(701)),
     };
@@ -4860,7 +4860,7 @@ fn indexed_write_witness_keeps_the_least_borrow_across_buckets_and_aliases() {
         );
     }
     let original = memory(0, 32, false);
-    let alias = Address {
+    let alias = OldAddress {
         base: AddressBase::Symbolic(Variable(991_123)),
         offset: OldAddressOffset::Constant(0),
     };
@@ -4968,7 +4968,7 @@ fn equal_returned_composite_occurrences_keep_independent_holds() {
 #[test]
 fn a_failed_selected_return_permission_does_not_retry_a_wider_description() {
     let (ledger, owner, reader) = participants();
-    let p = Address::symbolic(Variable(8_916_000));
+    let p = OldAddress::symbolic(Variable(8_916_000));
     let view = |start: u32, end: u32| {
         ResourceFact::view_memory(MemoryRange::new(p.clone(), start.into(), end.into()))
     };

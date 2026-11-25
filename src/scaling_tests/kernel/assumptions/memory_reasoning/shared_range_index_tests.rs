@@ -3,7 +3,7 @@ fn retained_delta_and_affine_queries_scale_with_the_selected_dag() {
     let mut samples = Vec::new();
     for size in [16, 64, 256] {
         let _session = VerificationSession::enter();
-        let base = Address {
+        let base = OldAddress {
             base: "shared_delta_scaling".into(),
             offset: OldAddressOffset::Constant(0),
         };
@@ -48,7 +48,7 @@ fn wide_coordinate_reconstruction_retains_cold_index_dags() {
     let mut samples = Vec::new();
     for size in [16, 64, 256] {
         let _session = VerificationSession::enter();
-        let base = Address {
+        let base = OldAddress {
             base: "wide_shared_indices".into(),
             offset: OldAddressOffset::Constant(0),
         };
@@ -64,7 +64,7 @@ fn wide_coordinate_reconstruction_retains_cold_index_dags() {
             );
         }
         let index = MachineOperandView::Shared(&root).retain(MachineIntegerType::UInt64);
-        let pointer = Address {
+        let pointer = OldAddress {
             base: base.base.clone(),
             offset: OldAddressOffset::Int64Scaled {
                 value: index.clone(),

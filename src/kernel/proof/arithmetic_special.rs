@@ -1,9 +1,9 @@
 //! Local arithmetic rules used by selected-input normalization, and internal
 //! plans selecting those rules for ordinary proof expansion.
 use super::super::{
-    Address, AddressBase, ComparisonOperator, FloatClassification, FloatCondition,
-    FloatOperandView, KernelFloatType, OldAddressOffset, OldConditionTerm, OldMachineTerm,
-    OldPointer, Proposition, SignedDefinedWidth,
+    AddressBase, ComparisonOperator, FloatClassification, FloatCondition, FloatOperandView,
+    KernelFloatType, OldAddress, OldAddressOffset, OldConditionTerm, OldMachineTerm, OldPointer,
+    Proposition, SignedDefinedWidth,
 };
 
 use crate::kernel::binary_term;
@@ -59,7 +59,7 @@ fn address_base_payload(block: &AddressBase) -> Option<usize> {
     (payload <= MAX_TERM_PAYLOAD).then_some(payload)
 }
 
-fn pointer_payload(pointer: &Address) -> Option<usize> {
+fn pointer_payload(pointer: &OldAddress) -> Option<usize> {
     address_base_payload(&pointer.base)?.checked_add(pointer_offset_payload(&pointer.offset)?)
 }
 
@@ -205,7 +205,7 @@ fn charge_pointer_offset(offset: &OldAddressOffset) -> bool {
     pointer_offset_payload(offset).is_some_and(charge_payload)
 }
 
-fn charge_pointer(pointer: &Address) -> bool {
+fn charge_pointer(pointer: &OldAddress) -> bool {
     pointer_payload(pointer).is_some_and(charge_payload)
 }
 
@@ -396,7 +396,7 @@ fn address_offset_equal(left: &OldAddressOffset, right: &OldAddressOffset) -> bo
     true
 }
 
-fn address_equal(left: &Address, right: &Address) -> bool {
+fn address_equal(left: &OldAddress, right: &OldAddress) -> bool {
     charge_pointer(left)
         && charge_pointer(right)
         && address_base_equal(&left.base, &right.base)
@@ -570,7 +570,9 @@ fn legacy_bitvector_equal_after_payload_check(
 /// uses the convenience `uint64_as_const` recognizer, whose implementation is
 /// recursive for constant expressions; keeping it behind this bounded walk
 /// makes attacker-controlled depth fail before that helper is reached.
-pub(crate) fn checked_pointer_alignment(condition: &OldConditionTerm) -> Option<(&Address, u64)> {
+pub(crate) fn checked_pointer_alignment(
+    condition: &OldConditionTerm,
+) -> Option<(&OldAddress, u64)> {
     use crate::kernel::MachineOperandView;
     let is_mask = |operand: MachineOperandView<'_>| {
         matches!(
@@ -1532,7 +1534,10 @@ pub(crate) fn unsigned_word_constant_for_discovery(
 
 /// A bounded discovery hint over two explicit pointers, with no fact context.
 /// The caller still constructs its ordinary address identity and offset law.
-pub(crate) fn constant_pointer_byte_difference(left: &Address, right: &Address) -> Option<i128> {
+pub(crate) fn constant_pointer_byte_difference(
+    left: &OldAddress,
+    right: &OldAddress,
+) -> Option<i128> {
     if !charge_pointer(left)
         || !charge_pointer(right)
         || !address_base_equal(&left.base, &right.base)
@@ -1608,7 +1613,7 @@ fn pointer_alignment(premise: Option<&Proposition>, result: &Proposition) -> boo
         };
         aligned
     } else {
-        let intrinsic_alignment = if address_equal(goal_pointer, &Address::null()) {
+        let intrinsic_alignment = if address_equal(goal_pointer, &OldAddress::null()) {
             // The null address is zero, so every valid power-of-two alignment
             // divides it; use the largest possible bound as an intrinsic
             // alignment sentinel.
@@ -1710,9 +1715,9 @@ enum TaggedTag<'a> {
 struct TaggedAddress<'a> {
     /// Pointer payloads can be large symbolic offset trees.  The iterative
     /// evaluator keeps one of these forms at every visited term, so sharing
-    /// the payload is essential: cloning an `Address` here would turn a tag
+    /// the payload is essential: cloning an `OldAddress` here would turn a tag
     /// chain over a deep pointer into a payload-depth by tag-depth operation.
-    pointer: Arc<Address>,
+    pointer: Arc<OldAddress>,
     tag: Arc<TaggedTag<'a>>,
     /// The tag's constant value, when it is known.  Keeping this alongside
     /// the term is important: a symbolic tag chain must not be recursively
@@ -1810,7 +1815,7 @@ fn pointer_index_hash(view: crate::kernel::MachineOperandView<'_>) -> Option<u64
     Some(hash.finish())
 }
 
-fn pointer_identity_hash(pointer: &Address) -> Option<u64> {
+fn pointer_identity_hash(pointer: &OldAddress) -> Option<u64> {
     let payload = pointer_payload(pointer)?;
     if crate::instrumentation::deadline_exceeded_with_work(payload.max(1)) {
         return None;
@@ -1852,12 +1857,12 @@ struct AlignmentIndex<'a> {
 }
 
 struct AlignmentEntry<'a> {
-    pointer: &'a Address,
+    pointer: &'a OldAddress,
     max_alignment: u64,
 }
 
 impl<'a> AlignmentIndex<'a> {
-    fn new(alignments: &'a [(&'a Address, u64)]) -> Option<Self> {
+    fn new(alignments: &'a [(&'a OldAddress, u64)]) -> Option<Self> {
         let mut by_hash: HashMap<u64, Vec<AlignmentEntry<'a>>> = HashMap::new();
         for (pointer, alignment) in alignments {
             if crate::instrumentation::deadline_exceeded_with_work(1) {
@@ -1885,7 +1890,7 @@ impl<'a> AlignmentIndex<'a> {
         Some(Self { by_hash })
     }
 
-    fn supports(&self, pointer: &Address, required: u64) -> bool {
+    fn supports(&self, pointer: &OldAddress, required: u64) -> bool {
         let Some(hash) = pointer_identity_hash(pointer) else {
             return false;
         };
@@ -2055,7 +2060,7 @@ fn masked_source(term: Word<'_>) -> Option<(Word<'_>, u64)> {
 fn pointer_or_masked_tag<'a>(
     left: Word<'a>,
     right: Word<'a>,
-) -> Option<(&'a Address, Word<'a>, u64)> {
+) -> Option<(&'a OldAddress, Word<'a>, u64)> {
     let (pointer, tag) = match (left.node(), right.node()) {
         (WordNode::IntegerAddress(pointer), _) => (pointer, right),
         (_, WordNode::IntegerAddress(pointer)) => (pointer, left),
@@ -2132,7 +2137,7 @@ fn tagged_form_inner<'a>(
         },
         FinishPointerOr {
             term: Word<'a>,
-            pointer: &'a Address,
+            pointer: &'a OldAddress,
             tag: Word<'a>,
             alignment: u64,
         },
@@ -4996,7 +5001,7 @@ mod tests {
         let mut root = KernelTerm::retained_machine_operand(MachineIntegerType::Int32, V::Old(&x));
         for depth in 0..9 {
             let index = S::from_shared(MachineIntegerType::Int32, root.clone()).unwrap();
-            let pointer = Address {
+            let pointer = OldAddress {
                 base: AddressBase::ExternalArgument,
                 offset: OldAddressOffset::Int32Scaled {
                     value: index.clone(),
@@ -5241,8 +5246,8 @@ mod tests {
         assert!(!bitvector_equal(&constant(1.into()), &constant(2.into())));
     }
 
-    fn pointer(offset: OldAddressOffset) -> Address {
-        Address {
+    fn pointer(offset: OldAddressOffset) -> OldAddress {
+        OldAddress {
             base: AddressBase::ExternalArgument,
             offset,
         }
@@ -5271,7 +5276,7 @@ mod tests {
         seen.len()
     }
 
-    fn deep_pointer(depth: usize) -> Address {
+    fn deep_pointer(depth: usize) -> OldAddress {
         let mut offset = OldAddressOffset::Constant(0);
         for _ in 0..depth {
             offset = add(offset, OldAddressOffset::Constant(1));

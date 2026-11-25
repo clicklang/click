@@ -2720,7 +2720,7 @@ impl LoweringContext<'_> {
             CppExpression::AddressOf {
                 place, value_type, ..
             } if !place.projections.is_empty() => {
-                // Address formation checks storage, not a read of the field value.
+                // OldAddress formation checks storage, not a read of the field value.
                 // The member is its own subobject (C++ [basic.compound]): the
                 // pointer may not reach a sibling member at an adjacent address.
                 let CppType::Pointer { pointee } = value_type else {

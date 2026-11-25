@@ -30,21 +30,24 @@ impl EqualityGraph {
 
     pub(in crate::kernel) fn exact_pointer_offset_aliases(
         &self,
-        pointer: &Address,
-    ) -> impl Iterator<Item = Address> + '_ {
+        pointer: &OldAddress,
+    ) -> impl Iterator<Item = OldAddress> + '_ {
         let block = pointer.base.clone();
         self.admitted
             .pointer_offset_aliases
             .get(&pointer.offset)
             .into_iter()
             .flat_map(|aliases| aliases.iter())
-            .map(move |offset| Address {
+            .map(move |offset| OldAddress {
                 base: block.clone(),
                 offset: offset.clone(),
             })
     }
 
-    pub(in crate::kernel) fn exact_pointer_offset_alias_count(&self, pointer: &Address) -> usize {
+    pub(in crate::kernel) fn exact_pointer_offset_alias_count(
+        &self,
+        pointer: &OldAddress,
+    ) -> usize {
         self.admitted
             .pointer_offset_aliases
             .get(&pointer.offset)
@@ -53,7 +56,7 @@ impl EqualityGraph {
 
     pub(in crate::kernel) fn exactly_aliased_pointers(
         &self,
-    ) -> impl ExactSizeIterator<Item = &Address> {
+    ) -> impl ExactSizeIterator<Item = &OldAddress> {
         self.admitted.address_base_aliases.keys()
     }
 
@@ -61,8 +64,8 @@ impl EqualityGraph {
     /// Multiple alternatives belong to premise search, not checked lookup.
     pub(in crate::kernel) fn unique_exact_pointer_alias(
         &self,
-        pointer: &Address,
-    ) -> Option<&Address> {
+        pointer: &OldAddress,
+    ) -> Option<&OldAddress> {
         let aliases = self.admitted.address_base_aliases.get(pointer)?;
         if aliases.len() != 1 {
             return None;
@@ -72,8 +75,8 @@ impl EqualityGraph {
 
     pub(in crate::kernel) fn exact_pointer_aliases(
         &self,
-        pointer: &Address,
-    ) -> impl Iterator<Item = &Address> {
+        pointer: &OldAddress,
+    ) -> impl Iterator<Item = &OldAddress> {
         self.admitted
             .address_base_aliases
             .get(pointer)
@@ -196,7 +199,10 @@ impl EqualityGraph {
 }
 
 impl EqualityGraph {
-    pub(in crate::kernel) fn has_parameter_store_alias_sources(&self, pointer: &Address) -> bool {
+    pub(in crate::kernel) fn has_parameter_store_alias_sources(
+        &self,
+        pointer: &OldAddress,
+    ) -> bool {
         let bucket = parameter_alias_bucket(pointer);
         self.admitted
             .wide_pointer_alias_endpoints_by_object
@@ -214,7 +220,7 @@ impl EqualityGraph {
 
     pub(in crate::kernel) fn parameter_store_numeric_connectivity(
         &self,
-        base: Option<&Address>,
+        base: Option<&OldAddress>,
     ) -> Option<&super::NumericAddressConnectivity> {
         // A write can use the numeric projection unless its own component
         // can reach an exact pointer edge or a raw coordinate equality.
@@ -234,8 +240,8 @@ impl EqualityGraph {
 
     pub(in crate::kernel) fn parameter_store_alias_bases(
         &self,
-        base: &Address,
-    ) -> Option<BTreeSet<Address>> {
+        base: &OldAddress,
+    ) -> Option<BTreeSet<OldAddress>> {
         let mut pending = vec![base.clone()];
         let mut seen = BTreeSet::new();
         let mut bases = BTreeSet::new();
@@ -301,8 +307,8 @@ impl EqualityGraph {
 
     pub(in crate::kernel) fn addresses_numerically_connected(
         &self,
-        left: &Address,
-        right: &Address,
+        left: &OldAddress,
+        right: &OldAddress,
     ) -> bool {
         self.admitted
             .numeric_address_connectivity

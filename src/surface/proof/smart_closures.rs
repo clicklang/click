@@ -5414,9 +5414,9 @@ mod synthesized_literal_tests {
 
     #[test]
     fn signed_certificate_spelling_matches_exact_read_atoms() {
-        use crate::kernel::{Address, LoadKind, SymbolicMemory, intern_memory};
+        use crate::kernel::{LoadKind, OldAddress, SymbolicMemory, intern_memory};
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Address::symbolic(Variable(71_230));
+        let pointer = OldAddress::symbolic(Variable(71_230));
         let before = intern_memory(SymbolicMemory::new());
         let after = intern_memory(before.memory().clone().store(
             pointer.clone(),
@@ -5459,14 +5459,14 @@ mod synthesized_literal_tests {
     #[test]
     fn retained_requirements_match_mirrored_orders_and_stored_read_sources() {
         use crate::kernel::{
-            Address, CompareRelation as R, KernelTerm, LoadKind, MachineBinaryOp as Op,
-            MachineOperandView as V, SymbolicMemory, intern_memory,
+            CompareRelation as R, KernelTerm, LoadKind, MachineBinaryOp as Op,
+            MachineOperandView as V, OldAddress, SymbolicMemory, intern_memory,
         };
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
         let x = OldMachineTerm::Variable(Variable(71231));
         let sum = OldMachineTerm::logical_machine_binary(ty, Op::Add, x, 1u32.into());
-        let pointer = Address::symbolic(Variable(71232));
+        let pointer = OldAddress::symbolic(Variable(71232));
         let before = intern_memory(SymbolicMemory::new());
         let after = intern_memory(
             before

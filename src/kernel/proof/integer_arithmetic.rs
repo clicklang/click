@@ -1174,10 +1174,11 @@ mod tests {
     #[test]
     fn fold_atom_identity_retains_the_exact_memory_state() {
         use crate::kernel::{
-            Address, IntegerRangeFoldIndex, MachineIntegerType, OldAddressOffset, OldMachineTerm,
-            ProgramValue, SharedIntegerRangeEndpoint, SharedMachineIntegerTerm, SymbolicMemory,
+            IntegerRangeFoldIndex, MachineIntegerType, OldAddress, OldAddressOffset,
+            OldMachineTerm, ProgramValue, SharedIntegerRangeEndpoint, SharedMachineIntegerTerm,
+            SymbolicMemory,
         };
-        let pointer = Address {
+        let pointer = OldAddress {
             base: "affine-fold-retained_state".into(),
             offset: OldAddressOffset::Constant(0),
         };

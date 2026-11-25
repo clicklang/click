@@ -412,7 +412,7 @@ int32 short_sum(int32 seed) {
             (
                 "resource_child_pure_arguments.md",
                 include_str!("../../../mdtests/resource_child_pure_arguments.md"),
-                "model_pointer(Address::At(p)) == p",
+                "model_pointer(OldAddress::At(p)) == p",
             ),
             (
                 "resource_child_pure_arguments_recursive.md",

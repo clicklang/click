@@ -20,7 +20,7 @@ fn binary(
     }
 }
 fn reads() -> [OldMachineTerm; 3] {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: "retained-retained_state".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -30,7 +30,7 @@ fn reads() -> [OldMachineTerm; 3] {
             pointer.clone(),
             ProgramValue::Int32(OldMachineTerm::constant(2)),
         );
-    let other = Address {
+    let other = OldAddress {
         base: pointer.base.clone(),
         offset: OldAddressOffset::Constant(32),
     };
@@ -184,7 +184,7 @@ fn cached_state_syntax_never_caches_context_authority() {
     let _session = VerificationSession::enter();
     let memory =
         crate::kernel::intern_memory(SymbolicMemory::new().with_block("retained_state-alias", 16));
-    let pointers = [994110, 994111].map(|id| Address {
+    let pointers = [994110, 994111].map(|id| OldAddress {
         base: "retained_state-alias".into(),
         offset: OldAddressOffset::Variable(Variable(id)),
     });

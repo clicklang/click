@@ -308,7 +308,7 @@ fn minted_scalar_comparison_readers_reuse_selected_native_read_work() {
             };
         }
         let memory = crate::kernel::intern_memory(crate::kernel::SymbolicMemory::new());
-        let pointer = crate::kernel::Address {
+        let pointer = crate::kernel::OldAddress {
             base: AddressBase::Symbolic(Variable(979199)),
             offset: crate::kernel::OldAddressOffset::scaled_int32_node(offset, 4),
         };

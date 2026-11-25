@@ -12,7 +12,7 @@ fn pointer_index_dependency_comparison_and_hashing_visit_each_dag_node_once() {
                 KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [root.clone(), root]);
         }
         let index = offset(SharedMachineIntegerTerm::from_shared(ty, root).unwrap());
-        let pointer = Address {
+        let pointer = OldAddress {
             base: AddressBase::Concrete("r7-scaling".into()),
             offset: index.clone(),
         };
@@ -55,7 +55,7 @@ fn growing_pointer_index_fingerprints_reuse_shared_prefixes() {
                     MachineBinaryOp::Add,
                     [root.clone(), root],
                 );
-                let pointer = Address {
+                let pointer = OldAddress {
                     base: AddressBase::Concrete("r7-prefix".into()),
                     offset: offset(
                         SharedMachineIntegerTerm::from_shared(ty, root.clone()).unwrap(),

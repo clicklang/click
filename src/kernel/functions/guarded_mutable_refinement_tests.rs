@@ -39,7 +39,7 @@ fn entry_state() -> ExecutionState {
         .with_local("active", int32(OldMachineTerm::Variable(Variable(980_001))))
         .with_local(
             "cells",
-            ProgramValue::pointer(Address {
+            ProgramValue::pointer(OldAddress {
                 base: AddressBase::ExternalArgument,
                 offset: OldAddressOffset::Constant(0),
             }),

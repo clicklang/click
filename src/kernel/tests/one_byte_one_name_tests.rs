@@ -5,8 +5,8 @@
 use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
-fn byte(offset: i64) -> Address {
-    Address {
+fn byte(offset: i64) -> OldAddress {
+    OldAddress {
         base: AddressBase::from("global:bytes"),
         offset: OldAddressOffset::Constant(offset),
     }

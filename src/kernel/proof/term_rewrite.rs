@@ -235,8 +235,8 @@ struct CarrierVariables {
     pointer_applications: BTreeSet<u64>,
     shared_machine_operands: BTreeSet<u64>,
     mathematical_integers: BTreeSet<u64>,
-    pointer_terms: Option<Vec<Address>>,
-    read_terms: Option<BTreeMap<((u32, u32), Address, LoadKind), OldMachineTerm>>,
+    pointer_terms: Option<Vec<OldAddress>>,
+    read_terms: Option<BTreeMap<((u32, u32), OldAddress, LoadKind), OldMachineTerm>>,
 }
 
 impl CarrierVariables {
@@ -924,12 +924,12 @@ fn collect_algebraic_carriers_seen(
     }
 }
 
-fn collect_pointer_carriers(pointer: &Address, variables: &mut CarrierVariables) {
+fn collect_pointer_carriers(pointer: &OldAddress, variables: &mut CarrierVariables) {
     if !variables.visit() {
         return;
     }
     if let Some(pointers) = &mut variables.pointer_terms
-        && *pointer != Address::null()
+        && *pointer != OldAddress::null()
     {
         pointers.push(pointer.clone());
     }
@@ -1307,7 +1307,7 @@ fn materialized_registered_load_value(variable: Variable) -> Option<OldMachineTe
 /// element's size rather than the field's. A pointer shape this does not
 /// recognize answers `false`, so an unfamiliar address is refused rather than
 /// assumed.
-fn pointer_addresses_four_byte_elements(pointer: &Address) -> bool {
+fn pointer_addresses_four_byte_elements(pointer: &OldAddress) -> bool {
     fn offset_scales_by_four(offset: &OldAddressOffset) -> bool {
         match offset {
             OldAddressOffset::Int32Scaled { byte_width, .. } => *byte_width == 4,
@@ -1473,7 +1473,7 @@ impl IntegerSubstitutionVariableCollector {
 
 /// Collect only pointer expressions reachable from this explicit goal. SymbolicMemory
 /// states remain opaque, just as in capture-avoiding term rewriting.
-pub(crate) fn proposition_pointer_terms(proposition: &Proposition) -> Vec<Address> {
+pub(crate) fn proposition_pointer_terms(proposition: &Proposition) -> Vec<OldAddress> {
     let mut carriers = CarrierVariables::for_rewrite(false);
     carriers.pointer_terms = Some(Vec::new());
     collect_integer_substitution_variables_with_carriers(proposition, &mut carriers);
@@ -1664,8 +1664,8 @@ fn exhausted_integer(term: &IntegerTerm) -> IntegerTerm {
     }
 }
 
-fn exhausted_pointer() -> Address {
-    Address {
+fn exhausted_pointer() -> OldAddress {
+    OldAddress {
         base: AddressBase::Concrete(String::new()),
         offset: OldAddressOffset::Constant(0),
     }
@@ -1988,9 +1988,9 @@ pub(crate) struct TermRewrite<'a> {
     algebraic: Option<(&'a AlgebraicTerm, &'a AlgebraicTerm)>,
     bitvector: Option<(MachineOperandView<'a>, MachineOperandView<'a>)>,
     integer_exact: Option<(&'a SharedIntegerTerm, &'a SharedIntegerTerm)>,
-    pointer_variable: Option<(Variable, &'a Address)>,
+    pointer_variable: Option<(Variable, &'a OldAddress)>,
     pointer_addresses_only: bool,
-    pointer_exact: Option<(&'a Address, &'a Address)>,
+    pointer_exact: Option<(&'a OldAddress, &'a OldAddress)>,
     pointer_value_exact: Option<(&'a OldPointer, &'a OldPointer)>,
     pointer_offset_exact: Option<OffsetReplacement<'a>>,
     /// A `Bool` equality's rewrite (Stage 5, rule L-Eq): every occurrence of
@@ -2020,13 +2020,13 @@ pub(crate) struct TermRewrite<'a> {
     enforce_integer_work_limit: bool,
     typed_variables: Option<TypedVariableReplacements<'a>>,
     comparison_reads: Option<
-        &'a HashMap<((u32, u32), Address, LoadKind), (OldMachineTerm, ReadAddressDependencies)>,
+        &'a HashMap<((u32, u32), OldAddress, LoadKind), (OldMachineTerm, ReadAddressDependencies)>,
     >,
     /// Reads of a library or enum value at a fixed address, each with the
     /// value its state stores there: the read-over-write authority for
     /// values a scalar cell cannot hold.
     comparison_algebraic_reads:
-        Option<&'a HashMap<(crate::kernel::ProgramPoint, Address), AlgebraicTerm>>,
+        Option<&'a HashMap<(crate::kernel::ProgramPoint, OldAddress), AlgebraicTerm>>,
     // Recursive read-address walks must share this memo: each address can
     // reference the same earlier read more than once. Include lexical scope
     // and temporary rewrite modes so entries never cross interpretations.
@@ -2248,7 +2248,7 @@ impl<'a> TermRewrite<'a> {
     pub(crate) fn comparison_read_batch_with_algebraic(
         proposition: &Proposition,
         replacements: impl IntoIterator<Item = (OldMachineTerm, OldMachineTerm)>,
-        algebraic_reads: &HashMap<(crate::kernel::ProgramPoint, Address), AlgebraicTerm>,
+        algebraic_reads: &HashMap<(crate::kernel::ProgramPoint, OldAddress), AlgebraicTerm>,
     ) -> Option<Proposition> {
         let mut named = BTreeMap::new();
         let mut reads = HashMap::new();
@@ -2276,7 +2276,7 @@ impl<'a> TermRewrite<'a> {
                 reads.insert(
                     (
                         memory.shared_memory().arena_id(),
-                        Address::from(pointer),
+                        OldAddress::from(pointer),
                         kind,
                     ),
                     (value, dependencies),
@@ -2696,7 +2696,7 @@ impl<'a> TermRewrite<'a> {
         rewrite
     }
 
-    pub(crate) fn for_pointer_exact(from: &'a Address, to: &'a Address) -> Self {
+    pub(crate) fn for_pointer_exact(from: &'a OldAddress, to: &'a OldAddress) -> Self {
         let mut rewrite = Self::empty();
         rewrite.pointer_exact = Some((from, to));
         rewrite.enforce_integer_work_limit = true;
@@ -2728,13 +2728,13 @@ impl<'a> TermRewrite<'a> {
     }
 
     /// Numeric address equality cannot substitute an allocation or bounds identity.
-    pub(crate) fn for_pointer_address_variable(from: Variable, to: &'a Address) -> Self {
+    pub(crate) fn for_pointer_address_variable(from: Variable, to: &'a OldAddress) -> Self {
         let mut rewrite = Self::for_pointer_variable(from, to);
         rewrite.pointer_addresses_only = true;
         rewrite
     }
 
-    pub(crate) fn for_pointer_variable(from: Variable, to: &'a Address) -> Self {
+    pub(crate) fn for_pointer_variable(from: Variable, to: &'a OldAddress) -> Self {
         Self {
             comparison_arithmetic: false,
             comparison_reads: None,
@@ -4407,7 +4407,7 @@ impl<'a> TermRewrite<'a> {
                         return None;
                     }
                     // Lexical substitution replaces a complete formal value.
-                    // Address-equality rewrites use a separate constructor.
+                    // OldAddress-equality rewrites use a separate constructor.
                     Some(OldPointer::new(to.clone(), v.program_type()))
                 }));
                 let adopted = if !v.bounds_are_known() {
@@ -5534,7 +5534,7 @@ impl<'a> TermRewrite<'a> {
         }
     }
 
-    fn pointer(&mut self, p: &Address) -> Address {
+    fn pointer(&mut self, p: &OldAddress) -> OldAddress {
         if self.checked_work_exhausted() {
             return exhausted_pointer();
         }
@@ -5547,7 +5547,7 @@ impl<'a> TermRewrite<'a> {
         }
         // A full value equality `p == q` also substitutes `p + d` by `q + d`
         // when `p` is the base of its block: the displaced pointer is formed
-        // from that same value. Address equality alone never moves a pointer
+        // from that same value. OldAddress equality alone never moves a pointer
         // to another origin, so this rule needs the full value equality.
         if let Some((from, to)) = self.pointer_exact
             && self.pointer_value_exact.is_some()
@@ -5558,7 +5558,7 @@ impl<'a> TermRewrite<'a> {
         {
             self.changed = true;
             let displacement = self.offset(&p.offset);
-            return Address {
+            return OldAddress {
                 base: to.base.clone(),
                 offset: OldAddressOffset::add(to.offset.clone(), displacement),
             };
@@ -5580,7 +5580,7 @@ impl<'a> TermRewrite<'a> {
             let offset = self.offset(&read.displacement);
             if let Some(block) = self.pointer_origin_cache.get(&key) {
                 self.changed |= block != &p.base;
-                return Address {
+                return OldAddress {
                     base: block.clone(),
                     offset,
                 };
@@ -5590,12 +5590,12 @@ impl<'a> TermRewrite<'a> {
                 self.changed = true;
                 // Rewriting changes the selected address, not the read into
                 // its stored value. Keep the immutable defining state.
-                Address::version_read_at(&read.defining_memory, Some(&read.point), &address).base
+                OldAddress::version_read_at(&read.defining_memory, Some(&read.point), &address).base
             } else {
                 p.base.clone()
             };
             self.pointer_origin_cache.insert(key, block.clone());
-            return Address {
+            return OldAddress {
                 base: block,
                 offset,
             };
@@ -5604,7 +5604,7 @@ impl<'a> TermRewrite<'a> {
         // binding, never in numeric pointer rewrites.
         if let AddressBase::ExternalObject(variable) = &p.base {
             if let Some(mapped) = self.scope.program_values.get(variable) {
-                return Address {
+                return OldAddress {
                     base: AddressBase::ExternalObject(*mapped),
                     offset: self.offset(&p.offset),
                 };
@@ -5616,7 +5616,7 @@ impl<'a> TermRewrite<'a> {
             {
                 let root = replacement.provenance().clone();
                 self.changed = true;
-                return Address {
+                return OldAddress {
                     base: root.base,
                     offset: OldAddressOffset::add(root.offset, self.offset(&p.offset)),
                 };
@@ -5626,7 +5626,7 @@ impl<'a> TermRewrite<'a> {
             {
                 let root = to.object_identity();
                 self.changed = true;
-                return Address {
+                return OldAddress {
                     base: root.base,
                     offset: OldAddressOffset::add(root.offset, self.offset(&p.offset)),
                 };
@@ -5640,7 +5640,7 @@ impl<'a> TermRewrite<'a> {
             if self.checked_work_exhausted() {
                 return exhausted_pointer();
             }
-            return Address {
+            return OldAddress {
                 base: match &p.base {
                     AddressBase::FunctionSymbolic(_) => AddressBase::FunctionSymbolic(mapped),
                     _ => AddressBase::Symbolic(mapped),
@@ -5658,7 +5658,7 @@ impl<'a> TermRewrite<'a> {
             if self.checked_work_exhausted() {
                 return exhausted_pointer();
             }
-            return Address {
+            return OldAddress {
                 base: replacement.base.clone(),
                 offset: OldAddressOffset::add(replacement.offset.clone(), offset),
             };
@@ -5677,7 +5677,7 @@ impl<'a> TermRewrite<'a> {
             if self.checked_work_exhausted() {
                 return exhausted_pointer();
             }
-            return Address {
+            return OldAddress {
                 base: to.address().base.clone(),
                 offset: OldAddressOffset::add(to.address().offset.clone(), offset),
             };
@@ -5690,7 +5690,7 @@ impl<'a> TermRewrite<'a> {
             if self.checked_work_exhausted() {
                 return exhausted_pointer();
             }
-            return Address {
+            return OldAddress {
                 base: to.base.clone(),
                 offset: OldAddressOffset::add(to.offset.clone(), offset),
             };
@@ -5699,7 +5699,7 @@ impl<'a> TermRewrite<'a> {
         if self.checked_work_exhausted() {
             return exhausted_pointer();
         }
-        Address {
+        OldAddress {
             base: match &p.base {
                 AddressBase::Symbolic(variable)
                     if self.resolve_registered_loads
@@ -5738,7 +5738,7 @@ impl<'a> TermRewrite<'a> {
                         // Use the same null representation as the original
                         // cast, keeping the displacement outside this block.
                         let result = if let Some(bits) = rewritten.integer_address_bits() {
-                            Address::from_integer_address(bits.clone()).base
+                            OldAddress::from_integer_address(bits.clone()).base
                         } else {
                             AddressBase::PureFunctionApplication(rewritten)
                         };
@@ -6180,7 +6180,7 @@ impl<'a> TermRewrite<'a> {
                     unreachable!()
                 };
                 let canonical = |value: OldPointer| {
-                    value.map_addresses(|p| Address {
+                    value.map_addresses(|p| OldAddress {
                         base: p.base.clone(),
                         offset: crate::kernel::eval::canonical_offset_term(&p.offset),
                     })
@@ -6848,7 +6848,7 @@ impl<'a> TermRewrite<'a> {
                 crate::kernel::eval::viewed_as_memory_load(v)
             && let Some((replacement, variables)) = reads.get(&(
                 memory.shared_memory().arena_id(),
-                Address::from(pointer),
+                OldAddress::from(pointer),
                 kind,
             ))
             && !variables.is_bound_in(&self.scope)
@@ -7917,15 +7917,15 @@ mod tests {
     #[test]
     fn array_ref_rewrite_preserves_opaque_memory_and_ignores_unrelated_blocks() {
         let source = Variable(9880);
-        let replacement = Address {
+        let replacement = OldAddress {
             base: AddressBase::Symbolic(Variable(9881)),
             offset: OldAddressOffset::Constant(3),
         };
-        let expected_pointer = Address {
+        let expected_pointer = OldAddress {
             base: replacement.base.clone(),
             offset: OldAddressOffset::Constant(4),
         };
-        let input_pointer = Address {
+        let input_pointer = OldAddress {
             base: AddressBase::Symbolic(source),
             offset: OldAddressOffset::Constant(1),
         };
@@ -7936,7 +7936,7 @@ mod tests {
             }
             memory
         };
-        let observed_array = |memory: SymbolicMemory, pointer: Address| {
+        let observed_array = |memory: SymbolicMemory, pointer: OldAddress| {
             Term::Integer(
                 IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                     "observe_array".into(),
@@ -8046,7 +8046,7 @@ mod tests {
         };
         let source = Variable(9890);
         let replacement = Variable(9891);
-        let pointer = Address {
+        let pointer = OldAddress {
             base: AddressBase::Symbolic(source),
             offset: OldAddressOffset::Constant(0),
         };
@@ -8372,11 +8372,11 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let index = Variable(9_904);
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-        let address = Address {
+        let address = OldAddress {
             base: AddressBase::ExternalArgument,
             offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(index), 8),
         };
-        let loaded = Address::loaded_value(&memory, &address);
+        let loaded = OldAddress::loaded_value(&memory, &address);
         let mut carriers = CarrierVariables::default();
         collect_pointer_carriers(&loaded, &mut carriers);
         assert!(carriers.contains(BindingCarrier::Program, index));
@@ -9535,7 +9535,7 @@ mod tests {
         let source = Variable(3_104_100);
         let atom = Proposition::MemoryLoadable {
             memory: SymbolicMemory::new(),
-            base: Address {
+            base: OldAddress {
                 base: AddressBase::ExternalArgument,
                 offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(source), 4),
             },
@@ -9570,14 +9570,14 @@ mod pointer_integer_rewrite_tests {
     fn a_generic_read_rewrite_keeps_the_substituted_cells_version_name() {
         let _session = crate::kernel::VerificationSession::enter();
         let from = OldPointer::new(
-            Address {
+            OldAddress {
                 base: AddressBase::ExternalArgument,
                 offset: OldAddressOffset::Constant(0),
             },
             ProgramType::Int32Pointer,
         );
         let to = OldPointer::new(
-            Address::symbolic(Variable(996_021)),
+            OldAddress::symbolic(Variable(996_021)),
             ProgramType::Int32Pointer,
         );
         let parameter = TypeParameterName::intern("RewriteReadT");
@@ -9586,7 +9586,7 @@ mod pointer_integer_rewrite_tests {
             node: AlgebraicTermNode::Variable(Variable(996_022)),
         }));
         let memory = crate::kernel::intern_memory(SymbolicMemory::new().store(
-            Address {
+            OldAddress {
                 base: AddressBase::Heap(996_023),
                 offset: OldAddressOffset::Constant(0),
             },
@@ -9600,7 +9600,7 @@ mod pointer_integer_rewrite_tests {
         // A separate four-byte observation must not replace the generic
         // read's eight-byte origin when the same version name is reused.
         let partial = crate::kernel::intern_memory(memory.memory().clone().store(
-            Address {
+            OldAddress {
                 base: AddressBase::Heap(996_023),
                 offset: OldAddressOffset::Constant(0),
             },
@@ -9619,14 +9619,14 @@ mod pointer_integer_rewrite_tests {
     fn full_pointer_rewrite_keeps_the_read_version_and_state() {
         let _session = crate::kernel::VerificationSession::enter();
         let from = OldPointer::new(
-            Address::symbolic(Variable(996_010)),
+            OldAddress::symbolic(Variable(996_010)),
             ProgramType::Int32PointerPointer,
         );
         let to = OldPointer::new(
-            Address::symbolic(Variable(996_011)),
+            OldAddress::symbolic(Variable(996_011)),
             ProgramType::Int32PointerPointer,
         );
-        let stored = ProgramValue::pointer(Address::symbolic(Variable(996_012)));
+        let stored = ProgramValue::pointer(OldAddress::symbolic(Variable(996_012)));
         let memory = SymbolicMemory::new().store(to.address().clone(), stored.clone());
         let read =
             memory.symbolic_pointer_version_load(None, from.address(), ProgramType::Int32Pointer);
@@ -9637,7 +9637,7 @@ mod pointer_integer_rewrite_tests {
         assert_eq!(rewrite(), expected);
         let later = memory.store(
             to.address().clone(),
-            ProgramValue::pointer(Address::symbolic(Variable(996_013))),
+            ProgramValue::pointer(OldAddress::symbolic(Variable(996_013))),
         );
         let later_read =
             later.symbolic_pointer_version_load(None, to.address(), ProgramType::Int32Pointer);
@@ -9654,19 +9654,19 @@ mod pointer_integer_rewrite_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let from = OldMachineTerm::Variable(Variable(996_020));
         let to = OldMachineTerm::Variable(Variable(996_021));
-        let address = |index| Address {
+        let address = |index| OldAddress {
             base: AddressBase::ExternalArgument,
             offset: OldAddressOffset::scale_int32(index, 8),
         };
         let destination = address(to.clone());
-        let stored = ProgramValue::pointer(Address::symbolic(Variable(996_022)));
+        let stored = ProgramValue::pointer(OldAddress::symbolic(Variable(996_022)));
         let memory = SymbolicMemory::new().store(destination.clone(), stored.clone());
         let shared = crate::kernel::intern_memory(memory.clone());
         let mut input = address(from.clone());
         let mut expected = destination.clone();
         for depth in 1..=32 {
-            input = Address::version_read(&shared, &input);
-            expected = Address::version_read(&shared, &expected);
+            input = OldAddress::version_read(&shared, &input);
+            expected = OldAddress::version_read(&shared, &expected);
             assert_eq!(
                 TermRewrite::for_bits(&from, &to).pointer(&input),
                 expected,
@@ -9675,7 +9675,7 @@ mod pointer_integer_rewrite_tests {
         }
         let later = memory.store(
             destination,
-            ProgramValue::pointer(Address::symbolic(Variable(996_023))),
+            ProgramValue::pointer(OldAddress::symbolic(Variable(996_023))),
         );
         let _ = later.symbolic_pointer_version_load(
             None,
@@ -9695,7 +9695,7 @@ mod pointer_integer_rewrite_tests {
     fn numeric_rewriting_retains_the_existing_record_without_creating_one() {
         let context = PureFactContext::new();
         let pointer = OldPointer::new(
-            Address::symbolic(Variable(996_001)),
+            OldAddress::symbolic(Variable(996_001)),
             ProgramType::Int32Pointer,
         );
         let word = crate::kernel::eval::cast_program_value_to_type(
@@ -9777,7 +9777,7 @@ mod comparison_read_batch_tests {
         ] {
             let read = crate::kernel::OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
-                Address::symbolic(Variable(401_020)),
+                OldAddress::symbolic(Variable(401_020)),
                 kind,
             );
             let literal = |bits| {
@@ -9827,7 +9827,7 @@ mod comparison_read_batch_tests {
         let read = |index| {
             crate::kernel::OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
-                Address::symbolic(Variable(index)),
+                OldAddress::symbolic(Variable(index)),
                 LoadKind::Int32,
             )
         };
@@ -9906,7 +9906,7 @@ mod comparison_read_batch_tests {
             Some(scoped)
         );
 
-        let scoped_pointer = Address::symbolic(binder);
+        let scoped_pointer = OldAddress::symbolic(binder);
         let scoped_name =
             OldMachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
                 &memory,
@@ -9985,7 +9985,7 @@ mod comparison_read_batch_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let binder = Variable(403_001);
         let accumulator = Variable(403_002);
-        let pointer = Address::symbolic(binder);
+        let pointer = OldAddress::symbolic(binder);
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let raw = crate::kernel::OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
@@ -10077,7 +10077,7 @@ mod comparison_read_batch_tests {
     fn batch_read_comparison_preserves_states_and_sealed_resources() {
         let _session = crate::kernel::VerificationSession::enter();
         let source = Variable(402_001);
-        let pointer = Address::symbolic(Variable(402_002));
+        let pointer = OldAddress::symbolic(Variable(402_002));
         let memory = crate::kernel::intern_memory(SymbolicMemory::new().store(
             pointer.clone(),
             ProgramValue::Int32(OldMachineTerm::Variable(source)),
@@ -10089,7 +10089,7 @@ mod comparison_read_batch_tests {
         );
         let sealed = Resource::MutexGuard(MutexIdentity {
             epoch: Some(123),
-            mutex: Address {
+            mutex: OldAddress {
                 base: "sealed".into(),
                 offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(source), 1),
             },

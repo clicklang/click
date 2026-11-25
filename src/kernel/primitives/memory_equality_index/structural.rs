@@ -13,14 +13,14 @@ pub(in crate::kernel::primitives) struct StructuralMemory {
     origins: PersistentMap<Key, ResourceEntryIds>,
 }
 
-fn shape(pointer: &Address) -> Key {
+fn shape(pointer: &OldAddress) -> Key {
     (
         pointer.base.clone(),
         crate::kernel::assumptions::memory_blind_pointer_fingerprint(pointer),
     )
 }
 
-fn origin(pointer: &Address) -> Option<Key> {
+fn origin(pointer: &OldAddress) -> Option<Key> {
     // Literal bases need no normalization traversal (including during large
     // certified input publications).
     let offset = match &pointer.offset {
@@ -33,7 +33,7 @@ fn origin(pointer: &Address) -> Option<Key> {
 impl StructuralMemory {
     pub(in crate::kernel::primitives) fn update(
         &mut self,
-        base: &Address,
+        base: &OldAddress,
         entry: ResourceEntryId,
         insert: bool,
     ) {
@@ -48,10 +48,10 @@ impl StructuralMemory {
         }
     }
 
-    fn candidates(&self, pointer: &Address) -> BTreeSet<ResourceEntryId> {
+    fn candidates(&self, pointer: &OldAddress) -> BTreeSet<ResourceEntryId> {
         let mut result = BTreeSet::new();
         let mut add_shape = |offset: &OldAddressOffset| {
-            let key = shape(&Address {
+            let key = shape(&OldAddress {
                 base: pointer.base.clone(),
                 offset: offset.clone(),
             });
@@ -116,8 +116,8 @@ fn plain_origin(mut offset: &OldAddressOffset) -> bool {
 impl ResourceContext {
     pub(in crate::kernel::primitives) fn structural_memory_entries(
         &self,
-        base: &Address,
-        start: &Address,
+        base: &OldAddress,
+        start: &OldAddress,
         bytes: Option<u32>,
     ) -> MemoryAccessEntries {
         if let Some(bytes) = bytes
@@ -150,7 +150,7 @@ mod tests {
 
     #[test]
     fn structural_selection_preserves_width_forks_and_consumption() {
-        let base = Address::symbolic(Variable(873_000));
+        let base = OldAddress::symbolic(Variable(873_000));
         let owner =
             ResourceFact::own_memory(MemoryRange::new(base.clone(), 0u32.into(), 4u32.into()));
         let resources = ResourceContext::new().unchecked_with_fact(owner.clone());
@@ -175,10 +175,10 @@ mod tests {
         );
         assert!(slot.permits_memory_read(&base, 8, &empty));
         assert!(!slot.permits_memory_read(&base, 9, &empty));
-        let alias = Address::symbolic(Variable(873_001));
+        let alias = OldAddress::symbolic(Variable(873_001));
         let equal =
             empty.assume_condition(OldConditionTerm::address_equal(base, alias.clone()), true);
-        assert!(equal.pointers_known_equal(&alias, &Address::symbolic(Variable(873_000)),));
+        assert!(equal.pointers_known_equal(&alias, &OldAddress::symbolic(Variable(873_000)),));
         assert!(slot.permits_memory_read(&alias, 4, &equal));
         assert!(
             !slot.satisfies_memory_fact_structurally(&ResourceFact::view_memory(MemoryRange::new(

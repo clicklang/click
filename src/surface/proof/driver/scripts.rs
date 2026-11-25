@@ -143,7 +143,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         implicit_tail: bool,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         let driver_proof = self.proof;
-        // Address each tactic's diagnostics by its position in the block the
+        // OldAddress each tactic's diagnostics by its position in the block the
         // user wrote, so a failure inside one `have` body is distinguishable
         // from the same failure inside another.
         let sites = (0..tactics.len())

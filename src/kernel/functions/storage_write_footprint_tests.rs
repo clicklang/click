@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn write_span_must_fit_inside_owned_byte_footprint() {
-    let base = Address {
+    let base = OldAddress {
         base: "global:owned".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -36,7 +36,7 @@ fn write_span_must_fit_inside_owned_byte_footprint() {
 /// displacement, across several elements, and against a symbolic end.
 #[test]
 fn a_symbolic_index_write_is_placed_by_its_element_bounds() {
-    let base = Address {
+    let base = OldAddress {
         base: "global:owned".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -65,9 +65,10 @@ fn a_symbolic_index_write_is_placed_by_its_element_bounds() {
             )
     };
     let at_j = base.offset_by_elements(j.clone(), 4);
-    let within = |pointer: &Address, bytes: u32, owned: &[MemoryRange], facts: &PureFactContext| {
-        storage_write_within_owned_footprint(pointer, bytes, owned, facts)
-    };
+    let within =
+        |pointer: &OldAddress, bytes: u32, owned: &[MemoryRange], facts: &PureFactContext| {
+            storage_write_within_owned_footprint(pointer, bytes, owned, facts)
+        };
     let thousand = owned(OldMachineTerm::constant(1000));
     assert!(within(&at_j, 4, &thousand, &bounded(1000)));
     assert!(!within(&at_j, 4, &thousand, &bounded(1001)));
@@ -103,7 +104,7 @@ fn a_symbolic_index_write_is_placed_by_its_element_bounds() {
 
 #[test]
 fn memory_effect_write_collection_preserves_each_access_width() {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: "global:owned".into(),
         offset: OldAddressOffset::Constant(3),
     };

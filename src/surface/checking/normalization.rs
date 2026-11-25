@@ -656,8 +656,8 @@ mod tests {
         // the address must use the observed state, including its latest
         // overwrite, rather than inventing a disconnected target load.
         for (case, stored) in [(0, 17), (1, 29)] {
-            let source = Address::symbolic(Variable(910_000 + case));
-            let target = Address {
+            let source = OldAddress::symbolic(Variable(910_000 + case));
+            let target = OldAddress {
                 base: AddressBase::Heap(920_000 + case),
                 offset: OldAddressOffset::Constant(4),
             };
@@ -723,8 +723,8 @@ mod tests {
         // `w` is the pointer read from `source`. Rewriting `source` to
         // `target` rewrites the load `w` names, so a read through `w`
         // becomes a read through the pointer read from `target`.
-        let source = Address::symbolic(Variable(930_000));
-        let target = Address {
+        let source = OldAddress::symbolic(Variable(930_000));
+        let target = OldAddress {
             base: AddressBase::Heap(930_001),
             offset: OldAddressOffset::Constant(0),
         };
@@ -748,7 +748,7 @@ mod tests {
         let read_through = |variable| {
             crate::kernel::OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&memory),
-                Address {
+                OldAddress {
                     base: AddressBase::Symbolic(variable),
                     offset: OldAddressOffset::Constant(8),
                 },
@@ -789,18 +789,18 @@ mod tests {
     #[test]
     fn pointer_rewrite_changes_every_matching_field_load_at_one_state() {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-        let source = Address {
+        let source = OldAddress {
             base: AddressBase::Symbolic(Variable(91)),
             offset: OldAddressOffset::Constant(0),
         };
-        let target = Address {
+        let target = OldAddress {
             base: AddressBase::ExternalArgument,
             offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(92)), 4),
         };
-        let field_load = |base: &Address, displacement| {
+        let field_load = |base: &OldAddress, displacement| {
             crate::kernel::OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&memory),
-                Address {
+                OldAddress {
                     base: base.base.clone(),
                     offset: OldAddressOffset::add(
                         base.offset.clone(),
@@ -876,11 +876,11 @@ mod tests {
             OldConditionTerm::AddressOffsetEqual(Box::new(left.clone()), Box::new(right.clone())),
             true,
         );
-        let pointer = |offset| Address {
+        let pointer = |offset| OldAddress {
             base: AddressBase::ExternalArgument,
             offset,
         };
-        let null = Address {
+        let null = OldAddress {
             base: "null".into(),
             offset: OldAddressOffset::Constant(0),
         };
@@ -906,7 +906,7 @@ mod tests {
         let data = OldMachineTerm::Variable(Variable(51));
         let alias = OldMachineTerm::Variable(Variable(52));
         let index = OldMachineTerm::Variable(Variable(53));
-        let pointer = |offset| Address {
+        let pointer = |offset| OldAddress {
             base: AddressBase::ExternalArgument,
             offset,
         };
@@ -961,7 +961,7 @@ mod tests {
         let source_len = OldMachineTerm::Variable(Variable(63));
         let target_len = OldMachineTerm::Variable(Variable(64));
         let fixed = Resource::Memory(MemoryRange::new(
-            Address {
+            OldAddress {
                 base: AddressBase::ExternalArgument,
                 offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(65)), 4),
             },
@@ -970,7 +970,7 @@ mod tests {
         ));
         let range = |base: OldMachineTerm, end: OldMachineTerm| {
             Resource::Memory(MemoryRange::new(
-                Address {
+                OldAddress {
                     base: AddressBase::ExternalArgument,
                     offset: OldAddressOffset::scale_int32(base, 4),
                 },
@@ -1009,7 +1009,7 @@ mod tests {
             Proposition::ResourceSeparate {
                 left: Box::new(fixed),
                 right: Box::new(match range(source, target_len) {
-                    Resource::Memory(range) => Resource::Memory(range.with_base(Address {
+                    Resource::Memory(range) => Resource::Memory(range.with_base(OldAddress {
                         base: AddressBase::ExternalArgument,
                         offset: OldAddressOffset::scale_int32(target, 4),
                     })),
@@ -1023,7 +1023,7 @@ mod tests {
     fn integer_observation_rewrite_requires_an_available_machine_equality() {
         let memory =
             crate::kernel::intern_memory(SymbolicMemory::new().with_block("rewrite-cell", 4));
-        let pointer = Address {
+        let pointer = OldAddress {
             base: AddressBase::ExternalArgument,
             offset: OldAddressOffset::Constant(0),
         };
@@ -1062,7 +1062,7 @@ mod tests {
             MachineIntegerType::Int32,
             crate::kernel::OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&memory),
-                Address {
+                OldAddress {
                     base: "fold".into(),
                     offset: OldAddressOffset::Constant(0),
                 },
@@ -1167,7 +1167,7 @@ mod tests {
 
     #[test]
     fn integer_observation_rewrite_does_not_cross_memory_states() {
-        let pointer = Address {
+        let pointer = OldAddress {
             base: AddressBase::Concrete("rewrite-cell".into()),
             offset: OldAddressOffset::Constant(0),
         };

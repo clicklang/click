@@ -1002,7 +1002,11 @@ impl PureFactContext {
     /// arithmetic proof search, alias-component walk, or resource check.
     /// `false` means unknown, not unequal. SymbolicMemory consumers must retain their
     /// structural-distinctness and separation checks around this query.
-    pub(in crate::kernel) fn pointers_known_equal(&self, left: &Address, right: &Address) -> bool {
+    pub(in crate::kernel) fn pointers_known_equal(
+        &self,
+        left: &OldAddress,
+        right: &OldAddress,
+    ) -> bool {
         self.equality_graph.are_equal(left, right)
     }
 
@@ -1010,7 +1014,7 @@ impl PureFactContext {
     /// of this context: one indexed class lookup, no search. Diagnostics use
     /// it to name two reads of one address that are spelled differently,
     /// such as the byte offset `(char *)q + i * 4` and the element `q[i]`.
-    pub(crate) fn addresses_known_equal(&self, left: &Address, right: &Address) -> bool {
+    pub(crate) fn addresses_known_equal(&self, left: &OldAddress, right: &OldAddress) -> bool {
         left == right || self.pointers_known_equal(left, right)
     }
 
@@ -1660,7 +1664,7 @@ impl PureFactContext {
     /// else stays undecided; alignment is never inferred from a pointee type.
     pub(in crate::kernel) fn decide_pointer_alignment(
         &self,
-        pointer: &Address,
+        pointer: &OldAddress,
         alignment: u64,
     ) -> Option<bool> {
         self.pointer_alignment_decision(pointer, alignment)
@@ -1671,7 +1675,7 @@ impl PureFactContext {
     /// derivation can retain that premise for its check.
     pub(in crate::kernel) fn pointer_alignment_decision(
         &self,
-        pointer: &Address,
+        pointer: &OldAddress,
         alignment: u64,
     ) -> Option<(bool, Option<Proposition>)> {
         self.pointer_formation_alignment_decision(pointer, alignment, true)
@@ -1686,7 +1690,7 @@ impl PureFactContext {
 
     /// The concrete address used by the alignment decision when the named
     /// pointer is an alias. The planner uses this same address for a rewrite.
-    pub(crate) fn alignment_storage_address(&self, pointer: &Address) -> Option<Address> {
+    pub(crate) fn alignment_storage_address(&self, pointer: &OldAddress) -> Option<OldAddress> {
         let storage = self.equality_graph.storage_address(pointer);
         (storage != *pointer).then_some(storage)
     }
@@ -1696,7 +1700,7 @@ impl PureFactContext {
     /// though that restricted certificate also carried its equality support.
     pub(in crate::kernel) fn pointer_alignment_certificate_decision(
         &self,
-        pointer: &Address,
+        pointer: &OldAddress,
         alignment: u64,
     ) -> Option<(bool, Option<Proposition>)> {
         self.pointer_formation_alignment_decision(pointer, alignment, false)
@@ -1704,7 +1708,7 @@ impl PureFactContext {
 
     fn pointer_formation_alignment_decision(
         &self,
-        pointer: &Address,
+        pointer: &OldAddress,
         alignment: u64,
         allow_class_witness: bool,
     ) -> Option<(bool, Option<Proposition>)> {
@@ -1712,7 +1716,7 @@ impl PureFactContext {
             return None;
         }
         // The null pointer's address is zero, which every alignment divides.
-        let null_fact = OldConditionTerm::address_equal(pointer.clone(), Address::null());
+        let null_fact = OldConditionTerm::address_equal(pointer.clone(), OldAddress::null());
         let null = if allow_class_witness {
             self.decide(&null_fact)
         } else {
@@ -1744,7 +1748,7 @@ impl PureFactContext {
                 .collect::<Vec<_>>();
             let mut found = None;
             'candidates: for candidate in candidates {
-                let base_pointer = Address {
+                let base_pointer = OldAddress {
                     base: pointer.base.clone(),
                     offset: candidate,
                 };
@@ -1753,7 +1757,7 @@ impl PureFactContext {
                     if crate::instrumentation::deadline_exceeded_with_work(1) {
                         return None;
                     }
-                    let premise_at = |pointer: &Address, alignment| {
+                    let premise_at = |pointer: &OldAddress, alignment| {
                         self.equality_graph
                             .admitted
                             .pointer_alignment_facts
@@ -1944,7 +1948,7 @@ impl PureFactContext {
                 let tag = tag_bound(form.tag.operand_view())?;
                 let alignment = tag.checked_add(1)?.checked_next_power_of_two()?;
                 let nonnull = self.decide_citing(
-                    &OldConditionTerm::address_equal(form.pointer.clone(), Address::null()),
+                    &OldConditionTerm::address_equal(form.pointer.clone(), OldAddress::null()),
                     used,
                 ) == Some(false);
                 let aligned = self.decide_citing(
@@ -3570,8 +3574,8 @@ mod annotated_alignment_premise_tests {
     fn alignment_certificates_cite_the_exact_annotated_premise() {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = Address::symbolic(Variable(996_210));
-        // Address annotations share identity. Keep the written stronger
+        let pointer = OldAddress::symbolic(Variable(996_210));
+        // OldAddress annotations share identity. Keep the written stronger
         // premise for exact citation, independently of a weaker alignment
         // premise.
         let source = OldConditionTerm::Compare {
@@ -4132,7 +4136,7 @@ mod shared_read_equality_rule_tests {
         // fact (the reversed-history regression uses this same edge shape).
         let read_index = OldMachineTerm::Variable(Variable(995_781));
         let write_index = OldMachineTerm::Variable(Variable(995_782));
-        let base = Address {
+        let base = OldAddress {
             base: "selected-word".into(),
             offset: OldAddressOffset::Constant(0),
         };
@@ -4149,7 +4153,7 @@ mod shared_read_equality_rule_tests {
             ProgramValue::Int32(OldMachineTerm::constant(9)),
             &context,
         );
-        let read = |memory: SymbolicMemory, at: &Address| {
+        let read = |memory: SymbolicMemory, at: &OldAddress| {
             let memory = crate::kernel::intern_memory(memory);
             OldMachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
                 &memory,
@@ -4160,7 +4164,7 @@ mod shared_read_equality_rule_tests {
         };
         let left = read(before.clone(), &pointer);
         let right = read(after.clone(), &pointer);
-        let unrelated = Address {
+        let unrelated = OldAddress {
             base: "different-word".into(),
             offset: OldAddressOffset::Constant(0),
         };
@@ -4248,7 +4252,7 @@ mod shared_read_order_bridge_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let read_index = OldMachineTerm::Variable(Variable(995_801));
         let write_index = OldMachineTerm::Variable(Variable(995_802));
-        let base = Address {
+        let base = OldAddress {
             base: "order-read-bridge".into(),
             offset: OldAddressOffset::Constant(0),
         };

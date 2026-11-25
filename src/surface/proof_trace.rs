@@ -2,9 +2,9 @@
 //! The trace is diagnostic only; no recorded text participates in checking.
 
 use crate::kernel::proof::BranchId;
-use crate::kernel::{Address, OldConditionTerm, OldMachineTerm, Proposition, SharedMemory};
 #[cfg(test)]
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{OldAddress, OldConditionTerm, OldMachineTerm, Proposition, SharedMemory};
 use crate::source::SourcePosition;
 use crate::surface::proof_diagnostics::ProofDiagnosticState;
 use crate::surface::proof_diagnostics::render::{self, MemoryStateLabels};
@@ -162,8 +162,8 @@ pub(super) struct TraceStep {
 /// memory delta, the same bounded inspection the implicit tail's store
 /// search makes; the store itself records nothing.
 pub(super) struct TraceForgottenCell {
-    pub cell: Address,
-    pub store: Address,
+    pub cell: OldAddress,
+    pub store: OldAddress,
     /// The two cells as the statement's C locals spelled them, `q[0]`.
     pub spelled: [Option<String>; 2],
     pub indices_differ: Proposition,
@@ -237,10 +237,10 @@ impl PointerTraceView {
 pub(super) struct ChildArgumentTrace {
     child: String,
     index: usize,
-    actual: Address,
-    required: Address,
-    related: Vec<Address>,
-    views: HashMap<Address, PointerTraceView>,
+    actual: OldAddress,
+    required: OldAddress,
+    related: Vec<OldAddress>,
+    views: HashMap<OldAddress, PointerTraceView>,
 }
 
 impl ChildArgumentTrace {
@@ -280,7 +280,7 @@ impl ChildArgumentTrace {
 
     pub(super) fn name_values(
         &mut self,
-        mut name: impl FnMut(&Address, &Address) -> Option<[PointerTraceView; 2]>,
+        mut name: impl FnMut(&OldAddress, &OldAddress) -> Option<[PointerTraceView; 2]>,
     ) {
         for other in std::iter::once(&self.required).chain(&self.related) {
             if let Some([actual, required]) = name(&self.actual, other) {
@@ -290,10 +290,10 @@ impl ChildArgumentTrace {
         }
     }
 
-    fn value(&self, pointer: &Address, labels: &mut MemoryStateLabels) -> String {
+    fn value(&self, pointer: &OldAddress, labels: &mut MemoryStateLabels) -> String {
         if let Some(view) = self.views.get(pointer) {
             view.render(labels)
-        } else if pointer == &Address::null() {
+        } else if pointer == &OldAddress::null() {
             "0 (null pointer)".into()
         } else if let Some(OldMachineTerm::MemoryLoad(memory, address, _)) =
             pointer_definition(pointer)
@@ -345,7 +345,7 @@ impl ChildArgumentTrace {
     }
 }
 
-pub(super) fn pointer_definition(pointer: &Address) -> Option<OldMachineTerm> {
+pub(super) fn pointer_definition(pointer: &OldAddress) -> Option<OldMachineTerm> {
     crate::kernel::logical_pointer_read_term(pointer).or_else(|| {
         let read = pointer.as_loaded_value()?;
         (read.displacement == crate::kernel::OldAddressOffset::Constant(0)).then(|| {
@@ -1358,14 +1358,16 @@ mod tests {
         });
     }
 
-    use crate::kernel::{Address, AddressBase, OldAddressOffset, OldMachineTerm, SymbolicMemory};
+    use crate::kernel::{
+        AddressBase, OldAddress, OldAddressOffset, OldMachineTerm, SymbolicMemory,
+    };
 
     #[test]
     fn admitted_read_equalities_share_the_fact_printer_and_read_labels() {
-        let address = Address::symbolic(crate::kernel::Variable(303_000));
+        let address = OldAddress::symbolic(crate::kernel::Variable(303_000));
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-        let read = Address::loaded_value(&memory, &address);
-        let target = Address::function("callback");
+        let read = OldAddress::loaded_value(&memory, &address);
+        let target = OldAddress::function("callback");
         let fact = TraceFact {
             kernel: Proposition::condition_is(OldConditionTerm::address_equal(read, target), true),
         };
@@ -1394,7 +1396,7 @@ mod tests {
     #[test]
     fn legend_preserves_long_trace_and_line_boundaries() {
         let mut labels = MemoryStateLabels::default();
-        labels.pointer_value_name(&Address::null());
+        labels.pointer_value_name(&OldAddress::null());
         let mut text = "é".repeat(64 * 1024);
         text.push_str("\nfailed child argument comparison\nrequired: value#1");
         let original = text.clone();
@@ -1407,15 +1409,15 @@ mod tests {
     // refusal must reuse the same value labels as the preceding facts.
     #[test]
     fn child_comparison_keeps_read_values_distinct_from_source_spelling() {
-        let address = Address::symbolic(crate::kernel::Variable(700_001));
+        let address = OldAddress::symbolic(crate::kernel::Variable(700_001));
         let first = crate::kernel::intern_memory(SymbolicMemory::new());
         let second = crate::kernel::intern_memory(SymbolicMemory::new().store(
             address.clone(),
             crate::kernel::ProgramValue::Int32(OldMachineTerm::constant(1)),
         ));
-        let a = Address::loaded_value(&first, &address);
-        let b = Address::loaded_value(&second, &address);
-        let rid = Address::symbolic(crate::kernel::Variable(700_002));
+        let a = OldAddress::loaded_value(&first, &address);
+        let b = OldAddress::loaded_value(&second, &address);
+        let rid = OldAddress::symbolic(crate::kernel::Variable(700_002));
         let facts = [a.clone(), b.clone()].map(|value| TraceFact {
             kernel: Proposition::condition_is(
                 OldConditionTerm::address_equal(value, rid.clone()),
@@ -1456,8 +1458,8 @@ mod tests {
         let comparison = ChildArgumentTrace {
             child: "λ".repeat(64 * 1024),
             index: 0,
-            actual: Address::null(),
-            required: Address::null(),
+            actual: OldAddress::null(),
+            required: OldAddress::null(),
             related: vec![],
             views: HashMap::new(),
         };
@@ -1514,7 +1516,7 @@ mod tests {
                 1
             }
         }
-        let pointer = Address::symbolic(Variable(782001));
+        let pointer = OldAddress::symbolic(Variable(782001));
         let first = SymbolicMemory::new();
         let second = first.clone().store(
             pointer.clone(),
@@ -1596,7 +1598,7 @@ mod tests {
     fn loadable_at(memory: SymbolicMemory) -> Proposition {
         Proposition::MemoryLoadable {
             memory,
-            base: Address {
+            base: OldAddress {
                 base: AddressBase::ExternalArgument,
                 offset: OldAddressOffset::Constant(0),
             },
@@ -1765,7 +1767,7 @@ mod tests {
     #[test]
     fn trace_omits_generated_load_binding_beside_surface_branch_fact() {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-        let pointer = Address {
+        let pointer = OldAddress {
             base: AddressBase::ExternalArgument,
             offset: OldAddressOffset::Constant(0),
         };
@@ -2046,11 +2048,11 @@ mod tests {
                     facts: vec![TraceFact {
                         kernel: Proposition::condition_is(
                             OldConditionTerm::address_equal(
-                                Address::loaded_value(
+                                OldAddress::loaded_value(
                                     &crate::kernel::intern_memory(SymbolicMemory::new()),
-                                    &Address::null(),
+                                    &OldAddress::null(),
                                 ),
-                                Address::null(),
+                                OldAddress::null(),
                             ),
                             true,
                         ),
@@ -2170,7 +2172,7 @@ mod tests {
                 None,
             );
             let mut shared_labels = MemoryStateLabels::default();
-            let rejected_address = Address::symbolic(crate::kernel::Variable(987_771));
+            let rejected_address = OldAddress::symbolic(crate::kernel::Variable(987_771));
             shared_labels.immutable_pointer_name(&rejected_address, "rejected_fact_address");
             shared_labels.pointer_value_name(&rejected_address);
             let failed_prefix = render_accepted(

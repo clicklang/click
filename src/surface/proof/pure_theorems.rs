@@ -915,7 +915,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 InterfaceType::VoidPointer
                 | InterfaceType::VoidPointerPointer
                 | InterfaceType::Pointer => ProgramValue::typed_pointer(
-                    Address {
+                    OldAddress {
                         base: AddressBase::ExternalArgument,
                         offset: scale_int32_offset(
                             OldMachineTerm::Variable(Variable::produced(
@@ -965,7 +965,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 }
                 InterfaceType::Int8Pointer | InterfaceType::Int8Array(_) => {
                     ProgramValue::typed_pointer(
-                        Address {
+                        OldAddress {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
                                 OldMachineTerm::Variable(Variable::produced(
@@ -980,7 +980,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 }
                 InterfaceType::Int16Pointer | InterfaceType::Int16Array(_) => {
                     ProgramValue::typed_pointer(
-                        Address {
+                        OldAddress {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
                                 OldMachineTerm::Variable(Variable::produced(
@@ -995,7 +995,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 }
                 InterfaceType::UInt16Pointer | InterfaceType::UInt16Array(_) => {
                     ProgramValue::typed_pointer(
-                        Address {
+                        OldAddress {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
                                 OldMachineTerm::Variable(Variable::produced(
@@ -1010,7 +1010,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 }
                 InterfaceType::Int32Pointer | InterfaceType::Int32Array(_) => {
                     ProgramValue::typed_pointer(
-                        Address {
+                        OldAddress {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
                                 OldMachineTerm::Variable(Variable::produced(
@@ -1027,7 +1027,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 | InterfaceType::CharArray(_, _)
                 | InterfaceType::UInt8Pointer
                 | InterfaceType::UInt8Array(_) => ProgramValue::typed_pointer(
-                    Address {
+                    OldAddress {
                         base: AddressBase::ExternalArgument,
                         offset: scale_int32_offset(
                             OldMachineTerm::Variable(Variable::produced(
@@ -1041,7 +1041,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 ),
                 InterfaceType::UInt32Pointer | InterfaceType::UInt32Array(_) => {
                     ProgramValue::typed_pointer(
-                        Address {
+                        OldAddress {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
                                 OldMachineTerm::Variable(Variable::produced(
@@ -1056,7 +1056,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 }
                 InterfaceType::Int64Pointer(_) | InterfaceType::Int64Array(_, _) => {
                     ProgramValue::typed_pointer(
-                        Address {
+                        OldAddress {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
                                 OldMachineTerm::Variable(Variable::produced(
@@ -1071,7 +1071,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 }
                 InterfaceType::Int128Pointer | InterfaceType::Int128Array(_) => {
                     ProgramValue::typed_pointer(
-                        Address {
+                        OldAddress {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
                                 OldMachineTerm::Variable(Variable::produced(
@@ -1086,7 +1086,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 }
                 InterfaceType::UInt64Pointer(_) | InterfaceType::UInt64Array(_, _) => {
                     ProgramValue::typed_pointer(
-                        Address {
+                        OldAddress {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
                                 OldMachineTerm::Variable(Variable::produced(
@@ -1101,7 +1101,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 }
                 InterfaceType::UInt128Pointer | InterfaceType::UInt128Array(_) => {
                     ProgramValue::typed_pointer(
-                        Address {
+                        OldAddress {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
                                 OldMachineTerm::Variable(Variable::produced(
@@ -1116,7 +1116,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 }
                 InterfaceType::Float32Pointer | InterfaceType::Float32Array(_) => {
                     ProgramValue::typed_pointer(
-                        Address {
+                        OldAddress {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
                                 OldMachineTerm::Variable(Variable::produced(
@@ -1131,7 +1131,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 }
                 InterfaceType::Float64Pointer | InterfaceType::Float64Array(_) => {
                     ProgramValue::typed_pointer(
-                        Address {
+                        OldAddress {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
                                 OldMachineTerm::Variable(Variable::produced(
@@ -1151,7 +1151,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         .to_kernel_type()
                         .byte_width();
                     ProgramValue::typed_pointer(
-                        Address {
+                        OldAddress {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
                                 OldMachineTerm::Variable(Variable::produced(
@@ -1182,7 +1182,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         .to_kernel_type()
                         .byte_width();
                     ProgramValue::typed_pointer(
-                        Address {
+                        OldAddress {
                             base: AddressBase::ExternalArgument,
                             offset: scale_int32_offset(
                                 OldMachineTerm::Variable(Variable::produced(
@@ -1196,11 +1196,11 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                     )
                 }
                 InterfaceType::FunctionPointer(_) => ProgramValue::typed_pointer(
-                    Address::symbolic_function(Variable(index as u64)),
+                    OldAddress::symbolic_function(Variable(index as u64)),
                     interface_type.to_kernel_type(),
                 ),
                 InterfaceType::PointerArray(_, _, _) => ProgramValue::typed_pointer(
-                    Address {
+                    OldAddress {
                         base: AddressBase::ExternalArgument,
                         offset: scale_int32_offset(
                             OldMachineTerm::Variable(Variable::produced(

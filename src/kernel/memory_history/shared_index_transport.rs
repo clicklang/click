@@ -615,7 +615,7 @@ mod tests {
     #[test]
     fn framed_index_transport_retains_read_authority_at_each_state() {
         let _session = VerificationSession::enter();
-        let pointer = Address {
+        let pointer = OldAddress {
             base: "transport-index".into(),
             offset: OldAddressOffset::Constant(0),
         };
@@ -666,7 +666,7 @@ mod tests {
     #[test]
     fn framed_index_transport_moves_registered_read_variables() {
         let _session = VerificationSession::enter();
-        let pointer = Address {
+        let pointer = OldAddress {
             base: "registered-index".into(),
             offset: OldAddressOffset::Constant(0),
         };
@@ -724,7 +724,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let after = SymbolicMemory::new();
         let null = OldMachineTerm::IntegerAddress(
-            Box::new(Address::null()),
+            Box::new(OldAddress::null()),
             crate::kernel::AddressObjectClass::NONE,
         );
         let x = OldMachineTerm::Variable(Variable(1018912));
@@ -947,7 +947,7 @@ mod tests {
             }
         }
         let index = OldMachineTerm::Variable(Variable(1018953));
-        let query = Address {
+        let query = OldAddress {
             base: pointer.base.clone(),
             offset: OldAddressOffset::scaled_int32_node(index.clone(), 4),
         };
@@ -993,8 +993,8 @@ mod tests {
             ty,
             &OldMachineTerm::If {
                 condition: Box::new(OldConditionTerm::address_equal(
-                    Address::symbolic(Variable(1007510)),
-                    Address::symbolic(Variable(1007511)),
+                    OldAddress::symbolic(Variable(1007510)),
+                    OldAddress::symbolic(Variable(1007511)),
                 )),
                 then_term: Box::new(OldMachineTerm::constant(1)),
                 else_term: Box::new(OldMachineTerm::constant(0)),

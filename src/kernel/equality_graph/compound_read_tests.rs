@@ -32,7 +32,7 @@ fn equal(graph: &EqualityGraph, format: M, left: &OldMachineTerm, right: &OldMac
 fn compound_read_queries_require_explicit_equations() {
     let _session = crate::kernel::VerificationSession::enter();
     for format in [M::Int32, M::UInt64] {
-        let slot = Address {
+        let slot = OldAddress {
             base: "compound-slot".into(),
             offset: OldAddressOffset::Constant(0),
         };
@@ -65,7 +65,7 @@ fn compound_read_queries_require_explicit_equations() {
             &expression,
             &expected
         ));
-        let alias = Address::symbolic(Variable(989101));
+        let alias = OldAddress::symbolic(Variable(989101));
         if kind.is_word32() {
             // A typed word-read producer records this width for each address.
             crate::kernel::eval::record_load_access_width(memory.memory(), &alias, 4);

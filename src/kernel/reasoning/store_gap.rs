@@ -61,7 +61,7 @@
 
 #[cfg(test)]
 use crate::kernel::OldMachineTerm;
-use crate::kernel::{Address, OldAddressOffset, PureFactContext};
+use crate::kernel::{OldAddress, OldAddressOffset, PureFactContext};
 
 /// The widest cell there is: no `ProgramValue` is wider, and a cell holding
 /// `Void` stands in this width too.
@@ -101,10 +101,10 @@ pub(in crate::kernel) fn store_gap_skip_disabled() -> bool {
 /// normalized) keeps by its constant byte gap alone. Empty whenever the
 /// store's shape is not one the module comment covers.
 pub(in crate::kernel) fn store_gap_kept_ranges(
-    store: &Address,
+    store: &OldAddress,
     bytes: u32,
     assumptions: &PureFactContext,
-) -> Vec<(Address, Address)> {
+) -> Vec<(OldAddress, OldAddress)> {
     if bytes == 0
         || store_gap_skip_disabled()
         || crate::kernel::assumptions::implicit_consulted_premises_capturing()
@@ -113,7 +113,7 @@ pub(in crate::kernel) fn store_gap_kept_ranges(
         return Vec::new();
     }
     let bytes = i64::from(bytes);
-    let key = |offset: OldAddressOffset| Address {
+    let key = |offset: OldAddressOffset| OldAddress {
         base: store.base.clone(),
         offset,
     };
@@ -281,7 +281,7 @@ mod tests {
             crate::kernel::AddressBase::Symbolic(Variable(958_000)),
             crate::kernel::AddressBase::ExternalArgument,
         ] {
-            let pointer = |id| Address {
+            let pointer = |id| OldAddress {
                 base: block.clone(),
                 offset: OldAddressOffset::scale_int32(variable(id), 4),
             };
@@ -429,7 +429,7 @@ mod tests {
 
     fn store(
         memory: SymbolicMemory,
-        pointer: &Address,
+        pointer: &OldAddress,
         value: ProgramValue,
         context: &PureFactContext,
     ) -> SymbolicMemory {
@@ -439,14 +439,14 @@ mod tests {
     }
 
     /// Cells of `memory` inside the ranges a store would skip.
-    fn skipped_cells(memory: &SymbolicMemory, ranges: &[(Address, Address)]) -> usize {
+    fn skipped_cells(memory: &SymbolicMemory, ranges: &[(OldAddress, OldAddress)]) -> usize {
         ranges
             .iter()
             .map(|(low, high)| {
                 memory
                     .cells
                     .concrete()
-                    .range::<_, Address>(low..=high)
+                    .range::<_, OldAddress>(low..=high)
                     .count()
             })
             .sum()
@@ -461,7 +461,7 @@ mod tests {
         let mut full = fast.clone();
         let mut skipped = 0;
         for (offset, value) in stores {
-            let pointer = Address {
+            let pointer = OldAddress {
                 base: "store-gap".into(),
                 offset: offset.clone(),
             };
@@ -479,8 +479,8 @@ mod tests {
         (fast, skipped)
     }
 
-    fn at(offset: &OldAddressOffset) -> Address {
-        Address {
+    fn at(offset: &OldAddressOffset) -> OldAddress {
+        OldAddress {
             base: "store-gap".into(),
             offset: offset.clone(),
         }
@@ -667,7 +667,7 @@ mod tests {
             let mut fast = SymbolicMemory::new().with_block("store-gap", 64);
             let mut full = fast.clone();
             for step in 0..48 {
-                let pointer = Address {
+                let pointer = OldAddress {
                     base: "store-gap".into(),
                     offset: generated_offset(&mut generator, anchor, &anchors),
                 };

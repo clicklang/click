@@ -86,7 +86,7 @@ fn interface_join_states(count: usize, claimed: usize) -> (ExecutionState, Execu
 /// unindexed bucket.
 fn parameter_view(variable: u64) -> ResourceFact {
     ResourceFact::view_memory(MemoryRange::new_with_element_width(
-        Address {
+        OldAddress {
             base: AddressBase::ExternalArgument,
             offset: OldAddressOffset::Variable(Variable(variable)),
         },
@@ -120,7 +120,7 @@ fn cells_in_the_symbolic_block(count: usize) -> SymbolicMemory {
     let mut memory = SymbolicMemory::new();
     for index in 0..count {
         memory = memory.store(
-            Address {
+            OldAddress {
                 base: AddressBase::ExternalArgument,
                 offset: OldAddressOffset::Constant(4 * index as i64),
             },

@@ -15,7 +15,7 @@ fn wide_storage_exact_load_and_validation_work_ignore_unrelated_memory() {
             .with_block("local:wide-storage", 16)
             .store(address(0), value.clone());
         for index in 0..size {
-            let pointer = Address {
+            let pointer = OldAddress {
                 base: format!("wide-unrelated-{index}").into(),
                 offset: OldAddressOffset::Constant(0),
             };

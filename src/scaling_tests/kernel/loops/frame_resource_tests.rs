@@ -10,7 +10,7 @@ fn a_loop_frame_normalizes_its_retained_views_once() {
         let views = (0..count)
             .map(|index| {
                 ResourceFact::view_memory(MemoryRange::new(
-                    Address::symbolic(Variable(9_360_000 + index)),
+                    OldAddress::symbolic(Variable(9_360_000 + index)),
                     OldMachineTerm::constant(0),
                     OldMachineTerm::constant(1),
                 ))
@@ -68,7 +68,7 @@ fn loop_binding_carryover_ignores_ambient_observations() {
             let _session = crate::kernel::VerificationSession::enter();
             let assumptions = PureFactContext::new();
             let pointer = OldPointer::new(
-                Address::symbolic(Variable(9_370_001)),
+                OldAddress::symbolic(Variable(9_370_001)),
                 ProgramType::Int32Pointer,
             );
             let view = ResourceFact::view_memory(MemoryRange::from_pointer_value(
@@ -216,8 +216,8 @@ fn explicit_loop_views_keep_scalar_owners_without_visiting_observations() {
     let mut samples = Vec::new();
     for count in [4u64, 16, 64, 256] {
         let assumptions = PureFactContext::new();
-        let scalar = Address::symbolic(Variable(9_380_001));
-        let heap = Address::symbolic(Variable(9_380_002));
+        let scalar = OldAddress::symbolic(Variable(9_380_001));
+        let heap = OldAddress::symbolic(Variable(9_380_002));
         let scalar_owner =
             ResourceFact::own_memory(MemoryRange::new(scalar.clone(), 0u32.into(), 4u32.into()));
         let heap_owner = ResourceFact::own_memory(MemoryRange::new(heap, 0u32.into(), 4u32.into()));
@@ -229,7 +229,7 @@ fn explicit_loop_views_keep_scalar_owners_without_visiting_observations() {
             .unchecked_with_fact(heap_owner.clone());
         for index in 0..count {
             withheld = withheld.unchecked_with_fact(ResourceFact::view_memory(MemoryRange::new(
-                Address::symbolic(Variable(9_381_000 + index)),
+                OldAddress::symbolic(Variable(9_381_000 + index)),
                 0u32.into(),
                 4u32.into(),
             )));
@@ -266,9 +266,9 @@ fn explicit_loop_frame_ignores_rejected_heap_owners() {
     for count in [4u64, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let facts = PureFactContext::new();
-        let scalar = Address::symbolic(Variable(9_390_001));
+        let scalar = OldAddress::symbolic(Variable(9_390_001));
         let viewed = OldPointer::new(
-            Address::symbolic(Variable(9_390_002)),
+            OldAddress::symbolic(Variable(9_390_002)),
             ProgramType::Int32Pointer,
         );
         let scalar_owner =
@@ -291,7 +291,7 @@ fn explicit_loop_frame_ignores_rejected_heap_owners() {
         let mut heaps = Vec::new();
         for index in 0..count {
             let owner = ResourceFact::own_memory(MemoryRange::new(
-                Address::symbolic(Variable(9_391_000 + index)),
+                OldAddress::symbolic(Variable(9_391_000 + index)),
                 0u32.into(),
                 4u32.into(),
             ));

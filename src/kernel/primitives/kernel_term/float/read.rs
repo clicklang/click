@@ -36,7 +36,7 @@ mod tests {
         // Reads of the first session's memory, on purpose.
         let _cross_arena = crate::kernel::primitives::allow_cross_arena_loads();
         let second = intern_memory(SymbolicMemory::new());
-        let pointer = Address {
+        let pointer = OldAddress {
             base: AddressBase::Symbolic(Variable(999814)),
             offset: OldAddressOffset::scaled_int32_node(
                 OldMachineTerm::Variable(Variable(999815)),

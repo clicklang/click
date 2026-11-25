@@ -12,7 +12,7 @@ use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 /// symbolic: the shape a pure theorem's parameters reach a lowering in.
 fn indexed_pointer_site() -> (ProgramValueBindings, ExecutionState) {
     let pointer = ProgramValue::typed_pointer(
-        Address {
+        OldAddress {
             base: AddressBase::ExternalArgument,
             offset: OldAddressOffset::scaled_int32_node(
                 OldMachineTerm::Variable(Variable(100_000)),
@@ -32,7 +32,7 @@ fn indexed_pointer_site() -> (ProgramValueBindings, ExecutionState) {
 }
 
 /// The pointer `p` was passed, as the kernel holds it.
-fn pointer_base(values: &ProgramValueBindings) -> Address {
+fn pointer_base(values: &ProgramValueBindings) -> OldAddress {
     let ProgramValue::Pointer(pointer) = &values["p"] else {
         unreachable!("the probe binds `p` to a pointer");
     };
@@ -40,8 +40,8 @@ fn pointer_base(values: &ProgramValueBindings) -> Address {
 }
 
 /// The cell `(p + index) as (int32 *)[0]`, as the kernel indexes it.
-fn indexed_cell(values: &ProgramValueBindings) -> Address {
-    Address {
+fn indexed_cell(values: &ProgramValueBindings) -> OldAddress {
+    OldAddress {
         base: pointer_base(values).base,
         offset: OldAddressOffset::Add(
             Box::new(OldAddressOffset::scaled_int32_node(

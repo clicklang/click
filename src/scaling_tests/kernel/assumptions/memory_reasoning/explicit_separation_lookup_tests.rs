@@ -9,10 +9,10 @@
 /// their number.
 #[test]
 fn explicit_separation_lookup_reads_only_related_blocks() {
-    let pointer = |id| Address::symbolic(Variable(id));
+    let pointer = |id| OldAddress::symbolic(Variable(id));
     let narrow =
-        |base: Address| MemoryRange::new_with_element_width(base, 0u32.into(), 8u32.into(), 1);
-    let wide = |base: Address| MemoryRange::new_wide(base, 0u32.into(), 8u32.into(), 1);
+        |base: OldAddress| MemoryRange::new_with_element_width(base, 0u32.into(), 8u32.into(), 1);
+    let wide = |base: OldAddress| MemoryRange::new_wide(base, 0u32.into(), 8u32.into(), 1);
     let separation = |left: MemoryRange, right: MemoryRange| Proposition::ResourceSeparate {
         left: Box::new(Resource::Memory(left)),
         right: Box::new(Resource::Memory(right)),
@@ -68,7 +68,7 @@ fn explicit_separation_lookup_reads_only_related_blocks() {
 /// alone would lose the witness while filtering the unrelated wide facts.
 #[test]
 fn wide_separation_lookup_ignores_unrelated_wide_facts() {
-    let pointer = |id| Address::symbolic(Variable(id));
+    let pointer = |id| OldAddress::symbolic(Variable(id));
     let narrow = |base| MemoryRange::new_with_element_width(base, 0u32.into(), 4u32.into(), 4);
     let wide = |base| {
         MemoryRange::new_wide(
@@ -135,7 +135,7 @@ fn wide_separation_lookup_ignores_unrelated_wide_facts() {
 
 #[test]
 fn wide_separation_lookup_scales_with_its_related_alias_chain() {
-    let pointer = |id| Address::symbolic(Variable(9_992_000 + id));
+    let pointer = |id| OldAddress::symbolic(Variable(9_992_000 + id));
     let wide = |base| {
         MemoryRange::new_wide(
             base,

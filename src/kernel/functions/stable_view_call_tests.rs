@@ -2,18 +2,18 @@ use super::*;
 use crate::kernel::borrows::BorrowRefusal;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
-fn pointer() -> Address {
-    Address {
+fn pointer() -> OldAddress {
+    OldAddress {
         base: AddressBase::Concrete("local:candidate_view:data".to_string()),
         offset: OldAddressOffset::Constant(0),
     }
 }
 
-fn caller(pointer: &Address) -> ExecutionState {
+fn caller(pointer: &OldAddress) -> ExecutionState {
     caller_with_owned_end(pointer, 1, 4)
 }
 
-fn caller_with_owned_end(pointer: &Address, owned_end: u32, bytes: u32) -> ExecutionState {
+fn caller_with_owned_end(pointer: &OldAddress, owned_end: u32, bytes: u32) -> ExecutionState {
     let range = MemoryRange::new(
         pointer.clone(),
         OldMachineTerm::constant(0),
@@ -60,7 +60,7 @@ fn reader_with_output(name: &str, output_start: u32, output_end: u32) -> Program
 /// caller's automatic storage is initialized across a viewed range.
 fn with_initialized_cells(
     mut memory: SymbolicMemory,
-    base: &Address,
+    base: &OldAddress,
     cells: u32,
 ) -> SymbolicMemory {
     for cell in 0..cells {
@@ -201,7 +201,7 @@ fn conditional_owner(name: &str) -> (ProgramFunction, ExecutionEnvironment) {
                 "item",
             )),
             operator: ComparisonOperator::NotEqual,
-            right: SpecExpression::Value(ProgramValue::pointer(Address::null())),
+            right: SpecExpression::Value(ProgramValue::pointer(OldAddress::null())),
         }),
         false,
         vec![ResourceSpec::owned_memory(MemorySegment::new(
@@ -307,7 +307,7 @@ fn candidate_reader_escrows_owner_until_return() {
     );
     assert!(transfer.callee_resources.satisfies_fact(
         &ResourceFact::view_memory(MemoryRange::new(
-            Address {
+            OldAddress {
                 base: AddressBase::Concrete("local:candidate_view:data".to_string()),
                 offset: OldAddressOffset::Constant(0),
             },
@@ -588,8 +588,8 @@ fn adapter_reader(
 }
 
 /// The caller owns `wide(p)` over an eight-byte block and nothing else.
-fn adapter_caller(pointer: &Address) -> ExecutionState {
-    let second = Address {
+fn adapter_caller(pointer: &OldAddress) -> ExecutionState {
+    let second = OldAddress {
         base: pointer.base.clone(),
         offset: OldAddressOffset::Constant(4),
     };
@@ -1185,7 +1185,7 @@ fn candidate_conditional_composite_with_a_false_guard_needs_no_owned_entry() {
         &ExecutionState::new().with_population_creation_tracking(),
         &function,
         &[crate::kernel::program_expression::pointer_value(
-            Address::null(),
+            OldAddress::null(),
         )],
         &PureFactContext::new(),
         ExecutionContext::verify_loops(&environment),
@@ -1210,7 +1210,7 @@ fn candidate_conditional_composite_with_a_false_guard_needs_no_owned_entry() {
 #[test]
 fn candidate_conditional_composite_with_an_undecided_guard_still_needs_its_entry() {
     let (function, environment) = conditional_owner("candidate_guarded_symbolic_free");
-    let symbolic = Address {
+    let symbolic = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(910_101)), 4),
     };
@@ -1797,7 +1797,7 @@ fn recover_with_a_carried_view_of_another_block(
     read_only: bool,
 ) -> Result<ResourceContext, RuntimeError> {
     let pointer = pointer();
-    let other = Address {
+    let other = OldAddress {
         base: AddressBase::Concrete("global:candidate_table#file-static:t.c".to_string()),
         offset: OldAddressOffset::Constant(0),
     };
@@ -1854,7 +1854,7 @@ fn candidate_accepts_a_carried_view_of_read_only_storage() {
     let resources = recover_with_a_carried_view_of_another_block(true)
         .expect("a view of read-only storage is intrinsic read authority");
     let carried = ResourceFact::view_memory(MemoryRange::new(
-        Address {
+        OldAddress {
             base: AddressBase::Concrete("global:candidate_table#file-static:t.c".to_string()),
             offset: OldAddressOffset::Constant(0),
         },
@@ -1871,7 +1871,7 @@ fn candidate_rejects_a_carried_view_of_mutable_storage() {
     // The refusal carries the carried view itself, so the surface can
     // name it rather than print a kernel dump of it.
     let carried = ResourceFact::view_memory(MemoryRange::new(
-        Address {
+        OldAddress {
             base: AddressBase::Concrete("global:candidate_table#file-static:t.c".to_string()),
             offset: OldAddressOffset::Constant(0),
         },
@@ -1890,7 +1890,7 @@ fn symbolic_bounded_range(
     element_width: u32,
 ) -> MemoryRange {
     MemoryRange::new_with_element_width(
-        Address {
+        OldAddress {
             base: AddressBase::Concrete("candidate:separation".to_string()),
             offset: OldAddressOffset::Constant(0),
         },
@@ -2142,7 +2142,7 @@ fn lend_summary_test_range(
 /// concrete index and compared by offset arithmetic.
 #[test]
 fn candidate_rejects_symbolic_same_base_overlapping_effect() {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: AddressBase::Concrete("local:candidate_view:data".to_string()),
         offset: OldAddressOffset::Variable(Variable(700)),
     };
@@ -2171,11 +2171,11 @@ fn candidate_rejects_symbolic_same_base_overlapping_effect() {
 /// the call is refused as unproved rather than assumed disjoint.
 #[test]
 fn candidate_rejects_unproved_mutable_effect_separation() {
-    let viewed = Address {
+    let viewed = OldAddress {
         base: AddressBase::Concrete("local:candidate_view:data".to_string()),
         offset: OldAddressOffset::Variable(Variable(700)),
     };
-    let mutated = Address {
+    let mutated = OldAddress {
         base: AddressBase::Concrete("local:candidate_view:data".to_string()),
         offset: OldAddressOffset::Variable(Variable(701)),
     };
@@ -2276,15 +2276,15 @@ fn viewer_and_writer(name: &str) -> ProgramFunction {
 /// argument's child augmentation.
 #[test]
 fn candidate_allows_a_mutable_effect_reserved_from_another_owned_occurrence() {
-    let viewed = Address {
+    let viewed = OldAddress {
         base: AddressBase::Concrete("local:candidate_view:data".to_string()),
         offset: OldAddressOffset::Variable(Variable(700)),
     };
-    let mutated = Address {
+    let mutated = OldAddress {
         base: AddressBase::Concrete("local:candidate_view:data".to_string()),
         offset: OldAddressOffset::Variable(Variable(701)),
     };
-    let owned_range = |pointer: &Address| {
+    let owned_range = |pointer: &OldAddress| {
         ResourceFact::own(Resource::Memory(MemoryRange::new(
             pointer.clone(),
             OldMachineTerm::constant(0),
@@ -2743,7 +2743,7 @@ fn nonnegative_quantity(quantity: Variable) -> PureFactContext {
     )
 }
 
-fn token_population_unit(population: &str, pointer: &Address) -> ResourceFact {
+fn token_population_unit(population: &str, pointer: &OldAddress) -> ResourceFact {
     ResourceFact::own_composite(
         population.into(),
         vec![ProgramValue::pointer(pointer.clone())],
@@ -2889,12 +2889,13 @@ fn an_abnormal_sequence_exit_keeps_its_borrow_evidence_under_both_judgments() {
 
 #[test]
 fn composite_view_body_check_does_not_try_pointer_aliases() {
-    let p = Address::symbolic(Variable(94_100));
-    let q = Address::symbolic(Variable(94_101));
-    let r = Address::symbolic(Variable(94_102));
-    let s = Address::symbolic(Variable(94_103));
-    let equality = |a: &Address, b: &Address| OldConditionTerm::address_equal(a.clone(), b.clone());
-    let clause = |pointer: &Address| {
+    let p = OldAddress::symbolic(Variable(94_100));
+    let q = OldAddress::symbolic(Variable(94_101));
+    let r = OldAddress::symbolic(Variable(94_102));
+    let s = OldAddress::symbolic(Variable(94_103));
+    let equality =
+        |a: &OldAddress, b: &OldAddress| OldConditionTerm::address_equal(a.clone(), b.clone());
+    let clause = |pointer: &OldAddress| {
         Proposition::Implies(
             Box::new(Proposition::condition_is(equality(pointer, &r), true)),
             Box::new(Proposition::condition_is(equality(&r, &s), true)),
@@ -2910,7 +2911,7 @@ fn composite_view_body_check_does_not_try_pointer_aliases() {
     for count in [4, 16, 64] {
         let mut facts = facts.clone();
         for i in 0..count {
-            let alias = Address::symbolic(Variable(94_200 + i));
+            let alias = OldAddress::symbolic(Variable(94_200 + i));
             facts = facts.assume_condition(equality(&p, &alias), true);
         }
         // Preparing the generic stated-fact index is a separate cold cost.
@@ -3010,9 +3011,9 @@ fn local_storage_classification_does_not_restore_partial_or_aliased_authority() 
             case,
             "aliased_partial" | "aliased_whole" | "unknown_pointer"
         ) {
-            Address::symbolic(Variable(941_001))
+            OldAddress::symbolic(Variable(941_001))
         } else if case == "other_local" {
-            Address {
+            OldAddress {
                 base: "local:other".into(),
                 offset: OldAddressOffset::Constant(0),
             }
@@ -3027,7 +3028,7 @@ fn local_storage_classification_does_not_restore_partial_or_aliased_authority() 
             facts = facts.assume_condition(
                 OldConditionTerm::address_equal(
                     local.clone(),
-                    Address::symbolic(Variable(941_001)),
+                    OldAddress::symbolic(Variable(941_001)),
                 ),
                 true,
             );
@@ -3087,12 +3088,12 @@ fn local_storage_absence_summary_tracks_persistent_resource_edits() {
     let facts = PureFactContext::new();
     let local = pointer();
     let unknown = ResourceFact::own_memory(MemoryRange::new(
-        Address::symbolic(Variable(941_002)),
+        OldAddress::symbolic(Variable(941_002)),
         0u32.into(),
         1u32.into(),
     ));
     let unrelated = ResourceFact::own_memory(MemoryRange::new(
-        Address {
+        OldAddress {
             base: "local:other".into(),
             offset: OldAddressOffset::Constant(0),
         },

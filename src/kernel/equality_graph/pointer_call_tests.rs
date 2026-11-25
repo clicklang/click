@@ -1,8 +1,8 @@
 use super::*;
 use crate::kernel::VerificationSession;
 
-fn call(name: &str, arguments: Vec<PureFunctionArgument>) -> Address {
-    Address {
+fn call(name: &str, arguments: Vec<PureFunctionArgument>) -> OldAddress {
+    OldAddress {
         base: AddressBase::PureFunctionApplication(SharedPureApplication::intern(
             name.into(),
             arguments,
@@ -16,20 +16,20 @@ fn word(id: u64) -> OldMachineTerm {
 fn argument(id: u64) -> PureFunctionArgument {
     PureFunctionArgument::Value(ProgramValue::Int32(word(id)))
 }
-fn pointer_argument(p: Address) -> PureFunctionArgument {
+fn pointer_argument(p: OldAddress) -> PureFunctionArgument {
     PureFunctionArgument::Value(ProgramValue::Pointer(OldPointer::new(
         p,
         ProgramType::Int32Pointer,
     )))
 }
-fn equal_pointer_arguments(graph: &mut EqualityGraph, p: &Address, q: &Address) {
+fn equal_pointer_arguments(graph: &mut EqualityGraph, p: &OldAddress, q: &OldAddress) {
     graph.add_pointer_equality(
         &OldPointer::new(p.clone(), ProgramType::Int32Pointer),
         &OldPointer::new(q.clone(), ProgramType::Int32Pointer),
     );
 }
 
-fn equal(a: &Address, b: &Address) -> Proposition {
+fn equal(a: &OldAddress, b: &OldAddress) -> Proposition {
     Proposition::condition_is(
         OldConditionTerm::AddressEqual(Box::new(a.clone()), Box::new(b.clone())),
         true,
@@ -48,7 +48,7 @@ fn pointer_calls_follow_late_model_aliases_and_displaced_addresses() {
     let f = |x| call("handle", vec![PureFunctionArgument::Algebraic(x)]);
     let (left, right) = (f(a.clone()), f(b.clone()));
     let mut graph = EqualityGraph::default();
-    let shifted = |p: &Address| Address {
+    let shifted = |p: &OldAddress| OldAddress {
         base: p.base.clone(),
         offset: OldAddressOffset::Constant(8),
     };
@@ -67,8 +67,8 @@ fn pointer_calls_follow_late_model_aliases_and_displaced_addresses() {
 fn pointer_calls_keep_sorts_order_states_and_noninjectivity() {
     let _session = VerificationSession::enter();
     let mut graph = EqualityGraph::default();
-    let p = Address::symbolic(Variable(30));
-    let q = Address::symbolic(Variable(31));
+    let p = OldAddress::symbolic(Variable(30));
+    let q = OldAddress::symbolic(Variable(31));
     let memory = SymbolicMemory::new().with_block(p.base.clone(), 4);
     let changed = memory
         .clone()
@@ -121,10 +121,10 @@ fn pointer_calls_keep_sorts_order_states_and_noninjectivity() {
 fn nested_pointer_calls_feed_scalar_calls_and_checked_reads() {
     let _session = VerificationSession::enter();
     let (p, q) = (
-        Address::symbolic(Variable(40)),
-        Address::symbolic(Variable(41)),
+        OldAddress::symbolic(Variable(40)),
+        OldAddress::symbolic(Variable(41)),
     );
-    let build = |mut p: Address| {
+    let build = |mut p: OldAddress| {
         for _ in 0..12 {
             p = call("next", vec![pointer_argument(p)]);
         }
@@ -162,7 +162,7 @@ fn pointer_call_evidence_stays_scoped() {
         call("get", vec![argument(50)]),
         call("get", vec![argument(51)]),
     );
-    let p = Address::symbolic(Variable(52));
+    let p = OldAddress::symbolic(Variable(52));
     let premise = Proposition::condition_is(OldConditionTerm::equal(word(50), word(51)), true);
     let held = equal(&p, &a);
     let goal = equal(&p, &b);

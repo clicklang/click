@@ -287,7 +287,7 @@ pub(super) fn state_address(pointer: &SharedAddress) -> MemoryErasedAddressKey {
     let block = pointer.node().base.native_atom();
     // Existing depth bound and registry authority; never export the offset.
     let read = match block {
-        AddressBase::Load(_) if depth < 3 => Address {
+        AddressBase::Load(_) if depth < 3 => OldAddress {
             base: block.clone(),
             offset: OldAddressOffset::Constant(0),
         }
@@ -375,7 +375,7 @@ mod tests {
         VerificationSession,
     };
     fn pointer(offset: OldAddressOffset) -> OldPointer {
-        let address = Address {
+        let address = OldAddress {
             base: AddressBase::Concrete("shared-key".into()),
             offset,
         };
@@ -390,7 +390,7 @@ mod tests {
                     right: OldMachineTerm::constant(4).into(),
                 },
             }))
-            .with_bounds_owner(Some(Arc::new(Address::symbolic(Variable(1010001)))))
+            .with_bounds_owner(Some(Arc::new(OldAddress::symbolic(Variable(1010001)))))
     }
 
     #[test]
@@ -476,9 +476,9 @@ mod tests {
     fn shared_address_keys_preserve_load_depth_and_logical_call_identity() {
         let _session = VerificationSession::enter();
         let memory = crate::kernel::intern_memory(crate::kernel::SymbolicMemory::new());
-        let mut source = Address::symbolic(Variable(1010200));
+        let mut source = OldAddress::symbolic(Variable(1010200));
         for _ in 0..6 {
-            source = Address::loaded_value(&memory, &source);
+            source = OldAddress::loaded_value(&memory, &source);
             let shared = SharedAddress::import(&source);
             assert_eq!(state_address(&shared), memory_erased_address_key(&source));
             assert_eq!(
@@ -491,7 +491,7 @@ mod tests {
             );
         }
         let make = || {
-            SharedAddress::import(&Address {
+            SharedAddress::import(&OldAddress {
                 base: AddressBase::PureFunctionApplication(
                     crate::kernel::SharedPureApplication::intern("pointer-key-call".into(), vec![]),
                 ),

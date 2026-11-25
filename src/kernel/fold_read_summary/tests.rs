@@ -381,22 +381,22 @@ fn bv(variable: u32) -> OldMachineTerm {
 }
 
 /// An `int32` array parameter's base, spelled as the kernel spells one.
-fn parameter_base(variable: u32) -> Address {
-    Address {
+fn parameter_base(variable: u32) -> OldAddress {
+    OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scale_int32(bv(variable), 4),
     }
 }
 
-fn element(base: &Address, index: OldMachineTerm) -> Address {
-    Address {
+fn element(base: &OldAddress, index: OldMachineTerm) -> OldAddress {
+    OldAddress {
         base: base.base.clone(),
         offset: OldAddressOffset::add(base.offset.clone(), OldAddressOffset::scale_int32(index, 4)),
     }
 }
 
-fn byte_offset(pointer: &Address, bytes: i64) -> Address {
-    Address {
+fn byte_offset(pointer: &OldAddress, bytes: i64) -> OldAddress {
+    OldAddress {
         base: pointer.base.clone(),
         offset: OldAddressOffset::add(pointer.offset.clone(), OldAddressOffset::Constant(bytes)),
     }
@@ -408,7 +408,7 @@ fn one() -> ProgramValue {
 
 fn application(
     memory: &SymbolicMemory,
-    base: &Address,
+    base: &OldAddress,
     start: OldMachineTerm,
     end: OldMachineTerm,
 ) -> SharedPureApplication {
@@ -676,7 +676,7 @@ fn a_lifetime_end_of_the_array_is_never_crossed() {
     let _session = VerificationSession::enter();
     register_unmarked();
     let block = AddressBase::from("local:f:buffer");
-    let base = Address {
+    let base = OldAddress {
         base: block.clone(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -772,7 +772,7 @@ fn sibling_and_unrelated_histories_and_unsummarized_functions() {
     let base = SymbolicMemory::new();
     let left = base.clone().store(element(&v, bv(HI)), one());
     let right = base.clone().store(
-        Address {
+        OldAddress {
             base: AddressBase::from("local:f:other"),
             offset: OldAddressOffset::Constant(0),
         },
@@ -995,7 +995,7 @@ fn byte_fold_framing_refuses_overlap_and_counts_byte_endpoints() {
             SpecIntegerExpression::FromMachine(Box::new(read)),
         ),
     ));
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scale_int32(bv(V), 1),
     };
@@ -1074,7 +1074,7 @@ fn truncating_integer_terms_require_native_guards_before_fold_admission() {
 // Native write sets and separation ranges must not enter signed fold arithmetic.
 #[test]
 fn wide_ranges_refuse_signed_fold_framing_rules() {
-    let base = Address::symbolic(Variable(984_100));
+    let base = OldAddress::symbolic(Variable(984_100));
     let wide = MemoryRange::new_wide(
         base.clone(),
         OldMachineTerm::uint64_constant(0),
@@ -1149,7 +1149,7 @@ fn shared_fold_indices_require_exact_bounds_without_export() {
         [x.clone(), x],
     );
     let index = MachineOperandView::Shared(&root).retain(MachineIntegerType::Int32);
-    let base = Address {
+    let base = OldAddress {
         base: "retained_fold_indices".into(),
         offset: OldAddressOffset::Constant(0),
     };

@@ -21,7 +21,7 @@ pub(super) fn initialize_program_function_globals_owned(
                     break;
                 }
                 state.set_memory(state.memory.clone().store(
-                    Address {
+                    OldAddress {
                         base: slot.base.clone(),
                         offset: OldAddressOffset::Constant(offset as i64),
                     },
@@ -435,7 +435,7 @@ pub(super) fn initialize_program_function_globals_owned(
 /// [`CellRun`]: crate::kernel::primitives::CellRun
 pub(super) fn store_array_contents(
     mut memory: SymbolicMemory,
-    base: &Address,
+    base: &OldAddress,
     element_type: ProgramType,
     contents: &crate::kernel::ArrayContents,
 ) -> SymbolicMemory {
@@ -528,7 +528,7 @@ pub(super) fn aggregate_zero_fields(
             _ => continue,
         };
         let zero = if matches!(field.program_type(), ProgramType::PointerArray(_, _)) {
-            ProgramValue::typed_pointer(Address::null(), element_type)
+            ProgramValue::typed_pointer(OldAddress::null(), element_type)
         } else {
             match element_type {
                 ProgramType::Parameter(_) | ProgramType::ParameterPointer(_) => {
@@ -577,7 +577,7 @@ pub(super) fn aggregate_zero_fields(
                 | ProgramType::Float64PointerPointer
                 | ProgramType::Pointer
                 | ProgramType::FunctionPointer(_) => {
-                    ProgramValue::typed_pointer(Address::null(), element_type)
+                    ProgramValue::typed_pointer(OldAddress::null(), element_type)
                 }
                 ProgramType::Int8Array(_) => {
                     continue;
@@ -622,7 +622,7 @@ pub(super) fn aggregate_zero_fields(
 
 pub(super) fn zero_aggregate_fields(
     mut memory: SymbolicMemory,
-    base: &Address,
+    base: &OldAddress,
     layout: &AggregateLayout,
 ) -> SymbolicMemory {
     for (field_offset, element_count, element_width, zero) in aggregate_zero_fields(layout) {
@@ -670,7 +670,7 @@ pub(super) fn zero_union_member_value(program_type: ProgramType) -> Option<Progr
         | ProgramType::Int32PointerPointer
         | ProgramType::UInt8PointerPointer
         | ProgramType::FunctionPointer(_) => {
-            ProgramValue::typed_pointer(Address::null(), program_type)
+            ProgramValue::typed_pointer(OldAddress::null(), program_type)
         }
         _ => return None,
     })
@@ -678,7 +678,7 @@ pub(super) fn zero_union_member_value(program_type: ProgramType) -> Option<Progr
 
 pub(super) fn initialize_aggregate_fields(
     mut memory: SymbolicMemory,
-    base: &Address,
+    base: &OldAddress,
     initializers: &[AggregateInitializer],
 ) -> SymbolicMemory {
     for initializer in initializers {
@@ -741,7 +741,7 @@ pub(super) fn aggregate_array_zero_runs(
 
 pub(super) fn zero_aggregate_array_fields(
     mut memory: SymbolicMemory,
-    base: &Address,
+    base: &OldAddress,
     layout: &AggregateLayout,
     length: u32,
 ) -> SymbolicMemory {
@@ -864,7 +864,7 @@ pub(super) fn aggregate_argument_read_refusal(
 /// through the ordinary load path.
 pub(super) fn aggregate_copy_reads_uninitialized(
     memory: &SymbolicMemory,
-    source: &Address,
+    source: &OldAddress,
     layout: &AggregateLayout,
 ) -> bool {
     // Mirror the carried-field classification in `copy_aggregate_fields`: a
@@ -995,7 +995,7 @@ pub(super) fn aggregate_copy_reads_uninitialized(
 /// symbolic load rather than stale storage.
 pub(super) fn uninitialized_aggregate_copy_source_cell(
     memory: &SymbolicMemory,
-    source_field: &Address,
+    source_field: &OldAddress,
     element_type: ProgramType,
 ) -> bool {
     if memory.known_value(source_field).is_some()
@@ -1032,7 +1032,7 @@ pub(super) fn uninitialized_aggregate_copy_source_cell(
 /// as for external storage, so the destination is initialized too.
 pub(super) fn aggregate_copy_source_holds_nothing(
     memory: &SymbolicMemory,
-    source_field: &Address,
+    source_field: &OldAddress,
     element_type: ProgramType,
 ) -> bool {
     // Static storage is initialized for the whole run: a field function entry
@@ -1054,8 +1054,8 @@ pub(super) fn aggregate_copy_source_holds_nothing(
 /// other modules must use this checked form.
 pub(in crate::kernel) fn copy_aggregate_fields_checked_at(
     state: &ExecutionState,
-    source: &Address,
-    destination: &Address,
+    source: &OldAddress,
+    destination: &OldAddress,
     layout: &AggregateLayout,
 ) -> Result<SymbolicMemory, UndefinedBehavior> {
     // Caller storage predates this function's locals. Earlier field stores
@@ -1075,8 +1075,8 @@ pub(in crate::kernel) fn copy_aggregate_fields_checked_at(
 #[cfg(test)]
 pub(in crate::kernel) fn copy_aggregate_fields_checked(
     memory: SymbolicMemory,
-    source: &Address,
-    destination: &Address,
+    source: &OldAddress,
+    destination: &OldAddress,
     layout: &AggregateLayout,
 ) -> Result<SymbolicMemory, UndefinedBehavior> {
     copy_aggregate_fields_checked_from(memory, source, destination, layout, None)
@@ -1084,8 +1084,8 @@ pub(in crate::kernel) fn copy_aggregate_fields_checked(
 
 fn copy_aggregate_fields_checked_from(
     memory: SymbolicMemory,
-    source: &Address,
-    destination: &Address,
+    source: &OldAddress,
+    destination: &OldAddress,
     layout: &AggregateLayout,
     source_state: Option<&ExecutionState>,
 ) -> Result<SymbolicMemory, UndefinedBehavior> {
@@ -1116,8 +1116,8 @@ fn copy_aggregate_fields_checked_from(
 // images use the raw form because their incoming aggregate values are evaluated.
 pub(super) fn copy_aggregate_fields(
     memory: SymbolicMemory,
-    source: &Address,
-    destination: &Address,
+    source: &OldAddress,
+    destination: &OldAddress,
     layout: &AggregateLayout,
 ) -> SymbolicMemory {
     copy_aggregate_fields_from(memory, source, destination, layout, None)
@@ -1125,8 +1125,8 @@ pub(super) fn copy_aggregate_fields(
 
 pub(super) fn copy_aggregate_fields_from(
     mut memory: SymbolicMemory,
-    source: &Address,
-    destination: &Address,
+    source: &OldAddress,
+    destination: &OldAddress,
     layout: &AggregateLayout,
     source_state: Option<&ExecutionState>,
 ) -> SymbolicMemory {
@@ -1251,9 +1251,10 @@ pub(super) fn copy_aggregate_fields_from(
                         | ProgramType::UInt8Pointer
                         | ProgramType::UInt32Pointer
                         | ProgramType::Int32PointerPointer
-                        | ProgramType::UInt8PointerPointer => {
-                            Some(ProgramValue::typed_pointer(Address::null(), element_type))
-                        }
+                        | ProgramType::UInt8PointerPointer => Some(ProgramValue::typed_pointer(
+                            OldAddress::null(),
+                            element_type,
+                        )),
                         ProgramType::UInt16 => Some(uint16(0)),
                         ProgramType::UInt32 => Some(uint32(0)),
                         ProgramType::Int64 => {
@@ -1391,7 +1392,7 @@ pub(super) fn copy_aggregate_fields_from(
 
 fn copy_retained_aggregate_union_member<'a>(
     memory: &SymbolicMemory,
-    source_field: &Address,
+    source_field: &OldAddress,
     element_type: ProgramType,
     captured_point: impl Fn() -> Option<&'a ProgramPoint>,
 ) -> Option<ExecutionValue> {
@@ -1464,15 +1465,17 @@ fn copy_retained_aggregate_union_member<'a>(
             | ProgramType::FunctionPointer(_) => {
                 let pointer = if matches!(element_type, ProgramType::FunctionPointer(_)) {
                     match load {
-                        OldMachineTerm::Variable(variable) => Address::symbolic_function(variable),
-                        load => Address {
+                        OldMachineTerm::Variable(variable) => {
+                            OldAddress::symbolic_function(variable)
+                        }
+                        load => OldAddress {
                             base: source_field.base.clone(),
                             offset: OldAddressOffset::scale_int32(load, 1),
                         },
                     }
                 } else {
                     let pointee_type = element_type.pointee_type()?;
-                    Address {
+                    OldAddress {
                         base: source_field.base.clone(),
                         offset: OldAddressOffset::scale_int32(
                             load,

@@ -15652,7 +15652,7 @@ impl Parser {
     }
 
     // A recorded allocation names an identity, even if the pointer returned
-    // by the allocator has since been reassigned. Address transformations of
+    // by the allocator has since been reassigned. OldAddress transformations of
     // that identity do not read a pointer value from another program state.
     fn is_allocation_address(expression: &SyntaxTerm) -> bool {
         match expression {
@@ -15820,7 +15820,7 @@ impl Parser {
                 ..
             } = &expression
             {
-                // Address the typed field lvalue without evaluating its load.
+                // OldAddress the typed field lvalue without evaluating its load.
                 // This preserves the field's pointee type and qualifiers even
                 // when the aggregate itself uses byte-addressed storage.
                 // The member is its own subobject, as the C frontend narrows
@@ -16774,7 +16774,7 @@ impl Parser {
             self.expect(Token::RParen)?;
             return Ok(SyntaxTerm::ProgramExpression(ProgramExpression::Value(
                 ProgramValue::typed_pointer(
-                    crate::kernel::Address {
+                    crate::kernel::OldAddress {
                         base: crate::kernel::AddressBase::StaticObject { binding: id },
                         offset: crate::kernel::OldAddressOffset::Constant(0),
                     },
@@ -17015,7 +17015,7 @@ impl Parser {
             self.expect(Token::RParen)?;
             return Ok(Some(SyntaxTerm::ProgramExpression(
                 ProgramExpression::Value(ProgramValue::typed_pointer(
-                    crate::kernel::Address {
+                    crate::kernel::OldAddress {
                         base: crate::kernel::AddressBase::AutomaticLocal {
                             binding: id,
                             instance,
@@ -17180,7 +17180,7 @@ impl Parser {
             self.expect(Token::RParen)?;
             return Ok(SyntaxTerm::ProgramExpression(ProgramExpression::Value(
                 ProgramValue::typed_pointer(
-                    crate::kernel::Address {
+                    crate::kernel::OldAddress {
                         base: block,
                         offset: crate::kernel::OldAddressOffset::Constant(0),
                     },

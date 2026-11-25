@@ -2,7 +2,7 @@ use super::*;
 
 fn bounds_work(steps: u64, unrelated: u64) -> usize {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::Heap(982_000),
         offset: OldAddressOffset::Constant(0),
     };

@@ -38,7 +38,7 @@ fn typed_held_observation_does_not_search_a_growing_alias_class() {
             .unwrap();
         let mut assumptions = PureFactContext::new();
         for index in 0..size {
-            let alias = Address {
+            let alias = OldAddress {
                 base: AddressBase::Symbolic(Variable(810000 + index as u64)),
                 offset: OldAddressOffset::Constant(0),
             };

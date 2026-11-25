@@ -4,11 +4,11 @@ use crate::kernel::borrows::BorrowLedger;
 
 #[test]
 fn free_retires_a_cached_interior_alias() {
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::Heap(945_000),
         offset: OldAddressOffset::Constant(0),
     };
-    let alias = Address::symbolic(Variable(945_001));
+    let alias = OldAddress::symbolic(Variable(945_001));
     let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
         OldConditionTerm::address_equal(alias.clone(), base.offset_by_bytes(8)),
         true,
@@ -29,8 +29,8 @@ fn free_retires_a_cached_interior_alias() {
 
 #[test]
 fn free_keeps_an_uncertain_block_only_with_ownership_of_the_whole_cell() {
-    let base = Address::symbolic(Variable(945_010));
-    let cell = Address::symbolic(Variable(945_011));
+    let base = OldAddress::symbolic(Variable(945_010));
+    let cell = OldAddress::symbolic(Variable(945_011));
     let memory = SymbolicMemory::new()
         .with_heap_allocation_claim(base.clone(), AllocationSize::int32(12))
         .unwrap()
@@ -69,12 +69,12 @@ fn free_keeps_an_uncertain_block_only_with_ownership_of_the_whole_cell() {
 
 #[test]
 fn a_free_publishes_its_owned_pointer_frame_as_an_equality() {
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::Heap(950_000),
         offset: OldAddressOffset::Constant(0),
     };
-    let cell = Address::symbolic(Variable(950_001));
-    let value = Address {
+    let cell = OldAddress::symbolic(Variable(950_001));
+    let value = OldAddress {
         base: AddressBase::Heap(950_002),
         offset: OldAddressOffset::Constant(0),
     };
@@ -188,7 +188,7 @@ fn active_heap_memory_borrow(range: MemoryRange) -> BorrowLedger {
 fn heap_allocation_paths() -> Vec<StatementExecutionPath> {
     let state = ExecutionState::new()
         .with_population_creation_tracking()
-        .with_local("p", ProgramValue::pointer(Address::null()));
+        .with_local("p", ProgramValue::pointer(OldAddress::null()));
     execute_execution_statement_paths(
         &state,
         &program_heap_allocate("p", 16),
@@ -215,7 +215,7 @@ fn successful_heap_allocation_state() -> ExecutionState {
         panic!("allocation should assign a pointer");
     };
     let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
-        OldConditionTerm::address_equal(pointer.address().clone(), Address::null()),
+        OldConditionTerm::address_equal(pointer.address().clone(), OldAddress::null()),
         false,
     ));
     resolve_pending_heap_allocations(pending, &assumptions)
@@ -306,7 +306,7 @@ fn heap_allocate_has_null_or_fresh_uninitialized_outcomes() {
     let null = resolve_pending_heap_allocations(
         pending,
         &PureFactContext::new().assume_proposition(Proposition::condition_is(
-            OldConditionTerm::address_equal(pointer.address().clone(), Address::null()),
+            OldConditionTerm::address_equal(pointer.address().clone(), OldAddress::null()),
             true,
         )),
     );
@@ -442,7 +442,7 @@ fn naming_an_initialized_heap_cell_preserves_its_initialization() {
 
 #[test]
 fn zeroed_heap_allocation_reads_zero_until_a_store() {
-    let state = ExecutionState::new().with_local("p", ProgramValue::pointer(Address::null()));
+    let state = ExecutionState::new().with_local("p", ProgramValue::pointer(OldAddress::null()));
     let paths = execute_execution_statement_paths(
         &state,
         &program_heap_allocate_sized_with_zeroed(
@@ -468,7 +468,7 @@ fn zeroed_heap_allocation_reads_zero_until_a_store() {
     let success = resolve_pending_heap_allocations(
         pending,
         &PureFactContext::new().assume_proposition(Proposition::condition_is(
-            OldConditionTerm::address_equal(pending_pointer.address().clone(), Address::null()),
+            OldConditionTerm::address_equal(pending_pointer.address().clone(), OldAddress::null()),
             false,
         )),
     );
@@ -539,8 +539,8 @@ fn zeroed_heap_allocation_reads_zero_until_a_store() {
 #[test]
 fn realloc_preserves_zeroed_prefix_and_leaves_growth_uninitialized() {
     let state = ExecutionState::new()
-        .with_local("p", ProgramValue::pointer(Address::null()))
-        .with_local("q", ProgramValue::pointer(Address::null()));
+        .with_local("p", ProgramValue::pointer(OldAddress::null()))
+        .with_local("q", ProgramValue::pointer(OldAddress::null()));
     let calloc_paths = execute_execution_statement_paths(
         &state,
         &program_heap_allocate_sized_with_zeroed(
@@ -632,7 +632,7 @@ fn realloc_preserves_zeroed_prefix_and_leaves_growth_uninitialized() {
             .is_zeroed_heap_address(resized, 4, &PureFactContext::new())
     );
     assert!(success.memory().is_uninitialized_heap_address(
-        &Address {
+        &OldAddress {
             base: resized.base.clone(),
             offset: OldAddressOffset::Constant(8),
         },
@@ -679,12 +679,12 @@ fn realloc_preserves_zeroed_prefix_and_leaves_growth_uninitialized() {
 
 #[test]
 fn pending_and_failed_heap_allocation_preserve_existing_memory() {
-    let existing = Address {
+    let existing = OldAddress {
         base: "arg-memory".into(),
         offset: OldAddressOffset::Constant(0),
     };
     let state = ExecutionState::new()
-        .with_local("p", ProgramValue::pointer(Address::null()))
+        .with_local("p", ProgramValue::pointer(OldAddress::null()))
         .with_memory(
             SymbolicMemory::new()
                 .with_block("arg-memory", 4)
@@ -738,7 +738,7 @@ fn pending_and_failed_heap_allocation_preserve_existing_memory() {
     let failed = resolve_pending_heap_allocations(
         pending,
         &PureFactContext::new().assume_proposition(Proposition::condition_is(
-            OldConditionTerm::address_equal(pending_pointer.address().clone(), Address::null()),
+            OldConditionTerm::address_equal(pending_pointer.address().clone(), OldAddress::null()),
             true,
         )),
     );
@@ -760,7 +760,7 @@ fn pending_and_failed_heap_allocation_preserve_existing_memory() {
     let succeeded = resolve_pending_heap_allocations(
         pending,
         &PureFactContext::new().assume_proposition(Proposition::condition_is(
-            OldConditionTerm::address_equal(pending_pointer.address().clone(), Address::null()),
+            OldConditionTerm::address_equal(pending_pointer.address().clone(), OldAddress::null()),
             false,
         )),
     );
@@ -791,7 +791,7 @@ fn successful_heap_allocation_is_fresh_from_every_existing_block() {
     let first_pointer = first_pointer.clone();
     assert!(pointers_proven_distinct_for_memory_resolution(
         &first_pointer,
-        &Address::null(),
+        &OldAddress::null(),
         &PureFactContext::new(),
     ));
     assert!(pointers_proven_distinct_for_memory_resolution(
@@ -801,14 +801,14 @@ fn successful_heap_allocation_is_fresh_from_every_existing_block() {
     ));
     assert!(pointers_proven_distinct_for_memory_resolution(
         &first_pointer,
-        &Address {
+        &OldAddress {
             base: AddressBase::ExternalArgument,
             offset: OldAddressOffset::Constant(0),
         },
         &PureFactContext::new(),
     ));
 
-    let state = first.with_local("q", ProgramValue::pointer(Address::null()));
+    let state = first.with_local("q", ProgramValue::pointer(OldAddress::null()));
     let paths = execute_execution_statement_paths(
         &state,
         &program_heap_allocate("q", 16),
@@ -835,7 +835,7 @@ fn successful_heap_allocation_is_fresh_from_every_existing_block() {
     let second = resolve_pending_heap_allocations(
         pending,
         &PureFactContext::new().assume_proposition(Proposition::condition_is(
-            OldConditionTerm::address_equal(pending_pointer.address().clone(), Address::null()),
+            OldConditionTerm::address_equal(pending_pointer.address().clone(), OldAddress::null()),
             false,
         )),
     );
@@ -865,7 +865,7 @@ mod a_free_reaches_every_element_of_its_block {
 
     /// The rule's answer about one cell for the `free` that produced
     /// `freed`, inside the one scope that may read these edges at all.
-    fn effect_of_the_free(freed: &SymbolicMemory, cell: &Address) -> StepEffect {
+    fn effect_of_the_free(freed: &SymbolicMemory, cell: &OldAddress) -> StepEffect {
         let produced = crate::kernel::intern_memory(freed.clone());
         let derivation = produced.derivation().expect("the free records an edge");
         let no_facts = PureFactContext::new();
@@ -885,7 +885,7 @@ mod a_free_reaches_every_element_of_its_block {
         })
     }
 
-    fn freed_sixteen_byte_allocation() -> (SymbolicMemory, Address) {
+    fn freed_sixteen_byte_allocation() -> (SymbolicMemory, OldAddress) {
         let state = successful_heap_allocation_state();
         let local_native_output_849 = state.locals().get_native("p");
         let Some(ProgramValue::Pointer(pointer)) = local_native_output_849.as_deref() else {
@@ -920,7 +920,7 @@ mod a_free_reaches_every_element_of_its_block {
     #[test]
     fn a_freed_allocation_leaves_another_object_alone() {
         let (freed, _) = freed_sixteen_byte_allocation();
-        let elsewhere = Address {
+        let elsewhere = OldAddress {
             base: AddressBase::Concrete("global:g".to_string()),
             offset: OldAddressOffset::Constant(0),
         };
@@ -1002,7 +1002,7 @@ fn heap_free_deallocates_the_complete_block_and_rejects_double_free() {
 
 #[test]
 fn consuming_a_whole_range_drops_state_equivalent_prefix_residues() {
-    let owner = Address {
+    let owner = OldAddress {
         base: "owner".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -1149,7 +1149,7 @@ fn persistent_composite_view_blocks_free_and_realloc_locally() {
             .clone()
             .unchecked_with_fact(persistent.clone()),
     );
-    let state = state.with_local("q", ProgramValue::pointer(Address::null()));
+    let state = state.with_local("q", ProgramValue::pointer(OldAddress::null()));
     for statement in [
         program_heap_free(crate::kernel::program_expression::variable("p")),
         program_reallocate_then_assign(
@@ -1188,7 +1188,7 @@ fn persistent_composite_view_blocks_free_and_realloc_locally() {
 #[test]
 fn separated_persistent_view_survives_free() {
     let state = successful_heap_allocation_state();
-    let other = Address {
+    let other = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::Constant(0),
     };
@@ -1220,11 +1220,11 @@ fn separated_persistent_view_survives_free() {
 
 #[test]
 fn free_of_external_allocation_forgets_cells_without_separation() {
-    let allocation_base = Address {
+    let allocation_base = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(908_000)), 4),
     };
-    let unrelated = Address {
+    let unrelated = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(908_001)), 4),
     };
@@ -1284,7 +1284,7 @@ fn free_of_external_allocation_forgets_cells_without_separation() {
 
 #[test]
 fn interface_heap_join_retains_potential_live_allocation() {
-    let allocation_base = Address {
+    let allocation_base = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::Constant(0),
     };
@@ -1512,8 +1512,8 @@ fn resolve_test_realloc(pending: &ExecutionState) -> Vec<StatementExecutionPath>
 
 #[test]
 fn realloc_failure_preserves_a_borrow_and_success_requires_call_entry_separation() {
-    let state =
-        successful_heap_allocation_state().with_local("q", ProgramValue::pointer(Address::null()));
+    let state = successful_heap_allocation_state()
+        .with_local("q", ProgramValue::pointer(OldAddress::null()));
     let local = state.locals().get_native("p");
     let Some(ProgramValue::Pointer(pointer)) = local.as_deref() else {
         panic!("allocation should assign a pointer");
@@ -1541,7 +1541,7 @@ fn realloc_failure_preserves_a_borrow_and_success_requires_call_entry_separation
     assert_eq!(after_failure.borrow_ledger(), Some(&ledger));
     assert_eq!(
         after_failure.locals().get_native("q").as_deref(),
-        Some(&ProgramValue::pointer(Address::null()))
+        Some(&ProgramValue::pointer(OldAddress::null()))
     );
 
     // Proof operations after the call must not change which borrows constrain it.
@@ -1603,7 +1603,7 @@ fn realloc_keeps_old_resources_until_result_and_transfers_them_on_success() {
     };
     let state = stored
         .clone()
-        .with_local("q", ProgramValue::pointer(Address::null()));
+        .with_local("q", ProgramValue::pointer(OldAddress::null()));
     let realloc_paths = execute_execution_statement_paths(
         &state,
         &program_reallocate_then_assign(
@@ -1686,7 +1686,7 @@ fn realloc_keeps_old_resources_until_result_and_transfers_them_on_success() {
     let failure = resolve_pending_heap_allocations(pending, &failure_assumptions);
     assert_eq!(
         failure.locals().get_native("q").as_deref(),
-        Some(&ProgramValue::pointer(Address::null()))
+        Some(&ProgramValue::pointer(OldAddress::null()))
     );
     assert!(failure.memory().live_heap_block_size(old_pointer).is_some());
     assert!(
@@ -1702,7 +1702,7 @@ fn realloc_keeps_old_resources_until_result_and_transfers_them_on_success() {
 
 #[test]
 fn free_null_needs_no_allocation_resources() {
-    let state = ExecutionState::new().with_local("p", ProgramValue::pointer(Address::null()));
+    let state = ExecutionState::new().with_local("p", ProgramValue::pointer(OldAddress::null()));
     let paths = execute_execution_statement_paths(
         &state,
         &program_heap_free(crate::kernel::program_expression::variable("p")),
@@ -1722,11 +1722,11 @@ fn free_null_needs_no_allocation_resources() {
 
 #[test]
 fn free_preserves_a_separate_recursive_tail_with_the_same_symbolic_block() {
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(909_000)), 4),
     };
-    let tail = Address {
+    let tail = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(909_001)), 4),
     };
@@ -1770,7 +1770,7 @@ fn free_preserves_a_separate_recursive_tail_with_the_same_symbolic_block() {
 fn nullable_owner_contract(
     body: ProgramStatement,
 ) -> (ExecutionState, ProgramFunction, Vec<ProgramExpression>) {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(910_000)), 4),
     };
@@ -1783,7 +1783,7 @@ fn nullable_owner_contract(
         Some(SpecProposition::Comparison {
             left: pointer_expression.clone(),
             operator: ComparisonOperator::NotEqual,
-            right: SpecExpression::Value(ProgramValue::pointer(Address::null())),
+            right: SpecExpression::Value(ProgramValue::pointer(OldAddress::null())),
         }),
         false,
         vec![
@@ -1850,7 +1850,7 @@ fn guarded_opaque_call_footprints_skip_only_inactive_segments() {
             "item",
         )),
         operator: ComparisonOperator::NotEqual,
-        right: SpecExpression::Value(ProgramValue::pointer(Address::null())),
+        right: SpecExpression::Value(ProgramValue::pointer(OldAddress::null())),
     };
     std::sync::Arc::make_mut(&mut function.contract_interface).contract_mutable = vec![
         MemorySegment::new(
@@ -1872,7 +1872,7 @@ fn guarded_opaque_call_footprints_skip_only_inactive_segments() {
             applied_tactics: Default::default(),
         });
 
-    let null = ProgramValue::pointer(Address::null());
+    let null = ProgramValue::pointer(OldAddress::null());
     let null_state = ExecutionState::new()
         .with_local("result", ProgramValue::Int32(0u32.into()))
         .with_population_creation_tracking()
@@ -1900,7 +1900,7 @@ fn guarded_opaque_call_footprints_skip_only_inactive_segments() {
         }]
     ));
 
-    let nonnull = Address {
+    let nonnull = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::Constant(0),
     };
@@ -1944,7 +1944,7 @@ fn free_resolves_an_owned_return_alias_without_losing_its_offset() {
         let ProgramValue::Pointer(base) = local.as_ref() else {
             panic!("allocation pointer")
         };
-        let alias = Address::symbolic(Variable(984_100));
+        let alias = OldAddress::symbolic(Variable(984_100));
         let bytes = success
             .memory()
             .live_heap_block_size(base.address())
@@ -2071,7 +2071,7 @@ fn interior_free_and_store_after_free_are_rejected() {
 
 #[test]
 fn returning_malloc_result_resolves_null_and_success_outcomes() {
-    let state = ExecutionState::new().with_local("p", ProgramValue::pointer(Address::null()));
+    let state = ExecutionState::new().with_local("p", ProgramValue::pointer(OldAddress::null()));
     let statement = program_seq(
         program_heap_allocate("p", 16),
         program_return(crate::kernel::program_expression::variable("p")),
@@ -2102,7 +2102,7 @@ fn returning_malloc_result_resolves_null_and_success_outcomes() {
             panic!("malloc should return a pointer");
         };
         assert!(!state.memory().has_pending_heap_allocation());
-        if pointer.address() == &Address::null() {
+        if pointer.address() == &OldAddress::null() {
             saw_failure = true;
             assert!(state.resources().facts().is_empty());
         } else {
@@ -2125,7 +2125,7 @@ fn returning_malloc_result_resolves_null_and_success_outcomes() {
 
 #[test]
 fn unreturned_unresolved_malloc_result_cannot_cross_a_return() {
-    let state = ExecutionState::new().with_local("p", ProgramValue::pointer(Address::null()));
+    let state = ExecutionState::new().with_local("p", ProgramValue::pointer(OldAddress::null()));
     let statement = program_seq(
         program_heap_allocate("p", 16),
         program_return(crate::kernel::program_expression::int32_literal(0)),
@@ -2156,15 +2156,15 @@ fn unreturned_unresolved_malloc_result_cannot_cross_a_return() {
 /// loses nothing.
 #[test]
 fn freeing_through_one_spelling_retires_the_equal_spelling_too() {
-    let alias = Address {
+    let alias = OldAddress {
         base: AddressBase::Symbolic(Variable(921_000)),
         offset: OldAddressOffset::Constant(0),
     };
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::Heap(921_001),
         offset: OldAddressOffset::Constant(0),
     };
-    let fresh = Address {
+    let fresh = OldAddress {
         base: AddressBase::Heap(921_002),
         offset: OldAddressOffset::Constant(0),
     };
@@ -2218,7 +2218,7 @@ fn freeing_through_one_spelling_retires_the_equal_spelling_too() {
 /// including through an equal pointer spelling.
 #[test]
 fn contract_retire_forgets_zeroed_reading_and_records_the_change() {
-    let state = ExecutionState::new().with_local("p", ProgramValue::pointer(Address::null()));
+    let state = ExecutionState::new().with_local("p", ProgramValue::pointer(OldAddress::null()));
     let paths = execute_execution_statement_paths(
         &state,
         &program_heap_allocate_sized_with_zeroed(
@@ -2241,7 +2241,7 @@ fn contract_retire_forgets_zeroed_reading_and_records_the_change() {
     let success = resolve_pending_heap_allocations(
         pending,
         &PureFactContext::new().assume_proposition(Proposition::condition_is(
-            OldConditionTerm::address_equal(pending_pointer.address().clone(), Address::null()),
+            OldConditionTerm::address_equal(pending_pointer.address().clone(), OldAddress::null()),
             false,
         )),
     );
@@ -2250,7 +2250,7 @@ fn contract_retire_forgets_zeroed_reading_and_records_the_change() {
         panic!("allocation should assign a pointer");
     };
     let base = pointer.address().clone();
-    let alias = Address {
+    let alias = OldAddress {
         base: AddressBase::Symbolic(Variable(922_100)),
         offset: OldAddressOffset::Constant(0),
     };
@@ -2304,11 +2304,11 @@ fn contract_retire_forgets_zeroed_reading_and_records_the_change() {
 /// when the raw cell uses another pointer spelling.
 #[test]
 fn store_union_forgets_aliased_raw_cell() {
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::Heap(922_001),
         offset: OldAddressOffset::Constant(0),
     };
-    let alias = Address {
+    let alias = OldAddress {
         base: AddressBase::Symbolic(Variable(922_000)),
         offset: OldAddressOffset::Constant(0),
     };
@@ -2440,8 +2440,8 @@ fn read_validity_transports_checked_aliases_without_crossing_writes_or_retiremen
         panic!("allocated pointer");
     };
     let address = pointer.address().clone();
-    let alias = Address::symbolic(Variable(940_001));
-    let unrelated = Address {
+    let alias = OldAddress::symbolic(Variable(940_001));
+    let unrelated = OldAddress {
         base: AddressBase::Heap(940_002),
         offset: OldAddressOffset::Constant(0),
     };
@@ -2486,11 +2486,11 @@ fn read_validity_transports_checked_aliases_without_crossing_writes_or_retiremen
 
 #[test]
 fn read_validity_transports_field_offsets_through_equal_base_pointers() {
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::Heap(943_000),
         offset: OldAddressOffset::Constant(0),
     };
-    let alias = Address::symbolic(Variable(943_001));
+    let alias = OldAddress::symbolic(Variable(943_001));
     let field = base.offset_by_bytes(4);
     let alias_field = alias.offset_by_bytes(4);
     let memory = SymbolicMemory::new()
@@ -2519,7 +2519,7 @@ fn read_validity_transports_field_offsets_through_equal_base_pointers() {
         ProgramType::Int64
     ));
     let changed = memory.clone().store(
-        Address {
+        OldAddress {
             base: AddressBase::Heap(943_002),
             offset: OldAddressOffset::Constant(0),
         },
@@ -2555,7 +2555,7 @@ fn read_validity_transports_field_offsets_through_equal_base_pointers() {
 
 #[test]
 fn naming_an_uninitialized_local_cell_does_not_initialize_it() {
-    let address = Address {
+    let address = OldAddress {
         base: "local:uninitialized".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -2608,11 +2608,11 @@ fn an_unplaced_heap_store_keeps_the_elements_it_may_alias_initialized() {
             OldConditionTerm::signed_less_than(index.clone(), OldMachineTerm::constant(2)),
             true,
         );
-    let unplaced = Address {
+    let unplaced = OldAddress {
         base: base.base.clone(),
         offset: OldAddressOffset::scale_int32(index, 4),
     };
-    let store = |memory: SymbolicMemory, pointer: Address, value: u32| {
+    let store = |memory: SymbolicMemory, pointer: OldAddress, value: u32| {
         memory
             .without_possible_aliasing_cells(&pointer, 4, &assumptions)
             .store_with_context(pointer, int32(value), &assumptions)
@@ -2665,7 +2665,7 @@ fn fresh_heap_struct_binding_checks_size_alignment_and_resolution() {
     for (bytes, alignment, typed) in [(8, 8, true), (16, 8, true), (1, 8, false), (8, 32, false)] {
         for zeroed in [false, true] {
             let state =
-                ExecutionState::new().with_local("p", ProgramValue::pointer(Address::null()));
+                ExecutionState::new().with_local("p", ProgramValue::pointer(OldAddress::null()));
             let paths = execute_execution_statement_paths(
                 &state,
                 &ProgramStatement::HeapAllocate {
@@ -2694,7 +2694,8 @@ fn fresh_heap_struct_binding_checks_size_alignment_and_resolution() {
                 panic!("pointer expected")
             };
             assert_eq!(pointer.object_class(), typed.then(|| class.clone()));
-            let null = OldConditionTerm::address_equal(pointer.address().clone(), Address::null());
+            let null =
+                OldConditionTerm::address_equal(pointer.address().clone(), OldAddress::null());
             for succeeds in [false, true] {
                 let resolved = resolve_pending_heap_allocations(
                     pending,
@@ -2712,7 +2713,7 @@ fn fresh_heap_struct_binding_checks_size_alignment_and_resolution() {
                     );
                     assert_eq!(value.object_class(), typed.then(|| class.clone()));
                 } else {
-                    assert_eq!(value.address(), &Address::null());
+                    assert_eq!(value.address(), &OldAddress::null());
                     assert!(resolved.memory.heap.live_allocations.is_empty());
                 }
             }
@@ -2726,7 +2727,7 @@ fn fresh_heap_struct_binding_checks_size_alignment_and_resolution() {
 #[test]
 fn an_allocation_that_ends_the_program_on_failure_continues_only_on_success() {
     let _session = crate::kernel::VerificationSession::enter();
-    let state = ExecutionState::new().with_local("p", ProgramValue::pointer(Address::null()));
+    let state = ExecutionState::new().with_local("p", ProgramValue::pointer(OldAddress::null()));
     let paths = execute_execution_statement_paths(
         &state,
         &ProgramStatement::HeapAllocate {
@@ -2755,7 +2756,7 @@ fn an_allocation_that_ends_the_program_on_failure_continues_only_on_success() {
     let Some(ProgramValue::Pointer(pointer)) = local_native_output_2449.as_deref() else {
         panic!("pointer expected")
     };
-    let null = OldConditionTerm::address_equal(pointer.address().clone(), Address::null());
+    let null = OldConditionTerm::address_equal(pointer.address().clone(), OldAddress::null());
     let context = crate::kernel::reasoning::assumptions_with_path_context(
         &PureFactContext::new(),
         facts,
@@ -2767,7 +2768,7 @@ fn an_allocation_that_ends_the_program_on_failure_continues_only_on_success() {
     let Some(ProgramValue::Pointer(value)) = local_native_output_2460.as_deref() else {
         panic!("resolved pointer expected")
     };
-    assert_ne!(value.address(), &Address::null());
+    assert_ne!(value.address(), &OldAddress::null());
     assert_eq!(resolved.memory.heap.live_allocations.len(), 1);
 }
 
@@ -2791,7 +2792,7 @@ fn size_t_heap_allocation_with_zeroed(
     let n = OldMachineTerm::Variable(Variable(1 << 40));
     let state = ExecutionState::new()
         .with_population_creation_tracking()
-        .with_local("p", ProgramValue::pointer(Address::null()))
+        .with_local("p", ProgramValue::pointer(OldAddress::null()))
         .with_local("n", ProgramValue::UInt64(n));
     let assumptions = facts
         .iter()
@@ -2825,7 +2826,7 @@ fn size_t_heap_allocation_with_zeroed(
                 panic!("allocation should assign a pointer");
             };
             let not_null = assumptions.assume_proposition(Proposition::condition_is(
-                OldConditionTerm::address_equal(pointer.address().clone(), Address::null()),
+                OldConditionTerm::address_equal(pointer.address().clone(), OldAddress::null()),
                 false,
             ));
             Some(resolve_pending_heap_allocations(pending, &not_null))
@@ -3005,7 +3006,7 @@ fn a_64_bit_block_reallocates_to_a_64_bit_size() {
     let (_, allocated) = size_t_heap_allocation(&facts);
     let allocated = allocated
         .expect("a bounded count allocates")
-        .with_local("q", ProgramValue::pointer(Address::null()))
+        .with_local("q", ProgramValue::pointer(OldAddress::null()))
         .with_local("m", ProgramValue::UInt64(m.clone()));
     let local_native_output_2693 = allocated.locals().get_native("p");
     let Some(ProgramValue::Pointer(old_pointer)) = local_native_output_2693.as_deref() else {
@@ -3091,7 +3092,7 @@ fn a_64_bit_block_reallocates_to_a_64_bit_size() {
 #[test]
 fn viewability_alone_cannot_certify_initialization_of_external_storage() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = Address::symbolic(Variable(9_492_101));
+    let pointer = OldAddress::symbolic(Variable(9_492_101));
     for value_type in [
         ProgramType::UInt8,
         ProgramType::Int32,
@@ -3120,7 +3121,7 @@ fn viewability_alone_cannot_certify_initialization_of_external_storage() {
 #[test]
 fn typed_read_initialization_accepts_only_complete_cached_byte_coverage() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = Address::symbolic(Variable(9_492_102));
+    let pointer = OldAddress::symbolic(Variable(9_492_102));
     for count in [0, 1, 2] {
         let memory = SymbolicMemory::new().with_seeded_cells(
             pointer.clone(),

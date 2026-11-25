@@ -689,7 +689,7 @@ mod tests {
         let coordinate = Variable(999942);
         let stored = Variable(999943);
         let unrelated = Variable(999944);
-        let address = Address {
+        let address = OldAddress {
             base: AddressBase::Symbolic(base),
             offset: OldAddressOffset::Variable(coordinate),
         };
@@ -700,7 +700,7 @@ mod tests {
                     ProgramValue::Bool(OldMachineTerm::Variable(stored)),
                 )
                 .store(
-                    Address::symbolic(base),
+                    OldAddress::symbolic(base),
                     ProgramValue::Bool(OldMachineTerm::Variable(unrelated)),
                 ),
         );
@@ -740,7 +740,7 @@ mod tests {
         let stored_connection = Variable(999958);
         let frame_base = Variable(999954);
         let frame_index = Variable(999955);
-        let pointer = Address {
+        let pointer = OldAddress {
             base: AddressBase::Symbolic(base),
             offset: OldAddressOffset::Add(
                 Box::new(OldAddressOffset::scaled_int32_node(
@@ -762,7 +762,7 @@ mod tests {
                 ),
         );
         let writes = crate::kernel::MemoryRange::new(
-            Address::symbolic(frame_base),
+            OldAddress::symbolic(frame_base),
             OldMachineTerm::Variable(frame_index),
             OldMachineTerm::Binary {
                 format: crate::kernel::MachineIntegerType::Int32,
@@ -899,7 +899,7 @@ mod tests {
                     ProgramValue::Int32(OldMachineTerm::Variable(Variable(999811))),
                 ),
         );
-        let pointer = Address {
+        let pointer = OldAddress {
             base: AddressBase::Symbolic(Variable(999812)),
             offset: OldAddressOffset::scaled_int32_node(
                 OldMachineTerm::Variable(Variable(999813)),
@@ -946,7 +946,7 @@ mod tests {
             let left = Box::new(OldMachineTerm::Variable(Variable(999933)));
             let right = Box::new(OldMachineTerm::read_named(
                 ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
-                Box::new(Address::symbolic(Variable(999934))),
+                Box::new(OldAddress::symbolic(Variable(999934))),
                 format.load_kind(),
             ));
             let native = match format {
@@ -995,7 +995,7 @@ mod tests {
             let left = Box::new(OldMachineTerm::Variable(Variable(999933)));
             let right = Box::new(OldMachineTerm::read_named(
                 ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
-                Box::new(Address::symbolic(Variable(999934))),
+                Box::new(OldAddress::symbolic(Variable(999934))),
                 format.load_kind(),
             ));
             let native = match format {
@@ -1213,7 +1213,7 @@ mod tests {
                             ProgramValue::UInt64(OldMachineTerm::Variable(Variable(999741))),
                         ),
                 )),
-                pointer: Box::new(Address {
+                pointer: Box::new(OldAddress {
                     base: AddressBase::Symbolic(Variable(999742)),
                     offset: OldAddressOffset::scaled_int32_node(
                         OldMachineTerm::Variable(Variable(999743)),
@@ -1283,7 +1283,7 @@ mod tests {
                 crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory(
                     SymbolicMemory::new(),
                 )),
-                Address::symbolic(Variable(999563)),
+                OldAddress::symbolic(Variable(999563)),
             )),
         });
         let application = SharedPureApplication::intern(
@@ -1334,7 +1334,7 @@ mod tests {
                             ProgramValue::Int32(OldMachineTerm::Variable(Variable(970_030))),
                         ),
                 )),
-                Address {
+                OldAddress {
                     base: AddressBase::Symbolic(Variable(970_031)),
                     offset: OldAddressOffset::scaled_int32_node(
                         OldMachineTerm::Variable(Variable(970_032)),
@@ -1354,15 +1354,18 @@ mod tests {
             OldConditionTerm::PointerEqual(
                 Box::new(
                     OldPointer::new(
-                        Address::symbolic(Variable(970_010)),
+                        OldAddress::symbolic(Variable(970_010)),
                         ProgramType::Int32Pointer,
                     )
                     .with_bounds(Some(SubobjectBounds {
-                        start: Address::symbolic(Variable(970_011)),
+                        start: OldAddress::symbolic(Variable(970_011)),
                         width: OldMachineTerm::Variable(Variable(970_012)),
                     })),
                 ),
-                Box::new(OldPointer::new(Address::null(), ProgramType::Int32Pointer)),
+                Box::new(OldPointer::new(
+                    OldAddress::null(),
+                    ProgramType::Int32Pointer,
+                )),
             ),
             OldConditionTerm::AddressOffsetEqual(
                 Box::new(OldAddressOffset::Add(
@@ -1382,7 +1385,7 @@ mod tests {
                 )),
             ),
             OldConditionTerm::AddressEqual(
-                Box::new(Address {
+                Box::new(OldAddress {
                     base: AddressBase::PureFunctionApplication(SharedPureApplication::intern(
                         "raw_pointer_dependency".into(),
                         vec![PureFunctionArgument::Integer(
@@ -1394,7 +1397,7 @@ mod tests {
                         4,
                     ),
                 }),
-                Box::new(Address {
+                Box::new(OldAddress {
                     base: AddressBase::ExternalObject(Variable(970_010)),
                     offset: OldAddressOffset::scaled_int64_node(
                         OldMachineTerm::Variable(Variable(970_011)),
@@ -1780,7 +1783,7 @@ mod mixed_argument_tests {
             },
         };
         let pointer = ProgramValue::Pointer(OldPointer::new(
-            Address::symbolic(Variable(1008512)),
+            OldAddress::symbolic(Variable(1008512)),
             ProgramType::Int32Pointer,
         ));
         let arguments = [

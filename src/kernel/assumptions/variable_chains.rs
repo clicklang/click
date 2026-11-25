@@ -384,7 +384,7 @@ mod memory_tests {
                 true,
             );
         }
-        let pointer = |variable, stride| Address {
+        let pointer = |variable, stride| OldAddress {
             base: AddressBase::from("ordered"),
             offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(variable), stride),
         };

@@ -11,7 +11,7 @@ fn int32_load_late_merge_and_fork_work_scales_with_affected_applications() {
     for size in [16u64, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = memory();
-        let indexed = |index, suffix| Address {
+        let indexed = |index, suffix| OldAddress {
             base: "array".into(),
             offset: OldAddressOffset::Add(
                 Box::new(address(index).offset),
@@ -65,7 +65,7 @@ fn int32_load_nested_registration_and_late_closure_are_iterative_and_scale() {
             for _ in 0..size {
                 value = load(
                     &memory,
-                    &Address {
+                    &OldAddress {
                         base: "array".into(),
                         offset: OldAddressOffset::scale_int32(value, 4),
                     },
@@ -111,7 +111,7 @@ fn raw_read_address_registration_does_not_walk_memory_history() {
                 crate::kernel::LoadKind::Int32,
             )
         };
-        let backing = Address {
+        let backing = OldAddress {
             base: owner.base.clone(),
             offset: OldAddressOffset::scale_int32(load(&execution), 4),
         };
@@ -119,7 +119,7 @@ fn raw_read_address_registration_does_not_walk_memory_history() {
             backing.offset_by_int32_elements(var(88)),
             ProgramValue::Int32(7u32.into()),
         );
-        let selected = Address {
+        let selected = OldAddress {
             base: owner.base.clone(),
             offset: OldAddressOffset::scale_int32(load(&after), 4),
         };
@@ -154,11 +154,11 @@ fn nested_named_pointer_reads_ignore_unrelated_definitions() {
             );
         }
         let field = address(940_061);
-        let arena = Address::symbolic(Variable(940_062));
+        let arena = OldAddress::symbolic(Variable(940_062));
         let mut graph = EqualityGraph::default();
-        graph.add_equality(&Address::loaded_value(&memory, &field), &arena);
-        let named_read = |address: &Address| {
-            let value = Address::loaded(&load(&memory, address, 8)).unwrap();
+        graph.add_equality(&OldAddress::loaded_value(&memory, &field), &arena);
+        let named_read = |address: &OldAddress| {
+            let value = OldAddress::loaded(&load(&memory, address, 8)).unwrap();
             graph.register_pointer_read_definition(&value, &memory, address);
             value
         };

@@ -230,7 +230,7 @@ fn a_bool_read_is_one_value_per_cell() {
     let read = || {
         OldConditionTerm::boolean_cell_read(
             crate::kernel::ProgramPoint::at(&memory),
-            Address::symbolic(Variable(70)),
+            OldAddress::symbolic(Variable(70)),
         )
     };
     let context = PureFactContext::new()

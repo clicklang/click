@@ -14,11 +14,11 @@ use super::*;
 #[test]
 fn conjunct_elimination_is_flat_against_unrelated_history_and_facts() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Address {
+    let base = OldAddress {
         base: "conjunct-frame".into(),
         offset: OldAddressOffset::Constant(0),
     };
-    let unrelated = Address {
+    let unrelated = OldAddress {
         base: "conjunct-frame-unrelated".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -104,11 +104,11 @@ fn conjunct_elimination_is_flat_against_unrelated_history_and_facts() {
 /// Measure a cold query after constructing and interning its input states.
 fn load_equality_work(earlier: u32, between: u32, written: bool) -> usize {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = Address {
+    let base = OldAddress {
         base: "load-frame".into(),
         offset: OldAddressOffset::Constant(0),
     };
-    let unrelated = Address {
+    let unrelated = OldAddress {
         base: "load-frame-other".into(),
         offset: OldAddressOffset::Constant(0),
     };

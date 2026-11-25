@@ -9,8 +9,8 @@ fn block(name: &str) -> AddressBase {
     AddressBase::Concrete(name.to_string())
 }
 
-fn at(block: AddressBase, offset: i64) -> Address {
-    Address {
+fn at(block: AddressBase, offset: i64) -> OldAddress {
+    OldAddress {
         base: block,
         offset: OldAddressOffset::Constant(offset),
     }
@@ -432,7 +432,7 @@ fn a_block_does_not_cross_its_own_declaration_or_an_unseparated_one() {
 #[test]
 fn a_release_of_another_object_keeps_one_version() {
     let heap = AddressBase::Heap(1);
-    let fresh = Address {
+    let fresh = OldAddress {
         base: heap.clone(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -468,7 +468,7 @@ fn a_release_of_another_object_keeps_one_version() {
 /// printed as an internal error in every trace through a `free`.
 #[test]
 fn a_release_is_based_on_the_memory_it_started_from() {
-    let fresh = Address {
+    let fresh = OldAddress {
         base: AddressBase::Heap(1),
         offset: OldAddressOffset::Constant(0),
     };
@@ -496,7 +496,7 @@ fn a_release_is_based_on_the_memory_it_started_from() {
 /// every array parameter of a function shares.
 #[test]
 fn a_release_inside_the_argument_object_stops_a_block_fact() {
-    let inside = Address {
+    let inside = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::Constant(0),
     };
@@ -563,7 +563,7 @@ fn a_lifetime_end_of_another_local_keeps_one_version() {
 fn a_pending_allocation_records_nothing_a_block_can_observe() {
     let entry = entry_memory();
     let requested = entry.clone().with_pending_heap_allocation(
-        Address {
+        OldAddress {
             base: AddressBase::Symbolic(Variable(1_000)),
             offset: OldAddressOffset::Constant(0),
         },
@@ -946,7 +946,7 @@ mod footprints {
         Evidence, FootprintSeparation, Separation, StepEffect, affects,
     };
 
-    fn bytes(base: Address, count: u32) -> MemoryRange {
+    fn bytes(base: OldAddress, count: u32) -> MemoryRange {
         MemoryRange::new_with_element_width(
             base,
             OldMachineTerm::constant(0),
@@ -1025,8 +1025,8 @@ mod footprints {
     fn a_store_through_a_loaded_pointer_reaches_every_stated_footprint() {
         let cells = entry_memory();
         let source = intern_memory(cells.clone());
-        let p = Address::loaded_value(&source, &at(block("global:cells"), 0));
-        let q = Address::loaded_value(&source, &at(block("global:cells"), 8));
+        let p = OldAddress::loaded_value(&source, &at(block("global:cells"), 0));
+        let q = OldAddress::loaded_value(&source, &at(block("global:cells"), 8));
         let after = cells.store(q.offset_by_bytes(8), one());
         for footprint in [[bytes(p.clone(), 8)], [bytes(at(block("global:g"), 0), 4)]] {
             assert!(
@@ -1068,7 +1068,7 @@ mod footprints {
 fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
     let cell = at(block("global:g"), 0);
     let index = OldMachineTerm::Variable(Variable(0));
-    let written = Address {
+    let written = OldAddress {
         base: block("global:g"),
         offset: OldAddressOffset::scaled_int32_node(index.clone(), 4),
     };
@@ -1267,7 +1267,7 @@ fn branch_join_identity_retains_inputs_through_read_projection() {
 #[test]
 fn branch_join_typed_agreement_checks_alias_premises_and_access_width() {
     let cell = at(block("global:g"), 0);
-    let alias = Address {
+    let alias = OldAddress {
         base: AddressBase::Symbolic(Variable(981021)),
         offset: OldAddressOffset::Constant(0),
     };
@@ -1389,8 +1389,8 @@ fn transport_diagnostic_retains_the_actual_cell_walk_and_scope() {
 #[test]
 fn named_cell_stop_retains_the_decision_made_by_its_walk() {
     let _session = crate::kernel::VerificationSession::enter();
-    let read = Address::symbolic(crate::kernel::Variable(981_201));
-    let write = Address::symbolic(crate::kernel::Variable(981_202));
+    let read = OldAddress::symbolic(crate::kernel::Variable(981_201));
+    let write = OldAddress::symbolic(crate::kernel::Variable(981_202));
     let memory = intern_memory(SymbolicMemory::new().store(write.clone(), one()));
     let here = ProgramPoint::at(&memory);
     let named = last_same_named_cell(&read, crate::kernel::AccessExtent::from(4), &here)
@@ -1639,9 +1639,9 @@ fn raw_pointer_condition_reads_keep_block_and_displacement_order() {
             4,
         )
     };
-    let mut left = Address::loaded_value(&memory, &at(block("local:f:pointer_left"), 0));
+    let mut left = OldAddress::loaded_value(&memory, &at(block("local:f:pointer_left"), 0));
     left.offset = OldAddressOffset::Add(Box::new(offset("global:g")), Box::new(offset("global:h")));
-    let mut right = Address::loaded_value(&memory, &at(block("local:f:pointer_right"), 0));
+    let mut right = OldAddress::loaded_value(&memory, &at(block("local:f:pointer_right"), 0));
     right.offset = offset("local:f:i");
     let source = OldConditionTerm::AddressEqual(Box::new(left), Box::new(right));
     let root = KernelTermImport::default().condition(&source);
@@ -1667,9 +1667,9 @@ fn complete_pointer_conditions_keep_read_order() {
             4,
         )
     };
-    let mut left = Address::loaded_value(&memory, &at(block("local:f:pointer_left"), 0));
+    let mut left = OldAddress::loaded_value(&memory, &at(block("local:f:pointer_left"), 0));
     left.offset = OldAddressOffset::Add(Box::new(offset("global:g")), Box::new(offset("global:h")));
-    let mut right = Address::loaded_value(&memory, &at(block("local:f:pointer_right"), 0));
+    let mut right = OldAddress::loaded_value(&memory, &at(block("local:f:pointer_right"), 0));
     right.offset = offset("local:f:i");
     let source = OldConditionTerm::PointerEqual(
         Box::new(OldPointer::new(left, ProgramType::Int32Pointer)),
@@ -1688,7 +1688,7 @@ fn complete_pointer_conditions_keep_read_order() {
 fn boolean_reads_report_only_the_one_byte_cell() {
     use crate::kernel::{BooleanOperandView, KernelTermImport};
     let memory = intern_memory(entry_memory());
-    let pointer = Address {
+    let pointer = OldAddress {
         base: AddressBase::Symbolic(Variable(999350)),
         offset: OldAddressOffset::scaled_int32_node(
             OldMachineTerm::read_named(
@@ -1773,7 +1773,7 @@ fn a_path_version_crosses_an_unchanged_continuation_from_a_named_cell_view() {
     let start = start_with(&["slot"]);
     let state = &path_of_stores(&start, &[("slot", 7)])[0];
     let source = state.program_point().id();
-    let external = Address::symbolic(Variable(999_351));
+    let external = OldAddress::symbolic(Variable(999_351));
     let memory = state.memory().clone().materialize_cell_from_source(
         external,
         ProgramType::Int32,
@@ -1888,7 +1888,7 @@ fn contract_offset_reads_keep_order_and_distinct_versions() {
 fn static_array_version_stops_at_an_aliasing_write_before_disjoint_calls() {
     let _session = crate::kernel::VerificationSession::enter();
     let array = block("global:g");
-    let alias = Address::symbolic(Variable(935_100));
+    let alias = OldAddress::symbolic(Variable(935_100));
     let barrier = entry_memory().store(alias, one());
     let after = barrier.clone().with_storage_memory_havoc(
         Variable(935_101),

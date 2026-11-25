@@ -230,7 +230,7 @@ mod tests {
     fn boolean_cast_sources_keep_native_argument_equality() {
         let _session = VerificationSession::enter();
         let pointer = OldPointer::new(
-            Address::symbolic(Variable(999464)),
+            OldAddress::symbolic(Variable(999464)),
             ProgramType::Int32Pointer,
         );
         let values = [pointer.clone(), pointer].map(|pointer| {

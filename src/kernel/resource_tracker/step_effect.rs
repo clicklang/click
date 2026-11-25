@@ -297,7 +297,7 @@ pub(in crate::kernel) fn separation_check(
 /// verdict from the same premises.
 fn cell_effect(
     step: &MemoryDerivation,
-    pointer: &Address,
+    pointer: &OldAddress,
     extent: AccessExtent,
     evidence: &Evidence<'_>,
 ) -> StepEffect {
@@ -395,7 +395,7 @@ fn cell_effect(
             // its others, as for `HeapFreed` below. Only distinct *blocks*
             // decide without the size.
             if extended_dag_bridging_active()
-                && pointer.blocks_proven_distinct(&Address {
+                && pointer.blocks_proven_distinct(&OldAddress {
                     base: block.clone(),
                     offset: OldAddressOffset::Constant(0),
                 })
@@ -418,7 +418,7 @@ fn cell_effect(
                     write_membership,
                     load_membership,
                 }) = typed_store_separated_ranges_evidence(
-                    &Address {
+                    &OldAddress {
                         base: block.clone(),
                         offset: OldAddressOffset::Constant(0),
                     },
@@ -429,7 +429,7 @@ fn cell_effect(
                 )
                 .or_else(|| {
                     owned_composition_store_separated_evidence(
-                        &Address {
+                        &OldAddress {
                             base: block.clone(),
                             offset: OldAddressOffset::Constant(0),
                         },
@@ -648,9 +648,9 @@ fn cell_effect(
 /// the same question asked of each store it stands for.
 fn store_cell_effect(
     step: &MemoryDerivation,
-    write: &Address,
+    write: &OldAddress,
     write_bytes: u32,
-    pointer: &Address,
+    pointer: &OldAddress,
     extent: AccessExtent,
     evidence: &Evidence<'_>,
 ) -> StepEffect {
@@ -844,8 +844,8 @@ fn store_cell_effect(
 /// different, weaker fact — a store can reach a read without starting where
 /// it starts.
 pub(in crate::kernel) fn write_is_at_read_address(
-    write: &Address,
-    pointer: &Address,
+    write: &OldAddress,
+    pointer: &OldAddress,
     assumptions: &PureFactContext,
 ) -> bool {
     write == pointer
@@ -871,7 +871,7 @@ pub(in crate::kernel) fn write_is_at_read_address(
 pub(in crate::kernel) enum SeededCellEffect {
     /// One of its stores writes the cell: the store's pointer, and the value
     /// the walk reads.
-    Written(Address, ProgramValue),
+    Written(OldAddress, ProgramValue),
     /// Every store it stands for is separate from the cell, in the order a
     /// walk meets them.
     Separate(Vec<MemoryDagHopJustification>),
@@ -884,7 +884,7 @@ pub(in crate::kernel) enum SeededCellEffect {
 /// separate.
 pub(in crate::kernel) fn seeded_cell_effect(
     step: &MemoryDerivation,
-    pointer: &Address,
+    pointer: &OldAddress,
     bytes: u32,
     evidence: &Evidence<'_>,
 ) -> SeededCellEffect {
@@ -955,7 +955,7 @@ pub(in crate::kernel) fn seeded_loads_preserve_base(step: &MemoryDerivation) -> 
 fn seeded_cell_effect_store_by_store(
     step: &MemoryDerivation,
     run: &crate::kernel::primitives::CellRun,
-    pointer: &Address,
+    pointer: &OldAddress,
     bytes: u32,
     evidence: &Evidence<'_>,
 ) -> SeededCellEffect {
@@ -1319,7 +1319,7 @@ fn footprint_effect(step: &MemoryDerivation, ranges: Option<&[MemoryRange]>) -> 
             }
         }
         MemoryDerivation::LocalLifetimeEnded { block, .. } => {
-            let retired = Address {
+            let retired = OldAddress {
                 base: block.clone(),
                 offset: OldAddressOffset::Constant(0),
             };

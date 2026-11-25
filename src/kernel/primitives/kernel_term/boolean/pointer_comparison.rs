@@ -28,28 +28,28 @@ impl KernelTerm {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn pointers() -> Vec<Address> {
+    fn pointers() -> Vec<OldAddress> {
         let memory = crate::kernel::intern_memory(
             crate::kernel::SymbolicMemory::new().with_block("raw-pointer", 8),
         );
         let mut values = vec![
-            Address::null(),
-            Address::symbolic(Variable(999001)),
-            Address {
+            OldAddress::null(),
+            OldAddress::symbolic(Variable(999001)),
+            OldAddress {
                 base: AddressBase::FunctionSymbolic(Variable(999001)),
                 offset: OldAddressOffset::Constant(0),
             },
-            Address {
+            OldAddress {
                 base: AddressBase::ExternalObject(Variable(999001)),
                 offset: OldAddressOffset::Constant(0),
             },
             crate::kernel::SymbolicMemory::global_pointer("raw-pointer"),
-            Address::loaded_value(
+            OldAddress::loaded_value(
                 &memory,
                 &crate::kernel::SymbolicMemory::global_pointer("raw-pointer"),
             ),
-            Address::from_integer_address(OldMachineTerm::Variable(Variable(999002))),
-            Address {
+            OldAddress::from_integer_address(OldMachineTerm::Variable(Variable(999002))),
+            OldAddress {
                 base: AddressBase::PureFunctionApplication(SharedPureApplication::intern(
                     "raw_pointer_call".into(),
                     vec![PureFunctionArgument::Value(ProgramValue::Int32(
@@ -61,7 +61,7 @@ mod tests {
         ];
         let base = values.clone();
         for pointer in base {
-            values.push(Address {
+            values.push(OldAddress {
                 base: pointer.base,
                 offset: OldAddressOffset::Add(
                     Box::new(OldAddressOffset::Constant(0)),
@@ -103,7 +103,7 @@ mod tests {
     #[test]
     fn raw_pointer_condition_substitutions_preserve_native_policy() {
         let _session = crate::kernel::VerificationSession::enter();
-        let target = Address {
+        let target = OldAddress {
             base: AddressBase::Symbolic(Variable(999010)),
             offset: OldAddressOffset::Add(
                 Box::new(OldAddressOffset::Constant(1)),
@@ -112,7 +112,7 @@ mod tests {
         };
         for pointer in pointers() {
             let source =
-                OldConditionTerm::AddressEqual(Box::new(pointer), Box::new(Address::null()));
+                OldConditionTerm::AddressEqual(Box::new(pointer), Box::new(OldAddress::null()));
             for source in [
                 source.clone(),
                 OldConditionTerm::BoolEqual(
@@ -172,17 +172,17 @@ mod tests {
                 "raw_pointer_metadata".into(),
                 vec![PureFunctionArgument::Value(ProgramValue::UInt64(
                     OldMachineTerm::IntegerAddress(
-                        Box::new(Address::symbolic(Variable(999020))),
+                        Box::new(OldAddress::symbolic(Variable(999020))),
                         AddressObjectClass::new(Some(CAccessClass::Scalar(class))),
                     ),
                 ))],
             ));
             let source = OldConditionTerm::AddressEqual(
-                Box::new(Address {
+                Box::new(OldAddress {
                     base: block,
                     offset: OldAddressOffset::Constant(0),
                 }),
-                Box::new(Address::null()),
+                Box::new(OldAddress::null()),
             );
             KernelTermImport::default().condition(&source)
         });
@@ -238,11 +238,11 @@ mod tests {
                     OldAddressOffset::scaled_int32_node(value, 4)
                 };
                 OldConditionTerm::AddressEqual(
-                    Box::new(Address {
+                    Box::new(OldAddress {
                         base: AddressBase::Symbolic(Variable(999030)),
                         offset,
                     }),
-                    Box::new(Address::null()),
+                    Box::new(OldAddress::null()),
                 )
             };
             let a = condition(ProgramPoint::at(&memory_a));

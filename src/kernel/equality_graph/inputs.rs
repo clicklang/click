@@ -10,8 +10,8 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub(super) enum Input {
     Pointer(OldPointer, OldPointer),
-    PointerReadValue(Address, Address),
-    Address(Address, Address),
+    PointerReadValue(OldAddress, OldAddress),
+    Address(OldAddress, OldAddress),
     Offset(OldAddressOffset, OldAddressOffset),
     Int32(OldMachineTerm, OldMachineTerm),
     Int32Operands(
@@ -24,7 +24,7 @@ pub(super) enum Input {
         crate::kernel::SharedIntegerTerm,
         crate::kernel::SharedIntegerTerm,
     ),
-    CheckedRead(Address, Address),
+    CheckedRead(OldAddress, OldAddress),
 }
 
 pub(super) struct History {
@@ -281,7 +281,7 @@ impl EqualityGraph {
         let mut context_changed = !same_origin;
         let mut equalities = Vec::new();
         let reads = self.logical_reads.lock().expect("logical pointer reads");
-        let is_read = |pointer: &Address| {
+        let is_read = |pointer: &OldAddress| {
             pointer.as_loaded_value().is_some()
                 || reads.definitions.contains_key(pointer)
                 || is_read_offset(&pointer.offset)
@@ -375,10 +375,10 @@ mod read_trace_tests {
     use super::*;
     use crate::kernel::{OldConditionTerm, Proposition};
 
-    fn pointer(id: u64) -> Address {
-        Address::symbolic(Variable(id))
+    fn pointer(id: u64) -> OldAddress {
+        OldAddress::symbolic(Variable(id))
     }
-    fn equality(left: Address, right: Address) -> Proposition {
+    fn equality(left: OldAddress, right: OldAddress) -> Proposition {
         Proposition::condition_is(OldConditionTerm::address_equal(left, right), true)
     }
 
@@ -432,7 +432,7 @@ mod read_trace_tests {
     fn admitted_read_trace_includes_ordinary_read_value_equalities() {
         let mut graph = EqualityGraph::default();
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-        let read = Address::loaded_value(&memory, &pointer(303_000));
+        let read = OldAddress::loaded_value(&memory, &pointer(303_000));
         let checkpoint = graph.read_equality_checkpoint();
         graph.add_equality(&read, &pointer(303_001));
         graph.add_equality(&pointer(303_002), &pointer(303_003));

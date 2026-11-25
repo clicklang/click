@@ -102,7 +102,7 @@ fn quantified_loadable_alpha_query_ignores_unrelated_state_size() {
                 source_memory.with_block(format!("quantified-viewable-work-{index}"), 8);
         }
         source_memory = source_memory.store(
-            Address {
+            OldAddress {
                 base: "quantified-viewable-work-0".into(),
                 offset: OldAddressOffset::Constant(0),
             },
@@ -441,7 +441,7 @@ fn memory_erased_same_bucket_lookup_scales_without_deep_dedup() {
         let base = SymbolicMemory::new().with_block("same-bucket-facts", 8);
         for value in 0..=size {
             let memory = base.clone().store(
-                Address {
+                OldAddress {
                     base: "same-bucket-facts".into(),
                     offset: OldAddressOffset::Constant(0),
                 },
@@ -454,7 +454,7 @@ fn memory_erased_same_bucket_lookup_scales_without_deep_dedup() {
         let load = |memory: &crate::kernel::SharedMemory| {
             OldMachineTerm::read_named(
                 ProgramPoint::at(memory),
-                Box::new(Address {
+                Box::new(OldAddress {
                     base: "same-bucket-facts".into(),
                     offset: OldAddressOffset::Constant(0),
                 }),

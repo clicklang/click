@@ -214,7 +214,7 @@ int32 id(int32 x) {
                         4,
                         crate::kernel::ProgramType::Int32,
                     ),
-                    base: crate::kernel::Address::symbolic(Variable(700)),
+                    base: crate::kernel::OldAddress::symbolic(Variable(700)),
                     bytes: (OldMachineTerm::Variable(var)).into(),
                     wide: false,
                 },

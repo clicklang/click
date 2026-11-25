@@ -96,7 +96,7 @@ fn late_wide_zero_reindexes_only_its_existing_offsets() {
     let mut measured = Vec::new();
     for size in [4u64, 16, 64] {
         let mut graph = EqualityGraph::default();
-        let scaled = |base: &Address, value| Address {
+        let scaled = |base: &OldAddress, value| OldAddress {
             base: base.base.clone(),
             offset: OldAddressOffset::scaled_int64_node(
                 OldMachineTerm::Variable(Variable(value)),
@@ -105,10 +105,10 @@ fn late_wide_zero_reindexes_only_its_existing_offsets() {
             ),
         };
         for i in 0..size {
-            let base = Address::symbolic(Variable(896_000 + i));
+            let base = OldAddress::symbolic(Variable(896_000 + i));
             assert!(!graph.are_equal(&scaled(&base, 897_000 + i), &base));
         }
-        let base = Address::symbolic(Variable(898_000));
+        let base = OldAddress::symbolic(Variable(898_000));
         let pointer = scaled(&base, 898_001);
         assert!(!graph.are_equal(&pointer, &base));
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {

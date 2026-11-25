@@ -9,11 +9,11 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
 fn checked_loadability_ignores_unrelated_free_history() {
-    let external = |id| Address {
+    let external = |id| OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(id)), 4),
     };
-    let heap = |id| Address {
+    let heap = |id| OldAddress {
         base: AddressBase::Heap(id),
         offset: OldAddressOffset::Constant(0),
     };
@@ -89,7 +89,7 @@ fn unaddressable_scalar_owners_do_not_restate_observable_memory_frames() {
     let saved = crate::kernel::capture_block_registries();
     let base = ResourceContext::new()
         .unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
-            Address {
+            OldAddress {
                 base: AddressBase::ExternalArgument,
                 offset: OldAddressOffset::Variable(Variable(93_600)),
             },
@@ -97,7 +97,7 @@ fn unaddressable_scalar_owners_do_not_restate_observable_memory_frames() {
             1u32.into(),
         )))
         .unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
-            Address {
+            OldAddress {
                 base: AddressBase::ExternalArgument,
                 offset: OldAddressOffset::Variable(Variable(93_601)),
             },
@@ -164,7 +164,7 @@ fn memory_range_endpoint_graph_matching_scales_without_fact_index() {
         }
         let resource = |index| {
             Resource::Memory(MemoryRange::new(
-                Address::symbolic(Variable(43_000)),
+                OldAddress::symbolic(Variable(43_000)),
                 OldMachineTerm::constant(0),
                 OldMachineTerm::add(variable(index), OldMachineTerm::constant(1)),
             ))
@@ -189,11 +189,11 @@ fn memory_range_endpoint_graph_matching_scales_without_fact_index() {
 #[test]
 fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
     let memory = SymbolicMemory::new();
-    let storage = Address {
+    let storage = OldAddress {
         base: "viewed-storage".into(),
         offset: OldAddressOffset::Constant(0),
     };
-    let result = Address {
+    let result = OldAddress {
         base: AddressBase::Symbolic(Variable(9_300_100)),
         offset: OldAddressOffset::Constant(0),
     };
@@ -228,7 +228,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
         for index in 0..size {
             context = context.assume_proposition(Proposition::MemoryLoadable {
                 memory: memory.clone(),
-                base: Address {
+                base: OldAddress {
                     base: format!("unrelated-view-{index}").into(),
                     offset: OldAddressOffset::Constant(0),
                 },
@@ -284,7 +284,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
 #[test]
 fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
     let memory = SymbolicMemory::new();
-    let target = Address {
+    let target = OldAddress {
         base: "indexed-viewable-shapes".into(),
         offset: OldAddressOffset::Constant(10_000),
     };
@@ -301,7 +301,7 @@ fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
             for index in 0..size {
                 assumptions = assumptions.assume_proposition(Proposition::MemoryLoadable {
                     memory: memory.clone(),
-                    base: Address {
+                    base: OldAddress {
                         base: target.base.clone(),
                         offset: OldAddressOffset::Constant(index as i64),
                     },
@@ -335,13 +335,13 @@ fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
 fn composition_store_separation_uses_checked_aliases_without_scanning_other_owners() {
     use crate::kernel::memory_history::owned_composition_store_separated_evidence;
 
-    let parameter = |id| Address {
+    let parameter = |id| OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 4),
     };
     let write_base = parameter(95_001);
     let read = parameter(95_002);
-    let owner = Address::symbolic(Variable(95_003));
+    let owner = OldAddress::symbolic(Variable(95_003));
     let alias = OldConditionTerm::address_equal(write_base.clone(), owner.clone());
     for offset in [0, 8] {
         let write = write_base.offset_by_bytes(offset);
@@ -411,7 +411,7 @@ fn composition_store_separation_uses_checked_aliases_without_scanning_other_owne
 /// refused every chain past it.
 #[test]
 fn load_equality_resolves_through_stored_cell_chains_of_any_length() {
-    let base = Address {
+    let base = OldAddress {
         base: "chain".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -462,7 +462,7 @@ fn load_equality_resolves_through_stored_cell_chains_of_any_length() {
 fn shifted_constant_view_spans_match_without_ambient_search() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = SymbolicMemory::new();
-    let base = Address::symbolic(Variable(9_319_000));
+    let base = OldAddress::symbolic(Variable(9_319_000));
     let index = OldMachineTerm::Variable(Variable(9_319_001));
     let count = |length| {
         binary_node!(
@@ -521,7 +521,7 @@ fn shifted_constant_view_spans_match_without_ambient_search() {
         ));
         assert!(!context.proves_memory_loadable(
             &memory,
-            &Address::symbolic(Variable(9_319_002)),
+            &OldAddress::symbolic(Variable(9_319_002)),
             &OldMachineTerm::constant(4 * width),
         ));
     }
@@ -635,7 +635,7 @@ fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
 /// of stated compositions compare such states at every lookup.
 #[test]
 fn ordering_states_of_one_path_does_not_walk_their_shared_entries() {
-    let object = |index: u32| Address::symbolic(Variable(99_400 + u64::from(index)));
+    let object = |index: u32| OldAddress::symbolic(Variable(99_400 + u64::from(index)));
     for size in [16u32, 64, 256] {
         let mut memory = SymbolicMemory::new();
         let mut resources = ResourceContext::new();
@@ -674,8 +674,8 @@ fn ordering_states_of_one_path_does_not_walk_their_shared_entries() {
 /// every size.
 #[test]
 fn store_separation_without_an_owner_reads_only_listed_compositions() {
-    let object = |index: u32| Address::symbolic(Variable(98_900 + u64::from(index)));
-    let unowned = Address::symbolic(Variable(98_899));
+    let object = |index: u32| OldAddress::symbolic(Variable(98_900 + u64::from(index)));
+    let unowned = OldAddress::symbolic(Variable(98_899));
     let mut admitted = Vec::new();
     let mut proved = Vec::new();
     let mut refused = Vec::new();
@@ -734,7 +734,7 @@ fn store_separation_without_an_owner_reads_only_listed_compositions() {
 /// object from the oldest costs the same at every size, and still succeeds.
 #[test]
 fn store_separation_work_is_independent_of_earlier_compositions() {
-    let object = |index: u32| Address::symbolic(Variable(98_300 + u64::from(index)));
+    let object = |index: u32| OldAddress::symbolic(Variable(98_300 + u64::from(index)));
     let mut work = Vec::new();
     for size in [8u32, 32, 128] {
         let mut resources = ResourceContext::new();
@@ -770,8 +770,8 @@ fn store_separation_work_is_independent_of_earlier_compositions() {
 /// corresponding C proof supplies separation and transports the read explicitly.
 #[test]
 fn written_store_separation_and_alias_refusal_ignore_unrelated_objects() {
-    let pointer = |index: u64| Address::symbolic(Variable(97_100 + index));
-    let equal = |left: &Address, right: &Address| {
+    let pointer = |index: u64| OldAddress::symbolic(Variable(97_100 + index));
+    let equal = |left: &OldAddress, right: &OldAddress| {
         Proposition::condition_is(
             OldConditionTerm::address_equal(left.clone(), right.clone()),
             true,
@@ -821,7 +821,7 @@ fn written_store_separation_and_alias_refusal_ignore_unrelated_objects() {
 #[test]
 fn stated_pointer_separation_lookup_visits_only_its_anchor_index() {
     for cross_block in [false, true] {
-        let pointer = |id, right| Address {
+        let pointer = |id, right| OldAddress {
             base: if right && cross_block {
                 AddressBase::Symbolic(Variable(941_000))
             } else {
@@ -888,7 +888,7 @@ fn stated_pointer_separation_lookup_visits_only_its_anchor_index() {
 
 #[test]
 fn kept_frame_class_lookup_adds_only_selected_physical_coverage() {
-    let pointer = |id| Address {
+    let pointer = |id| OldAddress {
         base: AddressBase::Symbolic(Variable(id)),
         offset: OldAddressOffset::Constant(0),
     };
@@ -944,7 +944,7 @@ fn kept_frame_class_lookup_adds_only_selected_physical_coverage() {
 
 #[test]
 fn rechecked_kept_frame_checks_selected_equality_without_rebuilding_foreign_inputs() {
-    let pointer = |id| Address::symbolic(Variable(id));
+    let pointer = |id| OldAddress::symbolic(Variable(id));
     let queried = pointer(954_001);
     let middle = pointer(954_002);
     let owner = pointer(954_003);
@@ -1016,7 +1016,7 @@ fn one_owned_member_does_not_trigger_store_alias_reasoning() {
         count_composition_store_alias_queries, owned_composition_store_separated_evidence,
     };
 
-    let base = Address {
+    let base = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(99_700)), 4),
     };
@@ -1085,7 +1085,7 @@ fn one_owned_member_does_not_trigger_store_alias_reasoning() {
 fn fixed_overlapping_ranges_ignore_unrelated_separation_facts() {
     let samples = [4u64, 8, 16, 32].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = Address {
+        let base = OldAddress {
             base: AddressBase::ExternalArgument,
             offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(9_893_000)), 4),
         };
@@ -1093,14 +1093,14 @@ fn fixed_overlapping_ranges_ignore_unrelated_separation_facts() {
         let inner = MemoryRange::new(base, 2u32.into(), 4u32.into());
         let mut facts = PureFactContext::new();
         for index in 0..size {
-            let a = Address {
+            let a = OldAddress {
                 base: AddressBase::ExternalArgument,
                 offset: OldAddressOffset::scale_int32(
                     OldMachineTerm::Variable(Variable(9_894_000 + index * 2)),
                     4,
                 ),
             };
-            let b = Address {
+            let b = OldAddress {
                 base: AddressBase::ExternalArgument,
                 offset: OldAddressOffset::scale_int32(
                     OldMachineTerm::Variable(Variable(9_894_001 + index * 2)),
@@ -1141,7 +1141,7 @@ fn fixed_overlapping_ranges_ignore_unrelated_separation_facts() {
 /// store must select compositions by both accesses rather than scan history.
 #[test]
 fn ownerless_store_separation_ignores_unrelated_composition_history() {
-    let object = |index| Address {
+    let object = |index| OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::Variable(Variable(950_000 + index)),
     };

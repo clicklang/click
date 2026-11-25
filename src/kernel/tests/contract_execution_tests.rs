@@ -426,7 +426,7 @@ fn borrowed_contract_input_roots_are_shared_across_proof_units_of_one_function()
 /// it instead of proving a vacuous body under it.
 #[test]
 fn borrowed_contract_input_refuses_an_owned_clause_inside_a_viewed_range() {
-    let pointer = crate::kernel::Address {
+    let pointer = crate::kernel::OldAddress {
         base: "buffer".into(),
         offset: crate::kernel::OldAddressOffset::Constant(0),
     };
@@ -526,11 +526,11 @@ fn borrowed_contract_input_rejects_derived_or_ambiguous_views() {
 /// aggregate case in docs/internals/stable-views.md).
 #[test]
 fn owner_authorized_aggregate_copy_into_a_lent_range_requires_separation() {
-    let target = Address {
+    let target = OldAddress {
         base: "target".into(),
         offset: OldAddressOffset::Constant(0),
     };
-    let source = Address {
+    let source = OldAddress {
         base: "source".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -621,7 +621,7 @@ fn owner_authorized_aggregate_copy_into_a_lent_range_requires_separation() {
 /// check now runs first.
 #[test]
 fn owner_authorized_write_into_a_lent_range_is_refused() {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: "block".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -701,7 +701,7 @@ fn owner_authorized_write_into_a_lent_range_is_refused() {
 /// would change nothing (R01's same-value negative; docs/internals/stable-views.md).
 #[test]
 fn owner_authorized_same_value_store_into_a_lent_range_is_refused() {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: "block".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -780,7 +780,7 @@ fn owner_authorized_same_value_store_into_a_lent_range_is_refused() {
 
 #[test]
 fn local_declaration_allocates_stack_object_for_address_of() {
-    let local_pointer = Address {
+    let local_pointer = OldAddress {
         base: "local:x".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -1289,7 +1289,7 @@ fn signed_addition_ranges_nested_additions_only_when_each_level_is_safe() {
 
 #[test]
 fn signed_addition_matches_interval_facts_across_unchanged_states() {
-    let cell = Address {
+    let cell = OldAddress {
         base: "arg-memory".into(),
         offset: OldAddressOffset::scale_int32(OldMachineTerm::Variable(Variable(660)), 4),
     };
@@ -1326,7 +1326,7 @@ fn signed_addition_matches_interval_facts_across_unchanged_states() {
 
 #[test]
 fn pointer_store_through_local_address_updates_named_lvalue() {
-    let local_pointer = Address {
+    let local_pointer = OldAddress {
         base: "local:x".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -1389,7 +1389,7 @@ fn pointer_store_through_local_address_updates_named_lvalue() {
 
 #[test]
 fn memory_load_store_are_native_theorems() {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: "block".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -1409,11 +1409,11 @@ fn memory_load_store_are_native_theorems() {
 
 #[test]
 fn store_preserves_distinct_memory_cell_frame() {
-    let stored_pointer = Address {
+    let stored_pointer = OldAddress {
         base: "left".into(),
         offset: OldAddressOffset::Constant(0),
     };
-    let loaded_pointer = Address {
+    let loaded_pointer = OldAddress {
         base: "right".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -1438,7 +1438,7 @@ fn store_preserves_distinct_memory_cell_frame() {
 
 #[test]
 fn missing_memory_load_is_native_undefined_behavior() {
-    let pointer = Address {
+    let pointer = OldAddress {
         base: "block".into(),
         offset: OldAddressOffset::Constant(4),
     };
@@ -1697,11 +1697,11 @@ fn verified_function_rule_coerces_null_constants_in_contract_views() {
 
 #[test]
 fn verified_function_rule_does_not_publish_one_spec_alias_path() {
-    let stored = Address {
+    let stored = OldAddress {
         base: "heap".into(),
         offset: OldAddressOffset::Constant(0),
     };
-    let queried = Address {
+    let queried = OldAddress {
         base: stored.base.clone(),
         offset: OldAddressOffset::Variable(Variable(900_002)),
     };
@@ -1780,7 +1780,7 @@ fn verified_function_rule_does_not_publish_one_spec_alias_path() {
 
 #[test]
 fn opaque_pointer_result_can_alias_its_argument() {
-    let argument = Address {
+    let argument = OldAddress {
         base: "heap".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -1819,7 +1819,7 @@ fn opaque_pointer_result_can_alias_its_argument() {
     let execution = prove_symbolic_program_execution_paths_with_environment(
         ExecutionState::new()
             .with_population_creation_tracking()
-            .with_local("result", ProgramValue::pointer(Address::null())),
+            .with_local("result", ProgramValue::pointer(OldAddress::null())),
         program_call_then_assign(
             3,
             "result",
@@ -2453,7 +2453,7 @@ fn exceptional_direct_rule_boundary_excludes_resource_transitions() {
 
 #[test]
 fn effect_endpoint_comparison_ignores_function_local_cells() {
-    let local = Address {
+    let local = OldAddress {
         base: "local:temporary".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -2468,7 +2468,7 @@ fn effect_endpoint_comparison_ignores_function_local_cells() {
         )
     );
 
-    let external = Address {
+    let external = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::Constant(0),
     };
@@ -2484,7 +2484,7 @@ fn effect_endpoint_comparison_ignores_function_local_cells() {
 
 #[test]
 fn effect_endpoint_allows_resource_allocation_bookkeeping() {
-    let allocation = Address {
+    let allocation = OldAddress {
         base: AddressBase::ExternalArgument,
         offset: OldAddressOffset::Constant(64),
     };
@@ -4061,7 +4061,7 @@ fn a_recursion_anchor_is_part_of_the_environment_identity() {
 /// and the caller's would be one block, one allocation size and one cell map.
 #[test]
 fn a_called_frames_declaration_does_not_take_the_callers_block() {
-    let callers = Address {
+    let callers = OldAddress {
         base: "local:x".into(),
         offset: OldAddressOffset::Constant(0),
     };
@@ -4433,7 +4433,7 @@ fn path_exists_at_program_point(
                     arguments: vec![
                         PureFunctionArgument::ArrayRef {
                             point: crate::kernel::ProgramPoint::of_memory(&memory),
-                            pointer: ProgramValue::pointer(Address {
+                            pointer: ProgramValue::pointer(OldAddress {
                                 base: "graph".into(),
                                 offset: OldAddressOffset::Constant(0),
                             }),
@@ -4458,7 +4458,7 @@ fn certification_recognizes_only_the_same_algebraic_existential() {
     let ty = AlgebraicType::parameter("Path".into());
     let before = SymbolicMemory::new().with_block("graph", 4);
     let after = before.clone().store(
-        Address {
+        OldAddress {
             base: "graph".into(),
             offset: OldAddressOffset::Constant(0),
         },
@@ -4633,7 +4633,7 @@ fn certification_keeps_conditional_universal_guards_states_and_sorts() {
         0,
     )));
     let after = memory.store(
-        Address {
+        OldAddress {
             base: "graph".into(),
             offset: OldAddressOffset::Constant(0),
         },
@@ -4644,11 +4644,11 @@ fn certification_keeps_conditional_universal_guards_states_and_sorts() {
 
 #[test]
 fn aggregate_copy_requires_write_authority_for_each_destination_field() {
-    let target = Address {
+    let target = OldAddress {
         base: "target".into(),
         offset: OldAddressOffset::Constant(0),
     };
-    let source = Address {
+    let source = OldAddress {
         base: "source".into(),
         offset: OldAddressOffset::Constant(0),
     };

@@ -1,8 +1,8 @@
 //! Compact scalar arrays keep checked authority independent of logical length.
 use super::*;
 
-fn pointer(block: &str, offset: i64) -> Address {
-    Address {
+fn pointer(block: &str, offset: i64) -> OldAddress {
+    OldAddress {
         base: block.into(),
         offset: OldAddressOffset::Constant(offset),
     }

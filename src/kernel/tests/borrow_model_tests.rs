@@ -37,7 +37,7 @@ use crate::kernel::borrows::{
 };
 use crate::kernel::functions::CheckedResourceFact;
 use crate::kernel::{
-    Address, MemoryRange, OldAddressOffset, OldMachineTerm, PureFactContext, ResourceContext,
+    MemoryRange, OldAddress, OldAddressOffset, OldMachineTerm, PureFactContext, ResourceContext,
     ResourceFact, ResourceOccurrenceId, ResourceStateSource, ResourceTransferRole,
 };
 
@@ -1244,7 +1244,7 @@ impl ThreadLocalCellModel {
 
 fn production_memory_fact(start: u32, end: u32, own: bool) -> ResourceFact {
     let range = MemoryRange::new(
-        Address {
+        OldAddress {
             base: "v14-buffer".into(),
             offset: OldAddressOffset::Constant(0),
         },

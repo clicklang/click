@@ -21,7 +21,7 @@ use super::functions::CheckedResourceFact;
 #[cfg(test)]
 use super::primitives::memory_ranges_proven_overlapping;
 use super::primitives::{
-    Address, AddressBase, MemorySplitOrigins, OwnedMemberKey, ResourceMemoryIntervalNode,
+    AddressBase, MemorySplitOrigins, OldAddress, OwnedMemberKey, ResourceMemoryIntervalNode,
     memory_interval_ancestors, memory_interval_nodes, memory_range_covers,
     memory_range_is_proven_empty,
 };
@@ -344,7 +344,7 @@ pub(crate) struct BorrowBindings {
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum BoundViewKey {
-    Memory(Address),
+    Memory(OldAddress),
     Other(OwnedMemberKey),
 }
 
@@ -1118,11 +1118,11 @@ struct BorrowLedgerStorage {
 }
 
 type CacheProtectionIndex =
-    PersistentMap<(Address, ResourceMemoryIntervalNode), PersistentSet<BorrowId>>;
+    PersistentMap<(OldAddress, ResourceMemoryIntervalNode), PersistentSet<BorrowId>>;
 
 fn cache_protection_nodes(
     range: &MemoryRange,
-) -> Option<(Address, Vec<ResourceMemoryIntervalNode>)> {
+) -> Option<(OldAddress, Vec<ResourceMemoryIntervalNode>)> {
     let (origin, start, end) = super::primitives::constant_memory_coordinates(range)?;
     let nodes = super::primitives::memory_interval_nodes_for_coordinates(
         &origin.base,
@@ -1134,7 +1134,7 @@ fn cache_protection_nodes(
 
 fn update_cache_protection_bucket(
     index: &mut CacheProtectionIndex,
-    key: (Address, ResourceMemoryIntervalNode),
+    key: (OldAddress, ResourceMemoryIntervalNode),
     borrow: BorrowId,
     insert: bool,
 ) {
@@ -1749,7 +1749,7 @@ enum BorrowTransitionEvidence {
     BorrowedMutexUseRoot {
         holder: BorrowParticipantId,
         support: ResourceOccurrenceId,
-        mutex: super::Address,
+        mutex: super::OldAddress,
         protected: Option<ResourceDescription>,
         initialization: super::mutexes::MutexInitializationId,
         scope: BorrowScopeId,
@@ -2022,7 +2022,7 @@ impl LocalViewBacking {
         }
         let bytes = memory.block_size(&range.base().base)?.clone();
         let entire = MemoryRange::new_with_element_width(
-            super::Address {
+            super::OldAddress {
                 base: range.base().base.clone(),
                 offset: super::OldAddressOffset::Constant(0),
             },
@@ -2061,7 +2061,7 @@ impl LocalViewBacking {
             return Ok(());
         };
         let data = &ledger.storage.data;
-        let origin = Address {
+        let origin = OldAddress {
             base: self.block.clone(),
             offset: super::OldAddressOffset::Constant(0),
         };
@@ -5302,7 +5302,7 @@ impl BorrowLedger {
         &self,
         holder: BorrowParticipantId,
         support: ResourceOccurrenceId,
-        mutex: super::Address,
+        mutex: super::OldAddress,
     ) -> Result<(Self, MutexUseContractInput), BorrowRefusal> {
         self.borrowed_mutex_use_input_with_protected(holder, support, mutex, None)
     }
@@ -5311,7 +5311,7 @@ impl BorrowLedger {
         &self,
         holder: BorrowParticipantId,
         support: ResourceOccurrenceId,
-        mutex: super::Address,
+        mutex: super::OldAddress,
         protected: Option<ResourceDescription>,
     ) -> Result<(Self, MutexUseContractInput), BorrowRefusal> {
         let arena = self.storage.data.arena;
@@ -6627,7 +6627,7 @@ impl BorrowLedger {
         let (borrow, protected) = data.automatic_storage_borrows.get(block)?.iter().next()?;
         let record = data.borrows.get(borrow).expect("indexed live borrow");
         let attempted = MemoryRange::new_with_element_width(
-            Address {
+            OldAddress {
                 base: block.clone(),
                 offset: super::OldAddressOffset::Constant(0),
             },

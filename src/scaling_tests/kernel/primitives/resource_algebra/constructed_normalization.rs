@@ -4,14 +4,14 @@ fn constructed_normalization_bounds_neighbours_and_ignores_alias_classes() {
         let mut samples = Vec::new();
         for count in [4_u32, 16, 64] {
             let _session = crate::kernel::VerificationSession::enter();
-            let pointer = Address::symbolic(Variable(8_853_000));
+            let pointer = OldAddress::symbolic(Variable(8_853_000));
             let mut facts = PureFactContext::new();
             if axis == "aliases" {
                 for index in 0..count {
                     facts = facts.assume_condition(
                         OldConditionTerm::address_equal(
                             pointer.clone(),
-                            Address::symbolic(Variable(8_853_100 + u64::from(index))),
+                            OldAddress::symbolic(Variable(8_853_100 + u64::from(index))),
                         ),
                         true,
                     );
@@ -53,12 +53,12 @@ fn singleton_normalization_retains_occurrences_without_alias_discovery() {
     let mut samples = Vec::new();
     for count in [4_u64, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let p = Address::symbolic(Variable(8_963_000));
+        let p = OldAddress::symbolic(Variable(8_963_000));
         let facts = (0..count).fold(PureFactContext::new(), |facts, i| {
             facts.assume_condition(
                 OldConditionTerm::address_equal(
                     p.clone(),
-                    Address::symbolic(Variable(8_963_100 + i)),
+                    OldAddress::symbolic(Variable(8_963_100 + i)),
                 ),
                 true,
             )
@@ -90,7 +90,7 @@ fn constructed_normalization_omits_only_proven_empty_ranges() {
     let start = OldMachineTerm::Variable(Variable(8_968_000));
     let end = OldMachineTerm::Variable(Variable(8_968_001));
     let range = ResourceFact::own_memory(MemoryRange::new(
-        Address::symbolic(Variable(8_968_002)),
+        OldAddress::symbolic(Variable(8_968_002)),
         start.clone(),
         end.clone(),
     ));

@@ -15,7 +15,7 @@ fn loaded_quantifier_matching_ignores_ambient_facts_and_retained_memory_size() {
             for index in 0..size {
                 let block = format!("unrelated-{index}");
                 memory = memory.with_block(block.clone(), 8).store(
-                    Address {
+                    OldAddress {
                         base: block.into(),
                         offset: OldAddressOffset::Constant(0),
                     },
@@ -40,7 +40,7 @@ fn loaded_quantifier_matching_ignores_ambient_facts_and_retained_memory_size() {
             });
             assert!(found.is_some());
             let changed = intern_memory(memory.as_ref().clone().store(
-                Address {
+                OldAddress {
                     base: "loaded-quantifier".into(),
                     offset: OldAddressOffset::Constant(0),
                 },

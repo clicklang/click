@@ -859,7 +859,7 @@ previous equality answer.
 A typed pointer-load application in the equality graph denotes the stored
 value independently of the storage address form and pointee width. The
 graph can answer equality of two such applications without replacing the
-`Address` values produced by C execution. A live caller must supply the actual
+`OldAddress` values produced by C execution. A live caller must supply the actual
 defining state and address from a typed load site or checked evidence. A
 loaded value is represented only by its `AddressBase::Load` base; an address indexed
 by a loaded scalar (`a[*p]`) is pointer arithmetic, never a read.

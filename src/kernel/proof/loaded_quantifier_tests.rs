@@ -1,7 +1,7 @@
 use super::*;
 use crate::kernel::proof::PureFactStore;
 use crate::kernel::{
-    Address, LoadKind, OldAddressOffset, ProgramValue, SymbolicMemory, intern_memory,
+    LoadKind, OldAddress, OldAddressOffset, ProgramValue, SymbolicMemory, intern_memory,
 };
 
 fn loaded_fact(memory: &SharedMemory, binder: Variable, shared: bool) -> Proposition {
@@ -37,7 +37,7 @@ fn loaded_fact_of_format(
     };
     let read = OldMachineTerm::read_named(
         ProgramPoint::at(memory),
-        Box::new(Address {
+        Box::new(OldAddress {
             base: "loaded-quantifier".into(),
             offset: match format {
                 MachineIntegerType::Int32 => {
@@ -85,7 +85,7 @@ fn loaded_quantifier_matches_shared_guard_but_keeps_exact_read_and_binder() {
         assert!(quantified_binder_equivalent(source, requested));
     }
     let changed_memory = intern_memory(memory.as_ref().clone().store(
-        Address {
+        OldAddress {
             base: "loaded-quantifier".into(),
             offset: OldAddressOffset::Constant(0),
         },
@@ -158,7 +158,7 @@ fn loaded_quantifier_shared_guard_does_not_rename_a_variable_inside_state() {
         SymbolicMemory::new()
             .with_block("loaded-quantifier", 64)
             .store(
-                Address {
+                OldAddress {
                     base: "loaded-quantifier".into(),
                     offset: OldAddressOffset::Constant(0),
                 },
@@ -185,7 +185,7 @@ fn loaded_quantifier_native_guard_does_not_capture_a_variable_inside_state() {
                 SymbolicMemory::new()
                     .with_block("loaded-quantifier", 64)
                     .store(
-                        Address {
+                        OldAddress {
                             base: "loaded-quantifier".into(),
                             offset: OldAddressOffset::Constant(0),
                         },
@@ -232,7 +232,7 @@ fn loaded_quantifier_matching_renames_both_state_binders_without_swapping_free_v
             SymbolicMemory::new()
                 .with_block("loaded-quantifier", 64)
                 .store(
-                    Address {
+                    OldAddress {
                         base: "loaded-quantifier".into(),
                         offset: OldAddressOffset::Constant(0),
                     },

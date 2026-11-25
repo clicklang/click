@@ -81,7 +81,7 @@ mod tests {
             variant: "Arm".into(),
             fields: vec![AlgebraicValue::Program(ProgramValue::Pointer(
                 OldPointer::new(
-                    Address::symbolic(Variable(999728)),
+                    OldAddress::symbolic(Variable(999728)),
                     ProgramType::Int32Pointer,
                 ),
             ))],
@@ -160,7 +160,7 @@ mod tests {
         for exact in [false, true] {
             let sources = [false, true].map(|qualified| {
                 let pointer = OldPointer::new(
-                    Address::symbolic(Variable(999730)),
+                    OldAddress::symbolic(Variable(999730)),
                     ProgramType::Int32Pointer,
                 );
                 let application = SharedPureApplication::intern(

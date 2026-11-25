@@ -42,7 +42,7 @@ ForAll(var, body)
 
 The important rule is that C state is never ambient in Kernel Click. Surface
 Click is elaborated against a chosen state, and that state becomes an explicit
-`SymbolicMemory`, `Address`, or `ProgramValue` inside the term.
+`SymbolicMemory`, `OldAddress`, or `ProgramValue` inside the term.
 
 In `src/surface.rs`, invariant elaboration is driven by
 `SpecElaborationContext`. That context carries:
@@ -63,7 +63,7 @@ This is what lets `old(count(p, 0, n, x))` lower through the ordinary stdlib
 A C pointer says where:
 
 ```text
-Address { base, offset }
+OldAddress { base, offset }
 ```
 
 A Click array ref says where and in which kernel memory value:
