@@ -17059,7 +17059,6 @@ pub struct SymbolicExecutionPath {
     pub(super) descent_step: Option<crate::kernel::DescentStep>,
     pub(super) completion_origin: Option<FunctionOutcome>,
     pub(super) call_result: Option<StoredExecutionValue>,
-    pub(super) call_parameters: Option<CallParameters>,
     pub(super) assumptions: PureFactContext,
     /// The checked body context, retained by the Proof completion producer.
     /// It is available only after certification has checked the entry under
@@ -17208,9 +17207,6 @@ pub(super) struct StatementExecutionPath {
     pub(super) loop_invariant_correspondence: LoopInvariantCorrespondence,
     /// Exact non-void result retained by the call producer, even when discarded.
     pub(super) call_result: Option<StoredExecutionValue>,
-    /// The callee's by-value aggregate parameters as the call bound them
-    /// ([`CallParameters`]), retained by the call producer.
-    pub(super) call_parameters: Option<CallParameters>,
     pub(super) outcome: StatementOutcome,
     pub(super) facts: ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,
@@ -17240,7 +17236,6 @@ impl StatementExecutionPath {
         Self {
             loop_invariant_correspondence: Default::default(),
             call_result: None,
-            call_parameters: None,
             outcome,
             facts,
             obligations,
@@ -17255,50 +17250,6 @@ pub(super) struct FunctionPath {
     pub(super) facts: ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,
     pub(super) borrow_evidence: super::borrows::CheckedBorrowCallEvidenceSequence,
-    /// The callee's by-value aggregate parameters as a contract call bound
-    /// them; `None` for every other path.
-    pub(super) call_parameters: Option<CallParameters>,
-}
-
-/// The by-value aggregate parameters of one contract call as the call bound
-/// them: the memory just after each argument was copied into its parameter
-/// object, with only those parameters bound, each to its copy. The call
-/// introduces these values, and its contract reads them; a proof spells a
-/// read of one as `R.parameter(name)...` at the call's region `R`.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CallParameters(pub(crate) std::sync::Arc<ExecutionState>);
-
-impl CallParameters {
-    /// The parameter binding of `interface`'s by-value aggregate parameters
-    /// in `entry`, the state the call evaluates its contract in; `None` when
-    /// it has none. Keep the same read versions and bind only those
-    /// parameters, so nothing else is named through the snapshot.
-    pub(super) fn of(
-        entry: &ExecutionState,
-        interface: &FunctionContractInterface,
-    ) -> Option<Self> {
-        let mut bound = ExecutionState::at_state(entry);
-        let mut any = false;
-        for parameter in interface.parameters() {
-            let Some(layout) = parameter.aggregate_layout() else {
-                continue;
-            };
-            let slot = entry
-                .locals
-                .aggregate_object_pointer(parameter.binding_name().clone())?;
-            bound.locals.set_aggregate_object_at(
-                parameter.name().to_string(),
-                layout.clone(),
-                slot.clone(),
-            );
-            any = true;
-        }
-        any.then(|| Self(std::sync::Arc::new(bound)))
-    }
-
-    pub(crate) fn state(&self) -> &ExecutionState {
-        &self.0
-    }
 }
 
 impl FunctionPath {
@@ -17314,7 +17265,6 @@ impl FunctionPath {
             facts,
             obligations,
             borrow_evidence: super::borrows::empty_checked_borrow_evidence_sequence(),
-            call_parameters: None,
         }
     }
 }

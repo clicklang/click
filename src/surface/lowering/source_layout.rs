@@ -129,6 +129,14 @@ struct SourceExecutionLayoutData {
     source_statements: BTreeMap<Vec<u32>, Vec<usize>>,
     /// The function each direct-call region calls, for `.call(f, j)`.
     call_targets: BTreeMap<usize, String>,
+    /// The object each call region receives as each by-value aggregate
+    /// parameter, by the region and the parameter's name:
+    /// `R.parameter(name)` names it.
+    call_parameter_objects: BTreeMap<(usize, String), crate::kernel::BindingName>,
+    /// The call region and parameter each prepared argument object is.
+    prepared_parameters: BTreeMap<crate::kernel::BindingName, (usize, String)>,
+    /// The layout each prepared argument object is declared with.
+    prepared_layouts: BTreeMap<crate::kernel::BindingName, crate::kernel::AggregateLayout>,
     /// Every call region, including calls through a function pointer, which
     /// name no function and so have no entry in `call_targets`.
     calls: BTreeSet<usize>,
@@ -396,6 +404,38 @@ fn record_assignment(
 }
 
 type AggregateResultFields = std::sync::Arc<BTreeMap<String, crate::kernel::AggregateField>>;
+
+/// Records the prepared argument objects among a call's arguments, each the
+/// object region `index` receives as the parameter it is named for.
+fn record_prepared_arguments<'a>(
+    layout: &mut SourceExecutionLayoutData,
+    index: usize,
+    arguments: impl IntoIterator<Item = &'a crate::kernel::BindingName>,
+) {
+    for argument in arguments {
+        let Some(parameter) = argument
+            .local_id()
+            .and_then(crate::kernel::LocalBindingId::call_parameter)
+        else {
+            continue;
+        };
+        layout
+            .call_parameter_objects
+            .insert((index, parameter.to_owned()), argument.clone());
+        layout
+            .prepared_parameters
+            .insert(argument.clone(), (index, parameter.to_owned()));
+    }
+}
+
+/// The binding a kernel call argument passes as an object, through casts.
+fn kernel_argument_binding(argument: &ProgramExpression) -> Option<&crate::kernel::BindingName> {
+    match argument {
+        ProgramExpression::Variable(name) => Some(name),
+        ProgramExpression::Cast { expression, .. } => kernel_argument_binding(expression),
+        _ => None,
+    }
+}
 
 fn aggregate_result_fields(layout: &crate::kernel::AggregateLayout) -> AggregateResultFields {
     std::sync::Arc::new(
@@ -820,6 +860,15 @@ impl SourceExecutionLayout {
                     {
                         aggregate_objects
                             .insert(name.binding().clone(), aggregate_result_fields(declared));
+                        if name
+                            .binding()
+                            .local_id()
+                            .is_some_and(|id| id.call_parameter().is_some())
+                        {
+                            layout
+                                .prepared_layouts
+                                .insert(name.binding().clone(), declared.clone());
+                        }
                         // Construction can require proofs about the destination before
                         // it has initialized fields or published the constructed value.
                         let binding = name.binding();
@@ -878,11 +927,16 @@ impl SourceExecutionLayout {
                             }
                         }
                     }
-                    if let ProgramStatement::Call { .. }
-                    | ProgramStatement::CallResult { .. }
-                    | ProgramStatement::CallConstruct { .. } = statement
+                    if let ProgramStatement::Call { arguments, .. }
+                    | ProgramStatement::CallResult { arguments, .. }
+                    | ProgramStatement::CallConstruct { arguments, .. } = statement
                     {
                         layout.calls.insert(statement_index);
+                        record_prepared_arguments(
+                            layout,
+                            statement_index,
+                            arguments.iter().filter_map(kernel_argument_binding),
+                        );
                     }
                     if let ProgramStatement::Call {
                         function_name,
@@ -1225,10 +1279,33 @@ impl SourceExecutionLayout {
                 layout.step_regions.insert(*step, index);
                 layout.prior_steps.insert(*step, name.clone());
             }
-            if let syntax::CStatement::Call { .. } | syntax::CStatement::CallResult { .. } =
-                statement
+            if let syntax::CStatement::Call { arguments, .. }
+            | syntax::CStatement::CallResult { arguments, .. } = statement
             {
                 layout.calls.insert(index);
+                record_prepared_arguments(
+                    layout,
+                    index,
+                    arguments.iter().filter_map(|argument| match argument {
+                        syntax::CExpression::Variable(name) => Some(name),
+                        _ => None,
+                    }),
+                );
+            }
+            if let syntax::CStatement::DeclareStructValue {
+                name,
+                layout: declared,
+                ..
+            } = statement
+                && name
+                    .binding()
+                    .local_id()
+                    .is_some_and(|id| id.call_parameter().is_some())
+            {
+                layout.prepared_layouts.insert(
+                    name.binding().clone(),
+                    declared.to_kernel_aggregate_layout(),
+                );
             }
             if let syntax::CStatement::Call {
                 function_name,
@@ -1732,15 +1809,53 @@ impl SourceExecutionLayout {
         self.data.snapshot_step_results
     }
 
+    /// The object the call at `region` receives as its by-value aggregate
+    /// parameter `name`, and that object's layout.
+    pub(in crate::surface) fn call_parameter_object(
+        &self,
+        region: usize,
+        name: &str,
+    ) -> Option<(&crate::kernel::BindingName, &crate::kernel::AggregateLayout)> {
+        let object = self
+            .data
+            .call_parameter_objects
+            .get(&(region, name.to_owned()))?;
+        Some((object, self.data.prepared_layouts.get(object)?))
+    }
+
+    /// The call region and parameter a prepared argument object is, with
+    /// that region's source selector and the object's layout.
+    pub(in crate::surface) fn prepared_parameter(
+        &self,
+        object: &crate::kernel::BindingName,
+    ) -> Option<(
+        crate::surface::CodeRegionRef,
+        &str,
+        &crate::kernel::AggregateLayout,
+    )> {
+        let (region, parameter) = self.data.prepared_parameters.get(object)?;
+        let layout = self.data.prepared_layouts.get(object)?;
+        let selector = self
+            .call_region_source(*region)
+            .unwrap_or(crate::surface::CodeRegionRef::Region(*region));
+        Some((selector, parameter.as_str(), layout))
+    }
+
     /// The source selector of the call that produced a frontend capture.
     pub(in crate::surface) fn call_capture_source(
         &self,
         binding: &crate::kernel::BindingName,
     ) -> Option<(usize, crate::surface::CodeRegionRef)> {
-        use crate::surface::{CodeRegionRef, SourcePathStep};
         crate::instrumentation::record_deterministic_work(1);
         let step = self.data.call_captures.get(binding)?;
         let region = self.step_region(*step)?;
+        Some((region, self.call_region_source(region)?))
+    }
+
+    /// The source selector of direct-call region `region`:
+    /// `statement(...).call(f, j)`.
+    fn call_region_source(&self, region: usize) -> Option<crate::surface::CodeRegionRef> {
+        use crate::surface::{CodeRegionRef, SourcePathStep};
         let callee = self.data.call_targets.get(&region)?;
         let path = self.data.region_paths.get(&region).map(Vec::as_slice);
         let calls = self.data.named_calls.as_ref()?.regions(path, callee);
@@ -1751,7 +1866,7 @@ impl SourceExecutionLayout {
             .map(|index| SourcePathStep::Statement(*index as usize))
             .collect::<Vec<_>>();
         steps.push(SourcePathStep::Call(callee.clone(), ordinal));
-        Some((region, CodeRegionRef::Path(steps)))
+        Some(CodeRegionRef::Path(steps))
     }
 
     /// The number of the call inside an expression that `region` is.
@@ -2058,11 +2173,7 @@ impl SourceExecutionLayout {
                 .flat_map(|(_, regions)| regions)
                 .min()
                 .expect("a statement that exists has a region")),
-            // A call's parameters are bound at its own region, as its
-            // `.result` is read at its exit.
-            ProgramPointKind::Exit | ProgramPointKind::Parameters => {
-                Ok(self.source_statement_exit(&path))
-            }
+            ProgramPointKind::Exit => Ok(self.source_statement_exit(&path)),
         }
     }
 
@@ -2999,6 +3110,9 @@ mod source_execution_layout_tests {
                 sites: BTreeMap::new(),
                 source_statements: BTreeMap::new(),
                 call_targets: BTreeMap::new(),
+                call_parameter_objects: Default::default(),
+                prepared_parameters: Default::default(),
+                prepared_layouts: Default::default(),
                 calls: BTreeSet::new(),
                 loop_tests: BTreeSet::new(),
                 call_numbers: BTreeMap::new(),

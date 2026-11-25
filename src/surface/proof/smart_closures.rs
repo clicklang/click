@@ -4516,9 +4516,9 @@ fn source_backed_call_requirement_surface(
     // their interface name. Both paths index directly by the checked source
     // ordinal; resources, generated clauses, and out-of-range entries fail
     // closed without consulting ambient/project facts.
-    // The by-value aggregate parameters of an ordinary callee: the call
-    // copies each argument into its parameter object, and its contract reads
-    // that copy, which this call's parameter point names.
+    // The by-value aggregate parameters of an ordinary callee: the caller
+    // copies each argument into a parameter object before the call, and its
+    // contract reads that object, which `R.parameter(name)` names.
     let mut aggregate_parameters = BTreeSet::new();
     let (source_parameter_names, source_parameter_types, source_proposition) =
         if use_named_interface {
@@ -4656,22 +4656,21 @@ fn source_backed_call_requirement_surface(
         })
         .collect::<BTreeMap<_, _>>();
     if !aggregate_parameters.is_empty() {
-        // This call's parameter point, which the step that prepared it
-        // recorded; it must bind each by-value aggregate parameter.
-        let point = execution
-            .presentation
-            .surface_record
-            .last_call_parameters
-            .as_ref()?;
-        let bound = execution.presentation.recorded_states.get(point)?;
-        for parameter in &aggregate_parameters {
-            bound.locals().aggregate_layout(parameter)?;
+        // Each by-value aggregate parameter is the prepared object the call
+        // receives: `R.parameter(name)` at the call's region.
+        for (parameter, argument) in source_parameter_names.iter().zip(site.source_arguments.iter()) {
+            let name = parameter.to_string();
+            if !aggregate_parameters.contains(&name) {
+                continue;
+            }
+            let object = prepared_argument_binding(argument)?;
+            let (region, prepared, _) = context.constants.source_layout.prepared_parameter(object)?;
+            if prepared != name {
+                return None;
+            }
             substitutions.insert(
-                parameter.clone().into(),
-                SyntaxTerm::RegionParameter {
-                    region: point.region.clone(),
-                    name: parameter.clone(),
-                },
+                parameter.clone(),
+                SyntaxTerm::RegionParameter { region, name },
             );
         }
     }
@@ -5872,3 +5871,12 @@ mod division;
 mod fact_projection;
 mod machine_bridges;
 mod multiplication;
+
+/// The prepared argument object a call argument passes, through casts.
+fn prepared_argument_binding(argument: &ProgramExpression) -> Option<&crate::kernel::BindingName> {
+    match argument {
+        ProgramExpression::Variable(name) => Some(name),
+        ProgramExpression::Cast { expression, .. } => prepared_argument_binding(expression),
+        _ => None,
+    }
+}

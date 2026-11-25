@@ -1379,8 +1379,9 @@ impl LoweringContext<'_> {
                 callee, arguments, ..
             } => {
                 let target = self.call_name(callee, arguments)?;
+                let parameter_names = self.callee_parameter_names(callee);
                 let (prefix, arguments, mut temporaries) =
-                    self.normalize_temporary_arguments(arguments, true)?;
+                    self.normalize_temporary_arguments_for(arguments, &parameter_names, true)?;
                 temporaries.reverse();
                 let operation = self.coerced(program_call(target, arguments));
                 let operation = if temporaries.is_empty() {
@@ -1811,9 +1812,14 @@ impl LoweringContext<'_> {
                 conversions,
             } => {
                 let target = self.call_name(callee, arguments)?;
-                let (prefix, arguments, temporaries) = self.normalize_temporary_arguments(
+                let parameter_names = self.callee_parameter_names(callee);
+                let (prefix, arguments, temporaries) = self.normalize_temporary_arguments_for(
                     arguments,
-                    arguments.iter().any(CppCallArgument::is_opaque_copy),
+                    &parameter_names,
+                    arguments.iter().any(|argument| {
+                        argument.is_opaque_copy()
+                            || matches!(argument, CppCallArgument::RecordCopy { .. })
+                    }),
                 )?;
                 // Keep the callee's own type until the source conversion
                 // reads the value, including reference loads.
@@ -1902,9 +1908,38 @@ impl LoweringContext<'_> {
         Ok((prefix, actual))
     }
 
+    /// The parameter names of `callee`, by position, when it is a known
+    /// function: what a prepared by-value argument is passed as.
+    fn callee_parameter_names(&self, callee: &super::CppFunctionReference) -> Vec<String> {
+        (!callee.through_pointer)
+            .then(|| {
+                self.polymorphism
+                    .functions
+                    .get(callee.declaration_id.as_str())
+            })
+            .flatten()
+            .map(|function| {
+                function
+                    .parameters
+                    .iter()
+                    .map(|parameter| parameter.name.clone())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     fn normalize_temporary_arguments(
         &mut self,
         arguments: &[CppCallArgument],
+        allow_temporaries: bool,
+    ) -> Result<(ProgramStatement, Vec<ProgramExpression>, Vec<BindingName>), String> {
+        self.normalize_temporary_arguments_for(arguments, &[], allow_temporaries)
+    }
+
+    fn normalize_temporary_arguments_for(
+        &mut self,
+        arguments: &[CppCallArgument],
+        parameter_names: &[String],
         allow_temporaries: bool,
     ) -> Result<(ProgramStatement, Vec<ProgramExpression>, Vec<BindingName>), String> {
         let mut temporaries = Vec::new();
@@ -1932,7 +1967,12 @@ impl LoweringContext<'_> {
             retained_states.push(retained_state);
         }
         let mut lowered = Vec::with_capacity(arguments.len());
-        for (argument, retained_state) in arguments.iter().zip(retained_states) {
+        for (position, (argument, retained_state)) in
+            arguments.iter().zip(retained_states).enumerate()
+        {
+            let parameter_name = parameter_names
+                .get(position)
+                .filter(|name| !name.is_empty());
             crate::instrumentation::record_deterministic_work(1);
             if let Some(retained_state) = retained_state {
                 lowered.push(retained_state);
@@ -1957,6 +1997,39 @@ impl LoweringContext<'_> {
                 );
                 evaluation = evaluate_then(evaluation, call);
                 lowered.push(returned);
+            } else if let CppCallArgument::RecordCopy {
+                place,
+                value_type: CppType::Record { name, .. },
+                ..
+            } = argument
+                && allow_temporaries
+            {
+                // The trivial copy into the callee's parameter object is a
+                // region of its own before the call, as C's is: the call
+                // receives the initialized object, which ends with the full
+                // expression.
+                let layout = self.record_layout(name)?;
+                let capture = self.fresh_prepared_argument(name, parameter_name)?;
+                let source = crate::kernel::program_expression::cast(
+                    self.lower_place(place)?,
+                    ProgramType::UInt8Pointer,
+                );
+                evaluation = evaluate_then(
+                    evaluation,
+                    program_seq(
+                        program_allocate_aggregate_destination(capture.clone(), layout.clone()),
+                        crate::kernel::program_copy_aggregate(
+                            crate::kernel::program_expression::variable(capture.clone()),
+                            source,
+                            layout,
+                        ),
+                    ),
+                );
+                lowered.push(crate::kernel::program_expression::cast(
+                    crate::kernel::program_expression::variable(capture.clone()),
+                    ProgramType::UInt8Pointer,
+                ));
+                temporaries.push(capture);
             } else if matches!(
                 argument,
                 CppCallArgument::Construct { .. }
@@ -1990,7 +2063,11 @@ impl LoweringContext<'_> {
                     unreachable!()
                 };
                 let layout = self.record_layout(name)?;
-                let capture = self.fresh_aggregate_capture_with(name, opaque_copy)?;
+                let capture = if opaque_copy {
+                    self.fresh_prepared_argument(name, parameter_name)?
+                } else {
+                    self.fresh_aggregate_capture(name)?
+                };
                 let (prefix, mut actual, inner_temporaries) =
                     self.normalize_temporary_arguments(arguments, true)?;
                 temporaries.extend(inner_temporaries);
@@ -2292,6 +2369,31 @@ impl LoweringContext<'_> {
 
     fn fresh_aggregate_capture(&mut self, record: &str) -> Result<BindingName, String> {
         self.fresh_aggregate_capture_with(record, false)
+    }
+
+    /// The object a call receives as its by-value parameter, named for that
+    /// parameter when the callee is known.
+    fn fresh_prepared_argument(
+        &mut self,
+        record: &str,
+        parameter: Option<&String>,
+    ) -> Result<BindingName, String> {
+        let Some(parameter) = parameter else {
+            return self.fresh_aggregate_capture_with(record, true);
+        };
+        let ordinal = self.next_temporary;
+        self.next_temporary = ordinal
+            .checked_add(1)
+            .ok_or("C++ temporary ordinal overflow")?;
+        crate::instrumentation::record_deterministic_work(1);
+        let id = LocalBindingId::prepared_argument_for(
+            self.temporary_owner.clone(),
+            ordinal,
+            parameter,
+        );
+        id.initialize_program_type(ProgramType::Int32Pointer);
+        id.initialize_struct_name(record);
+        Ok(id.into())
     }
 
     fn fresh_aggregate_capture_with(

@@ -15185,10 +15185,29 @@ fn nested_aggregate_call_result_has_no_generated_destination_copy() {
     .expect("nested aggregate call parses");
     let body = format!("{:?}", functions[0].body());
     assert_eq!(body.matches("CallResult {").count(), 2, "{body}");
-    assert_eq!(body.matches("AggregateCopy {").count(), 0, "{body}");
-    assert!(!body.contains("DeclareStructValue"), "{body}");
+    // The only copy is the by-value argument's, into `read`'s parameter
+    // object, a region of its own before the call.
+    assert_eq!(body.matches("AggregateCopy {").count(), 1, "{body}");
+    assert_eq!(body.matches("DeclareStructValue").count(), 1, "{body}");
+    assert!(body.contains("PreparedArgument"), "{body}");
     assert!(!body.contains("__click_aggregate_result"), "{body}");
     assert!(!body.contains("CallConstruct"), "{body}");
+}
+
+#[test]
+fn a_by_value_struct_argument_is_copied_before_its_call() {
+    let functions = syntax::parse_functions(
+        "struct pair { uint32 a; uint32 b; };
+         uint32 first(struct pair p);
+         uint32 caller(void) { struct pair q; q.a = 1; q.b = 2; return first(q); }",
+    )
+    .expect("by-value call parses");
+    let body = format!("{:?}", functions[0].body());
+    let declare = body.rfind("DeclareStructValue").unwrap_or_else(|| panic!("{body}"));
+    let copy = body.find("AggregateCopy {").unwrap_or_else(|| panic!("{body}"));
+    let call = body.find("CallResult {").unwrap_or_else(|| panic!("{body}"));
+    let end = body.find("EndAggregateLifetimes").unwrap_or_else(|| panic!("{body}"));
+    assert!(declare < copy && copy < call && call < end, "{body}");
 }
 
 #[test]

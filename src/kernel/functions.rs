@@ -131,7 +131,6 @@ fn execute_function_body_paths(
 
 fn invalid_goto_path(path: StatementExecutionPath, message: &str) -> StatementExecutionPath {
     StatementExecutionPath {
-        call_parameters: None,
         loop_invariant_correspondence: Default::default(),
         call_result: None,
         outcome: StatementOutcome::RuntimeError(RuntimeError::FunctionContract(
@@ -2222,7 +2221,6 @@ fn execute_function_paths(
             append_string_literal_loadable_facts(function, &outcome, &mut facts);
 
             paths.push(FunctionPath {
-                call_parameters: None,
                 outcome,
                 facts,
                 obligations,
@@ -2554,7 +2552,6 @@ pub(super) fn execute_program_function_call_paths(
             let mut outcome = outcome;
             refresh_returned_local_bindings_from_stores(&mut outcome, &facts, &return_assumptions);
             paths.push(FunctionPath {
-                call_parameters: None,
                 outcome,
                 facts,
                 obligations,
@@ -5376,7 +5373,6 @@ fn execute_verified_function_applications_with_suspension(
         if let Some(function) = evidence {
             append_string_literal_loadable_facts(function, &outcome, &mut facts);
         }
-        let call_parameters = CallParameters::of(&entry_contract_state, interface);
         // The checked return partition recovers this call's borrows. The
         // transition that uses it still owes separation from the caller's
         // pre-existing borrows, on both normal and exceptional paths.
@@ -5411,10 +5407,8 @@ fn execute_verified_function_applications_with_suspension(
                     .unwrap_or_else(empty_checked_borrow_evidence_sequence),
                 &helper_evidence,
             ),
-            call_parameters: call_parameters.clone(),
         });
-        if let Some(mut path) = exceptional_path {
-            path.call_parameters = call_parameters;
+        if let Some(path) = exceptional_path {
             paths.push(path);
         }
     }

@@ -116,15 +116,18 @@ Review frontend and lowering changes against these checks.
   (`source_statements.rs`). The layout refuses a function whose region count
   differs from its sites' count, rather than guess.
   Source-layout result locals preserve allocation naming.
-  A call that copies a by-value aggregate argument into its parameter object
-  names that copy `<region>.parameter(name)`: the call producer hands back
-  the memory just after the copies, with only those parameters bound
-  (`kernel::CallParameters`), and the step records it as the region's
-  parameter point (`ProgramPointKind::Parameters`). The callee's contract
-  reads the copy there, so a step that prepares the call exposes that point at
-  its pre-state while it proves the call's requirements, and the source-backed
-  requirement Surface form substitutes `R.parameter(name)` for the parameter.
-  Reads through it are resolved from the recorded layout when lowered.
+  A by-value aggregate argument is copied into its parameter object by the
+  frontend, in regions of their own before the call: the object is a
+  prepared argument local of the caller, tagged with the callee parameter it
+  is passed as (`LocalBindingId::prepared_argument_for`), declared and then
+  initialized by an aggregate copy, and its lifetime ends when the call
+  returns. The call itself is one transition, so its `.entry` is the callee's
+  entry. The source layout maps each call region's parameters to their
+  objects from the program text (`call_parameter_object`, `prepared_parameter`),
+  so `<region>.parameter(name)` names the object like a local, from its
+  allocation on, and any fact about it, a separation goal for the copy's
+  write included, raises to that spelling. The source-backed requirement
+  Surface form substitutes `R.parameter(name)` for the parameter.
   In the function's own proof the parameter is the input itself: the entry
   declares its object holding its own entry values
   (`kernel::program_function_input_objects_state`), so `p.f` names the value and

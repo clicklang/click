@@ -1,17 +1,20 @@
 # A by-value struct argument is spelled by its call's parameter
 
-`first` takes `struct pair` by value. A call copies the argument into the
-callee's parameter object, and the callee's contract reads that copy: the
-requirement `p.a <= 1000u32` is about the copy, read at the memory just after
-the copy was made. The caller has no local naming the copy, and no recorded
-point holds that memory.
+`first` takes `struct pair` by value. Before the call, the argument is copied
+into the callee's parameter object, in regions of their own: the object is
+allocated, then `q` is copied into it. So `return first(q);` takes two steps
+before the step that runs the call, and the callee's contract reads the copy
+at the call's entry: the requirement `p.a <= 1000u32` is about the copy. The
+caller has no local naming the copy.
 
-The call names the copy where it makes it: a call's region has, for each
-by-value aggregate parameter, `.parameter(name)`, the callee's copy read at the
-call. So the step that runs the call writes its requirement as
+The call names the copy: a call's region has, for each by-value aggregate
+parameter, `.parameter(name)`, the object the call receives, read like a
+local in the current state. The step that runs the call starts at the call's
+entry, so it writes its requirement as
 `statement(3).call(first, 0).parameter(p).a <= 1000u32`, which lowers to the
 very obligation the call leaves open, and proves it from the caller's own
-facts. After the call the copy keeps its name, here as `x`.
+facts. The object's lifetime ends when the call returns, so after the call its
+value is read at the call's entry, here as `x`.
 
 ```c filename=by_value_parameter.c
 struct pair { uint32 a; uint32 b; };
@@ -43,11 +46,13 @@ uint32 caller(uint32 x) {
     step();
     step();
     step();
+    step();
+    step();
     step() {
         requires statement(3).call(first, 0).parameter(p).a <= 1000u32 by close();
     }
-    have statement(3).call(first, 0).parameter(p).a == x;
-    have statement(3).call(first, 0).parameter(p).b == 2u32;
+    have at(statement(3).call(first, 0).entry, statement(3).call(first, 0).parameter(p).a) == x;
+    have at(statement(3).call(first, 0).entry, statement(3).call(first, 0).parameter(p).b) == 2u32;
 }
 ```
 

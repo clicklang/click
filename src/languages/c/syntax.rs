@@ -13608,7 +13608,33 @@ impl Parser {
     ) -> Result<CStatement, CSyntaxError> {
         self.scalar_struct_value_layout(target_struct)?;
         let is_step_result = matches!(expression, CExpression::StepResult { .. });
-        let (source_pointer, source_struct) = match expression {
+        let (source_pointer, source_struct) = self.aggregate_copy_source(expression)?;
+        if target_struct != source_struct {
+            return Err(self.error_here(format!(
+                "cannot copy `struct {source_struct}` into `struct {target_struct}`"
+            )));
+        }
+        let layout = self
+            .structs
+            .get(target_struct)
+            .expect("validated struct value has a layout");
+        if is_step_result || !layout.aggregate_unions.is_empty() {
+            return Ok(CStatement::AggregateCopy {
+                target: target_pointer,
+                source: source_pointer,
+                layout: layout.clone(),
+                site: CSite::NONE,
+            });
+        }
+        self.aggregate_field_stores(target_pointer, source_pointer, layout)
+    }
+
+    /// The pointer an aggregate copy reads from, and the struct it holds.
+    fn aggregate_copy_source(
+        &self,
+        expression: CExpression,
+    ) -> Result<(CExpression, String), CSyntaxError> {
+        Ok(match expression {
             expression @ CExpression::StepResult { .. } => {
                 let struct_name = self.aggregate_struct_name(&expression).ok_or_else(|| {
                     self.error_here("aggregate copy requires an aggregate step result")
@@ -13640,24 +13666,15 @@ impl Parser {
                     "aggregate copies require another struct value or a direct struct lvalue load",
                 ));
             }
-        };
-        if target_struct != source_struct {
-            return Err(self.error_here(format!(
-                "cannot copy `struct {source_struct}` into `struct {target_struct}`"
-            )));
-        }
-        let layout = self
-            .structs
-            .get(target_struct)
-            .expect("validated struct value has a layout");
-        if is_step_result || !layout.aggregate_unions.is_empty() {
-            return Ok(CStatement::AggregateCopy {
-                target: target_pointer,
-                source: source_pointer,
-                layout: layout.clone(),
-                site: CSite::NONE,
-            });
-        }
+        })
+    }
+
+    fn aggregate_field_stores(
+        &self,
+        target_pointer: CExpression,
+        source_pointer: CExpression,
+        layout: &RecordLayout,
+    ) -> Result<CStatement, CSyntaxError> {
         let mut stores = Vec::new();
         for field in layout.aggregate_fields() {
             let (element_type, element_count) = match field.interface_type {
@@ -14295,6 +14312,9 @@ impl Parser {
         struct_name: String,
     ) -> Result<(Vec<CStatement>, CExpression), CSyntaxError> {
         let (mut prefix, arguments) = self.lower_call_arguments(arguments)?;
+        let (binding, arguments, prepared) =
+            self.prepare_by_value_arguments(&function_name, arguments)?;
+        prefix.extend(binding);
         let call = self.next_call_result;
         self.next_call_result = self.next_call_result.saturating_add(1);
         // Value returns already materialize independent aggregate storage.
@@ -14312,6 +14332,7 @@ impl Parser {
             site: CSite::NONE,
             callee: None,
         });
+        prefix.extend(Self::end_prepared_arguments(prepared));
         Ok((
             prefix,
             CExpression::StepResult {
@@ -15734,16 +15755,21 @@ impl Parser {
                 site,
                 callee,
             } => {
-                let (prefix, arguments) = self.lower_call_arguments(arguments)?;
-                Ok(prepend_statements(
-                    prefix,
-                    CStatement::Call {
-                        function_name,
-                        arguments,
-                        site,
-                        callee,
-                    },
-                ))
+                let (mut prefix, arguments) = self.lower_call_arguments(arguments)?;
+                let (binding, arguments, prepared) =
+                    self.prepare_by_value_arguments(&function_name, arguments)?;
+                prefix.extend(binding);
+                let call = CStatement::Call {
+                    function_name,
+                    arguments,
+                    site,
+                    callee,
+                };
+                let call = match Self::end_prepared_arguments(prepared) {
+                    Some(end) => CStatement::Seq(Box::new(call), Box::new(end)),
+                    None => call,
+                };
+                Ok(prepend_statements(prefix, call))
             }
             statement @ CStatement::CallResult { .. } => Ok(statement),
             CStatement::IndirectCall {
@@ -15904,6 +15930,103 @@ impl Parser {
                 unreachable!("nested statements are lowered by lower_statement_calls")
             }
         }
+    }
+
+    /// Binds each by-value aggregate argument of a call to `function_name`
+    /// as C does: the argument is copied into a fresh parameter object, which
+    /// the call then receives. The copy is its own atomic region, so the
+    /// call's entry is the callee's entry, with the parameter object already
+    /// initialized. The object's lifetime ends when the call returns; the
+    /// caller ends it with the statement [`Self::end_prepared_arguments`]
+    /// returns.
+    #[inline(never)]
+    fn prepare_by_value_arguments(
+        &mut self,
+        function_name: &str,
+        arguments: Vec<CExpression>,
+    ) -> Result<(Vec<CStatement>, Vec<CExpression>, Vec<BindingName>), CSyntaxError> {
+        let by_value = self
+            .function_declaration_for_call(function_name)
+            .map(|function| {
+                function
+                    .parameters
+                    .iter()
+                    .map(|parameter| {
+                        let spelling = match &parameter.name {
+                            BindingName::Named(name) => Some(name.to_string()),
+                            name => name
+                                .local_id()
+                                .and_then(LocalBindingId::spelling)
+                                .map(str::to_owned),
+                        };
+                        parameter
+                            .is_struct_value()
+                            .then(|| parameter.struct_name.clone().zip(spelling))
+                            .flatten()
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        if by_value.iter().all(Option::is_none) {
+            return Ok((Vec::new(), arguments, Vec::new()));
+        }
+        let mut prefix = Vec::new();
+        let mut prepared = Vec::new();
+        let mut lowered = Vec::with_capacity(arguments.len());
+        for (index, argument) in arguments.into_iter().enumerate() {
+            let Some(Some((struct_name, parameter))) = by_value.get(index).cloned() else {
+                lowered.push(argument);
+                continue;
+            };
+            let layout = self.scalar_struct_value_layout(&struct_name)?;
+            let (source, source_struct) = self.aggregate_copy_source(argument)?;
+            if source_struct != struct_name {
+                return Err(self.error_here(format!(
+                    "cannot pass `struct {source_struct}` as a `struct {struct_name}` argument"
+                )));
+            }
+            let owner = self
+                .binding_function
+                .clone()
+                .ok_or_else(|| self.error_here("a by-value struct argument requires a function body"))?;
+            let ordinal = self.next_local_binding;
+            self.next_local_binding = ordinal.checked_add(1).expect("binding ordinal fits u32");
+            let name: BindingName = LocalBindingId::prepared_argument_for(owner, ordinal, &parameter)
+                .with_scope_depth(self.scopes.len() as u32)
+                .into();
+            self.variable_types
+                .insert(name.clone(), record_value_type(&layout));
+            self.variable_structs
+                .insert(name.clone(), struct_name.clone());
+            self.variable_struct_values
+                .insert(name.clone(), struct_name.clone());
+            self.local_struct_values
+                .insert(name.clone(), Some(struct_name));
+            prefix.push(CStatement::DeclareStructValue {
+                name: name.clone().into(),
+                layout: layout.clone(),
+                site: CSite::NONE,
+            });
+            prefix.push(CStatement::AggregateCopy {
+                target: CExpression::Variable(name.clone()),
+                source,
+                layout,
+                site: CSite::NONE,
+            });
+            lowered.push(CExpression::Variable(name.clone()));
+            prepared.push(name);
+        }
+        Ok((prefix, lowered, prepared))
+    }
+
+    /// Ends the parameter objects [`Self::prepare_by_value_arguments`]
+    /// created, once their call has returned.
+    fn end_prepared_arguments(prepared: Vec<BindingName>) -> Option<CStatement> {
+        (!prepared.is_empty()).then(|| CStatement::EndAggregateLifetimes {
+            names: prepared,
+            steps: Vec::new(),
+            site: CSite::NONE,
+        })
     }
 
     fn lower_call_arguments(
@@ -16546,6 +16669,9 @@ impl Parser {
                     ));
                 }
                 let (mut prefix, arguments) = self.lower_call_arguments(arguments)?;
+                let (binding, arguments, prepared) =
+                    self.prepare_by_value_arguments(&function_name, arguments)?;
+                prefix.extend(binding);
                 let return_struct_name = self
                     .function_declaration(&function_name)
                     .and_then(|function| function.return_struct_name.clone());
@@ -16567,6 +16693,7 @@ impl Parser {
                         callee: None,
                         site: CSite::NONE,
                     });
+                    prefix.extend(Self::end_prepared_arguments(prepared));
                     return Ok((
                         prefix,
                         CExpression::StepResult {
@@ -16612,6 +16739,7 @@ impl Parser {
                     site: CSite::NONE,
                     callee: None,
                 });
+                prefix.extend(Self::end_prepared_arguments(prepared));
                 Ok((
                     prefix,
                     CExpression::StepResult {

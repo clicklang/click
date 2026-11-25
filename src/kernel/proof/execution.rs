@@ -12493,7 +12493,6 @@ impl ExecutionProofCore {
                 candidate.obligations(),
             ));
             let path = crate::kernel::SymbolicExecutionPath {
-                call_parameters: None,
                 descent_step: None,
                 completion_origin: Some(candidate.outcome().clone()),
                 call_result: None,

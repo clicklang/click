@@ -1742,27 +1742,6 @@ pub(super) fn checked_returned_call_value(
     .cloned()
 }
 
-fn record_call_parameters(
-    execution: &mut ExecutionProofState,
-    function_block: &FunctionBlock,
-    statement_index: usize,
-    call_parameters: Option<&crate::kernel::CallParameters>,
-) {
-    if let Some(parameters) = call_parameters {
-        record_statement_program_state(
-            &mut execution.presentation.recorded_states,
-            function_block,
-            statement_index,
-            ProgramPointKind::Parameters,
-            parameters.state().clone(),
-        );
-        execution.presentation.surface_record.last_call_parameters = Some(ProgramPointRef {
-            region: CodeRegionRef::Region(statement_index),
-            kind: ProgramPointKind::Parameters,
-        });
-    }
-}
-
 /// Record one of the two transitions retained by
 /// [`prepare_call_outcome_split`].  This is intentionally a recorder, not an
 /// evaluator: the theorem, outcome, facts, and borrow evidence all come from
@@ -1851,13 +1830,6 @@ pub(super) fn apply_prepared_call_outcome_transition(
         prepared.statement_index,
         ProgramPointKind::Exit,
         *next_state.clone(),
-    );
-
-    record_call_parameters(
-        execution,
-        function_block,
-        prepared.statement_index,
-        transition.call_parameters.as_ref(),
     );
 
     if is_throw {
@@ -3188,12 +3160,6 @@ fn execute_step_from_frontier_position_selecting_path(
             .presentation
             .recorded_states
             .record_read_events(statement_index, &execution_pure_facts);
-        record_call_parameters(
-            execution,
-            function_block,
-            statement_index,
-            transition.call_parameters.as_ref(),
-        );
         if matches!(outcome, StatementOutcome::Normal(_))
             && let Some(result) = &transition.call_result
         {
