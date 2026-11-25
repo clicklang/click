@@ -115,7 +115,11 @@ fn field_at_two_points<'a>(
     fn anchor(term: &SyntaxTerm) -> (Option<&ProgramPointSelector>, &SyntaxTerm) {
         match term {
             SyntaxTerm::At {
-                selector,
+                selector:
+                    selector @ ProgramPointSelector::ProgramPoint(ProgramPointRef {
+                        region: CodeRegionRef::Region(_) | CodeRegionRef::Path(_),
+                        kind: ProgramPointKind::Entry | ProgramPointKind::Exit,
+                    }),
                 expression,
             } => (Some(selector), expression),
             _ => (None, term),
@@ -7873,7 +7877,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(Some(known));
         }
-        if let Some(read) = Self::try_struct_field_store_bridge(search_input, equality)? {
+        if let Some(read) = Self::try_struct_field_store_bridge(search_input, equality, true)? {
             return Ok(Some(read));
         }
         Self::try_struct_field_equalities(search_input)
@@ -7884,6 +7888,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_struct_field_store_bridge(
         search_input: &Proof<'a>,
         equality: &SyntaxProposition,
+        allow_distinct_fields: bool,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_struct_field_store_bridge");
@@ -7895,14 +7900,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
-        let (other, read) =
-            if matches!(right, SyntaxTerm::Field { .. }) && is_field_observation(left) {
-                (left, right)
-            } else if let Some(pair) = field_at_two_points(left, right) {
-                pair
-            } else {
-                return Ok(None);
-            };
+        let (other, read) = if allow_distinct_fields
+            && matches!(right, SyntaxTerm::Field { .. })
+            && is_field_observation(left)
+        {
+            (left, right)
+        } else if let Some(pair) = field_at_two_points(left, right) {
+            pair
+        } else {
+            return Ok(None);
+        };
         let Some((
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,

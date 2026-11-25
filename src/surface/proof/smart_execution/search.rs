@@ -436,7 +436,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(Ok(proof));
         }
         if search_input.surface_goal() == Some(target)
-            && let Some(proof) = Self::try_struct_field_store_bridge(search_input, target)?
+            && let Some(proof) = Self::try_struct_field_store_bridge(search_input, target, false)?
         {
             return Ok(Ok(proof));
         }

@@ -12137,11 +12137,13 @@ fn struct_value_equality_costs_what_its_field_equalities_cost() {
     }
     eprintln!("struct value equality work (fields, [value, written]): {samples:?}");
     for (claim, source, program) in replay_examples {
-        let sources = [("probe.c", program.as_str())];
-        let expanded = expand_c_claim_source_by_label(&source, &sources, "copy.contract")
+        let imports = [
+            crate::languages::c::compiler_import::PreparedCImport::for_test("probe.c", &program),
+        ];
+        let expanded = expand_c_prepared_claim_source_by_label(&source, &imports, "copy.contract")
             .unwrap_or_else(|error| panic!("{claim}: {}", error.report()));
         crate::surface::without_implicit_solve_for_claim("copy.contract", || {
-            verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+            verify_c_prepared_sources(&expanded, &imports).map_err(|error| error.report())
         })
         .unwrap_or_else(|error| panic!("{claim}: {error}"));
     }
