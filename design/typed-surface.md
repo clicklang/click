@@ -39,6 +39,31 @@ siblings, or behaves differently depending on its caller, is doing type
 inference in the wrong place. The migration moves each such decision into
 elaboration and records it in the Surface node.
 
+## Every operation has its type
+
+`int32` and `Integer` are different types, and a term's meaning includes the
+type each operation works at and where each conversion happens. An int32
+`a + b` wraps; an Integer `a + b` does not. `x == y` at int32 and
+`to_integer(x) == to_integer(y)` hold in the same states but are different
+terms, and a substitution or a tactic that works on one need not work on the
+other: they are mathematically equal but not tactically interchangeable.
+
+So Surface records every operation's type and every conversion as a node,
+elaboration fills them from context, and lowering builds exactly that term.
+The e-graph depends on it: congruence is sound only when each node names one
+exact operation, and an equality class holds terms of one type, connected to
+another type only through explicit conversions. An equivalence across types
+is proved by checking, never applied by lowering.
+
+Today the kernel's logical lowering breaks this for machine comparisons over a
+compound operand: a spec's int32 `a + b == c` becomes
+`IntegerEqual(observe(a + b), observe(c))`
+(`condition_for_operand_views_in` in `src/kernel/machine_integer/comparison.rs`),
+while the same C condition is `Compare { Int32, a + b, c }`. The raiser's
+int32 and uint32 casts (`synthesize_int32_operand`,
+`synthesize_uint32_operand`, `is_signed_variable_arithmetic32`) exist to steer
+lowering back to the machine comparison. Fixing lowering removes them.
+
 ## The representations
 
 - **Syntax** is the proof as written: structure, names and literals as

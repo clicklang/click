@@ -3867,9 +3867,10 @@ fn raise_integer_comparison(
     )
 }
 
-/// `to_integer(left) OP to_integer(right)` with an explicit Integer context:
-/// a rewrite may have removed the last typed operand, so the left side keeps
-/// mathematical context without relying on an ambient binding.
+/// An Integer comparison of two Integer terms, printed by
+/// `print_comparison`: an Integer marking appears only when neither raised
+/// operand spells an Integer, such as `3 == n` after a rewrite removed the
+/// last observation.
 #[allow(clippy::too_many_arguments)]
 fn integer_observation_comparison(
     left: &crate::kernel::SharedIntegerTerm,
@@ -3880,23 +3881,14 @@ fn integer_observation_comparison(
     state: &ExecutionState,
     bound_variables: &BTreeMap<Variable, SurfaceBinder>,
 ) -> Option<SyntaxProposition> {
-    let raised_left = synthesize_surface_integer(left, parameter_binding, state, bound_variables)?;
-    // The comparison is Integer already when either side's spelling is:
-    // `to_integer(a) == n` needs no `(.. : Integer)`. Only a comparison of
-    // two sides neither of which spells an Integer, `3 == n`, takes it, so
-    // that it does not lower as a machine comparison.
-    let spelled_integer = |term: &crate::kernel::SharedIntegerTerm| {
-        spells_integer(&crate::kernel::KernelTermImport::default().integer(term))
-    };
-    let comparison = SyntaxProposition::Comparison {
-        left: if spelled_integer(left) || spelled_integer(right) {
-            raised_left
-        } else {
-            integer_typed_expression(raised_left)
-        },
+    let integer_calls = integer_call_names([left, right]);
+    let comparison = crate::surface::print_comparison(
+        crate::surface::ComparisonKind::Integer,
+        synthesize_surface_integer(left, parameter_binding, state, bound_variables)?,
         operator,
-        right: synthesize_surface_integer(right, parameter_binding, state, bound_variables)?,
-    };
+        synthesize_surface_integer(right, parameter_binding, state, bound_variables)?,
+        &|name| integer_calls.contains(name),
+    );
     Some(if value {
         comparison
     } else {
@@ -3904,19 +3896,30 @@ fn integer_observation_comparison(
     })
 }
 
-/// Whether an Integer term raises to Click text whose own type is
-/// Integer: an observation, which raises as `to_integer(..)`; an Integer
-/// call such as `length(xs)`; or Integer arithmetic with such an operand.
-/// A literal or a variable does not: alone on both sides it would read as
-/// a machine comparison. One visit per node on the operand's spine.
-fn spells_integer(root: &crate::kernel::KernelTerm) -> bool {
+/// The names of the Integer-valued calls on the arithmetic spine of these
+/// Integer terms: the calls their raised Syntax can show where
+/// `spells_integer` looks. A call is Integer by its declaration, which the
+/// kernel call node's type records. One visit per spine node.
+fn integer_call_names<'t>(
+    terms: impl IntoIterator<Item = &'t crate::kernel::SharedIntegerTerm>,
+) -> BTreeSet<String> {
     use crate::kernel::KernelTermNode as N;
-    match root.node() {
-        N::MachineObservation { .. } => true,
-        N::Call { .. } => matches!(root.ty(), crate::kernel::KernelType::Integer),
-        N::IntegerOperation { arguments, .. } => arguments.iter().any(spells_integer),
-        _ => false,
+    let mut import = crate::kernel::KernelTermImport::default();
+    let mut pending = terms
+        .into_iter()
+        .map(|term| import.integer(term))
+        .collect::<Vec<_>>();
+    let mut names = BTreeSet::new();
+    while let Some(root) = pending.pop() {
+        match root.node() {
+            N::Call { name, .. } if matches!(root.ty(), crate::kernel::KernelType::Integer) => {
+                names.insert(name.to_string());
+            }
+            N::IntegerOperation { arguments, .. } => pending.extend(arguments.iter().cloned()),
+            _ => {}
+        }
     }
+    names
 }
 
 fn synthesize_surface_integer(
