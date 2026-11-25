@@ -686,7 +686,7 @@ fn match_binding_variables(
 fn contract_expression_is_algebraic(
     expression: &SyntaxTerm,
     functions: &ClickFunctionEnvironment,
-    environment: &SpecElaborationContext,
+    typing: &TypingEnvironment<'_>,
     lexical_bindings: &mut Vec<(SurfaceBinder, bool)>,
 ) -> bool {
     if let Some(id) = expression.generated_binder() {
@@ -694,7 +694,7 @@ fn contract_expression_is_algebraic(
             .iter()
             .rev()
             .find_map(|(name, value)| (name == &SurfaceBinder::Generated(id)).then_some(*value))
-            .unwrap_or_else(|| environment.binding_is_algebraic(&id));
+            .unwrap_or_else(|| typing.binding_is_algebraic(&id));
     }
 
     match expression {
@@ -709,35 +709,35 @@ fn contract_expression_is_algebraic(
             .iter()
             .rev()
             .find_map(|(binding, algebraic)| (binding == name).then_some(*algebraic))
-            .unwrap_or_else(|| environment.binding_is_algebraic(name)),
+            .unwrap_or_else(|| typing.binding_is_algebraic(name)),
         SyntaxTerm::Old(inner)
         | SyntaxTerm::At {
             expression: inner, ..
-        } => contract_expression_is_algebraic(inner, functions, environment, lexical_bindings),
+        } => contract_expression_is_algebraic(inner, functions, typing, lexical_bindings),
         SyntaxTerm::If {
             then_branch,
             else_branch,
             ..
         } => {
-            contract_expression_is_algebraic(then_branch, functions, environment, lexical_bindings)
+            contract_expression_is_algebraic(then_branch, functions, typing, lexical_bindings)
                 || contract_expression_is_algebraic(
                     else_branch,
                     functions,
-                    environment,
+                    typing,
                     lexical_bindings,
                 )
         }
         SyntaxTerm::AlgebraicMatch { arms, .. } => arms.first().is_some_and(|arm| {
-            contract_expression_is_algebraic(&arm.body, functions, environment, lexical_bindings)
+            contract_expression_is_algebraic(&arm.body, functions, typing, lexical_bindings)
         }),
         SyntaxTerm::Let {
             name, value, body, ..
         } => {
             let value_is_algebraic =
-                contract_expression_is_algebraic(value, functions, environment, lexical_bindings);
+                contract_expression_is_algebraic(value, functions, typing, lexical_bindings);
             lexical_bindings.push((name.clone(), value_is_algebraic));
             let result =
-                contract_expression_is_algebraic(body, functions, environment, lexical_bindings);
+                contract_expression_is_algebraic(body, functions, typing, lexical_bindings);
             lexical_bindings.pop();
             result
         }
@@ -4997,7 +4997,7 @@ impl AnnotationLowerer<'_> {
                     || contract_expression_is_algebraic(
                         value,
                         self.spec_definitions.functions,
-                        environment,
+                        &TypingEnvironment::of(environment),
                         &mut Vec::new(),
                     )
                 {
@@ -7688,7 +7688,7 @@ impl AnnotationLowerer<'_> {
                 let value_is_algebraic = contract_expression_is_algebraic(
                     value,
                     self.spec_definitions.functions,
-                    environment,
+                    &TypingEnvironment::of(environment),
                     &mut Vec::new(),
                 );
                 if value_is_algebraic {
@@ -8212,7 +8212,7 @@ impl AnnotationLowerer<'_> {
                     || contract_expression_is_algebraic(
                         value,
                         self.spec_definitions.functions,
-                        environment,
+                        &TypingEnvironment::of(environment),
                         &mut Vec::new(),
                     )
                 {

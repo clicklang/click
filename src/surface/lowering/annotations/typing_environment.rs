@@ -38,6 +38,17 @@ impl<'a> TypingEnvironment<'a> {
         }
     }
 
+    /// Whether a name is bound to an algebraic value.
+    pub(super) fn binding_is_algebraic<Q: crate::surface::binders::BinderKey + ?Sized>(
+        &self,
+        name: &Q,
+    ) -> bool {
+        match self.binders.get(name) {
+            Some(click_type) => matches!(click_type, ClickType::Algebraic(_)),
+            None => self.outer.binding_is_algebraic(name),
+        }
+    }
+
     /// The type of a name read as a program binding. Lowering keeps an
     /// Integer binder in `integer_values` and an algebraic one in
     /// `algebraic_values`, and every other binder in `values`, which is all a

@@ -91,13 +91,13 @@ impl AnnotationLowerer<'_> {
             || contract_expression_is_algebraic(
                 left,
                 self.spec_definitions.functions,
-                environment,
+                &TypingEnvironment::of(environment),
                 &mut Vec::new(),
             )
             || contract_expression_is_algebraic(
                 right,
                 self.spec_definitions.functions,
-                environment,
+                &TypingEnvironment::of(environment),
                 &mut Vec::new(),
             )
             || self.generic_call_returns_algebraic(left, environment)
