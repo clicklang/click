@@ -146,6 +146,14 @@ fn rounding_phases_with_the_same_fixture_own_independent_directories() {
     assert!(!second_path.exists());
 }
 
+const RESULT_FIT_ADJUSTED_NUMERATOR_ADD: &str = "have to_integer(((this->fee as uint64 * at_size as uint64) + this->size as uint64)) == to_integer((this->fee as uint64 * at_size as uint64)) + to_integer(this->size as uint64) by {
+        apply(integer::uint64_add_to_integer(this->fee as uint64 * at_size as uint64, this->size as uint64));
+    }";
+
+const RESULT_FIT_ADJUSTED_NUMERATOR_SUBTRACT: &str = "have to_integer((((this->fee as uint64 * at_size as uint64) + this->size as uint64) - 1u64)) == to_integer(((this->fee as uint64 * at_size as uint64) + this->size as uint64)) - to_integer(1u64) by {
+        apply(integer::uint64_subtract_to_integer((this->fee as uint64 * at_size as uint64) + this->size as uint64, 1u64));
+    }";
+
 fn check_upstream_cpp_rounding_phase(
     selected: &str,
     name: &str,
@@ -739,8 +747,8 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                 ];
                 if !down {
                     cases.extend([
-                        source.replace("have to_integer(((this->fee as uint64 * at_size as uint64) + this->size as uint64)) == to_integer((this->fee as uint64 * at_size as uint64)) + to_integer(this->size as uint64);", ""),
-                        source.replace("have to_integer((((this->fee as uint64 * at_size as uint64) + this->size as uint64) - 1u64)) == to_integer(((this->fee as uint64 * at_size as uint64) + this->size as uint64)) - to_integer(1u64);", ""),
+                        source.replace(RESULT_FIT_ADJUSTED_NUMERATOR_ADD, ""),
+                        source.replace(RESULT_FIT_ADJUSTED_NUMERATOR_SUBTRACT, ""),
                         source.replace("== to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1", "== to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 2"),
                     ]);
                 }
@@ -815,8 +823,8 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                 RoundingPhase::AdjustedNumeratorRejections => {
                     assert!(!down);
                     vec![
-                        source.replace("have to_integer(((this->fee as uint64 * at_size as uint64) + this->size as uint64)) == to_integer((this->fee as uint64 * at_size as uint64)) + to_integer(this->size as uint64);", ""),
-                        source.replace("have to_integer((((this->fee as uint64 * at_size as uint64) + this->size as uint64) - 1u64)) == to_integer(((this->fee as uint64 * at_size as uint64) + this->size as uint64)) - to_integer(1u64);", ""),
+                        source.replace(RESULT_FIT_ADJUSTED_NUMERATOR_ADD, ""),
+                        source.replace(RESULT_FIT_ADJUSTED_NUMERATOR_SUBTRACT, ""),
                         source.replace("== to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 1", "== to_integer(this->fee) * to_integer(at_size) + to_integer(this->size) - 2"),
                     ]
                 }
