@@ -4117,6 +4117,22 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
+        let less_equal = SyntaxProposition::Comparison {
+            left: left.clone(),
+            operator: ComparisonOperator::LessEqual,
+            right: right.clone(),
+        };
+        let proof = if ordered == less_equal {
+            proof
+        } else {
+            let step =
+                super::super::wide_arithmetic::have(less_equal.clone(), vec![ProofStep::Known]);
+            let Some(retained) = attempt::candidate_outcome(proof.driver().apply_step(step))?
+            else {
+                return Ok(None);
+            };
+            retained
+        };
         let finite = SyntaxProposition::FloatClassification {
             expression: literal.clone(),
             classification: syntax::CFloatClassification::Finite,
@@ -4130,15 +4146,27 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 name: name.into(),
                 arguments: vec![literal, left, right],
             },
-            premises: vec![ordered, finite],
+            premises: vec![less_equal, finite],
         };
-        let Some(proof) = attempt::candidate_outcome(proof.driver().apply_step(
-            super::super::wide_arithmetic::have(intermediate.clone(), vec![application]),
-        ))?
+        let Some(scope) =
+            attempt::candidate_outcome(proof.driver().open_have(intermediate.clone()))?
         else {
             return Ok(None);
         };
-        Self::try_float_bound_weakening(&proof, plan, intermediate)
+        let Some(mut scope) = attempt::candidate_outcome(scope.driver().apply_step(application))?
+        else {
+            return Ok(None);
+        };
+        if !scope.is_complete() {
+            // The theorem gives both operand orders. Close the focused one.
+            let Some(closed) =
+                attempt::candidate_outcome(scope.driver().apply_step(ProofStep::Known))?
+            else {
+                return Ok(None);
+            };
+            scope = closed;
+        }
+        Self::try_float_bound_weakening(&scope.join()?, plan, intermediate)
     }
 
     pub(super) fn retain_float_adjacent_bound(
