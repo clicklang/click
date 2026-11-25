@@ -298,6 +298,7 @@ select_float_pair_bounds
 try_float_pair_bound
 try_float_literal_sum_or_difference_bound
 try_apply_float_pair_bound
+prepare_float_bound
 try_float_scale_bound
 try_float_narrow_bound
 try_float_reciprocal_bound

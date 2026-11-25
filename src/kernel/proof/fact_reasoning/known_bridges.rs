@@ -603,11 +603,19 @@ fn signed_product_bound(goal: &Proposition, available: &impl Fn(&Proposition) ->
 }
 
 fn exact_float_bound(goal: &Proposition, available: &impl Fn(&Proposition) -> bool) -> bool {
-    [false, true].into_iter().any(|strict| {
-        super::super::arithmetic_special::exact_float_bound_source(goal, strict).is_some_and(
-            |source| available(&source) || super::order_claim_forms(&source).iter().any(available),
-        )
-    })
+    use super::super::arithmetic_special::{
+        adjacent_float_bound_sources, exact_float_bound_source,
+    };
+    let holds =
+        |source| available(&source) || super::order_claim_forms(&source).iter().any(available);
+    [false, true]
+        .into_iter()
+        .filter_map(|strict| exact_float_bound_source(goal, strict))
+        .any(holds)
+        || adjacent_float_bound_sources(goal)
+            .into_iter()
+            .flatten()
+            .any(holds)
 }
 
 /// The count comparisons name their exact inputs. In particular an unsigned

@@ -27,15 +27,6 @@ enum SurfaceRaisingPurpose {
     ProposedGoal,
 }
 
-fn ordered_float_bound_parts(
-    bound: &SyntaxProposition,
-    lower: bool,
-) -> Option<(SyntaxTerm, SyntaxTerm)> {
-    let comparison = surface_comparison_with_anchored_operands(bound);
-    let (left, right) = surface_nonstrict_parts(&comparison)?;
-    Some(if lower { (right, left) } else { (left, right) })
-}
-
 /// After stored reads resolve, the same indicators can occur in a different
 /// order. At most three 0-or-1 terms fit in int32 regardless of their guards.
 /// Observe the uncast sums with `to_integer` so the checked arithmetic leaf
@@ -4038,7 +4029,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_float_pair_bound");
         use crate::kernel::proof::arithmetic_special::float_pair_bound_weakening;
-        let Some((plan, subtract)) = float_pair_bound_weakening(goal, bounds) else {
+        let Some((plan, subtract, tightened)) = float_pair_bound_weakening(goal, bounds) else {
             return Ok(None);
         };
         let resolve = |bound| {
@@ -4053,13 +4044,24 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let [Some(first), Some(second)] = bounds.each_ref().map(resolve) else {
             return Ok(None);
         };
-        let (Some(left), Some(right)) = (
-            ordered_float_bound_parts(&first, plan.lower),
-            ordered_float_bound_parts(&second, plan.lower != subtract),
-        ) else {
-            return Ok(None);
-        };
-        Self::try_apply_float_pair_bound(input, &plan, subtract, [left, right], [first, second])
+        let mut premises = [first, second];
+        let mut proof = input.clone();
+        for (premise, tighter) in premises.iter_mut().zip(tightened) {
+            let Some(tighter) = tighter else {
+                continue;
+            };
+            let Some(surface) = proof.structural_proposition_candidate(&tighter) else {
+                return Ok(None);
+            };
+            let step = super::super::wide_arithmetic::have(surface.clone(), vec![ProofStep::Known]);
+            let Some(retained) = attempt::candidate_outcome(proof.driver().apply_step(step))?
+            else {
+                return Ok(None);
+            };
+            *premise = surface;
+            proof = retained;
+        }
+        Self::try_apply_float_pair_bound(&proof, &plan, subtract, premises)
     }
 
     fn try_float_literal_sum_or_difference_bound(
@@ -4077,11 +4079,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
-        let Some(symbolic) =
-            ordered_float_bound_parts(source_surface, plan.lower != (subtract && literal_on_left))
-        else {
-            return Ok(None);
-        };
         let literal = SyntaxTerm::ProgramExpression(match plan.format {
             KernelFloatType::Float32 => {
                 crate::kernel::program_expression::float32_literal(bits as u32)
@@ -4093,20 +4090,61 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             operator: ComparisonOperator::LessEqual,
             right: literal.clone(),
         };
-        let constant = (literal.clone(), literal);
-        let (operands, premises) = if literal_on_left {
-            ([constant, symbolic], [reflexive, source_surface.clone()])
+        let premises = if literal_on_left {
+            [reflexive, source_surface.clone()]
         } else {
-            ([symbolic, constant], [source_surface.clone(), reflexive])
+            [source_surface.clone(), reflexive]
         };
-        Self::try_apply_float_pair_bound(input, &plan, subtract, operands, premises)
+        Self::try_apply_float_pair_bound(input, &plan, subtract, premises)
+    }
+
+    /// Rounding can merge distinct operands. Turn a strict input comparison
+    /// into the explicitly checked non-strict premise used by the rounded laws.
+    fn prepare_float_bound(
+        input: &Proof<'a>,
+        format: crate::kernel::KernelFloatType,
+        source: SyntaxProposition,
+    ) -> Result<Option<(Proof<'a>, SyntaxProposition, SyntaxTerm, SyntaxTerm)>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("prepare_float_bound");
+        let comparison = surface_comparison_with_anchored_operands(&source);
+        if let Some((left, right)) = surface_nonstrict_parts(&comparison) {
+            return Ok(Some((input.clone(), source, left, right)));
+        }
+        let Some((left, right)) =
+            super::super::surface_certificates::surface_strict_parts(&comparison)
+        else {
+            return Ok(None);
+        };
+        let bound = SyntaxProposition::Comparison {
+            left: left.clone(),
+            operator: ComparisonOperator::LessEqual,
+            right: right.clone(),
+        };
+        let name = match format {
+            crate::kernel::KernelFloatType::Float32 => "click::float_order::float32_lt_to_le",
+            crate::kernel::KernelFloatType::Float64 => "click::float_order::float64_lt_to_le",
+        };
+        let weakening = ProofStep::ApplyPlannedTheorem {
+            application: TheoremApplication {
+                name: name.into(),
+                arguments: vec![left.clone(), right.clone()],
+            },
+            premises: vec![source],
+        };
+        let Some(proof) = attempt::candidate_outcome(input.driver().apply_step(
+            super::super::wide_arithmetic::have(bound.clone(), vec![weakening]),
+        ))?
+        else {
+            return Ok(None);
+        };
+        Ok(Some((proof, bound, left, right)))
     }
 
     fn try_apply_float_pair_bound(
         input: &Proof<'a>,
         plan: &crate::kernel::proof::arithmetic_special::FloatBoundWeakening,
         subtract: bool,
-        [(x, a), (y, b)]: [(SyntaxTerm, SyntaxTerm); 2],
         [first, second]: [SyntaxProposition; 2],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
@@ -4125,6 +4163,26 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             (KernelFloatType::Float64, true, true) => "float64_sub_lower",
             (KernelFloatType::Float64, true, false) => "float64_sub_upper",
         };
+        let Some((proof, first, left, right)) =
+            Self::prepare_float_bound(input, plan.format, first)?
+        else {
+            return Ok(None);
+        };
+        let (x, a) = if plan.lower {
+            (right, left)
+        } else {
+            (left, right)
+        };
+        let Some((proof, second, left, right)) =
+            Self::prepare_float_bound(&proof, plan.format, second)?
+        else {
+            return Ok(None);
+        };
+        let (y, b) = if plan.lower != subtract {
+            (right, left)
+        } else {
+            (left, right)
+        };
         let finite = |expression| SyntaxProposition::FloatClassification {
             expression,
             classification: syntax::CFloatClassification::Finite,
@@ -4136,7 +4194,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             },
             premises: vec![first, second, finite(a), finite(b)],
         };
-        let Some(proof) = attempt::candidate_outcome(input.driver().apply_step(
+        let Some(proof) = attempt::candidate_outcome(proof.driver().apply_step(
             super::super::wide_arithmetic::have(intermediate.clone(), vec![application]),
         ))?
         else {
@@ -4161,17 +4219,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             },
             float_scale_bound_weakening,
         };
-        let Some((plan, factor, scale, source_strict)) = float_scale_bound_weakening(source, goal)
-        else {
-            return Ok(None);
-        };
-        let source_order = surface_comparison_with_anchored_operands(source_surface);
-        let parts = if source_strict {
-            super::super::surface_certificates::surface_strict_parts(&source_order)
-        } else {
-            surface_nonstrict_parts(&source_order)
-        };
-        let Some((left, right)) = parts else {
+        let Some((plan, factor, scale)) = float_scale_bound_weakening(source, goal) else {
             return Ok(None);
         };
         let reverse = matches!(
@@ -4224,30 +4272,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             KernelFloatType::Float32 => "float32",
             KernelFloatType::Float64 => "float64",
         };
-        let (proof, source_bound) = if source_strict {
-            // Rounding can merge distinct inputs. Pass only the weakened
-            // bound to the scaling law and the rounded result to the goal.
-            let bound = SyntaxProposition::Comparison {
-                left: left.clone(),
-                operator: ComparisonOperator::LessEqual,
-                right: right.clone(),
-            };
-            let weakening = ProofStep::ApplyPlannedTheorem {
-                application: TheoremApplication {
-                    name: format!("click::float_order::{module_width}_lt_to_le"),
-                    arguments: vec![left.clone(), right.clone()],
-                },
-                premises: vec![source_surface.clone()],
-            };
-            let Some(proof) = attempt::candidate_outcome(input.driver().apply_step(
-                super::super::wide_arithmetic::have(bound.clone(), vec![weakening]),
-            ))?
-            else {
-                return Ok(None);
-            };
-            (proof, bound)
-        } else {
-            (input.clone(), source_surface.clone())
+        let Some((proof, source_bound, left, right)) =
+            Self::prepare_float_bound(input, plan.format, source_surface.clone())?
+        else {
+            return Ok(None);
         };
         let (x, endpoint) = if plan.lower != reverse {
             (right, left)

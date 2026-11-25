@@ -61,6 +61,28 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - name: Prevent growth in legacy normalization expansion
+        shell: bash
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        run: |
+          inventory=build_support/normalize_expansion_edges.tsv
+          if ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            git fetch --depth=1 origin "$BASE"
+          fi
+          # The first revision installs the inventory. Subsequent revisions
+          # can only remove references or decrease their counts.
+          if git cat-file -e "$BASE:$inventory" 2>/dev/null; then
+            git show "$BASE:$inventory" | awk -F '\t' '
+              /^#/ || NF == 0 { next }
+              FILENAME == "-" { allowed[$1 FS $2 FS $3 FS $4] = $5; next }
+              $5 > allowed[$1 FS $2 FS $3 FS $4] {
+                print "Legacy normalization expansion inventory grew: " $0 > "/dev/stderr"
+                failed = 1
+              }
+              END { exit failed }
+            ' - "$inventory"
+          fi
       - uses: actions/cache@v4
         with:
           path: ~/.cache/click/tools

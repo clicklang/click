@@ -5,10 +5,24 @@ use std::collections::BTreeMap;
 use syn::visit::Visit;
 
 pub const MANIFEST: &str = include_str!("proof_search_edges.tsv");
+const NORMALIZE_EXPANSION_MANIFEST: &str = include_str!("normalize_expansion_edges.tsv");
 pub const OWNERSHIP_FALLBACK_MANIFEST: &str = include_str!("ownership_fallback_edges.tsv");
 pub const DRIVER_METHODS: &str = include_str!("proof_driver_methods.txt");
 pub const OWNERSHIP_FALLBACK_TARGETS: &str = include_str!("ownership_fallback_targets.txt");
 pub const TARGETS: &str = include_str!("proof_search_targets.txt");
+
+fn is_normalize_expansion_target(target: &str) -> bool {
+    matches!(
+        target,
+        "Normalize"
+            | "NormalizeUsing"
+            | "CompatibilityNormalize"
+            | "apply_normalization_closure"
+            | "apply_normalize"
+            | "apply_normalize_using"
+            | "try_normalize_after_arithmetic_bounds"
+    )
+}
 
 fn test_only(attrs: &[syn::Attribute]) -> bool {
     attrs.iter().any(|a| {
@@ -27,10 +41,11 @@ struct Inventory {
 }
 impl Inventory {
     fn record(&mut self, target: &str) {
-        if TARGETS
-            .lines()
-            .chain(OWNERSHIP_FALLBACK_TARGETS.lines())
-            .any(|name| name == target)
+        if is_normalize_expansion_target(target)
+            || TARGETS
+                .lines()
+                .chain(OWNERSHIP_FALLBACK_TARGETS.lines())
+                .any(|name| name == target)
         {
             *self
                 .edges
@@ -294,6 +309,15 @@ pub fn expected() -> BTreeMap<String, usize> {
     MANIFEST
         .lines()
         .chain(OWNERSHIP_FALLBACK_MANIFEST.lines())
+        // Legacy normalization has its own ratchet in required CI. A
+        // general proof-search allowance cannot authorize these references.
+        .filter(|line| {
+            !line
+                .rsplit('\t')
+                .nth(1)
+                .is_some_and(is_normalize_expansion_target)
+        })
+        .chain(NORMALIZE_EXPANSION_MANIFEST.lines())
         .filter(|line| !line.starts_with('#') && !line.is_empty())
         .map(|line| {
             let (key, count) = line.rsplit_once('\t').expect("dependency record count");
@@ -313,7 +337,14 @@ pub fn check(path: &str, file: &syn::File) -> Result<(), Vec<String>> {
     let actual = inventory(path, file);
     for (key, count) in &actual {
         if expected.get(key).copied().unwrap_or(0) != *count {
-            errors.push(format!("unreviewed proof-search dependency: {key} ({count} references); preserve the frozen inventory or explicitly review this boundary change"));
+            let target = key.rsplit_once('\t').expect("dependency inventory key").1;
+            if is_normalize_expansion_target(target) {
+                errors.push(format!(
+                    "new or changed legacy normalization reference: {key} ({count} references); expand through checked proof steps"
+                ));
+            } else {
+                errors.push(format!("unreviewed proof-search dependency: {key} ({count} references); preserve the frozen inventory or explicitly review this boundary change"));
+            }
         }
     }
     for key in expected.keys() {
