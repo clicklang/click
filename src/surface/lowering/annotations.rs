@@ -268,23 +268,38 @@ impl SpecElaborationContext {
         self.algebraic_values.contains_key(name)
     }
 
-    /// The element type of a program binding that names an array or a
-    /// pointer.
-    fn program_binding_pointer_element_type<Q: crate::surface::binders::BinderKey + ?Sized>(
+    /// The element type of a name bound to an array reference.
+    fn bound_array_element_type<Q: crate::surface::binders::BinderKey + ?Sized>(
         &self,
         name: &Q,
     ) -> Option<ProgramType> {
         self.array_refs
             .get(name)
             .map(|array_ref| array_ref.element_type)
-            .or_else(|| {
-                self.values.get(name).and_then(|value| match value {
-                    SpecExpression::Value(ProgramValue::Pointer(pointer)) => {
-                        pointer.program_type().pointee_type()
-                    }
-                    _ => None,
-                })
-            })
+    }
+
+    /// The program type of a name bound to an enum or library value.
+    fn bound_enum_value_type<Q: crate::surface::binders::BinderKey + ?Sized>(
+        &self,
+        name: &Q,
+    ) -> Option<ProgramType> {
+        match self.values.get(name)? {
+            SpecExpression::Value(value @ ProgramValue::Parameter(_)) => Some(value.program_type()),
+            _ => None,
+        }
+    }
+
+    /// The pointee type of a name bound to a pointer value.
+    fn bound_pointer_pointee_type<Q: crate::surface::binders::BinderKey + ?Sized>(
+        &self,
+        name: &Q,
+    ) -> Option<ProgramType> {
+        self.values.get(name).and_then(|value| match value {
+            SpecExpression::Value(ProgramValue::Pointer(pointer)) => {
+                pointer.program_type().pointee_type()
+            }
+            _ => None,
+        })
     }
 
     /// The type of a name bound to a program value, as a program binding
@@ -686,7 +701,7 @@ fn match_binding_variables(
 fn contract_expression_is_algebraic(
     expression: &SyntaxTerm,
     functions: &ClickFunctionEnvironment,
-    environment: &SpecElaborationContext,
+    typing: &TypingEnvironment<'_>,
     lexical_bindings: &mut Vec<(SurfaceBinder, bool)>,
 ) -> bool {
     if let Some(id) = expression.generated_binder() {
@@ -694,7 +709,7 @@ fn contract_expression_is_algebraic(
             .iter()
             .rev()
             .find_map(|(name, value)| (name == &SurfaceBinder::Generated(id)).then_some(*value))
-            .unwrap_or_else(|| environment.binding_is_algebraic(&id));
+            .unwrap_or_else(|| typing.binding_is_algebraic(&id));
     }
 
     match expression {
@@ -709,35 +724,35 @@ fn contract_expression_is_algebraic(
             .iter()
             .rev()
             .find_map(|(binding, algebraic)| (binding == name).then_some(*algebraic))
-            .unwrap_or_else(|| environment.binding_is_algebraic(name)),
+            .unwrap_or_else(|| typing.binding_is_algebraic(name)),
         SyntaxTerm::Old(inner)
         | SyntaxTerm::At {
             expression: inner, ..
-        } => contract_expression_is_algebraic(inner, functions, environment, lexical_bindings),
+        } => contract_expression_is_algebraic(inner, functions, typing, lexical_bindings),
         SyntaxTerm::If {
             then_branch,
             else_branch,
             ..
         } => {
-            contract_expression_is_algebraic(then_branch, functions, environment, lexical_bindings)
+            contract_expression_is_algebraic(then_branch, functions, typing, lexical_bindings)
                 || contract_expression_is_algebraic(
                     else_branch,
                     functions,
-                    environment,
+                    typing,
                     lexical_bindings,
                 )
         }
         SyntaxTerm::AlgebraicMatch { arms, .. } => arms.first().is_some_and(|arm| {
-            contract_expression_is_algebraic(&arm.body, functions, environment, lexical_bindings)
+            contract_expression_is_algebraic(&arm.body, functions, typing, lexical_bindings)
         }),
         SyntaxTerm::Let {
             name, value, body, ..
         } => {
             let value_is_algebraic =
-                contract_expression_is_algebraic(value, functions, environment, lexical_bindings);
+                contract_expression_is_algebraic(value, functions, typing, lexical_bindings);
             lexical_bindings.push((name.clone(), value_is_algebraic));
             let result =
-                contract_expression_is_algebraic(body, functions, environment, lexical_bindings);
+                contract_expression_is_algebraic(body, functions, typing, lexical_bindings);
             lexical_bindings.pop();
             result
         }
@@ -4997,7 +5012,7 @@ impl AnnotationLowerer<'_> {
                     || contract_expression_is_algebraic(
                         value,
                         self.spec_definitions.functions,
-                        environment,
+                        &TypingEnvironment::of(environment),
                         &mut Vec::new(),
                     )
                 {
@@ -6846,7 +6861,7 @@ impl AnnotationLowerer<'_> {
         }
         if !operands.is_empty()
             && self
-                .contract_pointer_element_type(current, environment)
+                .contract_pointer_element_type(current, &TypingEnvironment::of(environment))
                 .is_none()
             && self
                 .call_pointer_element_width(current, environment)?
@@ -6948,7 +6963,7 @@ impl AnnotationLowerer<'_> {
                             // 6.3.2.3p7).
                             && self.pointee_less_operand(operand, environment).is_none()
                             && !self
-                                .contract_pointer_element_type(operand, environment)
+                                .contract_pointer_element_type(operand, &TypingEnvironment::of(environment))
                                 .is_some_and(|element| {
                                     !element.is_pointer() && element.byte_width() > 0
                                 })
@@ -7686,7 +7701,7 @@ impl AnnotationLowerer<'_> {
                 let value_is_algebraic = contract_expression_is_algebraic(
                     value,
                     self.spec_definitions.functions,
-                    environment,
+                    &TypingEnvironment::of(environment),
                     &mut Vec::new(),
                 );
                 if value_is_algebraic {
@@ -7770,9 +7785,9 @@ impl AnnotationLowerer<'_> {
     fn enum_program_name_type(
         &self,
         name: &str,
-        environment: &SpecElaborationContext,
+        typing: &TypingEnvironment<'_>,
     ) -> Option<crate::kernel::TypeParameterName> {
-        match self.program_name_type(name, environment)? {
+        match self.program_name_type(name, typing)? {
             ProgramType::Parameter(enum_type) if crate::surface::holds_spec_value(enum_type) => {
                 Some(enum_type)
             }
@@ -7785,24 +7800,22 @@ impl AnnotationLowerer<'_> {
     fn program_name_type(
         &self,
         name: impl Into<crate::kernel::BindingName>,
-        environment: &SpecElaborationContext,
+        typing: &TypingEnvironment<'_>,
     ) -> Option<ProgramType> {
         let name = self.source_binding(name.into());
         if name == crate::kernel::CONTRACT_RESULT {
             return Some(self.result_type);
         }
         if matches!(name, crate::kernel::BindingName::Generated(_)) {
-            return environment
-                .values
-                .get(&name)
-                .and_then(spec_expression_click_type)
+            return typing
+                .program_binding_click_type(&name)
                 .and_then(|ty| ty.interface_type())
                 .map(|ty| ty.to_kernel_type());
         }
         if name.unresolved_name().is_none() {
             return name.program_type();
         }
-        if name.named_in(&environment.algebraic_values).is_some() {
+        if typing.binding_is_algebraic(&name) {
             return None;
         }
         if name.is_named("result") {
@@ -7820,12 +7833,7 @@ impl AnnotationLowerer<'_> {
                         })
                         // A name bound to a value in this context: a fixed state's
                         // local, including one that keeps an enum in memory.
-                        .or_else(|| match name.named_in(&environment.values)? {
-                            SpecExpression::Value(value @ ProgramValue::Parameter(_)) => {
-                                Some(value.program_type())
-                            }
-                            _ => None,
-                        })
+                        .or_else(|| typing.bound_enum_value_type(&name))
                 })
         }
     }
@@ -7834,20 +7842,20 @@ impl AnnotationLowerer<'_> {
     fn enum_program_value_type(
         &self,
         expression: &SyntaxTerm,
-        environment: &SpecElaborationContext,
+        typing: &TypingEnvironment<'_>,
     ) -> Option<crate::kernel::TypeParameterName> {
         match expression {
             SyntaxTerm::Binding(name)
             | SyntaxTerm::ProgramBinding(name)
             | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
                 crate::kernel::BindingName::Named(name),
-            )) => self.enum_program_name_type(name, environment),
+            )) => self.enum_program_name_type(name, typing),
             SyntaxTerm::ProgramExpression(ProgramExpression::Load(pointer)) => {
                 let value_type = match pointer.as_ref() {
                     ProgramExpression::Variable(name) => {
-                        self.program_name_type(name, environment)?.pointee_type()?
+                        self.program_name_type(name, typing)?.pointee_type()?
                     }
-                    _ => self.program_expression_array_element_type(pointer, environment)?,
+                    _ => self.program_expression_array_element_type(pointer, typing)?,
                 };
                 match value_type {
                     ProgramType::Parameter(ty) if crate::surface::holds_spec_value(ty) => Some(ty),
@@ -7858,12 +7866,12 @@ impl AnnotationLowerer<'_> {
                 value_type: ProgramType::Parameter(ty),
                 ..
             } if crate::surface::holds_spec_value(*ty) => Some(*ty),
-            SyntaxTerm::Old(inner) => self.enum_program_value_type(inner, environment),
+            SyntaxTerm::Old(inner) => self.enum_program_value_type(inner, typing),
             // The enum value a call returned.
             SyntaxTerm::RegionResult(region) => {
                 match self
                     .retained_states?
-                    .region_result_value_at(region, environment.call_result_point.as_ref())
+                    .region_result_value_at(region, typing.call_result_point())
                     .ok()?
                 {
                     ProgramValue::Parameter(term) => {
@@ -7891,7 +7899,9 @@ impl AnnotationLowerer<'_> {
         if let Some(reduced) = lambdas::reduce_head(expression)? {
             return self.lower_contract_algebraic_to_spec(&reduced, environment);
         }
-        if let Some(enum_type) = self.enum_program_value_type(expression, environment) {
+        if let Some(enum_type) =
+            self.enum_program_value_type(expression, &TypingEnvironment::of(environment))
+        {
             return Ok(SpecAlgebraicExpression {
                 algebraic_type: enum_type.algebraic_type(),
                 node: SpecAlgebraicExpressionNode::ProgramValue(Box::new(
@@ -8210,7 +8220,7 @@ impl AnnotationLowerer<'_> {
                     || contract_expression_is_algebraic(
                         value,
                         self.spec_definitions.functions,
-                        environment,
+                        &TypingEnvironment::of(environment),
                         &mut Vec::new(),
                     )
                 {
@@ -8853,7 +8863,10 @@ impl AnnotationLowerer<'_> {
         // needs the instantiated generic pointee's physical stride.
         if !matches!(segment.surface, ContractSegmentSurface::Range { .. }) {
             return Ok(self
-                .program_expression_array_element_type(&segment.base, environment)
+                .program_expression_array_element_type(
+                    &segment.base,
+                    &TypingEnvironment::of(environment),
+                )
                 .unwrap_or(ProgramType::Int32)
                 .byte_width());
         }
@@ -8870,9 +8883,12 @@ impl AnnotationLowerer<'_> {
         Ok(self
             .program_expression_array_element_width(&segment.base, environment)
             .unwrap_or_else(|| {
-                self.program_expression_array_element_type(&segment.base, environment)
-                    .unwrap_or(ProgramType::Int32)
-                    .byte_width()
+                self.program_expression_array_element_type(
+                    &segment.base,
+                    &TypingEnvironment::of(environment),
+                )
+                .unwrap_or(ProgramType::Int32)
+                .byte_width()
             }))
     }
 
@@ -9844,8 +9860,8 @@ impl AnnotationLowerer<'_> {
                     ..
                 }
             )
-            && let Some(element_type) =
-                self.program_expression_array_element_type(base, environment)
+            && let Some(element_type) = self
+                .program_expression_array_element_type(base, &TypingEnvironment::of(environment))
             && let Some(pointer_type) = element_type.pointer_to()
         {
             // An inline array decays to its logical address without reading
@@ -9997,7 +10013,10 @@ impl AnnotationLowerer<'_> {
                     .then_some(1)
                     .or_else(|| self.program_expression_array_element_width(left, environment))
                     && self
-                        .program_expression_array_element_type(right, environment)
+                        .program_expression_array_element_type(
+                            right,
+                            &TypingEnvironment::of(environment),
+                        )
                         .is_none()
                 {
                     return Ok(SpecExpression::PointerOffset {
@@ -10523,7 +10542,10 @@ impl AnnotationLowerer<'_> {
                 ProgramExpression::PointerOffsetBytes { .. } => {
                     self.contract_array_element_type_opt(operand, environment)
                 }
-                _ => self.program_expression_array_element_type(lowered, environment),
+                _ => self.program_expression_array_element_type(
+                    lowered,
+                    &TypingEnvironment::of(environment),
+                ),
             },
             SyntaxTerm::Binding(name)
             | SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
@@ -10540,9 +10562,10 @@ impl AnnotationLowerer<'_> {
             // element an index steps by; `uint8*` must not read as `int32*`.
             SyntaxTerm::ProgramExpression(lowered)
             | SyntaxTerm::QualifiedC { lowered, .. }
-            | SyntaxTerm::Field { lowered, .. } => {
-                self.program_expression_array_element_type(lowered, environment)
-            }
+            | SyntaxTerm::Field { lowered, .. } => self.program_expression_array_element_type(
+                lowered,
+                &TypingEnvironment::of(environment),
+            ),
             SyntaxTerm::At { expression, .. }
             | SyntaxTerm::Old(expression)
             | SyntaxTerm::Exact(expression) => {
@@ -10650,7 +10673,7 @@ impl AnnotationLowerer<'_> {
                 .or_else(|| self.contract_pointer_element_width(right, environment)),
             SyntaxTerm::Subtract(left, _) => self.contract_pointer_element_width(left, environment),
             _ => self
-                .contract_pointer_element_type(expression, environment)
+                .contract_pointer_element_type(expression, &TypingEnvironment::of(environment))
                 .map(ProgramType::byte_width),
         }
     }
@@ -10835,7 +10858,7 @@ impl AnnotationLowerer<'_> {
     fn contract_pointer_element_type(
         &self,
         expression: &SyntaxTerm,
-        environment: &SpecElaborationContext,
+        typing: &TypingEnvironment<'_>,
     ) -> Option<ProgramType> {
         match expression {
             SyntaxTerm::MemoryLoad { value_type, .. } => value_type.pointee_type(),
@@ -10848,13 +10871,13 @@ impl AnnotationLowerer<'_> {
             SyntaxTerm::CUnary { operand, lowered } => match lowered {
                 ProgramExpression::Cast { target_type, .. } => target_type.pointee_type(),
                 ProgramExpression::PointerOffsetBytes { .. } => {
-                    self.contract_pointer_element_type(operand, environment)
+                    self.contract_pointer_element_type(operand, typing)
                 }
-                _ => self.program_expression_array_element_type(lowered, environment),
+                _ => self.program_expression_array_element_type(lowered, typing),
             },
-            SyntaxTerm::ProgramBinding(name) => {
-                environment.program_binding_pointer_element_type(name)
-            }
+            SyntaxTerm::ProgramBinding(name) => typing
+                .bound_array_element_type(name)
+                .or_else(|| typing.bound_pointer_pointee_type(name)),
             SyntaxTerm::QualifiedC {
                 lowered: expression,
                 ..
@@ -10863,16 +10886,16 @@ impl AnnotationLowerer<'_> {
             | SyntaxTerm::Field {
                 lowered: expression,
                 ..
-            } => self.program_expression_array_element_type(expression, environment),
+            } => self.program_expression_array_element_type(expression, typing),
             SyntaxTerm::Old(expression)
             | SyntaxTerm::Exact(expression)
             | SyntaxTerm::At { expression, .. } => {
-                self.contract_pointer_element_type(expression, environment)
+                self.contract_pointer_element_type(expression, typing)
             }
             SyntaxTerm::Add(left, right) => self
-                .contract_pointer_element_type(left, environment)
-                .or_else(|| self.contract_pointer_element_type(right, environment)),
-            SyntaxTerm::Subtract(left, _) => self.contract_pointer_element_type(left, environment),
+                .contract_pointer_element_type(left, typing)
+                .or_else(|| self.contract_pointer_element_type(right, typing)),
+            SyntaxTerm::Subtract(left, _) => self.contract_pointer_element_type(left, typing),
             _ => None,
         }
     }
@@ -10885,7 +10908,7 @@ impl AnnotationLowerer<'_> {
         pointer: &ProgramExpression,
         environment: &SpecElaborationContext,
     ) -> Result<ProgramType, String> {
-        self.program_expression_array_element_type(pointer, environment)
+        self.program_expression_array_element_type(pointer, &TypingEnvironment::of(environment))
             .ok_or_else(
                 || match self.pointee_less_program_operand(pointer, environment) {
                     Some(spelling) => pointee_less_access_message(spelling),
@@ -10897,14 +10920,14 @@ impl AnnotationLowerer<'_> {
     fn program_expression_array_element_type(
         &self,
         expression: &ProgramExpression,
-        environment: &SpecElaborationContext,
+        typing: &TypingEnvironment<'_>,
     ) -> Option<ProgramType> {
         if matches!(expression, ProgramExpression::Variable(name) if name.is_named("result"))
-            && environment.contract_result_in_scope
+            && typing.contract_result_in_scope()
         {
             return self.program_expression_array_element_type(
                 &ProgramExpression::Variable(crate::kernel::CONTRACT_RESULT),
-                environment,
+                typing,
             );
         }
         match expression {
@@ -10918,14 +10941,13 @@ impl AnnotationLowerer<'_> {
                 // `&p[i]` and `&*p` point at `p`'s element: `*&p[i]` reads
                 // what `p[i]` reads, not an `int32`.
                 ProgramExpression::Index(base, _) | ProgramExpression::Load(base) => {
-                    self.program_expression_array_element_type(base, environment)
+                    self.program_expression_array_element_type(base, typing)
                 }
                 _ => None,
             },
             ProgramExpression::Cast { target_type, .. } => target_type.pointee_type(),
-            ProgramExpression::Variable(name) => name
-                .named_in(&environment.array_refs)
-                .map(|array_ref| array_ref.element_type)
+            ProgramExpression::Variable(name) => typing
+                .bound_array_element_type(name)
                 .or_else(|| self.declared_pointer_element_type(name))
                 .or_else(|| {
                     (name == &crate::kernel::CONTRACT_RESULT)
@@ -10946,15 +10968,7 @@ impl AnnotationLowerer<'_> {
                         .global_object_type(name)
                         .and_then(ProgramType::pointee_type)
                 })
-                .or_else(|| {
-                    name.named_in(&environment.values)
-                        .and_then(|value| match value {
-                            SpecExpression::Value(ProgramValue::Pointer(pointer)) => {
-                                pointer.program_type().pointee_type()
-                            }
-                            _ => None,
-                        })
-                }),
+                .or_else(|| typing.bound_pointer_pointee_type(name)),
             ProgramExpression::TypedLoad { value_type, .. } => match value_type {
                 ProgramType::Int32Array(_) => Some(ProgramType::Int32),
                 ProgramType::UInt32Array(_) => Some(ProgramType::UInt32),
@@ -10967,18 +10981,18 @@ impl AnnotationLowerer<'_> {
             },
             ProgramExpression::PointerOffsetBytes { pointer, .. }
             | ProgramExpression::Subobject { pointer, .. } => {
-                self.program_expression_array_element_type(pointer, environment)
+                self.program_expression_array_element_type(pointer, typing)
             }
             ProgramExpression::Add(left, right) => self
-                .program_expression_array_element_type(left, environment)
-                .or_else(|| self.program_expression_array_element_type(right, environment)),
+                .program_expression_array_element_type(left, typing)
+                .or_else(|| self.program_expression_array_element_type(right, typing)),
             ProgramExpression::Subtract(left, _) => {
-                self.program_expression_array_element_type(left, environment)
+                self.program_expression_array_element_type(left, typing)
             }
             // `*pp` and `pp[i]` hold `pp`'s pointer element, which points at
             // that pointer's pointee.
             ProgramExpression::Load(pointer) | ProgramExpression::Index(pointer, _) => self
-                .program_expression_array_element_type(pointer, environment)
+                .program_expression_array_element_type(pointer, typing)
                 .and_then(ProgramType::pointee_type),
             _ => None,
         }
