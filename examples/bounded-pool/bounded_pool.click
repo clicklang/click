@@ -104,7 +104,14 @@ void pool_checkout(struct pool* pool, struct object* object) {
         have defined(count(pool_object(pool, _)) + 1);
         have defined(pool->checked_out + 1);
         unfold(pool_slot(pool));
+        have separate(memory(pool->checked_out), memory(object->value)) by { close(); }
         step();
+        have separate(statement(0).footprint, memory(object->value)) by {
+            close() using { separate(memory(pool->checked_out), memory(object->value)); };
+        }
+        have object->value == at(statement(0).entry, object->value) by {
+            preserve(memory(object->value), statement(0));
+        }
         fold(pool_object(pool, object));
         have pool->capacity == pool->checked_out + count(pool_slot(pool));
     }
@@ -129,7 +136,14 @@ void pool_return(struct pool* pool, struct object* object) {
     with(pool_control(pool)) {
         have defined(count(pool_slot(pool)) + 1);
         unfold(pool_object(pool, object));
+        have separate(memory(pool->checked_out), memory(object->value)) by { close(); }
         step();
+        have separate(statement(0).footprint, memory(object->value)) by {
+            close() using { separate(memory(pool->checked_out), memory(object->value)); };
+        }
+        have object->value == at(statement(0).entry, object->value) by {
+            preserve(memory(object->value), statement(0));
+        }
         fold(pool_slot(pool));
         have pool->capacity == pool->checked_out + count(pool_slot(pool));
     }
@@ -157,7 +171,21 @@ void pool_pipeline(struct pool* pool, struct object* first, struct object* secon
     have defined(count(pool_object(pool, _)) + 1);
     step();
     with(pool_object(pool, first)) { step(); have first->value == 11; }
-    with(pool_object(pool, second)) { step(); have first->value == 11; have second->value == 22; }
+    with(pool_object(pool, second)) {
+        have separate(memory(second->value), memory(first->value)) by { close(); }
+        step();
+        have separate(statement(4).footprint, memory(first->value)) by {
+            close() using { separate(memory(second->value), memory(first->value)); };
+        }
+        have first->value == at(statement(4).entry, first->value) by {
+            preserve(memory(first->value), statement(4));
+        }
+        have first->value == 11 by {
+            rewrite(first->value, at(statement(4).entry, first->value));
+            close();
+        }
+        have second->value == 22;
+    }
     step();
     have first->value == 11;
     have second->value == 22;
@@ -287,6 +315,8 @@ void pool_transfer(struct pool* source, struct pool* destination, struct object*
             unfold(pool_slot(destination));
             have separate(memory(source->checked_out), memory(destination->checked_out));
             have separate(memory(source->checked_out), memory(destination->capacity));
+            have separate(memory(source->checked_out), memory(object->value)) by { close(); }
+            have separate(memory(destination->checked_out), memory(object->value)) by { close(); }
             mark before_source_write;
             step();
             have separate(statement(0).footprint, memory(destination->checked_out)) by {
@@ -301,6 +331,12 @@ void pool_transfer(struct pool* source, struct pool* destination, struct object*
             have destination->capacity == at(before_source_write, destination->capacity) by {
                 preserve(memory(destination->capacity), statement(0));
             }
+            have separate(statement(0).footprint, memory(object->value)) by {
+                close() using { separate(memory(source->checked_out), memory(object->value)); };
+            }
+            have object->value == at(before_source_write, object->value) by {
+                preserve(memory(object->value), statement(0));
+            }
             have separate(memory(destination->checked_out), memory(destination->capacity));
             step();
             have separate(statement(1).footprint, memory(destination->capacity)) by {
@@ -312,6 +348,13 @@ void pool_transfer(struct pool* source, struct pool* destination, struct object*
             have destination->capacity == at(before_source_write, destination->capacity) by {
                 close();
             }
+            have separate(statement(1).footprint, memory(object->value)) by {
+                close() using { separate(memory(destination->checked_out), memory(object->value)); };
+            }
+            have object->value == at(statement(1).entry, object->value) by {
+                preserve(memory(object->value), statement(1));
+            }
+            have object->value == old(object->value) by { close(); }
             fold(pool_object(destination, object));
             fold(pool_slot(source));
             have destination->capacity
