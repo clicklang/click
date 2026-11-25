@@ -246,13 +246,10 @@ that obligation.
    line is the written form of an argument its search chose ([Reading trace
    output](#reading-trace-output)). Writing those out leaves only the
    unproved part of the link.
-6. **On a search miss, write the argument.** An elided form, such as
-   `apply(t(x))` or a bare `transport(P, Q)`, searches for an argument that
-   a simple form of the same tactic takes written. When the search finds
-   nothing, the heading is `unsuccessful search` and the report may name the
-   tactic on a `refused by:` line. State the missing fact with `have`
-   first, or write the `using` form, and run again. Only the written form's
-   refusal can be `tactic-bug`.
+6. **On a search miss, prove the missing link explicitly.** Under
+   `unsuccessful search`, the report may name the tactic on a `refused by:`
+   line. For a transport miss, prove the frame with `have`, `preserve`,
+   and `rewrite`.
 
 Before each run, say in one line which link is new and why it should hold.
 Changing a tactic, its written form, or its position without changing the chain

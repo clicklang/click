@@ -7,8 +7,7 @@ language. A tactic is either **smart**, **simple**, or **control**:
   `close() using`, and `step_until`, which steps to a target and proves what
   each step needs. Smart tactics also include the implicit closer, which
   ends proofs including loop `maintain` scripts and finishes a `step()` or
-  `fold`, and forms whose search fills an elided argument:
-  `apply(fact)`, `apply(ih(m))`, and a bare `transport(P, Q)`. They
+  `fold`, and the frame search in bare `transport(P, Q)`. They
   are the tactics that `click profile` may recommend expanding. The parser
   refuses retired forms such as `known()` and `solve()` and names their
   replacement, `close()`.
