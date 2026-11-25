@@ -1487,6 +1487,21 @@ int32 identity(int32 x) {
     }
 
     #[test]
+    fn expands_memory_with_a_current_pointer_and_saved_index() {
+        let click_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/borrowed_window_returns_what_was_lent.md");
+        run(&Arguments {
+            click_path,
+            selection: Selection::Claim("push.contract".to_string()),
+            limits: RunLimits::expand(),
+            output: None,
+            in_place: false,
+            check_normalize_removal: false,
+        })
+        .expect("the generated preservation proof should parse and verify");
+    }
+
+    #[test]
     fn run_expands_a_pure_theorem_claim_by_label() {
         let directory = env::temp_dir().join(format!(
             "click-expand-pure-claim-{}-{}",

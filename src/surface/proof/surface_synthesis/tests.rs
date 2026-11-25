@@ -206,6 +206,76 @@ fn a_printed_void_pointer_coercion_round_trips_its_pointer_type() {
     );
 }
 
+/// `(wide & 1u64) == narrow` compares a `uint64` word with an `int32` one,
+/// which lowering widens. Raising must leave the widening to lowering: with
+/// it written as a cast, both operands have one format and the comparison
+/// lowers to a different node.
+#[test]
+fn a_wide_equality_with_a_narrow_operand_round_trips() {
+    let file = parser::parse(
+        "void probe(uint64 wide, int32 narrow) { requires (wide & 1u64) == narrow; ensures true; }",
+    )
+    .unwrap();
+    let Requirement::Proposition(written) = file.function_blocks()[0].requires()[0].clone() else {
+        panic!("expected a comparison requirement");
+    };
+    let state = ExecutionState::new()
+        .with_local(
+            "wide",
+            ProgramValue::UInt64(MachineTerm::Variable(Variable(910_101))),
+        )
+        .with_local(
+            "narrow",
+            ProgramValue::Int32(MachineTerm::Variable(Variable(910_102))),
+        );
+    let original = relower_written_proposition(&written, &state).unwrap();
+    let raised = synthesize_surface_proposition(&original, ParameterBinding::default(), &state)
+        .expect("the equality must be spellable");
+    assert_eq!(
+        relower_written_proposition(&raised, &state),
+        Ok(original),
+        "{}",
+        crate::surface::printing::source_click_proposition(&raised)
+    );
+}
+
+/// A pointer whose address is an integer word, as a tagged parent pointer
+/// is read, raises as the conversion it was written as, with its word
+/// unsigned. (Lowering the conversion needs a state that records the word's
+/// address, so this checks the spelling.)
+#[test]
+fn an_integer_converted_pointer_is_spelled_as_its_conversion() {
+    let word = MachineTerm::Variable(Variable(910_201));
+    let other = Address::symbolic(Variable(910_202));
+    let state = ExecutionState::new()
+        .with_local("word", ProgramValue::UInt64(word.clone()))
+        .with_local(
+            "other",
+            ProgramValue::typed_pointer(other.clone(), ProgramType::Int32Pointer),
+        );
+    let masked = MachineTerm::bitwise_and_at(
+        MachineIntegerType::UInt64,
+        word,
+        MachineTerm::uint64_constant(!3),
+    );
+    let fact = Proposition::condition_is(
+        ConditionTerm::pointer_equal(
+            crate::kernel::Pointer::new(
+                Address::from_integer_address(masked),
+                ProgramType::Int32Pointer,
+            ),
+            crate::kernel::Pointer::new(other, ProgramType::Int32Pointer),
+        ),
+        true,
+    );
+    let raised = synthesize_surface_proposition(&fact, ParameterBinding::default(), &state)
+        .expect("the conversion must be spellable");
+    assert_eq!(
+        crate::surface::printing::source_click_proposition(&raised),
+        "((word & 18446744073709551612u64) as (int32 *)) == other"
+    );
+}
+
 fn relower_written_proposition_with_states(
     surface: &SurfaceProposition,
     pre_state: &ExecutionState,
@@ -10176,4 +10246,92 @@ fn nested_operand_definedness_round_trips() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn retained_integer_comparison_raises_without_native_output() {
+    use crate::kernel::{KernelTermExport, KernelTermNode};
+    let fixture = ConditionalRoundTrip::new(MachineIntegerType::Int32, "int32");
+    for operator in ["==", "!=", "<", "<=", ">", ">="] {
+        let expected = fixture.lower(&format!("to_integer(x) + 1 {operator} to_integer(y)"));
+        let Proposition::ConditionIs(condition, _) = &expected else {
+            panic!("expected a retained comparison: {operator}");
+        };
+        let root = condition.root().unwrap();
+        assert!(matches!(root.node(), KernelTermNode::IntegerCompare { .. }));
+        assert!(!root.has_cached_native_argument());
+        let exports = KernelTermExport::integer_export_count();
+        let surface =
+            synthesize_surface_proposition(&expected, ParameterBinding::default(), &fixture.state)
+                .unwrap();
+        assert_eq!(KernelTermExport::integer_export_count(), exports);
+        assert!(!root.has_cached_native_argument());
+        let text = crate::surface::printing::source_click_proposition(&surface);
+        assert_eq!(
+            relower_written_proposition(&surface, &fixture.state).unwrap(),
+            expected,
+            "{text}"
+        );
+        assert_eq!(fixture.lower(&text), expected, "{text}");
+    }
+}
+
+#[test]
+fn guarded_algebraic_matches_on_written_constructors_round_trip() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let state = ExecutionState::new();
+    let written = "(match Input::Hold(true, 7) { Input::Hold(flag, n) =>
+        if flag { Box::Value(n) } else { Box::Value(0) } })
+        == (match Input::Hold(false, 8) { Input::Hold(flag, n) =>
+        if flag { Box::Value(0) } else { Box::Value(n - 1) } })";
+    let parse = |text: &str| {
+        parser::parse(&format!(
+            "spec enum Input {{ Hold(Bool, Integer) }} spec enum Box {{ Value(Integer) }}
+             theorem probe() {{ requires {text}; ensures true; }}"
+        ))
+        .unwrap()
+    };
+    let file = parse(written);
+    let functions = ClickFunctionEnvironment::with_algebraic_types(
+        file.click_function_definitions(),
+        file.algebraic_type_definitions(),
+    );
+    let lower = |proposition: &SurfaceProposition| {
+        crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
+            proposition,
+            &PureFactContext::new(),
+            ContractEnvironment::new(&ProgramValueBindings::new(), &BTreeMap::new()),
+            FixedStateFrame::new(&state, &state, None, &RecordedStates::new()),
+            SpecDefinitions::new(&PredicateEnvironment::new(&[]), &functions),
+            FixedStateLoweringOptions::default(),
+        )
+        .unwrap()
+        .0
+    };
+    let lower_written = |file: &crate::surface::ClickFile| {
+        let Requirement::Proposition(proposition) = &file.theorem_definitions()[0].requires()[0]
+        else {
+            panic!("expected a proposition");
+        };
+        lower(proposition)
+    };
+    let expected = lower_written(&file);
+    let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = &expected else {
+        panic!("expected two algebraic operands");
+    };
+    for operand in [left, right] {
+        assert!(matches!(
+            operand.root().unwrap().node(),
+            crate::kernel::KernelTermNode::Match(_)
+        ));
+    }
+    let surface =
+        synthesize_surface_proposition(&expected, ParameterBinding::default(), &state).unwrap();
+    let text = crate::surface::printing::source_click_proposition(&surface);
+    for actual in [lower(&surface), lower_written(&parse(&text))] {
+        assert!(
+            crate::kernel::proof::propositions_are_alpha_equal(&expected, &actual),
+            "{text}\nlowered: {actual:?}"
+        );
+    }
 }

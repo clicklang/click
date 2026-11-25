@@ -41,6 +41,22 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
         Ok(Some(next))
     }
 
+    pub(in crate::surface::proof) fn try_struct_field_equality(
+        &self,
+        equality: &SurfaceProposition,
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let Some(body) = crate::kernel::search::ProofSearch::try_struct_field_equality(
+            &self.proof.body,
+            equality,
+        )?
+        else {
+            return Ok(None);
+        };
+        let mut next = self.proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
     /// Replay one operation bound inside the selected have body.
     pub(in crate::surface::proof) fn try_float_bound_link(
         &self,

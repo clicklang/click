@@ -2960,11 +2960,9 @@ fn reflexive_completion_condition(condition: BooleanOperandView<'_>) -> bool {
                     )
                     .is_eq()
                 } else {
-                    // Compare the selected written operands where the native
-                    // carrier still owns part of their identity.
-                    use crate::kernel::KernelTermExport;
-                    KernelTermExport::machine(left).expect("comparison operand")
-                        == KernelTermExport::machine(right).expect("comparison operand")
+                    // The exact storage key preserves written carriers,
+                    // including conversion spelling and scoped operands.
+                    left.scalar_storage_key() == right.scalar_storage_key()
                 }
             }
             _ => unreachable!("a comparison has one operand representation"),

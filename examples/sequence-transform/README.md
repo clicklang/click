@@ -21,7 +21,4 @@ in-order traversal.
 
 `sequence_transform.click` now verifies the finite-literal sequence slices
 without changing the C: exact three-cell copying, fixed two-by-two
-concatenation, in-place reversal, and exact membership observation. The
-remaining algebraic-data-type, symbolic-list, and range-projection work is
-tracked by
-[`algebraic-data-types.md`](../../roadmap/algebraic-data-types.md).
+concatenation, in-place reversal, and exact membership observation.

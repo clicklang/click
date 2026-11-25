@@ -793,15 +793,14 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         let _ = take_unclosed_bundle_member();
         // Catch every error here; `?` must not skip the obligation
         // diagnostic below.
-        if body == [ProofTactic::Solve]
-            && crate::surface::proof::implicit_solve_scope::checked_only()
-        {
-            return Err(driver_proof.step_error(
-                "checked-only verification requires an explicit proof for `close_invariants()`",
-            ));
-        }
         let attempted = {
-            if body == [ProofTactic::Solve] {
+            if body == [ProofTactic::Solve]
+                && crate::surface::proof::implicit_solve_scope::checked_only()
+            {
+                // Expanded maintain scripts publish the individual members
+                // at the back edge. Check the bundle only from those facts.
+                root.driver().apply_step(ProofStep::Known).map(Some)
+            } else if body == [ProofTactic::Solve] {
                 crate::instrumentation::measure_operation(
                     "surface",
                     "close invariants",
@@ -1269,10 +1268,19 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         let proof = if execution.core.checked_invariant_lowerings.is_some() {
             driver_proof.clone()
         } else {
+            // Expanded maintain scripts can establish the invariant bundle
+            // as facts and leave the back edge to certify them. In checked
+            // replay that certification must use the facts directly.
+            let checked_only = crate::surface::proof::implicit_solve_scope::checked_only();
+            let closer = if checked_only {
+                ProofTactic::Known
+            } else {
+                ProofTactic::Solve
+            };
             driver_proof.driver().apply_close_invariants_body(
-                &[ProofTactic::Solve],
+                &[closer],
                 Some(&boundary),
-                true,
+                !checked_only,
             )?
         };
         proof.validate_loop_invariant_bundle(

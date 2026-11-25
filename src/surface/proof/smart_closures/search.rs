@@ -3034,6 +3034,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             scope.succeed();
             return Ok(Some(proof));
         }
+        if let Some(proof) = Self::try_struct_field_equalities(search_input)? {
+            scope.succeed();
+            return Ok(Some(proof));
+        }
         if let Some(proof) = attempt::candidate_outcome(
             Self::try_bounded_observation_identity_closure(search_input),
         )?
@@ -3735,10 +3739,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let step = if proof.goal().is_some_and(|goal| {
-            crate::kernel::proof::arithmetic_special::checks_selected_float_bounds(
-                goal,
-                requirements,
-            )
+            use crate::kernel::proof::arithmetic_special::{
+                checks_selected_float_bounds, positive_divisor_product_guards,
+            };
+            checks_selected_float_bounds(goal, requirements)
+                || [false, true].into_iter().any(|swap| {
+                    positive_divisor_product_guards(goal, swap).as_deref() == Some(requirements)
+                })
         }) {
             ProofStep::NormalizeUsing(surfaces)
         } else {
@@ -4370,10 +4377,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_bounded_arithmetic_closure");
         use crate::kernel::proof::arithmetic_special::{
-            checks_selected_float_bounds, float_compound_bound_operand, is_float_bound,
-            promoted_right_shift_bound, shift_count_mask_requirements, shifted_one_bounds,
-            signed_max_shift_count_bound, signed_product_guard_candidates,
-            signed_quotient_bridge_requirement, signed_shift_bound_mask_identity,
+            checks_selected_float_bounds, float_compound_bound_operand, float_finiteness_bounds,
+            float_finiteness_source, float_zero_product_premise, is_float_bound,
+            positive_divisor_product_guards, promoted_right_shift_bound,
+            shift_count_mask_requirements, shifted_one_bounds, signed_max_shift_count_bound,
+            signed_product_guard_candidates, signed_quotient_bridge_requirement,
+            signed_shift_bound_mask_identity,
         };
         let Some(goal) = search_input.goal() else {
             return Ok(None);
@@ -4574,15 +4583,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(Some(closed));
         }
-        if let Some(bound) = float_compound_bound_operand(goal)
-            && let Some(closed) = Self::try_normalize_after_arithmetic_bounds(
-                search_input,
-                &[bound],
-                introduced_surfaces,
-            )?
-        {
-            return Ok(Some(closed));
-        }
         for premises in candidates {
             check_verification_deadline()?;
             let surfaces = premises
@@ -4608,6 +4608,25 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if let Some(closed) =
                 attempt::candidate_outcome(search_input.driver().apply_step(step))?
             {
+                return Ok(Some(closed));
+            }
+        }
+        let derived_requirements = [false, true]
+            .into_iter()
+            .filter_map(|swap| positive_divisor_product_guards(goal, swap))
+            .chain(
+                float_finiteness_source(goal)
+                    .or_else(|| float_zero_product_premise(goal))
+                    .map(|premise| vec![premise]),
+            )
+            .chain(float_finiteness_bounds(goal).map(Vec::from))
+            .chain(float_compound_bound_operand(goal).map(|bound| vec![bound]));
+        for requirements in derived_requirements {
+            if let Some(closed) = Self::try_normalize_after_arithmetic_bounds(
+                search_input,
+                &requirements,
+                introduced_surfaces,
+            )? {
                 return Ok(Some(closed));
             }
         }
@@ -7451,6 +7470,193 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             std::iter::once(source.clone()).chain(premises),
         )
         .map(|proof| proof.filter(Proof::is_complete))
+    }
+
+    /// Prove a struct equality from its constructor's individual field
+    /// equalities. Each proof names its stored reads and footprint.
+    fn try_struct_field_equalities(
+        search_input: &Proof<'a>,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_struct_field_equalities");
+        let Some(SurfaceProposition::Comparison {
+            left:
+                SurfaceTerm::AlgebraicConstructor {
+                    variant: left_variant,
+                    arguments: left_fields,
+                    ..
+                },
+            operator: ComparisonOperator::Equal,
+            right:
+                SurfaceTerm::AlgebraicConstructor {
+                    variant: right_variant,
+                    arguments: right_fields,
+                    ..
+                },
+        }) = search_input.surface_goal()
+        else {
+            return Ok(None);
+        };
+        if left_variant != right_variant
+            || left_fields.len() != right_fields.len()
+            || crate::surface::struct_values::field_names(left_variant).is_none()
+        {
+            return Ok(None);
+        }
+
+        let mut proof = search_input.clone();
+        for (left, right) in left_fields.iter().zip(right_fields) {
+            check_verification_deadline()?;
+            let equality = SurfaceProposition::Comparison {
+                left: left.clone(),
+                operator: ComparisonOperator::Equal,
+                right: right.clone(),
+            };
+            let Some(field) =
+                attempt::candidate_outcome(proof.driver().open_have(equality.clone()))?
+            else {
+                return Ok(None);
+            };
+            let Some(closed) = field.driver().try_struct_field_equality(&equality)? else {
+                return Ok(None);
+            };
+            proof = closed.join()?;
+        }
+        attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Known))
+    }
+
+    pub(in crate::surface::proof) fn try_struct_field_equality(
+        search_input: &Proof<'a>,
+        equality: &SurfaceProposition,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_struct_field_equality");
+        if let Some(known) =
+            attempt::candidate_outcome(search_input.driver().apply_step(ProofStep::Known))?
+        {
+            return Ok(Some(known));
+        }
+        if let Some(read) = Self::try_struct_field_store_bridge(search_input, equality)? {
+            return Ok(Some(read));
+        }
+        Self::try_struct_field_equalities(search_input)
+    }
+
+    /// Select a recorded store across which one operand is unchanged.
+    /// The mixed-state equality is checked first, so unsuccessful candidates
+    /// do not need to search for footprint separation.
+    fn try_struct_field_store_bridge(
+        search_input: &Proof<'a>,
+        equality: &SurfaceProposition,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        #[cfg(test)]
+        crate::kernel::search::record_discovery("try_struct_field_store_bridge");
+        let SurfaceProposition::Comparison {
+            left: other @ SurfaceTerm::Field { .. },
+            operator: ComparisonOperator::Equal,
+            right: read @ SurfaceTerm::Field { .. },
+        } = equality
+        else {
+            return Ok(None);
+        };
+        let Some((
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                right,
+                ..
+            },
+            true,
+        )) = search_input.goal().and_then(Proposition::condition_native)
+        else {
+            return Ok(None);
+        };
+        let load = match right.as_ref() {
+            MachineTerm::Variable(variable) => {
+                crate::kernel::registered_load_term_for_variable(variable)
+            }
+            term => Some(term.clone()),
+        };
+        let Some(MachineTerm::MemoryLoad(_, address, _)) = load else {
+            return Ok(None);
+        };
+        let Some(view) = search_input.premise_fixed_state_view() else {
+            return Ok(None);
+        };
+        let kept = Resource::Memory(crate::kernel::MemoryRange::new_with_element_width(
+            address.into(),
+            0u32.into(),
+            1u32.into(),
+            4,
+        ));
+        let Some(kept) = super::surface_synthesis::synthesize_surface_resource_subject(
+            &kept,
+            view.parameter_binding,
+            view.fixed_state.state,
+            &BTreeMap::new(),
+        ) else {
+            return Ok(None);
+        };
+        let records = view.fixed_state.recorded_states;
+        let known =
+            ProofCertificate::from_steps(vec![ProofStep::Known]).expect("ordinary equality");
+        for (selector, _) in records.recent(MAX_TRANSPORT_SOURCE_POINTS) {
+            check_verification_deadline()?;
+            let ProgramPointSelector::ProgramPoint(ProgramPointRef {
+                region: region @ CodeRegionRef::Region(_),
+                kind: ProgramPointKind::Exit,
+            }) = selector
+            else {
+                continue;
+            };
+            let Ok(Resource::Footprint(footprint)) = records.footprint(region) else {
+                continue;
+            };
+            if !footprint.complete || footprint.members.is_empty() {
+                continue;
+            }
+            let at = |kind| SurfaceTerm::At {
+                selector: ProgramPointSelector::ProgramPoint(ProgramPointRef {
+                    region: region.clone(),
+                    kind,
+                }),
+                expression: Box::new(read.clone()),
+            };
+            let entry = at(ProgramPointKind::Entry);
+            let stored = SurfaceProposition::Comparison {
+                left: other.clone(),
+                operator: ComparisonOperator::Equal,
+                right: entry.clone(),
+            };
+            let Some(stored) =
+                attempt::candidate_outcome(search_input.driver().apply_have_step(&stored, &known))?
+            else {
+                continue;
+            };
+            let separation = SurfaceProposition::Separate {
+                left: ResourceSubject::Footprint(region.clone()),
+                right: kept.clone(),
+            };
+            let Some(separated) =
+                Self::try_memory_footprint_separation(&stored, &footprint, &kept, &separation)?
+            else {
+                continue;
+            };
+            let bridge = SurfaceProposition::Comparison {
+                left: at(ProgramPointKind::Exit),
+                operator: ComparisonOperator::Equal,
+                right: entry,
+            };
+            let preserve = ProofCertificate::from_steps(vec![ProofStep::Preserve(separation)])
+                .expect("ordinary field preservation");
+            let candidate = separated
+                .driver()
+                .apply_have_step(&bridge, &preserve)
+                .and_then(|preserved| preserved.driver().apply_step(ProofStep::Known));
+            if let Some(proof) = attempt::candidate_outcome(candidate)? {
+                return Ok(Some(proof));
+            }
+        }
+        Ok(None)
     }
 
     /// Follow recorded stores back from the current memory, checking each

@@ -1,6 +1,4 @@
-# P1: A Rust language baseline that ordinary small crates meet
-
-Priority: P1.
+# A Rust language baseline that ordinary small crates meet
 
 Soundness: incomplete. Click refuses ordinary safe Rust that it should
 accept: any function that takes or returns `&str` or `String`, generic code
@@ -17,7 +15,8 @@ traits. Without this baseline the installed front end and Cargo dependencies
 reach code Click refuses within minutes.
 
 The target is a small, ordinary crate: safe Rust, `panic=abort`, no
-concurrency, no floats. Unsafe Rust stays in [unsafe-rust.md](unsafe-rust.md).
+concurrency, no floats. The [pointer model](../design/pointer-model.md#rust-raw-pointers)
+describes the constraints on unsafe Rust.
 Broader coverage beyond this baseline stays post-launch, as described in the
 [Rust reference](../docs/reference/rust.md).
 

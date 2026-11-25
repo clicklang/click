@@ -444,3 +444,63 @@ fn rounded_integer_float_bound_checks_only_the_cited_integer_endpoint() {
         );
     }
 }
+
+#[test]
+fn finite_float_checks_two_cited_endpoints_as_ambient_bounds_grow() {
+    use crate::kernel::{FloatClassification, Variable};
+
+    let x = MachineTerm::var(Variable(881001));
+    let bound = |value, endpoint: f32, operator| {
+        Proposition::condition_is(
+            ConditionTerm::float32_compare(
+                value,
+                MachineTerm::constant(endpoint.to_bits()),
+                operator,
+            ),
+            true,
+        )
+    };
+    let goal = Proposition::condition_is(
+        ConditionTerm::float32_classification(x.clone(), FloatClassification::Finite),
+        true,
+    );
+    let lower = bound(x.clone(), -1.0, ComparisonOperator::GreaterEqual);
+    let upper = bound(x.clone(), 1.0, ComparisonOperator::LessEqual);
+    let infinite = bound(x.clone(), f32::INFINITY, ComparisonOperator::LessEqual);
+    let selected = [lower.clone(), upper];
+    let insufficient = [lower, infinite];
+    for related in [false, true] {
+        let samples = [4, 16, 64].map(|size| {
+            let mut ambient = selected.to_vec();
+            ambient.push(insufficient[1].clone());
+            for index in 0..size {
+                let operand = if related {
+                    x.clone()
+                } else {
+                    MachineTerm::var(Variable(881010 + index))
+                };
+                ambient.push(bound(
+                    operand,
+                    2.0 + index as f32,
+                    ComparisonOperator::LessEqual,
+                ));
+            }
+            let facts = PureFactStore::from_ordered(&ambient);
+            let (hit, hit_work) = crate::instrumentation::measure_deterministic_work(|| {
+                normalize_using_conditions(&goal, &selected, &facts)
+            });
+            let (miss, miss_work) = crate::instrumentation::measure_deterministic_work(|| {
+                normalize_using_conditions(&goal, &insufficient, &facts)
+            });
+            hit.unwrap();
+            assert!(miss.is_err());
+            (hit_work, miss_work)
+        });
+        assert!(
+            samples
+                .iter()
+                .all(|(hit, miss)| *hit <= samples[0].0 + 8 && *miss <= samples[0].1 + 8),
+            "{related}: {samples:?}"
+        );
+    }
+}
