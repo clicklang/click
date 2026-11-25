@@ -2017,6 +2017,7 @@ fn execution_statement_source_cost(statement: &ProgramStatement) -> ProgramSourc
         }
         match statement {
             ProgramStatement::ThrowOpaque(_)
+            | ProgramStatement::BuiltinConstantP { .. }
             | ProgramStatement::Skip
             | ProgramStatement::EndAutomaticLifetimes { .. }
             | ProgramStatement::Break

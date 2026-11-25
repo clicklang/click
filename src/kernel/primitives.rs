@@ -6271,6 +6271,10 @@ pub enum ProgramStatement {
         function_name: String,
         arguments: Vec<ProgramExpression>,
     },
+    /// Record the GNU builtin's unknown integer result, either 0 or 1.
+    BuiltinConstantP {
+        step: u32,
+    },
     /// A call inside an expression of the statement that follows it: its
     /// result is that statement's `ProgramExpression::StepResult { step, .. }`,
     /// never a variable of the program.
@@ -11775,6 +11779,8 @@ pub struct Callee {
 /// What made a statement's step result.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum StepOrigin {
+    /// The value of the GNU builtin `__builtin_constant_p`.
+    BuiltinConstantP,
     /// A call of this function returned it.
     Call(String),
     /// It is this local's value before an assignment step replaced it, the

@@ -701,10 +701,6 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
         include_str!("../library/bytes.click"),
     ),
     (
-        "library/c/builtins.interface.click",
-        include_str!("../library/c/builtins.interface.click"),
-    ),
-    (
         "library/integer.click",
         include_str!("../library/integer.click"),
     ),

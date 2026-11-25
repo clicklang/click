@@ -3351,11 +3351,10 @@ produced resource. Direct and function-pointer calls use the same rule.
 
 Verifier primitives are part of the language, not the Click library. The
 kernel or the C front end gives each one its meaning, so none can be
-implemented or unfolded in Click. Every sidecar sees them without an import.
-They are written in Click syntax in `library/primitives.click` and
-`library/c/builtins.interface.click` only so that the parser declares them; the
-[library reference](../library/index.md) does not list them. The documentation
-gate checks each declaration below against that source.
+implemented or unfolded in Click. Every sidecar sees the primitive resources
+without an import. The parser gets the declarations of the primitive resources from
+`library/primitives.click`. The documentation gate checks each resource
+declaration below against that source.
 
 The seven resources are declared as
 [abstract resources](#read-and-write-resources), so none has a Click body
@@ -3565,16 +3564,13 @@ and [`mdtests/a_callee_frees_a_64_bit_block_it_consumes.md`](https://github.com/
 
 ### `__builtin_constant_p`
 
-#### `__click_constant_p_unknown`
-
-**Declaration:** `int32 __click_constant_p_unknown() { ensures result == 0 or result == 1; }`
-
-**Meaning:** The value of the GNU builtin `__builtin_constant_p`, which the C
-frontend lowers to a call of this function. Whether the compiler folds the
-builtin's operand to a constant depends on optimization, so nothing is known
-about the result beyond its being 0 or 1, and a proof covers both.
-
-**Kind:** an `extern` contract, so its one guarantee is an explicit verification assumption, listed in [trust](../../concepts/trust.md).
+The GNU builtin `__builtin_constant_p(operand)` has a result of type `int`.
+Whether the compiler folds the operand to a constant depends on optimization.
+Click's builtin operation constrains the result to 0 or 1, and proofs cover
+both values. The operation's result is available at its source region through
+`.result`. The operand is unevaluated and must be free of side effects.
+`click verify` reports the kernel model as `primitive: __builtin_constant_p`.
+See [trust](../../concepts/trust.md).
 
 **Verified use:** [`mdtests/c_builtin_constant_p.md`](https://github.com/clicklang/click/blob/master/mdtests/c_builtin_constant_p.md) checks that a claim must hold for both values.
 

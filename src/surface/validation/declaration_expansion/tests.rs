@@ -318,9 +318,9 @@ fn standard_library_cache_preserves_all_declarations() {
     // Accessors return independently owned categories, never a mutable view
     // of the process-wide syntax or a clone of unrelated categories.
     let empty = parser::parse_file_items("").unwrap();
-    let mut functions = combined_external_function_blocks(&empty).unwrap();
-    assert!(!functions.is_empty());
-    functions.clear();
+    let mut types = combined_algebraic_type_definitions(&empty).unwrap();
+    assert!(!types.is_empty());
+    types.clear();
     // An empty file sees only the implicit modules' declarations.
     let implicit = &file_library(&empty).unwrap().file;
     assert_eq!(

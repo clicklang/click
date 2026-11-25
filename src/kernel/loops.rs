@@ -9131,6 +9131,7 @@ pub(super) fn statement_may_write_memory(
 ) -> bool {
     match statement {
         ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::BuiltinConstantP { .. }
         | ProgramStatement::Skip
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -9222,6 +9223,7 @@ pub(super) fn collect_loop_modified_locals(
             names.extend(retired.iter().cloned())
         }
         ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::BuiltinConstantP { .. }
         | ProgramStatement::Skip
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -9470,6 +9472,7 @@ fn for_each_statement_expression<'a>(
     match statement {
         ProgramStatement::EndAutomaticLifetimes { .. }
         | ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::BuiltinConstantP { .. }
         | ProgramStatement::Skip
         | ProgramStatement::Break
         | ProgramStatement::Continue
@@ -9591,6 +9594,7 @@ pub(crate) fn collect_address_taken_locals(
     match statement {
         ProgramStatement::EndAutomaticLifetimes { .. } => {}
         ProgramStatement::ThrowOpaque(_)
+        | ProgramStatement::BuiltinConstantP { .. }
         | ProgramStatement::Skip
         | ProgramStatement::Break
         | ProgramStatement::Continue

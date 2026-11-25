@@ -283,6 +283,7 @@ pub(crate) fn child_expressions<'a>(
         CExpression::StringLiteral(_)
         | CExpression::Void
         | CExpression::Variable(_)
+        | CExpression::BuiltinConstantP { .. }
         | CExpression::StepResult { .. }
         | CExpression::FunctionAddress(_)
         | CExpression::Int32Literal(_)
@@ -378,6 +379,7 @@ pub(crate) fn child_statements<'a>(
     match statement {
         CStatement::EndAggregateLifetimes { .. }
         | CStatement::FillArrayTail { .. }
+        | CStatement::BuiltinConstantP { .. }
         | CStatement::Skip
         | CStatement::Break
         | CStatement::Continue

@@ -547,7 +547,11 @@ uint32 ser_readdata32<FixtureReader>(struct FixtureReader& s) {
     step() {
         requires std_span_size(call(2).parameter(dst)) == 4u64 by { close(); }
         requires 4u64 <= s.remaining by { close(); }
-        requires separate(memory(at(call(2).entry, std_span_data(call(2).parameter(dst)))[0..4]), memory(s.data[0..4])) by { close(); }
+        requires separate(memory(at(call(2).entry, std_span_data(call(2).parameter(dst)))[0..4]), memory(s.data[0..4])) by {
+            have at(call(2).entry, std_span_data(call(2).parameter(dst))) == ((&obj) as (uint8 *)) by { close(); }
+            rewrite(at(call(2).entry, std_span_data(call(2).parameter(dst))), ((&obj) as (uint8 *)));
+            close();
+        }
         requires separate(memory(at(call(2).entry, load<uint8*>(region(4).result))[0..4]), memory(s.data[0..4])) by { close(); }
     }
     have std_span_data(call(2).parameter(dst)) == ((&obj) as (uint8 *)) by { close(); }
