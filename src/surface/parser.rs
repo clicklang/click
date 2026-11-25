@@ -27,6 +27,51 @@ use rust_syntax::rust_signature_hint;
 use crate::languages::SourceLanguage;
 use tokenizer::tokenize;
 
+struct CheckedExpansionClosers {
+    source: String,
+    positions: Vec<SourcePosition>,
+}
+
+thread_local! {
+    static CHECKED_EXPANSION_CLOSERS: std::cell::RefCell<Option<CheckedExpansionClosers>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+pub(super) fn with_checked_expansion_closers<R>(
+    source: &str,
+    regions: &[std::ops::Range<usize>],
+    operation: impl FnOnce() -> R,
+) -> Result<R, ClickError> {
+    struct Restore(Option<CheckedExpansionClosers>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            CHECKED_EXPANSION_CLOSERS.with(|slot| *slot.borrow_mut() = self.0.take());
+        }
+    }
+
+    let (tokens, positions, spans) = tokenizer::tokenize_with_spans(source, None)?;
+    let positions = tokens
+        .into_iter()
+        .zip(spans)
+        .zip(positions)
+        .filter_map(|((token, span), position)| {
+            let region = regions.partition_point(|region| region.end <= span.start);
+            (matches!(token, Token::Ident(name) if name == "close")
+                && regions
+                    .get(region)
+                    .is_some_and(|region| region.contains(&span.start)))
+            .then_some(position)
+        })
+        .collect();
+    let _restore = Restore(CHECKED_EXPANSION_CLOSERS.with(|slot| {
+        slot.replace(Some(CheckedExpansionClosers {
+            source: source.to_owned(),
+            positions,
+        }))
+    }));
+    Ok(operation())
+}
+
 /// A written parser token and its exact source span. Source tools retain the
 /// original spelling rather than reconstructing literals from their values.
 #[derive(Clone, Debug)]
@@ -979,6 +1024,7 @@ fn reduce_contract_binary_expression(
 }
 
 struct Parser {
+    checked_expansion_closers: BTreeSet<SourcePosition>,
     local_bindings: std::sync::Arc<SourceBindingIndex>,
     string_literal_values: std::sync::Arc<BTreeMap<crate::kernel::StringLiteralId, ProgramValue>>,
     string_literal_owners: std::sync::Arc<BTreeMap<String, BTreeSet<Option<String>>>>,
@@ -2033,6 +2079,21 @@ impl Parser {
         imported_models: &ObjectModels,
     ) -> Result<Self, ClickError> {
         let (mut tokens, mut positions) = tokenize(source, container)?;
+        let checked_expansion_closers = CHECKED_EXPANSION_CLOSERS.with(|slot| {
+            let slot = slot.borrow();
+            let Some(selected) = slot.as_ref().filter(|selected| selected.source == source) else {
+                return BTreeSet::new();
+            };
+            selected
+                .positions
+                .iter()
+                .map(|position| SourcePosition {
+                    origin: container
+                        .map(|container| std::sync::Arc::new(container.origin(position.line))),
+                    ..position.clone()
+                })
+                .collect()
+        });
         if let Some(catalog) = catalog {
             let source = crate::source::SourceContainer::new("catalog.interface.click", 0);
             let (mut catalog_tokens, mut catalog_positions) = tokenize(catalog, Some(&source))?;
@@ -2191,6 +2252,7 @@ impl Parser {
             cpp_receiver_calls: BTreeMap::new(),
             tokens,
             positions,
+            checked_expansion_closers,
             matching_parentheses,
             match_nesting: 0,
             proposition_nesting: 0,
@@ -8171,13 +8233,29 @@ impl Parser {
                 Ok(segment) => ResourceSubject::Memory(segment),
                 Err(error) => {
                     self.position = start;
-                    let Ok(base) = self.parse_contract_primary() else {
-                        return Err(error);
-                    };
-                    if !Self::is_allocation_address(&base) {
-                        return Err(error);
+                    match self.parse_contract_primary() {
+                        Ok(base) if Self::is_allocation_address(&base) => {
+                            self.parse_saved_memory_range(base)?
+                        }
+                        _ => {
+                            self.position = start;
+                            // A pointer can be current even when its subscript
+                            // is a proof expression such as `old(i)`.
+                            match self.parse_contract_postfix() {
+                                Ok(ContractExpression::Index(base, index))
+                                    if contract_expression_as_program_expression(&index)
+                                        .is_none() =>
+                                {
+                                    ResourceSubject::SavedMemory {
+                                        base: *base,
+                                        start: *index,
+                                        end: None,
+                                    }
+                                }
+                                _ => return Err(error),
+                            }
+                        }
                     }
-                    self.parse_saved_memory_range(base)?
                 }
             };
             self.expect(Token::RParen)?;
@@ -12186,13 +12264,18 @@ impl Parser {
                 ProofTactic::CheckTerminationCallbacks
             }
             "close" => {
+                let start = self.position - 1;
                 self.expect_empty_tactic_args(&name)?;
                 if self.peek_ident() == Some("using") {
                     let premises = self.parse_exact_premises()?;
                     self.skip_redundant_semicolon();
                     return Ok(ProofTactic::SolveUsing(ProofSolveUsing { premises }));
                 }
-                ProofTactic::Close
+                if self.checked_expansion_closers.contains(&self.positions[start]) {
+                    ProofTactic::Known
+                } else {
+                    ProofTactic::Close
+                }
             }
             "sorry" => {
                 self.expect_empty_tactic_args(&name)?;
