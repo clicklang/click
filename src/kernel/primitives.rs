@@ -10225,7 +10225,67 @@ pub struct SharedMemory {
     memory: std::sync::Arc<SymbolicMemory>,
 }
 
+/// Record that `memory` is the state at `node`'s point, unless an earlier
+/// point already holds it. O(1); identity is unchanged.
+pub(in crate::kernel::primitives) fn record_memory_occurrence(
+    memory: &SharedMemory,
+    node: &std::sync::Arc<program_point::PointNode>,
+) {
+    C_MEMORY_ARENA.with(|arena| {
+        let mut arena = arena.borrow_mut();
+        let (token, arena) = &mut *arena;
+        if *token != memory.arena {
+            return;
+        }
+        if let Some(slot) = arena.occurrences.get_mut(memory.id as usize)
+            && slot.as_ref().is_none_or(|weak| weak.strong_count() == 0)
+        {
+            *slot = Some(std::sync::Arc::downgrade(node));
+        }
+    });
+}
+
 impl SharedMemory {
+    /// The first program point whose state this memory is, or of which it
+    /// is a view: a projection for one read stands for its one source's
+    /// state. `None` for a memory no point has held.
+    pub(in crate::kernel::primitives) fn occurrence(
+        &self,
+    ) -> Option<std::sync::Arc<program_point::PointNode>> {
+        let mut memory = self.clone();
+        for _ in 0..4 {
+            let found = C_MEMORY_ARENA.with(|arena| {
+                let arena = arena.borrow();
+                if arena.0 != memory.arena {
+                    return None;
+                }
+                arena
+                    .1
+                    .occurrences
+                    .get(memory.id as usize)
+                    .cloned()
+                    .flatten()
+                    .and_then(|weak| weak.upgrade())
+            });
+            if found.is_some() {
+                return found;
+            }
+            let Some(MemoryConstructionKind::Transform {
+                operation: "project memory for pointer read" | "canonicalize embedded reads",
+                sources,
+                ..
+            }) = memory.diagnostic_construction()
+            else {
+                return None;
+            };
+            let [source] = sources.as_slice() else {
+                return None;
+            };
+            memory = intern_memory_ref(source);
+        }
+        None
+    }
+
     /// How this state was produced, when the arena that named it is this
     /// thread's and an edge producer recorded one.
     ///
@@ -10873,6 +10933,10 @@ struct MemoryArena {
     /// Indexed by arena id; `None` for entry states and for any state
     /// whose first interning did not come from a recorded edge.
     derivations: Vec<Option<std::sync::Arc<MemoryDerivation>>>,
+    /// Indexed by arena id: the first program point whose state this memory
+    /// was, set when the point is made. Weak, because a point holds its
+    /// memory. Only metadata: it changes no identity.
+    occurrences: Vec<Option<std::sync::Weak<program_point::PointNode>>>,
     /// Immutable load-congruence keys. Producers reuse the base's key only
     /// for an unconditional byte-preserving transition. No history is queried.
     read_identities: Vec<u32>,
@@ -11563,6 +11627,7 @@ fn intern_memory_with(
             .insert(shallow_identity, (id, content_hash));
         arena.memories.push(stored.clone());
         arena.derivations.push(None);
+        arena.occurrences.push(None);
         arena.static_block_versions.push(None);
         arena.static_cell_versions.push(None);
         arena

@@ -262,7 +262,7 @@ impl PartialEq for PointReadWrite {
 }
 
 #[derive(Debug)]
-struct PointNode {
+pub(super) struct PointNode {
     id: ProgramPointId,
     function_entry: bool,
     /// The memory state the path had here.
@@ -742,6 +742,11 @@ impl PathLink {
             self.1 = IndexedView::Unverified;
         } else if source.arena_id() != view.arena_id() {
             self.1 = IndexedView::Materialized(view.arena_id());
+            // A verified materialization names more cells of the same
+            // state: it is that point's state too.
+            if let Some(node) = &self.0 {
+                super::record_memory_occurrence(view, node);
+            }
         }
         self
     }
@@ -867,48 +872,47 @@ impl PathLink {
         let external_read_start = external_read_start(&predecessors, steps.as_deref(), &memory);
         let array_version_after_call =
             array_version_across_call(&predecessors, steps.as_deref(), &memory);
-        Self(
-            Some(Arc::new_cyclic(|version| {
-                let id = ProgramPointId::fresh();
-                let point_read_index = point_read_index(
-                    &predecessors,
-                    steps.as_deref(),
-                    &memory,
-                    version,
-                    id,
-                    transition,
-                );
-                let array_block_versions = ArrayBlockVersions::after(
-                    &predecessors,
-                    steps.as_deref(),
-                    &memory,
-                    version,
-                    id,
-                    transition,
-                );
-                let external_entry_writes = ExternalEntryWrites::after(
-                    &predecessors,
-                    steps.as_deref(),
-                    &memory,
-                    id,
-                    transition,
-                );
-                PointNode {
-                    id,
-                    function_entry: transition == PointTransition::FunctionEntry,
-                    memory,
-                    steps,
-                    predecessors,
-                    split: split.filter(|point| point.0.is_some()),
-                    point_read_index,
-                    external_read_start,
-                    array_version_after_call,
-                    array_block_versions,
-                    external_entry_writes,
-                }
-            })),
-            IndexedView::Recorded,
-        )
+        let node = Arc::new_cyclic(|version| {
+            let id = ProgramPointId::fresh();
+            let point_read_index = point_read_index(
+                &predecessors,
+                steps.as_deref(),
+                &memory,
+                version,
+                id,
+                transition,
+            );
+            let array_block_versions = ArrayBlockVersions::after(
+                &predecessors,
+                steps.as_deref(),
+                &memory,
+                version,
+                id,
+                transition,
+            );
+            let external_entry_writes = ExternalEntryWrites::after(
+                &predecessors,
+                steps.as_deref(),
+                &memory,
+                id,
+                transition,
+            );
+            PointNode {
+                id,
+                function_entry: transition == PointTransition::FunctionEntry,
+                memory,
+                steps,
+                predecessors,
+                split: split.filter(|point| point.0.is_some()),
+                point_read_index,
+                external_read_start,
+                array_version_after_call,
+                array_block_versions,
+                external_entry_writes,
+            }
+        });
+        super::record_memory_occurrence(&node.memory, &node);
+        Self(Some(node), IndexedView::Recorded)
     }
 
     /// The steps the path took from its predecessor to this point.
@@ -1565,7 +1569,11 @@ impl ProgramPoint {
         Self {
             memory: memory.clone(),
             path: PathLink::default(),
-            read: ReadSelection::Legacy(LegacyPlace::Unplaced),
+            read: ReadSelection::Legacy(
+                memory
+                    .occurrence()
+                    .map_or(LegacyPlace::Unplaced, LegacyPlace::TrueAt),
+            ),
         }
     }
 
@@ -1610,12 +1618,16 @@ impl ProgramPoint {
     /// belongs to an earlier point the walk does not name, so it is placed
     /// as walked from `read_at`, not as true there. Named by `memory`.
     pub(crate) fn walked(memory: &SharedMemory, read_at: &ProgramPoint) -> Self {
-        let place = match read_at.place() {
-            LegacyPlace::TrueAt(path) | LegacyPlace::WalkedFrom(path) => {
-                LegacyPlace::WalkedFrom(path)
-            }
-            LegacyPlace::Unplaced => LegacyPlace::Unplaced,
-            LegacyPlace::OwnPath => unreachable!("a place is never the own path"),
+        // A memory some point held is true there, whoever walked to it.
+        let place = match memory.occurrence() {
+            Some(node) => LegacyPlace::TrueAt(node),
+            None => match read_at.place() {
+                LegacyPlace::TrueAt(path) | LegacyPlace::WalkedFrom(path) => {
+                    LegacyPlace::WalkedFrom(path)
+                }
+                LegacyPlace::Unplaced => LegacyPlace::Unplaced,
+                LegacyPlace::OwnPath => unreachable!("a place is never the own path"),
+            },
         };
         Self {
             memory: memory.clone(),
@@ -2497,6 +2509,31 @@ mod tests {
     /// the read of the same memory built from that memory alone. A view of
     /// a state is placed as true there; the legacy walk's memory, and any
     /// view of it, only as walked from there.
+    /// A memory a point held is true at the first point that held it,
+    /// whoever builds a point from it: an earlier state reached by a walk is
+    /// placed at its own point, not the read's. A memory no point held has
+    /// no place. Identity stays the memory.
+    #[test]
+    fn a_memory_is_placed_at_the_point_that_held_it() {
+        let earlier = stored(&ExecutionState::default().with_memory(memory_holding(0)), 1);
+        let earlier_point = earlier.program_point();
+        let later = stored(&earlier, 2);
+        let read_at = later.program_point();
+        let walked = ProgramPoint::walked(earlier_point.shared_memory(), &read_at);
+        assert!(matches!(
+            walked.read,
+            super::ReadSelection::Legacy(super::LegacyPlace::TrueAt(_))
+        ));
+        assert!(
+            walked
+                .read_site()
+                .is_some_and(|path| path.id() == earlier_point.id())
+        );
+        assert_eq!(walked, ProgramPoint::at(earlier_point.shared_memory()));
+        let never_held = crate::kernel::intern_memory(memory_holding(9));
+        assert!(ProgramPoint::at(&never_held).read_site().is_none());
+    }
+
     #[test]
     fn a_legacy_read_records_its_place_without_changing_its_term() {
         let state = stored(&ExecutionState::default().with_memory(memory_holding(0)), 1);
@@ -2504,7 +2541,9 @@ mod tests {
         let memory = site.shared_memory().clone();
         let bare = ProgramPoint::at(&memory);
         let sited = ProgramPoint::read_at(&memory, &site);
-        assert!(bare.read_site().is_none());
+        // The memory is the state at the site, so even a point built from
+        // it alone is placed there.
+        assert!(bare.read_site().is_some_and(|path| path.id() == site.id()));
         assert!(sited.read_site().is_some_and(|path| path.id() == site.id()));
         assert_eq!(sited.read_key(), bare.read_key());
         assert_eq!(sited, bare);
@@ -2522,7 +2561,10 @@ mod tests {
             sited.read,
             super::ReadSelection::Legacy(super::LegacyPlace::TrueAt(_))
         ));
-        let walked = ProgramPoint::walked(&memory, &site);
+        // A walked memory no point held is placed only as walked from the
+        // read, and a view of it inherits that.
+        let never_held = crate::kernel::intern_memory(memory_holding(9));
+        let walked = ProgramPoint::walked(&never_held, &site);
         assert!(matches!(
             walked.read,
             super::ReadSelection::Legacy(super::LegacyPlace::WalkedFrom(_))
@@ -2532,9 +2574,9 @@ mod tests {
                 .read_site()
                 .is_some_and(|path| path.id() == site.id())
         );
-        assert_eq!(walked, bare);
+        assert_eq!(walked, ProgramPoint::at(&never_held));
         assert!(matches!(
-            ProgramPoint::viewing(&memory, &walked).read,
+            ProgramPoint::viewing(&never_held, &walked).read,
             super::ReadSelection::Legacy(super::LegacyPlace::WalkedFrom(_))
         ));
         // A point with no path has no point for an exact selection to keep,
