@@ -1856,7 +1856,12 @@ fn saved_memory_observation_expands_and_replays() {
     }
     assert!(source.contains("observe(at("), "{source}");
     assert!(!source.contains("transport("), "{source}");
-    without_implicit_solve(|| verify_c_sources(&source, &sources)).unwrap();
+    for claim in ["update.contract", "update_byte.contract"] {
+        without_implicit_solve_for_claim(claim, || {
+            verify_c_sources(&source, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
 }
 
 #[test]

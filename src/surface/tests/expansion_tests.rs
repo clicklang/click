@@ -3021,6 +3021,7 @@ fn struct_pointer_field_scalar_read_expansion_keeps_its_width() {
             step(put);
             step();
             step(read);
+            step();
             have p->kid == kid;
             have observed == kid->payload;
             step_until(function.exit);
@@ -3031,8 +3032,10 @@ fn struct_pointer_field_scalar_read_expansion_keeps_its_width() {
     let expanded = expand_function_proof_source(source, &sources, "caller")
         .expect("the scalar read should expand through a byte address");
     assert!(!expanded.contains("p->kid[1]"), "{expanded}");
-    without_implicit_solve(|| verify_c_sources(&expanded, &sources))
-        .expect("the printed read must retain its four-byte offset");
+    crate::surface::check_audit_claim("caller.contract", true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .expect("the printed read must retain its four-byte offset");
 }
 
 // Splitting a written sequence equality retains the source spelling and
@@ -7366,7 +7369,7 @@ resource pair(p: {click_type}*) {{ owns p[0..2]; }}
 verifying "main.c";
 {interface_type} read_pair({interface_type} *p) {{
     requires viewable(p[0..2]); owns pair(p);
-    ensures result == old(p[0]) + old(p[1]);
+    ensures result == (old(p[0]) + old(p[1])) as {click_type};
 }} {helper_proof}
 int main() {{ ensures result == 16; }} {main_proof}
 "#
@@ -9291,39 +9294,31 @@ fn selected_pure_case_split_solve_expands_by_removal() {
             } by {
                 branch {
                     true => {
-                        step_until(function.exit);
-                        normalize();
+                        step();
+                        close();
                     }
                     false => {
-                        step_until(function.exit);
-                        normalize();
+                        step();
+                        close();
                     }
                 }
-                close();
             }
         "#;
-    let solve_offset = click_source
-        .find("close();")
-        .expect("proof should contain the selected solve");
-    let line = click_source[..solve_offset]
-        .bytes()
-        .filter(|byte| *byte == b'\n')
-        .count()
-        + 1;
-    let column = solve_offset
-        - click_source[..solve_offset]
-            .rfind('\n')
-            .map(|offset| offset + 1)
-            .unwrap_or(0)
-        + 1;
-
-    let expanded = expand_c_tactic_source_at(click_source, &[("branch.c", c_source)], line, column)
-        .expect("a pure case-split solve should expand");
-    assert!(!expanded.contains("solve()"), "{expanded}");
-    assert_eq!(expanded.matches("branch {").count(), 1, "{expanded}");
-    assert_eq!(expanded.matches("normalize();").count(), 2, "{expanded}");
-    without_implicit_solve(|| verify_c_sources(&expanded, &[("branch.c", c_source)]))
-        .expect("both explicitly closed paths should replay without implicit solving");
+    let sources = [("branch.c", c_source)];
+    let label = "choose.contract";
+    let closed = expand_c_claim_source_by_label(click_source, &sources, label)
+        .expect("complete both paths, including their lifetime obligations");
+    let offset = closed[..closed.rfind('}').unwrap()].rfind('\n').unwrap() + 1;
+    let mut redundant = closed.clone();
+    redundant.insert_str(offset, "                close();\n");
+    let position = expansion::position_at_offset(&redundant, offset + 16);
+    let expanded = expand_c_tactic_source_at(&redundant, &sources, position.line, position.column)
+        .expect("a redundant closer after the case split should expand");
+    assert_eq!(expanded, closed);
+    crate::surface::check_audit_claim(label, true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .expect("both explicitly closed paths should replay without implicit solving");
 }
 
 #[test]
@@ -16514,91 +16509,20 @@ fn successive_post_execution_ifs_stay_on_one_proof() {
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 2s in the parallel gate"]
 fn bound_universal_outcome_retains_instantiation_and_transport() {
-    let c_source = r#"
-        int32 bubble_pass3(int32 p[3]) {
-            int32 j;
-            int32 tmp;
-            j = 0;
-            while (j < 2) {
-                if (p[j + 1] < p[j]) {
-                    tmp = p[j];
-                    p[j] = p[j + 1];
-                    p[j + 1] = tmp;
-                }
-                j = j + 1;
-            }
-            return 0;
-        }
-    "#;
-    let click_source = r#"
-        verifying "bubble_pass3.c";
+    let (source, owned_sources) = mdtest_sources("mdtests/bubble_pass3_max_suffix.md");
+    let sources = crate::cli::source_refs(&owned_sources);
+    let label = "bubble_pass3.contract";
+    verify_c_sources(&source, &sources).expect("the bound universal proof should verify");
 
-        predicate all_le_range(p: int32[], lo: int32, hi: int32, x: int32) {
-            forall (k: int32) {
-                0 <= k and lo <= k and k < hi implies p[k] <= x
-            }
-        }
-
-        int32 bubble_pass3(int32 p[3]) {
-            consumes p[0..3];
-            ensures all_le_range(p, 0, 2, p[2]);
-        } by {
-            step();
-            step();
-            step();
-            loop {
-                decreases 2 - j;
-                invariant j >= 0 and j <= 2;
-                invariant all_le_range(p, 0, j, p[j]);
-                initialize by {
-                    unfold(all_le_range(p, 0, j, p[j]));
-                    close();
-                }
-                maintain by {
-                    branch ensuring {
-                        fact p[j] <= p[j + 1];
-                        fact all_le_range(p, 0, j, p[j + 1]);
-                    } {
-                        true => {
-                            step();
-                            step();
-                            step();
-                            have defined(j + 1) by { close(); }
-                            have p[j] <= p[j + 1] by { close(); }
-                            have all_le_range(p, 0, j, p[j + 1]) by {
-                                unfold(all_le_range(p, 0, j, p[j + 1]));
-                                close();
-                            }
-                        }
-                        false => {
-                            have defined(j + 1) by { close(); }
-                            have p[j] <= p[j + 1] by { close(); }
-                            have all_le_range(p, 0, j, p[j + 1]) by {
-                                unfold(all_le_range(p, 0, j, p[j + 1]));
-                                close();
-                            }
-                        }
-                    }
-                    step();
-                    unfold(all_le_range(p, 0, j, p[j + 1]));
-                }
-            }
-            step();
-            unfold(all_le_range(p, 0, j, p[j + 1]));
-            close();
-        }
-    "#;
-    let sources = [("bubble_pass3.c", c_source)];
-
-    let verified = verify_c_sources(click_source, &sources);
-    verified.expect("the bound universal outcome should close through Proof");
-
-    let expanded = expand_function_proof_source(click_source, &sources, "bubble_pass3")
+    let expanded = expand_c_claim_source_by_label(&source, &sources, label)
         .expect("the retained bound universal proof should expand");
     assert!(expanded.contains("instantiate("), "{expanded}");
-    assert!(expanded.contains("transport("), "{expanded}");
-    verify_c_sources(&expanded, &sources)
-        .expect("the retained bound universal proof should check independently");
+    assert!(expanded.contains("preserve(memory(p[0]),"), "{expanded}");
+    assert!(!expanded.contains("transport("), "{expanded}");
+    crate::surface::check_audit_claim(label, true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .expect("the retained bound universal proof should check independently");
 }
 
 const BOUND_UNIVERSAL_FIXTURE_CASES: &[(&str, &str)] = &[
@@ -16630,9 +16554,16 @@ fn assert_bound_universal_fixture_has_no_outcome_fallbacks(filename: &str, funct
     let expanded =
         expanded.unwrap_or_else(|error| panic!("failed to expand `{}`: {error:?}", path.display()));
 
-    assert!(
+    let has_upper_bound_split = if function == "bubble_pass3" {
+        expanded.contains("if j == 0 {")
+            && expanded.contains("have j == 1 by {")
+            && expanded.contains("have k == 0 by {")
+    } else {
         expanded.contains("if to_integer(k) < (to_integer(j) - 1)")
-            || expanded.contains("if k < ((j - 1) as int32)"),
+            || expanded.contains("if k < ((j - 1) as int32)")
+    };
+    assert!(
+        has_upper_bound_split,
         "expanded proof from `{}` omitted the checked upper-bound split",
         path.display()
     );
