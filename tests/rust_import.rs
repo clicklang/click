@@ -6539,6 +6539,8 @@ fn rust_byte_sum_proves_exact_prefix_sum_and_expands() {
     assert_cli(&p, &["profile"]);
     assert_cli(&p, &["audit"]);
     assert_cli(&p, &["expand", "--claim", "sum.contract", "--in-place"]);
+    let expanded = fs::read_to_string(p.root.join("borrow.click")).unwrap();
+    assert!(!expanded.contains("contradiction("), "{expanded}");
     assert_cli(&p, &["verify"]);
 }
 

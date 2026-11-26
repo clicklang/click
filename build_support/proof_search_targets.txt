@@ -5,6 +5,7 @@ available_rewrite_equality
 available_surface_fact
 available_surface_fact_raw
 carried_machine_facts
+close_refuted_comparison
 check_typed_atomic_solve_candidate
 composition_context
 compositions_only

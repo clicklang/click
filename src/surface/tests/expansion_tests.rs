@@ -27516,6 +27516,7 @@ fn computed_shift_divisor_expands_and_replays() {
     let sources = crate::cli::source_refs(&sources);
     let claim = "divide.ensures_0";
     let expanded = expand_c_claim_source_by_label(&source, &sources, claim).unwrap();
+    assert!(!expanded.contains("contradiction("), "{expanded}");
     assert!(!expanded.contains("normalize("), "{expanded}");
     crate::surface::check_audit_claim(claim, true, || {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())
