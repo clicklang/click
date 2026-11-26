@@ -11320,15 +11320,6 @@ impl ExecutionState {
         self.memory = memory;
     }
 
-    /// [`Self::stage_memory`] when `stage`, [`Self::set_memory`] otherwise.
-    pub(crate) fn set_or_stage_memory(&mut self, memory: SymbolicMemory, stage: bool) {
-        if stage {
-            self.stage_memory(memory);
-        } else {
-            self.set_memory(memory);
-        }
-    }
-
     /// Ends the atomic region in progress: a state with staged memory moves
     /// to the one new point those steps reach. Without staged memory it
     /// stays where it is.
@@ -11338,6 +11329,14 @@ impl ExecutionState {
         if steps.is_none() && self.point.memory() == Some(&shared) {
             return;
         }
+        self.point = self.point.after(shared, steps);
+    }
+
+    /// Ends the atomic region in progress at a new point, even when it
+    /// staged nothing: a contract call's exit, which follows its effect point.
+    pub(crate) fn complete_staged_memory_at_new_point(&mut self) {
+        let steps = self.memory.pending_steps.take();
+        let shared = super::intern_memory_ref(&self.memory);
         self.point = self.point.after(shared, steps);
     }
 

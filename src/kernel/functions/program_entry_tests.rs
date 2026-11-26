@@ -592,3 +592,22 @@ fn a_symbolic_aggregate_array_at_function_entry_holds_no_cells() {
 mod scaling_tests {
     include!("../../scaling_tests/kernel/functions/program_entry_tests.rs");
 }
+
+#[test]
+fn function_static_storage_is_installed_as_one_region() {
+    let global = Global::new("state", ProgramType::Int32, int32(7));
+    let function =
+        storage_function("read", vec![global]).with_string_literals(vec![StringLiteral::new(
+            StringLiteralId::new("read", 0),
+            b"ok\0".to_vec(),
+        )]);
+    let start = ExecutionState::new().begin_function_entry_memory();
+    let entry = initialize_program_function_globals(&start, &function);
+    let [from] = entry.path_link().predecessors() else {
+        panic!("a function's static storage reaches one new point");
+    };
+    assert_eq!(from.id(), start.program_point_id());
+    // Storage the state already holds adds no point.
+    let again = initialize_program_function_globals(&entry, &function);
+    assert_eq!(again.program_point_id(), entry.program_point_id());
+}

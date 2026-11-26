@@ -2,12 +2,20 @@
 
 use super::*;
 
+/// The static storage `function` reads, materialized as one region: every
+/// block and initializer it installs reaches one new point together, and a
+/// state that already holds all of it stays where it is.
 pub(super) fn initialize_program_function_globals_owned(
     state: ExecutionState,
     function: &ProgramFunction,
     initialize_missing_storage: bool,
 ) -> ExecutionState {
-    initialize_program_function_globals_with(state, function, initialize_missing_storage, false)
+    let (mut state, staged) =
+        initialize_program_function_globals_with(state, function, initialize_missing_storage);
+    if staged {
+        state.complete_staged_memory();
+    }
+    state
 }
 
 /// The static storage a contract call's callee reads, materialized as it
@@ -17,32 +25,39 @@ pub(super) fn initialize_callee_globals(
     state: &ExecutionState,
     function: &ProgramFunction,
 ) -> ExecutionState {
-    let mut state = initialize_program_function_globals_with(state.clone(), function, false, true);
-    state.complete_staged_memory();
-    state
+    initialize_program_function_globals_owned(state.clone(), function, false)
 }
 
+/// Stage one install of the static storage region in progress.
+fn stage_static_storage(memory: SymbolicMemory, state: &mut ExecutionState, staged: &mut bool) {
+    state.stage_memory(memory);
+    *staged = true;
+}
+
+/// The state with `function`'s static storage staged, and whether anything
+/// was staged.
 fn initialize_program_function_globals_with(
     mut state: ExecutionState,
     function: &ProgramFunction,
     initialize_missing_storage: bool,
-    stage: bool,
-) -> ExecutionState {
+) -> (ExecutionState, bool) {
+    let mut staged = false;
     for literal in function.string_literals() {
         let slot = SymbolicMemory::string_literal_pointer(literal.identity(), literal.bytes());
         if !state.memory.has_block(&slot.base) {
-            state.set_or_stage_memory(
+            stage_static_storage(
                 state
                     .memory
                     .clone()
                     .with_read_only_block(slot.base.clone(), literal.bytes().len() as u32),
-                stage,
+                &mut state,
+                &mut staged,
             );
             for (offset, byte) in literal.bytes().iter().copied().enumerate() {
                 if crate::instrumentation::deadline_exceeded() {
                     break;
                 }
-                state.set_or_stage_memory(
+                stage_static_storage(
                     state.memory.clone().store(
                         OldAddress {
                             base: slot.base.clone(),
@@ -50,7 +65,8 @@ fn initialize_program_function_globals_with(
                         },
                         literal.element_value(byte),
                     ),
-                    stage,
+                    &mut state,
+                    &mut staged,
                 );
             }
         }
@@ -84,22 +100,24 @@ fn initialize_program_function_globals_with(
         let slot = SymbolicMemory::global_pointer(global.kernel_name());
         register_block_alignment(&slot.base, global.program_type().abi_alignment());
         if !state.memory.has_block(&slot.base) {
-            state.set_or_stage_memory(
+            stage_static_storage(
                 state.memory.clone().with_classed_block_or_read_only(
                     slot.base.clone(),
                     global.declared_class(),
                     global.program_type().byte_width(),
                     global.is_constant(),
                 ),
-                stage,
+                &mut state,
+                &mut staged,
             );
             if initialize_missing_storage || global.is_constant() {
-                state.set_or_stage_memory(
+                stage_static_storage(
                     state
                         .memory
                         .clone()
                         .store(slot.clone(), global.initial_value().clone()),
-                    stage,
+                    &mut state,
+                    &mut staged,
                 );
             }
         }
@@ -139,24 +157,26 @@ fn initialize_program_function_globals_with(
             .checked_mul(global_array.element_type().byte_width())
             .expect("validated C global array size");
         if !state.memory.has_block(&slot.base) {
-            state.set_or_stage_memory(
+            stage_static_storage(
                 state.memory.clone().with_classed_block_or_read_only(
                     slot.base.clone(),
                     global_array.declared_class(),
                     bytes,
                     global_array.is_constant(),
                 ),
-                stage,
+                &mut state,
+                &mut staged,
             );
             if initialize_missing_storage || global_array.is_constant() {
-                state.set_or_stage_memory(
+                stage_static_storage(
                     store_array_contents(
                         state.memory.clone(),
                         &slot,
                         global_array.element_type(),
                         global_array.initial_values(),
                     ),
-                    stage,
+                    &mut state,
+                    &mut staged,
                 );
             }
         }
@@ -183,27 +203,30 @@ fn initialize_program_function_globals_with(
         let slot = SymbolicMemory::global_pointer(global_aggregate.kernel_name());
         register_block_alignment(&slot.base, global_aggregate.layout().alignment_bytes());
         if !state.memory.has_block(&slot.base) {
-            state.set_or_stage_memory(
+            stage_static_storage(
                 state.memory.clone().with_classed_block_or_read_only(
                     slot.base.clone(),
                     global_aggregate.declared_class.clone(),
                     global_aggregate.layout().size_bytes(),
                     global_aggregate.is_constant(),
                 ),
-                stage,
+                &mut state,
+                &mut staged,
             );
             if initialize_missing_storage || global_aggregate.is_constant() {
-                state.set_or_stage_memory(
+                stage_static_storage(
                     zero_aggregate_fields(state.memory.clone(), &slot, global_aggregate.layout()),
-                    stage,
+                    &mut state,
+                    &mut staged,
                 );
-                state.set_or_stage_memory(
+                stage_static_storage(
                     initialize_aggregate_fields(
                         state.memory.clone(),
                         &slot,
                         global_aggregate.initializers(),
                     ),
-                    stage,
+                    &mut state,
+                    &mut staged,
                 );
             }
         }
@@ -235,32 +258,35 @@ fn initialize_program_function_globals_with(
             .checked_mul(global_aggregate_array.layout().size_bytes())
             .expect("validated C global aggregate array size");
         if !state.memory.has_block(&slot.base) {
-            state.set_or_stage_memory(
+            stage_static_storage(
                 state.memory.clone().with_classed_block_or_read_only(
                     slot.base.clone(),
                     global_aggregate_array.declared_class.clone(),
                     bytes,
                     global_aggregate_array.is_constant(),
                 ),
-                stage,
+                &mut state,
+                &mut staged,
             );
             if initialize_missing_storage || global_aggregate_array.is_constant() {
-                state.set_or_stage_memory(
+                stage_static_storage(
                     zero_aggregate_array_fields(
                         state.memory.clone(),
                         &slot,
                         global_aggregate_array.layout(),
                         global_aggregate_array.length(),
                     ),
-                    stage,
+                    &mut state,
+                    &mut staged,
                 );
-                state.set_or_stage_memory(
+                stage_static_storage(
                     initialize_aggregate_fields(
                         state.memory.clone(),
                         &slot,
                         global_aggregate_array.initializers(),
                     ),
-                    stage,
+                    &mut state,
+                    &mut staged,
                 );
             }
         }
@@ -290,13 +316,14 @@ fn initialize_program_function_globals_with(
         let slot = SymbolicMemory::static_pointer(function.name(), static_local.kernel_name());
         register_block_alignment(&slot.base, static_local.program_type().abi_alignment());
         if !state.memory.has_block(&slot.base) {
-            state.set_or_stage_memory(
+            stage_static_storage(
                 state.memory.clone().with_block_or_read_only(
                     slot.base.clone(),
                     static_local.program_type().byte_width(),
                     static_local.is_constant(),
                 ),
-                stage,
+                &mut state,
+                &mut staged,
             );
             // A qualified resource can materialize the cell before this
             // function's storage declaration is installed. Adding block
@@ -304,12 +331,13 @@ fn initialize_program_function_globals_with(
             if (initialize_missing_storage || static_local.is_constant())
                 && state.memory.known_value(&slot).is_none()
             {
-                state.set_or_stage_memory(
+                stage_static_storage(
                     state
                         .memory
                         .clone()
                         .store(slot.clone(), static_local.initial_value().clone()),
-                    stage,
+                    &mut state,
+                    &mut staged,
                 );
             }
         }
@@ -350,23 +378,25 @@ fn initialize_program_function_globals_with(
             .checked_mul(static_array.element_type().byte_width())
             .expect("validated C static local array size");
         if !state.memory.has_block(&slot.base) {
-            state.set_or_stage_memory(
+            stage_static_storage(
                 state.memory.clone().with_block_or_read_only(
                     slot.base.clone(),
                     bytes,
                     static_array.is_constant(),
                 ),
-                stage,
+                &mut state,
+                &mut staged,
             );
             if initialize_missing_storage || static_array.is_constant() {
-                state.set_or_stage_memory(
+                stage_static_storage(
                     store_array_contents(
                         state.memory.clone(),
                         &slot,
                         static_array.element_type(),
                         static_array.initial_values(),
                     ),
-                    stage,
+                    &mut state,
+                    &mut staged,
                 );
             }
         }
@@ -393,26 +423,29 @@ fn initialize_program_function_globals_with(
         let slot = SymbolicMemory::static_pointer(function.name(), static_aggregate.kernel_name());
         register_block_alignment(&slot.base, static_aggregate.layout().alignment_bytes());
         if !state.memory.has_block(&slot.base) {
-            state.set_or_stage_memory(
+            stage_static_storage(
                 state.memory.clone().with_block_or_read_only(
                     slot.base.clone(),
                     static_aggregate.layout().size_bytes(),
                     static_aggregate.is_constant(),
                 ),
-                stage,
+                &mut state,
+                &mut staged,
             );
             if initialize_missing_storage || static_aggregate.is_constant() {
-                state.set_or_stage_memory(
+                stage_static_storage(
                     zero_aggregate_fields(state.memory.clone(), &slot, static_aggregate.layout()),
-                    stage,
+                    &mut state,
+                    &mut staged,
                 );
-                state.set_or_stage_memory(
+                stage_static_storage(
                     initialize_aggregate_fields(
                         state.memory.clone(),
                         &slot,
                         static_aggregate.initializers(),
                     ),
-                    stage,
+                    &mut state,
+                    &mut staged,
                 );
             }
         }
@@ -445,31 +478,34 @@ fn initialize_program_function_globals_with(
             .checked_mul(static_aggregate_array.layout().size_bytes())
             .expect("validated C static aggregate array size");
         if !state.memory.has_block(&slot.base) {
-            state.set_or_stage_memory(
+            stage_static_storage(
                 state.memory.clone().with_block_or_read_only(
                     slot.base.clone(),
                     bytes,
                     static_aggregate_array.is_constant(),
                 ),
-                stage,
+                &mut state,
+                &mut staged,
             );
             if initialize_missing_storage || static_aggregate_array.is_constant() {
-                state.set_or_stage_memory(
+                stage_static_storage(
                     zero_aggregate_array_fields(
                         state.memory.clone(),
                         &slot,
                         static_aggregate_array.layout(),
                         static_aggregate_array.length(),
                     ),
-                    stage,
+                    &mut state,
+                    &mut staged,
                 );
-                state.set_or_stage_memory(
+                stage_static_storage(
                     initialize_aggregate_fields(
                         state.memory.clone(),
                         &slot,
                         static_aggregate_array.initializers(),
                     ),
-                    stage,
+                    &mut state,
+                    &mut staged,
                 );
             }
         }
@@ -495,7 +531,7 @@ fn initialize_program_function_globals_with(
             );
         }
     }
-    state
+    (state, staged)
 }
 
 /// Stores `contents` into the just-declared array storage at `base`, as a
