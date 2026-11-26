@@ -18,14 +18,17 @@ use click::surface::{
     ClickProject, ProgramVerificationSession, ProofSourceIndex, SourcePosition,
     VerifiedProgramTheorem, c_incremental_selection, click_import_sites,
     expand_c_claim_source_by_label, expand_c_prepared_claim_source_by_label,
-    expand_c_prepared_tactic_source_at, expand_c_tactic_source_at,
-    expand_program_prepared_claim_source_by_label, expand_program_prepared_tactic_source_at,
-    expand_project_claim_source_by_label, expand_project_tactic_source_at,
+    expand_program_prepared_claim_source_by_label, expand_project_claim_source_by_label,
     expand_verified_function_claim_source_by_label, project_smart_tactic_source_sites,
     project_tactic_source_position, smart_tactic_source_sites, tactic_source_position,
     verify_project_at, verify_sources_at, verifying_source_paths,
 };
 use click::surface::{claim_label_matches, display_source_names};
+#[cfg(test)]
+use click::surface::{
+    expand_c_prepared_tactic_source_at, expand_c_tactic_source_at,
+    expand_program_prepared_tactic_source_at, expand_project_tactic_source_at,
+};
 
 /// Each phase's wall-clock bound is crash containment only: a phase is judged
 /// by its deterministic work, so machine load cannot change a verdict.
@@ -2445,24 +2448,9 @@ fn audit_selected_claim_rewrite(
     verbose: bool,
 ) -> Result<ClaimAuditReport, String> {
     let first = &sites[0];
-    let positions = sites
-        .iter()
-        .map(|site| site.click_position.clone())
-        .collect::<Vec<_>>();
     let source = &worker.source;
-    let (artifact, expansion) = run_phase("expansion", limits.expansion.within(deadline)?, || {
-        use click::surface::*;
-        match (&source.project, &source.inputs) {
-            (Some(project), inputs) => {
-                expand_project_tactics_source_at(project, &inputs.program_inputs(), &positions)
-            }
-            (None, inputs) => {
-                expand_tactics_source_at(&source.click_source, &inputs.program_inputs(), &positions)
-            }
-        }
-        .map_err(|error| error.report())
-    })
-    .map_err(|error| audit_phase_error("expansion", error))?;
+    let (artifact, expansion) =
+        expand_selected_sites(sites, source, limits.expansion.within(deadline)?)?;
     let original_cost = cold_verify(
         &source.container_source,
         source,
@@ -2472,64 +2460,10 @@ fn audit_selected_claim_rewrite(
     );
     let (expanded, fixed_point, replay, size) = artifact
         .with_checked_closers(|| {
-            let ((), fixed_point) = run_phase(
-                "selected fixed point",
-                limits.expansion.within(deadline)?,
-                || {
-                    let remaining = smart_sites_for_source(
-                        &artifact.source,
-                        &source.inputs,
-                        source.project.as_ref(),
-                    )?;
-                    let positions = remaining
-                        .into_iter()
-                        .map(|site| ((site.position.line, site.position.column), site.tactic_name))
-                        .collect::<BTreeMap<_, _>>();
-                    let (mut line, mut column, mut region) = (1, 1, 0);
-                    for (offset, character) in artifact.source.char_indices() {
-                        while artifact
-                            .replacement_spans
-                            .get(region)
-                            .is_some_and(|span| span.end <= offset)
-                        {
-                            region += 1;
-                        }
-                        if artifact
-                            .replacement_spans
-                            .get(region)
-                            .is_some_and(|span| span.contains(&offset))
-                            && let Some(tactic) = positions.get(&(line, column))
-                        {
-                            return Err(format!(
-                                "selected expansion introduced smart tactic `{tactic}`; \
-                         its rewrite is not a fixed point"
-                            ));
-                        }
-                        if character == '\n' {
-                            line += 1;
-                            column = 1;
-                        } else {
-                            column += 1;
-                        }
-                    }
-                    Ok(())
-                },
-            )
-            .map_err(|error| audit_phase_error("expansion fixed point", error))?;
+            let fixed_point =
+                check_selected_fixed_point(source, &artifact, limits.expansion.within(deadline)?)?;
             let expanded_click = &artifact.source;
-            let expanded = if let Some(mdtest) = &source.mdtest {
-                mdtest.replace_click_source(&source.container_source, expanded_click)?
-            } else {
-                expanded_click.clone()
-            };
-            if expanded == source.container_source
-                && artifact
-                    .replacement_spans
-                    .iter()
-                    .all(std::ops::Range::is_empty)
-            {
-                return Err("expansion did not emit a selected proof region".into());
-            }
+            let expanded = selected_rewrite_container(source, &artifact)?;
             // Unselected automation keeps running, including the implicit closer.
             let cold_limit = limits.verification.within(deadline)?;
             let replay = cold_verify_expansion(&expanded, source, &first.claim, cold_limit, false)?;
@@ -2557,6 +2491,96 @@ fn audit_selected_claim_rewrite(
         report.detail.push_str(&size);
     }
     Ok(report)
+}
+
+fn expand_selected_sites(
+    sites: &[AuditSite],
+    source: &AuditSource,
+    limit: PhaseLimit,
+) -> Result<(click::surface::SelectedTacticExpansion, PhaseCost), String> {
+    let positions = sites
+        .iter()
+        .map(|site| site.click_position.clone())
+        .collect::<Vec<_>>();
+    run_phase("expansion", limit, || {
+        use click::surface::*;
+        match (&source.project, &source.inputs) {
+            (Some(project), inputs) => {
+                expand_project_tactics_source_at(project, &inputs.program_inputs(), &positions)
+            }
+            (None, inputs) => {
+                expand_tactics_source_at(&source.click_source, &inputs.program_inputs(), &positions)
+            }
+        }
+        .map_err(|error| error.report())
+    })
+    .map_err(|error| audit_phase_error("expansion", error))
+}
+
+fn check_selected_fixed_point(
+    source: &AuditSource,
+    artifact: &click::surface::SelectedTacticExpansion,
+    limit: PhaseLimit,
+) -> Result<PhaseCost, String> {
+    let ((), cost) = run_phase("selected fixed point", limit, || {
+        let positions = smart_sites_for_source(
+            &artifact.source,
+            &source.inputs,
+            source.project.as_ref(),
+        )?
+        .into_iter()
+        .map(|site| ((site.position.line, site.position.column), site.tactic_name))
+        .collect::<BTreeMap<_, _>>();
+        let (mut line, mut column, mut region) = (1, 1, 0);
+        for (offset, character) in artifact.source.char_indices() {
+            while artifact
+                .replacement_spans
+                .get(region)
+                .is_some_and(|span| span.end <= offset)
+            {
+                region += 1;
+            }
+            if artifact
+                .replacement_spans
+                .get(region)
+                .is_some_and(|span| span.contains(&offset))
+                && let Some(tactic) = positions.get(&(line, column))
+            {
+                return Err(format!(
+                    "selected expansion introduced smart tactic `{tactic}`; its rewrite is not a fixed point"
+                ));
+            }
+            if character == '\n' {
+                line += 1;
+                column = 1;
+            } else {
+                column += 1;
+            }
+        }
+        Ok(())
+    })
+    .map_err(|error| audit_phase_error("expansion fixed point", error))?;
+    Ok(cost)
+}
+
+fn selected_rewrite_container(
+    source: &AuditSource,
+    artifact: &click::surface::SelectedTacticExpansion,
+) -> Result<String, String> {
+    let expanded = if let Some(mdtest) = &source.mdtest {
+        mdtest.replace_click_source(&source.container_source, &artifact.source)?
+    } else {
+        artifact.source.clone()
+    };
+    if expanded == source.container_source
+        && artifact
+            .replacement_spans
+            .iter()
+            .all(std::ops::Range::is_empty)
+    {
+        return Err("expansion did not emit a selected proof region".into());
+    }
+    Ok(expanded)
 }
 
 /// The proof container with every smart site of `claim_label` expanded.
@@ -2591,22 +2615,6 @@ fn expand_claim_with_source(
     }
 }
 
-/// The names of the smart tactics the inventory finds in `claim_label`.
-fn claim_smart_sites(
-    source: &str,
-    inputs: &VerificationInput,
-    project: Option<&ClickProject>,
-    claim_label: &str,
-) -> Result<Vec<String>, String> {
-    smart_sites_for_source(source, inputs, project).map(|sites| {
-        sites
-            .into_iter()
-            .filter(|site| site.claim_label == claim_label)
-            .map(|site| site.tactic_name)
-            .collect()
-    })
-}
-
 fn smart_sites_for_source(
     source: &str,
     inputs: &VerificationInput,
@@ -2629,90 +2637,47 @@ fn audit_site_rewrite(
     cold_reverify: bool,
     deadline: Instant,
 ) -> Result<SiteRewrite, String> {
-    let location = format!(
-        "{}:{}:{}",
-        site.click_path.display(),
-        site.position.line,
-        site.position.column
-    );
-    let (expanded, expansion) = run_phase("expansion", limits.expansion.within(deadline)?, || {
-        expand_location_with_source(&location, &worker.source)
-    })?;
-    let original = worker.source.container_source.clone();
-    if expanded == original {
-        return Err("expansion returned the original sidecar unchanged".to_string());
-    }
-    let expanded_click_source =
-        rewritten_click_source(&worker.source, &expanded).map_err(|error| {
-            format!("expanded proof container did not parse (report this as a bug): {error}")
-        })?;
-    // The rewritten claim must still be found: expansion can insert or
-    // remove lines at the selected tactic, so later checks resolve the proof
-    // unit by claim rather than by its now-stale source coordinate.
-    claim_source_position_for_source(&worker.source, &expanded_click_source, &site.claim)?;
-
-    // Checklist step 6: reverify the rewritten proof unit from normal
-    // inputs by running the direct targeted entry point under
-    // the verification limits. The retained session checks the
-    // rewrite changed nothing outside the audited proof unit, so the other
-    // units' outcomes cannot change; a whole-file pass here would redo them
-    // all per site, which made auditing a project cost sites x whole-file
-    // time. The cold direct pass catches anything the retained session's
-    // cached environment masks, which one site per claim already
-    // exercises — repeating it for every site of a many-site claim would
-    // double the whole audit for no additional coverage.
-    let cold_verification = if cold_reverify {
-        let original_cost = cold_verify(
-            &original,
-            &worker.source,
+    let source = &worker.source;
+    let (artifact, expansion) = expand_selected_sites(
+        std::slice::from_ref(site),
+        source,
+        limits.expansion.within(deadline)?,
+    )?;
+    // Keep original verification outside the checked-closer scope. A
+    // byte-identical rewrite can still change how those closers are checked.
+    let original_cost = if cold_reverify {
+        Some(cold_verify(
+            &source.container_source,
+            source,
             &site.claim,
             limits.verification.within(deadline)?,
             "original proof-unit verification",
-        )?;
-        let expanded_cost = cold_verify(
-            &expanded,
-            &worker.source,
-            &site.claim,
-            limits.verification.within(deadline)?,
-            "expanded proof-unit verification",
-        )?;
-        Some((original_cost, expanded_cost))
+        )?)
     } else {
         None
     };
-
-    // Checklist step 7: re-expanding the same claim against the rewritten
-    // source must be a fixed point, byte for byte. The site is re-resolved
-    // by claim because the rewrite moves and replaces tactics.
-    let (reexpanded, reexpansion) =
-        run_phase("re-expansion", limits.expansion.within(deadline)?, || {
-            reexpand_source_with_inputs(
-                &worker.source,
-                &site.claim,
-                &expanded_click_source,
-                &expanded,
-            )
-        })?;
-    if reexpanded != expanded {
-        return Err(format!(
-            "re-expansion was not byte-identical to the first rewrite \
-             ({} bytes rewritten, {} bytes re-expanded)",
-            expanded.len(),
-            reexpanded.len()
-        ));
-    }
-
-    // Proof scripts have no runtime semantics: re-verifying the same isolated
-    // claim is the semantic invariant. Requiring the prover to visit identical
-    // internal branch/path states would reject valid explicit certificates and
-    // is intentionally not an audit invariant.
-
-    Ok(SiteRewrite {
-        expanded,
-        expansion,
-        cold_verification,
-        reexpansion,
-    })
+    artifact
+        .with_checked_closers(|| {
+            let expanded = selected_rewrite_container(source, &artifact)?;
+            let reexpansion =
+                check_selected_fixed_point(source, &artifact, limits.expansion.within(deadline)?)?;
+            let cold_verification = if let Some(original_cost) = original_cost {
+                let limit = limits.verification.within(deadline)?;
+                let expanded_cost =
+                    cold_verify_expansion(&expanded, source, &site.claim, limit, false)?.cost;
+                Some((original_cost, expanded_cost))
+            } else {
+                claim_source_position_for_source(source, &artifact.source, &site.claim)?;
+                None
+            };
+            Ok(SiteRewrite {
+                expanded,
+                expansion,
+                cold_verification,
+                reexpansion,
+            })
+        })
+        .map_err(|error| audit_phase_error("expanded source", error.report()))?
 }
 
 /// The single contiguous edit that turns `original` into `rewritten`.
@@ -2968,11 +2933,7 @@ fn expand_location(location: &str) -> Result<String, String> {
     expand_location_with_source_parts(&click_path, &source, line, column)
 }
 
-fn expand_location_with_source(location: &str, source: &AuditSource) -> Result<String, String> {
-    let (click_path, line, column) = cli::parse_source_location(location)?;
-    expand_location_with_source_parts(&click_path, source, line, column)
-}
-
+#[cfg(test)]
 fn expand_location_with_source_parts(
     click_path: &Path,
     source: &AuditSource,
@@ -3093,88 +3054,6 @@ fn claim_source_position_for_inputs(
             error.report()
         )
     })
-}
-
-/// Checks that the rewritten sidecar is an expansion fixed point for the
-/// audited site, resolving C sources
-/// relative to the original on-disk sidecar path.
-///
-/// The rewrite moves and replaces tactics, so the audited site cannot be
-/// re-located by its original position. The fixed-point property that is
-/// actually checkable per site: the audited smart tactic must be gone from
-/// the claim's smart inventory, and the emitted expansion must not have
-/// introduced any new smart tactic (certificates are explicit tactics), so
-/// the claim's smart-site multiset strictly shrinks. A path-aligned
-/// certificate can replace more than one symmetric occurrence at once, so an
-/// exact one-site decrease would reject a stronger valid expansion. Other
-/// smart sites of the claim are audited on their own turns against the
-/// original sidecar.
-/// On success the rewritten source is echoed so the caller's byte-identical
-/// comparison passes.
-#[cfg(test)]
-fn reexpand_source(
-    click_path: &Path,
-    claim_label: &str,
-    rewritten: &str,
-) -> Result<String, String> {
-    let original = load_audit_source(click_path)?;
-    let rewritten_source = load_audit_source_from_text(click_path, rewritten.to_string())?;
-    reexpand_source_with_inputs(
-        &original,
-        claim_label,
-        &rewritten_source.click_source,
-        rewritten,
-    )
-}
-
-fn reexpand_source_with_inputs(
-    original: &AuditSource,
-    claim_label: &str,
-    rewritten_click_source: &str,
-    rewritten_container: &str,
-) -> Result<String, String> {
-    let claim_sites = |source: &str, inputs: &VerificationInput, project: Option<&ClickProject>| {
-        claim_smart_sites(source, inputs, project, claim_label)
-    };
-    let original_sites = claim_sites(
-        &original.click_source,
-        &original.inputs,
-        original.project.as_ref(),
-    )?;
-    let rewritten_sites = claim_sites(
-        rewritten_click_source,
-        &original.inputs,
-        original.project.as_ref(),
-    )?;
-    let mut unmatched_original = original_sites.clone();
-    let introduced = rewritten_sites.iter().find(|rewritten| {
-        let Some(index) = unmatched_original
-            .iter()
-            .position(|original| original == *rewritten)
-        else {
-            return true;
-        };
-        unmatched_original.remove(index);
-        false
-    });
-    if let Some(introduced) = introduced {
-        return Err(format!(
-            "expansion introduced smart tactic `{introduced}` in `{claim_label}`: \
-             {} smart site(s) before ({}), {} after ({})",
-            original_sites.len(),
-            original_sites.join(", "),
-            rewritten_sites.len(),
-            rewritten_sites.join(", "),
-        ));
-    }
-    if unmatched_original.is_empty() {
-        return Err(format!(
-            "expansion did not remove a smart tactic from `{claim_label}`: {} site(s) before and {} after",
-            original_sites.len(),
-            rewritten_sites.len(),
-        ));
-    }
-    Ok(rewritten_container.to_string())
 }
 
 fn rewritten_click_source(source: &AuditSource, rewritten: &str) -> Result<String, String> {
