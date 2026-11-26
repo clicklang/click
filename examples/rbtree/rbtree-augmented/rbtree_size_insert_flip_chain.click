@@ -654,7 +654,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have g->__rb_parent_color == address(sized_flip_parent(up)) + (g->__rb_parent_color & 1) by {
                                                         rewrite(g->__rb_parent_color, address(parent));
                                                         rewrite(sized_flip_parent(up), parent);
-                                                        rewrite((address(parent) & 1u64), 0u64); normalize();
+                                                        rewrite((address(parent) & 1u64), 0u64); close();
                                                     }
                                                     have root->rb_node == old(root->rb_node) by close();
                                                     let uncle_tree = fold(sized_at(u), {
@@ -679,7 +679,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                     unfold(sized_value(SizedTree::Node(u, ug, uc, uv, ul, ur)));
                                                     have sized_value(uncle) == uv by {
                                                         rewrite(uncle, SizedTree::Node(u, ug, uc, uv, ul, ur));
-                                                        unfold(sized_value(SizedTree::Node(u, ug, uc, uv, ul, ur))); normalize();
+                                                        unfold(sized_value(SizedTree::Node(u, ug, uc, uv, ul, ur))); close();
                                                     }
                                                     let focus = fold(sized_at(g), { model: SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(u, g, Color::Black, uv, ul, ur), SizedTree::Node(p, g, Color::Black, pv, at(iteration,state.model), other)), metadata: g_size, left: uncle_tree, right: parent_tree });
                                                     apply(sized_flip_context_parent(up));
@@ -707,23 +707,23 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                         rewrite(path.model, at(iteration,state.context));
                                         rewrite(at(iteration,state.context), sized_flip_context(at(iteration,state.chain)));
                                         rewrite(at(iteration,state.chain), SizedFlipChain::RR(p, g, pv, gv, other, uncle, up));
-                                        unfold(sized_flip_context(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up))); normalize();
+                                        unfold(sized_flip_context(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up))); close();
                                     }
                                     let { metadata: p_size, sibling: other_tree, up: g_path } = unfold(path);
                                     let { metadata: g_size, sibling: uncle_tree, up: outer_path } = unfold(g_path);
                                     have parent == p by {
                                         rewrite(parent, sized_flip_parent(at(iteration,state.chain)));
                                         rewrite(at(iteration,state.chain), SizedFlipChain::RR(p, g, pv, gv, other, uncle, up));
-                                        unfold(sized_flip_parent(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up))); normalize();
+                                        unfold(sized_flip_parent(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up))); close();
                                     }
                                     match uncle {
                                         SizedTree::Empty => {
                                             unfold(sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up)));
                                             unfold(sized_flip_uncle_red(SizedTree::Empty));
-                                            have sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up)) == 0 by { rewrite(uncle, SizedTree::Empty); unfold(sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, SizedTree::Empty, up))); unfold(sized_flip_uncle_red(SizedTree::Empty)); normalize(); }
+                                            have sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up)) == 0 by { rewrite(uncle, SizedTree::Empty); unfold(sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, SizedTree::Empty, up))); unfold(sized_flip_uncle_red(SizedTree::Empty)); close(); }
                                             have not (sized_flip_allowed(at(iteration,state.chain)) == 1) by {
                                                 rewrite(at(iteration,state.chain), SizedFlipChain::RR(p, g, pv, gv, other, uncle, up));
-                                                rewrite(sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up)), 0); normalize();
+                                                rewrite(sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up)), 0); close();
                                             }
                                             contradiction(sized_flip_allowed(at(iteration,state.chain)) == 1);
                                         },
@@ -732,10 +732,10 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                 Color::Black => {
                                                     unfold(sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up)));
                                                     unfold(sized_flip_uncle_red(SizedTree::Node(u, ug, uc, uv, ul, ur)));
-                                                    have sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up)) == 0 by { rewrite(uncle, SizedTree::Node(u, ug, uc, uv, ul, ur)); rewrite(uc, Color::Black); unfold(sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, SizedTree::Node(u, ug, Color::Black, uv, ul, ur), up))); unfold(sized_flip_uncle_red(SizedTree::Node(u, ug, Color::Black, uv, ul, ur))); normalize(); }
+                                                    have sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up)) == 0 by { rewrite(uncle, SizedTree::Node(u, ug, uc, uv, ul, ur)); rewrite(uc, Color::Black); unfold(sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, SizedTree::Node(u, ug, Color::Black, uv, ul, ur), up))); unfold(sized_flip_uncle_red(SizedTree::Node(u, ug, Color::Black, uv, ul, ur))); close(); }
                                                     have not (sized_flip_allowed(at(iteration,state.chain)) == 1) by {
                                                         rewrite(at(iteration,state.chain), SizedFlipChain::RR(p, g, pv, gv, other, uncle, up));
-                                                        rewrite(sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up)), 0); normalize();
+                                                        rewrite(sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up)), 0); close();
                                                     }
                                                     contradiction(sized_flip_allowed(at(iteration,state.chain)) == 1);
                                                 },
@@ -745,7 +745,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, uncle, up)) == sized_flip_allowed(up) by {
                                                         rewrite(uncle, SizedTree::Node(u, ug, uc, uv, ul, ur)); rewrite(uc, Color::Red);
                                                         unfold(sized_flip_allowed(SizedFlipChain::RR(p, g, pv, gv, other, SizedTree::Node(u, ug, Color::Red, uv, ul, ur), up)));
-                                                        unfold(sized_flip_uncle_red(SizedTree::Node(u, ug, Color::Red, uv, ul, ur))); normalize();
+                                                        unfold(sized_flip_uncle_red(SizedTree::Node(u, ug, Color::Red, uv, ul, ur))); close();
                                                     }
                                                     have sized_flip_allowed(up) == 1 by close();
                                                     let { metadata: u_size, left: u_left, right: u_right } = unfold(uncle_tree);
@@ -759,7 +759,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                                 close();
                                                             }
                                                             have not (sized_parent_is(uncle,g) == 1) by {
-                                                                rewrite(sized_parent_is(uncle,g), 0); normalize();
+                                                                rewrite(sized_parent_is(uncle,g), 0); close();
                                                             }
                                                             contradiction(sized_parent_is(uncle,g) == 1);
                                                         }
@@ -770,12 +770,12 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                                                     have (u->__rb_parent_color & 1) == 0 by {
                                                         rewrite((u->__rb_parent_color & 1), color_bit(uc));
                                                         rewrite(uc, Color::Red);
-                                                        unfold(color_bit(Color::Red)); normalize();
+                                                        unfold(color_bit(Color::Red)); close();
                                                     }
                                                     have p->__rb_parent_color == address(g) by {
                                                         rewrite(p->__rb_parent_color, address(g) + (p->__rb_parent_color & 1));
                                                         rewrite((p->__rb_parent_color & 1), color_bit(Color::Red));
-                                                        rewrite(color_bit(Color::Red), 0); normalize();
+                                                        rewrite(color_bit(Color::Red), 0); close();
                                                     }
                                                     let links = fold(sized_context_flip_links(root, g, p, u), {
                                                         top: old(root->rb_node), xl: g->rb_left, xr: g->rb_right,
