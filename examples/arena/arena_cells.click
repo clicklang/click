@@ -4334,10 +4334,9 @@ int32 arena_pipeline(
         close();
     }
     have &first->arena->data[first->start + 0] == at(w2, &first->arena->data[first->start + 0]) by {
-        normalize() using {
-            first->arena->data == at(w2, first->arena->data);
-            first->start == at(w2, first->start);
-        };
+        rewrite(first->arena->data, at(w2, first->arena->data));
+        rewrite(first->start, at(w2, first->start));
+        close();
     }
     let { live: framed_live, capacity: framed_capacity } = unfold(s0);
     have at(region(25).entry, separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data[0..arena->capacity]))) by close();
@@ -4563,27 +4562,24 @@ int32 arena_pipeline(
         close();
     }
     have &second->arena->data[second->start + 0] == (at(m3, second->arena->data) + kept_start) by {
-        normalize() using {
-            second->arena->data == at(m3, second->arena->data);
-            second->start == at(m3, second->start);
-            at(m3, second->start) == kept_start;
-        };
+        rewrite(second->arena->data, at(m3, second->arena->data));
+        rewrite(second->start, at(m3, second->start));
+        rewrite(at(m3, second->start), kept_start);
+        close();
     }
     have second->arena->data[(second->start + 0)] == 22 by {
         rewrite(&second->arena->data[second->start + 0], (at(m3, second->arena->data) + kept_start));
         close();
     }
     have (at(m3, second->arena->data) + at(m3, second->start)) == (second->arena->data + kept_start) by {
-        normalize() using {
-            second->arena->data == at(m3, second->arena->data);
-            at(m3, second->start) == kept_start;
-        };
+        rewrite(second->arena->data, at(m3, second->arena->data));
+        rewrite(at(m3, second->start), kept_start);
+        close();
     }
     have (at(m3, second->arena->data) + (at(m3, second->start) + 1)) == (second->arena->data + (kept_start + 1)) by {
-        normalize() using {
-            second->arena->data == at(m3, second->arena->data);
-            at(m3, second->start) == kept_start;
-        };
+        rewrite(second->arena->data, at(m3, second->arena->data));
+        rewrite(at(m3, second->start), kept_start);
+        close();
     }
     let r2 = fold(arena_region(second), { start: kept_start, end: kept_end });
     have r2.end <= s0.capacity by {
@@ -5321,11 +5317,9 @@ int32 arena_pipeline(
             rewrite(to_integer(at(z3, combined->end)), to_integer((at(z3, combined->start) + 4))); close();
         }
         have to_integer(r3.end) == (to_integer(r3.start) + 4) by {
-            normalize() using {
-                r3.start == at(z3, combined->start);
-                r3.end == at(z3, combined->end);
-                to_integer(at(z3, combined->end)) == (to_integer(at(z3, combined->start)) + 4);
-            };
+            rewrite(r3.start, at(z3, combined->start));
+            rewrite(r3.end, at(z3, combined->end));
+            close();
         }
         have r3.end <= g3.capacity by {
             close();
