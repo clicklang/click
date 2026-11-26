@@ -4394,25 +4394,6 @@ fn execute_verified_function_applications_with_suspension(
         // An undecided continuity relation remains symbolic in this one call
         // successor; it is not an execution-path split.
         post_state.resources = return_resources.clone();
-        let (symbolic_initialized_bytes, produced_words) = match initialize_produced_memory(
-            &entry_resource_state,
-            &output_resource_state,
-            interface,
-            &mut post_state,
-            &effective_assumptions,
-            budget,
-            application.evidence.is_none() && application.representation_copy.is_none(),
-        )? {
-            Ok(ranges) => ranges,
-            Err(error) => {
-                paths.push(FunctionPath::new(
-                    FunctionOutcome::RuntimeError(error),
-                    facts,
-                    obligations,
-                ));
-                continue;
-            }
-        };
         let authority_release_retires = {
             match authority_release_retires_control(
                 &entry_contract_state,
@@ -4897,9 +4878,30 @@ fn execute_verified_function_applications_with_suspension(
             continue;
         };
         facts.extend(allocation_effects);
-        // The call's exit: its staged initialization and its allocation
-        // effects, reached from its effect point.
-        post_state.set_memory(memory);
+        // The call's exit: its allocation effects and the initialization of
+        // the memory it produces, staged together and reached from its effect
+        // point. Everything above reads the effect point.
+        post_state.stage_memory(memory);
+        let (symbolic_initialized_bytes, produced_words) = match initialize_produced_memory(
+            &entry_resource_state,
+            &output_resource_state,
+            interface,
+            &mut post_state,
+            &effective_assumptions,
+            budget,
+            application.evidence.is_none() && application.representation_copy.is_none(),
+        )? {
+            Ok(ranges) => ranges,
+            Err(error) => {
+                paths.push(FunctionPath::new(
+                    FunctionOutcome::RuntimeError(error),
+                    facts,
+                    obligations,
+                ));
+                continue;
+            }
+        };
+        post_state.complete_staged_memory_at_new_point();
         produced_word_equations(&post_state, &produced_words, &mut facts, budget);
         // A consumed allocation named through a pointer proven equal to it,
         // a contract's `result == p`, retires the storage the call's entry
@@ -13437,8 +13439,9 @@ fn initialize_produced_memory(
             word_outputs.push(start);
         }
     }
-    // A step of the call in progress, which reaches its exit after the
-    // allocation effects; the produced words' equations are made there.
+    // The last step of the call in progress, staged beside its allocation
+    // effects; the call's exit takes both, and the produced words' equations
+    // are made there.
     post_state.stage_memory(memory);
     Ok(Ok((symbolic_initialized_bytes, word_outputs)))
 }

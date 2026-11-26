@@ -84,11 +84,16 @@ A contract call reaches two points: its effect point (`call(f, j).effect`,
 writes is in place, and then its exit, after its effects on initialization,
 liveness and allocation. The call's reads before its exit, such as the
 provisional ensures that decide its allocation effects and its coordinate
-ensures, are made at the effect point; its produced words' equations are made
-at the exit. Every value is the same at both, so `.effect` is a migration
+ensures, are made at the effect point. Its allocation effects and the
+initialization of the memory it produces are staged together after those
+reads, so the exit takes both; its produced words' equations are made at the
+exit. Every value is the same at both, so `.effect` is a migration
 measure, to be removed once reads are named by the write that made their
-value. A callee's static storage is materialized at one point before the
-effect (`initialize_callee_globals`). A call's mutex protocol steps, a
+value. Static storage a function reads is one region: a function's entry
+installs all of its literals and globals at one point, and a callee whose
+storage the caller's memory lacks materializes it at one point before the
+effect (`initialize_callee_globals`); storage already present adds no point.
+A call's mutex protocol steps, a
 helper's exchange and each typed use's forgetting, are steps of the call
 (`mutexes::ProtocolSite::InCall`): they read at the call's entry, where the
 callee's effects leave the protected footprint as it was, and stage their
