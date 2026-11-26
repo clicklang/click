@@ -20,6 +20,7 @@ use crate::kernel::{
     PureFunctionArgument, SharedIntegerTerm, SharedMemory, Sort, Term,
 };
 use crate::kernel::{MachineCastSpelling, cast_term};
+use crate::kernel::{OffsetTree, OffsetView};
 use crate::kernel::{
     bits32_constant, constant_i64, constant_u32, constant_u64, int64_constant, native_constant,
     uint64_constant,
@@ -633,27 +634,30 @@ fn memory_erased_address_key(pointer: &OldAddress) -> MemoryErasedAddressKey {
 }
 
 fn memory_erased_address_offset_key(offset: &OldAddressOffset) -> MemoryErasedAddressOffsetKey {
-    Canonical::new(match offset {
-        OldAddressOffset::Add(left, right) => MemoryErasedAddressOffsetNode::Add(
+    Canonical::new(match offset.view() {
+        OffsetView::Add(left, right) => MemoryErasedAddressOffsetNode::Add(
             memory_erased_address_offset_key(left),
             memory_erased_address_offset_key(right),
         ),
-        OldAddressOffset::Int32Scaled { value, byte_width } => {
-            MemoryErasedAddressOffsetNode::Int32Scaled {
-                value: memory_operands::operand(value.operand_view()),
-                byte_width: *byte_width,
-            }
-        }
-        OldAddressOffset::Int64Scaled {
-            value,
+        OffsetView::Int32Scaled {
+            index: value,
+            byte_width,
+        } => MemoryErasedAddressOffsetNode::Int32Scaled {
+            value: memory_operands::operand(value.operand_view()),
+            byte_width,
+        },
+        OffsetView::Int64Scaled {
+            index: value,
             byte_width,
             unsigned,
         } => MemoryErasedAddressOffsetNode::Int64Scaled {
             value: memory_operands::operand(value.operand_view()),
-            byte_width: *byte_width,
-            unsigned: *unsigned,
+            byte_width,
+            unsigned,
         },
-        offset => MemoryErasedAddressOffsetNode::Exact(offset.clone()),
+        OffsetView::Constant(_) | OffsetView::Variable(_) => {
+            MemoryErasedAddressOffsetNode::Exact(offset.clone())
+        }
     })
 }
 
@@ -2228,43 +2232,44 @@ fn alpha_pointer_offset_key_with_bindings<const ALLOW_LOADS: bool>(
     next_binder: &mut usize,
 ) -> Option<AlphaAddressOffsetKey> {
     alpha_work_checkpoint(bindings, 1)?;
-    Some(Canonical::new(match offset {
-        OldAddressOffset::Constant(value) => AlphaPointerOffsetNode::Constant(*value),
-        OldAddressOffset::Variable(variable)
+    Some(Canonical::new(match offset.view() {
+        OffsetView::Constant(value) => AlphaPointerOffsetNode::Constant(value),
+        OffsetView::Variable(variable)
             if bindings.state_aware
-                && crate::kernel::is_load_variable(variable)
-                && !bindings.bitvector.contains_key(variable) =>
+                && crate::kernel::is_load_variable(&variable)
+                && !bindings.bitvector.contains_key(&variable) =>
         {
             let load_id = alpha_registered_load_pointer_with_bindings::<ALLOW_LOADS>(
-                *variable,
+                variable,
                 bindings,
                 next_binder,
             )?;
             AlphaPointerOffsetNode::RegisteredLoad(load_id)
         }
-        OldAddressOffset::Variable(variable) => {
+        OffsetView::Variable(variable) => {
             AlphaPointerOffsetNode::Variable(alpha_variable_key_with_bindings::<ALLOW_LOADS>(
-                *variable,
+                variable,
                 bindings,
                 &bindings.bitvector,
             )?)
         }
-        OldAddressOffset::Add(left, right) => AlphaPointerOffsetNode::Add(
+        OffsetView::Add(left, right) => AlphaPointerOffsetNode::Add(
             alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(left, bindings, next_binder)?,
             alpha_pointer_offset_key_with_bindings::<ALLOW_LOADS>(right, bindings, next_binder)?,
         ),
-        OldAddressOffset::Int32Scaled { value, byte_width } => {
-            AlphaPointerOffsetNode::Int32Scaled {
-                value: Canonical::new(alpha_machine_key::<ALLOW_LOADS>(
-                    value.operand_view(),
-                    bindings,
-                    next_binder,
-                )?),
-                byte_width: *byte_width,
-            }
-        }
-        OldAddressOffset::Int64Scaled {
-            value,
+        OffsetView::Int32Scaled {
+            index: value,
+            byte_width,
+        } => AlphaPointerOffsetNode::Int32Scaled {
+            value: Canonical::new(alpha_machine_key::<ALLOW_LOADS>(
+                value.operand_view(),
+                bindings,
+                next_binder,
+            )?),
+            byte_width,
+        },
+        OffsetView::Int64Scaled {
+            index: value,
             byte_width,
             unsigned,
         } => AlphaPointerOffsetNode::Int64Scaled {
@@ -2273,8 +2278,8 @@ fn alpha_pointer_offset_key_with_bindings<const ALLOW_LOADS: bool>(
                 bindings,
                 next_binder,
             )?),
-            byte_width: *byte_width,
-            unsigned: *unsigned,
+            byte_width,
+            unsigned,
         },
     }))
 }

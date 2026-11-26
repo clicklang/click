@@ -921,10 +921,12 @@ fn checks_population_member_exchange(
                 }
             });
     if !imported_member_exchange
-        && (anchor.offset != crate::kernel::OldAddressOffset::Constant(0)
-            || !(matches!(&anchor.base, crate::kernel::AddressBase::Heap(_))
-                && before.memory.live_heap_block_size(anchor).is_some()
-                || anchor.base.is_local_block() && before.memory.has_block(&anchor.base)))
+        && (!matches!(
+            crate::kernel::OffsetTree::view(&anchor.offset),
+            crate::kernel::OffsetView::Constant(0)
+        ) || !(matches!(&anchor.base, crate::kernel::AddressBase::Heap(_))
+            && before.memory.live_heap_block_size(anchor).is_some()
+            || anchor.base.is_local_block() && before.memory.has_block(&anchor.base)))
     {
         return Err("population member rewrite requires live base storage".into());
     }

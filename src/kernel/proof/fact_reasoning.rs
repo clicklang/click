@@ -662,33 +662,33 @@ fn offsets_equal_by_cited_index_sum(
         let mut pending = vec![offset];
         while let Some(offset) = pending.pop() {
             crate::instrumentation::record_deterministic_work(1);
-            match offset {
-                OldAddressOffset::Add(left, right) => {
+            match offset.view() {
+                OffsetView::Add(left, right) => {
                     pending.push(right);
                     pending.push(left);
                 }
-                other => out.push(other),
+                _ => out.push(offset),
             }
         }
     }
     // An index and its observation: the offset is `index * width` exactly.
     fn scaled(offset: &OldAddressOffset) -> Option<(IntegerTerm, i64)> {
-        let (ty, value, width) = match offset {
-            OldAddressOffset::Int32Scaled { value, byte_width } => {
-                (MachineIntegerType::Int32, value, *byte_width)
+        let (ty, value, width) = match offset.view() {
+            OffsetView::Int32Scaled { index, byte_width } => {
+                (MachineIntegerType::Int32, index, byte_width)
             }
-            OldAddressOffset::Int64Scaled {
-                value,
+            OffsetView::Int64Scaled {
+                index,
                 byte_width,
                 unsigned,
             } => (
-                if *unsigned {
+                if unsigned {
                     MachineIntegerType::UInt64
                 } else {
                     MachineIntegerType::Int64
                 },
-                value,
-                *byte_width,
+                index,
+                byte_width,
             ),
             _ => return None,
         };
@@ -730,11 +730,11 @@ fn offsets_equal_by_cited_index_sum(
     };
     // A constant addend of the pair is a whole number of elements at the
     // indices' width, `(p + i) + 3` for three bytes: its exact index.
-    let index = |offset: &OldAddressOffset| match offset {
-        OldAddressOffset::Constant(bytes) if *bytes >= 0 && bytes % width == 0 => {
+    let index = |offset: &OldAddressOffset| match offset.view() {
+        OffsetView::Constant(bytes) if bytes >= 0 && bytes % width == 0 => {
             Some((IntegerTerm::constant((bytes / width).into()), width))
         }
-        offset => scaled(offset),
+        _ => scaled(offset),
     };
     let (Some((first, first_width)), Some((second, second_width))) =
         (index(pair[0]), index(pair[1]))
@@ -1318,10 +1318,13 @@ fn expand_load_variables_shallow(bits: &OldMachineTerm) -> OldMachineTerm {
 }
 
 fn expand_offset_load_variables_shallow(value: &OldAddressOffset) -> OldAddressOffset {
-    match value {
-        OldAddressOffset::Int32Scaled { value, byte_width } => {
+    match value.view() {
+        OffsetView::Int32Scaled {
+            index: value,
+            byte_width,
+        } => {
             let next = crate::kernel::memory_history::map_shared_pointer_index_with_descent(
-                value,
+                &value,
                 |leaf| Some(expand_load_variables_shallow(leaf)),
                 crate::kernel::proof::equality_rewrite::rebuild_transported_machine_node,
                 |node| {
@@ -1338,14 +1341,11 @@ fn expand_offset_load_variables_shallow(value: &OldAddressOffset) -> OldAddressO
                 },
             )
             .unwrap_or_else(|| value.clone());
-            OldAddressOffset::Int32Scaled {
-                value: next,
-                byte_width: *byte_width,
-            }
+            OldAddressOffset::int32_scaled(next, byte_width)
         }
-        OldAddressOffset::Add(left, right) => OldAddressOffset::Add(
-            Box::new(expand_offset_load_variables_shallow(left)),
-            Box::new(expand_offset_load_variables_shallow(right)),
+        OffsetView::Add(left, right) => OldAddressOffset::raw_add(
+            expand_offset_load_variables_shallow(left),
+            expand_offset_load_variables_shallow(right),
         ),
         _ => value.clone(),
     }
@@ -3142,7 +3142,7 @@ trait ScalarReadBridgeSide: Clone + PartialEq + Sized {
 
 impl ScalarReadBridgeSide for OldAddressOffset {
     fn scalar_read(&self) -> Option<OldMachineTerm> {
-        let OldAddressOffset::Int32Scaled { value, .. } = self else {
+        let OffsetView::Int32Scaled { index: value, .. } = self.view() else {
             return None;
         };
         value.operand_view().read_source()?.scalar_read()
@@ -3571,11 +3571,11 @@ fn separations_equal_modulo_proven_states(
                 && assumptions.conditions_equal_modulo_proven_states(
                     &OldConditionTerm::AddressOffsetEqual(
                         Box::new(expand_offset_load_variables_shallow(&left.base().offset)),
-                        Box::new(OldAddressOffset::Constant(0)),
+                        Box::new(OldAddressOffset::constant(0)),
                     ),
                     &OldConditionTerm::AddressOffsetEqual(
                         Box::new(expand_offset_load_variables_shallow(&right.base().offset)),
-                        Box::new(OldAddressOffset::Constant(0)),
+                        Box::new(OldAddressOffset::constant(0)),
                     ),
                 )
                 && assumptions.conditions_equal_modulo_proven_states(

@@ -170,12 +170,17 @@ pub(crate) trait OffsetTree: Sized {
     /// A constant byte displacement. It equals only a constant node of the
     /// same value, never a sum or scaled index that folds to that value.
     fn constant(value: i64) -> Self;
+    /// A symbolic offset variable.
+    fn variable(variable: Variable) -> Self;
     /// The sum node of two offsets. Unlike the folding `add`, it keeps zero
     /// and constant addends as written.
     fn raw_add(left: Self, right: Self) -> Self;
     /// A signed 32-bit index scaled by `byte_width`. A constant index stays
     /// an index; it is not folded into a constant offset.
     fn int32_scaled(index: SharedMachineIntegerTerm, byte_width: i64) -> Self;
+    /// A 64-bit index scaled by `byte_width`, read as unsigned when
+    /// `unsigned` holds. Like [`OffsetTree::int32_scaled`], it never folds.
+    fn int64_scaled(index: SharedMachineIntegerTerm, byte_width: i64, unsigned: bool) -> Self;
 }
 
 impl OffsetTree for OldAddressOffset {
@@ -204,6 +209,10 @@ impl OffsetTree for OldAddressOffset {
         Self::Constant(value)
     }
 
+    fn variable(variable: Variable) -> Self {
+        Self::Variable(variable)
+    }
+
     fn raw_add(left: Self, right: Self) -> Self {
         Self::Add(Box::new(left), Box::new(right))
     }
@@ -212,6 +221,14 @@ impl OffsetTree for OldAddressOffset {
         Self::Int32Scaled {
             value: index,
             byte_width,
+        }
+    }
+
+    fn int64_scaled(index: SharedMachineIntegerTerm, byte_width: i64, unsigned: bool) -> Self {
+        Self::Int64Scaled {
+            value: index,
+            byte_width,
+            unsigned,
         }
     }
 }
@@ -245,6 +262,12 @@ impl OffsetTree for SharedAddressOffset {
         KernelAddressOffset::Constant(value).into_shared().unwrap()
     }
 
+    fn variable(variable: Variable) -> Self {
+        KernelAddressOffset::Variable(variable)
+            .into_shared()
+            .unwrap()
+    }
+
     fn raw_add(left: Self, right: Self) -> Self {
         KernelAddressOffset::Add([left, right])
             .into_shared()
@@ -255,6 +278,16 @@ impl OffsetTree for SharedAddressOffset {
         KernelAddressOffset::Int32Scaled {
             value: KernelTerm::retain_address_index(&index),
             byte_width,
+        }
+        .into_shared()
+        .expect("native offset types")
+    }
+
+    fn int64_scaled(index: SharedMachineIntegerTerm, byte_width: i64, unsigned: bool) -> Self {
+        KernelAddressOffset::Int64Scaled {
+            value: KernelTerm::retain_address_index(&index),
+            byte_width,
+            unsigned,
         }
         .into_shared()
         .expect("native offset types")
@@ -718,12 +751,38 @@ mod tests {
             assert_eq!(import(&old), SharedAddressOffset::constant(value));
             values.push(old);
         }
-        values.push(OldAddressOffset::Variable(Variable(994203)));
+        for id in [994203, 994205] {
+            let old = OldAddressOffset::variable(Variable(id));
+            assert_eq!(import(&old), SharedAddressOffset::variable(Variable(id)));
+            values.push(old);
+        }
         values.push(OldAddressOffset::scaled_int64_node(
             OldMachineTerm::Variable(Variable(994204)),
             8,
             true,
         ));
+        let wide_indices = [
+            index(MachineIntegerType::UInt64, 994206),
+            SharedMachineIntegerTerm::intern(
+                MachineIntegerType::UInt64,
+                OldMachineTerm::Constant {
+                    format: MachineIntegerType::UInt64,
+                    bits: u64::MAX as u128,
+                },
+            ),
+        ];
+        for index in &wide_indices {
+            for width in [1, -8] {
+                for unsigned in [false, true] {
+                    let old = OldAddressOffset::int64_scaled(index.clone(), width, unsigned);
+                    assert_eq!(
+                        import(&old),
+                        SharedAddressOffset::int64_scaled(index.clone(), width, unsigned)
+                    );
+                    values.push(old);
+                }
+            }
+        }
         for index in &indices {
             for width in [0, 1, 4, -8] {
                 let old = OldAddressOffset::int32_scaled(index.clone(), width);

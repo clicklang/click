@@ -56,6 +56,7 @@ use crate::kernel::OldMachineTerm;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::*;
+use crate::kernel::{OffsetTree, OffsetView};
 use crate::kernel::{bits32_constant, constant_u32, int64_constant, uint64_constant};
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -937,7 +938,7 @@ fn pointer_congruence_rewrite(
     right: &OldAddress,
 ) -> Option<Proposition> {
     let mut rewrite = if let AddressBase::Symbolic(variable) = left.base
-        && left.offset == OldAddressOffset::Constant(0)
+        && matches!(left.offset.view(), OffsetView::Constant(0))
     {
         crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_address_variable(
             variable, right,
@@ -1042,28 +1043,29 @@ fn rewrite_term(
         from: &OldMachineTerm,
         to: &OldMachineTerm,
     ) -> OldAddressOffset {
-        match offset {
-            OldAddressOffset::Add(left, right) => OldAddressOffset::add(
+        match offset.view() {
+            OffsetView::Add(left, right) => OldAddressOffset::add(
                 rewrite_offset(left, from, to),
                 rewrite_offset(right, from, to),
             ),
-            OldAddressOffset::Int32Scaled { value, byte_width } => {
-                crate::kernel::memory_history::rebuild_scaled_pointer_index(
-                    rewrite_pointer_index(value, from, to),
-                    *byte_width,
-                    None,
-                )
-            }
-            OldAddressOffset::Int64Scaled {
-                value,
+            OffsetView::Int32Scaled {
+                index: value,
+                byte_width,
+            } => crate::kernel::memory_history::rebuild_scaled_pointer_index(
+                rewrite_pointer_index(&value, from, to),
+                byte_width,
+                None,
+            ),
+            OffsetView::Int64Scaled {
+                index: value,
                 byte_width,
                 unsigned,
             } => crate::kernel::memory_history::rebuild_scaled_pointer_index(
-                rewrite_pointer_index(value, from, to),
-                *byte_width,
-                Some(*unsigned),
+                rewrite_pointer_index(&value, from, to),
+                byte_width,
+                Some(unsigned),
             ),
-            OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => offset.clone(),
+            OffsetView::Constant(_) | OffsetView::Variable(_) => offset.clone(),
         }
     }
     if term == from
@@ -1638,8 +1640,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
             {
                 return right.clone();
             }
-            match offset {
-                OldAddressOffset::Add(first, second) => OldAddressOffset::add(
+            match offset.view() {
+                OffsetView::Add(first, second) => OldAddressOffset::add(
                     rewrite_offset(first, left, right),
                     rewrite_offset(second, left, right),
                 ),
@@ -1647,47 +1649,48 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 // names the rewritten offset (`p->q->cells[i]` under
                 // `p->q == r`): rewrite through it, as through the outer
                 // load. Each level is the registered address of one load.
-                OldAddressOffset::Int32Scaled { value, byte_width } => {
+                OffsetView::Int32Scaled {
+                    index: value,
+                    byte_width,
+                } => {
                     let rewritten = crate::kernel::memory_history::map_shared_pointer_index(
-                        value,
+                        &value,
                         |leaf| Some(rewrite_term_offset(leaf, left, right)),
                         rebuild_transported_machine_node,
                     )
                     .unwrap_or_else(|| value.clone());
-                    if crate::kernel::memory_history::pointer_index_syntax_equal(value, &rewritten)
+                    if crate::kernel::memory_history::pointer_index_syntax_equal(&value, &rewritten)
                     {
                         offset.clone()
                     } else {
                         crate::kernel::memory_history::rebuild_scaled_pointer_index(
-                            rewritten,
-                            *byte_width,
-                            None,
+                            rewritten, byte_width, None,
                         )
                     }
                 }
-                OldAddressOffset::Int64Scaled {
-                    value,
+                OffsetView::Int64Scaled {
+                    index: value,
                     byte_width,
                     unsigned,
                 } => {
                     let rewritten = crate::kernel::memory_history::map_shared_pointer_index(
-                        value,
+                        &value,
                         |leaf| Some(rewrite_term_offset(leaf, left, right)),
                         rebuild_transported_machine_node,
                     )
                     .unwrap_or_else(|| value.clone());
-                    if crate::kernel::memory_history::pointer_index_syntax_equal(value, &rewritten)
+                    if crate::kernel::memory_history::pointer_index_syntax_equal(&value, &rewritten)
                     {
                         offset.clone()
                     } else {
                         crate::kernel::memory_history::rebuild_scaled_pointer_index(
                             rewritten,
-                            *byte_width,
-                            Some(*unsigned),
+                            byte_width,
+                            Some(unsigned),
                         )
                     }
                 }
-                OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => offset.clone(),
+                OffsetView::Constant(_) | OffsetView::Variable(_) => offset.clone(),
             }
         }
         fn rewrite_term_offset(
@@ -1982,7 +1985,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
             address: &OldAddressOffset,
             base: &OldAddressOffset,
         ) -> Option<OldAddressOffset> {
-            if base == &OldAddressOffset::Constant(0) {
+            if matches!(base.view(), OffsetView::Constant(0)) {
                 return Some(address.clone());
             }
             // Keep parent links rather than cloning a growing suffix at each
@@ -2002,13 +2005,11 @@ fn rewrite_atomic_proposition_by_exact_equality(
             while let Some(index) = pending.pop() {
                 let offset = nodes[index].offset;
                 let difference = if offset == base {
-                    Some(OldAddressOffset::Constant(0))
-                } else if let (
-                    OldAddressOffset::Constant(address),
-                    OldAddressOffset::Constant(base),
-                ) = (offset, base)
+                    Some(OldAddressOffset::constant(0))
+                } else if let (OffsetView::Constant(address), OffsetView::Constant(base)) =
+                    (offset.view(), base.view())
                 {
-                    address.checked_sub(*base).map(OldAddressOffset::Constant)
+                    address.checked_sub(base).map(OldAddressOffset::constant)
                 } else {
                     None
                 };
@@ -2021,7 +2022,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     }
                     return Some(difference);
                 }
-                if let OldAddressOffset::Add(left, right) = offset {
+                if let OffsetView::Add(left, right) = offset.view() {
                     let left_index = nodes.len();
                     nodes.push(OffsetNode {
                         offset: left,
@@ -2330,28 +2331,29 @@ fn rewrite_atomic_proposition_by_exact_equality(
         from: &OldMachineTerm,
         to: &OldMachineTerm,
     ) -> OldAddressOffset {
-        match offset {
-            OldAddressOffset::Add(left, right) => OldAddressOffset::add(
+        match offset.view() {
+            OffsetView::Add(left, right) => OldAddressOffset::add(
                 rewrite_offset_term(left, from, to),
                 rewrite_offset_term(right, from, to),
             ),
-            OldAddressOffset::Int32Scaled { value, byte_width } => {
-                crate::kernel::memory_history::rebuild_scaled_pointer_index(
-                    rewrite_pointer_index(value, from, to),
-                    *byte_width,
-                    None,
-                )
-            }
-            OldAddressOffset::Int64Scaled {
-                value,
+            OffsetView::Int32Scaled {
+                index: value,
+                byte_width,
+            } => crate::kernel::memory_history::rebuild_scaled_pointer_index(
+                rewrite_pointer_index(&value, from, to),
+                byte_width,
+                None,
+            ),
+            OffsetView::Int64Scaled {
+                index: value,
                 byte_width,
                 unsigned,
             } => crate::kernel::memory_history::rebuild_scaled_pointer_index(
-                rewrite_pointer_index(value, from, to),
-                *byte_width,
-                Some(*unsigned),
+                rewrite_pointer_index(&value, from, to),
+                byte_width,
+                Some(unsigned),
             ),
-            OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => offset.clone(),
+            OffsetView::Constant(_) | OffsetView::Variable(_) => offset.clone(),
         }
     }
 
