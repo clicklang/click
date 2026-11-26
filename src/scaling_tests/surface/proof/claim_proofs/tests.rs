@@ -135,8 +135,20 @@ fn exact_return_closers_share_preparation_beside_unrelated_resources() {
 #[ignore = "nightly: 2.9s in the parallel gate"]
 fn post_execution_haves_before_a_fold_cost_the_same_at_every_position() {
     use crate::instrumentation::collect_tactic_work;
-    crate::surface::verify_c_sources("theorem warm() { ensures true by normalize(); }", &[])
-        .unwrap();
+    crate::surface::verify_c_sources("theorem warm() { ensures true by close(); }", &[]).unwrap();
+    let helper = r#"import click::integer;
+
+theorem equal_from_native_bounds(value: int32, bound: int32) {
+    requires value >= bound;
+    requires value <= bound;
+    ensures value == bound by {
+        apply(integer::int32_less_equal_to_integer(bound, value));
+        apply(integer::int32_less_equal_to_integer(value, bound));
+        apply(integer::le_antisymmetric(to_integer(value), to_integer(bound)));
+        close();
+    }
+}
+"#;
     let mut last_works = Vec::new();
     for size in [4, 8, 12, 16] {
         let parameters = (1..=size)
@@ -150,7 +162,7 @@ fn post_execution_haves_before_a_fold_cost_the_same_at_every_position() {
             .collect::<String>();
         let haves = (1..=size)
             .map(|i| {
-                format!("have x{i} == {i} by normalize() using {{ x{i} >= {i}; x{i} <= {i}; }};\n")
+                format!("have x{i} == {i} by {{ apply(equal_from_native_bounds(x{i}, {i})); }};\n")
             })
             .collect::<String>();
         let c = format!(
@@ -172,6 +184,7 @@ void write(struct holder* h, int32 x{click_parameters}) {{
     let after = fold(cell_at(h->first), {{ value: x }});
 }}"
         );
+        let source = format!("{helper}\n{source}");
         let (verified, samples) = collect_tactic_work(|| {
             crate::surface::verify_c_sources(&source, &[("cell.c", c.as_str())])
         });
