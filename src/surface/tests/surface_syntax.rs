@@ -2470,7 +2470,7 @@ theorem false_guard(x: int32) {
             .expect("expected false-guard certificate")
             .as_slice(),
         [ProofTactic::IntroBlock { binder: None, body }]
-            if matches!(body.as_slice(), [ProofTactic::Contradiction(_)])
+            if matches!(body.as_slice(), [ProofTactic::Known])
     ));
     verify_click_theorems(
         r#"
