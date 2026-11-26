@@ -242,12 +242,12 @@ theorem first_null() {
     ensures first(Nodes::Link(0, Nodes::Empty))
         == List<struct node*>::Cons(0, List<struct node*>::Nil) by {
             unfold(first(Nodes::Link(0, Nodes::Empty)));
-            normalize();
+            close();
         }
 }
 theorem singleton_null() {
     ensures singleton(0) == List<struct node*>::Cons(0, List<struct node*>::Nil)
-        by { unfold(singleton(0)); normalize(); }
+        by { unfold(singleton(0)); close(); }
 }
 theorem singleton_return_null() {
     ensures singleton_return(0) == List<struct node*>::Cons(0, List<struct node*>::Nil)
@@ -255,7 +255,7 @@ theorem singleton_return_null() {
 }
 theorem typed_membership(xs: List<struct node*>, target: struct node*) {
     ensures list::contains(xs, target) == list::contains(xs, target)
-        by { normalize(); }
+        by { close(); }
 }
 "#;
     verify_c_sources(source, &[("node.c", c)])
@@ -293,19 +293,19 @@ verifying "node.c";
 function retain<T>(value: T) -> T { value }
 theorem null_has_nominal_list_type() {
     ensures List<struct node*>::Cons(0, List<struct node*>::Nil)
-        == List<struct node*>::Cons(0, List<struct node*>::Nil) by { normalize(); }
+        == List<struct node*>::Cons(0, List<struct node*>::Nil) by { close(); }
 }
 theorem typed_head(head: struct node*) {
-    ensures head == head by { normalize(); }
+    ensures head == head by { close(); }
 }
 theorem typed_tail(items: List<struct node*>) {
-    ensures 0 == 0 by { normalize(); }
+    ensures 0 == 0 by { close(); }
 }
 theorem list_has_typed_heads(xs: List<struct node*>) {
     ensures 0 == 0 by {
         let ih = induct(xs);
         match xs {
-            List::Nil => { normalize(); }
+            List::Nil => { close(); }
             List::Cons(head, tail) => {
                 apply(typed_head(head));
                 apply(typed_head(retain(head)));
@@ -315,7 +315,7 @@ theorem list_has_typed_heads(xs: List<struct node*>) {
                 apply(list::append_cons(head as (int32 *), List<int32*>::Nil, List<int32*>::Nil));
                 apply(list::append_cons(retain(head as (void *)), List<void*>::Nil, List<void*>::Nil));
                 apply(list::append_cons(retain(head as (int32 *)), List<int32*>::Nil, List<int32*>::Nil));
-                normalize();
+                close();
             }
         }
     }
@@ -631,7 +631,7 @@ resource callbacks_at(augment: const struct callbacks*) {
 
 void dummy_rotate(struct root* root) {
     ensures 1 == 1;
-} by { step_until(function.exit); normalize(); }
+} by { step_until(function.exit); close(); }
 
 theorem dummy_rotate_contract() {
     ensures Rotate(&dummy_rotate) by { unfold(Rotate(&dummy_rotate)); close(); }
@@ -904,23 +904,23 @@ theorem nat_integer_client(n: Nat) {
 fn builtin_nat_integer_dispatch_and_checked_to_nat() {
     let source = r#"
 theorem nat_dispatch(n: Nat) {
-    ensures to_integer(n) == to_integer(n) by { normalize(); }
+    ensures to_integer(n) == to_integer(n) by { close(); }
 }
 theorem checked_to_nat(z: Integer) {
     requires z >= 0;
-    ensures to_nat(z) == to_nat(z) by { normalize(); }
+    ensures to_nat(z) == to_nat(z) by { close(); }
 }
 "#;
     verify_c_sources(source, &[]).expect("Nat/Integer conversion dispatch verifies");
     let missing_bound = r#"
 theorem missing_to_nat_bound(z: Integer) {
-    ensures to_nat(z) == to_nat(z) by { normalize(); }
+    ensures to_nat(z) == to_nat(z) by { close(); }
 }
 "#;
     assert!(verify_c_sources(missing_bound, &[]).is_err());
     let nested_missing_bound = r#"
 theorem nested_missing_to_nat_bound(z: Integer) {
-    ensures Nat::Succ(to_nat(z)) == Nat::Succ(to_nat(z)) by { normalize(); }
+    ensures Nat::Succ(to_nat(z)) == Nat::Succ(to_nat(z)) by { close(); }
 }
 "#;
     assert!(verify_c_sources(nested_missing_bound, &[]).is_err());
@@ -940,24 +940,22 @@ theorem add_two(n: Nat) {
         unfold(nat::add(Nat::Succ(Nat::Succ(Nat::Zero)), n));
         unfold(nat::add(Nat::Succ(Nat::Zero), n));
         unfold(nat::add(Nat::Zero, n));
-        normalize();
+        close();
     }
 }
 theorem singleton<T>(x: T) {
     ensures list::length(List<T>::Cons(x, List<T>::Nil)) == Nat::Succ(Nat::Zero) by {
         unfold(list::length(List<T>::Cons(x, List<T>::Nil)));
         unfold(list::length(List<T>::Nil));
-        normalize();
+        close();
     }
 }
 "#;
     verify_c_sources(source, &[]).expect("successive explicit unfolds verify");
-    let smart_source = source.replace("normalize();", "close();");
-    verify_c_sources(&smart_source, &[]).expect("smart closers have checked certificates");
     for (claim, index) in [("add_two.ensures_0", 3), ("singleton.ensures_0", 2)] {
-        let position = c_tactic_source_position(&smart_source, &[], claim, index).unwrap();
+        let position = c_tactic_source_position(source, &[], claim, index).unwrap();
         let expanded =
-            expand_c_tactic_source_at(&smart_source, &[], position.line, position.column).unwrap();
+            expand_c_tactic_source_at(source, &[], position.line, position.column).unwrap();
         verify_c_sources(&expanded, &[]).expect("successive unfolds expand and recheck");
     }
     let tampered = source.replace("== Nat::Succ(Nat::Succ(n))", "== Nat::Succ(n)");
@@ -4532,7 +4530,7 @@ theorem append_tally(lo: int32, hi: int32) {
     requires lo < hi;
     ensures tally(lo, hi) == tally(lo, hi - 1) + 1 by {
         unfold(tally(lo, hi));
-        normalize();
+        close();
     }
 }
 "#;
@@ -4561,7 +4559,7 @@ theorem fold_case(end: int32) {
     requires end <= 0;
     ensures tally(end) == 0 by {
         unfold(tally(end));
-        normalize();
+        close();
     }
 }
 "#,
@@ -4628,7 +4626,7 @@ theorem fold_case(end: int32) {
     requires end <= 0;
     ensures tally(end) == 0 by {
         unfold(tally(end));
-        normalize();
+        close();
     }
 }
 "#;
@@ -4638,7 +4636,7 @@ theorem fold_case(end: int32) {
     crate::surface::proof::without_implicit_solve(|| verify_c_sources(&invalid, &[]))
         .expect_err("unfold cannot retain the empty law without its range guard");
     let nested = source.replace(
-        "unfold(tally(end));\n        normalize();",
+        "unfold(tally(end));\n        close();",
         "have tally(end) == 0 by { unfold(tally(end)); close(); }\n        close();",
     );
     assert_ne!(nested, source);
@@ -4679,11 +4677,11 @@ theorem fold_case(end: int32) {
         all {
             tally(end) == 0 => {
                 unfold(tally(end));
-                normalize();
+                close();
             }
             0 <= tally(end) => {
                 unfold(tally(end));
-                normalize();
+                close();
             }
         }
     }

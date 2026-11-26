@@ -3455,11 +3455,11 @@ mod tests {
             theorem identity(x: int32) { requires x == 0; ensures x == 0 by { close(); } }
             theorem application(x: int32) {
                 requires x == 0;
-                ensures x == 0 by { apply(identity(x)); rewrite(x, 0); normalize(); }
+                ensures x == 0 by { apply(identity(x)); rewrite(x, 0); close(); }
             }
             theorem extraction(x: int32) {
                 requires x == 0 and x <= 1;
-                ensures x == 0 by { have x == 0 by close(); rewrite(x, 0); normalize(); }
+                ensures x == 0 by { have x == 0 by close(); rewrite(x, 0); close(); }
             }
         "#;
         let verified = crate::surface::verify_click_theorems(source).unwrap();
@@ -3748,8 +3748,8 @@ mod tests {
                 ensures n == n by {
                     let ih = induct(n);
                     match n {
-                        TestNat::Zero => { normalize(); }
-                        TestNat::Succ(tail) => { normalize(); }
+                        TestNat::Zero => { close(); }
+                        TestNat::Succ(tail) => { close(); }
                     }
                 }
             }
@@ -4101,7 +4101,7 @@ mod tests {
                 ensures forall (x: Integer) { x == x } by {
                     intro() {
                         instantiate(forall (k: int32) { k == k }, x);
-                        normalize();
+                        close();
                     }
                 }
             }
