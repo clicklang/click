@@ -232,9 +232,9 @@ fn both_and_proves_exact_conjuncts_and_rejects_incomplete_arms() {
         theorem pair(x: int32) {
             ensures x == x and (x <= x and x >= x) by {
                 all {
-                    x == x => { normalize(); }
+                    x == x => { close(); }
                     (x <= x and x >= x) => {
-                        all { x <= x => { normalize(); } x >= x => { normalize(); } }
+                        all { x <= x => { close(); } x >= x => { close(); } }
                     }
                 }
             }
@@ -245,13 +245,13 @@ fn both_and_proves_exact_conjuncts_and_rejects_incomplete_arms() {
     };
     verify_explicit(source).expect("nested exact conjunction proofs");
     for bad in [
-        source.replacen("x == x => { normalize(); }", "x == x => { }", 1),
+        source.replacen("x == x => { close(); }", "x == x => { }", 1),
         source.replace("x >= x", "x > x"),
-        source.replacen("x >= x => { normalize(); }", "", 1),
+        source.replacen("x >= x => { close(); }", "", 1),
         source.replacen("x == x =>", "x <= x =>", 1),
         source.replace(
-            "all { x <= x => { normalize(); } x >= x => { normalize(); } }",
-            "all { normalize(); } and { normalize(); }",
+            "all { x <= x => { close(); } x >= x => { close(); } }",
+            "all { close(); } and { close(); }",
         ),
     ] {
         assert!(verify_explicit(&bad).is_err(), "{bad}");
@@ -1458,9 +1458,9 @@ fn named_conjunct_proofs_match_labels_in_either_order() {
         theorem conjunction(x: int32) {
             ensures (x == x and x <= x) and x == x by {
                 all {
-                    x <= x => { normalize(); }
-                    x == x => { normalize(); }
-                    x == x => { normalize(); }
+                    x <= x => { close(); }
+                    x == x => { close(); }
+                    x == x => { close(); }
                 }
             }
         }
@@ -1473,9 +1473,9 @@ fn named_conjunct_proofs_match_labels_in_either_order() {
             ensures (forall (i: int32) { i == i }) and (2 == 2 and 3 == 3) by {
                 all {
                     (2 == 2 and 3 == 3) => {
-                        all { 3 == 3 => { normalize(); } 2 == 2 => { normalize(); } }
+                        all { 3 == 3 => { close(); } 2 == 2 => { close(); } }
                     }
-                    forall (j: int32) { j == j } => { intro() { normalize(); } }
+                    forall (j: int32) { j == j } => { intro() { close(); } }
                 }
             }
         }
@@ -1484,17 +1484,17 @@ fn named_conjunct_proofs_match_labels_in_either_order() {
     crate::surface::proof::without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
     for (changed, reason) in [
         (
-            source.replace("x <= x => { normalize(); }", ""),
+            source.replace("x <= x => { close(); }", ""),
             "is missing an arm for this conjunct",
         ),
         (
-            source.replace("x <= x => { normalize(); }", "x < x => { normalize(); }"),
+            source.replace("x <= x => { close(); }", "x < x => { close(); }"),
             "is missing an arm for this conjunct",
         ),
         (
             source.replace(
-                "x <= x => { normalize(); }",
-                "x <= x => { normalize(); } x <= x => { normalize(); }",
+                "x <= x => { close(); }",
+                "x <= x => { close(); } x <= x => { close(); }",
             ),
             "has no corresponding conjunct",
         ),
