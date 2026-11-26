@@ -20,7 +20,7 @@ tactic sized_walk_done_at_stop(rb: struct rb_node*, stop: struct rb_node*) {
             have sized_walk_pending(walk.model) == 0 by {
                 rewrite(walk.model, SizedWalk::Done(result_model));
                 unfold(sized_walk_pending(SizedWalk::Done(result_model)));
-                normalize();
+                close();
             }
             have address(rb) != address(stop) or sized_walk_pending(walk.model) == 0 by { close(); }
         },
@@ -61,10 +61,10 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                 SizedWalk::Done(result_model) => {
                     have sized_walk_pending(walk.model) == 0 by {
                         rewrite(walk.model, SizedWalk::Done(result_model));
-                        unfold(sized_walk_pending(SizedWalk::Done(result_model))); normalize();
+                        unfold(sized_walk_pending(SizedWalk::Done(result_model))); close();
                     }
                     have not (sized_walk_pending(walk.model) == 1) by {
-                        rewrite(sized_walk_pending(walk.model), 0); normalize();
+                        rewrite(sized_walk_pending(walk.model), 0); close();
                     }
                     have rb == stop by {
                         cases {
@@ -78,11 +78,11 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                 SizedWalk::Active(previous, sub_model, path_model) => {
                     have sized_walk_tree(walk.model) == sized_plug(sized_path_context(path_model), sub_model) by {
                         rewrite(walk.model, SizedWalk::Active(previous, sub_model, path_model));
-                        unfold(sized_walk_tree(SizedWalk::Active(previous, sub_model, path_model))); normalize();
+                        unfold(sized_walk_tree(SizedWalk::Active(previous, sub_model, path_model))); close();
                     }
                     have sized_walk_root(walk.model) == sized_path_root(path_model) by {
                         rewrite(walk.model, SizedWalk::Active(previous, sub_model, path_model));
-                        unfold(sized_walk_root(SizedWalk::Active(previous, sub_model, path_model))); normalize();
+                        unfold(sized_walk_root(SizedWalk::Active(previous, sub_model, path_model))); close();
                     }
                     apply(sized_context_depth_nonnegative(sized_path_context(path_model)));
                     apply(sized_plug_contains_focus(sized_path_context(path_model), sub_model));
@@ -159,7 +159,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                                 have sized_walk_rank(walk.model) < sized_context_depth(sized_path_context(path_model)) + 1 by { close(); }
                                 have sized_walk_rank(at(iteration, walk.model)) == sized_context_depth(sized_path_context(path_model)) + 1 by {
                                     rewrite(at(iteration, walk.model), SizedWalk::Active(previous, sub_model, path_model));
-                                    unfold(sized_walk_rank(SizedWalk::Active(previous, sub_model, path_model))); normalize();
+                                    unfold(sized_walk_rank(SizedWalk::Active(previous, sub_model, path_model))); close();
                                 }
                                 have sized_walk_rank(walk.model) < sized_walk_rank(at(iteration, walk.model)) by {
                                     rewrite(sized_walk_rank(at(iteration, walk.model)), sized_context_depth(sized_path_context(path_model)) + 1); close();
