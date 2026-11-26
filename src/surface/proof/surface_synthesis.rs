@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::MachineBinaryOp;
+use crate::kernel::OffsetTree as _;
 use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use crate::kernel::{MachineCastSpelling, cast_term};

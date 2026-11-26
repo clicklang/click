@@ -159,9 +159,23 @@ pub(crate) enum OffsetView<'a, T> {
     },
 }
 
-/// An offset tree that can be read node by node through [`OffsetView`].
+/// An offset tree that can be read node by node through [`OffsetView`] and
+/// built node by node. Each constructor builds exactly the node it names, as
+/// written: none folds constants or consults facts, so a tree built through
+/// these constructors from old offsets imports to the handle built through
+/// them from shared ones. The folding sum is each representation's own
+/// `add`, which fold alike.
 pub(crate) trait OffsetTree: Sized {
     fn view(&self) -> OffsetView<'_, Self>;
+    /// A constant byte displacement. It equals only a constant node of the
+    /// same value, never a sum or scaled index that folds to that value.
+    fn constant(value: i64) -> Self;
+    /// The sum node of two offsets. Unlike the folding `add`, it keeps zero
+    /// and constant addends as written.
+    fn raw_add(left: Self, right: Self) -> Self;
+    /// A signed 32-bit index scaled by `byte_width`. A constant index stays
+    /// an index; it is not folded into a constant offset.
+    fn int32_scaled(index: SharedMachineIntegerTerm, byte_width: i64) -> Self;
 }
 
 impl OffsetTree for OldAddressOffset {
@@ -185,8 +199,26 @@ impl OffsetTree for OldAddressOffset {
             },
         }
     }
+
+    fn constant(value: i64) -> Self {
+        Self::Constant(value)
+    }
+
+    fn raw_add(left: Self, right: Self) -> Self {
+        Self::Add(Box::new(left), Box::new(right))
+    }
+
+    fn int32_scaled(index: SharedMachineIntegerTerm, byte_width: i64) -> Self {
+        Self::Int32Scaled {
+            value: index,
+            byte_width,
+        }
+    }
 }
 
+/// Each constructor builds the node [`KernelAddressOffset::try_import`] builds
+/// from the same old node, so a constructed handle is the imported one, and an
+/// index of the wrong machine type is refused here as import refuses it.
 impl OffsetTree for SharedAddressOffset {
     fn view(&self) -> OffsetView<'_, Self> {
         match self.node() {
@@ -207,6 +239,25 @@ impl OffsetTree for SharedAddressOffset {
                 unsigned: *unsigned,
             },
         }
+    }
+
+    fn constant(value: i64) -> Self {
+        KernelAddressOffset::Constant(value).into_shared().unwrap()
+    }
+
+    fn raw_add(left: Self, right: Self) -> Self {
+        KernelAddressOffset::Add([left, right])
+            .into_shared()
+            .unwrap()
+    }
+
+    fn int32_scaled(index: SharedMachineIntegerTerm, byte_width: i64) -> Self {
+        KernelAddressOffset::Int32Scaled {
+            value: KernelTerm::retain_address_index(&index),
+            byte_width,
+        }
+        .into_shared()
+        .expect("native offset types")
     }
 }
 
@@ -636,6 +687,87 @@ mod tests {
         }
         assert_eq!(natives[0], natives[1]);
         assert_ne!(roots[0], roots[1]);
+    }
+
+    /// Each [`OffsetTree`] constructor, and each representation's folding
+    /// `add`, builds on the old side exactly the value whose import the same
+    /// call builds on the shared side, so a caller written against the trait
+    /// builds the same offset whichever representation it holds.
+    #[test]
+    fn offset_constructors_build_the_imported_handle() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let import = KernelAddressOffset::import;
+        let index = |format, id| {
+            SharedMachineIntegerTerm::index(format, OldMachineTerm::Variable(Variable(id)))
+        };
+        let indices = [
+            index(MachineIntegerType::Int32, 994201),
+            index(MachineIntegerType::UInt32, 994202),
+            SharedMachineIntegerTerm::intern(
+                MachineIntegerType::Int32,
+                OldMachineTerm::constant(3),
+            ),
+            SharedMachineIntegerTerm::intern(
+                MachineIntegerType::Int32,
+                OldMachineTerm::constant(u32::MAX),
+            ),
+        ];
+        let mut values = Vec::new();
+        for value in [i64::MIN, -4, 0, 4, i64::MAX] {
+            let old = OldAddressOffset::constant(value);
+            assert_eq!(import(&old), SharedAddressOffset::constant(value));
+            values.push(old);
+        }
+        values.push(OldAddressOffset::Variable(Variable(994203)));
+        values.push(OldAddressOffset::scaled_int64_node(
+            OldMachineTerm::Variable(Variable(994204)),
+            8,
+            true,
+        ));
+        for index in &indices {
+            for width in [0, 1, 4, -8] {
+                let old = OldAddressOffset::int32_scaled(index.clone(), width);
+                assert_eq!(
+                    import(&old),
+                    SharedAddressOffset::int32_scaled(index.clone(), width)
+                );
+                values.push(old);
+            }
+        }
+        fn extreme(offset: &OldAddressOffset) -> bool {
+            match offset.view() {
+                OffsetView::Constant(value) => value.unsigned_abs() > 1 << 40,
+                OffsetView::Add(left, right) => extreme(left) || extreme(right),
+                _ => false,
+            }
+        }
+        let leaves = values.len();
+        for left in 0..leaves {
+            values.push(OldAddressOffset::raw_add(
+                values[left].clone(),
+                OldAddressOffset::constant(4),
+            ));
+        }
+        for left in &values {
+            for right in &values {
+                let (shared_left, shared_right) = (import(left), import(right));
+                assert_eq!(
+                    import(&OldAddressOffset::raw_add(left.clone(), right.clone())),
+                    SharedAddressOffset::raw_add(shared_left.clone(), shared_right.clone()),
+                    "{left:?} + {right:?}"
+                );
+                // Both folds add constants unchecked, so extreme constants
+                // stay out of the folding sum.
+                if extreme(left) || extreme(right) {
+                    continue;
+                }
+                assert_eq!(
+                    import(&OldAddressOffset::add(left.clone(), right.clone())),
+                    SharedAddressOffset::add(shared_left, shared_right),
+                    "{left:?} + {right:?}"
+                );
+            }
+        }
     }
 
     #[test]

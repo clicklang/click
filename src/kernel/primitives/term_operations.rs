@@ -2484,10 +2484,6 @@ impl OldMachineTerm {
 }
 
 impl OldAddressOffset {
-    pub fn constant(value: i64) -> Self {
-        Self::Constant(value)
-    }
-
     /// This offset as `sum(sext(index) * stride) + constant`, when every
     /// leaf is a constant or a scaled `int32` index: the scaled leaves and
     /// the constant. The sum is exact, with no wrap, so it describes the
