@@ -75,7 +75,9 @@ theorem zlib_native_component_step(bytes: uint8[], n: int32, a: uint64, b: uint6
  ensures to_integer(a + value as uint32 as uint64) == 1 + adler_byte_sum(bytes, n + 1)
      and to_integer(b + (a + value as uint32 as uint64)) == to_integer(n + 1) + adler_weighted_sum(bytes, n + 1, n + 1)
      and to_integer(a + value as uint32 as uint64) <= 1 + 255 * to_integer(n + 1)
-     and to_integer(b + (a + value as uint32 as uint64)) <= 1415761 * to_integer(n + 1) by {
+     and to_integer(b + (a + value as uint32 as uint64)) <= 1415761 * to_integer(n + 1)
+     and to_integer(a + value as uint32 as uint64) == to_integer(a) + to_integer(value as uint32 as uint64)
+     and to_integer(b + (a + value as uint32 as uint64)) == to_integer(b) + to_integer(a + value as uint32 as uint64) by {
   have n <= 5551 by close() using { n < 5552; };
   have n < 2147483647 by close() using { n < 5552; };
   have defined(n + 1) by close();
@@ -91,7 +93,7 @@ theorem zlib_native_component_step(bytes: uint8[], n: int32, a: uint64, b: uint6
    to_integer(value as int32) <= 255;
   };
   have to_integer(a) + to_integer(value as uint32 as uint64) <= 18446744073709551615 by close() using { to_integer(a) + to_integer(value as uint32 as uint64) <= 1415761; };
-  have to_integer(a + value as uint32 as uint64) == to_integer(a) + to_integer(value as uint32 as uint64);
+  apply(integer::uint64_add_to_integer(a, value as uint32 as uint64));
   have to_integer(a + value as uint32 as uint64) <= 1415761 by close() using {
    to_integer(a + value as uint32 as uint64) == to_integer(a) + to_integer(value as uint32 as uint64);
    to_integer(a) + to_integer(value as uint32 as uint64) <= 1415761;
@@ -101,7 +103,7 @@ theorem zlib_native_component_step(bytes: uint8[], n: int32, a: uint64, b: uint6
    to_integer(n) <= 5551;
    to_integer(a + value as uint32 as uint64) <= 1415761;
   };
-  have to_integer(b + (a + value as uint32 as uint64)) == to_integer(b) + to_integer(a + value as uint32 as uint64);
+  apply(integer::uint64_add_to_integer(b, a + value as uint32 as uint64));
   have to_integer(a + value as uint32 as uint64) == 1 + adler_byte_sum(bytes, n + 1) by close() using {
    to_integer(a + value as uint32 as uint64) == to_integer(a) + to_integer(value as uint32 as uint64);
    to_integer(a) == 1 + adler_byte_sum(bytes, n);
