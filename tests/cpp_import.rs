@@ -15585,7 +15585,7 @@ fn condition_calls_preserve_inherited_receiver_and_sibling_frames() {
             have empty == {empty} by {{
                 rewrite(empty, (if state.left.base.value == 0 {{ true }} else {{ false }}));
                 rewrite(state.left.base.value, {value});
-                normalize();
+                close();
             }}
             step_until(function.exit);
             close();
@@ -15918,7 +15918,7 @@ fn locked_header_graph_conditions_verify_offline_with_inherited_frames() {
             have empty == {empty} by {{
                 rewrite(empty, (if state.left.base.value == 0 {{ true }} else {{ false }}));
                 rewrite(state.left.base.value, {value});
-                normalize();
+                close();
             }}
             step_until(function.exit);
             close();
@@ -17223,7 +17223,7 @@ fn converted_wide_boolean_calls_observe_high_bits() {
             String::new()
         } else {
             format!(
-                "have not (to_integer(captured) == 0) by {{ rewrite(to_integer(captured), {point}); normalize(); }}"
+                "have not (to_integer(captured) == 0) by {{ rewrite(to_integer(captured), {point}); close(); }}"
             )
         };
         let proof = format!(
@@ -18721,7 +18721,7 @@ uint64 probe(struct View& view, uint64 n) {
     have view.size == n by close();
     step();
     have separate(region(7).footprint, memory(view.size)) by {
-        normalize() using { at(region(7).entry, separate(memory(back), memory(view.size))); };
+        close() using { at(region(7).entry, separate(memory(back), memory(view.size))); };
     }
     have view.size == at(region(7).entry, view.size) by {
         preserve(memory(view.size), region(7));
@@ -18731,7 +18731,7 @@ uint64 probe(struct View& view, uint64 n) {
         close();
     }
     have separate(region(7).footprint, memory(view.data)) by {
-        normalize() using { at(region(7).entry, separate(memory(back), memory(view.data))); };
+        close() using { at(region(7).entry, separate(memory(back), memory(view.data))); };
     }
     have view.data == at(region(7).entry, view.data) by {
         preserve(memory(view.data), region(7));
@@ -23115,7 +23115,7 @@ int probe(Widget* pointer) noexcept { auto& ref = dereference(pointer); return r
     let source = r#"verifying "reference.cpp";
 Widget& dereference(Widget* pointer) { views pointer->padding; views pointer->value; ensures &result == pointer; } by {
     step();
-    have &result == pointer by { normalize() using {}; }
+    have &result == pointer by { close(); }
 }
 int32 probe(Widget* pointer) { views pointer->padding; views pointer->value; ensures result == pointer->value; }
 "#;

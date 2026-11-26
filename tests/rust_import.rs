@@ -1559,7 +1559,7 @@ fn charon_slice_failure_has_a_focused_trace() {
         "    step_until(function.exit);\n",
         "    close();\n",
         "}\n",
-        "theorem good(x: int32) { ensures x == x by { normalize(); } }\n",
+        "theorem good(x: int32) { ensures x == x by { close(); } }\n",
     );
     fs::write(p.root.join("borrow.click"), source).unwrap();
     let (line, column) = source
@@ -3236,7 +3236,7 @@ fn rust_enum_signed_match_explicit_split_verifies() {
     let p = signed_match_project();
     let prepared = p.prepared().unwrap();
     let explicit = format!(
-        "{} by {{ match amount {{ Amount::Credit(x) => {{ step_until(function.exit); close(); }}, Amount::Debit(x) => {{ step_until(function.exit); have result == -1i32 * x by {{ close(); }} have match amount {{ Amount::Credit(y) => y as i32, Amount::Debit(y) => 0i32 - y }} == 0i32 - x by {{ rewrite(amount, Amount::Debit(x)); normalize(); }} close(); }} }} }}",
+        "{} by {{ match amount {{ Amount::Credit(x) => {{ step_until(function.exit); close(); }}, Amount::Debit(x) => {{ step_until(function.exit); have result == -1i32 * x by {{ close(); }} have match amount {{ Amount::Credit(y) => y as i32, Amount::Debit(y) => 0i32 - y }} == 0i32 - x by {{ rewrite(amount, Amount::Debit(x)); close(); }} close(); }} }} }}",
         SIGNED_MATCH_SIDECAR.trim()
     );
     ProgramVerificationSession::new_program_prepared(&explicit, &prepared)
