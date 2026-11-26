@@ -1205,7 +1205,7 @@ fn bounded_statement_successor_exclusion_ignores_unrelated_ambient_facts() {
         let unrelated = (0..size)
             .map(|index| {
                 format!(
-                    "                have 0 <= {index} by {{\n                    normalize();\n                }}\n"
+                    "                have 0 <= {index} by {{\n                    close() using {{}};\n                }}\n"
                 )
             })
             .collect::<String>();
