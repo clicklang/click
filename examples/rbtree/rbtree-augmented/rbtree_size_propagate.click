@@ -58,7 +58,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
             have address(rb) != address(stop) by { rewrite(rb, old(rb)); close(); }
             have propagate_remaining(rb, stop) == 1 by {
                 unfold(propagate_remaining(rb, stop));
-                normalize() using { address(rb) != address(stop); };
+                close() using { address(rb) != address(stop); };
             }
             // Expose the child links and keep the packed parent word folded across compute_size.
             mark leaf;
@@ -86,7 +86,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                 rewrite(metadata.value, 1 + left.value + right.value);
                 rewrite(left.value, 0);
                 rewrite(right.value, 0);
-                normalize();
+                close();
             }
             unfold(left);
             unfold(right);
@@ -107,7 +107,6 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                 });
                 have propagate_remaining(rb, stop) == 0 by {
                     unfold(propagate_remaining(rb, stop));
-                    normalize() using { rb == stop; };
                 }
                 have metadata.value == 1 by { close(); }
                 have metadata.value == 1 or rb == old(rb) by { close(); }

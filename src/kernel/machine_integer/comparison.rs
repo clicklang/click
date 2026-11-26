@@ -691,16 +691,19 @@ fn condition_for_operand_views_in(
             return OldConditionTerm::Constant(result);
         }
     }
-    // Calls and pointer addresses remain native comparison atoms, as before producer migration.
-    // The root reading retains numeric argument handles; it does not export
-    // the argument DAG or turn a machine fact into an Integer fact.
+    // Calls and pointer addresses remain native comparison atoms. Conversions
+    // with an opaque Integer input also have a cached native reading, but
+    // cannot be compared as shared machine observations.
     let operands = operands.map(|operand| match operand {
         V::Shared(root)
             if matches!(
                 root.node(),
                 crate::kernel::KernelTermNode::Call { .. }
                     | crate::kernel::KernelTermNode::IntegerAddress { .. }
-            ) =>
+            ) || (matches!(
+                root.node(),
+                crate::kernel::KernelTermNode::IntegerToMachine { .. }
+            ) && !root.is_shared_machine_operand()) =>
         {
             V::Old(
                 root.machine_conversion_leaf()

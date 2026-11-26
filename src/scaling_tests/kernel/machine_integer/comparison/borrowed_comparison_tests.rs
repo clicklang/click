@@ -1,6 +1,47 @@
 use super::*;
 
 #[test]
+fn comparing_conversions_of_a_read_reuses_the_native_operand() {
+    use crate::instrumentation::measure_deterministic_work;
+    use crate::kernel::{
+        KernelIntegerOperator, KernelTerm, KernelTermImport, LoadKind, OldAddress, ProgramPoint,
+        SymbolicMemory, intern_memory,
+    };
+
+    let format = MachineIntegerType::UInt32;
+    for size in [8, 32, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let read = OldMachineTerm::read_named(
+            ProgramPoint::at(&intern_memory(SymbolicMemory::new())),
+            Box::new(OldAddress::symbolic(Variable(999742))),
+            LoadKind::UInt32,
+        );
+        let observed = IntegerTerm::from_machine(format, read).unwrap();
+        let mut input = KernelTermImport::default().integer(&observed.into());
+        let one = KernelTerm::integer_literal(1.into());
+        for _ in 0..size {
+            input =
+                KernelTerm::integer_operation(KernelIntegerOperator::Add, vec![input, one.clone()])
+                    .unwrap();
+        }
+        let converted = KernelTerm::integer_to_machine(format, input).unwrap();
+        assert!(!converted.is_shared_machine_operand());
+        let compare = || {
+            logical_condition_for_operand_views(
+                format,
+                R::Equal,
+                [MachineOperandView::Shared(&converted); 2],
+            )
+        };
+        let (cold_condition, cold_work) = measure_deterministic_work(compare);
+        let (warm_condition, warm_work) = measure_deterministic_work(compare);
+        assert_eq!(cold_condition, warm_condition);
+        assert!(cold_work <= 16 * size + 32, "size={size}, work={cold_work}");
+        assert!(warm_work <= 8, "size={size}, work={warm_work}");
+    }
+}
+
+#[test]
 fn conditional_atom_reads_fixed_roots_without_exporting_arithmetic() {
     use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineBinaryOp};
     for format in [MachineIntegerType::UInt32, MachineIntegerType::UInt64] {
