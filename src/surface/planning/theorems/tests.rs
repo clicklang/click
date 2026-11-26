@@ -258,7 +258,7 @@ fn mirrored_float_orders_do_not_complement_nan_comparisons() {
     ] {
         let proof = "by { close() using {}; }";
         let source = format!(
-            "function fixed(x: {ty}) -> {ty} {{ {bits}({one}) }} theorem law(x: {ty}) {{ ensures fixed(x) > {bits}(0) by {{ unfold(fixed(x)); normalize(); }} }} theorem test(value: {ty}) {{ ensures {bits}(0) < fixed(value) {proof} }}"
+            "function fixed(x: {ty}) -> {ty} {{ {bits}({one}) }} theorem law(x: {ty}) {{ ensures fixed(x) > {bits}(0) by {{ unfold(fixed(x)); close(); }} }} theorem test(value: {ty}) {{ ensures {bits}(0) < fixed(value) {proof} }}"
         );
         let verified = verify_click_theorems(&source).unwrap_or_else(|e| panic!("{}", e.report()));
         let expanded = verified.last().unwrap().expanded_proof_source().unwrap();
