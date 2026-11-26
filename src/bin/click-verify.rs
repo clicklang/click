@@ -2144,13 +2144,13 @@ resource choice() { field model: Choice; }
 tactic choose() { owns x: choice(); ensures 0 == 0; } by {
     match x.model {
         Choice::First => {
-            have 0 == 0 by { normalize(); }
+            have 0 == 0 by { close(); }
         },
         Choice::Second => {
-            have 0 == 0 by { normalize(); }
+            have 0 == 0 by { close(); }
         },
         Choice::Third => {
-            have 0 == 0 by { normalize(); }
+            have 0 == 0 by { close(); }
         },
     }
 }
@@ -2212,12 +2212,12 @@ void walk(int32 n) { requires n >= 0; ensures 0 == 0; } by {
             step();
         }
     }
-    step(); normalize();
+    step(); close();
 }
 void plain(int32 n) { requires n >= 0; ensures 0 == 0; } by {
     have n >= 0 by { close(); }
     apply(positive(0));
-    step_until(function.exit); normalize();
+    step_until(function.exit); close();
 }
 "#;
         let (root, path) = temporary_project(
@@ -2266,7 +2266,7 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
             r#"        initialize by close();
         maintain by { step(); }
     }
-    have 0 == 1 by { normalize(); }
+    have 0 == 1 by { close(); }
     step_until(function.exit); close();
 }
 "#,
