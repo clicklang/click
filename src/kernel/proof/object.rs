@@ -3058,6 +3058,12 @@ mod tests {
         };
         let equal = equality(conditional(13, 13));
         let different_capture = equality(conditional(13, 12));
+        // Initialize the shared goal representation before comparing fact-set sizes.
+        assert!(
+            known_computation_proof(equal.clone(), PureFactStore::default())
+                .apply_known(PropositionKnownContext::Pure)
+                .is_ok()
+        );
         let mut baseline = None;
         for size in [0, 32, 256] {
             let mut facts = PureFactStore::default();
