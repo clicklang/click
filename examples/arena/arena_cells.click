@@ -3991,7 +3991,7 @@ int32 arena_pipeline(
         requires defined(r1.start + 0) and (to_integer(r1.start) + to_integer(0)) < to_integer(r1.end) by {
             all {
                 defined(r1.start + 0) => {
-                    normalize();
+                    close();
                 }
                 (to_integer(r1.start) + to_integer(0)) < to_integer(r1.end) => {
                     close() using { to_integer(r1.start) < to_integer(r1.end); };
@@ -4176,7 +4176,7 @@ int32 arena_pipeline(
         requires defined(r2.start + 0) and (to_integer(r2.start) + to_integer(0)) < to_integer(r2.end) by {
             all {
                 defined(r2.start + 0) => {
-                    normalize();
+                    close();
                 }
                 (to_integer(r2.start) + to_integer(0)) < to_integer(r2.end) => {
                     close() using { to_integer(r2.start) < to_integer(r2.end); };
