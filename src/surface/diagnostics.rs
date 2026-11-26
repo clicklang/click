@@ -8411,8 +8411,25 @@ pub(super) fn describe_code_region_ref(region: &CodeRegionRef) -> String {
                 SourcePathStep::Statement(index) => format!("statement({index})"),
                 SourcePathStep::Loop(index) => format!("loop({index})"),
                 SourcePathStep::Region(index) => format!("region({index})"),
+                SourcePathStep::Call(function, index)
+                    if matches!(steps.last(), Some(SourcePathStep::Binding { .. })) =>
+                {
+                    let name = crate::languages::cpp::names::cpp_display_name(function);
+                    let function = name.as_deref().unwrap_or(function);
+                    format!("call({function}, {index})")
+                }
                 SourcePathStep::Call(function, index) => format!("call({function}, {index})"),
                 SourcePathStep::AnyCall(index) => format!("call({index})"),
+                SourcePathStep::Binding { slot, release } => {
+                    let slot = match slot {
+                        crate::kernel::CppBindingSlot::Receiver => "receiver".to_owned(),
+                        crate::kernel::CppBindingSlot::Argument(index) => {
+                            format!("argument({index})")
+                        }
+                    };
+                    let suffix = if *release { ".release" } else { "" };
+                    format!("{slot}.binding{suffix}")
+                }
                 SourcePathStep::Test => "test()".to_string(),
                 SourcePathStep::Assignment(local, index) => format!("assignment({local}, {index})"),
                 SourcePathStep::Operator(kind, index) => {

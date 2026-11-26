@@ -4778,6 +4778,7 @@ fn execute_execution_statement_leaf_paths(
             function_name,
             arguments,
             callee,
+            ..
         } => execute_program_call_paths(
             state,
             None,

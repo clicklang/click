@@ -1960,21 +1960,22 @@ definitions (`mdtests/cpp_class_const_method_keeps_fields.md`,
 `mdtests/cpp_class_const_method_keeps_fields_rejects_overclaim.md`). An override of a `Shape` method
 inherits that method's clauses read the same way, labeled
 `Square::area.interface_ensures_0`. Its refinement is checked against the
-`contract` named for it with `_iface` that states them on that memory. Where a
-call converts a `Square` reference to a `Shape` one, as an argument or a
-receiver, the importer places `Square__click_pack__Shape` before the call
-and `Square__click_unpack__Shape` after it. The pack consumes the memory
-and produces the object, with the definitions as its fields; the unpack
-returns the memory with the definitions equal to the fields. A caller
+`contract` named for it with `_iface` that states them on that memory.
+
+A call that binds a `Square` to a `Shape&` transfers its memory to the abstract
+object before the call and restores the memory afterward. The binding reads
+the class definitions as the object's fields. The release restores memory
+with the definitions equal to those fields. Proofs can name the binding by
+the written argument or receiver. For example, the first argument of
+`total(sq)` is `call(total, 0).argument(0).binding`. Use `.entry` to select
+the point before the binding and `.release` to select the matching region
+after the call. A caller
 passing a `Square` therefore knows the object's `size` is its `side`, and
 after lending it as a `Shape&` that its `side` is the object's new `size`
 and nothing of the `side` it lent
 (`mdtests/cpp_class_object_state_mutable_reference_returns_new_state.md`).
-Where the conversion is to `const Shape&`, the importer places
-`Square__click_pack_const__Shape` and `Square__click_unpack_const__Shape`
-instead: the pack views the memory and produces, beside the object, the
-resource `Square__click_lent__Shape(object) { views *object; }`, which keeps
-the memory lent until the unpack consumes both. Nothing can change the
+A binding to `const Shape&` views the memory and produces both the object and
+a resource that keeps the memory lent until the release consumes both. Nothing can change the
 memory meanwhile, so the caller keeps every field, and the same object
 cannot also be handed over in that call as a mutable reference
 (`mdtests/cpp_class_const_reference_keeps_fields.md`,
@@ -2003,9 +2004,8 @@ abstract, against the interface read through its definitions, the
 `contract` named for each with `_iface` stated once for every type too; an
 override that does not keep it is refused there
 (`mdtests/cpp_class_template_object_state_rejects_overclaim.md`). Each
-instance of `Wrap` the import has, `Wrap<int>`, packs and unpacks with the
-definitions at its types, its functions named by the instances' records,
-`Wrap__int__click_pack__Holder__int`. A generic block names its template at
+instance of `Wrap` the import has, such as `Wrap<int>`, uses the definitions
+at its types. A generic block names its template at
 its own parameters, and its base at them or at concrete types. Classes
 deriving from a generic defining class, and dispatches through one, remain
 outside this slice.
@@ -2107,10 +2107,10 @@ from the class, the dispatch's contract is the method's own
 (`mdtests/cpp_virtual_call_through_a_derived_class_reference.md`). A qualified
 call, `square.Square::area(scale)`, and a call on a complete object, a
 local or by-value parameter, run the method named, against its own
-contract. A conversion packs with the definitions of the class of the
-complete object or reference it starts from: a `BigSquare&` passed as a
-`const Square&` is packed by `BigSquare__click_pack_const__Square`, and a
-local `Square` passed as one by `Square__click_pack_const__Square`
+contract. A binding uses the definitions of the class of the complete
+object or reference it starts from. Passing a `BigSquare&` as a
+`const Square&` uses the `BigSquare` definitions, and passing a complete
+`Square` as one uses the `Square` definitions
 (`mdtests/cpp_class_subclass_local_object_packs_itself.md`).
 
 Limits:

@@ -56,7 +56,7 @@ int caller(int scale) {
     step();
     step();
     step();
-    let { object_resource(): packed } = step(Square__click_pack_const__Shape);
+    let { object_resource(): packed } = step(call(total, 0).argument(0).binding);
 }
 ```
 

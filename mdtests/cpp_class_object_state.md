@@ -51,8 +51,9 @@ int caller(const Square& square, int scale) {
     requires 0 <= square.side and square.side <= 100;
     ensures result == square.side + scale;
 } by {
-    step_until(call(Square__click_pack_const__Shape, 0).entry);
-    let { object_resource(): packed } = step(Square__click_pack_const__Shape);
+    step_until(call(total, 0).argument(0).binding.entry);
+    let { object_resource(): packed } = step(call(total, 0).argument(0).binding);
+    step_until(call(total, 0).argument(0).binding.release.entry);
 }
 ```
 

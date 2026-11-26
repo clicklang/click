@@ -488,7 +488,7 @@ struct LoweringContext<'a> {
     /// The packs the call being lowered needs, with their unpacks and the
     /// derived class's address: one for each reference argument that
     /// converts a derived class reference to a polymorphic base.
-    pending_coercions: Vec<(String, String, ProgramExpression)>,
+    pending_coercions: Vec<(usize, String, String, ProgramExpression)>,
     /// The receiver of the call being lowered when it converts to a base
     /// whose method runs as itself, on memory: it is not packed.
     direct_receiver: Option<CppPlaceReference>,
@@ -605,12 +605,39 @@ impl LoweringContext<'_> {
     /// the callee holds the base class's object the derived class's memory
     /// stands for, which the sidecar may declare.
     fn coerced(&mut self, call: ProgramStatement) -> ProgramStatement {
+        self.coerced_call(call, false)
+    }
+
+    fn coerced_call(&mut self, call: ProgramStatement, has_receiver: bool) -> ProgramStatement {
+        use crate::kernel::{CppBindingSlot, CppBindingSource};
         let coercions = std::mem::take(&mut self.pending_coercions);
+        // The only multi-step call passed here is a call followed by the
+        // assignment of its result. Both count as regions of the binding.
+        let call_regions = match &call {
+            ProgramStatement::Seq(statements) => statements.len(),
+            _ => 1,
+        };
         let mut statement = call;
-        for (pack, unpack, address) in coercions.iter().rev() {
+        for (index, (position, pack, unpack, address)) in coercions.iter().enumerate().rev() {
             crate::instrumentation::record_deterministic_work(1);
+            let remaining = coercions.len() - index;
+            let slot = if has_receiver && *position == 0 {
+                CppBindingSlot::Receiver
+            } else {
+                CppBindingSlot::Argument(position - usize::from(has_receiver))
+            };
+            let acquire = ProgramStatement::Call {
+                function_name: pack.clone(),
+                arguments: vec![address.clone()],
+                callee: None,
+                cpp_binding: Some(CppBindingSource {
+                    slot,
+                    call_offset: remaining,
+                    release_offset: remaining + call_regions + remaining - 1,
+                }),
+            };
             statement = program_seq(
-                program_call(pack.clone(), vec![address.clone()]),
+                acquire,
                 program_seq(
                     statement,
                     program_call(unpack.clone(), vec![address.clone()]),
@@ -620,9 +647,20 @@ impl LoweringContext<'_> {
         statement
     }
 
+    fn call_has_receiver(&self, callee: &super::CppFunctionReference) -> bool {
+        self.polymorphism
+            .functions
+            .get(callee.declaration_id.as_str())
+            .is_some_and(|function| function.receiver().is_some())
+    }
+
     /// Records the pack a reference argument needs when its place ends in
     /// base projections to a polymorphic class.
-    fn note_object_coercion(&mut self, place: &super::CppPlaceReference) -> Result<(), String> {
+    fn note_object_coercion(
+        &mut self,
+        place: &super::CppPlaceReference,
+        position: usize,
+    ) -> Result<(), String> {
         let trailing = place
             .projections
             .iter()
@@ -673,7 +711,8 @@ impl LoweringContext<'_> {
                 crate::languages::cpp::names::object_unpack_name(&derived, &base.base_name),
             )
         };
-        self.pending_coercions.push((pack, unpack, address));
+        self.pending_coercions
+            .push((position, pack, unpack, address));
         self.polymorphism
             .coercions
             .borrow_mut()
@@ -726,7 +765,9 @@ impl LoweringContext<'_> {
             return Ok(name);
         };
         let receiver = function.receiver();
-        for (argument, parameter) in arguments.iter().zip(&function.parameters) {
+        for (position, (argument, parameter)) in
+            arguments.iter().zip(&function.parameters).enumerate()
+        {
             let CppCallArgument::Reference { place } = argument else {
                 continue;
             };
@@ -766,7 +807,8 @@ impl LoweringContext<'_> {
                     crate::languages::cpp::names::object_unpack_name(class, class),
                 )
             };
-            self.pending_coercions.push((pack, unpack, address));
+            self.pending_coercions
+                .push((position, pack, unpack, address));
             self.polymorphism
                 .coercions
                 .borrow_mut()
@@ -1386,7 +1428,10 @@ impl LoweringContext<'_> {
                 let (prefix, arguments, mut temporaries) =
                     self.normalize_temporary_arguments_for(arguments, &parameter_names, true)?;
                 temporaries.reverse();
-                let operation = self.coerced(program_call(target, arguments));
+                let operation = self.coerced_call(
+                    program_call(target, arguments),
+                    self.call_has_receiver(callee),
+                );
                 let operation = if temporaries.is_empty() {
                     operation
                 } else {
@@ -1850,12 +1895,15 @@ impl LoweringContext<'_> {
                                     false,
                                     pointee_constant,
                                 ),
-                                self.coerced(program_seq(call, program_assign(name.clone(), raw))),
+                                self.coerced_call(
+                                    program_seq(call, program_assign(name.clone(), raw)),
+                                    self.call_has_receiver(callee),
+                                ),
                             ),
                             crate::kernel::program_expression::variable(name),
                         )
                     } else {
-                        (self.coerced(call), raw)
+                        (self.coerced_call(call, self.call_has_receiver(callee)), raw)
                     };
                 let operation = if temporaries.is_empty() {
                     operation
@@ -2122,7 +2170,7 @@ impl LoweringContext<'_> {
                 lowered.push(inner.value);
             } else {
                 // Remaining siblings are stable and total across the call.
-                lowered.push(self.lower_call_argument(argument)?);
+                lowered.push(self.lower_call_argument(argument, position)?);
             }
         }
         Ok((evaluation, lowered, temporaries))
@@ -2415,7 +2463,8 @@ impl LoweringContext<'_> {
     ) -> Result<Vec<ProgramExpression>, String> {
         arguments
             .iter()
-            .map(|argument| self.lower_call_argument(argument))
+            .enumerate()
+            .map(|(position, argument)| self.lower_call_argument(argument, position))
             .collect()
     }
 
@@ -2438,6 +2487,7 @@ impl LoweringContext<'_> {
     fn lower_call_argument(
         &mut self,
         argument: &CppCallArgument,
+        position: usize,
     ) -> Result<ProgramExpression, String> {
         match argument {
             CppCallArgument::RecordCopy { place, .. } => {
@@ -2451,7 +2501,7 @@ impl LoweringContext<'_> {
                 if self.direct_receiver.as_ref() == Some(place) {
                     self.direct_receiver = None;
                 } else {
-                    self.note_object_coercion(place)?;
+                    self.note_object_coercion(place, position)?;
                 }
                 let root = self.place(place)?;
                 // A scalar local bound to a native reference: its address.

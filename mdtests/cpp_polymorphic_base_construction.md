@@ -68,8 +68,8 @@ int caller(int scale) {
     step();
     fold(Whole(sq));
     unfold(Whole(sq));
-    step_until(call(Square__click_pack_const__Shape, 0).entry);
-    let { object_resource(): packed } = step(Square__click_pack_const__Shape);
+    step_until(call(total, 0).argument(0).binding.entry);
+    let { object_resource(): packed } = step(call(total, 0).argument(0).binding);
 }
 ```
 

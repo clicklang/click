@@ -313,8 +313,8 @@ int caller(Stack<int>& stack, int x) {
     requires stack.count < 18446744073709551615u64;
     ensures result == x;
 } by {
-    step_until(call(Stack__int__click_pack__Container__int, 0).entry);
-    let { object_resource(): packed } = step(Stack__int__click_pack__Container__int, { state: state });
+    step_until(call(round_trip, 0).argument(0).binding.entry);
+    let { object_resource(): packed } = step(call(round_trip, 0).argument(0).binding, { state: state });
     step_until(function.exit);
     unfold(first_or(List<int>::Cons(x, old(state.items)), 0));
     close();
@@ -325,8 +325,8 @@ int local_round_trip(int x) {
     step_until(region(2).entry);
     let state = fold(nodes<int>(stack.head), { items: List<int32>::Nil });
     unfold(length(List<int32>::Nil));
-    step_until(call(Stack__int__click_pack__Container__int, 0).entry);
-    let { object_resource(): packed } = step(Stack__int__click_pack__Container__int, { state: state });
+    step_until(call(round_trip, 0).argument(0).binding.entry);
+    let { object_resource(): packed } = step(call(round_trip, 0).argument(0).binding, { state: state });
     step_until(function.exit);
     unfold(first_or(List<int32>::Cons(x, List<int32>::Nil), 0));
     close();

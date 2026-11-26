@@ -40,6 +40,28 @@ fn c_builtin_constant_p_expands_using_its_source_region() {
     verify_c_sources(&expanded, &sources).unwrap();
 }
 
+#[test]
+fn cpp_reference_binding_expands_with_its_source_path() {
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests/cpp_class_object_state.md");
+    let fixture = crate::cli::read_mdtest(&path).unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let inputs = crate::cli::prepare_mdtest_inputs(&fixture).unwrap();
+    let project = crate::cli::read_mdtest_project_if_needed(&path, source, &inputs)
+        .unwrap()
+        .unwrap();
+    let expanded =
+        expand_project_claim_source_by_label(&project, &inputs.program_inputs(), "caller.contract")
+            .unwrap();
+    assert!(expanded.contains("call(total, 0).argument(0).binding"));
+    assert!(!expanded.contains("__click_pack"), "{expanded}");
+    let expanded = project.with_entry_source(expanded);
+    crate::surface::verify_project_with_summary(&expanded, &inputs.program_inputs())
+        .unwrap()
+        .1
+        .unwrap();
+}
+
 #[cfg(feature = "fast-gate")]
 crate::surface::tests::test_batches! {
     file: "tests.rs",
@@ -4117,6 +4139,7 @@ fn a_caught_call_can_bypass_its_branch_return() {
         crate::kernel::program_expression::int32_literal(1),
         program_seq(
             ProgramStatement::Call {
+                cpp_binding: None,
                 function_name: "may_throw".into(),
                 arguments: Vec::new(),
                 callee: None,

@@ -2429,6 +2429,7 @@ pub fn program_call(
         function_name: function_name.into(),
         arguments,
         callee: None,
+        cpp_binding: None,
     }
 }
 
@@ -8154,6 +8155,7 @@ pub(crate) fn prove_executed_contract_refinement(
             function_name: callback.name().to_string(),
             arguments,
             callee: None,
+            cpp_binding: None,
         }
     } else {
         let (call, result) = program_call_value(0, callback.name(), arguments);
@@ -8361,6 +8363,7 @@ pub(crate) fn prove_executed_concrete_contract_refinement(
             function_name: callee_name.to_string(),
             arguments,
             callee: None,
+            cpp_binding: None,
         }
     } else {
         let (call, result) = program_call_value(0, callee_name, arguments);

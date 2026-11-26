@@ -127,6 +127,10 @@ struct SourceExecutionLayoutData {
     /// [`syntax::CStatementSite::source_path`]), in executable preorder:
     /// the statement's own regions, not its children's.
     source_statements: BTreeMap<Vec<u32>, Vec<usize>>,
+    /// The acquisition region and contract for each written call argument.
+    cpp_bindings: BTreeMap<(usize, crate::kernel::CppBindingSlot), (usize, String)>,
+    cpp_binding_releases: BTreeMap<(usize, crate::kernel::CppBindingSlot), (usize, String)>,
+    cpp_binding_sites: BTreeMap<usize, (usize, crate::kernel::CppBindingSlot, bool)>,
     /// The function each direct-call region calls, for `.call(f, j)`.
     call_targets: BTreeMap<usize, String>,
     /// The object each call region receives as each by-value aggregate
@@ -927,6 +931,25 @@ impl SourceExecutionLayout {
                             }
                         }
                     }
+                    if let ProgramStatement::Call {
+                        function_name,
+                        cpp_binding: Some(binding),
+                        ..
+                    } = statement
+                    {
+                        let call = statement_index + binding.call_offset;
+                        let release = statement_index + binding.release_offset;
+                        layout.cpp_bindings.insert(
+                            (call, binding.slot),
+                            (statement_index, function_name.clone()),
+                        );
+                        layout
+                            .cpp_binding_sites
+                            .insert(statement_index, (call, binding.slot, false));
+                        layout
+                            .cpp_binding_sites
+                            .insert(release, (call, binding.slot, true));
+                    }
                     if let ProgramStatement::Call { arguments, .. }
                     | ProgramStatement::CallResult { arguments, .. }
                     | ProgramStatement::CallConstruct { arguments, .. } = statement
@@ -1085,7 +1108,18 @@ impl SourceExecutionLayout {
                 .collect::<Vec<_>>();
             layout.loop_paths.extend(loops);
         }
-        if !layout.call_numbers.is_empty() {
+        for (&region, &(call, slot, release)) in &layout.cpp_binding_sites {
+            if release && let Some(name) = layout.call_targets.get(&region) {
+                layout
+                    .cpp_binding_releases
+                    .insert((call, slot), (region, name.clone()));
+            }
+        }
+        for region in layout.cpp_binding_sites.keys() {
+            layout.calls.remove(region);
+            layout.call_targets.remove(region);
+        }
+        if !layout.call_numbers.is_empty() || !layout.cpp_bindings.is_empty() {
             let mut named = NamedCalls::default();
             for (region, callee) in &layout.call_targets {
                 crate::instrumentation::record_deterministic_work(1);
@@ -1946,6 +1980,38 @@ impl SourceExecutionLayout {
             .flatten()
     }
 
+    pub(in crate::surface) fn cpp_binding_target(
+        &self,
+        steps: &[crate::surface::SourcePathStep],
+    ) -> Result<&str, String> {
+        Ok(&self.cpp_binding_region(steps)?.1)
+    }
+
+    fn cpp_binding_region(
+        &self,
+        steps: &[crate::surface::SourcePathStep],
+    ) -> Result<&(usize, String), String> {
+        use crate::surface::{ProgramPointKind, SourcePathStep};
+        let Some((SourcePathStep::Binding { slot, release }, call_path)) = steps.split_last()
+        else {
+            return Err("expected a C++ reference binding".into());
+        };
+        let call = self.source_path_region(call_path, ProgramPointKind::Entry)?;
+        let bindings = if *release {
+            &self.data.cpp_binding_releases
+        } else {
+            &self.data.cpp_bindings
+        };
+        bindings.get(&(call, *slot)).ok_or_else(|| {
+            format!(
+                "`{}` does not perform a checked reference binding",
+                crate::surface::diagnostics::describe_code_region_ref(
+                    &crate::surface::CodeRegionRef::Path(steps.to_vec()),
+                )
+            )
+        })
+    }
+
     pub(in crate::surface) fn source_path_region(
         &self,
         steps: &[crate::surface::SourcePathStep],
@@ -1953,6 +2019,9 @@ impl SourceExecutionLayout {
     ) -> Result<usize, String> {
         use crate::surface::{ProgramPointKind, SourcePathStep};
         let data = &self.data;
+        if matches!(steps.last(), Some(SourcePathStep::Binding { .. })) {
+            return Ok(self.cpp_binding_region(steps)?.0);
+        }
         // `call(f, j)` and `call(j)` on their own count the function's
         // calls, in the order they run.
         match steps {
@@ -2157,7 +2226,7 @@ impl SourceExecutionLayout {
                             .into(),
                     );
                 }
-                SourcePathStep::ReadEvent(_) => {
+                SourcePathStep::Binding { .. } | SourcePathStep::ReadEvent(_) => {
                     return Err("`read_event(i)` selects a volatile observation's `.result`, not a statement boundary".into());
                 }
                 SourcePathStep::Loop(_) => {
@@ -2189,6 +2258,12 @@ impl SourceExecutionLayout {
     ) -> Option<Vec<crate::surface::SourcePathStep>> {
         use crate::surface::SourcePathStep;
         let data = &self.data;
+        if let Some(&(call, slot, release)) = data.cpp_binding_sites.get(&region) {
+            let mut steps = self.source_path_spelling(call, kind)?;
+            steps.push(SourcePathStep::Binding { slot, release });
+            return Some(steps);
+        }
+
         // A call with no statement as written is named among the
         // function's calls.
         let Some(path) = data.region_paths.get(&region) else {
@@ -3091,6 +3166,9 @@ mod source_execution_layout_tests {
         let layout = SourceExecutionLayout {
             data: std::sync::Arc::new(SourceExecutionLayoutData {
                 parameter_names: BTreeSet::new(),
+                cpp_bindings: BTreeMap::new(),
+                cpp_binding_releases: BTreeMap::new(),
+                cpp_binding_sites: BTreeMap::new(),
                 statements,
                 assignments: BTreeMap::new(),
                 reads: Vec::new(),
