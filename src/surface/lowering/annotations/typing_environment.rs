@@ -12,8 +12,108 @@
 //! scoping removes the outer entry when it binds one.
 use super::*;
 
+/// What elaboration may ask about the names bound outside the proposition it
+/// elaborates: their types, and the two facts about the clause's position
+/// that name resolution needs. Elaboration reads outer names only through
+/// this, so it does not depend on how a scope knows the answers. The
+/// lowering context answers from the values lowering bound the names to; a
+/// scope built from declarations can answer with no kernel at all.
+pub(super) trait TypeScope {
+    /// The type a name has.
+    fn binding_click_type(
+        &self,
+        name: &dyn crate::surface::binders::BinderKey,
+    ) -> Option<ClickType>;
+    /// The type of a name bound to an algebraic value.
+    fn algebraic_binding_click_type(
+        &self,
+        name: &dyn crate::surface::binders::BinderKey,
+    ) -> Option<ClickType>;
+    /// Whether a name is bound to an Integer.
+    fn is_integer_binding(&self, name: &dyn crate::surface::binders::BinderKey) -> bool;
+    /// Whether a name is bound to an algebraic value.
+    fn binding_is_algebraic(&self, name: &dyn crate::surface::binders::BinderKey) -> bool;
+    /// The element type of a name bound to an array reference.
+    fn bound_array_element_type(
+        &self,
+        name: &dyn crate::surface::binders::BinderKey,
+    ) -> Option<ProgramType>;
+    /// The pointee type of a name bound to a pointer.
+    fn bound_pointer_pointee_type(
+        &self,
+        name: &dyn crate::surface::binders::BinderKey,
+    ) -> Option<ProgramType>;
+    /// The program type of a name bound to an enum or library value.
+    fn bound_enum_value_type(
+        &self,
+        name: &dyn crate::surface::binders::BinderKey,
+    ) -> Option<ProgramType>;
+    /// The type of a name read as a program binding.
+    fn program_binding_click_type(
+        &self,
+        name: &dyn crate::surface::binders::BinderKey,
+    ) -> Option<ClickType>;
+    /// The call whose result `result` and region results name here.
+    fn call_result_point(&self) -> Option<&ProgramPointSelector>;
+    /// Whether bare `result` names the contract's return value here.
+    fn contract_result_in_scope(&self) -> bool;
+}
+
+/// The lowering context answers from the values lowering bound each name to,
+/// with the lookups elaboration used before this boundary existed.
+impl TypeScope for SpecElaborationContext {
+    fn binding_click_type(
+        &self,
+        name: &dyn crate::surface::binders::BinderKey,
+    ) -> Option<ClickType> {
+        Self::binding_click_type(self, name)
+    }
+    fn algebraic_binding_click_type(
+        &self,
+        name: &dyn crate::surface::binders::BinderKey,
+    ) -> Option<ClickType> {
+        Self::algebraic_binding_click_type(self, name)
+    }
+    fn is_integer_binding(&self, name: &dyn crate::surface::binders::BinderKey) -> bool {
+        self.integer_values.contains_key(name)
+    }
+    fn binding_is_algebraic(&self, name: &dyn crate::surface::binders::BinderKey) -> bool {
+        Self::binding_is_algebraic(self, name)
+    }
+    fn bound_array_element_type(
+        &self,
+        name: &dyn crate::surface::binders::BinderKey,
+    ) -> Option<ProgramType> {
+        Self::bound_array_element_type(self, name)
+    }
+    fn bound_pointer_pointee_type(
+        &self,
+        name: &dyn crate::surface::binders::BinderKey,
+    ) -> Option<ProgramType> {
+        Self::bound_pointer_pointee_type(self, name)
+    }
+    fn bound_enum_value_type(
+        &self,
+        name: &dyn crate::surface::binders::BinderKey,
+    ) -> Option<ProgramType> {
+        Self::bound_enum_value_type(self, name)
+    }
+    fn program_binding_click_type(
+        &self,
+        name: &dyn crate::surface::binders::BinderKey,
+    ) -> Option<ClickType> {
+        Self::program_binding_click_type(self, name)
+    }
+    fn call_result_point(&self) -> Option<&ProgramPointSelector> {
+        self.call_result_point.as_ref()
+    }
+    fn contract_result_in_scope(&self) -> bool {
+        self.contract_result_in_scope
+    }
+}
+
 pub(super) struct TypingEnvironment<'a> {
-    outer: &'a SpecElaborationContext,
+    outer: &'a dyn TypeScope,
     binders: PersistentBinderMap<ClickType>,
 }
 
@@ -21,6 +121,11 @@ impl<'a> TypingEnvironment<'a> {
     /// The typing environment of a lowering context, with no binders of its
     /// own.
     pub(super) fn of(outer: &'a SpecElaborationContext) -> Self {
+        Self::in_scope(outer)
+    }
+
+    /// The typing environment of any outer scope, with no binders of its own.
+    pub(super) fn in_scope(outer: &'a dyn TypeScope) -> Self {
         Self {
             outer,
             binders: PersistentBinderMap::default(),
@@ -34,7 +139,7 @@ impl<'a> TypingEnvironment<'a> {
     ) -> Option<ClickType> {
         match self.binders.get(name) {
             Some(click_type) => Some(click_type.clone()),
-            None => self.outer.binding_click_type(name),
+            None => self.outer.binding_click_type(&name),
         }
     }
 
@@ -47,7 +152,7 @@ impl<'a> TypingEnvironment<'a> {
         match self.binders.get(name) {
             Some(click_type @ ClickType::Algebraic(_)) => Some(click_type.clone()),
             Some(_) => None,
-            None => self.outer.algebraic_binding_click_type(name),
+            None => self.outer.algebraic_binding_click_type(&name),
         }
     }
 
@@ -59,7 +164,7 @@ impl<'a> TypingEnvironment<'a> {
     ) -> bool {
         match self.binders.get(name) {
             Some(click_type) => *click_type == ClickType::Integer,
-            None => self.outer.integer_values.contains_key(name),
+            None => self.outer.is_integer_binding(&name),
         }
     }
 
@@ -70,7 +175,7 @@ impl<'a> TypingEnvironment<'a> {
     ) -> bool {
         match self.binders.get(name) {
             Some(click_type) => matches!(click_type, ClickType::Algebraic(_)),
-            None => self.outer.binding_is_algebraic(name),
+            None => self.outer.binding_is_algebraic(&name),
         }
     }
 
@@ -83,7 +188,7 @@ impl<'a> TypingEnvironment<'a> {
     ) -> Option<ProgramType> {
         match self.binders.get(name) {
             Some(_) => None,
-            None => self.outer.bound_array_element_type(name),
+            None => self.outer.bound_array_element_type(&name),
         }
     }
 
@@ -98,7 +203,7 @@ impl<'a> TypingEnvironment<'a> {
                 .interface_type()
                 .map(InterfaceType::to_kernel_type)
                 .and_then(ProgramType::pointee_type),
-            None => self.outer.bound_pointer_pointee_type(name),
+            None => self.outer.bound_pointer_pointee_type(&name),
         }
     }
 
@@ -114,18 +219,18 @@ impl<'a> TypingEnvironment<'a> {
                 .interface_type()
                 .map(InterfaceType::to_kernel_type)
                 .filter(|ty| matches!(ty, ProgramType::Parameter(_))),
-            None => self.outer.bound_enum_value_type(name),
+            None => self.outer.bound_enum_value_type(&name),
         }
     }
 
     /// The call whose result `result` and region results name here.
     pub(super) fn call_result_point(&self) -> Option<&'a ProgramPointSelector> {
-        self.outer.call_result_point.as_ref()
+        self.outer.call_result_point()
     }
 
     /// Whether bare `result` names the contract's return value here.
     pub(super) fn contract_result_in_scope(&self) -> bool {
-        self.outer.contract_result_in_scope
+        self.outer.contract_result_in_scope()
     }
 
     /// The type of a name read as a program binding. Lowering keeps an
@@ -139,7 +244,7 @@ impl<'a> TypingEnvironment<'a> {
         match self.binders.get(name) {
             Some(ClickType::Integer | ClickType::Algebraic(_)) => None,
             Some(click_type) => Some(click_type.clone()),
-            None => self.outer.program_binding_click_type(name),
+            None => self.outer.program_binding_click_type(&name),
         }
     }
 }
