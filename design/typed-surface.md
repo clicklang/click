@@ -253,7 +253,11 @@ lowering four questions through the `LoweringQueries` trait: whether a generic
 call's result is algebraic at its instantiation, a pointer's element width,
 a call result's pointer element width, and whether an access through an
 untyped pointer is refused. Each moves to the `Elaborator` once declared
-types answer it.
+types answer it. `annotations/elaboration_tests.rs` elaborates comparisons
+from declared types alone: Click binders declared in a `TypingEnvironment`
+over `NoOuterNames`, C parameters in the declarations, and a
+`LoweringQueries` that knows nothing, with no lowerer. The declarations
+still hold an (empty) entry state, a kernel value.
 
 Still to do in stage 2: elaboration runs where lowering reaches a comparison,
 not as a pass before lowering; the raiser still returns Syntax and keeps its

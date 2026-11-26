@@ -112,6 +112,61 @@ impl TypeScope for SpecElaborationContext {
     }
 }
 
+/// An outer scope with no names in it: every name a typing environment over
+/// it knows is one it binds with a declared type. Elaboration over it reads
+/// nothing lowering built.
+#[cfg(test)]
+pub(super) struct NoOuterNames;
+
+#[cfg(test)]
+impl TypeScope for NoOuterNames {
+    fn binding_click_type(&self, _: &dyn crate::surface::binders::BinderKey) -> Option<ClickType> {
+        None
+    }
+    fn algebraic_binding_click_type(
+        &self,
+        _: &dyn crate::surface::binders::BinderKey,
+    ) -> Option<ClickType> {
+        None
+    }
+    fn is_integer_binding(&self, _: &dyn crate::surface::binders::BinderKey) -> bool {
+        false
+    }
+    fn binding_is_algebraic(&self, _: &dyn crate::surface::binders::BinderKey) -> bool {
+        false
+    }
+    fn bound_array_element_type(
+        &self,
+        _: &dyn crate::surface::binders::BinderKey,
+    ) -> Option<ProgramType> {
+        None
+    }
+    fn bound_pointer_pointee_type(
+        &self,
+        _: &dyn crate::surface::binders::BinderKey,
+    ) -> Option<ProgramType> {
+        None
+    }
+    fn bound_enum_value_type(
+        &self,
+        _: &dyn crate::surface::binders::BinderKey,
+    ) -> Option<ProgramType> {
+        None
+    }
+    fn program_binding_click_type(
+        &self,
+        _: &dyn crate::surface::binders::BinderKey,
+    ) -> Option<ClickType> {
+        None
+    }
+    fn call_result_point(&self) -> Option<&ProgramPointSelector> {
+        None
+    }
+    fn contract_result_in_scope(&self) -> bool {
+        false
+    }
+}
+
 pub(super) struct TypingEnvironment<'a> {
     outer: &'a dyn TypeScope,
     binders: PersistentBinderMap<ClickType>,
@@ -130,6 +185,18 @@ impl<'a> TypingEnvironment<'a> {
             outer,
             binders: PersistentBinderMap::default(),
         }
+    }
+
+    /// Bind `name` with the type its declaration gives it. Every typing
+    /// query then answers for `name` from that type alone, as
+    /// `check_declared_binder` checks lowering does too.
+    #[cfg(test)]
+    pub(super) fn declare(
+        &mut self,
+        name: impl Into<crate::surface::binders::SurfaceBinder>,
+        declared: ClickType,
+    ) {
+        self.binders.insert(name.into(), declared);
     }
 
     /// The type a name has here.
@@ -262,7 +329,7 @@ pub(super) fn check_declared_binder(
 ) {
     let by_value = TypingEnvironment::of(lowered);
     let mut by_type = TypingEnvironment::of(lowered);
-    by_type.binders.insert(name.clone(), declared.clone());
+    by_type.declare(name, declared.clone());
     let pairs: [(&str, String, String); 7] = [
         (
             "binding_click_type",
