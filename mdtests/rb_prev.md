@@ -2166,7 +2166,7 @@ struct rb_node* rb_prev(struct rb_node* node) {
                                             have ctx_is_left(c.model) == 0 by {
                                                 rewrite(c.model, Context::Top);
                                                 unfold(ctx_is_left(Context::Top));
-                                                normalize();
+                                                close();
                                             }
                                             have ctx_node_is(Context::Top, parent) == 1 by {
                                                 rewrite(Context::Top, c.model);
@@ -2473,7 +2473,7 @@ struct rb_node* rb_prev(struct rb_node* node) {
                             }
                             have plug(Context::Top, t.model) == t.model by {
                                 unfold(plug(Context::Top, t.model));
-                                normalize();
+                                close();
                             }
                             have t.model == plug(old(c.model), old(t.model)) by {
                                 rewrite(t.model, plug(Context::Top, t.model));
@@ -2481,7 +2481,7 @@ struct rb_node* rb_prev(struct rb_node* node) {
                             }
                             have rb_remainder_tree(Remainder::Whole(node, t.model)) == t.model by {
                                 unfold(rb_remainder_tree(Remainder::Whole(node, t.model)));
-                                normalize();
+                                close();
                             }
                             have rb_remainder_tree(Remainder::Whole(node, t.model))
                                 == plug(old(c.model), old(t.model)) by {
@@ -2527,7 +2527,7 @@ struct rb_node* rb_prev(struct rb_node* node) {
                             }
                             have plug(Context::Right(frame_identity, frame_parent, frame_color, frame_right, above), t.model) == plug(above, RbTree::Node(frame_identity, frame_parent, frame_color, frame_right, t.model)) by {
                                 unfold(plug(Context::Right(frame_identity, frame_parent, frame_color, frame_right, above), t.model));
-                                normalize();
+                                close();
                             }
                             have plug(above, RbTree::Node(frame_identity, frame_parent, frame_color, frame_right, t.model)) == plug(old(c.model), old(t.model)) by {
                                 rewrite(plug(above, RbTree::Node(frame_identity, frame_parent, frame_color, frame_right, t.model)), plug(Context::Right(frame_identity, frame_parent, frame_color, frame_right, above), t.model));
