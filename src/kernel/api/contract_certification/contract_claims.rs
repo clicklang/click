@@ -2189,6 +2189,7 @@ fn check_effect_on_prepared_path(
                 before,
                 after,
                 writes,
+                ..
             } => {
                 let repeats_transition =
                     seen_transitions.iter().any(|(seen_before, seen_after)| {
@@ -2302,6 +2303,7 @@ fn check_effect_on_prepared_path(
                 after,
                 allocation_base,
                 bytes,
+                ..
             } => {
                 let repeats_transition =
                     seen_transitions.iter().any(|(seen_before, seen_after)| {

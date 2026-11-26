@@ -2428,6 +2428,7 @@ fn verify_kernel_standard_theorem_axiom(
         if theorem.name() == "click::separation::viewable_restrict" {
             crate::kernel::prove_viewable_restrict(
                 context.point.memory(),
+                context.point.path_link().clone(),
                 args[0].clone(),
                 args[1].clone(),
             )

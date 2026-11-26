@@ -1476,6 +1476,7 @@ pub(super) fn evaluate_native_expression_paths(
                         &mut path.obligations,
                         assumptions,
                         Proposition::MemoryLoadable {
+                            point: state.memory_point(),
                             memory: state.memory().clone(),
                             base: pointer.address().clone(),
                             bytes: (OldMachineTerm::constant(width)).into(),

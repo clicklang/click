@@ -285,17 +285,20 @@ impl super::ProofSearch<PureFactContext> {
                 base,
                 bytes,
                 wide: true,
+                ..
             } => context.proves_native_memory_loadable(memory, base, bytes.old_form()),
             Proposition::MemoryLoadable {
                 memory,
                 base,
                 bytes,
                 wide: false,
+                ..
             } => context.proves_memory_loadable(memory, base, bytes.old_form()),
             Proposition::MemoryCanStore {
                 memory,
                 pointer,
                 byte_width,
+                ..
             } => context.proves_memory_access(memory, pointer, *byte_width),
             Proposition::ResourceSeparate { left, right } => {
                 context.contains_proposition_fact(proposition)
@@ -861,6 +864,7 @@ impl super::ProofSearch<PureFactContext> {
             base,
             bytes,
             wide: false,
+            ..
         } = proposition
             && let Some(premises) =
                 context.adjacent_loadable_region_facts(memory, base, bytes.old_form())
@@ -879,6 +883,7 @@ impl super::ProofSearch<PureFactContext> {
                 base,
                 bytes,
                 wide: false,
+                ..
             } = proposition
             && candidates.len() > 1
         {

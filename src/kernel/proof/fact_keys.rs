@@ -3644,18 +3644,21 @@ mod proposition_identity_tests {
             ProgramValue::Int32(OldMachineTerm::constant(9)),
         );
         let left = Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: left_memory.clone(),
             base: pointer.clone(),
             bytes: (OldMachineTerm::constant(1)).into(),
             wide: false,
         };
         let same = Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: left_memory,
             base: pointer.clone(),
             bytes: (OldMachineTerm::constant(1)).into(),
             wide: false,
         };
         let changed = Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: right_memory,
             base: pointer,
             bytes: (OldMachineTerm::constant(1)).into(),
@@ -3919,6 +3922,7 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
             base,
             bytes,
             wide,
+            ..
         } => {
             if !ALLOW_LOADS {
                 return None;

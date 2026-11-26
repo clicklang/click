@@ -107,13 +107,24 @@ once that point exists.
 
 A fact that quotes a memory state also carries the point that memory is the
 state at, so it can be named by the point rather than by searching for its
-memory. `MemoryEffectSummary` carries `before_point` and `after_point`; the
-point is not part of the fact's equality, so adding it changes no reasoning.
-Each is the point of the state the memory was taken from. That state's memory
-can still differ from its point's: a verified proof-only view names more
-cells of the same state, but some states hold memory no point holds, and
-those must be named where they are made before a fact can drop its memory for
-its point.
+memory: `before_point` and `after_point` on `MemoryEffectSummary`,
+`MemoryMutatesOnly` and `HeapAllocationFreed`, and `point` on `MemoryLoads`,
+`MemoryCanStore`, `MemoryLoadable` and `ResourceViewable`. A point is a
+`PathLink`, which is not part of the fact's equality, so carrying it changes
+no reasoning. A fact built from a state takes `ExecutionState::memory_point`;
+a rewrite of a fact keeps its point.
+
+Where a fact quotes a memory no point holds, it says so with
+`PathLink::not_yet_a_point()`, a migration marker: each use is a fact to give
+a point before it can drop its memory. The current uses are memories made
+inside an atomic region (the frees of a call's allocation delta, a staged
+state's memory), memories derived from another (a footprint's endpoints, a
+memory without a local's block), facts built from a bare memory value (the
+liveness queries in `memory_reasoning`, the public `prove_memory_load*`
+theorems) and facts rewritten from `MemoryReadDefined`, whose point is an id.
+A state's memory can also differ from its point's when it is not marked: a
+verified proof-only view names more cells of the same state, but some states
+hold memory no point holds.
 
 Review frontend and lowering changes against these checks.
 

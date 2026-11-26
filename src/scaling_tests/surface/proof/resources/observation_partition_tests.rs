@@ -82,6 +82,7 @@ fn memory_load_outcome_checks_shared_current_read_dependencies_without_export() 
             );
         }
         let fact = Proposition::MemoryLoads {
+            point: Default::default(),
             memory: state.memory().clone(),
             pointer,
             outcome: ExpressionOutcome::Value(crate::kernel::StoredProgramValue::from(
@@ -145,6 +146,7 @@ fn stored_conditions_and_counts_check_current_dependency_without_export() {
             true,
         );
         let count_fact = Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: state.memory().clone(),
             base: pointer.clone(),
             bytes: StoredMachineTerm::from_value(crate::kernel::ExecutionValue::Shared(

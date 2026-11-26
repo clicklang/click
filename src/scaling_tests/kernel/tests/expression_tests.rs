@@ -52,6 +52,7 @@ fn loadable_object_provenance_lookup_ignores_unrelated_external_pointers() {
     };
     let target = external(31_070);
     let loadable = |base| Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: SymbolicMemory::new(),
         base,
         bytes: (OldMachineTerm::constant(4)).into(),

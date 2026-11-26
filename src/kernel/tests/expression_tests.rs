@@ -3147,6 +3147,7 @@ fn nonempty_loadability_establishes_external_pointer_object_provenance() {
     };
     let state = ExecutionState::new().with_local("pointer", ProgramValue::pointer(pointer.clone()));
     let loadable = |bytes| Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: state.memory().clone(),
         base: pointer.clone(),
         bytes: (OldMachineTerm::constant(bytes)).into(),
@@ -3385,6 +3386,7 @@ fn symbolic_loadable_discharges_pointer_access_obligation() {
     );
     let assumptions = PureFactContext::new()
         .assume_proposition(Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: memory.clone(),
             base: base.clone(),
             bytes: (binary_node!(
@@ -4785,6 +4787,8 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
         &a,
         ProgramType::Int32Pointer,
         &[Proposition::MemoryMutatesOnly {
+            before_point: Default::default(),
+            after_point: Default::default(),
             before: before_b.clone(),
             after: memory.clone(),
             writes: vec![(b.clone(), crate::kernel::AccessExtent::from(8))],
@@ -4829,6 +4833,8 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
         &c,
         ProgramType::Int32Pointer,
         &[Proposition::MemoryMutatesOnly {
+            before_point: Default::default(),
+            after_point: Default::default(),
             before: before.clone(),
             after: changed.clone(),
             writes: vec![(b.clone(), crate::kernel::AccessExtent::from(4))],

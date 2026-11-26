@@ -1437,7 +1437,9 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
             memory,
             pointer,
             outcome,
+            point,
         } => Proposition::MemoryLoads {
+            point: point.clone(),
             memory: s.memory(memory),
             pointer: s.pointer(pointer),
             outcome: walk_program_expression_outcome(outcome, s),
@@ -1457,7 +1459,9 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
             memory,
             pointer,
             byte_width,
+            point,
         } => Proposition::MemoryCanStore {
+            point: point.clone(),
             memory: s.memory(memory),
             pointer: s.pointer(pointer),
             byte_width: *byte_width,
@@ -1467,7 +1471,9 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
             base,
             bytes,
             wide,
+            point,
         } => Proposition::MemoryLoadable {
+            point: point.clone(),
             memory: s.memory(memory),
             base: s.pointer(base),
             bytes: match bytes.value() {
@@ -1481,9 +1487,15 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
             left: Box::new(walk_resource(left, s)),
             right: Box::new(walk_resource(right, s)),
         },
-        Proposition::ResourceViewable { memory, resource } => {
-            crate::kernel::resource_viewable(&s.memory(memory), walk_resource(resource, s))
-        }
+        Proposition::ResourceViewable {
+            memory,
+            point,
+            resource,
+        } => crate::kernel::resource_viewable(
+            &s.memory(memory),
+            point.clone(),
+            walk_resource(resource, s),
+        ),
         Proposition::ResourceContains { parent, child } => Proposition::ResourceContains {
             parent: Box::new(walk_resource(parent, s)),
             child: Box::new(walk_resource(child, s)),
@@ -1495,7 +1507,11 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
             before,
             after,
             writes,
+            before_point,
+            after_point,
         } => Proposition::MemoryMutatesOnly {
+            before_point: before_point.clone(),
+            after_point: after_point.clone(),
             before: s.memory(before),
             after: s.memory(after),
             writes: writes
@@ -1526,7 +1542,11 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
             after,
             allocation_base,
             bytes,
+            before_point,
+            after_point,
         } => Proposition::HeapAllocationFreed {
+            before_point: before_point.clone(),
+            after_point: after_point.clone(),
             before: s.memory(before),
             after: s.memory(after),
             allocation_base: s.pointer(allocation_base),
@@ -2412,6 +2432,7 @@ fn collect_proposition_bound_variables_one(
             memory,
             pointer,
             outcome,
+            ..
         } => {
             collect_memory_bound_variables(memory, variables);
             collect_pointer_bound_variables(pointer, variables);
@@ -2431,12 +2452,15 @@ fn collect_proposition_bound_variables_one(
             base,
             bytes,
             wide: _,
+            ..
         } => {
             collect_memory_bound_variables(memory, variables);
             collect_pointer_bound_variables(base, variables);
             collect_expression_value_bound_variables(bytes.value(), variables);
         }
-        Proposition::ResourceViewable { memory, resource } => {
+        Proposition::ResourceViewable {
+            memory, resource, ..
+        } => {
             collect_memory_bound_variables(memory, variables);
             collect_resource_bound_variables(resource, variables);
         }
@@ -2457,6 +2481,7 @@ fn collect_proposition_bound_variables_one(
             before,
             after,
             writes,
+            ..
         } => {
             collect_memory_bound_variables(before, variables);
             collect_memory_bound_variables(after, variables);
@@ -2483,6 +2508,7 @@ fn collect_proposition_bound_variables_one(
             after,
             allocation_base,
             bytes,
+            ..
         } => {
             collect_memory_bound_variables(before, variables);
             collect_memory_bound_variables(after, variables);
@@ -4627,6 +4653,7 @@ fn rewrite_integer_memory_loadable_with_walker(
         base,
         bytes,
         wide,
+        ..
     } = proposition
     else {
         unreachable!("memory-viewable helper called for another proposition carrier")
@@ -4649,6 +4676,7 @@ fn rewrite_integer_memory_loadable_with_walker(
         // SymbolicMemory states are immutable proof-state identities.  Keep the same
         // handle and rewrite only the selected address/width expressions.
         memory: memory.clone(),
+        point: crate::kernel::program_point::PathLink::not_yet_a_point(),
         base: pointer.address().clone(),
         bytes: crate::kernel::StoredMachineTerm::new(
             if *wide {

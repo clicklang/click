@@ -154,7 +154,7 @@ pub(super) fn matched_resource_instance_case_read_projection(
             continue;
         };
         supporting_facts.extend(crate::kernel::admitted_memory_range_span_facts(range));
-        supporting_facts.push(range.loadable_fact(&state.memory));
+        supporting_facts.push(range.loadable_fact(&state.memory, state.memory_point()));
     }
     supporting_facts.push(Proposition::ResourceComposition(body_resources));
     let mut body_assumptions = assumptions

@@ -1038,6 +1038,7 @@ mod tests {
             }
         }
         let at = |memory| Proposition::MemoryLoadable {
+            point: Default::default(),
             memory,
             base: OldAddress {
                 base: AddressBase::ExternalArgument,

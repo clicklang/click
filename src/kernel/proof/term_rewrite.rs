@@ -3738,6 +3738,7 @@ impl<'a> TermRewrite<'a> {
             }
             Proposition::MemoryLoadable {
                 memory,
+                point,
                 base,
                 bytes,
                 wide,
@@ -3755,6 +3756,7 @@ impl<'a> TermRewrite<'a> {
                 }
                 Proposition::MemoryLoadable {
                     memory: memory.clone(),
+                    point: point.clone(),
                     base,
                     bytes: crate::kernel::StoredMachineTerm::new(
                         if *wide {
@@ -3771,6 +3773,7 @@ impl<'a> TermRewrite<'a> {
                 memory,
                 pointer,
                 byte_width,
+                point,
             } => {
                 if !self.source_variables_reserved {
                     let mut variables = self.new_carrier_variables();
@@ -3782,6 +3785,7 @@ impl<'a> TermRewrite<'a> {
                     return exhausted_proposition();
                 }
                 Proposition::MemoryCanStore {
+                    point: point.clone(),
                     memory: memory.clone(),
                     pointer,
                     byte_width: *byte_width,
@@ -3816,9 +3820,13 @@ impl<'a> TermRewrite<'a> {
                     right: Box::new(self.resource(right)),
                 }
             }
-            Proposition::ResourceViewable { memory, resource } => {
+            Proposition::ResourceViewable {
+                memory,
+                point,
+                resource,
+            } => {
                 self.reserve_resource_variables_once(&[resource]);
-                crate::kernel::resource_viewable(memory, self.resource(resource))
+                crate::kernel::resource_viewable(memory, point.clone(), self.resource(resource))
             }
             Proposition::ResourceContains { parent, child } => {
                 self.reserve_resource_variables_once(&[parent, child]);
@@ -9505,6 +9513,7 @@ mod tests {
     fn checked_substitution_collector_rejects_work_exhaustion() {
         let source = Variable(3_104_100);
         let atom = Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: SymbolicMemory::new(),
             base: OldAddress {
                 base: AddressBase::ExternalArgument,

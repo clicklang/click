@@ -2118,6 +2118,7 @@ fn while_invariant_is_proof_obligation() {
         offset: AddressOffset::constant(0),
     };
     let invariant = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: SymbolicMemory::new(),
         base: pointer,
         bytes: (OldMachineTerm::constant(4)).into(),

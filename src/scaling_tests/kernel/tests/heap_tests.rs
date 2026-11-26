@@ -676,6 +676,7 @@ fn typed_validity_uses_one_storage_anchor_among_many_aliases() {
         }
         // The equality supplies storage identity, not access authority.
         facts = facts.assume_proposition(Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: memory.clone(),
             base: query.clone(),
             bytes: (OldMachineTerm::constant(8)).into(),

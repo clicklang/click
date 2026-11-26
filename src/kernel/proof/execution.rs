@@ -1350,6 +1350,7 @@ fn cached_body_loadability(
         base,
         bytes,
         wide,
+        ..
     } = fact
     else {
         return false;
@@ -1368,6 +1369,7 @@ fn cached_body_loadability(
     }
     allowed.contains(&Proposition::MemoryLoadable {
         memory: body_memory.clone(),
+        point: crate::kernel::program_point::PathLink::not_yet_a_point(),
         base: base.clone(),
         bytes: bytes.clone(),
         wide: *wide,
@@ -5344,6 +5346,7 @@ fn checked_interface_effect_facts_along(
                     before,
                     after,
                     writes: changed,
+                    ..
                 } => {
                     if !fact.is_certified() {
                         return Err("an interface arm contains an uncertified memory effect");
@@ -5411,8 +5414,10 @@ fn checked_interface_effect_facts_along(
                 Proposition::HeapAllocationFreed {
                     before,
                     after,
+                    after_point,
                     allocation_base,
                     bytes,
+                    ..
                 } => {
                     if !chained && !interface_chain_memory_matches(&memory, before, assumptions) {
                         return Err(
@@ -5424,6 +5429,7 @@ fn checked_interface_effect_facts_along(
                         allocation_base.clone(),
                         bytes.clone(),
                         after.clone(),
+                        after_point.clone(),
                     ));
                 }
                 _ if fact.is_certified() => {}
@@ -5441,10 +5447,12 @@ fn checked_interface_effect_facts_along(
         if heap_frees[0] == heap_frees[1] && !heap_frees[0].is_empty() {
             let facts = heap_frees[0]
                 .iter()
-                .map(|(allocation_base, bytes, after)| {
+                .map(|(allocation_base, bytes, after, after_point)| {
                     ExecutionPureFact::certified(Proposition::HeapAllocationFreed {
                         before: split_state.memory().clone(),
+                        before_point: split_state.memory_point(),
                         after: after.clone(),
+                        after_point: after_point.clone(),
                         allocation_base: allocation_base.clone(),
                         bytes: bytes.clone(),
                     })
@@ -5457,7 +5465,9 @@ fn checked_interface_effect_facts_along(
     let proposition = if ranges.is_empty() {
         Proposition::MemoryMutatesOnly {
             before: split_state.memory().clone(),
+            before_point: split_state.memory_point(),
             after: joined_state.memory().clone(),
+            after_point: joined_state.memory_point(),
             writes,
         }
     } else {
@@ -5637,7 +5647,8 @@ fn interface_resource_intrinsic_fact(
 ) -> Option<Proposition> {
     let segment = spec.memory_segment()?;
     let range = resource.memory_range()?;
-    (segment.element_width() == range.element_width()).then(|| range.loadable_fact(state.memory()))
+    (segment.element_width() == range.element_width())
+        .then(|| range.loadable_fact(state.memory(), state.memory_point()))
 }
 
 /// The selected kernel lowering and the precise context in which it passed
@@ -5842,6 +5853,7 @@ impl InterfaceReadPremises {
                 base,
                 bytes,
                 wide: false,
+                ..
             } = &premise
             else {
                 continue;
@@ -5875,12 +5887,14 @@ pub(super) fn interface_read_is_subrange(goal: &Proposition, premise: &Propositi
             base,
             bytes,
             wide: false,
+            ..
         },
         Proposition::MemoryLoadable {
             memory: source_memory,
             base: source_base,
             bytes: source_bytes,
             wide: false,
+            ..
         },
     ) = (goal, premise)
     else {
@@ -7796,7 +7810,7 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
                     // This is read validity, not ownership or a value equality;
                     // no ambient range search or cross-state transport occurs.
                     let materialized_read = matches!(fact,
-                        Proposition::MemoryLoadable { memory, base, bytes, wide: false }
+                        Proposition::MemoryLoadable { memory, base, bytes, wide: false, .. }
                             if bytes.as_const().is_some_and(|width|
                                 width > 0 && memory.is_loadable_concretely(base, width)));
                     if !materialized_read

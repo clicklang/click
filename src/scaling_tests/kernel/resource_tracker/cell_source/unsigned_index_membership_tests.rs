@@ -45,6 +45,8 @@ fn unsigned_index_membership_ignores_unrelated_facts_and_stores() {
             let before = memory.clone();
             memory = memory.store(target.clone(), crate::kernel::uint8(0u32));
             context = context.assume_proposition(Proposition::MemoryMutatesOnly {
+                before_point: Default::default(),
+                after_point: Default::default(),
                 before,
                 after: memory.clone(),
                 writes: vec![(target, crate::kernel::AccessExtent::from(1))],

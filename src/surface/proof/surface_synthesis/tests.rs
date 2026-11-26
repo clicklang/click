@@ -915,6 +915,7 @@ fn external_byte_range_caller() -> (
 fn exact_external_zero_based_byte_range_round_trips_symbolic_end() {
     let (parameters, arguments, state) = external_byte_range_caller();
     let requirement = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: state.memory().clone(),
         base: match &arguments[0] {
             ProgramExpression::Value(ProgramValue::Pointer(pointer)) => pointer.address().clone(),
@@ -961,6 +962,7 @@ fn exact_external_zero_based_byte_range_resolves_direct_variable_argument() {
     };
     arguments[0] = ProgramExpression::Variable("bytes".into());
     let requirement = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: state.memory().clone(),
         base,
         bytes: (OldMachineTerm::add(
@@ -993,6 +995,7 @@ fn exact_external_zero_based_byte_range_rejects_ambiguous_alias() {
     ));
     arguments.push(arguments[0].clone());
     let requirement = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: state.memory().clone(),
         base: match &arguments[0] {
             ProgramExpression::Value(ProgramValue::Pointer(pointer)) => pointer.address().clone(),
@@ -1044,6 +1047,7 @@ fn external_byte_range_requirement(binder: Variable, length: &OldMachineTerm) ->
                 )),
             )),
             Box::new(Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: SymbolicMemory::new(),
                 base: OldAddress {
                     base: AddressBase::ExternalArgument,
@@ -1118,6 +1122,7 @@ fn external_symbolic_element_requirement_term(
     index: OldMachineTerm,
 ) -> Proposition {
     Proposition::MemoryLoadable {
+        point: Default::default(),
         memory,
         base: OldAddress {
             base: AddressBase::ExternalArgument,
@@ -1407,6 +1412,7 @@ fn strlen_symbolic_element_range_rejects_wrong_identity() {
     let (parameters, arguments, state) = external_symbolic_element_context(memory.clone());
 
     let wrong_base = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: memory.clone(),
         base: OldAddress {
             base: AddressBase::ExternalArgument,
@@ -1570,6 +1576,7 @@ fn non_external_named_range_still_uses_general_synthesis() {
         .with_local("elements", pointer)
         .with_local("start", start);
     let requirement = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory,
         base: OldAddress {
             base: AddressBase::Concrete("local:elements".into()),
@@ -1726,6 +1733,7 @@ fn external_element_range_requirement(
     end: OldMachineTerm,
 ) -> Proposition {
     Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: SymbolicMemory::new(),
         base: OldAddress {
             base: AddressBase::ExternalArgument,

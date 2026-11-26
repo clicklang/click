@@ -10558,10 +10558,14 @@ fn apply_verified_heap_allocation_delta(
             .map_err(|error| {
                 VerifiedAllocationDeltaError::Runtime(RuntimeError::InvalidFree(error))
             })?;
+        // The frees are steps of the call's exit region: their memories lie
+        // between its effect point and its exit, and no point holds them.
         effects.push(ExecutionPureFact::internal(
             Proposition::HeapAllocationFreed {
                 before: before_free,
+                before_point: crate::kernel::program_point::PathLink::not_yet_a_point(),
                 after: memory.clone(),
+                after_point: crate::kernel::program_point::PathLink::not_yet_a_point(),
                 allocation_base: base,
                 bytes: bytes.clone(),
             },
@@ -16329,9 +16333,9 @@ fn rewrite_resource_instance_selecting_children_unspelled(
         if observe {
             // The attached view supplies permission after the tactic. A
             // state-bearing loadability fact is needed only for body checking.
-            local_loadability.push(range.loadable_fact(&state.memory));
+            local_loadability.push(range.loadable_fact(&state.memory, state.memory_point()));
         } else {
-            facts.push(range.loadable_fact(&state.memory));
+            facts.push(range.loadable_fact(&state.memory, state.memory_point()));
         }
     }
     // What a fold consumes is what holding the folded instance lets C read.

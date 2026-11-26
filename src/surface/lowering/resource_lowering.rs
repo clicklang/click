@@ -1229,6 +1229,7 @@ fn check_segment_base_loadability(
         return Ok(());
     };
     let obligation = Proposition::MemoryLoadable {
+        point: state.memory_point(),
         memory: state.memory().clone(),
         base: cell.into_pointer(),
         bytes: (OldMachineTerm::constant(value_type.byte_width())).into(),
@@ -3241,7 +3242,11 @@ fn loadable_requirement_props(
                 .map(|requirement| requirement.proposition),
         );
         reject_impossible_range_guards(&guards, assumptions)?;
-        let mut propositions = vec![memory_range_loadable_atom_prop(memory, &range)];
+        let mut propositions = vec![memory_range_loadable_atom_prop(
+            memory,
+            state.memory_point(),
+            &range,
+        )];
         propositions.extend(guards);
         return Ok(propositions);
     }
@@ -3249,6 +3254,7 @@ fn loadable_requirement_props(
     reject_impossible_range_guards(&guards, assumptions)?;
     let mut propositions = vec![Proposition::MemoryLoadable {
         memory: memory.clone(),
+        point: state.memory_point(),
         base,
         bytes: (bytes).into(),
         wide: false,
@@ -3268,7 +3274,7 @@ pub(in crate::surface) fn resource_clause_loadable_prop_at_state(
     };
     let mut propositions = ranges
         .iter()
-        .map(|range| memory_range_loadable_atom_prop(state.memory(), range))
+        .map(|range| memory_range_loadable_atom_prop(state.memory(), state.memory_point(), range))
         .collect::<Vec<_>>();
     let first = propositions
         .drain(..1)
@@ -3295,7 +3301,7 @@ pub(in crate::surface) fn resource_clause_loadable_props_at_state(
     };
     let loadable = ranges
         .iter()
-        .map(|range| memory_range_loadable_atom_prop(state.memory(), range))
+        .map(|range| memory_range_loadable_atom_prop(state.memory(), state.memory_point(), range))
         .reduce(|left, right| Proposition::And(Box::new(left), Box::new(right)))
         .expect("memory resource clause has at least one range");
     // Every stated range carries its byte-count guards, whichever clause
@@ -3376,21 +3382,24 @@ pub(in crate::surface) fn resource_clause_memory_ranges_at_state(
 
 pub(in crate::surface) fn memory_range_loadable_prop(
     memory: &SymbolicMemory,
+    point: crate::kernel::program_point::PathLink,
     range: &MemoryRange,
 ) -> Proposition {
-    memory_range_loadable_atom_prop(memory, range)
+    memory_range_loadable_atom_prop(memory, point, range)
 }
 
 pub(in crate::surface) fn memory_range_loadable_atom_prop(
     memory: &SymbolicMemory,
+    point: crate::kernel::program_point::PathLink,
     range: &MemoryRange,
 ) -> Proposition {
     if range.wide_bounds().is_some() {
-        return range.loadable_fact(memory);
+        return range.loadable_fact(memory, point);
     }
     let (base, bytes) = range.byte_footprint();
     Proposition::MemoryLoadable {
         memory: memory.clone(),
+        point,
         base,
         bytes: (bytes).into(),
         wide: false,

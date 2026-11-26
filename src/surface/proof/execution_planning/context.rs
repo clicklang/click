@@ -1429,6 +1429,7 @@ mod tests {
             offset: AddressOffset::constant(0),
         };
         let range = Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: crate::kernel::SymbolicMemory::new(),
             base: pointer,
             bytes: (OldMachineTerm::constant(1)).into(),

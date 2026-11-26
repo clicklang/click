@@ -612,6 +612,7 @@ pub(in crate::kernel) fn add_memory_store_obligation(
         assumptions,
         Proposition::MemoryCanStore {
             memory: memory.clone(),
+            point: crate::kernel::program_point::PathLink::not_yet_a_point(),
             pointer: pointer.clone(),
             byte_width: value.byte_width(),
         },
@@ -841,6 +842,7 @@ pub(super) fn append_string_literal_loadable_facts(
     for literal in function.string_literals() {
         let base = SymbolicMemory::string_literal_pointer(literal.identity(), literal.bytes());
         let proposition = Proposition::MemoryLoadable {
+            point: state.memory_point(),
             memory: state.memory.clone(),
             base,
             bytes: (OldMachineTerm::constant(literal.bytes().len() as u32)).into(),

@@ -2068,7 +2068,11 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
             .memory_view_range()
             .or_else(|| lowered.memory_own_range())
         {
-            let kernel = memory_range_loadable_atom_prop(fact_state.memory(), range);
+            let kernel = memory_range_loadable_atom_prop(
+                fact_state.memory(),
+                fact_state.memory_point(),
+                range,
+            );
             surface_propositions
                 .record_lowering(
                     &SyntaxProposition::Loadable {
@@ -2707,7 +2711,7 @@ pub(super) fn append_lowered_resource_clause_loadable_fact(
     else {
         return;
     };
-    let proposition = memory_range_loadable_prop(state.memory(), range);
+    let proposition = memory_range_loadable_prop(state.memory(), state.memory_point(), range);
     if !propositions.contains(&proposition) {
         propositions.push(proposition);
     }
@@ -3613,7 +3617,11 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             .memory_view_range()
             .or_else(|| lowered.memory_own_range())
         {
-            available_pure_facts.insert(memory_range_loadable_prop(state.memory(), range));
+            available_pure_facts.insert(memory_range_loadable_prop(
+                state.memory(),
+                state.memory_point(),
+                range,
+            ));
         }
     }
 

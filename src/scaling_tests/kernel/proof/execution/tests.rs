@@ -287,6 +287,7 @@ fn cached_body_loadability_work_is_linear_in_cache_delta_and_selected_facts() {
             )
         });
         let view = |memory, index| Proposition::MemoryLoadable {
+            point: Default::default(),
             memory,
             base: OldAddress {
                 base: "body".into(),
@@ -332,6 +333,7 @@ fn return_materialized_reads_scale_with_the_selected_cells() {
         let context = returned_proposition_context(&state);
         for pointer in pointers {
             let fact = Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: memory.clone(),
                 base: pointer,
                 bytes: (OldMachineTerm::constant(4)).into(),
@@ -992,6 +994,7 @@ fn interface_read_premises_are_indexed_and_check_the_exact_range() {
     use crate::kernel::{OldAddress, SymbolicMemory};
     let memory = SymbolicMemory::new();
     let readable = |memory: SymbolicMemory, block: String, width| Proposition::MemoryLoadable {
+        point: Default::default(),
         memory,
         base: OldAddress {
             base: block.into(),

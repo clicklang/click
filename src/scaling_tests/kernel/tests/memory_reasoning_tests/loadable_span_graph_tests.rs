@@ -11,6 +11,7 @@ fn direct_loadable_span_graph_queries_scale_without_fact_index() {
         let base = OldAddress::symbolic(Variable(9_320_010));
         let range_bytes = span(var(0));
         let fact = Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: memory.clone(),
             base: base.clone(),
             bytes: (range_bytes.clone()).into(),
@@ -52,6 +53,7 @@ fn direct_loadable_span_graph_queries_scale_without_fact_index() {
 fn filing_a_loadable_fact_in_a_fork_shares_every_other_block() {
     let memory = SymbolicMemory::new();
     let loadable = |id: u64| Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: memory.clone(),
         base: OldAddress::symbolic(Variable(9_330_000 + id)),
         bytes: (span(var(id))).into(),

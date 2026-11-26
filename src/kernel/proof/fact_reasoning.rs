@@ -2320,7 +2320,9 @@ mod tests {
         );
         let effect = ExecutionPureFact::certified(Proposition::MemoryMutatesOnly {
             before: before.memory().clone(),
+            before_point: Default::default(),
             after: after.memory().clone(),
+            after_point: Default::default(),
             writes: vec![(actual.clone(), crate::kernel::AccessExtent::from(1))],
         });
         let footprint = Resource::Footprint(crate::kernel::RegionFootprint::transition(
@@ -2654,7 +2656,9 @@ mod tests {
         let assumptions =
             PureFactContext::new().assume_proposition(Proposition::MemoryMutatesOnly {
                 before: before.clone(),
+                before_point: Default::default(),
                 after: after.clone(),
+                after_point: Default::default(),
                 writes: vec![(written, crate::kernel::AccessExtent::from(4))],
             });
         // The canonical memories are the cells' versions. SymbolicMemory states that

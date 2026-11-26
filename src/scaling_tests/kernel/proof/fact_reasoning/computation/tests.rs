@@ -672,6 +672,7 @@ fn computation_refusal_is_independent_of_memory_history() {
         assert!(cancelled);
         costs.push(work);
         assert!(!computes_leaf(&Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: before.memory().clone(),
             base: pointer,
             bytes: (OldMachineTerm::constant(5)).into(),

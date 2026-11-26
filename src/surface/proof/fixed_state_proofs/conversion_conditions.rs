@@ -254,6 +254,7 @@ fn spell_condition(
         // where the array-index spelling lives.
         let cell = loadable_cell(
             site.spell_proposition(&Proposition::MemoryLoadable {
+                point: site.state.memory_point(),
                 memory: site.state.memory().clone(),
                 base: pointer.clone(),
                 bytes: (OldMachineTerm::constant(4)).into(),

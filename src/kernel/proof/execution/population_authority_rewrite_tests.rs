@@ -278,6 +278,7 @@ fn member_exchange_requires_both_external_body_ownership_and_checked_span() {
             .is_err()
     );
     let span = |bytes| Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: owned.memory().clone(),
         base: external.clone(),
         bytes: (OldMachineTerm::constant(bytes)).into(),

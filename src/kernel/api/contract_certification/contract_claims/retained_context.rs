@@ -602,7 +602,9 @@ mod tests {
         prepared.effect_facts = vec![crate::kernel::ExecutionPureFact::certified(
             Proposition::MemoryMutatesOnly {
                 before: memory.clone(),
+                before_point: Default::default(),
                 after: memory,
+                after_point: Default::default(),
                 writes: vec![(address, extent)],
             },
         )]

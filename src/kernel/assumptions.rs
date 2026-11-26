@@ -11181,6 +11181,7 @@ impl ExecutionPureFact {
 
     pub(super) fn certified_store(
         before: SymbolicMemory,
+        before_point: crate::kernel::program_point::PathLink,
         after: crate::kernel::ProgramPoint,
         pointer: OldAddress,
         value: ProgramValue,
@@ -11189,12 +11190,15 @@ impl ExecutionPureFact {
         let value_equation =
             super::memory_history::store_value_equation_at(&after, &pointer, &value)
                 .map(std::sync::Arc::new);
+        let after_link = after.path_link().clone();
         let after_point = crate::kernel::ProgramPoint::viewing(after.shared_memory(), &after);
         let after = after.memory().clone();
         Self {
             proposition: std::sync::Arc::new(Proposition::MemoryMutatesOnly {
                 before: before.clone(),
+                before_point,
                 after: after.clone(),
+                after_point: after_link,
                 writes: vec![(
                     pointer.clone(),
                     crate::kernel::assumptions::access_extent_of_value(&value),

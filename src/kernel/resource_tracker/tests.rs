@@ -1097,6 +1097,8 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
         "source discovery does not cross the cache-forgetting and store edges"
     );
     let effect = Proposition::MemoryMutatesOnly {
+        before_point: Default::default(),
+        after_point: Default::default(),
         before: before.clone(),
         after: after.memory().clone(),
         writes: vec![(written, crate::kernel::AccessExtent::from(4))],

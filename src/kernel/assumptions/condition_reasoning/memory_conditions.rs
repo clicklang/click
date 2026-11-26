@@ -222,6 +222,7 @@ impl PureFactContext {
                     before,
                     after,
                     writes,
+                    ..
                 } => {
                     let matches = memories_match_for_pointer_load(before, left, pointer)
                         && memories_match_for_pointer_load(after, right, pointer)
@@ -277,6 +278,7 @@ impl PureFactContext {
                     after,
                     allocation_base,
                     bytes,
+                    ..
                 } => {
                     // Bounded for the same reason as the effect-summary arm.
                     let endpoint_matches = |expected: &SymbolicMemory, actual: &SymbolicMemory| {

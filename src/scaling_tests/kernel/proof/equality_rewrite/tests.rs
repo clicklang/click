@@ -580,6 +580,7 @@ fn pointer_view_rewrite_preserves_state_span_and_ambient_scaling() {
     let memory = SymbolicMemory::new().with_block("pointer-view-rewrite", 8);
     let span = OldMachineTerm::Variable(Variable(192_912));
     let goal = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: memory.clone(),
         base: source,
         bytes: (span.clone()).into(),
@@ -607,6 +608,7 @@ fn pointer_view_rewrite_preserves_state_span_and_ambient_scaling() {
             base,
             bytes,
             wide: false,
+            ..
         } = rewritten.proposition()
         else {
             panic!("viewability changed kind")

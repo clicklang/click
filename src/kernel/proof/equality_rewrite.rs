@@ -1786,7 +1786,9 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 base,
                 bytes,
                 wide,
+                point,
             } => Proposition::MemoryLoadable {
+                point: point.clone(),
                 // Same-block pointer equalities use offsets rather than the
                 // AddressEqual carrier. Substitute the selected address while
                 // retaining the exact state and readable byte span.
@@ -1915,8 +1917,13 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 left: Box::new(rewrite_resource_offset(goal_left, left, right)),
                 right: Box::new(rewrite_resource_offset(goal_right, left, right)),
             },
-            Proposition::ResourceViewable { memory, resource } => crate::kernel::resource_viewable(
+            Proposition::ResourceViewable {
                 memory,
+                point,
+                resource,
+            } => crate::kernel::resource_viewable(
+                memory,
+                point.clone(),
                 rewrite_resource_offset(resource, left, right),
             ),
             Proposition::ResourceContains { parent, child } => Proposition::ResourceContains {
@@ -2153,8 +2160,10 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 base,
                 bytes,
                 wide,
+                point,
             } => {
                 Proposition::MemoryLoadable {
+                    point: point.clone(),
                     // Clone only shared state roots. Equality changes the
                     // selected address, never the memory or view span.
                     memory: memory.clone(),
@@ -2672,8 +2681,12 @@ fn rewrite_atomic_proposition_by_exact_equality(
             left: Box::new(rewrite_resource_term(goal_left)),
             right: Box::new(rewrite_resource_term(goal_right)),
         },
-        Proposition::ResourceViewable { memory, resource } => {
-            crate::kernel::resource_viewable(memory, rewrite_resource_term(resource))
+        Proposition::ResourceViewable {
+            memory,
+            point,
+            resource,
+        } => {
+            crate::kernel::resource_viewable(memory, point.clone(), rewrite_resource_term(resource))
         }
         Proposition::ResourceContains { parent, child } => Proposition::ResourceContains {
             parent: Box::new(rewrite_resource_term(parent)),
@@ -2698,7 +2711,9 @@ fn rewrite_atomic_proposition_by_exact_equality(
             base,
             bytes,
             wide,
+            point,
         } => Proposition::MemoryLoadable {
+            point: point.clone(),
             memory: memory.clone(),
             base: OldAddress {
                 base: base.base.clone(),

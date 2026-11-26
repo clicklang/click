@@ -143,6 +143,7 @@ fn loadability_count_storage_shares_growing_machine_operands() {
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let fact = Proposition::MemoryLoadable {
+                    point: Default::default(),
                     memory: SymbolicMemory::new(),
                     base: OldAddress::symbolic(Variable(10993684)),
                     bytes: StoredMachineTerm::from_value(root.clone().into()).unwrap(),

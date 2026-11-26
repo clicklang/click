@@ -873,6 +873,8 @@ fn execution_effect_diagnostics_omit_raw_memory_states() {
     let after = before.clone().store(pointer.clone(), int32(2));
     let facts = vec![
         ExecutionPureFact::new(Proposition::MemoryMutatesOnly {
+            before_point: Default::default(),
+            after_point: Default::default(),
             before: before.clone(),
             after: after.clone(),
             writes: vec![(pointer.clone(), crate::kernel::AccessExtent::from(4))],
@@ -889,6 +891,8 @@ fn execution_effect_diagnostics_omit_raw_memory_states() {
             )],
         }),
         ExecutionPureFact::new(Proposition::HeapAllocationFreed {
+            before_point: Default::default(),
+            after_point: Default::default(),
             before,
             after,
             allocation_base: pointer,
@@ -1588,6 +1592,8 @@ fn empty_footprint_rejects_a_fact_aliased_write_and_effect_range() {
         Proposition::condition_is(OldConditionTerm::address_equal(alias.clone(), global), true);
     let facts = [
         ExecutionPureFact::new(Proposition::MemoryMutatesOnly {
+            before_point: Default::default(),
+            after_point: Default::default(),
             before: before.clone(),
             after: after.clone(),
             writes: vec![(alias.clone(), crate::kernel::AccessExtent::from(4))],

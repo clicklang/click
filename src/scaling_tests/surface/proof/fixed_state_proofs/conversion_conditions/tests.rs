@@ -4,12 +4,14 @@ fn loadability_explanation_ignores_unrelated_objects() {
     let expression = ProgramExpression::Variable("index".into());
     let site = StatedSite::new(StatedForm::ProgramExpression(&expression), &state, &values);
     let missing = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: state.memory().clone(),
         base: pointer_base(&values),
         bytes: (OldMachineTerm::constant(4)).into(),
         wide: false,
     };
     let covering = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: state.memory().clone(),
         base: pointer_base(&values),
         bytes: (OldMachineTerm::constant(8)).into(),
@@ -23,6 +25,7 @@ fn loadability_explanation_ignores_unrelated_objects() {
         let mut context = PureFactContext::new();
         for index in 0..size {
             context = context.assume_proposition(Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: state.memory().clone(),
                 base: OldAddress {
                     base: AddressBase::Heap(index),

@@ -211,6 +211,7 @@ int32 id(int32 x) {
                 var,
                 crate::kernel::Sort::ProgramInt32,
                 Proposition::MemoryLoadable {
+                    point: Default::default(),
                     memory: crate::kernel::SymbolicMemory::new().with_declared_scalar_block(
                         "local:word".into(),
                         4,

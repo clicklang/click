@@ -53,6 +53,7 @@ fn checked_loadability_ignores_unrelated_free_history() {
             let facts = assumptions
                 .clone()
                 .assume_proposition(Proposition::MemoryLoadable {
+                    point: Default::default(),
                     memory: before.clone(),
                     base: target.clone(),
                     bytes: 8u32.into(),
@@ -204,12 +205,14 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
         true,
     );
     let view = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: memory.clone(),
         base: storage.clone(),
         bytes: (OldMachineTerm::constant(4)).into(),
         wide: false,
     };
     let goal = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: memory.clone(),
         base: result.clone(),
         bytes: (OldMachineTerm::constant(4)).into(),
@@ -229,6 +232,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
             .assume_proposition(view.clone());
         for index in 0..size {
             context = context.assume_proposition(Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: memory.clone(),
                 base: OldAddress {
                     base: format!("unrelated-view-{index}").into(),
@@ -245,6 +249,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
         assert!(!crate::kernel::search::ProofSearch::proves(
             &(context),
             &Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: memory.clone(),
                 base: result.offset_by_bytes(4),
                 bytes: (OldMachineTerm::constant(4)).into(),
@@ -267,6 +272,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
             true,
         ))
         .assume_proposition(Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: before,
             base: local,
             bytes: (OldMachineTerm::constant(4)).into(),
@@ -275,6 +281,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
     assert!(!crate::kernel::search::ProofSearch::proves(
         &(context),
         &Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: after,
             base: result,
             bytes: (OldMachineTerm::constant(4)).into(),
@@ -295,6 +302,7 @@ fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
         .map(|size| {
             let mut assumptions =
                 PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
+                    point: Default::default(),
                     memory: memory.clone(),
                     base: target.clone(),
                     bytes: (OldMachineTerm::constant(8)).into(),
@@ -302,6 +310,7 @@ fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
                 });
             for index in 0..size {
                 assumptions = assumptions.assume_proposition(Proposition::MemoryLoadable {
+                    point: Default::default(),
                     memory: memory.clone(),
                     base: OldAddress {
                         base: target.base.clone(),
@@ -315,6 +324,7 @@ fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
                 crate::kernel::search::ProofSearch::proves(
                     &(assumptions),
                     &Proposition::MemoryLoadable {
+                        point: Default::default(),
                         memory: memory.clone(),
                         base: target.clone(),
                         bytes: (OldMachineTerm::constant(4)).into(),

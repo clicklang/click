@@ -4525,6 +4525,7 @@ fn memory_load_is_directly_unchanged(
                     before: effect_before,
                     after: effect_after,
                     writes,
+                    ..
                 } => {
                     effect_before == before
                         && (effect_after == after
@@ -4570,6 +4571,7 @@ fn memory_load_is_directly_unchanged(
                     after: effect_after,
                     allocation_base,
                     bytes,
+                    ..
                 } => {
                     effect_before == before
                         && memories_directly_match_for_pointer_load(
@@ -6430,6 +6432,7 @@ pub(crate) fn certified_store_loadability_facts(
             };
             Some(Proposition::MemoryLoadable {
                 memory: store.after.clone(),
+                point: store.after_point.path_link().clone(),
                 base: store.pointer.clone(),
                 bytes: (OldMachineTerm::constant(byte_width)).into(),
                 wide: false,
@@ -9037,6 +9040,7 @@ mod direct_unchanged_scaling_tests {
             let _session = crate::kernel::VerificationSession::enter();
             let loadable =
                 |memory: &SymbolicMemory, base: OldAddress| Proposition::MemoryLoadable {
+                    point: Default::default(),
                     memory: memory.clone(),
                     base,
                     bytes: (OldMachineTerm::constant(4)).into(),
@@ -9170,6 +9174,7 @@ fn certified_scalar_store_equations_name_the_read_at_its_actual_width() {
         );
         let facts: ExecutionFacts = vec![ExecutionPureFact::certified_store(
             before,
+            Default::default(),
             ProgramPoint::of_memory(&after),
             address,
             value,
@@ -9223,6 +9228,7 @@ fn a_store_equation_admitted_before_a_typed_read_joins_reads_at_equal_indexes() 
         .store(cell(stored), ProgramValue::Int32(variable(value)));
     let facts: ExecutionFacts = vec![ExecutionPureFact::certified_store(
         before,
+        Default::default(),
         ProgramPoint::of_memory(&after),
         cell(stored),
         ProgramValue::Int32(variable(value)),
@@ -9655,6 +9661,7 @@ fn the_equation_for_an_indexed_store_names_its_written_point() {
     let point = after.program_point();
     let fact = ExecutionPureFact::certified_store(
         before.memory().clone(),
+        before.memory_point(),
         point.clone(),
         slot.clone(),
         value,

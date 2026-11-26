@@ -474,6 +474,7 @@ impl PureFactContext {
         crate::instrumentation::record_deterministic_work(1);
         if self.contains_assumed_exact(&Proposition::MemoryLoadable {
             memory: memory.clone(),
+            point: crate::kernel::program_point::PathLink::not_yet_a_point(),
             base: base.clone(),
             bytes: crate::kernel::StoredMachineTerm::new(
                 crate::kernel::MachineIntegerType::UInt64,
@@ -537,6 +538,7 @@ impl PureFactContext {
                     base: source_base,
                     bytes: source_bytes,
                     wide: true,
+                    ..
                 } = fact
                 else {
                     return false;
@@ -604,6 +606,7 @@ impl PureFactContext {
             base: source,
             bytes: held,
             wide: true,
+            ..
         } = fact
         else {
             return false;
@@ -695,6 +698,7 @@ impl PureFactContext {
                 self,
                 &Proposition::MemoryLoadable {
                     memory: memory.clone(),
+                    point: crate::kernel::program_point::PathLink::not_yet_a_point(),
                     base: base.clone(),
                     bytes: (bytes.clone()).into(),
                     wide: false,
@@ -715,6 +719,7 @@ impl PureFactContext {
         crate::instrumentation::record_deterministic_work(1);
         if self.contains_assumed_exact(&Proposition::MemoryLoadable {
             memory: memory.clone(),
+            point: crate::kernel::program_point::PathLink::not_yet_a_point(),
             base: base.clone(),
             bytes: (bytes.clone()).into(),
             wide: false,
@@ -751,6 +756,7 @@ impl PureFactContext {
                     base: range_base,
                     bytes: range_bytes,
                     wide: false,
+                    ..
                 } = proposition
                 else {
                     return false;
@@ -788,6 +794,7 @@ impl PureFactContext {
                     base: range_base,
                     bytes: range_bytes,
                     wide: true,
+                    ..
                 } = fact
                 else {
                     return false;
@@ -829,6 +836,7 @@ impl PureFactContext {
                     base: range_base,
                     bytes: range_bytes,
                     wide: false,
+                    ..
                 } = proposition
                 else {
                     return None;
@@ -900,6 +908,7 @@ impl PureFactContext {
                     base: fact_base,
                     bytes: fact_bytes,
                     wide: false,
+                    ..
                 } = fact
                 else {
                     return None;
@@ -969,6 +978,7 @@ impl PureFactContext {
                         base: address,
                         bytes: span,
                         wide: false,
+                        ..
                     } = fact
                     else {
                         return None;
@@ -1071,6 +1081,7 @@ impl PureFactContext {
         crate::instrumentation::record_deterministic_work(1);
         if self.contains_assumed_exact(&Proposition::MemoryLoadable {
             memory: memory.clone(),
+            point: crate::kernel::program_point::PathLink::not_yet_a_point(),
             base: base.clone(),
             bytes: (bytes.clone()).into(),
             wide: false,
@@ -1103,6 +1114,7 @@ impl PureFactContext {
                     base: range_base,
                     bytes: range_bytes,
                     wide: false,
+                    ..
                 } = proposition
                 else {
                     return false;

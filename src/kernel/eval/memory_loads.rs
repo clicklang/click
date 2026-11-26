@@ -1942,6 +1942,7 @@ fn evaluate_retained_memory_load_case(
     if purpose != LoadPurpose::Logical && !has_external_read_resource {
         let proposition = Proposition::MemoryLoadable {
             memory: memory.clone(),
+            point: crate::kernel::program_point::PathLink::not_yet_a_point(),
             base: pointer.clone(),
             bytes: (OldMachineTerm::constant(value_type.byte_width())).into(),
             wide: false,
@@ -7685,6 +7686,7 @@ mod tests {
                 value_type,
             })
             .assume_proposition(Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: memory.clone(),
                 base: cell.clone(),
                 bytes: (OldMachineTerm::constant(8)).into(),
@@ -7737,6 +7739,7 @@ mod tests {
                         value_type,
                     })
                     .assume_proposition(Proposition::MemoryLoadable {
+                        point: Default::default(),
                         memory: memory.clone(),
                         base: cell.clone(),
                         bytes: (OldMachineTerm::constant(8)).into(),
@@ -8677,6 +8680,7 @@ mod tests {
                 value_type: ProgramType::UInt64,
             })
             .assume_proposition(Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: memory.clone(),
                 base: alias.clone(),
                 bytes: 8u32.into(),
@@ -8940,6 +8944,7 @@ mod tests {
         assert!(memory.known_value(&field).is_none());
         let view = |bytes| {
             PureFactContext::new().assume_proposition(Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: memory.clone(),
                 base: field.clone(),
                 bytes: (OldMachineTerm::constant(bytes)).into(),
@@ -9213,7 +9218,9 @@ mod tests {
             ProgramType::UInt64,
             &[Proposition::MemoryMutatesOnly {
                 before: before.clone(),
+                before_point: Default::default(),
                 after: after.clone(),
+                after_point: Default::default(),
                 writes: vec![],
             }],
             &PureFactContext::new(),
@@ -10010,7 +10017,9 @@ mod tests {
                         ProgramType::Int64Pointer,
                         &[Proposition::MemoryMutatesOnly {
                             before: entry.clone(),
+                            before_point: Default::default(),
                             after: exit.clone(),
+                            after_point: Default::default(),
                             writes: vec![(write, crate::kernel::AccessExtent::from(8))],
                         }],
                         &explicit,

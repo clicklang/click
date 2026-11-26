@@ -262,6 +262,7 @@ fn integer_fold_loadable_obligation_keeps_carriers_separate() {
         destination: MachineIntegerType::Int32,
     };
     let integer_address_requirement = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: SymbolicMemory::new(),
         base: OldAddress {
             base: AddressBase::Concrete("array".into()),
@@ -297,6 +298,7 @@ fn integer_fold_loadable_obligation_keeps_carriers_separate() {
     ));
 
     let c_address_requirement = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: SymbolicMemory::new(),
         base: OldAddress {
             base: AddressBase::Concrete("array".into()),
@@ -340,6 +342,7 @@ fn integer_fold_loadable_obligation_sees_integer_in_registered_pointer() {
         crate::kernel::LoadKind::Int32,
     );
     let requirement = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: SymbolicMemory::new(),
         base: OldAddress {
             base: AddressBase::Concrete("array".into()),
@@ -365,6 +368,7 @@ fn integer_fold_loadable_obligation_sees_integer_in_registered_pointer() {
     ));
 
     let direct_requirement = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: SymbolicMemory::new(),
         base: OldAddress {
             base: AddressBase::Concrete("array".into()),
@@ -416,6 +420,7 @@ fn integer_fold_loadable_obligation_keeps_accumulator_for_two_hop_direct_offset(
         crate::kernel::LoadKind::Int32,
     );
     let requirement = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: SymbolicMemory::new(),
         base: OldAddress {
             base: AddressBase::Concrete("array".into()),
@@ -470,6 +475,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
         true,
     );
     let loadable = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: registered_memory.as_ref().clone(),
         base: registered_pointer.clone(),
         bytes: (OldMachineTerm::constant(4)).into(),
@@ -528,6 +534,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
     let retained_state = drop_verified_load_definition_conjuncts(Proposition::And(
         Box::new(tampered_state),
         Box::new(Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: registered_memory.as_ref().clone(),
             base: registered_pointer.clone(),
             bytes: (OldMachineTerm::constant(4)).into(),
@@ -554,6 +561,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
     let retained_unknown = drop_verified_load_definition_conjuncts(Proposition::And(
         Box::new(unknown_definition),
         Box::new(Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: memory.as_ref().clone(),
             base: pointer,
             bytes: (OldMachineTerm::constant(4)).into(),
@@ -687,6 +695,7 @@ fn integer_existential_branch_filters_exact_load_definitions_only() {
     };
     let exact = defining(registered_memory.clone(), registered_pointer.clone(), load);
     let loadable = Proposition::MemoryLoadable {
+        point: Default::default(),
         memory: registered_memory.as_ref().clone(),
         base: registered_pointer.clone(),
         bytes: (OldMachineTerm::constant(4)).into(),

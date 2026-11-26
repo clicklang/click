@@ -109,6 +109,8 @@ fn memory_effect_write_collection_preserves_each_access_width() {
         offset: AddressOffset::constant(3),
     };
     let fact = ExecutionPureFact::new(Proposition::MemoryMutatesOnly {
+        before_point: Default::default(),
+        after_point: Default::default(),
         before: SymbolicMemory::new(),
         after: SymbolicMemory::new(),
         writes: vec![

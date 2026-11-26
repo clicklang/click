@@ -182,12 +182,14 @@ fn describe_access_bound_prerequisite(
             memory,
             pointer,
             byte_width,
+            ..
         } => ("store to", "write", memory, pointer, *byte_width),
         Proposition::MemoryLoadable {
             memory,
             base,
             bytes,
             wide: false,
+            ..
         } => ("read of", "read", memory, base, bytes.as_const()?),
         _ => return None,
     };

@@ -25,6 +25,7 @@ fn facts_over_one_memory_reserve_its_variables_once() {
         crate::kernel::intern_memory(memory.clone());
         let facts = (0..size)
             .map(|index| Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: memory.clone(),
                 base: pointer(index),
                 bytes: (OldMachineTerm::constant(4)).into(),
@@ -63,6 +64,7 @@ fn facts_over_one_memory_walk_its_bound_variables_once() {
         crate::kernel::intern_memory(memory.clone());
         let facts = (0..size)
             .map(|index| Proposition::MemoryLoadable {
+                point: Default::default(),
                 memory: memory.clone(),
                 base: pointer(index),
                 bytes: (OldMachineTerm::constant(4)).into(),
@@ -79,6 +81,7 @@ fn facts_over_one_memory_walk_its_bound_variables_once() {
         // Adding one more fact over the same memory walks none of it again.
         let before = crate::kernel::reasoning::memory_bound_cell_visits();
         let extended = built.with_fact(Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: memory.clone(),
             base: pointer(0),
             bytes: (OldMachineTerm::constant(8)).into(),

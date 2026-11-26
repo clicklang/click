@@ -157,6 +157,8 @@ fn extending_a_candidate_retains_payload_and_classifies_only_new_facts() {
         true,
     ));
     let effect = ExecutionPureFact::internal(Proposition::MemoryMutatesOnly {
+        before_point: Default::default(),
+        after_point: Default::default(),
         before: state.memory().clone(),
         after: state.memory().clone(),
         writes: vec![],
@@ -1400,6 +1402,7 @@ fn memory_load_store_are_native_theorems() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::MemoryLoads {
+            point: Default::default(),
             memory: SymbolicMemory::new().store(pointer.clone(), value.clone()),
             pointer,
             outcome: ExpressionOutcome::Value((value).into()),
@@ -1429,6 +1432,7 @@ fn store_preserves_distinct_memory_cell_frame() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::MemoryLoads {
+            point: Default::default(),
             memory: memory.store(stored_pointer, int32(9)),
             pointer: loaded_pointer,
             outcome: ExpressionOutcome::Value((int32(42)).into()),
@@ -1447,6 +1451,7 @@ fn missing_memory_load_is_native_undefined_behavior() {
     assert_eq!(
         theorem.proposition(),
         &Proposition::MemoryLoads {
+            point: Default::default(),
             memory: SymbolicMemory::new(),
             pointer,
             outcome: ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory),

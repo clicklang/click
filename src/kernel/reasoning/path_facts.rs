@@ -275,6 +275,7 @@ pub(crate) fn solve_builtin_prop(proposition: &Proposition) -> bool {
             base,
             bytes,
             wide: false,
+            ..
         } => bytes.as_const().is_some_and(|bytes| {
             let written = crate::kernel::eval::pointer_read_over_immediate_store(base);
             memory.access_in_bounds(written.as_ref().unwrap_or(base), bytes)
@@ -284,6 +285,7 @@ pub(crate) fn solve_builtin_prop(proposition: &Proposition) -> bool {
             memory,
             pointer,
             byte_width,
+            ..
         } => memory.access_in_bounds(pointer, *byte_width),
         _ => false,
     }
@@ -2697,7 +2699,9 @@ mod mandatory_integer_obligation_tests {
         let right = ExecutionFacts::from(vec![
             ExecutionPureFact::new(Proposition::MemoryMutatesOnly {
                 before: memory.clone(),
+                before_point: Default::default(),
                 after: memory,
+                after_point: Default::default(),
                 writes: vec![],
             }),
             ExecutionPureFact::certified(Proposition::condition_is(condition, false)),

@@ -573,6 +573,7 @@ fn cached_body_loadability_preserves_exact_range_and_state_barriers() {
         crate::kernel::intern_memory_ref(&before),
     );
     let view = |memory, pointer, width, wide| Proposition::MemoryLoadable {
+        point: Default::default(),
         memory,
         base: pointer,
         bytes: crate::kernel::StoredMachineTerm::new(
@@ -603,6 +604,7 @@ fn cached_body_loadability_preserves_exact_range_and_state_barriers() {
         cached.with_call_memory_havoc(Variable(901_020), &[], &PureFactContext::new(), None);
     assert!(!check(view(havoc, at("body"), 8, false)));
     assert!(!check(Proposition::MemoryCanStore {
+        point: Default::default(),
         memory: before.clone(),
         pointer: at("body"),
         byte_width: 8
@@ -747,6 +749,8 @@ fn return_proof_publication_shares_candidate_fact_and_effect_objects() {
         let state = ExecutionState::new();
         let effects: ExecutionFacts = [ExecutionPureFact::certified(
             Proposition::MemoryMutatesOnly {
+                before_point: Default::default(),
+                after_point: Default::default(),
                 before: state.memory().clone(),
                 after: state.memory().clone(),
                 writes: vec![],
@@ -936,6 +940,7 @@ fn return_proposition_accepts_materialized_reads_without_widening_or_value_facts
     let (function, original) = returned_proposition_trace(&state, &empty);
     let context = returned_proposition_context(&state);
     let read = |memory, base, bytes: OldMachineTerm| Proposition::MemoryLoadable {
+        point: Default::default(),
         memory,
         base,
         bytes: (bytes).into(),
@@ -1009,6 +1014,7 @@ fn return_proposition_accepts_the_store_loadability_of_a_pointer_cell() {
     let empty = PureFactStore::default();
     let store = crate::kernel::ExecutionPureFact::certified_store(
         SymbolicMemory::new(),
+        Default::default(),
         crate::kernel::ProgramPoint::of_memory(&memory),
         pointer,
         value,
@@ -1372,6 +1378,7 @@ fn return_resource_observations_construct_successors_and_reject_other_paths() {
     assert!(trace_completion(&function, &valid, facts.assumptions(), false).is_ok());
     for extra in [
         Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: before.memory().clone(),
             base: OldAddress::symbolic(Variable(42)),
             bytes: 4.into(),
@@ -1793,6 +1800,7 @@ fn interface_pointer_congruence_preserves_scope_and_read_obligations() {
     assert!(!checked_interface_pointer_equality(
         &arm,
         &Proposition::MemoryLoadable {
+            point: Default::default(),
             memory: SymbolicMemory::new(),
             base: a,
             bytes: (OldMachineTerm::constant(8)).into(),
@@ -2169,11 +2177,15 @@ fn checked_join_effects_require_exact_arm_deltas_and_summarize_alternatives() {
             .store(right_pointer.clone(), int32(2)),
     );
     let left_effect = ExecutionPureFact::certified(Proposition::MemoryMutatesOnly {
+        before_point: Default::default(),
+        after_point: Default::default(),
         before: before.memory().clone(),
         after: left.memory().clone(),
         writes: vec![(left_pointer.clone(), crate::kernel::AccessExtent::from(8))],
     });
     let right_effect = ExecutionPureFact::certified(Proposition::MemoryMutatesOnly {
+        before_point: Default::default(),
+        after_point: Default::default(),
         before: before.memory().clone(),
         after: right.memory().clone(),
         writes: vec![(right_pointer.clone(), crate::kernel::AccessExtent::from(4))],
@@ -2221,7 +2233,7 @@ fn checked_join_effects_require_exact_arm_deltas_and_summarize_alternatives() {
         summaries.to_vec().as_slice(),
         [fact] if matches!(
             fact.proposition(),
-            Proposition::MemoryMutatesOnly { before: effect_before, after, writes }
+            Proposition::MemoryMutatesOnly { before: effect_before, after, writes, .. }
                 if effect_before == before.memory()
                     && after == joined.memory()
                     && writes
@@ -2244,6 +2256,8 @@ fn checked_interface_effects_reject_uncertified_memory_effects() {
         .clone()
         .with_memory(before.memory().clone().store(pointer.clone(), int32(1)));
     let effect = ExecutionPureFact::new(Proposition::MemoryMutatesOnly {
+        before_point: Default::default(),
+        after_point: Default::default(),
         before: before.memory().clone(),
         after: after.memory().clone(),
         writes: vec![(pointer, crate::kernel::AccessExtent::from(4))],
@@ -2285,6 +2299,8 @@ fn checked_interface_effects_require_memory_diff_coverage() {
     let parent = ExecutionProofCore::at_entry(before.clone(), ExecutionFrontier::default());
 
     let mutation = ExecutionPureFact::certified(Proposition::MemoryMutatesOnly {
+        before_point: Default::default(),
+        after_point: Default::default(),
         before: before.memory().clone(),
         after: after.memory().clone(),
         writes: vec![(
@@ -2391,6 +2407,8 @@ fn conditional_heap_free_is_checked_as_a_guarded_lifetime_join() {
     let retained = before.clone();
     let parent = ExecutionProofCore::at_entry(before.clone(), ExecutionFrontier::default());
     let free_effect = ExecutionPureFact::certified(Proposition::HeapAllocationFreed {
+        before_point: Default::default(),
+        after_point: Default::default(),
         before: before.memory().clone(),
         after: freed.memory().clone(),
         allocation_base: allocation_base.clone(),
@@ -2957,7 +2975,7 @@ fn interface_successor_fact_checks_pay_for_exported_resources_once() {
             .collect::<Vec<_>>();
         let intrinsic = ranges
             .iter()
-            .map(|range| range.loadable_fact(&memory))
+            .map(|range| range.loadable_fact(&memory, Default::default()))
             .collect::<Vec<_>>();
         let exported = ranges
             .into_iter()
