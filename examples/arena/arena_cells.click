@@ -3675,7 +3675,7 @@ int32 arena_pipeline(
     mark a2;
     let { outcome: o2 } = step(arena_alloc, { st: s0 });
     have contains(at(a2, s0) * memory(*second), statement(9).call(0).footprint) by { close(); }
-    have contains(memory(*first), memory(first->arena)) by { normalize(); }
+    have contains(memory(*first), memory(first->arena)) by { close(); }
     have separate(statement(9).call(0).footprint, memory(first->arena)) by {
         apply(separation::separate_restrict(at(a2, s0) * memory(*second), memory(*first), statement(9).call(0).footprint, memory(first->arena)));
     }
@@ -3986,12 +3986,12 @@ int32 arena_pipeline(
     let r2 = fold(arena_region(second), { start: w1_start, end: w1_end });
     mark w1;
     step(arena_write, { r: r1, st: s0 }) {
-        requires 0 <= 0 by normalize();
+        requires 0 <= 0 by { close(); }
         requires r1.end <= s0.capacity by close();
         requires defined(r1.start + 0) and (to_integer(r1.start) + to_integer(0)) < to_integer(r1.end) by {
             all {
                 defined(r1.start + 0) => {
-                    normalize();
+                    close();
                 }
                 (to_integer(r1.start) + to_integer(0)) < to_integer(r1.end) => {
                     close() using { to_integer(r1.start) < to_integer(r1.end); };
@@ -4000,7 +4000,7 @@ int32 arena_pipeline(
         }
     }
     have contains(at(w1, r1) * at(w1, s0), statement(11).footprint) by { close(); }
-    have contains(memory(*second), memory(second->arena)) by { normalize(); }
+    have contains(memory(*second), memory(second->arena)) by { close(); }
     have separate(statement(11).footprint, memory(second->arena)) by {
         apply(separation::separate_restrict(at(w1, r1) * at(w1, s0), memory(*second), statement(11).footprint, memory(second->arena)));
     }
@@ -4171,12 +4171,12 @@ int32 arena_pipeline(
     }
     mark w2;
     step(arena_write, { r: r2, st: s0 }) {
-        requires 0 <= 0 by normalize();
+        requires 0 <= 0 by { close(); }
         requires r2.end <= s0.capacity by close();
         requires defined(r2.start + 0) and (to_integer(r2.start) + to_integer(0)) < to_integer(r2.end) by {
             all {
                 defined(r2.start + 0) => {
-                    normalize();
+                    close();
                 }
                 (to_integer(r2.start) + to_integer(0)) < to_integer(r2.end) => {
                     close() using { to_integer(r2.start) < to_integer(r2.end); };
@@ -4369,7 +4369,8 @@ int32 arena_pipeline(
         close();
     }
     have first->start < r1.end by {
-        normalize() using { r1.start == first->start; r1.start < r1.end; };
+        rewrite(first->start, r1.start);
+        close();
     }
     have (r1.start as int32) <= ((first->start + 0) as int32) by {
         rewrite(first->start, r1.start);

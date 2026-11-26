@@ -3055,7 +3055,7 @@ fn casts_of_resource_fields_keep_their_declared_scalar_types() {
             requires o.size == -1;
             ensures (o.size as int64) == -1i64;
         } by {
-            have (o.size as int32) == o.size by normalize();
+            have (o.size as int32) == o.size by close();
             step_until(function.exit); close();
         }
     "#;
@@ -3123,12 +3123,12 @@ fn contract_quantifier_domains_keep_the_chosen_witness_and_polarity() {
         ),
         (
             "forall (k: int32) { to_integer(k + 1) == to_integer(k + 1) }",
-            "intro() { normalize(); }",
+            "intro() { close(); }",
             false,
         ),
         (
             "not (exists (k: int32) { to_integer(k + 1) != to_integer(k + 1) })",
-            "intro() { normalize(); }",
+            "intro() { close(); }",
             false,
         ),
         (
@@ -3410,7 +3410,7 @@ fn contract_closing_keeps_state_clauses_as_local_obligations() {
     let proof = r#"verifying "closing.c";
         int32 unchanged(int32 x) {
             ensures result == at(region(0).entry, x);
-        } by { step(); normalize(); }
+        } by { step(); close(); }
     "#;
     let inputs = [("closing.c", source)];
     verify_c_sources(proof, &inputs).unwrap();
