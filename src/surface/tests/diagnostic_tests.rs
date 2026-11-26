@@ -3035,7 +3035,7 @@ fn long_theorem_traces_retain_every_step_and_reach_late_targets() {
         );
         for index in 0..size {
             source.push_str(&format!(
-                " have x <= {index} by {{ rewrite(x, 0); normalize(); }}\n"
+                " have x <= {index} by {{ rewrite(x, 0); close(); }}\n"
             ));
         }
         source.push_str(" close();\n }\n}\n");
@@ -3476,7 +3476,7 @@ fn failed_invariant_closure_retains_body_trace_and_focused_fact() {
 #[ignore = "nightly: 2.6s in the parallel gate"]
 fn failed_invariant_closure_trace_prefix_is_lazy_and_scales() {
     for size in [16, 32, 64] {
-        let repeated = "   have len == len by normalize();\n".repeat(size);
+        let repeated = "   have len == len by close();\n".repeat(size);
         let source = CLOSURE_TRACE_CLICK.replace(
             "   have len == 0u64 by close();\n",
             &format!("{repeated}   have len == 0u64 by close();\n"),

@@ -1454,7 +1454,7 @@ fn straight_line_project(statement_count: usize, program_point_claim: bool) -> (
     for _ in 0..=statement_count {
         click_source.push_str("    step();\n");
     }
-    click_source.push_str("    normalize();\n}\n");
+    click_source.push_str("    close();\n}\n");
     (c_source, click_source)
 }
 
@@ -3386,7 +3386,7 @@ fn wide_execution_match_project(width: usize) -> (String, String) {
                  \x20           have wide_code(old(c.model)) == {index} by {{\n\
                  \x20               rewrite(old(c.model), Wide::V{index});\n\
                  \x20               unfold(wide_code(Wide::V{index}));\n\
-                 \x20               normalize();\n\
+                 \x20               close();\n\
                  \x20           }}\n\
                  \x20           close();\n\
                  \x20       }},\n"
@@ -9516,7 +9516,7 @@ int32 count_once(int32 flag) {{
         decreases 1 - i;
         invariant i >= 0;
         invariant i <= 1;
-        initialize by {{ normalize(); }}
+        initialize by {{ close(); }}
         maintain by {{
             mark before_increment;
             step();
@@ -10183,8 +10183,7 @@ fn one_hundred_twenty_eight_early_returns_expand_and_reverify() {
 }
 
 /// The proof `click expand` writes for [`early_return_project`]'s implicit
-/// proof: each return in its own proof `if`, closed by `known` and
-/// `normalize`, with the next case after it.
+/// proof: each return in its own proof `if`, followed by the next case.
 fn early_return_expanded_closers(returns: usize) -> String {
     let mut proof = format!(
         "verifying \"mark.c\";\nint32 mark(int32 *a, int32 x) {{\n    owns a[0..{returns}];\n    ensures result >= 0;\n}} by {{\n    step();\n"
@@ -10192,12 +10191,12 @@ fn early_return_expanded_closers(returns: usize) -> String {
     for index in 0..returns {
         let statement = 1 + 4 * index;
         let last = if index + 1 == returns {
-            "        close();\n        normalize();\n        close();\n        close();\n        close();\n"
+            "        close();\n        close();\n        close();\n        close();\n        close();\n"
         } else {
             ""
         };
         proof.push_str(&format!(
-            "    if at(region({statement}).entry, x) == at(region({statement}).entry, {index}) {{\n        step();\n        step();\n        close();\n        normalize();\n        close();\n        close();\n        close();\n    }} else {{\n        step();\n        step();\n        step();\n{last}    }}\n"
+            "    if at(region({statement}).entry, x) == at(region({statement}).entry, {index}) {{\n        step();\n        step();\n        close();\n        close();\n        close();\n        close();\n        close();\n    }} else {{\n        step();\n        step();\n        step();\n{last}    }}\n"
         ));
     }
     proof.push_str("}\n");
