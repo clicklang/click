@@ -177,7 +177,7 @@ pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, St
         &reachable_functions,
         layouts,
         library_contracts,
-        &polymorphism.coercions.into_inner(),
+        polymorphism.coercions.into_inner(),
         &polymorphism.dispatches.into_inner(),
         &polymorphism.receiver_calls.into_inner(),
         overload_paths,
@@ -488,7 +488,7 @@ struct LoweringContext<'a> {
     /// The packs the call being lowered needs, with their unpacks and the
     /// derived class's address: one for each reference argument that
     /// converts a derived class reference to a polymorphic base.
-    pending_coercions: Vec<(usize, String, String, ProgramExpression)>,
+    pending_coercions: Vec<(usize, crate::kernel::CppBindingContract, ProgramExpression)>,
     /// The receiver of the call being lowered when it converts to a base
     /// whose method runs as itself, on memory: it is not packed.
     direct_receiver: Option<CppPlaceReference>,
@@ -506,7 +506,7 @@ struct Polymorphism<'a> {
     derived: BTreeSet<&'a str>,
     /// Every conversion of a derived class reference to a polymorphic base
     /// the program makes, by derived and base record.
-    coercions: std::cell::RefCell<BTreeSet<(String, String)>>,
+    coercions: std::cell::RefCell<BTreeSet<crate::kernel::CppObjectConversion>>,
     /// Methods the program calls through their virtual interface.
     dispatches: std::cell::RefCell<BTreeSet<String>>,
     /// Each function's calls of methods on a receiver that may be an object
@@ -608,7 +608,7 @@ impl LoweringContext<'_> {
     }
 
     fn coerced_call(&mut self, call: ProgramStatement, has_receiver: bool) -> ProgramStatement {
-        use crate::kernel::{CppBindingSlot, CppBindingSource};
+        use crate::kernel::{CppBindingOperation, CppBindingSlot, CppBindingSource};
         let coercions = std::mem::take(&mut self.pending_coercions);
         // The only multi-step call passed here is a call followed by the
         // assignment of its result. Both count as regions of the binding.
@@ -617,7 +617,7 @@ impl LoweringContext<'_> {
             _ => 1,
         };
         let mut statement = call;
-        for (index, (position, pack, unpack, address)) in coercions.iter().enumerate().rev() {
+        for (index, (position, contract, address)) in coercions.iter().enumerate().rev() {
             crate::instrumentation::record_deterministic_work(1);
             let remaining = coercions.len() - index;
             let slot = if has_receiver && *position == 0 {
@@ -625,24 +625,26 @@ impl LoweringContext<'_> {
             } else {
                 CppBindingSlot::Argument(position - usize::from(has_receiver))
             };
-            let acquire = ProgramStatement::Call {
-                function_name: pack.clone(),
+            let transition = |contract, source| ProgramStatement::Call {
+                function_name: String::new(),
                 arguments: vec![address.clone()],
                 callee: None,
                 dispatch: crate::kernel::CallDispatch::Direct,
-                cpp_binding: Some(CppBindingSource {
+                cpp_binding: Some(std::sync::Arc::new(CppBindingOperation {
+                    contract,
+                    source,
+                })),
+            };
+            let acquire = transition(
+                contract.clone(),
+                Some(CppBindingSource {
                     slot,
                     call_offset: remaining,
                     release_offset: remaining + call_regions + remaining - 1,
                 }),
-            };
-            statement = program_seq(
-                acquire,
-                program_seq(
-                    statement,
-                    program_call(unpack.clone(), vec![address.clone()]),
-                ),
             );
+            let release = transition(contract.release(), None);
+            statement = program_seq(acquire, program_seq(statement, release));
         }
         statement
     }
@@ -700,24 +702,32 @@ impl LoweringContext<'_> {
             self.lower_place(&derived_place)?,
             ProgramType::Int32Pointer,
         );
-        let (pack, unpack) = if base.is_const {
-            (
-                crate::languages::cpp::names::object_const_pack_name(&derived, &base.base_name),
-                crate::languages::cpp::names::object_const_unpack_name(&derived, &base.base_name),
-            )
-        } else {
-            (
-                crate::languages::cpp::names::object_pack_name(&derived, &base.base_name),
-                crate::languages::cpp::names::object_unpack_name(&derived, &base.base_name),
-            )
-        };
-        self.pending_coercions
-            .push((position, pack, unpack, address));
+        self.record_binding(position, &derived, &base.base_name, base.is_const, address);
+        Ok(())
+    }
+
+    fn record_binding(
+        &mut self,
+        position: usize,
+        derived: &str,
+        base: &str,
+        shared: bool,
+        address: ProgramExpression,
+    ) {
+        use crate::kernel::{CppBindingContract, CppBindingKind, CppObjectConversion};
+        let conversion = CppObjectConversion::new(derived, base);
         self.polymorphism
             .coercions
             .borrow_mut()
-            .insert((derived, base.base_name.clone()));
-        Ok(())
+            .insert(conversion.clone());
+        self.pending_coercions.push((
+            position,
+            CppBindingContract {
+                conversion,
+                kind: CppBindingKind::acquire(shared),
+            },
+            address,
+        ));
     }
 
     /// Whether `place`, before any base edges it ends in, is a complete
@@ -797,23 +807,7 @@ impl LoweringContext<'_> {
                 self.lower_place(place)?,
                 ProgramType::Int32Pointer,
             );
-            let (pack, unpack) = if *is_const {
-                (
-                    crate::languages::cpp::names::object_const_pack_name(class, class),
-                    crate::languages::cpp::names::object_const_unpack_name(class, class),
-                )
-            } else {
-                (
-                    crate::languages::cpp::names::object_pack_name(class, class),
-                    crate::languages::cpp::names::object_unpack_name(class, class),
-                )
-            };
-            self.pending_coercions
-                .push((position, pack, unpack, address));
-            self.polymorphism
-                .coercions
-                .borrow_mut()
-                .insert((class.clone(), class.clone()));
+            self.record_binding(position, class, class, *is_const, address);
         }
         let Some(CppType::LvalueReference { pointee }) =
             receiver.map(|parameter| &parameter.value_type)

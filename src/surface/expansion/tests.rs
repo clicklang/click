@@ -54,7 +54,14 @@ fn cpp_reference_binding_expands_with_its_source_path() {
         expand_project_claim_source_by_label(&project, &inputs.program_inputs(), "caller.contract")
             .unwrap();
     assert!(expanded.contains("call(total, 0).argument(0).binding"));
-    assert!(!expanded.contains("__click_pack"), "{expanded}");
+    for helper in [
+        "__click_pack",
+        "__click_unpack",
+        "__click_lent",
+        "C++ reference loan",
+    ] {
+        assert!(!expanded.contains(helper), "{expanded}");
+    }
     let expanded = project.with_entry_source(expanded);
     crate::surface::verify_project_with_summary(&expanded, &inputs.program_inputs())
         .unwrap()

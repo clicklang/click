@@ -1969,14 +1969,14 @@ with the definitions equal to those fields. Proofs can name the binding by
 the written argument or receiver. For example, the first argument of
 `total(sq)` is `call(total, 0).argument(0).binding`. Use `.entry` to select
 the point before the binding and `.release` to select the matching region
-after the call. A caller
+after the call. These regions execute checked resource transitions. A caller
 passing a `Square` therefore knows the object's `size` is its `side`, and
 after lending it as a `Shape&` that its `side` is the object's new `size`
 and nothing of the `side` it lent
 (`mdtests/cpp_class_object_state_mutable_reference_returns_new_state.md`).
 A binding to `const Shape&` views the memory and produces both the object and
-a resource that keeps the memory lent until the release consumes both. Nothing can change the
-memory meanwhile, so the caller keeps every field, and the same object
+a resource that keeps the memory lent until the release consumes both. Nothing
+can change the memory meanwhile, so the caller keeps every field, and the same object
 cannot also be handed over in that call as a mutable reference
 (`mdtests/cpp_class_const_reference_keeps_fields.md`,
 `mdtests/cpp_class_const_reference_lends_the_object.md`).

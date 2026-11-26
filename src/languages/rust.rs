@@ -28,6 +28,7 @@ pub(crate) fn prepare_execution(
         library_models,
         record_spellings: Default::default(),
         overload_paths: Default::default(),
+        cpp_binding_conversions: Default::default(),
     }))
 }
 

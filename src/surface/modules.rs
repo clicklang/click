@@ -137,6 +137,9 @@ pub(in crate::surface) fn resolve_click_project_with_layouts(
                 file.function_blocks()
                     .iter()
                     .map(parser::ImportedCallee::Function)
+                    .chain(file.cpp_bindings.written.iter().map(|(contract, block)| {
+                        parser::ImportedCallee::CppBinding(contract, block)
+                    }))
                     .chain(
                         file.tactic_definitions()
                             .iter()
@@ -474,6 +477,13 @@ fn merge_modules(
         contract_definitions: Vec::new(),
         function_blocks: Vec::new(),
         cpp_virtual_interfaces: BTreeMap::new(),
+        cpp_bindings: CppBindingContracts {
+            conversions: locals
+                .get(entry)
+                .map(|file| file.cpp_bindings.conversions.clone())
+                .unwrap_or_default(),
+            written: BTreeMap::new(),
+        },
         tactic_definitions: Vec::new(),
         termination_proof: locals
             .get(entry)
@@ -558,6 +568,18 @@ fn merge_modules(
         merged
             .function_blocks
             .extend(local.function_blocks.iter().cloned());
+        for (contract, block) in &local.cpp_bindings.written {
+            if merged
+                .cpp_bindings
+                .written
+                .insert(contract.clone(), block.clone())
+                .is_some()
+            {
+                return Err(ClickError::new(format!(
+                    "conflicting contracts for {contract}"
+                )));
+            }
+        }
         for (method, interface) in &local.cpp_virtual_interfaces {
             if merged
                 .cpp_virtual_interfaces

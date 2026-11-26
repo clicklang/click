@@ -30,6 +30,7 @@ fn linking_work_scales_with_the_functions_each_source_holds() {
             library_models: Default::default(),
             record_spellings: Default::default(),
             overload_paths: Default::default(),
+            cpp_binding_conversions: Default::default(),
         };
         // The second source repeats every declaration of the first and adds
         // as many of its own.

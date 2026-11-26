@@ -7311,6 +7311,10 @@ pub(super) fn describe_execution_statement_head(statement: &ProgramStatement) ->
             format!("{target} = {call}")
         }
         ProgramStatement::Call {
+            cpp_binding: Some(binding),
+            ..
+        } => binding.contract.to_string(),
+        ProgramStatement::Call {
             function_name,
             arguments,
             ..

@@ -6321,7 +6321,7 @@ pub enum ProgramStatement {
         /// call of a named function; `function_name` then only describes it.
         callee: Option<Callee>,
         /// Source provenance of a C++ reference binding implemented by this transition.
-        cpp_binding: Option<CppBindingSource>,
+        cpp_binding: Option<Arc<CppBindingOperation>>,
     },
     /// A value the rest of its statement reads: the value an operator that
     /// decides between its operands (`&&`, `||`, the ternary operator) takes
@@ -7697,11 +7697,25 @@ pub struct FunctionSpecification {
     pub(super) outcome: FunctionOutcome,
 }
 
-/// One checked binder transport selected at an ordinary C call site.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum CallBinderTarget {
+    Function(Arc<str>),
+    CppBinding(CppBindingContract),
+}
+
+impl std::fmt::Display for CallBinderTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Function(name) => f.write_str(name),
+            Self::CppBinding(binding) => binding.fmt(f),
+        }
+    }
+}
+
+/// One checked binder transport selected at a call or reference binding.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CallBinderTransport {
-    /// The callee the step named. A call to any other function is refused.
-    pub(crate) function: std::sync::Arc<str>,
+    pub(crate) target: CallBinderTarget,
     /// How many arguments the step wrote, checked against the call it selects.
     pub(crate) arity: usize,
     /// Every instance binder of that callee, mapped to the caller instance
@@ -7724,7 +7738,8 @@ impl CallBinderTransport {
         let source_spelling = function_name
             .split_once("#inline:")
             .map_or(function_name, |(source, _)| source);
-        function_name == self.function.as_ref() || source_spelling == self.function.as_ref()
+        matches!(&self.target, CallBinderTarget::Function(name)
+            if function_name == name.as_ref() || source_spelling == name.as_ref())
     }
 }
 
@@ -7862,6 +7877,7 @@ pub struct ExecutionEnvironment {
         Option<std::sync::Arc<(String, Vec<(String, ProgramValue)>)>>,
     pub(super) functions: std::sync::Arc<BTreeMap<String, ProgramFunction>>,
     pub(super) function_contracts: std::sync::Arc<BTreeMap<String, FunctionContract>>,
+    pub(super) cpp_binding_rules: Arc<BTreeMap<CppBindingContract, ExternalFunctionRule>>,
     pub(super) cpp_virtual_rules: std::sync::Arc<BTreeMap<String, ExternalFunctionRule>>,
     pub(super) external_function_rules: std::sync::Arc<BTreeMap<String, ExternalFunctionRule>>,
     pub(super) verified_function_rules: std::sync::Arc<BTreeMap<String, VerifiedFunctionRule>>,
@@ -7915,6 +7931,7 @@ impl std::fmt::Debug for ExecutionEnvironment {
             )
             .field("functions", &self.functions)
             .field("function_contracts", &self.function_contracts)
+            .field("cpp_binding_rules", &self.cpp_binding_rules)
             .field("cpp_virtual_rules", &self.cpp_virtual_rules)
             .field("external_function_rules", &self.external_function_rules)
             .field("verified_function_rules", &self.verified_function_rules)
@@ -7943,6 +7960,7 @@ impl PartialEq for ExecutionEnvironment {
             && self.selected_call_value_arguments == other.selected_call_value_arguments
             && self.functions == other.functions
             && self.function_contracts == other.function_contracts
+            && self.cpp_binding_rules == other.cpp_binding_rules
             && self.cpp_virtual_rules == other.cpp_virtual_rules
             && self.external_function_rules == other.external_function_rules
             && self.verified_function_rules == other.verified_function_rules
@@ -10552,6 +10570,7 @@ impl MemoryStateIdentity {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CallRequirementSite {
     pub(crate) callee: String,
+    pub(crate) cpp_binding: Option<CppBindingContract>,
     /// Original indirect invocation, distinct from the selected concrete target.
     pub(crate) source_callee: Option<std::sync::Arc<str>>,
     pub(crate) value_arguments: std::sync::Arc<[(String, ProgramValue)]>,
@@ -10579,6 +10598,7 @@ impl CallRequirementSite {
         });
         Self {
             callee: callee.into(),
+            cpp_binding: None,
             source_callee: None,
             value_arguments: std::sync::Arc::from([]),
             resource_arguments: std::sync::Arc::from([]),
@@ -10588,6 +10608,11 @@ impl CallRequirementSite {
             source_invocation_arguments: None,
             source_memory_state: MemoryStateIdentity::of(source_memory),
         }
+    }
+
+    pub(crate) fn with_cpp_binding(mut self, binding: Option<&CppBindingContract>) -> Self {
+        self.cpp_binding = binding.cloned();
+        self
     }
 
     #[cfg(test)]
@@ -11807,6 +11832,97 @@ pub struct ExecutionState {
 pub enum CppBindingSlot {
     Receiver,
     Argument(usize),
+}
+
+/// One conversion between checked C++ record layouts.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CppObjectConversion {
+    pub derived: Arc<str>,
+    pub base: Arc<str>,
+}
+
+impl CppObjectConversion {
+    pub(crate) fn new(derived: &str, base: &str) -> Self {
+        Self {
+            derived: derived.into(),
+            base: base.into(),
+        }
+    }
+
+    /// The private composite family used by the shared resource checker.
+    /// This spelling cannot be a declared source identifier.
+    pub(crate) fn loan_family(&self) -> String {
+        format!("C++ reference loan ({:?}, {:?})", self.derived, self.base)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CppBindingKind {
+    AcquireMutable,
+    ReleaseMutable,
+    AcquireShared,
+    ReleaseShared,
+}
+
+impl CppBindingKind {
+    pub(crate) const ALL: [Self; 4] = [
+        Self::AcquireMutable,
+        Self::ReleaseMutable,
+        Self::AcquireShared,
+        Self::ReleaseShared,
+    ];
+
+    pub(crate) fn acquire(shared: bool) -> Self {
+        if shared {
+            Self::AcquireShared
+        } else {
+            Self::AcquireMutable
+        }
+    }
+
+    pub(crate) fn release(self) -> Self {
+        match self {
+            Self::AcquireMutable | Self::ReleaseMutable => Self::ReleaseMutable,
+            Self::AcquireShared | Self::ReleaseShared => Self::ReleaseShared,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CppBindingContract {
+    pub conversion: CppObjectConversion,
+    pub kind: CppBindingKind,
+}
+
+impl CppBindingContract {
+    pub(crate) fn release(&self) -> Self {
+        Self {
+            conversion: self.conversion.clone(),
+            kind: self.kind.release(),
+        }
+    }
+}
+
+impl std::fmt::Display for CppBindingContract {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let operation = match self.kind {
+            CppBindingKind::AcquireMutable => "mutable reference binding",
+            CppBindingKind::ReleaseMutable => "mutable reference release",
+            CppBindingKind::AcquireShared => "shared reference binding",
+            CppBindingKind::ReleaseShared => "shared reference release",
+        };
+        write!(
+            f,
+            "{operation} from {} to {}",
+            self.conversion.derived, self.conversion.base
+        )
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CppBindingOperation {
+    pub contract: CppBindingContract,
+    pub source: Option<CppBindingSource>,
 }
 
 /// The regions of a checked C++ reference binding, relative to its acquisition.

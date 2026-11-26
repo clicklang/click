@@ -13,14 +13,14 @@ pub(super) fn prepare(
     reachable: &[ProgramFunction],
     layouts: BTreeMap<String, crate::languages::interface::RecordLayout>,
     library_contracts: String,
-    object_coercions: &BTreeSet<(String, String)>,
+    cpp_binding_conversions: BTreeSet<crate::kernel::CppObjectConversion>,
     dispatches: &BTreeSet<String>,
     receiver_calls: &BTreeMap<String, Vec<crate::languages::interface::CppReceiverCall>>,
     overload_paths: BTreeMap<String, String>,
 ) -> Result<PreparedExecution, String> {
     let shared_layouts = std::sync::Arc::new(layouts.clone());
     let shared_paths = std::sync::Arc::new(overload_paths.clone());
-    let mut functions = prepare_functions(import, selected, reachable, &layouts)?
+    let functions = prepare_functions(import, selected, reachable, &layouts)?
         .into_iter()
         .map(|mut function| {
             crate::instrumentation::record_deterministic_work(1);
@@ -35,35 +35,6 @@ pub(super) fn prepare(
             }
         })
         .collect::<Vec<_>>();
-    // Where a reference to a derived class becomes a reference to its
-    // polymorphic base, the importer places a pack before the call and an
-    // unpack after it, each taking the derived class's address. Their
-    // contracts are the sidecar's; without one, each moves nothing.
-    for (derived, base) in object_coercions {
-        let layout = layouts
-            .get(derived)
-            .ok_or("C++ base conversion's derived class has no checked layout")?;
-        for name in [
-            crate::languages::cpp::names::object_pack_name(derived, base),
-            crate::languages::cpp::names::object_unpack_name(derived, base),
-            crate::languages::cpp::names::object_const_pack_name(derived, base),
-            crate::languages::cpp::names::object_const_unpack_name(derived, base),
-        ] {
-            crate::instrumentation::record_deterministic_work(1);
-            let object = crate::languages::interface::ImportedParameter::from_binding(
-                InterfaceType::Int32Pointer,
-                "object".to_string(),
-                Some(derived.clone()),
-            )
-            .with_pointee_struct_layout(derived.clone(), layout.clone())
-            .with_pointee_constant(true);
-            functions.push(crate::languages::interface::ImportedFunction::external(
-                InterfaceType::Void,
-                name,
-                vec![object],
-            ));
-        }
-    }
     // A diagnostic prints each record by its C++ path.
     for record in &import.export().records {
         super::names::register_record_display(&record.name, &record.path.join("::"));
@@ -90,6 +61,7 @@ pub(super) fn prepare(
         library_models: BTreeSet::new(),
         record_spellings,
         overload_paths,
+        cpp_binding_conversions,
     })
 }
 

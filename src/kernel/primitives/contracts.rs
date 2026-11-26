@@ -4068,14 +4068,29 @@ impl ExecutionEnvironment {
 
     /// [`Self::with_selected_call_binders`] with runtime type binders.
     pub(crate) fn with_selected_call_binders_and_types(
-        mut self,
+        self,
         function: &str,
         arity: usize,
         bindings: ResourceBindings,
         type_arguments: BTreeMap<Variable, crate::kernel::ResourceDescription>,
     ) -> Self {
+        self.with_call_binder_target(
+            CallBinderTarget::Function(function.into()),
+            arity,
+            bindings,
+            type_arguments,
+        )
+    }
+
+    pub(crate) fn with_call_binder_target(
+        mut self,
+        target: CallBinderTarget,
+        arity: usize,
+        bindings: ResourceBindings,
+        type_arguments: BTreeMap<Variable, crate::kernel::ResourceDescription>,
+    ) -> Self {
         self.selected_call_binders = Some(std::sync::Arc::new(CallBinderTransport {
-            function: std::sync::Arc::from(function),
+            target,
             arity,
             bindings: std::sync::Arc::new(bindings),
             type_arguments: std::sync::Arc::new(type_arguments),
@@ -4101,6 +4116,32 @@ impl ExecutionEnvironment {
 
     pub(crate) fn get_function_contract(&self, name: &str) -> Option<&FunctionContract> {
         self.function_contracts.get(name)
+    }
+
+    pub(crate) fn with_cpp_binding_rule(
+        mut self,
+        contract: CppBindingContract,
+        rule: ExternalFunctionRule,
+    ) -> Self {
+        Arc::make_mut(&mut self.cpp_binding_rules).insert(contract, rule);
+        self.variable_index = ExecutionEnvironmentVariableIndex::default();
+        self
+    }
+
+    pub(crate) fn get_cpp_binding_rule(
+        &self,
+        contract: &CppBindingContract,
+    ) -> Option<&ExternalFunctionRule> {
+        crate::instrumentation::record_deterministic_work(1);
+        self.cpp_binding_rules.get(contract)
+    }
+
+    pub(crate) fn get_cpp_binding_function(
+        &self,
+        binding: &CppBindingContract,
+    ) -> Option<&ProgramFunction> {
+        self.get_cpp_binding_rule(binding)
+            .map(|rule| &rule.function)
     }
 
     pub(crate) fn with_cpp_virtual_rule(mut self, rule: ExternalFunctionRule) -> Self {
@@ -4261,6 +4302,7 @@ impl ExecutionEnvironment {
             .external_function_rules
             .values()
             .chain(self.cpp_virtual_rules.values())
+            .chain(self.cpp_binding_rules.values())
             .any(|rule| {
                 rule.function
                     .resource_ensures()
@@ -4292,6 +4334,7 @@ impl ExecutionEnvironment {
         std::sync::Arc::ptr_eq(&self.functions, &other.functions)
             && std::sync::Arc::ptr_eq(&self.function_contracts, &other.function_contracts)
             && Arc::ptr_eq(&self.cpp_virtual_rules, &other.cpp_virtual_rules)
+            && Arc::ptr_eq(&self.cpp_binding_rules, &other.cpp_binding_rules)
             && std::sync::Arc::ptr_eq(
                 &self.external_function_rules,
                 &other.external_function_rules,

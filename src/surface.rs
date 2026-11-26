@@ -812,6 +812,12 @@ pub(in crate::surface) fn call_source_spelling(callee: &str) -> &str {
         .unwrap_or(callee)
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct CppBindingContracts {
+    conversions: std::sync::Arc<BTreeSet<crate::kernel::CppObjectConversion>>,
+    written: BTreeMap<crate::kernel::CppBindingContract, FunctionBlock>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClickFile {
     /// Physical struct strides retained for generic theorem instantiation.
@@ -838,6 +844,7 @@ pub struct ClickFile {
     contract_definitions: Vec<ContractDefinition>,
     function_blocks: Vec<FunctionBlock>,
     cpp_virtual_interfaces: BTreeMap<String, FunctionBlock>,
+    cpp_bindings: CppBindingContracts,
     termination_proof: Option<Vec<ProofTactic>>,
     termination_span: Option<(crate::source::SourcePosition, crate::source::SourcePosition)>,
     /// User-defined tactics: contracts over the proof state, each proved once
