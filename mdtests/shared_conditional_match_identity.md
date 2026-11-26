@@ -15,18 +15,7 @@ theorem identity(x: Payload, a: int32, b: int32) {
     ensures joined(x, a) == joined(x, b) by {
         unfold(joined(x, a));
         unfold(joined(x, b));
-        match x {
-            Payload::Item(n) => {
-                rewrite(x, Payload::Item(n));
-                unfold(flag(Payload::Item(n)));
-                close();
-            },
-            Payload::Empty => {
-                rewrite(x, Payload::Empty);
-                unfold(flag(Payload::Empty));
-                close();
-            },
-        }
+        close();
     }
 }
 ```

@@ -3663,6 +3663,25 @@ fn selected_bounds_and_cross_width_viewability_expand_and_replay() {
 }
 
 #[test]
+fn conditional_match_identity_expands_and_replays() {
+    let filename = "shared_conditional_match_identity.md";
+    let fixture =
+        crate::cli::parse_mdtest(std::path::Path::new(filename), &mdtest_markdown(filename))
+            .unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = crate::cli::source_refs(&fixture.c_sources);
+    let label = "identity.ensures_0";
+    let expanded = expand_c_claim_source_by_label(source, &sources, label)
+        .unwrap_or_else(|error| panic!("{}", error.message()));
+    assert!(expanded.contains("close();"), "{expanded}");
+    assert!(!expanded.contains("normalize()"), "{expanded}");
+    crate::surface::check_audit_claim(label, true, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn nested_machine_arms_replay_with_only_the_cited_guards() {

@@ -473,7 +473,8 @@ fn condition_value(condition: &OldConditionTerm) -> Option<bool> {
             if matches!(
                 condition,
                 OldConditionTerm::IntegerEqual(..) | OldConditionTerm::IntegerNotEqual(..)
-            ) && unchanged_integer_folds_equal(left, right)
+            ) && (unchanged_integer_folds_equal(left, right)
+                || conditional_matches_alpha_equal(left, right))
             {
                 return Some(matches!(condition, OldConditionTerm::IntegerEqual(..)));
             }
@@ -743,6 +744,33 @@ fn int32_conditional_guard(guard: BooleanOperandView<'_>) -> Option<bool> {
         }
         _ => Some(left.literal()?.as_const()? == right.literal()?.as_const()?),
     }
+}
+
+/// Compare explicit Int32 conditional observations up to the local binders
+/// of their match arms. Unequal keys carry no disequality evidence.
+fn conditional_matches_alpha_equal(left: &SharedIntegerTerm, right: &SharedIntegerTerm) -> bool {
+    let has_match_arm = |term: &SharedIntegerTerm| {
+        let IntegerTerm::Machine(machine) = term.as_ref() else {
+            return false;
+        };
+        machine.ty() == MachineIntegerType::Int32
+            && machine
+                .operand_view()
+                .conditional_view()
+                .is_some_and(|(_, arms)| {
+                    arms.into_iter().any(|arm| match arm {
+                        MachineOperandView::Shared(root) => {
+                            matches!(root.node(), KernelTermNode::Match(_))
+                        }
+                        MachineOperandView::Old(term) => {
+                            matches!(term, OldMachineTerm::AlgebraicMatch { .. })
+                        }
+                    })
+                })
+    };
+    has_match_arm(left)
+        && has_match_arm(right)
+        && super::super::fact_keys::integer_terms_alpha_equivalent(left, right) == Some(true)
 }
 
 fn conditional_int32_equality(left: &IntegerTerm, right: &IntegerTerm) -> Option<bool> {
