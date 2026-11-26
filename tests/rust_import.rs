@@ -5632,7 +5632,7 @@ fn rust_byte_slices_length_preserves_target_width_and_index_borrows_verify() {
     let sidecar = "verifying \"borrow.rs\";
 fn length(bytes: &[u8]) -> usize { requires bytes.len() == 4294967296u64; ensures result == 4294967296u64; }
 fn replace(bytes: &mut [u8], index: usize) { requires bytes.len() == 4u64; requires index < 4u64; owns bytes[0..4]; ensures bytes[index] == 9; }
-fn shift(x: u32, n: usize) -> u32 { requires x == 1u32; requires n == 31u64; ensures result == 2147483648u32; } by { step_until(function.exit); rewrite(n, 31u64); rewrite(x, 1u32); normalize(); }";
+fn shift(x: u32, n: usize) -> u32 { requires x == 1u32; requires n == 31u64; ensures result == 2147483648u32; } by { step_until(function.exit); rewrite(n, 31u64); rewrite(x, 1u32); close(); }";
     ProgramVerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     let error = ProgramVerificationSession::new_program_prepared(
         &sidecar.replace("n == 31u64", "n == 4294967296u64"),
