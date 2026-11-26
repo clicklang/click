@@ -270,7 +270,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                         rewrite(old(state.chain), SizedFlipChain::Stop(ctx));
                                         unfold(sized_flip_result(SizedFlipChain::Stop(ctx), old(state.model)));
                                         rewrite(focus.model, old(state.model));
-                                        rewrite(path.model, SizedContext::Left(a, gp, color, cached, sibling, up)); rewrite(SizedContext::Left(a, gp, color, cached, sibling, up), ctx); normalize();
+                                        rewrite(path.model, SizedContext::Left(a, gp, color, cached, sibling, up)); rewrite(SizedContext::Left(a, gp, color, cached, sibling, up), ctx); close();
                                     }
                                     have ancestor == sized_context_parent(SizedContext::Left(a, gp, color, cached, sibling, up), 0) by {
                                         rewrite(ancestor, parent);
@@ -324,7 +324,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                         rewrite(old(state.chain), SizedFlipChain::Stop(ctx));
                                         unfold(sized_flip_result(SizedFlipChain::Stop(ctx), old(state.model)));
                                         rewrite(focus.model, old(state.model));
-                                        rewrite(path.model, SizedContext::Right(a, gp, color, cached, sibling, up)); rewrite(SizedContext::Right(a, gp, color, cached, sibling, up), ctx); normalize();
+                                        rewrite(path.model, SizedContext::Right(a, gp, color, cached, sibling, up)); rewrite(SizedContext::Right(a, gp, color, cached, sibling, up), ctx); close();
                                     }
                                     have ancestor == sized_context_parent(SizedContext::Right(a, gp, color, cached, sibling, up), 0) by {
                                         rewrite(ancestor, parent);
