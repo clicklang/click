@@ -790,12 +790,12 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         // Catch every error here; `?` must not skip the obligation
         // diagnostic below.
         let attempted = {
-            if body == [ProofTactic::Solve]
-                && crate::surface::proof::implicit_solve_scope::checked_only()
+            if crate::surface::proof::implicit_solve_scope::checked_only()
+                && matches!(body, [ProofTactic::Solve | ProofTactic::Known])
             {
                 // Expanded maintain scripts publish the individual members
-                // at the back edge. Check the bundle only from those facts.
-                root.driver().apply_step(ProofStep::Known).map(Some)
+                // at the back edge. Rebuild their guards with checked steps.
+                root.driver().plan_invariant_bundle_closure()
             } else if body == [ProofTactic::Solve] {
                 crate::instrumentation::measure_operation(
                     "surface",
@@ -923,6 +923,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         )? {
             return Ok(Some(closed));
         }
+        let checked_only = crate::surface::proof::implicit_solve_scope::checked_only();
         let _planning = crate::instrumentation::OperationTiming::new(
             "surface",
             "close invariants",
@@ -937,7 +938,8 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         // each and then `known`, as a function's exit closes its
         // `ensures`; expansion writes those `have`s at the back edge. A
         // member's own proof does not take this path again.
-        if !IN_BUNDLE_MEMBER_HAVE.with(std::cell::Cell::get)
+        if !checked_only
+            && !IN_BUNDLE_MEMBER_HAVE.with(std::cell::Cell::get)
             && let Some(surfaces) = driver_proof.conjunction_leaf_surfaces(1)
         {
             let mut proof = driver_proof.clone();
@@ -1015,11 +1017,17 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             // `done implies ...` is on a path whose test said `!done`: the
             // contradiction is between a premise and the context, so the
             // member closes whole, as `have` would close it.
+            if checked_only {
+                return Ok(None);
+            }
             let whole = self.close_bundle_member_by_solve()?;
             if whole.is_some() {
                 scope.succeed();
             }
             return Ok(whole);
+        }
+        if checked_only {
+            return Ok(None);
         }
         let result = self.close_bundle_member_by_solve()?;
         if result.is_none() {
