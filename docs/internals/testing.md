@@ -1899,7 +1899,7 @@ that class to prescribe the next action:
   diagnostic only and produces no expansion command. Failed smart search has
   no successful proof. Decompose the proof into smaller or explicit steps.
   A search that ignores or badly overshoots its enforced bound is a tooling
-  bug. Smart sites include written `close()`, `step_until`, and `transport`,
+  bug. Smart sites include written `close()` and `step_until`,
   as well as the implicit tail and closer (see
   [`click profile`](../reference/cli/profile.md#report-interpretation)).
 - `SIMPLE` steps are deterministic checked operations. Do not expand them;

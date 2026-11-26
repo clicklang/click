@@ -2781,8 +2781,8 @@ names the read of the word at the state where it was stated. The program's
 cast reads the word where it executes, so after a store through another
 pointer the two are different reads, and the cast no longer designates
 `parent` (`mdtests/a_parent_cast_fact_is_not_carried_across_a_store_through_another_node.md`).
-Restate the fact before the cast, with `close()` across plain stores or with
-`transport` and the store's separation, and through a join's `ensuring`
+Restate the fact before the cast. Use `close()` or a proof of separation
+from the store, and use a join's `ensuring`
 clause when a branch lies between
 (`mdtests/a_parent_cast_restated_after_a_store_lets_the_parent_be_dereferenced.md`).
 
@@ -4320,8 +4320,8 @@ is still written `program::result` inside `at(...)` or `old(...)`.
 available where `result` is: in a postcondition and in a proof step after
 execution has returned, where it is the current path's state. It is refused
 before the return. Each returned path has its own `result`, so
-`transport(at(function.exit, P), P)` can close a `result` goal on a path
-whose own state proves it. Expansion can write the ordinary proof on each
+`close()` can prove a `result` goal from that path's own state.
+Expansion can write the ordinary proof on each
 such path (`mdtests/a_returned_path_transports_a_result_goal_from_function_exit.md`,
 `mdtests/a_function_exit_point_before_the_return_is_refused.md`,
 `mdtests/a_function_exit_transport_of_a_false_result_claim_is_refused.md`).

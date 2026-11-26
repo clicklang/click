@@ -67,8 +67,8 @@ A `viewable` fact names its memory too, since an object's lifetime can end
 between two points. In a report about a program state, a fact from an earlier
 recorded point is `at(point, viewable(p[0..n]))`, including
 `at(function.entry, ...)` for entry, because `old` takes a value, not a fact.
-Written back, that printed form is the premise the checker holds; carry it
-forward with `transport`. A fact of the reported state, or in a report with no
+That printed form names the historical premise. Prove it at the new point
+with `have` and a frame proof. A fact of the reported state, or in a report with no
 program state such as a contract check, is bare (`viewable(p[0..n])`).
 
 A value no current local holds but a local held at a point this path
@@ -222,7 +222,7 @@ not evidence that Click verifies the unchanged source form.
 Smart tactics are bounded, incomplete heuristics. A prompt and actionable
 failure from `close()`, the implicit tail that ends every script, or another
 smart search does not establish an engine bug. Split the task into smaller searches or use
-simple tactics with explicit premises. If `transport(P, Q)` misses, use
+simple tactics with explicit premises. When a frame proof is needed, use
 `have` to establish facts at named states, `preserve` to prove unchanged
 reads, and `rewrite` to carry the fact forward.
 

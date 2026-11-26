@@ -1379,15 +1379,6 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             &prefix,
             &format!("rewrite({});", source_rewrite_arguments(equality)),
         ),
-        ProofTactic::Transport { source, target } => line(
-            output,
-            &prefix,
-            &format!(
-                "transport({}, {});",
-                source_click_proposition(source),
-                source_click_proposition(target)
-            ),
-        ),
         ProofTactic::Instantiate {
             quantified,
             arguments,

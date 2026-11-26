@@ -232,13 +232,8 @@ Narrowing reads both ranges at element granularity. From `viewable(p[a..b])` it
 concludes `viewable(p[c..d])` when order facts establish `a <= c`, `c <= d` and
 `d <= b`: the elements `c..d` are then a contiguous part of the elements `a..b`.
 All three are required. `c <= d` in particular is not assumed, so a reversed
-range is refused rather than read as a negative span, and a range reaching
-past `b` is refused with the order fact it was missing:
-
-```text
-Bare `transport` cannot narrow `viewable(v[lo..hi])` to `viewable(v[lo..k])`:
-narrowing a viewable range needs `k <= hi`, which is not an available fact
-```
+range fails the order check. For a range reaching past `b`, establish the
+missing upper bound first.
 
 Narrowing also needs the range it starts from to be a valid byte span — the
 first half of [what a range fact means](#what-a-range-fact-means) — and this is

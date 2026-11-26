@@ -1178,7 +1178,6 @@ pub(super) fn smart_site_spelling(site: SmartSite) -> &'static str {
         SmartSite::Engine(SmartTacticKind::Arithmetic) => "arithmetic",
         SmartSite::Engine(SmartTacticKind::Solve) => "solve",
         SmartSite::Engine(SmartTacticKind::Execute) => "implicit tail",
-        SmartSite::FactTransport => "transport",
         SmartSite::CloseInvariants => "close_invariants",
         SmartSite::Implicit => "implicit tail",
     }

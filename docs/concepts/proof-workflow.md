@@ -149,9 +149,8 @@ expansion output.
 - `step()`: execute the next C statement with every fact in the proof
   context visible to the kernel. A fact about a cell the context proves the
   statement leaves untouched keeps that cell's name and stays true; a fact
-  about a cell the statement may write is renamed. Use an explicit
-  `transport(source, target)` when relating such a fact to the new state
-  needs more reasoning than the context gives the step. At a C `if`, an
+  about a cell the statement may write is renamed. A later `have` can
+  establish the current fact with a frame proof. At a C `if`, an
   available condition fact selects and enters one arm. At a loop head, it
   evaluates the condition once and enters one iteration or advances past the
   loop.
@@ -220,11 +219,6 @@ expansion output.
 - `rewrite(from, to);`: rewrite the current proposition once using an exact
   available equality; the [tactic reference](../reference/tactics/index.md)
   lists the supported integer, pointer, and native unsigned forms.
-- `transport(source, target);`: require an exact source fact and apply one
-  certified atomic transport rule to establish the stated target fact at the
-  current statement frontier. Conditions use framing; structural memory facts
-  such as `viewable(...)` use the certified execution effects. Like `apply`,
-  this bare form is smart.
 - `preserve(resource, region)`: use exact footprint separation to prove a
   selected read unchanged across the named region. Use the equality in a
   `rewrite` to carry the fact to the current point.
@@ -244,8 +238,7 @@ expansion output.
 
 An opaque predicate does not expose the memory footprint needed for framing.
 When a predicate fact must cross execution, unfold it before those execution
-steps and transport the unfolded definition; smart `transport` diagnoses this
-case directly.
+steps, then prove that the unfolded definition still holds.
 
 The implicit tail at the end of a per-claim `by { ... }` block closes that
 claim. The tail of a trailing grouped function block closes every effect and

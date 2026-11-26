@@ -319,7 +319,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "target",
     "theorem",
     "then",
-    "transport",
     "uint8",
     "unfold",
     "uninitialized",
@@ -6471,10 +6470,6 @@ pub enum ProofTactic {
     CloseInvariants,
     Rewrite(SyntaxProposition),
     Preserve(SyntaxProposition),
-    Transport {
-        source: SyntaxProposition,
-        target: SyntaxProposition,
-    },
     /// Substitute consecutive universal binders, preserving the residual body and guards.
     Instantiate {
         quantified: SyntaxProposition,
@@ -6590,8 +6585,6 @@ pub enum SmartTacticKind {
 pub enum SmartSite {
     /// A smart tactic engine.
     Engine(SmartTacticKind),
-    /// Bare `transport(P, Q)` searches for frame evidence.
-    FactTransport,
     /// Bare `close_invariants()`: a fixed expansion into
     /// `close_invariants() by { ... }` with `close()` on each member.
     CloseInvariants,
@@ -6876,11 +6869,6 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
-        id: "transport",
-        syntax: "transport(P, Q)",
-        class: "smart",
-    },
-    PublicTacticForm {
         id: "instantiate",
         syntax: "instantiate(F, value, ...)",
         class: "simple",
@@ -7059,7 +7047,6 @@ impl ProofTactic {
             Self::CloseInvariantsBy(_) => TacticClass::Control(ControlTactic::CloseInvariants),
             Self::StepProved { .. } => TacticClass::Control(ControlTactic::StepProofs),
             Self::Rewrite(_) => TacticClass::Simple(SimpleTactic::Rewrite),
-            Self::Transport { .. } => TacticClass::Smart(SmartSite::FactTransport),
             Self::Instantiate { .. } => TacticClass::Simple(SimpleTactic::Instantiate),
             Self::FoldResource(_) => TacticClass::Simple(SimpleTactic::FoldResource),
             Self::ReleaseView(_) => TacticClass::Simple(SimpleTactic::ReleaseView),
@@ -9025,10 +9012,6 @@ struct ReportDetail {
     written_goal: Option<String>,
     /// Whether a write and a live view concretely overlap, when reporting a write prerequisite.
     live_view_write_overlap: Option<bool>,
-    /// The labels a refusal that prints its own legend numbered it with, so
-    /// a trace of the same failure names the same states and values the
-    /// same way instead of numbering them afresh.
-    labels: Option<ReportLabels>,
 }
 
 impl ReportDetail {
@@ -9044,25 +9027,6 @@ impl ReportDetail {
         })
     }
 }
-
-/// A refusal's own state and value labels. Diagnostics only: two errors
-/// are not told apart by them.
-#[derive(Clone)]
-struct ReportLabels(std::sync::Arc<proof_diagnostics::render::MemoryStateLabels>);
-
-impl std::fmt::Debug for ReportLabels {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("ReportLabels")
-    }
-}
-
-impl PartialEq for ReportLabels {
-    fn eq(&self, _: &Self) -> bool {
-        true
-    }
-}
-
-impl Eq for ReportLabels {}
 
 /// What the verifier is working on, for locating a failure that carries no
 /// site of its own. This is diagnostics only: nothing reads it to decide a
@@ -11502,14 +11466,7 @@ impl ClickError {
             return None;
         }
         let _typed = proof_diagnostics::render::TypedNotationScope::enter();
-        let mut labels = self
-            .report_detail
-            .as_ref()
-            .and_then(|detail| detail.labels.as_ref())
-            .map_or_else(
-                proof_diagnostics::render::MemoryStateLabels::ambient,
-                |labels| labels.0.as_ref().clone(),
-            );
+        let mut labels = proof_diagnostics::render::MemoryStateLabels::ambient();
         let context = proof_diagnostics::render_trace_context_with_requirement(
             diagnostic,
             self.search_failures
@@ -12099,17 +12056,6 @@ impl ClickError {
                 .origin
                 .source_tactic_path = Some(vec![source_index]);
         }
-        self
-    }
-
-    /// Records the labels this refusal's own legend used, so its trace
-    /// continues that numbering.
-    pub(crate) fn with_report_labels(
-        mut self,
-        labels: proof_diagnostics::render::MemoryStateLabels,
-    ) -> Self {
-        std::sync::Arc::make_mut(self.report_detail.get_or_insert_default()).labels =
-            Some(ReportLabels(std::sync::Arc::new(labels)));
         self
     }
 

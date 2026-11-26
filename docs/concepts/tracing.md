@@ -87,8 +87,8 @@ arm and its own checked steps. When both arms end at function exit, as the
 implicit tail's early `return` does, a failure on one outcome path shows the
 arm that produced that path, with its steps, instead of `(joined)`.
 
-A goal about memory, such as a `transport` target or any goal that reads
-`read<...>(state#N, pointer=value#M)`, depends on what its labels denote.
+A goal about memory, such as `read<...>(state#N, pointer=value#M)`,
+depends on what its labels denote.
 Record the legend line defining each label the goal uses: two written forms of
 one C address, such as a pointer local and the `g + 16 bytes` cell it was loaded
 from, or a read at entry and the same read inside a loop, are often the whole
@@ -180,8 +180,7 @@ read origin must not make the author prove a chain of bookkeeping equalities
 or make the checker search that chain. The value supplied from the preceding
 step and the separation premise must suffice for this primitive.
 
-This is a checking design requirement, not a claim that current `transport`
-already implements it for every read kind. Separate a failure to express the
+Separate a failure to express the
 rule, a refusal of a documented rule, and a successful check that still walks
 history. For the last case, retain a deterministic scaling reproduction as
 required by [verifier design](../internals/verifier-design.md); proof success
@@ -418,9 +417,7 @@ Equal ranges keep one label, and unambiguous footprints gain no annotation.
 This describes a representation mismatch, not additional proof evidence.
 
 Within a trace, goals, requirements, and traced facts share names and memory
-labels. A `transport` refusal that finds no frame evidence prints its own
-legend first, and the trace continues its numbering, so a label in the refusal
-and in the `proof refusal` goal means the same value or memory. A field of a named pointer prints as that name
+labels. A field of a named pointer prints as that name
 plus its byte offset (`g + 16 bytes`). A bounded legend defines
 generated addresses and memory labels, including immutable proof names, pointer-read
 constructions, pure pointer calls with their typed arguments, byte offsets,

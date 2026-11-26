@@ -435,7 +435,6 @@ fn checked_execution_arm_tactics_end(
                 tactic,
                 ProofTactic::ApplyFact(_)
                     | ProofTactic::ApplyTheorem(_)
-                    | ProofTactic::Transport { .. }
                     | ProofTactic::Have(_)
                     | ProofTactic::LetSatisfy(_)
             )
@@ -942,10 +941,6 @@ fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTacti
         ProofTactic::Both(_) | ProofTactic::All(_) => {
             Some(PostExecutionTactic::Both(tactic.clone()))
         }
-        ProofTactic::Transport { source, target } => Some(PostExecutionTactic::Transport {
-            source: source.clone(),
-            target: target.clone(),
-        }),
         ProofTactic::Solve => Some(PostExecutionTactic::Solve),
         ProofTactic::ImplicitSolve => Some(PostExecutionTactic::ImplicitSolve),
         ProofTactic::SolveUsing(solve) => Some(PostExecutionTactic::SolveUsing(solve.clone())),
@@ -1196,13 +1191,6 @@ fn apply_frontier_source_tactic<'a>(
         proof.driver().apply_fact_application(fact)?
     } else if let ProofTactic::ApplyTheorem(application) = &indexed.tactic {
         apply_written_theorem(&proof, application)?
-    } else if let ProofTactic::Transport { source, target } = &indexed.tactic {
-        crate::kernel::search::ProofSearch::apply_written_fact_transport(
-            &proof,
-            source,
-            target,
-            indexed.index,
-        )?
     } else if let Some(have) = frontier_have(&indexed.tactic) {
         let nested = proof.driver().open_source_have(have)?;
         let goal = nested.goal().cloned();
@@ -5042,25 +5030,6 @@ fn advance_linear_open_scope<'a>(
                 return decline();
             };
             scope = applied;
-            if indexed.source_index != owning_source_index
-                && let Some(site) = proof_site
-            {
-                let certificate = scope.certificate_since(&checkpoint)?;
-                record_proof_site_tactic_expansion(
-                    expansion_capture.as_deref_mut(),
-                    site,
-                    indexed.source_index,
-                    &certificate.to_proof_tactics(),
-                );
-            }
-            continue;
-        }
-        if let ProofTactic::Transport { source, target } = &indexed.tactic {
-            let checkpoint = scope.checkpoint();
-            let Some(transported) = scope.driver().try_fact_transport(source, target)? else {
-                return decline();
-            };
-            scope = transported;
             if indexed.source_index != owning_source_index
                 && let Some(site) = proof_site
             {

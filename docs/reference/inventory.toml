@@ -926,10 +926,6 @@ id = "language.word.then"
 path = "reference/language/grammar.md#word-index"
 
 [[item]]
-id = "language.word.transport"
-path = "reference/language/grammar.md#word-index"
-
-[[item]]
 id = "language.word.true"
 path = "reference/language/grammar.md#word-index"
 
@@ -1383,10 +1379,6 @@ path = "reference/tactics/index.md#proposition-reasoning"
 
 
 [[item]]
-id = "tactic.transport"
-path = "reference/tactics/index.md#resources-and-transport"
-
-[[item]]
 id = "tactic.unfold"
 path = "reference/tactics/index.md#resources-and-transport"
 
@@ -1553,9 +1545,6 @@ path = "reference/tactics/index.md#proposition-reasoning"
 [[item]]
 id = "tactic-form.rewrite"
 path = "reference/tactics/index.md#proposition-reasoning"
-[[item]]
-id = "tactic-form.transport"
-path = "reference/tactics/index.md#resources-and-transport"
 [[item]]
 id = "tactic-form.instantiate"
 path = "reference/tactics/index.md#proposition-reasoning"

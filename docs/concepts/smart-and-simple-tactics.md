@@ -56,7 +56,6 @@ work expands into simple tactics:
 - At a loop back edge, the closure of the invariant bundle runs `close()` on
   each member and expands to one `have <member> by { ... }` per member not
   already a fact.
-- Bare `transport(P, Q)` searches for frame evidence between certified states.
 
 `step_until(point)` repeats `step()` up to its target, and each requirement
 it crosses is proved as a bare `step()`'s is. It walks a loop the facts decide
@@ -67,9 +66,8 @@ as smart. The parser refuses the removed `execute()`; write
 
 ## Fact transport
 
-`transport(P, Q)` searches for evidence that a fact at an earlier state still
-holds at the target state. A search miss names the source, target, and
-recorded effects. Use `have` to state supporting facts, `preserve` to prove
+To establish a proposition in the current state, state it with `have`.
+The closer can search for evidence that an earlier fact still holds. Use `have` to state supporting facts, `preserve` to prove
 that reads stay unchanged across named footprints, and `rewrite` to relate
 the reads. Expansion keeps those ordinary steps when it finds a replayable
 derivation.

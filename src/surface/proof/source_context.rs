@@ -144,7 +144,6 @@ impl SourceContext {
                         | ProofTactic::StepProved { .. }
                         | ProofTactic::ApplyFact(_)
                         | ProofTactic::ApplyTheorem(_)
-                        | ProofTactic::Transport { .. }
                         | ProofTactic::Have(_)
                         | ProofTactic::ExecuteUntil(_)
                         | ProofTactic::SmartExecute
