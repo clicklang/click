@@ -3,10 +3,9 @@
 An explicit invariant can relate a pointer local that is advanced by the loop
 to the current array index.
 
-The preservation proof names the entry pointer relation and strict index
-bound in `normalize() using`. The bound excludes index overflow; the checked
-step compares exact byte advances, not wrapped int32 offsets. The kernel's
-ordinary pointer-equality query need not search ambient facts to find them.
+The preservation proof uses the entry pointer relation and the checked
+pointer addition theorem. The index bound proves that the increment stays
+within the signed integer range.
 
 ```c filename=c_pointer_local_loop_invariant.c
 int32 last_element(int32 arr[], int32 n, int32 cap) {
@@ -23,6 +22,7 @@ int32 last_element(int32 arr[], int32 n, int32 cap) {
 ```
 
 ```click
+import click::integer;
 verifying "c_pointer_local_loop_invariant.c";
 
 int32 last_element(int32 arr[], int32 n, int32 cap) {
@@ -45,10 +45,18 @@ int32 last_element(int32 arr[], int32 n, int32 cap) {
             step();
             step();
             have p == arr + i by {
-                normalize() using {
-                    at(region(5).entry, p) == at(region(5).entry, arr + i);
-                    at(region(5).entry, i) < at(region(5).entry, n);
-                };
+                have p == at(region(5).entry, p) + 1 by close();
+                have defined(at(region(5).entry, i) + 1) by {
+                    apply(integer::int32_increment_below_max_is_defined(at(region(5).entry, i)));
+                    close();
+                }
+                apply(integer::int32_add_to_integer(at(region(5).entry, i), 1));
+                have i == at(region(5).entry, i) + 1 by close();
+                apply(integer::int32_pointer_add_associate_int32(arr, at(region(5).entry, i), 1));
+                rewrite(p, at(region(5).entry, p) + 1);
+                rewrite(at(region(5).entry, p), arr + at(region(5).entry, i));
+                rewrite(i, at(region(5).entry, i) + 1);
+                close();
             }
         }
     }
