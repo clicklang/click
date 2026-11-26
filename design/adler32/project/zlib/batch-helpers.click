@@ -232,7 +232,7 @@ theorem zlib_batch_capacity_step(n: uint32) {
   unfold(zlib_batch_remaining(n - 1u32));
   have to_integer(n - 1u32) == to_integer(n) - to_integer(1u32);
   have to_integer(16u64) <= to_integer(16u64 * n as uint64) by close();
-  have to_integer((16u64 * n as uint64) - 16u64) == to_integer(16u64 * n as uint64) - to_integer(16u64);
+  apply(integer::uint64_subtract_to_integer(16u64 * n as uint64, 16u64));
   apply(zlib_batch_native_capacity_observation(n));
   apply(zlib_batch_native_capacity_observation(n - 1u32));
   have to_integer(16u64 * (n - 1u32) as uint64) == to_integer(16u64 * n as uint64 - 16u64) by close() using {
