@@ -2790,7 +2790,7 @@ impl Renderer<'_> {
                 }
             }
             Resource::Composite { name, arguments } | Resource::Token { name, arguments } => {
-                self.push(name);
+                self.push(&crate::languages::display_source_names(name));
                 self.resource_arguments(&(arguments).native_values());
             }
             Resource::Instance(instance) => {

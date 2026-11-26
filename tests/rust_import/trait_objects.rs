@@ -156,6 +156,31 @@ fn charon_trait_object_functions_are_defined_per_implementation() {
 #[ignore = "nightly: 24s in the parallel gate"]
 fn charon_trait_objects_tools_recheck_expanded_certificates() {
     let p = trait_objects_project();
+    let line_after_release = SIDECAR
+        .lines()
+        .enumerate()
+        .find(|(_, line)| line.contains("step(statement(1).call(0).argument(0).binding.release,"))
+        .map(|(index, _)| (index + 2).to_string())
+        .expect("the through_bound proof releases its shared binding");
+    let trace = p.cli(&[
+        "verify",
+        "--locked",
+        "--trace-proof",
+        "trait_objects::through_bound",
+        "--trace-to",
+        &line_after_release,
+    ]);
+    assert!(trace.status.success(), "{trace:?}");
+    let trace = String::from_utf8(trace.stdout).unwrap();
+    let loan =
+        r#"Rust shared reference loan ("trait_objects::Square", "trait_objects::Shape")(&square)"#;
+    for change in ["gained", "lost"] {
+        assert!(
+            trace.contains(&format!("resource {change}: owns {loan}")),
+            "{trace}"
+        );
+    }
+    assert!(!trace.contains("__lent"), "{trace}");
     for command in ["profile", "audit"] {
         assert_cli(&p, &[command]);
     }

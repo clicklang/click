@@ -2597,9 +2597,11 @@ impl Printer<'_> {
                     None => application,
                 }
             }
-            Resource::Composite { name, arguments } | Resource::Token { name, arguments } => {
-                self.resource_arguments(name, &(arguments).native_values())
-            }
+            Resource::Composite { name, arguments } | Resource::Token { name, arguments } => self
+                .resource_arguments(
+                    &crate::languages::display_source_names(name),
+                    &(arguments).native_values(),
+                ),
             Resource::ConditionalMutexGuard(carrier) => {
                 let condition = self
                     .condition(carrier.condition(), true, 0)

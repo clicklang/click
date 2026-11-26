@@ -838,6 +838,8 @@ fn removed_tactic_refusal(name: &str) -> Option<&'static str> {
 pub(super) enum Token {
     /// The input view carried into the loan of a generated shared pack.
     SharedObjectView,
+    /// A private composite family selected by a shared Rust binding.
+    RustSharedReferenceLoan(std::sync::Arc<crate::kernel::RustObjectConversion>),
     /// Frontend-only marker for a C++ method’s virtual interface.
     CppVirtualInterface,
     OverrideContract,
@@ -949,6 +951,7 @@ impl Token {
             | Self::String(_)
             | Self::ByteString(_) => "",
             Self::SharedObjectView => "shared object view",
+            Self::RustSharedReferenceLoan(_) => "Rust shared reference loan",
             Self::CppVirtualInterface => "virtual method interface",
             Self::OverrideContract => "implementation interface",
             Self::ReferenceBindingContract(_) => "reference binding contract",
@@ -4194,7 +4197,7 @@ impl Parser {
             self.expect_ident_spelling("abstract")?;
         }
         self.expect_ident_spelling("resource")?;
-        let name = self.expect_ident("resource name")?;
+        let name = self.expect_resource_family_name()?;
         if self.verifies_rust()
             && self.peek() == Some(&Token::LessThan)
             && !self.parse_rust_generic_parameters()?.is_empty()
@@ -8485,8 +8488,10 @@ impl Parser {
         if self.peek_ident() == Some("uninitialized") && self.peek_next() == Some(&Token::LParen) {
             return self.parse_uninitialized_memory_target(access);
         }
-        if matches!(self.peek(), Some(Token::Ident(_)))
-            && self.peek_ident() != Some("object")
+        if matches!(
+            self.peek(),
+            Some(Token::Ident(_) | Token::RustSharedReferenceLoan(_))
+        ) && self.peek_ident() != Some("object")
             && self.peek_next() == Some(&Token::LParen)
         {
             return self.parse_declared_resource_call_with_access(access);
@@ -13033,11 +13038,20 @@ impl Parser {
         })
     }
 
+    fn expect_resource_family_name(&mut self) -> Result<String, ClickError> {
+        if let Some(Token::RustSharedReferenceLoan(conversion)) = self.peek() {
+            let family = conversion.loan_family();
+            self.position += 1;
+            return Ok(family);
+        }
+        self.expect_ident("resource name")
+    }
+
     fn parse_declared_resource_call_with_access(
         &mut self,
         access: ResourceAccessMode,
     ) -> Result<ResourceClause, ClickError> {
-        let name = self.expect_ident("resource name")?;
+        let name = self.expect_resource_family_name()?;
         self.expect(Token::LParen)?;
         let mut arguments = Vec::new();
         let mut resource_type_arguments = Vec::new();

@@ -1546,11 +1546,11 @@ fn coercion_contracts(
     // a resource the pack produces beside the object: while the callee holds
     // the object nothing changes the memory or hands it over again, so the
     // caller keeps every field. The unpack gives both up.
-    let lend = crate::languages::rust::names::object_lend_name(type_name, trait_name);
-    let lent = |verb: &str, from_view: bool| {
+    let loan = Token::RustSharedReferenceLoan(std::sync::Arc::new(conversion.clone()));
+    let loan_clause = |verb: &str, from_view: bool| {
         let mut clause = vec![
             ident(verb),
-            ident(&lend),
+            loan.clone(),
             Token::LParen,
             ident("object"),
             Token::RParen,
@@ -1565,7 +1565,7 @@ fn coercion_contracts(
         position,
         vec![
             ident("resource"),
-            ident(&lend),
+            loan.clone(),
             Token::LParen,
             ident("object"),
             Token::Colon,
@@ -1599,7 +1599,7 @@ fn coercion_contracts(
         ],
     ));
     tokens.extend(resources("consumes"));
-    tokens.extend(lent("produces", true));
+    tokens.extend(loan_clause("produces", true));
     tokens.extend(instance("produces"));
     // A definition reading a consumed resource reads it at entry.
     let entry = if held.is_empty() {
@@ -1618,7 +1618,7 @@ fn coercion_contracts(
     }
     tokens.push((Token::RBrace, position.clone()));
     tokens.extend(head(ReferenceBindingKind::ReleaseShared));
-    tokens.extend(lent("consumes", false));
+    tokens.extend(loan_clause("consumes", false));
     tokens.extend(instance("consumes"));
     // The resources come back holding the object's state, which a shared
     // reference kept.
