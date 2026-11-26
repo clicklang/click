@@ -3593,6 +3593,16 @@ impl<'a> Proof<'a> {
         })
     }
 
+    /// Use plain closure when the focused proposition already has `false`
+    /// in scope. Other refutations still need their selected fact.
+    pub(in crate::surface::proof) fn refutation_step(&self, fact: SyntaxProposition) -> ProofStep {
+        if self.goal().is_some() && self.facts().holds_false() {
+            ProofStep::Known
+        } else {
+            ProofStep::Contradiction(fact)
+        }
+    }
+
     fn apply_contradiction(
         &self,
         surface: &SyntaxProposition,

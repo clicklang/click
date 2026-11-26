@@ -8950,7 +8950,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         attempt::candidate_outcome(
             introduced
                 .driver()
-                .apply_step(ProofStep::Contradiction(opposite)),
+                .apply_step(introduced.refutation_step(opposite)),
         )?
         .map(|closed| joined.finish_generated_intro(&introduced, closed))
         .transpose()
@@ -9004,7 +9004,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 && let Some(closed) = attempt::candidate_outcome(
                     with_antecedent
                         .driver()
-                        .apply_step(ProofStep::Contradiction(negated_antecedent)),
+                        .apply_step(with_antecedent.refutation_step(negated_antecedent)),
                 )?
             {
                 openings.push((with_opposite, with_antecedent));
@@ -10110,7 +10110,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if let Some(closed) = attempt::candidate_outcome(
             search_input
                 .driver()
-                .apply_step(ProofStep::Contradiction(surface_antecedent.clone())),
+                .apply_step(search_input.refutation_step(surface_antecedent.clone())),
         )? {
             return Ok(Some(closed));
         }
@@ -10137,7 +10137,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if let Some(closed) = attempt::candidate_outcome(
                 search_input
                     .driver()
-                    .apply_step(ProofStep::Contradiction(surface)),
+                    .apply_step(search_input.refutation_step(surface)),
             )? {
                 return Ok(Some(closed));
             }
@@ -12239,12 +12239,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let certificate =
             ProofCertificate::from_steps(vec![ProofStep::Rewrite(rewrite), ProofStep::Known])
                 .expect("ordinary proof of the opposite comparison");
-        let equal_done = equal
+        let refuted = equal
             .driver()
             .apply_have_step(&negated, &certificate)
-            .ok()?
+            .ok()?;
+        let equal_done = refuted
             .driver()
-            .apply_step(ProofStep::Contradiction(assumed.clone()))
+            .apply_step(refuted.refutation_step(assumed.clone()))
             .ok()?;
         let unequal_done = equal_done
             .focus_branch(ids[1])
@@ -12325,7 +12326,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 } else {
                     focused_branch
                         .driver()
-                        .apply_step(ProofStep::Contradiction(assumed_surface.clone()))
+                        .apply_step(focused_branch.refutation_step(assumed_surface.clone()))
                         .ok()
                 };
                 let selected = branch

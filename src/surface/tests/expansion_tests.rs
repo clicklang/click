@@ -2301,7 +2301,7 @@ fn disjunctive_divisor_bounds_expand_and_cold_replay() {
         let expanded = expand_c_claim_source_by_label(&source, &sources, claim)
             .unwrap_or_else(|error| panic!("{claim}: {}", error.report()));
         assert!(!expanded.contains("normalize()"), "{claim}: {expanded}");
-        assert!(expanded.contains("contradiction("), "{claim}: {expanded}");
+        assert!(!expanded.contains("contradiction("), "{claim}: {expanded}");
         crate::surface::check_audit_claim(claim, true, || {
             verify_c_sources(&expanded, &sources).map_err(|error| error.report())
         })
