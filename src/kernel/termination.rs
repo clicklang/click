@@ -615,6 +615,14 @@ impl TerminationWalk for StructuralMeasureWalk<'_> {
                 Ok(forget(target, paths))
             }
             ProgramStatement::Call {
+                dispatch: CallDispatch::CppVirtual,
+                ..
+            }
+            | ProgramStatement::CallResult {
+                dispatch: CallDispatch::CppVirtual,
+                ..
+            } => Ok(paths),
+            ProgramStatement::Call {
                 function_name,
                 arguments,
                 ..
@@ -1712,17 +1720,49 @@ fn collect_spec_program_variables(
     }
 }
 
-fn statement_calls(statement: &ProgramStatement, calls: &mut BTreeSet<String>) {
+/// Virtual interface edges must remain distinct from edges to method bodies.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub(crate) enum CallDependency {
+    Named(String),
+    CppVirtual(String),
+}
+
+impl From<String> for CallDependency {
+    fn from(name: String) -> Self {
+        Self::Named(name)
+    }
+}
+
+impl From<&str> for CallDependency {
+    fn from(name: &str) -> Self {
+        Self::Named(name.to_owned())
+    }
+}
+
+fn statement_calls(statement: &ProgramStatement, calls: &mut BTreeSet<CallDependency>) {
     statement_calls_visiting(statement, calls, &mut |_| true);
 }
 
 /// The functions `function`'s body calls by name: the call graph of a body a
 /// typed frontend lowered itself, which has no C syntax to read calls from.
 pub fn program_function_callees(function: &ProgramFunction) -> BTreeSet<String> {
+    program_function_call_dependencies(function)
+        .into_iter()
+        .map(|callee| match callee {
+            CallDependency::Named(name) | CallDependency::CppVirtual(name) => name,
+        })
+        .collect()
+}
+
+pub(crate) fn program_function_call_dependencies(
+    function: &ProgramFunction,
+) -> BTreeSet<CallDependency> {
     statement_callees(&function.source_body)
 }
 
-pub(in crate::kernel) fn statement_callees(statement: &ProgramStatement) -> BTreeSet<String> {
+pub(in crate::kernel) fn statement_callees(
+    statement: &ProgramStatement,
+) -> BTreeSet<CallDependency> {
     let mut calls = BTreeSet::new();
     statement_calls(statement, &mut calls);
     calls
@@ -1734,7 +1774,7 @@ pub(in crate::kernel) fn statement_callees(statement: &ProgramStatement) -> BTre
 pub(in crate::kernel) fn checked_statement_calls(
     statement: &ProgramStatement,
     seen: &mut std::collections::HashSet<usize>,
-    calls: &mut BTreeSet<String>,
+    calls: &mut BTreeSet<CallDependency>,
 ) {
     statement_calls_visiting(statement, calls, &mut |node| {
         seen.insert(node as *const ProgramStatement as usize)
@@ -1743,7 +1783,7 @@ pub(in crate::kernel) fn checked_statement_calls(
 
 fn statement_calls_visiting(
     statement: &ProgramStatement,
-    calls: &mut BTreeSet<String>,
+    calls: &mut BTreeSet<CallDependency>,
     visit: &mut impl FnMut(&ProgramStatement) -> bool,
 ) {
     charge_termination_work(1);
@@ -1763,12 +1803,24 @@ fn statement_calls_visiting(
             callee: Some(_),
             ..
         } => {
-            calls.insert(format!("{function_name}#indirect"));
+            calls.insert(format!("{function_name}#indirect").into());
+        }
+        ProgramStatement::Call {
+            function_name,
+            dispatch: CallDispatch::CppVirtual,
+            ..
+        }
+        | ProgramStatement::CallResult {
+            function_name,
+            dispatch: CallDispatch::CppVirtual,
+            ..
+        } => {
+            calls.insert(CallDependency::CppVirtual(function_name.clone()));
         }
         ProgramStatement::CallConstruct { function_name, .. }
         | ProgramStatement::Call { function_name, .. }
         | ProgramStatement::CallResult { function_name, .. } => {
-            calls.insert(function_name.clone());
+            calls.insert(function_name.clone().into());
         }
         ProgramStatement::Seq(statements) => {
             charge_seq_spine(statements);
@@ -2267,6 +2319,14 @@ impl TerminationWalk for Int32MeasureWalk<'_> {
                 self.check_recursive_call(function_name, arguments, &lower_bounds)?;
                 Ok(lower_bounds)
             }
+            ProgramStatement::Call {
+                dispatch: CallDispatch::CppVirtual,
+                ..
+            }
+            | ProgramStatement::CallResult {
+                dispatch: CallDispatch::CppVirtual,
+                ..
+            } => Ok(lower_bounds),
             ProgramStatement::Call {
                 function_name,
                 arguments,
@@ -4271,8 +4331,8 @@ fn prove_loop_obligation(
 /// Union each shared dependency set once at a certification boundary. Missing
 /// evidence is contagious: it must never be interpreted as an empty call set.
 pub(in crate::kernel) fn merge_checked_callees<'a>(
-    sets: impl IntoIterator<Item = Option<&'a Arc<BTreeSet<String>>>>,
-) -> Option<Arc<BTreeSet<String>>> {
+    sets: impl IntoIterator<Item = Option<&'a Arc<BTreeSet<CallDependency>>>>,
+) -> Option<Arc<BTreeSet<CallDependency>>> {
     let mut unique = BTreeMap::new();
     for set in sets {
         charge_termination_work(1);
@@ -4300,7 +4360,9 @@ pub(in crate::kernel) fn merge_checked_callees<'a>(
 /// parameter or local, so such a call goes through that object. Resolving it
 /// to the function would hand the call that function's ranking proof, so it is
 /// left unranked, which is the treatment every indirect call gets.
-pub(in crate::kernel) fn termination_callees(function: &ProgramFunction) -> BTreeSet<String> {
+pub(in crate::kernel) fn termination_callees(
+    function: &ProgramFunction,
+) -> BTreeSet<CallDependency> {
     let mut found = BTreeSet::new();
     statement_calls(&function.source_body, &mut found);
     classify_termination_callees(function, found.into_iter())
@@ -4308,16 +4370,15 @@ pub(in crate::kernel) fn termination_callees(function: &ProgramFunction) -> BTre
 
 fn classify_termination_callees(
     function: &ProgramFunction,
-    found: impl Iterator<Item = String>,
-) -> BTreeSet<String> {
+    found: impl Iterator<Item = CallDependency>,
+) -> BTreeSet<CallDependency> {
     let objects = function_object_names(function);
     found
-        .map(|callee| {
-            if objects.contains(&callee) {
-                format!("{callee}#indirect")
-            } else {
-                callee
+        .map(|callee| match callee {
+            CallDependency::Named(name) if objects.contains(&name) => {
+                format!("{name}#indirect").into()
             }
+            _ => callee,
         })
         .collect()
 }
@@ -4652,7 +4713,7 @@ fn function_address_taken(function: &ProgramFunction, taken: &mut BTreeSet<Strin
 /// only the ones the verified bodies actually reach, and each is read once.
 type TerminationCallGraph<'a> = (
     BTreeMap<String, &'a ProgramFunction>,
-    BTreeMap<String, BTreeSet<String>>,
+    BTreeMap<String, BTreeSet<CallDependency>>,
 );
 
 fn termination_call_graph<'a>(
@@ -4680,7 +4741,7 @@ fn termination_call_graph<'a>(
         .iter()
         .map(|rule| (rule.function.name(), rule.checked_callees.as_ref()))
         .collect::<BTreeMap<_, _>>();
-    let mut calls = BTreeMap::<String, BTreeSet<String>>::new();
+    let mut calls = BTreeMap::<String, BTreeSet<CallDependency>>::new();
     let mut pending = functions.keys().cloned().collect::<Vec<_>>();
     while let Some(name) = pending.pop() {
         charge_termination_work(1);
@@ -4699,10 +4760,13 @@ fn termination_call_graph<'a>(
         };
         if let Some(tactics) = applied_tactics.get(&name) {
             charge_termination_work(tactics.len());
-            found.extend(tactics.iter().cloned());
+            found.extend(tactics.iter().cloned().map(CallDependency::from));
         }
         for callee in &found {
             charge_termination_work(1);
+            let CallDependency::Named(callee) = callee else {
+                continue;
+            };
             if functions.contains_key(callee) {
                 continue;
             }
@@ -4815,8 +4879,24 @@ fn self_call_loop_indices(
         self_call_loop_indices(statement, callee, next_index, enclosing, found);
     };
     match statement {
-        ProgramStatement::Call { function_name, .. }
-        | ProgramStatement::CallResult { function_name, .. }
+        ProgramStatement::Call {
+            dispatch: CallDispatch::CppVirtual,
+            ..
+        }
+        | ProgramStatement::CallResult {
+            dispatch: CallDispatch::CppVirtual,
+            ..
+        } => {}
+        ProgramStatement::Call {
+            function_name,
+            dispatch: CallDispatch::Direct,
+            ..
+        }
+        | ProgramStatement::CallResult {
+            function_name,
+            dispatch: CallDispatch::Direct,
+            ..
+        }
         | ProgramStatement::CallConstruct { function_name, .. } => {
             if callee.contains(function_name) {
                 found.extend(enclosing.iter().copied());
@@ -4925,7 +5005,10 @@ pub fn program_termination_height_plan(
             calls[*name]
                 .iter()
                 .inspect(|_| charge_termination_work(1))
-                .filter_map(|callee| node_of.get(callee.as_str()).copied())
+                .filter_map(|callee| match callee {
+                    CallDependency::Named(callee) => node_of.get(callee.as_str()).copied(),
+                    CallDependency::CppVirtual(_) => None,
+                })
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
@@ -5194,6 +5277,7 @@ mod address_escape_tests {
     #[test]
     fn helper_call_receiving_the_address_is_detected() {
         let call = ProgramStatement::Call {
+            dispatch: crate::kernel::CallDispatch::Direct,
             cpp_binding: None,
             function_name: "reset".to_string(),
             arguments: vec![address_of("n")],
@@ -6342,6 +6426,7 @@ mod local_descent_tests {
                 },
                 plans: &[],
                 assumed_terminating: &BTreeSet::new(),
+                cpp_virtual_terminating: &BTreeSet::new(),
                 diverging_contracts: &BTreeSet::new(),
                 has_unselected_functions: false,
             })
@@ -7437,7 +7522,7 @@ mod checked_callee_certification_tests {
         let empty = rule(Some(Arc::new(BTreeSet::new())));
         let missing = rule(None);
         assert!(termination_call_graph(std::slice::from_ref(&empty), &[]).1["caller"].is_empty());
-        let expected = BTreeSet::from(["callee".to_string()]);
+        let expected = BTreeSet::from(["callee".into()]);
         assert_eq!(
             termination_call_graph(std::slice::from_ref(&missing), &[]).1["caller"],
             expected

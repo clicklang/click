@@ -120,6 +120,7 @@ mod tests {
             &BTreeSet::new(),
             &BTreeSet::new(),
             &BTreeSet::new(),
+            &BTreeSet::new(),
             false,
             None,
         )

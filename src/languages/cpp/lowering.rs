@@ -162,6 +162,15 @@ pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, St
         .collect::<Result<Vec<_>, _>>()?;
     let (library_contracts, library_models) =
         super::standard_library::contracts(import.export(), &names)?;
+    // An overload's head at its shared path selects it by signature.
+    let mut overload_paths = BTreeMap::new();
+    for (id, path) in &paths {
+        crate::instrumentation::record_deterministic_work(1);
+        let name = names.require(id)?;
+        if name != path {
+            overload_paths.insert(name.to_string(), path.clone());
+        }
+    }
     let mut execution = super::interface::prepare(
         import,
         &functions,
@@ -171,18 +180,9 @@ pub fn lower_import(import: &PreparedCppImport) -> Result<LoweredCppFunction, St
         &polymorphism.coercions.into_inner(),
         &polymorphism.dispatches.into_inner(),
         &polymorphism.receiver_calls.into_inner(),
+        overload_paths,
     )?;
     execution.library_models = library_models;
-    // An overload's head at its shared path selects it by signature.
-    for (id, path) in &paths {
-        crate::instrumentation::record_deterministic_work(1);
-        let name = names.require(id)?;
-        if name != path {
-            execution
-                .overload_paths
-                .insert(name.to_string(), path.clone());
-        }
-    }
     Ok(LoweredCppFunction {
         execution: std::sync::Arc::new(execution),
         names,
@@ -507,14 +507,13 @@ struct Polymorphism<'a> {
     /// Every conversion of a derived class reference to a polymorphic base
     /// the program makes, by derived and base record.
     coercions: std::cell::RefCell<BTreeSet<(String, String)>>,
-    /// Every dispatch the program makes through a reference to an open
-    /// class's method that overrides another, by the name of the function
-    /// it calls, with the method's importer name.
-    dispatches: std::cell::RefCell<BTreeMap<String, String>>,
+    /// Methods the program calls through their virtual interface.
+    dispatches: std::cell::RefCell<BTreeSet<String>>,
     /// Each function's calls of methods on a receiver that may be an object
     /// of a derived class, by its importer name: the function called, and
     /// the reference parameter the receiver is, or `None` for `this`.
-    receiver_calls: std::cell::RefCell<BTreeMap<String, Vec<(String, Option<String>)>>>,
+    receiver_calls:
+        std::cell::RefCell<BTreeMap<String, Vec<crate::languages::interface::CppReceiverCall>>>,
 }
 
 impl<'a> Polymorphism<'a> {
@@ -630,6 +629,7 @@ impl LoweringContext<'_> {
                 function_name: pack.clone(),
                 arguments: vec![address.clone()],
                 callee: None,
+                dispatch: crate::kernel::CallDispatch::Direct,
                 cpp_binding: Some(CppBindingSource {
                     slot,
                     call_offset: remaining,
@@ -744,13 +744,14 @@ impl LoweringContext<'_> {
     /// complete object of an open class passed by reference becomes the
     /// object a reference to its class holds. A call that dispatches through
     /// a reference to an open class's method that overrides another runs
-    /// whichever override the object's class selects, which the function
-    /// named for that dispatch stands for.
-    fn call_name(
+    /// whichever override the object's class selects, using the method's
+    /// virtual interface.
+    fn call_target(
         &mut self,
         callee: &super::CppFunctionReference,
         arguments: &[CppCallArgument],
-    ) -> Result<String, String> {
+    ) -> Result<(String, crate::kernel::CallDispatch), String> {
+        use crate::kernel::CallDispatch;
         self.direct_receiver = None;
         let name = self.callee_name(callee)?;
         let Some(function) = (!callee.through_pointer)
@@ -762,7 +763,7 @@ impl LoweringContext<'_> {
             .flatten()
             .copied()
         else {
-            return Ok(name);
+            return Ok((name, CallDispatch::Direct));
         };
         let receiver = function.receiver();
         for (position, (argument, parameter)) in
@@ -817,13 +818,13 @@ impl LoweringContext<'_> {
         let Some(CppType::LvalueReference { pointee }) =
             receiver.map(|parameter| &parameter.value_type)
         else {
-            return Ok(name);
+            return Ok((name, CallDispatch::Direct));
         };
         let CppType::Record { name: class, .. } = pointee.as_ref() else {
-            return Ok(name);
+            return Ok((name, CallDispatch::Direct));
         };
         let Some(CppCallArgument::Reference { place }) = arguments.first() else {
-            return Ok(name);
+            return Ok((name, CallDispatch::Direct));
         };
         let exact = self.is_exact(place)?;
         let dispatches = function.virtual_method.as_ref().is_some_and(|method| {
@@ -831,26 +832,28 @@ impl LoweringContext<'_> {
                 && !method.overrides.is_empty()
                 && self.polymorphism.open.contains(class.as_str())
         }) && !exact;
+        let dispatch = if dispatches {
+            self.polymorphism
+                .dispatches
+                .borrow_mut()
+                .insert(name.clone());
+            CallDispatch::CppVirtual
+        } else {
+            CallDispatch::Direct
+        };
         if !exact && self.polymorphism.derived.contains(class.as_str()) {
             let id = place.declaration_id.as_str();
             let holder = (self.receiver != Some(id)).then(|| place.name.clone());
-            let target = if dispatches {
-                crate::languages::cpp::names::object_dispatch_name(
-                    class,
-                    function
-                        .path
-                        .last()
-                        .map_or(callee.name.as_str(), String::as_str),
-                )
-            } else {
-                name.clone()
-            };
             self.polymorphism
                 .receiver_calls
                 .borrow_mut()
                 .entry(self.function_name.to_string())
                 .or_default()
-                .push((target, holder));
+                .push(crate::languages::interface::CppReceiverCall {
+                    method: name.clone(),
+                    dispatch,
+                    holder,
+                });
         }
         if !dispatches {
             // A method of a class with a polymorphic base, called as itself,
@@ -863,18 +866,8 @@ impl LoweringContext<'_> {
             {
                 self.direct_receiver = Some(place.clone());
             }
-            return Ok(name);
         }
-        let method_name = function
-            .path
-            .last()
-            .map_or(callee.name.as_str(), String::as_str);
-        let dispatch = crate::languages::cpp::names::object_dispatch_name(class, method_name);
-        self.polymorphism
-            .dispatches
-            .borrow_mut()
-            .insert(dispatch.clone(), name);
-        Ok(dispatch)
+        Ok((name, dispatch))
     }
 
     fn lower_statement(&mut self, statement: &CppStatement) -> Result<ProgramStatement, String> {
@@ -1423,13 +1416,19 @@ impl LoweringContext<'_> {
             CppStatement::Call {
                 callee, arguments, ..
             } => {
-                let target = self.call_name(callee, arguments)?;
+                let (target, dispatch) = self.call_target(callee, arguments)?;
                 let parameter_names = self.callee_parameter_names(callee);
                 let (prefix, arguments, mut temporaries) =
                     self.normalize_temporary_arguments_for(arguments, &parameter_names, true)?;
                 temporaries.reverse();
                 let operation = self.coerced_call(
-                    program_call(target, arguments),
+                    ProgramStatement::Call {
+                        function_name: target,
+                        arguments,
+                        dispatch,
+                        callee: None,
+                        cpp_binding: None,
+                    },
                     self.call_has_receiver(callee),
                 );
                 let operation = if temporaries.is_empty() {
@@ -1860,7 +1859,7 @@ impl LoweringContext<'_> {
                 value_type,
                 conversions,
             } => {
-                let target = self.call_name(callee, arguments)?;
+                let (target, dispatch) = self.call_target(callee, arguments)?;
                 let parameter_names = self.callee_parameter_names(callee);
                 let (prefix, arguments, temporaries) = self.normalize_temporary_arguments_for(
                     arguments,
@@ -1875,12 +1874,14 @@ impl LoweringContext<'_> {
                 let ProgramStatement::CallResult {
                     result_type,
                     result_pointee_constant,
+                    dispatch: call_dispatch,
                     ..
                 } = &mut call
                 else {
                     unreachable!("a value-producing call")
                 };
                 let pointee_constant = scalar::returns_constant_element(value_type);
+                *call_dispatch = dispatch;
                 *result_type = Some(capture_type);
                 *result_pointee_constant = pointee_constant;
                 let (operation, mut value) =

@@ -197,6 +197,7 @@ pub(super) fn execute_program_call_construct_paths(
         &selected,
         None,
         function_name,
+        CallDispatch::Direct,
         None,
         arguments,
         assumptions,
@@ -217,12 +218,50 @@ pub(super) fn execute_program_call_paths(
     state: &ExecutionState,
     result_call: Option<u32>,
     function_name: &str,
+    dispatch: CallDispatch,
     callee: Option<&Callee>,
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
     execution_context: ExecutionContext<'_>,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<StatementExecutionPath>> {
+    if dispatch == CallDispatch::CppVirtual {
+        let environment = execution_context.environment;
+        let Some(rule) = environment.get_cpp_virtual_rule(function_name) else {
+            return Ok(vec![StatementExecutionPath::new(
+                StatementOutcome::RuntimeError(RuntimeError::FunctionContract(format!(
+                    "virtual call to `{function_name}` requires a virtual interface contract"
+                ))),
+                Vec::new().into(),
+                Vec::new(),
+            )]);
+        };
+        if environment.selected_call_contract.is_some() {
+            return Ok(vec![StatementExecutionPath::new(
+                StatementOutcome::RuntimeError(RuntimeError::FunctionContract(
+                    "step(Contract) requires a function-pointer call".into(),
+                )),
+                Vec::new().into(),
+                Vec::new(),
+            )]);
+        }
+        if super::functions::contract_reaches_population(rule.function.contract_interface())
+            && !super::functions::authority_preserves_assumed_resource_contract(
+                rule.function.contract_interface(),
+            )
+        {
+            return Ok(vec![authority_call_refusal_path()]);
+        }
+        let paths = super::functions::execute_external_function_rule(
+            state,
+            rule,
+            arguments,
+            assumptions,
+            environment,
+            budget,
+        )?;
+        return call_statement_paths(paths, budget);
+    }
     // A call through a function pointer calls whatever the pointer holds.
     if let Some(callee) = callee {
         let paths = indirect_call_statement_paths(execute_program_indirect_call_paths(
@@ -371,30 +410,40 @@ pub(super) fn execute_program_call_paths(
         assumptions,
         execution_context,
         budget,
-    )?
-    .into_iter()
-    .map(|path| StatementExecutionPath {
-        loop_invariant_correspondence: Default::default(),
-        call_result: match &path.outcome {
-            FunctionOutcome::Return { value, .. } if value.program_type() != ProgramType::Void => {
-                Some(value.clone())
-            }
-            _ => None,
-        },
-        outcome: match path.outcome {
-            FunctionOutcome::Return { state, .. } => StatementOutcome::Normal(state),
-            FunctionOutcome::Throw { value, state } => StatementOutcome::Throw { value, state },
-            FunctionOutcome::VerificationDiverges => StatementOutcome::VerificationDiverges,
-            FunctionOutcome::UndefinedBehavior(undefined_behavior) => {
-                StatementOutcome::UndefinedBehavior(undefined_behavior)
-            }
-            FunctionOutcome::RuntimeError(error) => StatementOutcome::RuntimeError(error),
-        },
-        facts: path.facts,
-        obligations: path.obligations,
-        borrow_evidence: path.borrow_evidence,
-    })
-    .collect::<Vec<_>>();
+    )?;
+    call_statement_paths(paths, budget)
+}
+
+fn call_statement_paths(
+    paths: Vec<FunctionPath>,
+    budget: &ExecutionBudget,
+) -> ExecutionResult<Vec<StatementExecutionPath>> {
+    let paths = paths
+        .into_iter()
+        .map(|path| StatementExecutionPath {
+            loop_invariant_correspondence: Default::default(),
+            call_result: match &path.outcome {
+                FunctionOutcome::Return { value, .. }
+                    if value.program_type() != ProgramType::Void =>
+                {
+                    Some(value.clone())
+                }
+                _ => None,
+            },
+            outcome: match path.outcome {
+                FunctionOutcome::Return { state, .. } => StatementOutcome::Normal(state),
+                FunctionOutcome::Throw { value, state } => StatementOutcome::Throw { value, state },
+                FunctionOutcome::VerificationDiverges => StatementOutcome::VerificationDiverges,
+                FunctionOutcome::UndefinedBehavior(undefined_behavior) => {
+                    StatementOutcome::UndefinedBehavior(undefined_behavior)
+                }
+                FunctionOutcome::RuntimeError(error) => StatementOutcome::RuntimeError(error),
+            },
+            facts: path.facts,
+            obligations: path.obligations,
+            borrow_evidence: path.borrow_evidence,
+        })
+        .collect::<Vec<_>>();
     budget.check_path_width(paths.len())?;
     Ok(paths)
 }

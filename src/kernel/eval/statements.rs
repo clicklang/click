@@ -4916,11 +4916,13 @@ fn execute_execution_statement_leaf_paths(
             function_name,
             arguments,
             callee,
+            dispatch,
             ..
         } => execute_program_call_paths(
             state,
             None,
             function_name,
+            *dispatch,
             callee.as_ref(),
             arguments,
             assumptions,
@@ -4937,13 +4939,14 @@ fn execute_execution_statement_leaf_paths(
             result_type,
             result_aggregate_layout,
             result_pointee_constant: _,
+            dispatch,
             callee,
             ..
         } => {
             if let Some(expected) = result_aggregate_layout {
                 let actual = execution_context
                     .environment
-                    .get_function(function_name)
+                    .get_call_function(function_name, *dispatch)
                     .and_then(|function| function.return_aggregate_layout());
                 if actual != Some(expected) {
                     return Ok(vec![StatementExecutionPath::new(
@@ -4979,6 +4982,7 @@ fn execute_execution_statement_leaf_paths(
                     state,
                     Some(*call),
                     function_name,
+                    *dispatch,
                     callee.as_ref(),
                     arguments,
                     assumptions,

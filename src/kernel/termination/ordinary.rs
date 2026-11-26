@@ -747,6 +747,7 @@ mod tests {
                 },
                 plans: &[],
                 assumed_terminating: &BTreeSet::new(),
+                cpp_virtual_terminating: &BTreeSet::new(),
                 diverging_contracts: &BTreeSet::new(),
                 has_unselected_functions: false,
             })

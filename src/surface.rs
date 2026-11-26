@@ -837,6 +837,7 @@ pub struct ClickFile {
     theorem_definitions: Vec<TheoremDefinition>,
     contract_definitions: Vec<ContractDefinition>,
     function_blocks: Vec<FunctionBlock>,
+    cpp_virtual_interfaces: BTreeMap<String, FunctionBlock>,
     termination_proof: Option<Vec<ProofTactic>>,
     termination_span: Option<(crate::source::SourcePosition, crate::source::SourcePosition)>,
     /// User-defined tactics: contracts over the proof state, each proved once
@@ -9861,9 +9862,8 @@ impl FunctionBlock {
         Ok(())
     }
 
-    /// This contract, without its proof, as the contract of `name`: a C++
-    /// dispatch that stands for this block's virtual method.
-    pub(in crate::surface) fn dispatch_alias(&self, name: &str) -> FunctionBlock {
+    /// This interface, without its proof, as an external contract of `name`.
+    pub(in crate::surface) fn external_contract_as(&self, name: &str) -> FunctionBlock {
         let mut alias = self.clone();
         alias.signature.name = name.to_string();
         alias.signature.c_source = None;
@@ -9890,7 +9890,7 @@ impl FunctionBlock {
                 self.signature.parameters.len()
             ));
         }
-        let mut alias = self.dispatch_alias(name);
+        let mut alias = self.external_contract_as(name);
         for (parameter, interface_type) in
             alias.signature.parameters.iter_mut().zip(parameter_types)
         {

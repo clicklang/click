@@ -327,11 +327,8 @@ pub(in crate::surface) struct ProgramLayouts {
     /// Each C++ override with the virtual method it overrides, by their
     /// sidecar names: the override inherits that method's interface.
     pub(in crate::surface) virtual_overrides: Vec<(String, String)>,
-    /// Each dispatch a C++ importer names for a call through a reference to
-    /// a class another derives from, with the virtual method it stands for,
-    /// by their sidecar names: without a contract of its own, it has the
-    /// method's.
-    pub(in crate::surface) virtual_dispatches: Vec<(String, String)>,
+    /// Methods that a C++ call invokes through their virtual interface.
+    pub(in crate::surface) virtual_dispatches: BTreeSet<String>,
     /// Each instance of a generic Rust function the import declares, with
     /// the generic function, the instance's parameter and result types, and
     /// its parameters' names as a head writes them: it has the generic
@@ -349,7 +346,8 @@ pub(in crate::surface) struct ProgramLayouts {
     /// Each C++ function's calls of methods on a receiver that may be an
     /// object of a derived class, by sidecar names: the function called, and
     /// the reference parameter the receiver is, or `None` for `this`.
-    pub(in crate::surface) receiver_calls: BTreeMap<String, Vec<(String, Option<String>)>>,
+    pub(in crate::surface) receiver_calls:
+        BTreeMap<String, Vec<crate::languages::interface::CppReceiverCall>>,
     /// The layout name of each C++ record a head spells otherwise, by that
     /// spelling: `Stored<long long>` is `Stored__long_long`.
     pub(in crate::surface) record_spellings: BTreeMap<String, String>,
@@ -827,6 +825,8 @@ fn removed_tactic_refusal(name: &str) -> Option<&'static str> {
 pub(super) enum Token {
     /// The input view carried into the loan of a generated shared pack.
     SharedObjectView,
+    /// Frontend-only marker for a C++ method’s virtual interface.
+    CppVirtualInterface,
     Ident(String),
     Number(u32),
     // Keep literal metadata shared so adding Rust forms does not enlarge
@@ -934,6 +934,7 @@ impl Token {
             | Self::String(_)
             | Self::ByteString(_) => "",
             Self::SharedObjectView => "shared object view",
+            Self::CppVirtualInterface => "virtual method interface",
             Self::LBrace => "{",
             Self::RBrace => "}",
             Self::LParen => "(",
@@ -1169,8 +1170,8 @@ struct Parser {
     /// Each crate trait method implementation read, by name, with the
     /// interface it inherits.
     rust_trait_implementations: Vec<(String, String)>,
-    cpp_dispatches: Vec<(String, String)>,
-    cpp_receiver_calls: BTreeMap<String, Vec<(String, Option<String>)>>,
+    cpp_dispatches: BTreeSet<String>,
+    cpp_receiver_calls: BTreeMap<String, Vec<crate::languages::interface::CppReceiverCall>>,
     /// The crate traits whose objects carry state, by importer name: the
     /// token rewrite already gave their implementations their interfaces.
     rust_object_traits: BTreeSet<String>,
@@ -2290,7 +2291,7 @@ impl Parser {
             rust_written_instances: BTreeSet::new(),
             cpp_generic_instances: BTreeMap::new(),
             rust_trait_implementations: Vec::new(),
-            cpp_dispatches: Vec::new(),
+            cpp_dispatches: BTreeSet::new(),
             cpp_receiver_calls: BTreeMap::new(),
             tokens,
             positions,
@@ -2716,6 +2717,7 @@ impl Parser {
         let mut deferred_theorems = Vec::new();
         let mut contract_definitions = Vec::new();
         let mut function_blocks = Vec::new();
+        let mut cpp_virtual_interfaces = BTreeMap::new();
         let mut tactic_definitions = Vec::new();
         let mut termination_proof = None;
         let mut termination_span = None;
@@ -2848,6 +2850,19 @@ impl Parser {
                 resource_definitions.push(self.parse_resource_definition(true)?);
             } else if self.peek_ident() == Some("resource") {
                 resource_definitions.push(self.parse_resource_definition(false)?);
+            } else if self.peek() == Some(&Token::CppVirtualInterface) {
+                self.position += 1;
+                let interface = self.parse_function_block(true)?;
+                let method = interface.signature().name().to_owned();
+                if cpp_virtual_interfaces
+                    .insert(method.clone(), interface)
+                    .is_some()
+                {
+                    return Err(self.error(format!(
+                        "duplicate virtual interface for `{}`",
+                        crate::languages::display_source_names(&method)
+                    )));
+                }
             } else if self.peek_ident() == Some("extern") {
                 function_blocks.push(self.parse_function_block(true)?);
             } else if self.verifies_cpp()
@@ -2992,21 +3007,18 @@ impl Parser {
                 .map_err(|message| ClickError::new(message).at_declaration(&generic))?;
             function_blocks.push(alias);
         }
-        // A dispatch the sidecar does not state has the contract of the
-        // method it stands for.
-        for (dispatch, method) in std::mem::take(&mut self.cpp_dispatches) {
-            if function_blocks
+        // A virtual call without an object interface uses the method's contract.
+        if !self.cpp_dispatches.is_empty() {
+            let ordinary_methods = function_blocks
                 .iter()
-                .any(|block| block.signature().name() == dispatch)
-            {
-                continue;
-            }
-            if let Some(block) = function_blocks
-                .iter()
-                .find(|block| block.signature().name() == method)
-            {
-                let alias = block.dispatch_alias(&dispatch);
-                function_blocks.push(alias);
+                .map(|block| (block.signature().name(), block))
+                .collect::<BTreeMap<_, _>>();
+            for method in std::mem::take(&mut self.cpp_dispatches) {
+                if let Some(block) = ordinary_methods.get(method.as_str()) {
+                    cpp_virtual_interfaces
+                        .entry(method.clone())
+                        .or_insert_with(|| block.external_contract_as(&method));
+                }
             }
         }
         // A method of a class another derives from holds its memory, and a
@@ -3016,9 +3028,13 @@ impl Parser {
         for (caller, calls) in &self.cpp_receiver_calls {
             let caller_class = crate::languages::cpp::names::cpp_display_name(caller)
                 .and_then(|path| Some(path.rsplit_once("::")?.0.to_string()));
-            for (callee, holder) in calls {
-                let message = match holder {
+            for call in calls {
+                let callee = &call.method;
+                let message = match &call.holder {
                     None => {
+                        if call.dispatch != crate::kernel::CallDispatch::CppVirtual {
+                            continue;
+                        }
                         let (Some((class, method)), Some((_, (root, derived)))) = (
                             methods.dispatches.get(callee),
                             caller_class
@@ -3044,7 +3060,9 @@ impl Parser {
                         else {
                             continue;
                         };
-                        if !methods.on_memory.contains(callee) {
+                        if call.dispatch != crate::kernel::CallDispatch::Direct
+                            || !methods.on_memory.contains(callee)
+                        {
                             continue;
                         }
                         let (root, derived) = &methods.derived_from[class];
@@ -3123,6 +3141,7 @@ impl Parser {
             theorem_definitions,
             contract_definitions,
             function_blocks,
+            cpp_virtual_interfaces,
             tactic_definitions,
             termination_proof,
             termination_span,
@@ -8500,10 +8519,15 @@ impl Parser {
             // generic function's instance its type arguments,
             // `cells::write<u32>(...)`.
             callee = self.rust_step_callee(callee)?;
-        } else if !tactic && self.peek() == Some(&Token::ColonColon) {
-            self.position += 1;
-            callee.push_str("::");
-            callee.push_str(&self.expect_ident("C function name")?);
+        } else if !tactic {
+            while self.peek() == Some(&Token::ColonColon) {
+                self.position += 1;
+                callee.push_str("::");
+                callee.push_str(&self.expect_ident("called function")?);
+                if !self.verifies_cpp() {
+                    break;
+                }
+            }
         }
         let form = if tactic { "name(...)" } else { "step(...)" };
         // Select the declared named contract when present. Otherwise the name
@@ -13178,7 +13202,7 @@ impl Parser {
                 self.position += 1;
                 path.push(self.expect_ident("C++ method name")?);
             }
-            function = crate::languages::cpp::names::path_name(&path);
+            function = path.join("::");
         }
         self.expect(Token::Comma)?;
         let index = self.expect_index("call index")?;

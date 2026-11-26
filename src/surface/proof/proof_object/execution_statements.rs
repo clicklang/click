@@ -1276,25 +1276,39 @@ impl<'a> Proof<'a> {
             ProgramStatement::Call {
                 function_name,
                 arguments,
-                ..
-            }
-            | ProgramStatement::CallConstruct {
-                function_name,
-                arguments,
+                dispatch,
                 ..
             }
             | ProgramStatement::CallResult {
+                function_name,
+                arguments,
+                dispatch,
+                ..
+            } => Some(FrontierCall {
+                callee: function_name.clone(),
+                arguments: arguments.clone(),
+                dispatch: *dispatch,
+            }),
+            ProgramStatement::CallConstruct {
                 function_name,
                 arguments,
                 ..
             } => Some(FrontierCall {
                 callee: function_name.clone(),
                 arguments: arguments.clone(),
+                dispatch: crate::kernel::CallDispatch::Direct,
             }),
             _ => None,
         });
+        let source_target = self.execution().and_then(|execution| {
+            context
+                .constants
+                .source_layout
+                .call_target(execution.core.frontier.next_statement_index)
+        });
         let names_written = |callee: &str| {
             callee == written
+                || source_target == Some(written)
                 || crate::surface::call_source_spelling(callee) == written
                 || context
                     .spec_definitions
@@ -1316,7 +1330,10 @@ impl<'a> Proof<'a> {
             crate::languages::c::formatted_output::describe_function(&call.callee)
                 .unwrap_or_else(|| format!("`{written}`"))
         };
-        let Some(function) = context.function_environment.get_function(&call.callee) else {
+        let Some(function) = context
+            .function_environment
+            .get_call_function(&call.callee, call.dispatch)
+        else {
             return Err(self.step_error(format!(
                 "`{transport}` gives values to {}, which has no Click contract",
                 named()
@@ -2172,6 +2189,7 @@ pub fn without_implicit_solve<R>(operation: impl FnOnce() -> R) -> R {
 /// name and argument expressions.
 struct FrontierCall {
     callee: String,
+    dispatch: crate::kernel::CallDispatch,
     arguments: Vec<ProgramExpression>,
 }
 

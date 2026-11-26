@@ -1119,10 +1119,16 @@ impl SourceExecutionLayout {
             layout.calls.remove(region);
             layout.call_targets.remove(region);
         }
-        if !layout.call_numbers.is_empty() || !layout.cpp_bindings.is_empty() {
+        if imported.has_cpp_call_paths()
+            || !layout.call_numbers.is_empty()
+            || !layout.cpp_bindings.is_empty()
+        {
             let mut named = NamedCalls::default();
-            for (region, callee) in &layout.call_targets {
+            for (region, callee) in &mut layout.call_targets {
                 crate::instrumentation::record_deterministic_work(1);
+                if let Some(source) = imported.cpp_call_path(callee) {
+                    *callee = source;
+                }
                 named
                     .in_function
                     .entry(callee.clone())
@@ -1929,6 +1935,10 @@ impl SourceExecutionLayout {
 
     pub(in crate::surface) fn is_pointee_result(&self, region: usize) -> bool {
         self.data.pointee_results.contains_key(&region)
+    }
+
+    pub(in crate::surface) fn call_target(&self, region: usize) -> Option<&str> {
+        self.data.call_targets.get(&region).map(String::as_str)
     }
 
     pub(in crate::surface) fn call_number(&self, region: usize) -> Option<u32> {

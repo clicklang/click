@@ -12,6 +12,14 @@ use super::c::syntax::{
 use super::c::target::{LongRank, PlainChar};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// A C++ call whose receiver may be a derived object.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CppReceiverCall {
+    pub method: String,
+    pub dispatch: crate::kernel::CallDispatch,
+    pub holder: Option<String>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ImportedFunction {
     pub(crate) program_entry_state: Option<std::sync::Arc<crate::kernel::ExecutionState>>,
@@ -54,12 +62,12 @@ pub struct ImportedFunction {
     /// once for every type; the instance's contract is its contract at the
     /// declaration's types.
     pub(super) generic_instance: Option<String>,
-    /// The C++ virtual method a dispatch the importer names stands for.
-    pub(super) dispatched_method: Option<String>,
+    /// Whether a C++ call uses this method’s virtual interface.
+    pub(super) cpp_virtual: bool,
     /// A C++ function's calls of methods on a receiver that may be an object
     /// of a derived class: the function called, and the reference parameter
     /// the receiver is, or `None` for `this`.
-    pub(super) receiver_calls: Vec<(String, Option<String>)>,
+    pub(super) receiver_calls: Vec<CppReceiverCall>,
     pub(super) parameters: Vec<ImportedParameter>,
     pub(super) body: CStatement,
     /// Compiler-created carriers for statement-form callback calls. Keeping
@@ -74,6 +82,8 @@ pub struct ImportedFunction {
     /// Native frontends share their prepared nominal layouts across functions.
     /// Only indexed source queries read this; ordinary C declaration scopes stay local.
     pub(super) prepared_record_layouts: std::sync::Arc<BTreeMap<String, RecordLayout>>,
+    /// Source paths shared by overloaded C++ declarations.
+    pub(super) cpp_overload_paths: Option<std::sync::Arc<BTreeMap<String, String>>>,
     pub(super) enums: DeclarationMap<CEnumDefinition>,
     pub(super) unions: DeclarationMap<CUnionLayout>,
     pub(super) globals: DeclarationMap<CGlobal>,
@@ -555,20 +565,39 @@ impl ImportedFunction {
 
     /// This C++ function, calling methods on receivers that may be objects of
     /// derived classes.
-    pub(crate) fn with_receiver_calls(mut self, calls: Vec<(String, Option<String>)>) -> Self {
+    pub(crate) fn with_receiver_calls(mut self, calls: Vec<CppReceiverCall>) -> Self {
         self.receiver_calls = calls;
         self
     }
 
     /// Its calls of methods on receivers that may be objects of derived
     /// classes.
-    pub(crate) fn receiver_calls(&self) -> &[(String, Option<String>)] {
+    pub(crate) fn receiver_calls(&self) -> &[CppReceiverCall] {
         &self.receiver_calls
     }
 
-    /// The C++ virtual method this function, a dispatch, stands for.
-    pub(crate) fn dispatched_method(&self) -> Option<&str> {
-        self.dispatched_method.as_deref()
+    /// The method's source path, when its execution name encodes a path
+    /// or a particular overload.
+    pub(crate) fn cpp_call_path(&self, callee: &str) -> Option<String> {
+        use crate::languages::cpp::names::cpp_display_name;
+        let paths = self.cpp_overload_paths.as_ref()?;
+        match paths.get(callee) {
+            Some(path) => Some(cpp_display_name(path).unwrap_or_else(|| path.clone())),
+            None => cpp_display_name(callee),
+        }
+    }
+
+    pub(crate) fn has_cpp_call_paths(&self) -> bool {
+        self.cpp_overload_paths.is_some()
+    }
+
+    pub(crate) fn has_cpp_virtual_call(&self) -> bool {
+        self.cpp_virtual
+    }
+
+    pub(crate) fn with_cpp_virtual_call(mut self) -> Self {
+        self.cpp_virtual = true;
+        self
     }
 
     /// A closure's function whose first `count` parameters are captures.
@@ -626,17 +655,16 @@ impl ImportedFunction {
         self.return_pointee_constant
     }
 
-    /// A declaration with this function's interface and no body, named
-    /// `name`: the dispatch a C++ importer names for a virtual method.
-    pub(crate) fn external_alias(&self, name: String) -> Self {
-        let mut alias = Self::external(self.return_type, name, self.parameters.clone());
+    /// A bodiless declaration of the method, used to lower its virtual interface.
+    pub(crate) fn cpp_virtual_declaration(&self) -> Self {
+        let mut alias =
+            Self::external(self.return_type, self.name.clone(), self.parameters.clone());
         alias.return_pointee_constant = self.return_pointee_constant;
         alias.return_reference = self.return_reference;
         alias.return_struct_name = self.return_struct_name.clone();
         alias.return_pointer_struct_name = self.return_pointer_struct_name.clone();
         alias.requires_read_only_contract = self.requires_read_only_contract;
         alias.requires_nonthrowing_contract = self.requires_nonthrowing_contract;
-        alias.dispatched_method = Some(self.name.clone());
         alias
     }
 
@@ -661,7 +689,7 @@ impl ImportedFunction {
             closure_captures: 0,
             trait_interface: None,
             generic_instance: None,
-            dispatched_method: None,
+            cpp_virtual: false,
             receiver_calls: Vec::new(),
             program_entry_state: None,
             prelowered_kernel_function: None,
@@ -672,6 +700,7 @@ impl ImportedFunction {
             control_targets: BTreeMap::new(),
             structs: DeclarationMap::new(),
             prepared_record_layouts: std::sync::Arc::default(),
+            cpp_overload_paths: None,
             enums: DeclarationMap::new(),
             unions: DeclarationMap::new(),
             globals: DeclarationMap::new(),
@@ -774,6 +803,8 @@ impl ImportedFunction {
     pub(crate) fn same_definition_apart_from_uses(&self, other: &Self) -> bool {
         let mut other = other.clone();
         other.requires_read_only_contract = self.requires_read_only_contract;
+        other.cpp_virtual = self.cpp_virtual;
+        other.cpp_overload_paths = self.cpp_overload_paths.clone();
         *self == other
     }
 

@@ -162,11 +162,13 @@ impl ProgramStatement {
                 function_name,
                 arguments,
                 callee,
+                dispatch,
                 cpp_binding,
             } => Self::Call {
                 function_name: function_name.clone(),
                 arguments: arguments.clone(),
                 callee: callee.clone(),
+                dispatch: *dispatch,
                 cpp_binding: *cpp_binding,
             },
             Self::CallResult {
@@ -177,6 +179,7 @@ impl ProgramStatement {
                 result_type,
                 result_aggregate_layout,
                 result_pointee_constant,
+                dispatch,
                 callee,
                 ..
             } => Self::CallResult {
@@ -187,6 +190,7 @@ impl ProgramStatement {
                 result_type: *result_type,
                 result_aggregate_layout: result_aggregate_layout.clone(),
                 result_pointee_constant: *result_pointee_constant,
+                dispatch: *dispatch,
                 callee: callee.clone(),
             },
             Self::HeapAllocate {

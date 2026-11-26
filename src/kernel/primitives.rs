@@ -6205,6 +6205,14 @@ pub struct AggregateResultLayout {
     pub declared_class: Option<crate::kernel::effective_type::CAccessClass>,
 }
 
+/// How a named call selects its contract.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum CallDispatch {
+    #[default]
+    Direct,
+    CppVirtual,
+}
+
 #[derive(Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum ProgramStatement {
     Skip,
@@ -6300,6 +6308,7 @@ pub enum ProgramStatement {
         result_type: Option<ProgramType>,
         result_aggregate_layout: Option<AggregateLayout>,
         result_pointee_constant: bool,
+        dispatch: CallDispatch,
         /// The function pointer the call goes through, when it is not a
         /// call of a named function; `function_name` then only describes it.
         callee: Option<Callee>,
@@ -6307,6 +6316,7 @@ pub enum ProgramStatement {
     Call {
         function_name: String,
         arguments: Vec<ProgramExpression>,
+        dispatch: CallDispatch,
         /// The function pointer the call goes through, when it is not a
         /// call of a named function; `function_name` then only describes it.
         callee: Option<Callee>,
@@ -7852,6 +7862,7 @@ pub struct ExecutionEnvironment {
         Option<std::sync::Arc<(String, Vec<(String, ProgramValue)>)>>,
     pub(super) functions: std::sync::Arc<BTreeMap<String, ProgramFunction>>,
     pub(super) function_contracts: std::sync::Arc<BTreeMap<String, FunctionContract>>,
+    pub(super) cpp_virtual_rules: std::sync::Arc<BTreeMap<String, ExternalFunctionRule>>,
     pub(super) external_function_rules: std::sync::Arc<BTreeMap<String, ExternalFunctionRule>>,
     pub(super) verified_function_rules: std::sync::Arc<BTreeMap<String, VerifiedFunctionRule>>,
     pub(super) verified_function_termination_rules:
@@ -7904,6 +7915,7 @@ impl std::fmt::Debug for ExecutionEnvironment {
             )
             .field("functions", &self.functions)
             .field("function_contracts", &self.function_contracts)
+            .field("cpp_virtual_rules", &self.cpp_virtual_rules)
             .field("external_function_rules", &self.external_function_rules)
             .field("verified_function_rules", &self.verified_function_rules)
             .field(
@@ -7931,6 +7943,7 @@ impl PartialEq for ExecutionEnvironment {
             && self.selected_call_value_arguments == other.selected_call_value_arguments
             && self.functions == other.functions
             && self.function_contracts == other.function_contracts
+            && self.cpp_virtual_rules == other.cpp_virtual_rules
             && self.external_function_rules == other.external_function_rules
             && self.verified_function_rules == other.verified_function_rules
             && self.verified_function_termination_rules == other.verified_function_termination_rules
@@ -8029,7 +8042,7 @@ pub struct VerifiedFunctionRule {
     /// Complete conservative call dependencies from kernel-checked execution.
     /// None retains source-call analysis; a present empty set proves no calls.
     /// Shared across claims and certificate reuse, never copied per step.
-    pub(super) checked_callees: Option<Arc<BTreeSet<String>>>,
+    pub(super) checked_callees: Option<Arc<BTreeSet<crate::kernel::termination::CallDependency>>>,
 }
 
 impl VerifiedFunctionRule {}
@@ -16937,7 +16950,7 @@ pub struct CheckedFunctionExecution {
     /// Complete conservative call dependencies from kernel-checked execution.
     /// None retains source-call analysis; a present empty set proves no calls.
     /// Shared across claims and certificate reuse, never copied per step.
-    pub(super) checked_callees: Option<Arc<BTreeSet<String>>>,
+    pub(super) checked_callees: Option<Arc<BTreeSet<crate::kernel::termination::CallDependency>>>,
     /// Original checked input selection; later certification must not rebuild it.
     pub(super) boundary_transfer: Option<Arc<super::functions::CheckedBoundaryResourceTransfer>>,
     pub(super) checked_call_events: super::proof::CheckedCallEvents,

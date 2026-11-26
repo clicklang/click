@@ -70,6 +70,7 @@ fn generation_and_execution_scale_with_requirements_and_completion_only_moves_th
                 },
                 plans: &[],
                 assumed_terminating: &BTreeSet::new(),
+                cpp_virtual_terminating: &BTreeSet::new(),
                 diverging_contracts: &BTreeSet::new(),
                 has_unselected_functions: false,
             })

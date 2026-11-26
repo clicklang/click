@@ -143,6 +143,7 @@ pub(crate) struct ProgramTerminationInputs<'a> {
     pub independent: super::inputs::IndependentTerminationInputs<'a>,
     pub plans: &'a [FunctionTerminationPlan],
     pub assumed_terminating: &'a BTreeSet<String>,
+    pub cpp_virtual_terminating: &'a BTreeSet<String>,
     pub diverging_contracts: &'a BTreeSet<String>,
     pub has_unselected_functions: bool,
 }
@@ -293,6 +294,7 @@ impl ProgramContractProof {
             inputs.independent.bodies,
             &heights,
             inputs.assumed_terminating,
+            inputs.cpp_virtual_terminating,
             &self.declared_diverging,
             inputs.diverging_contracts,
             inputs.has_unselected_functions,
@@ -344,6 +346,7 @@ impl ProgramContractProof {
             inputs.independent.bodies,
             &heights,
             inputs.assumed_terminating,
+            inputs.cpp_virtual_terminating,
             &self.declared_diverging,
             inputs.diverging_contracts,
             inputs.has_unselected_functions,
@@ -435,6 +438,7 @@ mod tests {
             independent: crate::kernel::IndependentTerminationInputs { rules, bodies: &[] },
             plans: &[],
             assumed_terminating: &BTreeSet::new(),
+            cpp_virtual_terminating: &BTreeSet::new(),
             diverging_contracts: &BTreeSet::new(),
             has_unselected_functions: false,
         })
@@ -578,6 +582,7 @@ mod tests {
                 },
                 plans: &[],
                 assumed_terminating: &assumptions,
+                cpp_virtual_terminating: &BTreeSet::new(),
                 diverging_contracts: &BTreeSet::new(),
                 has_unselected_functions: false,
             })

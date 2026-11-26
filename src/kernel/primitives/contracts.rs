@@ -4103,6 +4103,31 @@ impl ExecutionEnvironment {
         self.function_contracts.get(name)
     }
 
+    pub(crate) fn with_cpp_virtual_rule(mut self, rule: ExternalFunctionRule) -> Self {
+        Arc::make_mut(&mut self.cpp_virtual_rules).insert(rule.function.name().to_owned(), rule);
+        self.variable_index = ExecutionEnvironmentVariableIndex::default();
+        self
+    }
+
+    pub(in crate::kernel) fn get_cpp_virtual_rule(
+        &self,
+        method: &str,
+    ) -> Option<&ExternalFunctionRule> {
+        crate::instrumentation::record_deterministic_work(1);
+        self.cpp_virtual_rules.get(method)
+    }
+
+    pub(crate) fn get_call_function(
+        &self,
+        name: &str,
+        dispatch: CallDispatch,
+    ) -> Option<&ProgramFunction> {
+        match dispatch {
+            CallDispatch::Direct => self.get_function(name),
+            CallDispatch::CppVirtual => self.get_cpp_virtual_rule(name).map(|rule| &rule.function),
+        }
+    }
+
     pub fn with_external_function_rule(mut self, rule: ExternalFunctionRule) -> Self {
         std::sync::Arc::make_mut(&mut self.external_function_rules)
             .insert(rule.function.name().to_string(), rule);
@@ -4232,17 +4257,22 @@ impl ExecutionEnvironment {
                 .resource_ensures()
                 .iter()
                 .any(|resource| resource.guard().is_some())
-        }) || self.external_function_rules.values().any(|rule| {
-            rule.function
-                .resource_ensures()
-                .iter()
-                .any(|resource| resource.guard().is_some())
-        }) || self.verified_function_rules.values().any(|rule| {
-            rule.function
-                .resource_ensures()
-                .iter()
-                .any(|resource| resource.guard().is_some())
-        })
+        }) || self
+            .external_function_rules
+            .values()
+            .chain(self.cpp_virtual_rules.values())
+            .any(|rule| {
+                rule.function
+                    .resource_ensures()
+                    .iter()
+                    .any(|resource| resource.guard().is_some())
+            })
+            || self.verified_function_rules.values().any(|rule| {
+                rule.function
+                    .resource_ensures()
+                    .iter()
+                    .any(|resource| resource.guard().is_some())
+            })
     }
 
     pub(in crate::kernel) fn recursion_anchor(&self) -> Option<&RecursionAnchor> {
@@ -4261,6 +4291,7 @@ impl ExecutionEnvironment {
     pub(crate) fn shares_project_storage_with(&self, other: &Self) -> bool {
         std::sync::Arc::ptr_eq(&self.functions, &other.functions)
             && std::sync::Arc::ptr_eq(&self.function_contracts, &other.function_contracts)
+            && Arc::ptr_eq(&self.cpp_virtual_rules, &other.cpp_virtual_rules)
             && std::sync::Arc::ptr_eq(
                 &self.external_function_rules,
                 &other.external_function_rules,
@@ -4318,7 +4349,12 @@ impl ExecutionEnvironment {
         };
         !calls.iter().any(|callee| {
             crate::kernel::termination::charge_termination_work(1);
-            callee.ends_with("#indirect") || anchor.ranks_call_to(callee)
+            match callee {
+                crate::kernel::termination::CallDependency::Named(callee) => {
+                    callee.ends_with("#indirect") || anchor.ranks_call_to(callee)
+                }
+                crate::kernel::termination::CallDependency::CppVirtual(_) => false,
+            }
         }) || rule.recursion_anchor.as_deref() == Some(anchor)
     }
 

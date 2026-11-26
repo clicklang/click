@@ -35,7 +35,7 @@ pub(crate) struct WholeContractProof {
     proof: RootProof,
     modular: bool,
     loop_exits: Arc<crate::kernel::termination::loop_evidence::PreparedLoopExits>,
-    declared_calls: Arc<BTreeSet<String>>,
+    declared_calls: Arc<BTreeSet<crate::kernel::termination::CallDependency>>,
 }
 
 impl std::fmt::Debug for WholeContractProof {

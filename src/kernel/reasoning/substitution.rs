@@ -1050,9 +1050,11 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
             function_name,
             arguments,
             callee,
+            dispatch,
             cpp_binding,
         } => ProgramStatement::Call {
             function_name: function_name.clone(),
+            dispatch: *dispatch,
             cpp_binding: *cpp_binding,
             arguments: arguments
                 .iter()
@@ -1071,6 +1073,7 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
             result_type,
             result_aggregate_layout,
             result_pointee_constant,
+            dispatch,
             callee,
             ..
         } => ProgramStatement::CallResult {
@@ -1084,6 +1087,7 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
             result_type: *result_type,
             result_aggregate_layout: result_aggregate_layout.clone(),
             result_pointee_constant: *result_pointee_constant,
+            dispatch: *dispatch,
             callee: callee.as_ref().map(|callee| Callee {
                 pointer: s.program_expression(&callee.pointer),
                 pointer_type: callee.pointer_type,

@@ -122,6 +122,7 @@ fn link(parts: &[(&str, &PreparedExecution)]) -> Result<PreparedExecution, Strin
                 continue;
             };
             let kept = &functions[index];
+            let virtual_use = kept.has_cpp_virtual_call() || function.has_cpp_virtual_call();
             let display = crate::languages::display_source_names(&name).into_owned();
             match (
                 kept.prelowered_kernel_function().is_some(),
@@ -164,6 +165,9 @@ fn link(parts: &[(&str, &PreparedExecution)]) -> Result<PreparedExecution, Strin
                         functions[index] = functions[index].clone().with_read_only_contract(true);
                     }
                 }
+            }
+            if virtual_use && !functions[index].has_cpp_virtual_call() {
+                functions[index] = functions[index].clone().with_cpp_virtual_call();
             }
         }
         for (name, layout) in &execution.layouts {
