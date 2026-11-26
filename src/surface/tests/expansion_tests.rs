@@ -1626,8 +1626,8 @@ fn negated_resource_fields_expand_and_cold_replay() {
             requires defined(r.start + index);
             requires to_integer(r.start + index) < to_integer(r.end);
         } by {
-            have -to_integer(r.start) == 0 - to_integer(r.start) by { normalize(); }
-            have -(-to_integer(r.start)) == to_integer(r.start) by { normalize(); }
+            have -to_integer(r.start) == 0 - to_integer(r.start) by { close(); }
+            have -(-to_integer(r.start)) == to_integer(r.start) by { close(); }
             let { start: s, end: e } = unfold(r);
             have to_integer(s + index + 1) <= to_integer(e);
             let r = fold(saved(p), { start: s, end: e });
@@ -2645,7 +2645,7 @@ fn bundle_and_project_expansion_check_the_selected_pure_theorem() {
     ensures x == x by { close(); }
 }
 theorem unrelated() {
-    ensures 0 == 1 by { normalize(); }
+    ensures 0 == 1 by { close(); }
 }
 "#;
     let position = expansion::position_at_offset(source, source.find("ensures x == x").unwrap());
@@ -5726,7 +5726,7 @@ function bad_fold_match(value: FoldInput) -> Integer {
 theorem force_bad_fold_match() {
     ensures bad_fold_match(FoldInput::Machine(0)) == 0 by {
         unfold(bad_fold_match(FoldInput::Machine(0)));
-        normalize();
+        close();
     }
 }
 "#;
@@ -5761,7 +5761,7 @@ function bad_machine_body(n: int32) -> Integer {
 theorem force_bad_machine_body(n: int32) {
     ensures bad_machine_body(n) == to_integer(0) by {
         unfold(bad_machine_body(n));
-        normalize();
+        close();
     }
 }
 "#,
@@ -5783,7 +5783,7 @@ function bad_c_body(x: int32, z: Integer) -> Integer {
 theorem force_bad_c_body(x: int32, z: Integer) {
     ensures bad_c_body(x, z) == z by {
         unfold(bad_c_body(x, z));
-        normalize();
+        close();
     }
 }
 "#,
@@ -10343,7 +10343,7 @@ fn uint64_bit_test_inequality_rejects_missing_false_and_malformed_evidence() {
         theorem unproved_set_bit_cannot_be_a_certificate(word: uint64) {
             ensures (word & 1u64) != 0u64 by {
                 rewrite((word & 1u64), 1u64);
-                normalize();
+                close();
             }
         }
     "#;
@@ -13324,7 +13324,7 @@ fn post_return_resource_exchange_accepts_a_preceding_pure_have() {
             ensures result == x;
         } by {
             step_until(function.exit);
-            have 1000 == 1000 by { normalize(); }
+            have 1000 == 1000 by { close(); }
             unfold(marker(x));
             fold(marker(x));
             unfold(marker(x));
@@ -14272,7 +14272,7 @@ fn execution_branch_arm_resource_scope_stays_on_one_proof() {
                     with(cell(p)) {
                         step();
                         have value == old(p[0]) or value == 0 by {
-                            have value == old(p[0]) by { normalize(); }
+                            have value == old(p[0]) by { close(); }
                             close();
                         }
                     }
@@ -14379,7 +14379,7 @@ fn scoped_execution_branch_arm_resource_scope_stays_on_one_proof() {
                             with(marker(flag)) {
                                 step();
                                 have value == old(p[0]) or value == 0 by {
-                                    have value == old(p[0]) by { normalize(); }
+                                    have value == old(p[0]) by { close(); }
                                     close();
                                 }
                             }
@@ -14387,7 +14387,7 @@ fn scoped_execution_branch_arm_resource_scope_stays_on_one_proof() {
                         false => {
                             step();
                             have value == old(p[0]) or value == 0 by {
-                                have value == 0 by { normalize(); }
+                                have value == 0 by { close(); }
                                 close();
                             }
                         }
@@ -20281,7 +20281,7 @@ int read(int* p) {
             have bi_code(old(c.model)) == 0 by {
                 rewrite(old(c.model), Bi::Zero);
                 unfold(bi_code(Bi::Zero));
-                normalize();
+                close();
             }
             close();
         },
@@ -20292,7 +20292,7 @@ int read(int* p) {
             have bi_code(old(c.model)) == value by {
                 rewrite(old(c.model), Bi::Other(value));
                 unfold(bi_code(Bi::Other(value)));
-                normalize();
+                close();
             }
             close();
         },
@@ -20746,12 +20746,12 @@ fn loop_initialization_duplicate_clauses_keep_distinct_bodies() {
         .replace(
             "            close();",
             r#"            have i >= 0 by { close() using { n >= 0; } }
-            have i >= 0 by { normalize(); }"#,
+            have i >= 0 by { close(); }"#,
         );
     let sources = [("spin.c", LOOP_INITIALIZE_PHASE_C)];
     verify_c_sources(&click_source, &sources).expect("mixed entry bodies should verify");
     let invalid_second = click_source.replace(
-        "have i >= 0 by { normalize(); }",
+        "have i >= 0 by { close(); }",
         "have i >= 0 by { apply(missing_entry_theorem()); }",
     );
     let error = verify_c_sources(&invalid_second, &sources)
@@ -24601,8 +24601,8 @@ mod scaling_tests {
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_81")]
 fn retained_project_recheck_ignores_shifted_import_positions_but_checks_paths() {
     let source = r#"import "helper.click";
-theorem selected(x: int32) { ensures x == x by { normalize(); } }
-theorem untouched() { ensures 1 == 1 by { normalize(); } }
+theorem selected(x: int32) { ensures x == x by { close(); } }
+theorem untouched() { ensures 1 == 1 by { close(); } }
 "#;
     let project = ClickProject::new(
         "main.click",
