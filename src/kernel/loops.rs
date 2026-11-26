@@ -1436,7 +1436,7 @@ fn execute_program_indirect_call_paths(
         } = target_path;
         let target_names = match outcome {
             ExpressionOutcome::Value(ProgramValue::Pointer(pointer))
-                if pointer.offset == OldAddressOffset::Constant(0) =>
+                if matches!(pointer.offset.view(), OffsetView::Constant(0)) =>
             {
                 match &pointer.base {
                     AddressBase::Function(name)

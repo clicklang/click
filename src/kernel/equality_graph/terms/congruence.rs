@@ -1966,7 +1966,7 @@ impl TermClasses {
         if application.integer_address_bits().is_some() {
             return;
         }
-        if origin.offset != OldAddressOffset::Constant(0) {
+        if !matches!(origin.offset.view(), OffsetView::Constant(0)) {
             return;
         }
         let key = Node::PointerFunctionIdentity(application.clone());

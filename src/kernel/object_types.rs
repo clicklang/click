@@ -192,7 +192,7 @@ fn pointer_result_from_outcomes<'a>(
             continue;
         }
         let evidence = pointer.object_origin_evidence().cloned().or_else(|| {
-            (pointer.offset == OldAddressOffset::Constant(0))
+            matches!(pointer.offset.view(), OffsetView::Constant(0))
                 .then(|| {
                     state
                         .memory()

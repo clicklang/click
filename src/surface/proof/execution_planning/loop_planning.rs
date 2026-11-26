@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::OffsetTree;
 use std::sync::Arc;
 
 /// The proof scope a loop's phase proofs are written in.
@@ -863,7 +864,7 @@ pub(super) fn scoped_loop_exit_facts(
                             .locals()
                             .name_for_slot(&OldAddress {
                                 base: address.base.clone(),
-                                offset: OldAddressOffset::Constant(0),
+                                offset: OldAddressOffset::constant(0),
                             })
                             .is_none()
                     })

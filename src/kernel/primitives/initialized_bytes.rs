@@ -24,6 +24,7 @@
 use super::{
     AddressBase, AliasCandidates, HashedOrdMap, OldAddress, OldAddressOffset, ProgramValue,
 };
+use crate::kernel::OffsetTree;
 
 /// See the module comment.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
@@ -55,7 +56,7 @@ impl std::hash::Hash for InitializedBytes {
 fn constant_start(block: &AddressBase, offset: i64) -> OldAddress {
     OldAddress {
         base: block.clone(),
-        offset: OldAddressOffset::Constant(offset),
+        offset: OldAddressOffset::constant(offset),
     }
 }
 

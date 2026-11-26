@@ -418,7 +418,7 @@ impl EqualityGraph {
         let mut variables = BTreeSet::new();
         let selector = OldConditionTerm::AddressOffsetEqual(
             Box::new(offset.clone()),
-            Box::new(OldAddressOffset::Constant(0)),
+            Box::new(OldAddressOffset::constant(0)),
         );
         if crate::kernel::reasoning::variable_collection::collect_condition_coordinate_index_variables(&selector, &mut variables) { return true; }
         variables

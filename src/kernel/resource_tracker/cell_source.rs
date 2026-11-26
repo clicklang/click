@@ -275,14 +275,14 @@ pub(in crate::kernel) fn unsigned_index_in_range(
     }
     let (index_offset, base_rest) =
         crate::kernel::reasoning::common_base_index_offsets(pointer, range.base())?;
-    if base_rest != OldAddressOffset::Constant(0) {
+    if !matches!(base_rest.view(), OffsetView::Constant(0)) {
         return None;
     }
-    let OldAddressOffset::Int64Scaled {
-        value,
+    let OffsetView::Int64Scaled {
+        index: value,
         byte_width,
         unsigned: true,
-    } = index_offset
+    } = index_offset.view()
     else {
         return None;
     };
@@ -711,7 +711,7 @@ impl MemoryDagHopJustification {
                         };
                         retired = OldAddress {
                             base: block.clone(),
-                            offset: OldAddressOffset::Constant(0),
+                            offset: OldAddressOffset::constant(0),
                         };
                         (&retired, AccessExtent::Bytes(size))
                     }
@@ -770,7 +770,7 @@ impl MemoryDagHopJustification {
                 MemoryDerivation::LocalLifetimeEnded { block, .. }
                     if pointer.blocks_proven_distinct(&OldAddress {
                         base: block.clone(),
-                        offset: OldAddressOffset::Constant(0),
+                        offset: OldAddressOffset::constant(0),
                     })
             ),
             Self::HeapFreeOfDistinctBlock => matches!(

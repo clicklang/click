@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::{OffsetTree, OffsetView};
 use crate::kernel::{ResourceFieldSchema, ResourceTerm};
 use crate::kernel::{bits32_constant, constant_u32, int32_constant};
 
@@ -209,8 +210,8 @@ fn input_pointer_identity(pointer: &crate::kernel::OldPointer) -> Option<Variabl
     if pointer.address().base != AddressBase::ExternalArgument {
         return None;
     }
-    match &pointer.address().offset {
-        OldAddressOffset::Int32Scaled { value, .. } => value.operand_view().variable().copied(),
+    match pointer.address().offset.view() {
+        OffsetView::Int32Scaled { index, .. } => index.operand_view().variable().copied(),
         _ => None,
     }
 }
@@ -3413,7 +3414,7 @@ pub(in crate::surface) fn concrete_loadable_block(
             else {
                 return Ok(None);
             };
-            if segment.base.offset != OldAddressOffset::Constant(0)
+            if !matches!(segment.base.offset.view(), OffsetView::Constant(0))
                 || segment.start != OldMachineTerm::constant(0)
             {
                 return Ok(None);

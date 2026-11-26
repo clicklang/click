@@ -5371,8 +5371,8 @@ impl RecordedStates {
         pointer: &crate::kernel::OldAddress,
         name_base: impl FnOnce(&crate::kernel::OldAddress) -> Option<SyntaxTerm>,
     ) -> Option<SyntaxTerm> {
-        use crate::kernel::{OldAddress, OldAddressOffset};
-        let OldAddressOffset::Constant(bytes) = pointer.offset else {
+        use crate::kernel::{OffsetTree, OffsetView, OldAddress, OldAddressOffset};
+        let OffsetView::Constant(bytes) = pointer.offset.view() else {
             return None;
         };
         let bytes = u32::try_from(bytes).ok()?;
@@ -5381,7 +5381,7 @@ impl RecordedStates {
         }
         let base = OldAddress {
             base: pointer.base.clone(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         };
         Some(SyntaxTerm::CUnary {
             operand: Box::new(name_base(&base)?),

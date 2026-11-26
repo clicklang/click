@@ -122,7 +122,7 @@ pub(in crate::kernel) fn indexed_uint32_byte_read(
     byte_order: Option<ByteOrder>,
 ) -> Option<(ProgramValue, ExecutionFacts)> {
     if byte_order != Some(ByteOrder::Little)
-        || pointer.offset != OldAddressOffset::Constant(0)
+        || !matches!(pointer.offset.view(), OffsetView::Constant(0))
         || point.memory().is_ended_local_address(pointer)
     {
         return None;
@@ -193,7 +193,7 @@ pub(in crate::kernel) fn assemble_declared_uint32_after_byte_store(
     let incoming = as_byte(stored)?;
     let start = OldAddress {
         base: pointer.base.clone(),
-        offset: OldAddressOffset::Constant(0),
+        offset: OldAddressOffset::constant(0),
     };
     let mut assembled = OldMachineTerm::constant(0);
     for byte in 0..4 {
@@ -277,7 +277,7 @@ pub(in crate::kernel) fn containing_integer_cell(
     if byte_order != Some(ByteOrder::Little) {
         return None;
     }
-    let OldAddressOffset::Constant(offset) = pointer.offset else {
+    let OffsetView::Constant(offset) = pointer.offset.view() else {
         return None;
     };
     crate::instrumentation::record_deterministic_work(1);
@@ -298,7 +298,7 @@ pub(in crate::kernel) fn containing_integer_cell(
     for cell_offset in (lowest..offset).rev() {
         let cell_pointer = OldAddress {
             base: pointer.base.clone(),
-            offset: OldAddressOffset::Constant(cell_offset),
+            offset: OldAddressOffset::constant(cell_offset),
         };
         crate::instrumentation::record_deterministic_work(1);
         let Some(value) = memory.cells.get(&cell_pointer) else {
