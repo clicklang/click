@@ -908,6 +908,10 @@ int32 buffer_push(struct buffer* owner, int32 value) {
     step_until(function.exit);
     have owner->len <= owner->cap by { close(); }
     apply(click::separation::contains_subrange(owner->data, 0, owner->cap, 0, owner->len));
+    have viewable(owner->data[0..owner->cap]) by {
+        observe(owner->data[0..owner->cap]);
+        close();
+    }
     apply(click::separation::viewable_restrict(
         memory(owner->data[0..owner->cap]), memory(owner->data[0..owner->len])));
     fold(buffer_storage(owner));
@@ -936,7 +940,7 @@ int32 buffer_pipeline(
         have owner->len == 1 by close();
         have 1 <= owner->len by {
             rewrite(owner->len, 1);
-            normalize();
+            close();
         }
         fold(nonempty_buffer(owner));
         step_until(function.exit);
