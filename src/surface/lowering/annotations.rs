@@ -5116,6 +5116,8 @@ impl AnnotationLowerer<'_> {
                             crate::kernel::IntegerTerm::var(variable),
                         ),
                     );
+                    #[cfg(test)]
+                    typing_environment::check_declared_binder(name, click_type, &body_environment);
                     let body =
                         self.click_proposition_to_spec_proposition(body, &body_environment)?;
                     return Ok(SpecProposition::ForAllInteger {
@@ -5133,6 +5135,8 @@ impl AnnotationLowerer<'_> {
                             node: SpecAlgebraicExpressionNode::Variable(variable),
                         },
                     );
+                    #[cfg(test)]
+                    typing_environment::check_declared_binder(name, click_type, &body_environment);
                     let body =
                         self.click_proposition_to_spec_proposition(body, &body_environment)?;
                     return Ok(SpecProposition::ForAllAlgebraic {
@@ -5178,6 +5182,8 @@ impl AnnotationLowerer<'_> {
                     .values
                     .insert(name.clone(), SpecExpression::Value(value.clone()));
                 let previous = self.quantified_values.insert(name.clone(), value);
+                #[cfg(test)]
+                typing_environment::check_declared_binder(name, click_type, &body_environment);
                 let body = self.click_proposition_to_spec_proposition(body, &body_environment)?;
                 match previous {
                     Some(value) => {
@@ -5248,6 +5254,8 @@ impl AnnotationLowerer<'_> {
                             crate::kernel::IntegerTerm::var(variable),
                         ),
                     );
+                    #[cfg(test)]
+                    typing_environment::check_declared_binder(name, click_type, &body_environment);
                     let body =
                         self.click_proposition_to_spec_proposition(body, &body_environment)?;
                     return Ok(SpecProposition::ExistsInteger {
@@ -5265,6 +5273,8 @@ impl AnnotationLowerer<'_> {
                             node: SpecAlgebraicExpressionNode::Variable(variable),
                         },
                     );
+                    #[cfg(test)]
+                    typing_environment::check_declared_binder(name, click_type, &body_environment);
                     let body =
                         self.click_proposition_to_spec_proposition(body, &body_environment)?;
                     return Ok(SpecProposition::ExistsAlgebraic {
@@ -5310,6 +5320,8 @@ impl AnnotationLowerer<'_> {
                     .values
                     .insert(name.clone(), SpecExpression::Value(value.clone()));
                 let previous = self.quantified_values.insert(name.clone(), value);
+                #[cfg(test)]
+                typing_environment::check_declared_binder(name, click_type, &body_environment);
                 let body = self.click_proposition_to_spec_proposition(body, &body_environment)?;
                 match previous {
                     Some(value) => {
