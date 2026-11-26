@@ -61,9 +61,21 @@ pub(crate) enum ArithmeticOperator {
     BitwiseXor,
 }
 
+/// The type a written integer literal has.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum LiteralType {
+    /// A mathematical Integer.
+    Integer,
+    /// A C constant of this type: `int32` when the value fits, else `int64`,
+    /// else `uint64`, as C types an unsuffixed decimal constant.
+    Program(super::ProgramType),
+}
+
 /// A typed Surface term.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum SurfaceTerm {
+    /// An integer literal as written, with its type.
+    IntegerLiteral { text: String, ty: LiteralType },
     /// `left op right` in the arithmetic `kind` names.
     Binary {
         op: ArithmeticOperator,
