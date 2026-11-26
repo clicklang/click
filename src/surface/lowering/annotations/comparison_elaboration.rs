@@ -293,7 +293,10 @@ impl AnnotationLowerer<'_> {
             SurfaceTerm::IntegerLiteral {
                 ty: LiteralType::Integer,
                 ..
-            } => unreachable!("a native operand is never an Integer literal: {term:?}"),
+            }
+            | SurfaceTerm::Name { .. } => {
+                unreachable!("a native operand is never an Integer literal or binder: {term:?}")
+            }
             SurfaceTerm::BitwiseNot { operand } => Ok(SpecExpression::BitwiseNot(Box::new(
                 self.lower_surface_native(operand, environment)?,
             ))),
@@ -387,7 +390,24 @@ impl AnnotationLowerer<'_> {
                     &environment.integer_values,
                 )
             }
-            SurfaceTerm::IntegerLiteral {
+            // As the Syntax lowering reads a written binder: one unit of
+            // integer work, then the Integer binding or the same refusal.
+            SurfaceTerm::Name {
+                name,
+                ty: ClickType::Integer,
+            } => {
+                check_integer_lowering_work(1)?;
+                let value = environment
+                    .integer_values
+                    .get(name)
+                    .ok_or_else(|| format!("`{name}` is not an Integer binding"))?;
+                if let SpecIntegerExpression::Term(term) = value {
+                    check_integer_lowering_work(integer_root_work(term))?;
+                }
+                Ok(value.clone())
+            }
+            SurfaceTerm::Name { .. }
+            | SurfaceTerm::IntegerLiteral {
                 ty: LiteralType::Program(_),
                 ..
             }
@@ -526,6 +546,13 @@ fn integer_surface_term(term: SyntaxTerm) -> SurfaceTerm {
         SyntaxTerm::IntegerLiteral(text) => SurfaceTerm::IntegerLiteral {
             text,
             ty: LiteralType::Integer,
+        },
+        // A Click binder of an Integer comparison is an Integer binder:
+        // lowering reads it among the Integer bindings or refuses it.
+        // (A generated binder is never a `Binding`.)
+        SyntaxTerm::Binding(name) => SurfaceTerm::Name {
+            name,
+            ty: ClickType::Integer,
         },
         term => SurfaceTerm::Untyped(term),
     }

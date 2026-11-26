@@ -76,6 +76,8 @@ pub(crate) enum LiteralType {
 pub(crate) enum SurfaceTerm {
     /// An integer literal as written, with its type.
     IntegerLiteral { text: String, ty: LiteralType },
+    /// A Click binder named as written, with the type it is bound at.
+    Name { name: String, ty: super::ClickType },
     /// `left op right` in the arithmetic `kind` names.
     Binary {
         op: ArithmeticOperator,
