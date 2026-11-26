@@ -946,6 +946,8 @@ mod tests {
             assumptions.assume_condition(OldConditionTerm::address_equal(previous, anchor), true);
         let effects = vec![crate::kernel::ExecutionPureFact::certified(
             Proposition::MemoryEffectSummary {
+                before_point: Default::default(),
+                after_point: Default::default(),
                 before: memory.clone(),
                 after: memory.clone(),
                 mutable_ranges: vec![MemoryRange::new_with_element_width(

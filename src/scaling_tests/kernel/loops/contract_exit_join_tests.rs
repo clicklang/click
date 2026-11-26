@@ -26,6 +26,8 @@ fn loop_exit_scalar_restatement_keeps_recorded_memory_effects() {
         }
         let after = before.clone().store(slot.clone(), held.clone());
         let effect = Proposition::MemoryEffectSummary {
+            before_point: Default::default(),
+            after_point: Default::default(),
             before,
             after,
             mutable_ranges: vec![range.clone()],

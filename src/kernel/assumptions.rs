@@ -14177,6 +14177,8 @@ mod shared_load_atom_comparison_tests {
             offset: AddressOffset::constant(0),
         };
         let effect = Proposition::MemoryEffectSummary {
+            before_point: Default::default(),
+            after_point: Default::default(),
             before: before.clone(),
             after: after.clone(),
             mutable_ranges: vec![MemoryRange::new(elsewhere, 0u32.into(), 1u32.into())],

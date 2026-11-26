@@ -896,7 +896,9 @@ impl PreparedThreadCreate<'_> {
         let handle = ThreadHandle(NEXT_HANDLE.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
         let effect = ExecutionPureFact::internal(Proposition::MemoryEffectSummary {
             before: self.parent.parent.memory().clone(),
+            before_point: self.parent.parent.path_link().clone(),
             after: self.completion.memory.clone(),
+            after_point: self.completion.point.path_link().clone(),
             mutable_ranges: self.completion.effects.clone(),
         })
         .into_certified();

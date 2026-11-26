@@ -1557,6 +1557,7 @@ impl CheckedLoadEquality {
                     before,
                     after,
                     mutable_ranges,
+                    ..
                 } = summary.as_ref()
                 else {
                     return false;
@@ -1986,6 +1987,7 @@ pub(crate) fn checked_origin_load_equality(
                         before,
                         after,
                         mutable_ranges,
+                        ..
                     } = summary
                     else {
                         return None;
@@ -4546,6 +4548,7 @@ fn memory_load_is_directly_unchanged(
                     before: effect_before,
                     after: effect_after,
                     mutable_ranges,
+                    ..
                 } => {
                     // The direct check decides most disjointness
                     // structurally; the remaining route reads indexed
@@ -8991,6 +8994,8 @@ mod direct_unchanged_scaling_tests {
             let end = middle.clone().with_block("call-havoc:1", 0);
             let summary = |before: &SymbolicMemory, after: &SymbolicMemory| {
                 Proposition::MemoryEffectSummary {
+                    before_point: Default::default(),
+                    after_point: Default::default(),
                     before: before.clone(),
                     after: after.clone(),
                     mutable_ranges: Vec::new(),
@@ -9088,6 +9093,8 @@ mod direct_unchanged_scaling_tests {
                 let base =
                     SymbolicMemory::new().store(cell(&format!("unrelated-{index}")), value(index));
                 facts.assume_proposition(Proposition::MemoryEffectSummary {
+                    before_point: Default::default(),
+                    after_point: Default::default(),
                     before: base.clone(),
                     after: base
                         .clone()
@@ -9096,6 +9103,8 @@ mod direct_unchanged_scaling_tests {
                 })
             });
             let facts = facts.assume_proposition(Proposition::MemoryEffectSummary {
+                before_point: Default::default(),
+                after_point: Default::default(),
                 before: before.clone(),
                 after: after.clone(),
                 mutable_ranges: vec![MemoryRange::new(

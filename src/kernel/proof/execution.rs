@@ -5378,6 +5378,7 @@ fn checked_interface_effect_facts_along(
                     before,
                     after,
                     mutable_ranges,
+                    ..
                 } => {
                     if !fact.is_certified() {
                         return Err("an interface arm contains an uncertified memory effect");
@@ -5468,7 +5469,9 @@ fn checked_interface_effect_facts_along(
         }
         Proposition::MemoryEffectSummary {
             before: split_state.memory().clone(),
+            before_point: split_state.path_link().clone(),
             after: joined_state.memory().clone(),
+            after_point: joined_state.path_link().clone(),
             mutable_ranges: ranges,
         }
     };

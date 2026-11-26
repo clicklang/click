@@ -688,7 +688,7 @@ impl Drop for PointNode {
 /// It is not part of a state's equality, hashing or order: two states are
 /// equal when they hold the same things, wherever each was reached.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct PathLink(Option<Arc<PointNode>>, IndexedView);
+pub struct PathLink(Option<Arc<PointNode>>, IndexedView);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum PointTransition {
@@ -1720,7 +1720,7 @@ impl ProgramPoint {
     }
 
     /// Where on its path this point is.
-    pub(super) fn path_link(&self) -> &PathLink {
+    pub(crate) fn path_link(&self) -> &PathLink {
         &self.path
     }
 

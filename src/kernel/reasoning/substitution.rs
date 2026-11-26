@@ -1508,9 +1508,14 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
             before,
             after,
             mutable_ranges,
+            before_point,
+            after_point,
         } => Proposition::MemoryEffectSummary {
+            // Renaming respells the memory, not where on the path it is.
             before: s.memory(before),
+            before_point: before_point.clone(),
             after: s.memory(after),
+            after_point: after_point.clone(),
             mutable_ranges: mutable_ranges
                 .iter()
                 .map(|range| walk_memory_range(range, s))
@@ -2463,6 +2468,7 @@ fn collect_proposition_bound_variables_one(
             before,
             after,
             mutable_ranges,
+            ..
         } => {
             collect_memory_bound_variables(before, variables);
             collect_memory_bound_variables(after, variables);
