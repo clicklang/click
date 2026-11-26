@@ -273,6 +273,27 @@ impl AnnotationLowerer<'_> {
             SurfaceTerm::Untyped(syntax) => {
                 self.lower_contract_expression_to_spec(syntax, environment)
             }
+            SurfaceTerm::IntegerLiteral {
+                text,
+                ty: LiteralType::Program(ty),
+            } => {
+                let value: u64 = text
+                    .parse()
+                    .expect("a native literal elaborates only from a u64 value");
+                Ok(SpecExpression::Value(match ty {
+                    ProgramType::Int32 => {
+                        ProgramValue::Int32(OldMachineTerm::constant(value as u32))
+                    }
+                    ProgramType::Int64 => {
+                        ProgramValue::Int64(OldMachineTerm::int64_constant(value as i64))
+                    }
+                    _ => ProgramValue::UInt64(OldMachineTerm::uint64_constant(value)),
+                }))
+            }
+            SurfaceTerm::IntegerLiteral {
+                ty: LiteralType::Integer,
+                ..
+            } => unreachable!("a native operand is never an Integer literal: {term:?}"),
             SurfaceTerm::BitwiseNot { operand } => Ok(SpecExpression::BitwiseNot(Box::new(
                 self.lower_surface_native(operand, environment)?,
             ))),
@@ -354,7 +375,23 @@ impl AnnotationLowerer<'_> {
             SurfaceTerm::Untyped(syntax) => {
                 self.lower_contract_integer_to_spec(syntax, environment)
             }
-            SurfaceTerm::BitwiseNot { .. }
+            // As the Syntax lowering reaches a literal: one unit of integer
+            // work, then the shared literal lowering.
+            SurfaceTerm::IntegerLiteral {
+                text,
+                ty: LiteralType::Integer,
+            } => {
+                check_integer_lowering_work(1)?;
+                lower_contract_integer_to_spec(
+                    &SyntaxTerm::IntegerLiteral(text.clone()),
+                    &environment.integer_values,
+                )
+            }
+            SurfaceTerm::IntegerLiteral {
+                ty: LiteralType::Program(_),
+                ..
+            }
+            | SurfaceTerm::BitwiseNot { .. }
             | SurfaceTerm::PointerStep { .. }
             | SurfaceTerm::Negate {
                 kind: ArithmeticKind::Native,
@@ -486,6 +523,10 @@ fn integer_surface_term(term: SyntaxTerm) -> SurfaceTerm {
             kind: ArithmeticKind::Integer,
             operand: Box::new(integer_surface_term(*operand)),
         },
+        SyntaxTerm::IntegerLiteral(text) => SurfaceTerm::IntegerLiteral {
+            text,
+            ty: LiteralType::Integer,
+        },
         term => SurfaceTerm::Untyped(term),
     }
 }
@@ -609,6 +650,21 @@ impl AnnotationLowerer<'_> {
                     operand: Box::new(self.native_surface_term(*operand, environment)),
                 }
             }
+            // C types an unsuffixed decimal constant by its value. One too
+            // large for `uint64` stays `Untyped`: lowering refuses it.
+            SyntaxTerm::IntegerLiteral(text) => match text.parse::<u64>() {
+                Ok(value) => SurfaceTerm::IntegerLiteral {
+                    text,
+                    ty: LiteralType::Program(if value <= i32::MAX as u64 {
+                        ProgramType::Int32
+                    } else if value <= i64::MAX as u64 {
+                        ProgramType::Int64
+                    } else {
+                        ProgramType::UInt64
+                    }),
+                },
+                Err(_) => SurfaceTerm::Untyped(SyntaxTerm::IntegerLiteral(text)),
+            },
             term => SurfaceTerm::Untyped(term),
         }
     }
