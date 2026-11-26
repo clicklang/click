@@ -87,8 +87,8 @@ use integer_conversions::*;
 use integer_truncation::*;
 pub use surface_propositions::SurfacePropositionMap;
 pub(crate) use typed_surface::{
-    ArithmeticKind, ArithmeticOperator, ComparisonKind, LiteralType, SurfaceProposition,
-    SurfaceTerm, elaborate_connectives, print_comparison,
+    ArithmeticKind, ArithmeticOperator, ComparisonKind, LeafType, SurfaceProposition, SurfaceTerm,
+    elaborate_connectives, print_comparison,
 };
 mod printing;
 mod proof;

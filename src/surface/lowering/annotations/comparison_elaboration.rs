@@ -275,7 +275,7 @@ impl AnnotationLowerer<'_> {
             }
             SurfaceTerm::IntegerLiteral {
                 text,
-                ty: LiteralType::Program(ty),
+                ty: LeafType::Program(ty),
             } => {
                 let value: u64 = text
                     .parse()
@@ -290,11 +290,23 @@ impl AnnotationLowerer<'_> {
                     _ => ProgramValue::UInt64(OldMachineTerm::uint64_constant(value)),
                 }))
             }
+            // A C variable is resolved at the program point exactly as the
+            // Syntax lowering resolved it.
+            SurfaceTerm::Name {
+                name,
+                ty: LeafType::Program(_),
+            } => self.lower_program_expression_to_spec(
+                &ProgramExpression::Variable(crate::kernel::BindingName::Named(name.clone())),
+                environment,
+            ),
             SurfaceTerm::IntegerLiteral {
-                ty: LiteralType::Integer,
+                ty: LeafType::Integer,
                 ..
             }
-            | SurfaceTerm::Name { .. } => {
+            | SurfaceTerm::Name {
+                ty: LeafType::Integer,
+                ..
+            } => {
                 unreachable!("a native operand is never an Integer literal or binder: {term:?}")
             }
             SurfaceTerm::BitwiseNot { operand } => Ok(SpecExpression::BitwiseNot(Box::new(
@@ -382,7 +394,7 @@ impl AnnotationLowerer<'_> {
             // work, then the shared literal lowering.
             SurfaceTerm::IntegerLiteral {
                 text,
-                ty: LiteralType::Integer,
+                ty: LeafType::Integer,
             } => {
                 check_integer_lowering_work(1)?;
                 lower_contract_integer_to_spec(
@@ -394,7 +406,7 @@ impl AnnotationLowerer<'_> {
             // integer work, then the Integer binding or the same refusal.
             SurfaceTerm::Name {
                 name,
-                ty: ClickType::Integer,
+                ty: LeafType::Integer,
             } => {
                 check_integer_lowering_work(1)?;
                 let value = environment
@@ -406,9 +418,12 @@ impl AnnotationLowerer<'_> {
                 }
                 Ok(value.clone())
             }
-            SurfaceTerm::Name { .. }
+            SurfaceTerm::Name {
+                ty: LeafType::Program(_),
+                ..
+            }
             | SurfaceTerm::IntegerLiteral {
-                ty: LiteralType::Program(_),
+                ty: LeafType::Program(_),
                 ..
             }
             | SurfaceTerm::BitwiseNot { .. }
@@ -545,14 +560,14 @@ fn integer_surface_term(term: SyntaxTerm, typing: &TypingEnvironment<'_>) -> Sur
         },
         SyntaxTerm::IntegerLiteral(text) => SurfaceTerm::IntegerLiteral {
             text,
-            ty: LiteralType::Integer,
+            ty: LeafType::Integer,
         },
         // A Click binder of an Integer comparison is an Integer binder:
         // lowering reads it among the Integer bindings or refuses it.
         // (A generated binder is never a `Binding`.)
         SyntaxTerm::Binding(name) => SurfaceTerm::Name {
             name,
-            ty: ClickType::Integer,
+            ty: LeafType::Integer,
         },
         // A C-variable spelling of an Integer binder names the same binder.
         // A C variable that is no Integer binder stays `Untyped`.
@@ -560,7 +575,7 @@ fn integer_surface_term(term: SyntaxTerm, typing: &TypingEnvironment<'_>) -> Sur
             crate::kernel::BindingName::Named(name),
         )) if typing.is_integer_binding(&name) => SurfaceTerm::Name {
             name,
-            ty: ClickType::Integer,
+            ty: LeafType::Integer,
         },
         term => SurfaceTerm::Untyped(term),
     }
@@ -685,12 +700,27 @@ impl AnnotationLowerer<'_> {
                     operand: Box::new(self.native_surface_term(*operand, environment)),
                 }
             }
+            // A C variable with a known declared type is a typed name; one
+            // with no known type stays `Untyped`.
+            SyntaxTerm::ProgramExpression(ProgramExpression::Variable(
+                crate::kernel::BindingName::Named(name),
+            )) => {
+                match self.program_name_type(name.as_str(), &TypingEnvironment::of(environment)) {
+                    Some(ty) => SurfaceTerm::Name {
+                        name,
+                        ty: LeafType::Program(ty),
+                    },
+                    None => SurfaceTerm::Untyped(SyntaxTerm::ProgramExpression(
+                        ProgramExpression::Variable(crate::kernel::BindingName::Named(name)),
+                    )),
+                }
+            }
             // C types an unsuffixed decimal constant by its value. One too
             // large for `uint64` stays `Untyped`: lowering refuses it.
             SyntaxTerm::IntegerLiteral(text) => match text.parse::<u64>() {
                 Ok(value) => SurfaceTerm::IntegerLiteral {
                     text,
-                    ty: LiteralType::Program(if value <= i32::MAX as u64 {
+                    ty: LeafType::Program(if value <= i32::MAX as u64 {
                         ProgramType::Int32
                     } else if value <= i64::MAX as u64 {
                         ProgramType::Int64

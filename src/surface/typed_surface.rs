@@ -61,13 +61,14 @@ pub(crate) enum ArithmeticOperator {
     BitwiseXor,
 }
 
-/// The type a written integer literal has.
+/// The type a Surface leaf, a literal or a name, has.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum LiteralType {
+pub(crate) enum LeafType {
     /// A mathematical Integer.
     Integer,
-    /// A C constant of this type: `int32` when the value fits, else `int64`,
-    /// else `uint64`, as C types an unsuffixed decimal constant.
+    /// A C value of this type. For an unsuffixed decimal literal it is the
+    /// type C gives the constant: `int32` when the value fits, else `int64`,
+    /// else `uint64`. For a name it is the name's declared C type.
     Program(super::ProgramType),
 }
 
@@ -75,9 +76,10 @@ pub(crate) enum LiteralType {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum SurfaceTerm {
     /// An integer literal as written, with its type.
-    IntegerLiteral { text: String, ty: LiteralType },
-    /// A Click binder named as written, with the type it is bound at.
-    Name { name: String, ty: super::ClickType },
+    IntegerLiteral { text: String, ty: LeafType },
+    /// A name as written, with its type: an Integer binder, or a C variable
+    /// at its declared type, which lowering resolves at the program point.
+    Name { name: String, ty: LeafType },
     /// `left op right` in the arithmetic `kind` names.
     Binary {
         op: ArithmeticOperator,
