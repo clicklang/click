@@ -441,7 +441,7 @@ theorem count_step(n: uint64{parameters}) {{
 #[ignore = "nightly: multi-size quantified frame refusal and positive controls"]
 fn false_quantified_frames_do_not_materialize_the_constant_domain() {
     use crate::instrumentation::measure_deterministic_work;
-    verify_c_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
+    verify_c_sources("theorem warm() { ensures true by close(); }", &[]).unwrap();
     let program = "int32 untouched_element(int32* a) { unsigned char* b; b = (unsigned char*)(void*) a; b[5] = 7; return a[2]; }";
     let mut samples = Vec::new();
     for size in [16, 1024, 1_000_000, 100_000_000] {
@@ -716,7 +716,7 @@ fn repeated_execution_matches_keep_terminal_case_evidence_and_scale_linearly() {
         .spawn(|| {
             // Initialize shared library definitions before measuring the
             // selected proof, consistently with the other scaling fixtures.
-            verify_c_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
+            verify_c_sources("theorem warm() { ensures true by close(); }", &[]).unwrap();
             let c = [("unit.c", "int32 unit(void) { return 0; }")];
             let mut samples = Vec::new();
             for depth in [1, 2, 4, 8] {
@@ -762,7 +762,7 @@ fn nested_execution_matches_fit_the_cli_stack_and_scale_linearly() {
         .spawn(|| {
             // Initialize shared library definitions before measuring the
             // selected proof, consistently with the other scaling fixtures.
-            verify_c_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
+            verify_c_sources("theorem warm() { ensures true by close(); }", &[]).unwrap();
             let c = [("unit.c", "int32 unit(void) { return 0; }")];
             let mut samples = Vec::new();
             for depth in [1, 2, 4, 8, 10] {
@@ -1502,7 +1502,7 @@ fn load_variable_project(statement_count: usize, axis: LoadAxis) -> (String, Str
         // one smart tactic in this fixture, before the scalar result goal.
         click_source.push_str("    close();\n");
     }
-    click_source.push_str("    normalize();\n");
+    click_source.push_str("    close();\n");
     click_source.push_str("}\n");
     (c_source, click_source)
 }
@@ -1575,7 +1575,7 @@ fn call_with_unrelated_facts(fact_count: usize) -> (String, String) {
         }
         step();
         have 1 == 1 by {
-            normalize();
+            close();
         }
         close();
     }
@@ -11727,7 +11727,7 @@ theorem append_tally(lo: int32, hi: int32) {{
     requires lo < hi;
     ensures tally(lo, hi) == tally(lo, hi - 1) + 1 by {{
         unfold(tally(lo, hi));
-        normalize();
+        close();
     }}
 }}
 "#
@@ -11888,7 +11888,7 @@ fn check_struct_value_equality_cost(fields: usize) {
     // `*dst == *src` is its fields' equalities: forming the two values and
     // comparing them is linear in the fields, as writing the comparisons
     // out is.
-    verify_c_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
+    verify_c_sources("theorem warm() { ensures true by close(); }", &[]).unwrap();
     let names = (0..fields).map(|i| format!("f{i}")).collect::<Vec<_>>();
     let declaration = names
         .iter()

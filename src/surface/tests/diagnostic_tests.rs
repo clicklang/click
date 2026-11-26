@@ -4121,7 +4121,7 @@ fn budget_stopped_close_retains_its_checked_loop_prefix() {
                     step();
                 }
             }
-            step_until(function.exit); normalize();
+            step_until(function.exit); close();
         }
     "#;
     with_proof_trace("f", || {
