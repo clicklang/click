@@ -5147,9 +5147,8 @@ int32 arena_pipeline(
         close();
     }
     have g3.live < 2147483647 by {
-        normalize() using {
-            g3.live == 0;
-        };
+        rewrite(g3.live, 0);
+        close();
     }
     mark a3;
     let { outcome: o3 } = step(arena_alloc, { st: g3 });
@@ -5157,7 +5156,7 @@ int32 arena_pipeline(
     step();
     have separate(memory(allocated), memory(combined->arena)) by { close(); }
     have separate(statement(18).assignment(allocated, 0).footprint, memory(combined->arena)) by {
-        normalize() using { separate(memory(allocated), memory(combined->arena)); };
+        close() using { separate(memory(allocated), memory(combined->arena)); };
     }
     have combined->arena == at(after_combined_alloc, combined->arena) by {
         preserve(memory(combined->arena), statement(18).assignment(allocated, 0));

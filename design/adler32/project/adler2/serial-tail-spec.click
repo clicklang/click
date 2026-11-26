@@ -48,13 +48,13 @@ theorem adler_serial_two_native_result(x0: uint8, x1: uint8) {
   have to_integer(((1u32 + x0 as uint32) + x1 as uint32) % 65521u32) == truncating_remainder(1 + to_integer(x0 as int32) + to_integer(x1 as int32), 65521) by {
    rewrite(to_integer(((1u32 + x0 as uint32) + x1 as uint32) % 65521u32), truncating_remainder(to_integer(((1u32 + x0 as uint32) + x1 as uint32)), to_integer(65521u32)));
    rewrite(to_integer(((1u32 + x0 as uint32) + x1 as uint32)), 1 + to_integer(x0 as int32) + to_integer(x1 as int32));
-   normalize();
+   close();
   }
   have to_integer(((393126u32 + (1u32 + x0 as uint32)) + ((1u32 + x0 as uint32) + x1 as uint32)) % 65521u32) == truncating_remainder(2 + 2 * to_integer(x0 as int32) + to_integer(x1 as int32), 65521) by {
    rewrite(to_integer(((393126u32 + (1u32 + x0 as uint32)) + ((1u32 + x0 as uint32) + x1 as uint32)) % 65521u32), truncating_remainder(to_integer(((393126u32 + (1u32 + x0 as uint32)) + ((1u32 + x0 as uint32) + x1 as uint32))), to_integer(65521u32)));
    rewrite(to_integer(((393126u32 + (1u32 + x0 as uint32)) + ((1u32 + x0 as uint32) + x1 as uint32))), 393126 + 2 + 2 * to_integer(x0 as int32) + to_integer(x1 as int32));
    rewrite(truncating_remainder(393126 + 2 + 2 * to_integer(x0 as int32) + to_integer(x1 as int32), 65521), truncating_remainder(2 + 2 * to_integer(x0 as int32) + to_integer(x1 as int32), 65521));
-   normalize();
+   close();
   }
   close();
  }
@@ -122,13 +122,13 @@ theorem adler_serial_three_native_result(x0: uint8, x1: uint8, x2: uint8) {
   have to_integer((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32) % 65521u32) == truncating_remainder(1 + to_integer(x0 as int32) + to_integer(x1 as int32) + to_integer(x2 as int32), 65521) by {
    rewrite(to_integer((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32) % 65521u32), truncating_remainder(to_integer((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32)), to_integer(65521u32)));
    rewrite(to_integer((((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32)), 1 + to_integer(x0 as int32) + to_integer(x1 as int32) + to_integer(x2 as int32));
-   normalize();
+   close();
   }
   have to_integer((((393126u32 + (1u32 + x0 as uint32)) + ((1u32 + x0 as uint32) + x1 as uint32)) + (((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32)) % 65521u32) == truncating_remainder(3 + 3 * to_integer(x0 as int32) + 2 * to_integer(x1 as int32) + to_integer(x2 as int32), 65521) by {
    rewrite(to_integer((((393126u32 + (1u32 + x0 as uint32)) + ((1u32 + x0 as uint32) + x1 as uint32)) + (((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32)) % 65521u32), truncating_remainder(to_integer((((393126u32 + (1u32 + x0 as uint32)) + ((1u32 + x0 as uint32) + x1 as uint32)) + (((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32))), to_integer(65521u32)));
    rewrite(to_integer((((393126u32 + (1u32 + x0 as uint32)) + ((1u32 + x0 as uint32) + x1 as uint32)) + (((1u32 + x0 as uint32) + x1 as uint32) + x2 as uint32))), 393126 + 3 + 3 * to_integer(x0 as int32) + 2 * to_integer(x1 as int32) + to_integer(x2 as int32));
    rewrite(truncating_remainder(393126 + 3 + 3 * to_integer(x0 as int32) + 2 * to_integer(x1 as int32) + to_integer(x2 as int32), 65521), truncating_remainder(3 + 3 * to_integer(x0 as int32) + 2 * to_integer(x1 as int32) + to_integer(x2 as int32), 65521));
-   normalize();
+   close();
   }
   close();
  }
