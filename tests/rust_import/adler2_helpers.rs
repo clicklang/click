@@ -2222,10 +2222,29 @@ const STORED_GUARD_LEMMAS: &str = r#"theorem adler_outer_nonempty_remaining(rema
  ensures 22208 <= remaining by {
   have 0 <= remaining by close() using { 0 < remaining; };
   if remaining < 22208 {
-   have remaining % 22208 == remaining by normalize() using { 0 <= remaining; remaining < 22208; };
-   have remaining == 0 by close() using { remaining % 22208 == 0; remaining % 22208 == remaining; };
-   have not (0 < remaining) by close() using { remaining == 0; };
-   contradiction(0 < remaining);
+   have 0 <= to_integer(remaining) by close();
+   have to_integer(remaining) < 22208 by close();
+   apply(integer::lt_step_le(to_integer(remaining), 22208));
+   have to_integer(remaining) <= 22207 by close();
+   apply(integer::small_remainder_interval(to_integer(remaining), 22208, 0, 22207, 22208));
+   have defined(remaining % 22208) by close();
+   have to_integer(22208) != 0 by close();
+   apply(integer::int32_remainder_to_integer(remaining, 22208));
+   have to_integer(remaining % 22208) == 0 by {
+    rewrite(remaining % 22208, 0);
+    close();
+   }
+   have to_integer(remaining) == 0 by {
+    rewrite(to_integer(remaining), truncating_remainder(to_integer(remaining), 22208));
+    rewrite(truncating_remainder(to_integer(remaining), 22208), to_integer(remaining % 22208));
+    close();
+   }
+   have 0 < to_integer(remaining) by close();
+   have not (0 < to_integer(remaining)) by {
+    rewrite(to_integer(remaining), 0);
+    close();
+   }
+   contradiction(0 < to_integer(remaining));
   } else {
    close();
   }
@@ -2258,10 +2277,10 @@ theorem adler_outer_remaining_step_divisible(remaining: int32) {
  ensures (remaining - 22208) % 22208 == 0 by {
   have defined(remaining - 22208);
   have to_integer(remaining - 22208) == to_integer(remaining) - to_integer(22208);
-  have defined(remaining % 22208) by normalize();
-  have to_integer(22208) != 0 by { normalize(); }
+  have defined(remaining % 22208) by close();
+  have to_integer(22208) != 0 by { close(); }
   apply(integer::int32_remainder_to_integer(remaining, 22208));
-  have to_integer(remaining % 22208) == 0 by { rewrite(remaining % 22208, 0); normalize(); }
+  have to_integer(remaining % 22208) == 0 by { rewrite(remaining % 22208, 0); close(); }
   have truncating_remainder(to_integer(remaining), 22208) == 0 by close() using { to_integer(remaining % 22208) == truncating_remainder(to_integer(remaining), to_integer(22208)); to_integer(remaining % 22208) == 0; };
   apply(integer::truncation_identity(to_integer(remaining), 22208));
   have 1 * 22208 <= to_integer(remaining) by close() using { 22208 <= to_integer(remaining); };
@@ -2294,7 +2313,7 @@ theorem adler_outer_exhausted_remaining(remaining: int32, size: uint64) {
    not (size as uint32 as int32 <= remaining) => {
     if 0 < remaining {
      apply(adler_outer_nonempty_remaining(remaining));
-     have size as uint32 as int32 == 22208 by { rewrite(size, 22208u64); normalize(); }
+     have size as uint32 as int32 == 22208 by { rewrite(size, 22208u64); close(); }
      have size as uint32 as int32 <= remaining by { rewrite(size as uint32 as int32, 22208); close(); }
      contradiction(size as uint32 as int32 <= remaining);
     } else {
