@@ -2538,7 +2538,7 @@ pub(super) fn execute_program_function_call_paths(
 pub(super) fn execute_external_function_rule(
     caller_state: &ExecutionState,
     rule: &ExternalFunctionRule,
-    binding: Option<&CppBindingContract>,
+    binding: Option<&ReferenceBindingContract>,
     arguments: &[ProgramExpression],
     assumptions: &PureFactContext,
     environment: &ExecutionEnvironment,
@@ -2563,7 +2563,7 @@ pub(super) fn execute_external_function_rule(
     execute_verified_function_applications(
         caller_state,
         &[FunctionContractApplication {
-            cpp_binding: binding,
+            reference_binding: binding,
             pointer_result: None,
             name: rule.function.name(),
             interface_name: rule.function.name(),
@@ -2718,7 +2718,7 @@ fn execute_verified_function_rule(
     execute_verified_function_applications(
         caller_state,
         &[FunctionContractApplication {
-            cpp_binding: None,
+            reference_binding: None,
             pointer_result: rule.pointer_result.as_deref(),
             name: rule.function.name(),
             interface_name: rule.function.name(),
@@ -2765,7 +2765,7 @@ pub(super) fn suspend_verified_worker(
     let paths = execute_verified_function_applications_with_suspension(
         caller_state,
         &[FunctionContractApplication {
-            cpp_binding: None,
+            reference_binding: None,
             pointer_result: rule.pointer_result.as_deref(),
             name: rule.function.name(),
             interface_name: rule.function.name(),
@@ -2827,7 +2827,7 @@ pub(super) fn unique_worker_completion(
 /// per declared binder.
 fn selected_call_binder_application(
     function_name: &str,
-    binding: Option<&CppBindingContract>,
+    binding: Option<&ReferenceBindingContract>,
     interface: &FunctionContractInterface,
     caller_state: &ExecutionState,
     environment: &ExecutionEnvironment,
@@ -2837,7 +2837,7 @@ fn selected_call_binder_application(
         .selected_call_binders
         .as_ref()
         .filter(|transport| match binding {
-            Some(binding) => matches!(&transport.target, CallBinderTarget::CppBinding(target) if target == binding),
+            Some(binding) => matches!(&transport.target, CallBinderTarget::ReferenceBinding(target) if target == binding),
             None => transport.names_call_to(function_name),
         })
         .map(|transport| transport.bindings.clone());
@@ -3047,7 +3047,7 @@ enum FramedCallRule<'a> {
 /// External assumptions carry storage but no body proof evidence.
 #[derive(Clone, Copy)]
 struct FunctionContractApplication<'a> {
-    cpp_binding: Option<&'a CppBindingContract>,
+    reference_binding: Option<&'a ReferenceBindingContract>,
     pointer_result: Option<&'a PurePointerResult>,
     /// Concrete callee name used for diagnostics and call attribution.
     name: &'a str,
@@ -3563,7 +3563,7 @@ fn execute_verified_function_applications_with_suspension(
             });
         let primary = applicable.remove(selected_position.unwrap_or(0));
         let PreparedVerifiedFunctionCall {
-            cpp_binding,
+            reference_binding,
             name,
             interface_name,
             candidate_ordinal,
@@ -3593,7 +3593,7 @@ fn execute_verified_function_applications_with_suspension(
                 arguments,
                 caller_state.memory(),
             )
-            .with_cpp_binding(cpp_binding)
+            .with_reference_binding(reference_binding)
         };
         // An unnamed byte projection can still have a checked resource
         // bound. Separate that bound from the entire retained borrow frame.
@@ -5715,7 +5715,7 @@ fn exceptional_direct_function_path(
 }
 
 struct PreparedVerifiedFunctionCall<'a> {
-    cpp_binding: Option<&'a CppBindingContract>,
+    reference_binding: Option<&'a ReferenceBindingContract>,
     /// The nominal callee name used for diagnostics and attribution. It is not
     /// a source-body handle for named callbacks.
     name: &'a str,
@@ -6635,7 +6635,7 @@ fn prepare_verified_function_call<'a>(
                         source_arguments,
                         &caller_state.memory,
                     )
-                    .with_cpp_binding(application.cpp_binding);
+                    .with_reference_binding(application.reference_binding);
                     site.value_arguments = contract_interface
                         .value_parameters()
                         .iter()
@@ -7147,7 +7147,7 @@ fn prepare_verified_function_call<'a>(
                             source_arguments,
                             caller_state.memory(),
                         )
-                        .with_cpp_binding(application.cpp_binding),
+                        .with_reference_binding(application.reference_binding),
                     )
                 })
                 .clone();
@@ -7408,7 +7408,7 @@ fn prepare_verified_function_call<'a>(
     }
 
     Ok(Ok(PreparedVerifiedFunctionCall {
-        cpp_binding: application.cpp_binding,
+        reference_binding: application.reference_binding,
         name: application.name,
         interface_name: application.interface_name,
         candidate_ordinal,
@@ -7609,7 +7609,7 @@ fn execute_named_contract_applications_paths(
         .map(|application| {
             let contract = application.contract;
             FunctionContractApplication {
-                cpp_binding: None,
+                reference_binding: None,
                 pointer_result: None,
                 name: contract.callee_name(),
                 interface_name: contract.name(),

@@ -316,7 +316,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
         .chain(
             file.cpp_virtual_interfaces
                 .values()
-                .chain(file.cpp_bindings.written.values())
+                .chain(file.binding_contracts.written.values())
                 .map(|block| (block, true)),
         );
     for (function, internal_interface) in function_blocks {

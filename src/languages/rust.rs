@@ -28,6 +28,23 @@ pub(crate) fn prepare_execution(
         library_models,
         record_spellings: Default::default(),
         overload_paths: Default::default(),
+        rust_binding_conversions: import
+            .export()
+            .functions
+            .iter()
+            .filter_map(|function| function.mir.as_ref())
+            .flat_map(|mir| &mir.blocks)
+            .filter_map(|block| match &block.terminator {
+                schema::MirTerminator::Call {
+                    function: schema::MirCallee::Binding { binding },
+                    ..
+                } => {
+                    crate::instrumentation::record_deterministic_work(1);
+                    Some(binding.conversion.clone())
+                }
+                _ => None,
+            })
+            .collect(),
         cpp_binding_conversions: Default::default(),
     }))
 }

@@ -205,7 +205,14 @@ fn charon_trait_objects_tools_recheck_expanded_certificates() {
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
     }
-    assert_cli(&p, &["verify"]);
+    let verification = p.cli(&["verify"]);
+    assert!(verification.status.success(), "{verification:?}");
+    let report = String::from_utf8(verification.stdout).unwrap();
+    assert!(report.contains("trait_objects::Shape::area"), "{report}");
+    assert!(
+        !report.contains("__pack") && !report.contains("__unpack"),
+        "{report}"
+    );
     let expanded = fs::read_to_string(p.root.join("borrow.click")).unwrap();
     assert!(expanded.contains(".receiver.binding"));
     assert!(expanded.contains(".argument(0).binding.release"));

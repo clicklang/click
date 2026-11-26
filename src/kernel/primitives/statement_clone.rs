@@ -163,13 +163,13 @@ impl ProgramStatement {
                 arguments,
                 callee,
                 dispatch,
-                cpp_binding,
+                reference_binding,
             } => Self::Call {
                 function_name: function_name.clone(),
                 arguments: arguments.clone(),
                 callee: callee.clone(),
                 dispatch: *dispatch,
-                cpp_binding: cpp_binding.clone(),
+                reference_binding: reference_binding.clone(),
             },
             Self::CallResult {
                 aggregate_layout,

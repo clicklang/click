@@ -225,6 +225,7 @@ fn link(parts: &[(&str, &PreparedExecution)]) -> Result<PreparedExecution, Strin
         library_models,
         record_spellings,
         overload_paths,
+        rust_binding_conversions: Default::default(),
         cpp_binding_conversions,
     })
 }

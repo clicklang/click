@@ -3529,7 +3529,7 @@ mod tests {
             ));
             let statement = ProgramStatement::Call {
                 dispatch: crate::kernel::CallDispatch::Direct,
-                cpp_binding: None,
+                reference_binding: None,
                 function_name: name.into(),
                 arguments: vec![ProgramExpression::Value(ProgramValue::pointer(
                     address.clone(),
@@ -3800,7 +3800,7 @@ mod tests {
         ));
         let statement = ProgramStatement::Call {
             dispatch: crate::kernel::CallDispatch::Direct,
-            cpp_binding: None,
+            reference_binding: None,
             function_name: "pthread_mutex_init".into(),
             arguments: vec![
                 ProgramExpression::Value(ProgramValue::pointer(pointer.clone())),
@@ -3896,7 +3896,7 @@ mod tests {
                 context.state(),
                 &ProgramStatement::Call {
                     dispatch: crate::kernel::CallDispatch::Direct,
-                    cpp_binding: None,
+                    reference_binding: None,
                     function_name: name.into(),
                     arguments,
                     callee: None,
@@ -4511,7 +4511,7 @@ mod tests {
         ));
         let statement = ProgramStatement::Call {
             dispatch: crate::kernel::CallDispatch::Direct,
-            cpp_binding: None,
+            reference_binding: None,
             function_name: name.into(),
             arguments: vec![ProgramExpression::Value(ProgramValue::pointer(
                 address.clone(),

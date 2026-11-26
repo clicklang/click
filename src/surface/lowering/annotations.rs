@@ -442,7 +442,7 @@ pub(in crate::surface) fn check_resource_field_schemas(
         .function_blocks
         .iter_mut()
         .chain(file.cpp_virtual_interfaces.values_mut())
-        .chain(file.cpp_bindings.written.values_mut())
+        .chain(file.binding_contracts.written.values_mut())
         .chain(
             file.contract_definitions
                 .iter_mut()

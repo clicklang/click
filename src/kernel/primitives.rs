@@ -6197,8 +6197,8 @@ pub enum ProgramStatement {
         /// The function pointer the call goes through, when it is not a
         /// call of a named function; `function_name` then only describes it.
         callee: Option<Callee>,
-        /// Source provenance of a C++ reference binding implemented by this transition.
-        cpp_binding: Option<Arc<CppBindingOperation>>,
+        /// The typed reference transfer, with its source provenance when available.
+        reference_binding: Option<Arc<ReferenceBindingOperation>>,
     },
     /// A value the rest of its statement reads: the value an operator that
     /// decides between its operands (`&&`, `||`, the ternary operator) takes
@@ -7577,14 +7577,14 @@ pub struct FunctionSpecification {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CallBinderTarget {
     Function(Arc<str>),
-    CppBinding(CppBindingContract),
+    ReferenceBinding(ReferenceBindingContract),
 }
 
 impl std::fmt::Display for CallBinderTarget {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Function(name) => f.write_str(name),
-            Self::CppBinding(binding) => binding.fmt(f),
+            Self::ReferenceBinding(binding) => binding.fmt(f),
         }
     }
 }
@@ -7754,7 +7754,8 @@ pub struct ExecutionEnvironment {
         Option<std::sync::Arc<(String, Vec<(String, ProgramValue)>)>>,
     pub(super) functions: std::sync::Arc<BTreeMap<String, ProgramFunction>>,
     pub(super) function_contracts: std::sync::Arc<BTreeMap<String, FunctionContract>>,
-    pub(super) cpp_binding_rules: Arc<BTreeMap<CppBindingContract, ExternalFunctionRule>>,
+    pub(super) reference_binding_rules:
+        Arc<BTreeMap<ReferenceBindingContract, ExternalFunctionRule>>,
     pub(super) cpp_virtual_rules: std::sync::Arc<BTreeMap<String, ExternalFunctionRule>>,
     pub(super) external_function_rules: std::sync::Arc<BTreeMap<String, ExternalFunctionRule>>,
     pub(super) verified_function_rules: std::sync::Arc<BTreeMap<String, VerifiedFunctionRule>>,
@@ -7808,7 +7809,7 @@ impl std::fmt::Debug for ExecutionEnvironment {
             )
             .field("functions", &self.functions)
             .field("function_contracts", &self.function_contracts)
-            .field("cpp_binding_rules", &self.cpp_binding_rules)
+            .field("reference_binding_rules", &self.reference_binding_rules)
             .field("cpp_virtual_rules", &self.cpp_virtual_rules)
             .field("external_function_rules", &self.external_function_rules)
             .field("verified_function_rules", &self.verified_function_rules)
@@ -7837,7 +7838,7 @@ impl PartialEq for ExecutionEnvironment {
             && self.selected_call_value_arguments == other.selected_call_value_arguments
             && self.functions == other.functions
             && self.function_contracts == other.function_contracts
-            && self.cpp_binding_rules == other.cpp_binding_rules
+            && self.reference_binding_rules == other.reference_binding_rules
             && self.cpp_virtual_rules == other.cpp_virtual_rules
             && self.external_function_rules == other.external_function_rules
             && self.verified_function_rules == other.verified_function_rules
@@ -10447,7 +10448,7 @@ impl MemoryStateIdentity {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CallRequirementSite {
     pub(crate) callee: String,
-    pub(crate) cpp_binding: Option<CppBindingContract>,
+    pub(crate) reference_binding: Option<ReferenceBindingContract>,
     /// Original indirect invocation, distinct from the selected concrete target.
     pub(crate) source_callee: Option<std::sync::Arc<str>>,
     pub(crate) value_arguments: std::sync::Arc<[(String, ProgramValue)]>,
@@ -10475,7 +10476,7 @@ impl CallRequirementSite {
         });
         Self {
             callee: callee.into(),
-            cpp_binding: None,
+            reference_binding: None,
             source_callee: None,
             value_arguments: std::sync::Arc::from([]),
             resource_arguments: std::sync::Arc::from([]),
@@ -10487,8 +10488,11 @@ impl CallRequirementSite {
         }
     }
 
-    pub(crate) fn with_cpp_binding(mut self, binding: Option<&CppBindingContract>) -> Self {
-        self.cpp_binding = binding.cloned();
+    pub(crate) fn with_reference_binding(
+        mut self,
+        binding: Option<&ReferenceBindingContract>,
+    ) -> Self {
+        self.reference_binding = binding.cloned();
         self
     }
 
@@ -11704,9 +11708,9 @@ pub struct ExecutionState {
     pub(crate) literal_values: Arc<PersistentMap<StringLiteralId, StoredExecutionValue>>,
 }
 
-/// A reference at a written C++ call.
+/// A reference at a written call.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum CppBindingSlot {
+pub enum ReferenceBindingSlot {
     Receiver,
     Argument(usize),
 }
@@ -11733,15 +11737,17 @@ impl CppObjectConversion {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum CppBindingKind {
+#[derive(
+    Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize,
+)]
+pub enum ReferenceBindingKind {
     AcquireMutable,
     ReleaseMutable,
     AcquireShared,
     ReleaseShared,
 }
 
-impl CppBindingKind {
+impl ReferenceBindingKind {
     pub(crate) const ALL: [Self; 4] = [
         Self::AcquireMutable,
         Self::ReleaseMutable,
@@ -11763,12 +11769,21 @@ impl CppBindingKind {
             Self::AcquireShared | Self::ReleaseShared => Self::ReleaseShared,
         }
     }
+
+    fn description(self) -> &'static str {
+        match self {
+            Self::AcquireMutable => "mutable reference binding",
+            Self::ReleaseMutable => "mutable reference release",
+            Self::AcquireShared => "shared reference binding",
+            Self::ReleaseShared => "shared reference release",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CppBindingContract {
     pub conversion: CppObjectConversion,
-    pub kind: CppBindingKind,
+    pub kind: ReferenceBindingKind,
 }
 
 impl CppBindingContract {
@@ -11782,31 +11797,76 @@ impl CppBindingContract {
 
 impl std::fmt::Display for CppBindingContract {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let operation = match self.kind {
-            CppBindingKind::AcquireMutable => "mutable reference binding",
-            CppBindingKind::ReleaseMutable => "mutable reference release",
-            CppBindingKind::AcquireShared => "shared reference binding",
-            CppBindingKind::ReleaseShared => "shared reference release",
-        };
         write!(
             f,
-            "{operation} from {} to {}",
-            self.conversion.derived, self.conversion.base
+            "{} from {} to {}",
+            self.kind.description(),
+            self.conversion.derived,
+            self.conversion.base
         )
     }
 }
 
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct CppBindingOperation {
-    pub contract: CppBindingContract,
-    pub source: Option<CppBindingSource>,
+#[derive(
+    Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize,
+)]
+pub struct RustObjectConversion {
+    pub record: String,
+    pub trait_name: String,
 }
 
-/// The regions of a checked C++ reference binding, relative to its acquisition.
+#[derive(
+    Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize,
+)]
+pub struct RustBindingContract {
+    pub conversion: RustObjectConversion,
+    pub kind: ReferenceBindingKind,
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ReferenceBindingContract {
+    Cpp(CppBindingContract),
+    Rust(RustBindingContract),
+}
+
+impl ReferenceBindingContract {
+    pub(crate) fn release(&self) -> Self {
+        match self {
+            Self::Cpp(contract) => Self::Cpp(contract.release()),
+            Self::Rust(contract) => Self::Rust(RustBindingContract {
+                conversion: contract.conversion.clone(),
+                kind: contract.kind.release(),
+            }),
+        }
+    }
+}
+
+impl std::fmt::Display for ReferenceBindingContract {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Cpp(contract) => contract.fmt(f),
+            Self::Rust(contract) => write!(
+                f,
+                "{} of <{} as {}>",
+                contract.kind.description(),
+                contract.conversion.record,
+                contract.conversion.trait_name,
+            ),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ReferenceBindingOperation {
+    pub contract: ReferenceBindingContract,
+    pub source: Option<ReferenceBindingSource>,
+}
+
+/// The regions of a checked reference binding, relative to its acquisition.
 /// Its lowering places all acquisitions before the call and releases after it.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct CppBindingSource {
-    pub slot: CppBindingSlot,
+pub struct ReferenceBindingSource {
+    pub slot: ReferenceBindingSlot,
     pub call_offset: usize,
     pub release_offset: usize,
 }

@@ -1051,11 +1051,11 @@ fn walk_execution_statement<S: VariableSubstitution + ?Sized>(
             arguments,
             callee,
             dispatch,
-            cpp_binding,
+            reference_binding,
         } => ProgramStatement::Call {
             function_name: function_name.clone(),
             dispatch: *dispatch,
-            cpp_binding: cpp_binding.clone(),
+            reference_binding: reference_binding.clone(),
             arguments: arguments
                 .iter()
                 .map(|argument| s.program_expression(argument))

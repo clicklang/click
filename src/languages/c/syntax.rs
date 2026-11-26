@@ -4333,7 +4333,7 @@ impl CStatement {
                     .collect(),
                 callee: callee.as_ref().map(CCallee::to_kernel),
                 dispatch: crate::kernel::CallDispatch::Direct,
-                cpp_binding: None,
+                reference_binding: None,
             },
             Self::IndirectCall { .. } => {
                 unreachable!("indirect call statements must be lowered before kernel conversion")

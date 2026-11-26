@@ -267,6 +267,8 @@ struct SourceBindingInfo {
 /// that are memory-backed.
 #[derive(Clone, Default)]
 pub(in crate::surface) struct ProgramLayouts {
+    pub(in crate::surface) rust_binding_conversions:
+        std::sync::Arc<BTreeSet<crate::kernel::RustObjectConversion>>,
     pub(in crate::surface) cpp_binding_conversions:
         std::sync::Arc<BTreeSet<crate::kernel::CppObjectConversion>>,
     pub(in crate::surface) reference_binding_functions:
@@ -586,7 +588,10 @@ pub(super) fn parse_library_file_items(source: &str) -> Result<ClickFile, ClickE
 
 pub(in crate::surface) enum ImportedCallee<'a> {
     Function(&'a FunctionBlock),
-    CppBinding(&'a crate::kernel::CppBindingContract, &'a FunctionBlock),
+    ReferenceBinding(
+        &'a crate::kernel::ReferenceBindingContract,
+        &'a FunctionBlock,
+    ),
     Tactic(&'a TacticDefinition),
     Contract(&'a ContractDefinition),
 }
@@ -690,10 +695,10 @@ pub(super) fn parse_file_items_for_module(
             .map(|(name, positions)| (name.clone(), positions.clone())),
     );
     for callee in imported_callees {
-        parser.current_cpp_binding = None;
+        parser.current_reference_binding = None;
         let (named_contract, block) = match callee {
-            ImportedCallee::CppBinding(contract, block) => {
-                parser.current_cpp_binding = Some((*contract).clone());
+            ImportedCallee::ReferenceBinding(contract, block) => {
+                parser.current_reference_binding = Some((*contract).clone());
                 (false, *block)
             }
             ImportedCallee::Function(block) => (false, *block),
@@ -755,7 +760,7 @@ pub(super) fn parse_file_items_for_module(
         }
     }
     parser.in_contract_definition = false;
-    parser.current_cpp_binding = None;
+    parser.current_reference_binding = None;
     for definition in imported_resources {
         parser
             .declared_resource_fields
@@ -837,7 +842,7 @@ pub(super) enum Token {
     SharedObjectView,
     /// Frontend-only marker for a C++ method’s virtual interface.
     CppVirtualInterface,
-    CppBindingContract(std::sync::Arc<crate::kernel::CppBindingContract>),
+    ReferenceBindingContract(std::sync::Arc<crate::kernel::ReferenceBindingContract>),
     Ident(String),
     Number(u32),
     // Keep literal metadata shared so adding Rust forms does not enlarge
@@ -946,7 +951,7 @@ impl Token {
             | Self::ByteString(_) => "",
             Self::SharedObjectView => "shared object view",
             Self::CppVirtualInterface => "virtual method interface",
-            Self::CppBindingContract(_) => "C++ reference binding contract",
+            Self::ReferenceBindingContract(_) => "reference binding contract",
             Self::LBrace => "{",
             Self::RBrace => "}",
             Self::LParen => "(",
@@ -1046,10 +1051,11 @@ fn reduce_contract_binary_expression(
 struct Parser {
     reference_binding_functions: BTreeMap<String, crate::languages::interface::ImportedFunction>,
     reference_binding_layouts: BTreeMap<String, super::lowering::SourceExecutionLayout>,
+    rust_binding_conversions: std::sync::Arc<BTreeSet<crate::kernel::RustObjectConversion>>,
     cpp_binding_conversions: std::sync::Arc<BTreeSet<crate::kernel::CppObjectConversion>>,
-    current_cpp_binding: Option<crate::kernel::CppBindingContract>,
-    cpp_binding_binders:
-        BTreeMap<crate::kernel::CppBindingContract, BTreeMap<String, CalleeResourceBinder>>,
+    current_reference_binding: Option<crate::kernel::ReferenceBindingContract>,
+    reference_binding_binders:
+        BTreeMap<crate::kernel::ReferenceBindingContract, BTreeMap<String, CalleeResourceBinder>>,
     reference_binding_function: Option<String>,
     checked_expansion_closers: BTreeSet<SourcePosition>,
     local_bindings: std::sync::Arc<SourceBindingIndex>,
@@ -1935,6 +1941,7 @@ impl Parser {
         )
         .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
         parser.reference_binding_functions = layouts.reference_binding_functions;
+        parser.rust_binding_conversions = layouts.rust_binding_conversions;
         parser.cpp_binding_conversions = layouts.cpp_binding_conversions;
         parser.local_bindings = layouts.local_bindings;
         parser.string_literal_values = layouts.string_literal_values;
@@ -2331,9 +2338,10 @@ impl Parser {
             loop_predicate_bodies: BTreeMap::new(),
             reference_binding_functions: BTreeMap::new(),
             reference_binding_layouts: BTreeMap::new(),
+            rust_binding_conversions: Default::default(),
             cpp_binding_conversions: Default::default(),
-            current_cpp_binding: None,
-            cpp_binding_binders: BTreeMap::new(),
+            current_reference_binding: None,
+            reference_binding_binders: BTreeMap::new(),
             reference_binding_function: None,
             program_object_names_by_function: BTreeMap::new(),
             c_library_names_by_function: BTreeMap::new(),
@@ -2738,8 +2746,9 @@ impl Parser {
         let mut contract_definitions = Vec::new();
         let mut function_blocks = Vec::new();
         let mut cpp_virtual_interfaces = BTreeMap::new();
-        let mut cpp_bindings = CppBindingContracts {
+        let mut binding_contracts = ReferenceBindingContracts {
             conversions: self.cpp_binding_conversions.clone(),
+            rust_conversions: self.rust_binding_conversions.clone(),
             written: BTreeMap::new(),
         };
         let mut tactic_definitions = Vec::new();
@@ -2887,12 +2896,12 @@ impl Parser {
                         crate::languages::display_source_names(&method)
                     )));
                 }
-            } else if let Some(Token::CppBindingContract(contract)) = self.peek().cloned() {
+            } else if let Some(Token::ReferenceBindingContract(contract)) = self.peek().cloned() {
                 self.position += 1;
-                self.current_cpp_binding = Some((*contract).clone());
+                self.current_reference_binding = Some((*contract).clone());
                 let block = self.parse_function_block(true)?;
-                self.current_cpp_binding = None;
-                if cpp_bindings
+                self.current_reference_binding = None;
+                if binding_contracts
                     .written
                     .insert((*contract).clone(), block)
                     .is_some()
@@ -3178,7 +3187,7 @@ impl Parser {
             contract_definitions,
             function_blocks,
             cpp_virtual_interfaces,
-            cpp_bindings,
+            binding_contracts,
             tactic_definitions,
             termination_proof,
             termination_span,
@@ -6698,7 +6707,7 @@ impl Parser {
             parsed_return_type.interface_type
         };
         let mut c_source = None;
-        let (name, receiver) = if let Some(binding) = &self.current_cpp_binding {
+        let (name, receiver) = if let Some(binding) = &self.current_reference_binding {
             (binding.to_string(), None)
         } else if self.verifies_cpp() {
             let declarator = self.parse_cpp_declarator(is_static)?;
@@ -8555,13 +8564,7 @@ impl Parser {
         } else {
             None
         };
-        let binding_contract_name = match &binding_contract {
-            Some(crate::kernel::CallBinderTarget::Function(name)) => Some(name.as_ref()),
-            _ => None,
-        };
-        let mut callee = if let Some(name) = binding_contract_name {
-            name.to_owned()
-        } else if let Some(region) = &source_binding {
+        let mut callee = if let Some(region) = &source_binding {
             super::diagnostics::describe_code_region_ref(region)
         } else {
             self.expect_ident(if tactic {
@@ -8627,16 +8630,15 @@ impl Parser {
         } else if has_map {
             self.position += 1;
         }
-        let mut declared =
-            if let Some(crate::kernel::CallBinderTarget::CppBinding(binding)) = &binding_contract {
-                self.cpp_binding_binders.get(binding)
-            } else if named_contract {
-                self.contract_resource_binders.get(&callee)
-            } else {
-                self.callee_resource_binders.get(&callee)
-            }
-            .cloned()
-            .unwrap_or_default();
+        let mut declared = if let Some(binding) = &binding_contract {
+            self.reference_binding_binders.get(binding)
+        } else if named_contract {
+            self.contract_resource_binders.get(&callee)
+        } else {
+            self.callee_resource_binders.get(&callee)
+        }
+        .cloned()
+        .unwrap_or_default();
         if has_map && binding_contract.is_none() && !named_contract && declared.is_empty() {
             declared = self.library_callee_value_parameters(&callee)?;
         }
@@ -9203,8 +9205,10 @@ impl Parser {
             return;
         };
         crate::instrumentation::record_deterministic_work(1);
-        let binders = if let Some(binding) = &self.current_cpp_binding {
-            self.cpp_binding_binders.entry(binding.clone()).or_default()
+        let binders = if let Some(binding) = &self.current_reference_binding {
+            self.reference_binding_binders
+                .entry(binding.clone())
+                .or_default()
         } else if self.in_contract_definition {
             self.contract_resource_binders
                 .entry(function.to_string())
@@ -13215,15 +13219,15 @@ impl Parser {
         ) && self.peek() == Some(&Token::Dot)
             && matches!(self.peek_next(), Some(Token::Ident(kind)) if matches!(kind.as_str(), "argument" | "receiver"))
         {
-            use crate::kernel::CppBindingSlot;
+            use crate::kernel::ReferenceBindingSlot;
             self.expect(Token::Dot)?;
             let slot = if self.expect_ident("argument or receiver")? == "argument" {
                 self.expect(Token::LParen)?;
                 let index = self.expect_index("argument index")?;
                 self.expect(Token::RParen)?;
-                CppBindingSlot::Argument(index)
+                ReferenceBindingSlot::Argument(index)
             } else {
-                CppBindingSlot::Receiver
+                ReferenceBindingSlot::Receiver
             };
             self.expect(Token::Dot)?;
             if self.expect_ident("binding")? != "binding" {

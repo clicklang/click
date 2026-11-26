@@ -171,6 +171,7 @@ pub(crate) struct PreparedExecution {
     /// another shares its path, as overloads do, by the name it has: a head
     /// at that path selects it by signature.
     pub overload_paths: std::collections::BTreeMap<String, String>,
+    pub rust_binding_conversions: std::collections::BTreeSet<crate::kernel::RustObjectConversion>,
     pub cpp_binding_conversions: std::collections::BTreeSet<crate::kernel::CppObjectConversion>,
 }
 

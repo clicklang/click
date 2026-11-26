@@ -2234,8 +2234,8 @@ fn execute_step_from_frontier_position_selecting_path(
         };
         use crate::kernel::CallBinderTarget;
         let called = match selected_statement {
-            ProgramStatement::Call { cpp_binding: Some(binding), arguments, .. } => {
-                matches!(&transport.target, CallBinderTarget::CppBinding(contract) if contract == &binding.contract)
+            ProgramStatement::Call { reference_binding: Some(binding), arguments, .. } => {
+                matches!(&transport.target, CallBinderTarget::ReferenceBinding(contract) if contract == &binding.contract)
                     .then_some(arguments.len())
             }
             ProgramStatement::Call {

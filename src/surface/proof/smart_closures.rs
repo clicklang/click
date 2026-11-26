@@ -4403,8 +4403,8 @@ fn source_backed_call_requirement_surface(
     }
 
     let source_registry = context.function_source_registry();
-    let ordinary_source = match &site.cpp_binding {
-        Some(binding) => source_registry.cpp_binding(binding),
+    let ordinary_source = match &site.reference_binding {
+        Some(binding) => source_registry.reference_binding(binding),
         None => source_registry.ordinary_function(site.callee.as_ref()),
     };
     if let ProofStep::UserTactic(application) = step {
@@ -4436,12 +4436,14 @@ fn source_backed_call_requirement_surface(
         }
         let (callee, arguments) = match statement {
             ProgramStatement::Call {
-                cpp_binding: Some(binding),
+                reference_binding: Some(binding),
                 arguments,
                 ..
-            } if site.cpp_binding.as_ref() == Some(&binding.contract) => (&site.callee, arguments),
+            } if site.reference_binding.as_ref() == Some(&binding.contract) => {
+                (&site.callee, arguments)
+            }
             ProgramStatement::Call {
-                cpp_binding: Some(_),
+                reference_binding: Some(_),
                 ..
             } => return None,
             ProgramStatement::Call {
@@ -4568,10 +4570,10 @@ fn source_backed_call_requirement_surface(
                 requirement.proposition()?.clone(),
             )
         } else {
-            let function = match &site.cpp_binding {
+            let function = match &site.reference_binding {
                 Some(binding) => context
                     .function_environment
-                    .get_cpp_binding_function(binding),
+                    .get_reference_binding_function(binding),
                 None => context
                     .function_environment
                     .get_function(site.callee.as_ref()),

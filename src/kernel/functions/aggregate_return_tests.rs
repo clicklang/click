@@ -764,7 +764,7 @@ fn a_modular_call_preserves_sparse_caller_reservations() {
         program_return(crate::kernel::program_expression::int32_literal(0)),
     );
     let application = FunctionContractApplication {
-        cpp_binding: None,
+        reference_binding: None,
         pointer_result: None,
         name: function.name(),
         interface_name: function.name(),

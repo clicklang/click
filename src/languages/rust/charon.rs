@@ -685,7 +685,6 @@ struct Adapter<'a> {
     trait_impl_methods: BTreeMap<a::FunDeclId, String>,
     /// Each crate struct a call passes as a crate trait's object, with the
     /// trait: the struct's pack and unpack functions are imported.
-    object_coercions: std::cell::RefCell<BTreeSet<(String, a::TraitDeclId, String)>>,
     /// Each generic crate trait's instances an implementation or a call
     /// names, by importer name, with their type arguments after `Self`.
     trait_instances: std::cell::RefCell<BTreeMap<a::TraitDeclId, BTreeMap<String, Vec<a::Ty>>>>,
@@ -1426,7 +1425,7 @@ struct BodyAdapter<'a, 'b> {
     unsized_objects: BTreeMap<a::LocalId, (String, (a::TraitDeclId, String), bool)>,
     /// The pack, unpack, and argument of each object the block's call makes
     /// from a crate struct reference.
-    coercions: std::cell::RefCell<Vec<(usize, String, String, E)>>,
+    coercions: std::cell::RefCell<Vec<traits::ObjectCoercion>>,
 }
 impl BodyAdapter<'_, '_> {
     /// Named interpretations for compiler-resolved slice length and unsigned From.
@@ -2893,22 +2892,20 @@ impl BodyAdapter<'_, '_> {
                             },
                             _ => None,
                         };
-                        if let Some((record, (trait_id, instance), shared)) =
-                            generic.or(unsized_object)
+                        if let Some((record, (_, trait_name), shared)) = generic.or(unsized_object)
                         {
-                            let (pack, unpack) = self
-                                .adapter
-                                .object_coercion_names(&record, &instance, shared)?;
-                            self.adapter
-                                .object_coercions
-                                .borrow_mut()
-                                .insert((record, trait_id, instance));
-                            self.coercions.borrow_mut().push((
-                                index,
-                                pack,
-                                unpack,
-                                arguments[index].clone(),
-                            ));
+                            let binding = crate::kernel::RustBindingContract {
+                                conversion: crate::kernel::RustObjectConversion {
+                                    record,
+                                    trait_name,
+                                },
+                                kind: crate::kernel::ReferenceBindingKind::acquire(shared),
+                            };
+                            self.coercions.borrow_mut().push(traits::ObjectCoercion {
+                                argument: index,
+                                binding,
+                                value: arguments[index].clone(),
+                            });
                         }
                     }
                     let function = match &instantiation {
@@ -3059,7 +3056,6 @@ pub(super) fn decode_crate(
         closure_captures: BTreeMap::new(),
         callable_parameters: std::cell::RefCell::new(Vec::new()),
         trait_impl_methods: BTreeMap::new(),
-        object_coercions: std::cell::RefCell::new(BTreeSet::new()),
         trait_instances: std::cell::RefCell::default(),
         generic_instances: std::cell::RefCell::default(),
         instance_types: std::cell::RefCell::default(),
@@ -4082,9 +4078,6 @@ pub(super) fn decode_crate(
             }
             functions.push(function);
         }
-    }
-    for (record, trait_id, instance) in adapter.object_coercions.borrow().iter() {
-        functions.extend(adapter.object_coercion_functions(record, *trait_id, instance)?);
     }
     // Each instance of a generic function a call names is declared at its
     // types, with the generic function's parameter names; its contract is

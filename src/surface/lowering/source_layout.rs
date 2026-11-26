@@ -128,11 +128,15 @@ struct SourceExecutionLayoutData {
     /// the statement's own regions, not its children's.
     source_statements: BTreeMap<Vec<u32>, Vec<usize>>,
     /// The acquisition region and contract for each written call argument.
-    reference_bindings:
-        BTreeMap<(usize, crate::kernel::CppBindingSlot), (usize, crate::kernel::CallBinderTarget)>,
-    reference_releases:
-        BTreeMap<(usize, crate::kernel::CppBindingSlot), (usize, crate::kernel::CallBinderTarget)>,
-    reference_binding_sites: BTreeMap<usize, (usize, crate::kernel::CppBindingSlot, bool)>,
+    reference_bindings: BTreeMap<
+        (usize, crate::kernel::ReferenceBindingSlot),
+        (usize, crate::kernel::ReferenceBindingContract),
+    >,
+    reference_releases: BTreeMap<
+        (usize, crate::kernel::ReferenceBindingSlot),
+        (usize, crate::kernel::ReferenceBindingContract),
+    >,
+    reference_binding_sites: BTreeMap<usize, (usize, crate::kernel::ReferenceBindingSlot, bool)>,
     /// The function each direct-call region calls, for `.call(f, j)`.
     call_targets: BTreeMap<usize, String>,
     /// The object each call region receives as each by-value aggregate
@@ -944,7 +948,7 @@ impl SourceExecutionLayout {
                         }
                     }
                     if let ProgramStatement::Call {
-                        cpp_binding: Some(binding),
+                        reference_binding: Some(binding),
                         ..
                     } = statement
                         && let Some(source) = binding.source
@@ -953,22 +957,11 @@ impl SourceExecutionLayout {
                         let release = statement_index + source.release_offset;
                         layout.reference_bindings.insert(
                             (call, source.slot),
-                            (
-                                statement_index,
-                                crate::kernel::CallBinderTarget::CppBinding(
-                                    binding.contract.clone(),
-                                ),
-                            ),
+                            (statement_index, binding.contract.clone()),
                         );
-                        layout.reference_releases.insert(
-                            (call, source.slot),
-                            (
-                                release,
-                                crate::kernel::CallBinderTarget::CppBinding(
-                                    binding.contract.release(),
-                                ),
-                            ),
-                        );
+                        layout
+                            .reference_releases
+                            .insert((call, source.slot), (release, binding.contract.release()));
                         layout
                             .reference_binding_sites
                             .insert(statement_index, (call, source.slot, false));
@@ -978,7 +971,7 @@ impl SourceExecutionLayout {
                     }
                     if let ProgramStatement::Call {
                         arguments,
-                        cpp_binding: None,
+                        reference_binding: None,
                         ..
                     }
                     | ProgramStatement::CallResult { arguments, .. }
@@ -993,7 +986,7 @@ impl SourceExecutionLayout {
                     }
                     if let ProgramStatement::Call {
                         function_name,
-                        cpp_binding: None,
+                        reference_binding: None,
                         callee: None,
                         ..
                     }
@@ -1130,25 +1123,13 @@ impl SourceExecutionLayout {
             for binding in &sites.object_bindings {
                 crate::instrumentation::record_deterministic_work(1);
                 let slot = binding.argument.map_or(
-                    crate::kernel::CppBindingSlot::Receiver,
-                    crate::kernel::CppBindingSlot::Argument,
+                    crate::kernel::ReferenceBindingSlot::Receiver,
+                    crate::kernel::ReferenceBindingSlot::Argument,
                 );
-                let target = |region| {
-                    layout
-                        .call_targets
-                        .get(&region)
-                        .map(|name| {
-                            (
-                                region,
-                                crate::kernel::CallBinderTarget::Function(name.as_str().into()),
-                            )
-                        })
-                        .ok_or_else(|| {
-                            ClickError::new("Rust object binding does not name a direct call")
-                        })
-                };
-                let acquire = target(binding.acquire)?;
-                let release = target(binding.release)?;
+                let contract =
+                    crate::kernel::ReferenceBindingContract::Rust(binding.binding.clone());
+                let release = (binding.release, contract.release());
+                let acquire = (binding.acquire, contract);
                 if !layout.calls.contains(&binding.call)
                     || layout
                         .reference_bindings
@@ -1162,12 +1143,10 @@ impl SourceExecutionLayout {
                     return Err(ClickError::new("duplicate or invalid Rust object binding"));
                 }
                 for (region, release) in [(binding.acquire, false), (binding.release, true)] {
-                    layout.call_targets.remove(&region);
-                    if !layout.calls.remove(&region)
-                        || layout
-                            .reference_binding_sites
-                            .insert(region, (binding.call, slot, release))
-                            .is_some()
+                    if layout
+                        .reference_binding_sites
+                        .insert(region, (binding.call, slot, release))
+                        .is_some()
                     {
                         return Err(ClickError::new(
                             "duplicate or invalid Rust object binding region",
@@ -2072,14 +2051,14 @@ impl SourceExecutionLayout {
     pub(in crate::surface) fn reference_binding_target(
         &self,
         steps: &[crate::surface::SourcePathStep],
-    ) -> Result<&crate::kernel::CallBinderTarget, String> {
+    ) -> Result<&crate::kernel::ReferenceBindingContract, String> {
         Ok(&self.reference_binding_region(steps)?.1)
     }
 
     pub(in crate::surface) fn reference_binding_region(
         &self,
         steps: &[crate::surface::SourcePathStep],
-    ) -> Result<&(usize, crate::kernel::CallBinderTarget), String> {
+    ) -> Result<&(usize, crate::kernel::ReferenceBindingContract), String> {
         use crate::surface::{ProgramPointKind, SourcePathStep};
         let Some((SourcePathStep::Binding { slot, release }, call_path)) = steps.split_last()
         else {
@@ -2372,7 +2351,7 @@ impl SourceExecutionLayout {
         if let Some(&(call, slot, release)) = data.reference_binding_sites.get(&region) {
             if matches!(
                 data.reference_bindings.get(&(call, slot)),
-                Some((_, crate::kernel::CallBinderTarget::CppBinding(_)))
+                Some((_, crate::kernel::ReferenceBindingContract::Cpp(_)))
             ) && let Some(mut steps) = self.source_path_spelling(call, kind)
                 && matches!(
                     steps.last(),

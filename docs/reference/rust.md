@@ -891,7 +891,9 @@ memory, an implementation's `contract fn` `..._iface`.
 
 Where a struct reference becomes the object, at a call that instantiates a
 bound type parameter with the struct or coerces it to `&dyn Trait`, the
-importer binds the object before the call and releases it afterward. Proofs can
+importer binds the object before the call and releases it afterward. Click
+selects the transfer contract by concrete type, trait instance, and borrow kind.
+Proofs can
 select the binding by its written call and argument, for example
 `statement(1).call(0).argument(0).binding`. A method call uses
 `.receiver.binding` for the receiver. The suffix `.release` selects the matching
