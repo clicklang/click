@@ -647,6 +647,49 @@ fn linked_pointer_viewability_expands_without_normalize() {
 
 #[test]
 #[cfg(not(feature = "fast-gate"))]
+#[ignore = "nightly: cold C expansion and checked replay"]
+fn local_pointer_slot_expands_as_an_indexed_memory_place() {
+    let sources = [(
+        "slot.c",
+        r#"
+            struct node {
+                struct node *left;
+                struct node *right;
+            };
+
+            void assign_local(struct node *node) {
+                struct node *pivot = node->right;
+                struct node *middle = pivot;
+                node->right = middle;
+            }
+        "#,
+    )];
+    let source = r#"
+        verifying "slot.c";
+
+        void assign_local(struct node* node) {
+            owns node->left;
+            owns node->right;
+            ensures true;
+        } by {
+            step_until(statement(1).entry);
+            have separate(memory((&pivot)[0]), memory(node->left)) by close();
+            step_until(function.exit);
+            close();
+        }
+    "#;
+    let label = "assign_local.contract";
+    let expanded = expand_c_claim_source_by_label(source, &sources, label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(expanded.contains("memory((&pivot)[0])"), "{expanded}");
+    without_implicit_solve_for_claim(label, || {
+        verify_c_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+#[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: expands and cold-verifies two automatic-storage separation proofs"]
 fn automatic_object_separation_expands_without_normalize() {
     for (fixture, label) in [
