@@ -11815,6 +11815,17 @@ pub struct RustObjectConversion {
     pub trait_name: String,
 }
 
+impl RustObjectConversion {
+    // A private composite family for the memory lent by a shared binding.
+    // A source declaration cannot spell this key.
+    pub(crate) fn loan_family(&self) -> String {
+        format!(
+            "Rust shared reference loan ({:?}, {:?})",
+            self.record, self.trait_name
+        )
+    }
+}
+
 #[derive(
     Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize,
 )]

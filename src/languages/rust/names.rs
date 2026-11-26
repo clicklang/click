@@ -218,15 +218,6 @@ pub(crate) fn is_rust_name(name: &str) -> bool {
     name.starts_with(PREFIX)
 }
 
-/// The method names of the pack and unpack placed where a shared crate
-/// struct reference becomes a crate trait's object: the memory stays with
-/// the caller, lent until the unpack.
-/// The resource a shared pack produces beside the object, holding the
-/// struct's memory lent: `<S as Trait>::__lent`.
-pub(crate) fn object_lend_name(type_name: &str, trait_name: &str) -> String {
-    trait_method_name(type_name, trait_name, "__lent")
-}
-
 /// The importer name of the item at a path, `quad::walk` or
 /// `adler2::algo::U32X4`: the prefix and each segment
 /// (`__rust_q_I4_quad_I4_walk`).
