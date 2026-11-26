@@ -129,7 +129,7 @@ fn interior_base_alias_frames_only_distinct_objects_and_is_indexed() {
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for offset in [-1i64, 0, 1, 2, 3, 16] {
                 let read = OldAddress {
-                    offset: OldAddressOffset::Constant(offset),
+                    offset: AddressOffset::constant(offset),
                     ..alias.clone()
                 };
                 assert!(pointers_proven_distinct_for_memory_resolution(
@@ -144,7 +144,7 @@ fn interior_base_alias_frames_only_distinct_objects_and_is_indexed() {
         });
         samples.push((size, work));
         let interior = OldAddress {
-            offset: OldAddressOffset::Constant(1),
+            offset: AddressOffset::constant(1),
             ..alias.clone()
         };
         assert!(!pointers_proven_distinct_for_memory_resolution(
