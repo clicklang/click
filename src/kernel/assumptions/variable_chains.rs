@@ -385,9 +385,11 @@ mod memory_tests {
                 true,
             );
         }
-        let pointer = |variable, stride| OldAddress {
-            base: AddressBase::from("ordered"),
-            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(variable), stride),
+        let pointer = |variable, stride| {
+            Address::new(
+                AddressBase::from("ordered"),
+                AddressOffset::scale_int32(OldMachineTerm::Variable(variable), stride),
+            )
         };
         let mut memory = SymbolicMemory::new().with_block("ordered", 4096);
         for (index, variable) in variables.iter().enumerate() {

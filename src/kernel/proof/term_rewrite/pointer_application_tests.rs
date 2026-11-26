@@ -1,16 +1,13 @@
 use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
-fn call(name: &str, arguments: Vec<PureFunctionArgument>) -> OldAddress {
-    OldAddress {
-        base: AddressBase::PureFunctionApplication(SharedPureApplication::intern(
-            name.into(),
-            arguments,
-        )),
-        offset: AddressOffset::constant(0),
-    }
+fn call(name: &str, arguments: Vec<PureFunctionArgument>) -> Address {
+    Address::new(
+        AddressBase::PureFunctionApplication(SharedPureApplication::intern(name.into(), arguments)),
+        AddressOffset::constant(0),
+    )
 }
-fn argument(pointer: OldAddress) -> PureFunctionArgument {
+fn argument(pointer: Address) -> PureFunctionArgument {
     PureFunctionArgument::Value(ProgramValue::typed_pointer(
         pointer,
         ProgramType::Int32Pointer,
@@ -24,9 +21,9 @@ fn rewriting_an_exact_scalar_read_keeps_its_named_point() {
     let point = ProgramPoint::starting_at(&memory).for_exact_read();
     let other = ProgramPoint::starting_at(&memory).for_exact_read();
     assert_ne!(point.id(), other.id());
-    let source = OldAddress::symbolic(Variable(1008322));
-    let target = OldAddress::symbolic(Variable(1008323));
-    let read = |point: &ProgramPoint, address: &OldAddress| {
+    let source = Address::symbolic(Variable(1008322));
+    let target = Address::symbolic(Variable(1008323));
+    let read = |point: &ProgramPoint, address: &Address| {
         OldMachineTerm::read_named(point.clone(), Box::new(address.clone()), LoadKind::Bits64)
     };
     let original = read(&point, &source);
@@ -47,8 +44,8 @@ fn rewriting_an_exact_scalar_read_keeps_its_named_point() {
 fn rewriting_an_exact_scalar_index_keeps_its_named_point() {
     let _session = VerificationSession::enter();
     let point = ProgramPoint::starting_at(&SymbolicMemory::new()).for_exact_read();
-    let pointer = OldAddress::symbolic(Variable(1008324));
-    let read = |address: OldAddress| {
+    let pointer = Address::symbolic(Variable(1008324));
+    let read = |address: Address| {
         OldMachineTerm::read_named(point.clone(), Box::new(address), LoadKind::UInt32)
     };
     let from = AddressOffset::constant(0);
@@ -62,13 +59,10 @@ fn rewriting_an_exact_scalar_index_keeps_its_named_point() {
 
     let variable = OldMachineTerm::Variable(Variable(1008325));
     let replacement = OldMachineTerm::constant(4);
-    let indexed = OldAddress {
-        base: pointer.base,
-        offset: AddressOffset::int32_scaled(
-            SharedMachineIntegerTerm::index(MachineIntegerType::Int32, variable.clone()),
-            1,
-        ),
-    };
+    let indexed = pointer.with_offset(AddressOffset::int32_scaled(
+        SharedMachineIntegerTerm::index(MachineIntegerType::Int32, variable.clone()),
+        1,
+    ));
     let new_address = TermRewrite::for_bits_checked(&variable, &replacement).pointer(&indexed);
     assert_ne!(new_address, indexed);
     assert_eq!(
@@ -81,7 +75,7 @@ fn rewriting_an_exact_scalar_index_keeps_its_named_point() {
 fn rewriting_a_scalar_store_read_keeps_its_program_point() {
     let _session = VerificationSession::enter();
     let source = SymbolicMemory::local_pointer("stored_word");
-    let target = OldAddress::symbolic(Variable(1008326));
+    let target = Address::symbolic(Variable(1008326));
     let kind = LoadKind::Int32;
     let state = ExecutionState::new().with_memory(
         SymbolicMemory::new()
@@ -116,10 +110,7 @@ fn rewriting_a_scalar_store_read_keeps_its_program_point() {
 #[test]
 fn rewriting_a_scalar_caller_store_read_keeps_its_program_point() {
     let _session = VerificationSession::enter();
-    let source = OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::constant(4),
-    };
+    let source = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(4));
     let target = source.offset_by_bytes(8);
     let kind = LoadKind::Int32;
     let entry = ExecutionState::new().begin_function_entry_memory();
@@ -145,17 +136,14 @@ fn rewriting_a_scalar_caller_store_read_keeps_its_program_point() {
 
 #[test]
 fn pure_pointer_calls_preserve_identity_and_do_not_imply_separation() {
-    let p = OldAddress::symbolic(Variable(410));
-    let q = OldAddress::symbolic(Variable(411));
+    let p = Address::symbolic(Variable(410));
+    let q = Address::symbolic(Variable(411));
     let a = call("select", vec![argument(p.clone())]);
     let b = call("select", vec![argument(q)]);
     assert_eq!(a, call("select", vec![argument(p)]));
     assert_ne!(a, b);
     assert!(!a.blocks_proven_distinct(&b));
-    let heap = OldAddress {
-        base: AddressBase::Heap(55),
-        offset: AddressOffset::constant(0),
-    };
+    let heap = Address::new(AddressBase::Heap(55), AddressOffset::constant(0));
     assert!(!a.blocks_proven_distinct(&heap));
     assert!(!heap.blocks_proven_distinct(&a));
     assert_ne!(a, call("different", vec![]));
@@ -163,16 +151,13 @@ fn pure_pointer_calls_preserve_identity_and_do_not_imply_separation() {
 
 #[test]
 fn pure_pointer_rewrite_preserves_offsets_and_distinct_arguments() {
-    let p = OldAddress::symbolic(Variable(410));
-    let q = OldAddress::symbolic(Variable(411));
+    let p = Address::symbolic(Variable(410));
+    let q = Address::symbolic(Variable(411));
     let mut input = call("select", vec![argument(p.clone()), argument(q.clone())]);
-    input.offset = AddressOffset::constant(8);
-    let replacement = OldAddress {
-        base: "target".into(),
-        offset: AddressOffset::constant(4),
-    };
+    input.set_offset(AddressOffset::constant(8));
+    let replacement = Address::new("target".into(), AddressOffset::constant(4));
     let mut expected = call("select", vec![argument(replacement.clone()), argument(q)]);
-    expected.offset = input.offset.clone();
+    expected.set_offset(input.offset.clone());
     let mut rewrite = TermRewrite::for_pointer_variable(Variable(410), &replacement);
     assert_eq!(rewrite.pointer(&input), expected);
     assert_eq!(rewrite.refusal(), None);
@@ -209,7 +194,7 @@ fn pure_pointer_arguments_respect_match_binders_and_avoid_capture() {
             binding_names: Default::default(),
             variant: "Node".into(),
             bindings: vec![AlgebraicValue::Program(ProgramValue::typed_pointer(
-                OldAddress::symbolic(bound),
+                Address::symbolic(bound),
                 ProgramType::Int32Pointer,
             ))],
             body: OldMachineTerm::ClickFunctionApplication {
@@ -217,14 +202,14 @@ fn pure_pointer_arguments_respect_match_binders_and_avoid_capture() {
                 arguments: vec![argument(call(
                     "select",
                     vec![
-                        argument(OldAddress::symbolic(bound)),
-                        argument(OldAddress::symbolic(free)),
+                        argument(Address::symbolic(bound)),
+                        argument(Address::symbolic(free)),
                     ],
                 ))],
             },
         }],
     };
-    let replacement = call("replacement", vec![argument(OldAddress::symbolic(bound))]);
+    let replacement = call("replacement", vec![argument(Address::symbolic(bound))]);
     let mut rewrite = TermRewrite::for_pointer_variable(free, &replacement);
     let OldMachineTerm::AlgebraicMatch { arms, .. } = rewrite.bits(&input) else {
         panic!("lost match")
@@ -233,7 +218,7 @@ fn pure_pointer_arguments_respect_match_binders_and_avoid_capture() {
     let AlgebraicValue::Program(ProgramValue::Pointer(renamed)) = &arms[0].bindings[0] else {
         panic!("lost binder")
     };
-    assert_ne!(renamed.address(), &OldAddress::symbolic(bound));
+    assert_ne!(renamed.address(), &Address::symbolic(bound));
     let expected = OldMachineTerm::ClickFunctionApplication {
         name: "observe".into(),
         arguments: vec![argument(call(
@@ -245,12 +230,12 @@ fn pure_pointer_arguments_respect_match_binders_and_avoid_capture() {
         ))],
     };
     assert_eq!(arms[0].body, expected);
-    let unrelated = OldAddress::symbolic(Variable(503));
+    let unrelated = Address::symbolic(Variable(503));
     let mut shadowed = TermRewrite::for_pointer_variable(bound, &unrelated);
     assert_eq!(shadowed.bits(&input), input);
     assert_eq!(shadowed.refusal(), None);
 
-    let source = OldAddress::symbolic(free);
+    let source = Address::symbolic(free);
     let mut exact = TermRewrite::for_pointer_exact(&source, &replacement);
     let _ = exact.bits(&input);
     assert_eq!(exact.refusal(), Some(RewriteRefusal::UnsupportedScope));
@@ -301,11 +286,8 @@ mod scaling_tests {
 
 #[test]
 fn numeric_pointer_rewrites_preserve_origin_and_selected_bounds() {
-    let source = OldAddress::symbolic(Variable(420));
-    let target = OldAddress {
-        base: "target".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let source = Address::symbolic(Variable(420));
+    let target = Address::new("target".into(), AddressOffset::constant(0));
     let original = OldPointer::new(source.clone(), ProgramType::Int32Pointer).with_bounds(Some(
         SubobjectBounds {
             start: source.clone(),
@@ -336,15 +318,9 @@ fn numeric_pointer_rewrites_preserve_origin_and_selected_bounds() {
 fn full_pointer_rewrite_changes_read_storage_without_inventing_its_origin() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = intern_memory(SymbolicMemory::new());
-    let p = OldPointer::new(
-        OldAddress::symbolic(Variable(421)),
-        ProgramType::Int32Pointer,
-    );
-    let q = OldPointer::new(
-        OldAddress::symbolic(Variable(422)),
-        ProgramType::Int32Pointer,
-    );
-    let other = OldAddress::symbolic(Variable(423));
+    let p = OldPointer::new(Address::symbolic(Variable(421)), ProgramType::Int32Pointer);
+    let q = OldPointer::new(Address::symbolic(Variable(422)), ProgramType::Int32Pointer);
+    let other = Address::symbolic(Variable(423));
     let read = OldPointer::from_read(
         other.clone(),
         ProgramType::Int32Pointer,
@@ -355,7 +331,7 @@ fn full_pointer_rewrite_changes_read_storage_without_inventing_its_origin() {
     let ProgramValue::Pointer(changed) = rewrite.value(&ProgramValue::Pointer(read.clone())) else {
         panic!("read changed type")
     };
-    let expected_origin = OldAddress::loaded_value(&memory, q.address());
+    let expected_origin = Address::loaded_value(&memory, q.address());
     assert_eq!(changed.address(), &other);
     assert_eq!(changed.provenance(), &expected_origin);
     assert_eq!(changed.bounds_owner(), Some(&expected_origin));
@@ -383,17 +359,14 @@ fn full_pointer_rewrite_changes_read_storage_without_inventing_its_origin() {
 fn memory_relationship_rewrite_transports_only_a_complete_pointer_carrier() {
     let _session = crate::kernel::VerificationSession::enter();
     let retained_state = intern_memory(SymbolicMemory::new());
-    let storage = OldAddress::symbolic(Variable(424_100));
+    let storage = Address::symbolic(Variable(424_100));
     let source = OldPointer::from_read(
-        OldAddress::symbolic(Variable(424_101)),
+        Address::symbolic(Variable(424_101)),
         ProgramType::Int32Pointer,
         &retained_state,
         &storage,
     );
-    let target_base = OldAddress {
-        base: AddressBase::Heap(424_102),
-        offset: AddressOffset::constant(0),
-    };
+    let target_base = Address::new(AddressBase::Heap(424_102), AddressOffset::constant(0));
     let target = OldPointer::new(target_base.clone(), ProgramType::Int32Pointer).with_bounds(Some(
         SubobjectBounds {
             start: target_base,
@@ -440,24 +413,21 @@ fn memory_relationship_rewrite_transports_only_a_complete_pointer_carrier() {
 fn a_full_pointer_rewrite_does_not_adopt_another_read_carrier_at_the_same_address() {
     let _session = crate::kernel::VerificationSession::enter();
     let retained_state = intern_memory(SymbolicMemory::new());
-    let raw = OldAddress::symbolic(Variable(424_110));
+    let raw = Address::symbolic(Variable(424_110));
     let source = OldPointer::from_read(
         raw.clone(),
         ProgramType::Int32Pointer,
         &retained_state,
-        &OldAddress::symbolic(Variable(424_111)),
+        &Address::symbolic(Variable(424_111)),
     );
     let unrelated = OldPointer::from_read(
         raw,
         ProgramType::Int32Pointer,
         &retained_state,
-        &OldAddress::symbolic(Variable(424_112)),
+        &Address::symbolic(Variable(424_112)),
     );
     let target = OldPointer::new(
-        OldAddress {
-            base: AddressBase::Heap(424_113),
-            offset: AddressOffset::constant(0),
-        },
+        Address::new(AddressBase::Heap(424_113), AddressOffset::constant(0)),
         ProgramType::Int32Pointer,
     );
     let input = Proposition::ResourceSeparate {
@@ -468,7 +438,7 @@ fn a_full_pointer_rewrite_does_not_adopt_another_read_carrier_at_the_same_addres
             4,
         ))),
         right: Box::new(Resource::Memory(MemoryRange::new(
-            OldAddress::symbolic(Variable(424_114)),
+            Address::symbolic(Variable(424_114)),
             0u32.into(),
             1u32.into(),
         ))),
@@ -493,10 +463,10 @@ fn a_full_pointer_rewrite_does_not_adopt_another_read_carrier_at_the_same_addres
 fn full_program_argument_pointer_rewrite_reaches_a_displaced_copy() {
     let parameter = |id| {
         OldPointer::new(
-            OldAddress {
-                base: AddressBase::ExternalArgument,
-                offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 1),
-            },
+            Address::new(
+                AddressBase::ExternalArgument,
+                AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 1),
+            ),
             ProgramType::UInt8Pointer,
         )
     };
@@ -531,10 +501,10 @@ fn full_program_argument_pointer_rewrite_reaches_a_displaced_copy() {
 #[test]
 fn displaced_symbolic_pointer_rewrite_keeps_selected_bounds() {
     let source = OldPointer::new(
-        OldAddress::symbolic(Variable(916_211)),
+        Address::symbolic(Variable(916_211)),
         ProgramType::UInt8Pointer,
     );
-    let target_address = OldAddress::symbolic(Variable(916_212));
+    let target_address = Address::symbolic(Variable(916_212));
     let target = OldPointer::new(target_address.clone(), ProgramType::UInt8Pointer).with_bounds(
         Some(SubobjectBounds {
             start: target_address.clone(),
@@ -589,10 +559,10 @@ fn displaced_symbolic_pointer_rewrite_keeps_selected_bounds() {
 fn displaced_program_argument_rewrite_inherits_known_replacement_bounds() {
     let parameter = |id| {
         OldPointer::new(
-            OldAddress {
-                base: AddressBase::ExternalArgument,
-                offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 1),
-            },
+            Address::new(
+                AddressBase::ExternalArgument,
+                AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 1),
+            ),
             ProgramType::UInt8Pointer,
         )
     };
@@ -618,11 +588,11 @@ fn displaced_program_argument_rewrite_inherits_known_replacement_bounds() {
 #[test]
 fn displaced_original_pointer_keeps_its_bounds_beside_a_view_equality() {
     let original = OldPointer::new(
-        OldAddress::symbolic(Variable(916_251)),
+        Address::symbolic(Variable(916_251)),
         ProgramType::UInt8Pointer,
     );
     let other = OldPointer::new(
-        OldAddress::symbolic(Variable(916_252)),
+        Address::symbolic(Variable(916_252)),
         ProgramType::UInt8Pointer,
     );
     let source_view = original
@@ -650,7 +620,7 @@ fn displaced_original_pointer_keeps_its_bounds_beside_a_view_equality() {
 
 #[test]
 fn displaced_copy_keeps_a_domain_not_named_by_the_full_equality() {
-    let numeric = OldAddress::symbolic(Variable(916_261));
+    let numeric = Address::symbolic(Variable(916_261));
     let original = OldPointer::new(numeric.clone(), ProgramType::UInt8Pointer).with_bounds(Some(
         SubobjectBounds {
             start: numeric.clone(),
@@ -662,10 +632,10 @@ fn displaced_copy_keeps_a_domain_not_named_by_the_full_equality() {
         numeric.clone(),
         ProgramType::UInt8Pointer,
         &memory,
-        &OldAddress::symbolic(Variable(916_263)),
+        &Address::symbolic(Variable(916_263)),
     );
     let target = OldPointer::new(
-        OldAddress::symbolic(Variable(916_262)),
+        Address::symbolic(Variable(916_262)),
         ProgramType::UInt8Pointer,
     );
     let input = original.clone().with_address(numeric.offset_by_bytes(1));
@@ -693,18 +663,18 @@ fn rewriting_integer_address_zero_keeps_canonical_null_and_displacement() {
         OldMachineTerm::uint64_bitwise_and(word.clone(), OldMachineTerm::uint64_constant(!3));
     for value in [0, 1, 2, 3, 4, 5, u64::MAX] {
         for displacement in [0, 8] {
-            let mut input = OldAddress::from_integer_address(bits.clone());
-            input.offset = AddressOffset::constant(displacement);
+            let mut input = Address::from_integer_address(bits.clone());
+            input.set_offset(AddressOffset::constant(displacement));
             let replacement = OldMachineTerm::uint64_constant(value);
             let mut rewrite = TermRewrite::for_bits(&word, &replacement);
             let output = rewrite.pointer(&input);
             assert_eq!(rewrite.refusal(), None);
             assert_eq!(output.offset, input.offset);
             if value < 4 {
-                assert_eq!(output.base, OldAddress::null().base);
+                assert_eq!(output.base, Address::null().base);
             } else {
-                assert_ne!(output.base, OldAddress::null().base);
-                let AddressBase::PureFunctionApplication(application) = output.base else {
+                assert_ne!(output.base, Address::null().base);
+                let AddressBase::PureFunctionApplication(application) = output.base.clone() else {
                     panic!("a nonzero integer must retain its opaque address")
                 };
                 assert_eq!(

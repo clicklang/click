@@ -32,7 +32,8 @@ pub use reads::KernelMemoryRead;
 mod addresses;
 mod offsets;
 mod pointers;
-pub(crate) use addresses::{SharedAddress, SharedAddressBase};
+pub use addresses::{Address, AddressParts};
+pub(crate) use addresses::{AddressBlock, SharedAddress, SharedAddressBase};
 pub use machine::KernelMachineLiteral;
 pub(in crate::kernel) use machine::wrap_exact as wrap_exact_machine_value;
 use num_bigint::BigInt;
@@ -198,7 +199,7 @@ pub enum KernelTermNode {
         point: ProgramPoint,
         address: SharedAddress,
     },
-    /// OldAddress observation retains its exact prepared address and object annotation.
+    /// Address observation retains its exact prepared address and object annotation.
     IntegerAddress {
         address: SharedAddress,
         object_class: Option<crate::kernel::effective_type::CAccessClass>,
@@ -2108,7 +2109,7 @@ mod tests {
             vec![PureFunctionArgument::Value(ProgramValue::Int32(
                 OldMachineTerm::read_named(
                     ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
-                    Box::new(OldAddress::symbolic(Variable(87654328))),
+                    Box::new(Address::symbolic(Variable(87654328))),
                     LoadKind::Int32,
                 ),
             ))],
@@ -2237,10 +2238,7 @@ mod tests {
 
     #[test]
     fn legacy_pointer_equality_does_not_discard_auxiliary_qualifiers() {
-        let pointer = OldPointer::new(
-            OldAddress::symbolic(Variable(76)),
-            ProgramType::Int32Pointer,
-        );
+        let pointer = OldPointer::new(Address::symbolic(Variable(76)), ProgramType::Int32Pointer);
         let constant = pointer.clone().with_declared_object_class(Some(
             crate::kernel::effective_type::CAccessClass::Scalar(
                 crate::kernel::effective_type::CScalarClass::Int,
@@ -2271,7 +2269,7 @@ mod tests {
 
     #[test]
     fn legacy_adapter_keeps_complete_pointers_and_scoped_integer_nodes() {
-        let base = OldAddress::symbolic(Variable(75));
+        let base = Address::symbolic(Variable(75));
         let root = OldPointer::new(base.clone(), ProgramType::Int32Pointer);
         let member = root.clone().with_bounds(Some(SubobjectBounds {
             start: base,

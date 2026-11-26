@@ -148,7 +148,7 @@ pub(super) fn summarize(function: &ProgramFunction, summary: &mut AddressTakenSu
         crate::instrumentation::record_deterministic_work(1);
         match expression {
             ProgramExpression::Value(value) => {
-                if matches!(value, ProgramValue::Pointer(pointer) if pointer.address() != &crate::kernel::OldAddress::null())
+                if matches!(value, ProgramValue::Pointer(pointer) if pointer.address() != &crate::kernel::Address::null())
                 {
                     return false;
                 }
@@ -249,10 +249,7 @@ mod tests {
         let function = imported(program_seq(
             program_declare("capture", ProgramType::Int32),
             program_return(crate::kernel::program_expression::pointer_value(
-                OldAddress {
-                    base: "local:capture".into(),
-                    offset: AddressOffset::constant(0),
-                },
+                Address::new("local:capture".into(), AddressOffset::constant(0)),
             )),
         ));
         assert!(

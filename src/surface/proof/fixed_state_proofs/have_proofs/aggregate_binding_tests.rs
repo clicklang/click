@@ -5,10 +5,7 @@ use crate::kernel::{
 };
 
 fn aggregate_entry(count: u32) -> (ExecutionState, ProgramValueBindings) {
-    let source = OldAddress {
-        base: "local:caller_packet".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let source = Address::new("local:caller_packet".into(), AddressOffset::constant(0));
     let layout = AggregateLayout::new(
         8,
         8,
@@ -34,7 +31,7 @@ fn aggregate_entry(count: u32) -> (ExecutionState, ProgramValueBindings) {
         program_return(program_void_value()),
     );
     let caller =
-        ExecutionState::new().with_memory(SymbolicMemory::new().with_block(source.base, 8));
+        ExecutionState::new().with_memory(SymbolicMemory::new().with_block(source.base.clone(), 8));
     let arguments = values
         .values()
         .cloned()

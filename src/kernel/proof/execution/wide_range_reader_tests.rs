@@ -4,7 +4,7 @@ use crate::kernel::MemorySegment;
 // changed-cell framing dispatches to the native access rule.
 #[test]
 fn wide_interface_and_memory_effect_readers_preserve_the_range_kind() {
-    let base = OldAddress::symbolic(Variable(984_600));
+    let base = Address::symbolic(Variable(984_600));
     let wide = MemoryRange::new_wide(
         base.clone(),
         OldMachineTerm::uint64_constant(0),

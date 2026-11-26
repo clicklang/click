@@ -1238,7 +1238,7 @@ pub(super) fn theorem_application_bindings(
         // parent (`parent_consistent(t, 0)`).
         if crate::surface::lowering::argument_is_null_pointer_constant(argument, parameter_type) {
             let pointer = ProgramValue::typed_pointer(
-                crate::kernel::OldAddress::null(),
+                crate::kernel::Address::null(),
                 parameter_type.to_kernel_type(),
             );
             if let Some(element_type) = click_array_element_type(parameter_type) {
@@ -1246,7 +1246,7 @@ pub(super) fn theorem_application_bindings(
                     parameter.name().to_string(),
                     ClickArrayRef {
                         point: context.post_state.program_point(),
-                        pointer: crate::kernel::OldAddress::null(),
+                        pointer: crate::kernel::Address::null(),
                         element_type,
                     },
                 );

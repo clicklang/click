@@ -4,12 +4,9 @@ use super::*;
 fn token_discovery_follows_a_producer_defined_pointer_read() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-    let field = OldAddress {
-        base: "local:field".into(),
-        offset: AddressOffset::constant(0),
-    };
-    let value = OldAddress::symbolic(Variable(976_000));
-    let read = OldAddress::loaded_value(&memory, &field);
+    let field = Address::new("local:field".into(), AddressOffset::constant(0));
+    let value = Address::symbolic(Variable(976_000));
+    let read = Address::loaded_value(&memory, &field);
     let facts = PureFactContext::new();
     facts
         .equality_graph
@@ -32,8 +29,8 @@ fn token_discovery_follows_a_producer_defined_pointer_read() {
 #[test]
 fn class_candidates_follow_merges_and_removals_without_leaking_to_siblings() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = OldAddress::symbolic(Variable(976_100));
-    let alias = OldAddress::symbolic(Variable(976_101));
+    let base = Address::symbolic(Variable(976_100));
+    let alias = Address::symbolic(Variable(976_101));
     let held = ResourceFact::own_allocation(base.clone(), 4);
     let required = ResourceFact::own_allocation(alias.clone(), 4);
     let facts = PureFactContext::new();
@@ -73,12 +70,9 @@ mod scaling_tests {
 fn definitions_registered_after_publication_select_existing_payloads() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-    let field = OldAddress {
-        base: "local:late_field".into(),
-        offset: AddressOffset::constant(0),
-    };
-    let value = OldAddress::symbolic(Variable(976_200));
-    let read = OldAddress::loaded_value(&memory, &field);
+    let field = Address::new("local:late_field".into(), AddressOffset::constant(0));
+    let value = Address::symbolic(Variable(976_200));
+    let read = Address::loaded_value(&memory, &field);
     let wrap = |p| OldPointer::from_read(p, ProgramType::Int32Pointer, &memory, &field);
     let held = ResourceFact::own_designated_allocation(wrap(read), &AllocationSize::int32(4));
     let required =
@@ -106,7 +100,7 @@ fn memory_direct_support_preserves_held_identity_and_authority() {
         for owned in [false, true] {
             let _session = crate::kernel::VerificationSession::enter();
             let facts = PureFactContext::new();
-            let p = OldAddress::symbolic(Variable(976_300));
+            let p = Address::symbolic(Variable(976_300));
             let range = |start: u32, end: u32| {
                 if native {
                     MemoryRange::new_wide(
@@ -156,9 +150,7 @@ fn memory_direct_support_preserves_held_identity_and_authority() {
                 );
                 let wrong = ResourceFact::view_memory(
                     range(1, 3)
-                        .with_provenance(std::sync::Arc::new(OldAddress::symbolic(Variable(
-                            976_301,
-                        ))))
+                        .with_provenance(std::sync::Arc::new(Address::symbolic(Variable(976_301))))
                         .with_typed_carrier(),
                 );
                 assert!(context.directly_supporting_fact(&wrong, &facts).is_none());

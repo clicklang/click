@@ -340,7 +340,7 @@ fn nested_bitwise_evaluator_retains_values_and_unsupported_widths_decline() {
 fn retained_pointer_masks_admit_alignment_without_exporting_operands() {
     let _session = VerificationSession::enter();
     let f = MachineIntegerType::UInt64;
-    let pointer = OldAddress::symbolic(Variable(995625));
+    let pointer = Address::symbolic(Variable(995625));
     let address = OldMachineTerm::IntegerAddress(
         Box::new(pointer.clone()),
         crate::kernel::AddressObjectClass::NONE,

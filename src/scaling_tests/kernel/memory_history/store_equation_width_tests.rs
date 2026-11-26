@@ -5,9 +5,11 @@
 fn store_equation_work(unrelated: usize, stores: usize) -> usize {
     use crate::kernel::{ExecutionFacts, ExecutionPureFact};
     let _session = crate::kernel::VerificationSession::enter();
-    let cell = |index: u64| OldAddress {
-        base: "array".into(),
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(index)), 4),
+    let cell = |index: u64| {
+        Address::new(
+            "array".into(),
+            AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(index)), 4),
+        )
     };
     let mut memory = SymbolicMemory::new().with_block("array", 1 << 20);
     for index in 0..unrelated as u64 {

@@ -156,17 +156,18 @@ fn retained_block_bounds_require_the_full_index_and_preserve_missing_bounds() {
     let _session = crate::kernel::VerificationSession::enter();
     use MachineIntegerType as T;
     for ty in [T::Int64, T::UInt64] {
-        let base = OldAddress {
-            base: AddressBase::Concrete("retained-formation".into()),
-            offset: AddressOffset::constant(0),
-        };
+        let base = Address::new(
+            AddressBase::Concrete("retained-formation".into()),
+            AddressOffset::constant(0),
+        );
         let state = ExecutionState::new()
             .with_memory(SymbolicMemory::new().with_block(base.base.clone(), 64));
         let variable = OldMachineTerm::Variable(Variable(993200));
-        let pointer = OldAddress {
-            base: base.base.clone(),
-            offset: AddressOffset::int64_scaled(retained(ty, &variable), 4, ty == T::UInt64),
-        };
+        let pointer = base.with_offset(AddressOffset::int64_scaled(
+            retained(ty, &variable),
+            4,
+            ty == T::UInt64,
+        ));
         let root = PureFactContext::new();
         let exports = KernelTermExport::machine_export_count();
         let guards = address_base_bounds(&state, &pointer, 4, &root).unwrap();
@@ -205,10 +206,10 @@ mod scaling_tests {
 #[test]
 fn coordinate_reconstruction_keeps_the_selected_read_state() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = OldAddress {
-        base: AddressBase::Concrete("coordinate-retained_state".into()),
-        offset: AddressOffset::constant(0),
-    };
+    let pointer = Address::new(
+        AddressBase::Concrete("coordinate-retained_state".into()),
+        AddressOffset::constant(0),
+    );
     let before = SymbolicMemory::new()
         .with_block(pointer.base.clone(), 8)
         .store(

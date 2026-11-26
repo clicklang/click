@@ -4481,7 +4481,7 @@ pub(super) fn plan_pointer_advanced_load_equality(
     None
 }
 
-fn registered_load_pointer(term: &OldMachineTerm) -> Option<OldAddress> {
+fn registered_load_pointer(term: &OldMachineTerm) -> Option<Address> {
     crate::kernel::scalar_read_observation(crate::kernel::MachineOperandView::Old(term))
         .map(|read| read.pointer)
 }

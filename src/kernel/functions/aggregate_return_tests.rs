@@ -24,7 +24,7 @@ fn copy_function() -> ProgramFunction {
     .with_return_aggregate_layout(node_layout())
 }
 
-fn pointer(value: &ProgramValue) -> OldAddress {
+fn pointer(value: &ProgramValue) -> Address {
     let ProgramValue::Pointer(value) = value else {
         panic!("expected an aggregate storage pointer");
     };
@@ -599,7 +599,7 @@ fn construction_destination_survives_substitution_and_requires_agreement_at_join
     let variable = Variable(873_003);
     let state = ExecutionState::new()
         .with_population_creation_tracking()
-        .with_aggregate_return_destination(OldAddress::symbolic(variable), node_layout());
+        .with_aggregate_return_destination(Address::symbolic(variable), node_layout());
     let mut variables = BTreeSet::new();
     collect_execution_state_bitvector_variables(&state, &mut variables);
     assert!(variables.contains(&variable));
@@ -896,7 +896,7 @@ fn aggregate_copy_return_refuses_partial_initialization_without_changing_state()
 #[test]
 fn symbolic_construction_storage_requires_written_fields_before_copy_return() {
     let _session = crate::kernel::VerificationSession::enter();
-    let source = OldAddress::symbolic(Variable(870_003));
+    let source = Address::symbolic(Variable(870_003));
     let mut state = ExecutionState::new()
         .with_population_creation_tracking()
         .with_memory(SymbolicMemory::new().with_uninitialized_block(source.base.clone(), 16));
@@ -923,7 +923,7 @@ fn symbolic_construction_storage_requires_written_fields_before_copy_return() {
 #[test]
 fn symbolic_construction_storage_is_unreadable_until_written() {
     let _session = crate::kernel::VerificationSession::enter();
-    let source = OldAddress::symbolic(Variable(870_004));
+    let source = Address::symbolic(Variable(870_004));
     let raw = SymbolicMemory::new().with_uninitialized_block(source.base.clone(), 4);
     for (mode, assumptions) in [
         ("ordinary", PureFactContext::new()),
@@ -990,8 +990,8 @@ fn symbolic_construction_storage_is_unreadable_until_written() {
 #[test]
 fn symbolic_construction_storage_respects_known_aliases() {
     let _session = crate::kernel::VerificationSession::enter();
-    let source = OldAddress::symbolic(Variable(870_005));
-    let alias = OldAddress::symbolic(Variable(870_006));
+    let source = Address::symbolic(Variable(870_005));
+    let alias = Address::symbolic(Variable(870_006));
     let assumptions = PureFactContext::new().assume_condition(
         OldConditionTerm::address_equal(source.clone(), alias.clone()),
         true,
@@ -1066,9 +1066,9 @@ fn symbolic_construction_storage_respects_known_aliases() {
 // when the resource uses another spelling that could alias the destination.
 #[test]
 fn naming_symbolic_construction_storage_does_not_initialize_it() {
-    let source = OldAddress::symbolic(Variable(870_007));
+    let source = Address::symbolic(Variable(870_007));
     let raw = SymbolicMemory::new().with_uninitialized_block(source.base.clone(), 4);
-    for address in [source.clone(), OldAddress::symbolic(Variable(870_008))] {
+    for address in [source.clone(), Address::symbolic(Variable(870_008))] {
         let named = raw
             .clone()
             .materialize_named_cell(address.clone(), ProgramValue::Int32(37u32.into()));
@@ -1082,7 +1082,7 @@ fn naming_symbolic_construction_storage_does_not_initialize_it() {
 #[test]
 fn symbolic_construction_initialization_survives_havoc_and_intersects_at_join() {
     let _session = crate::kernel::VerificationSession::enter();
-    let source = OldAddress::symbolic(Variable(870_009));
+    let source = Address::symbolic(Variable(870_009));
     let raw = SymbolicMemory::new().with_uninitialized_block(source.base.clone(), 8);
     let partial = raw
         .clone()
@@ -1114,7 +1114,7 @@ fn symbolic_construction_initialization_survives_havoc_and_intersects_at_join() 
 fn symbolic_construction_initialization_substitution_preserves_size() {
     let _session = crate::kernel::VerificationSession::enter();
     let variable = Variable(870_012);
-    let source = OldAddress::symbolic(variable);
+    let source = Address::symbolic(variable);
     let raw = SymbolicMemory::new().with_uninitialized_block(source.base.clone(), 4);
     let destination = SymbolicMemory::frame_local_pointer(20, "container").offset_by_bytes(8);
     let mapped = crate::kernel::reasoning::substitute_pointer_variable_in_memory(
@@ -1138,12 +1138,12 @@ fn construction_object_offsets_participate_in_fresh_variable_collection() {
     let _session = crate::kernel::VerificationSession::enter();
     let source_variable = Variable(870_013);
     let offset_variable = Variable(870_014);
-    let source = OldAddress::symbolic(source_variable);
+    let source = Address::symbolic(source_variable);
     let raw = SymbolicMemory::new().with_uninitialized_block(source.base.clone(), 4);
-    let destination = OldAddress {
-        base: "local:variable-container".into(),
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(offset_variable), 4),
-    };
+    let destination = Address::new(
+        "local:variable-container".into(),
+        AddressOffset::scale_int32(OldMachineTerm::Variable(offset_variable), 4),
+    );
     let mapped = crate::kernel::reasoning::substitute_pointer_variable_in_memory(
         &raw,
         source_variable,
@@ -1171,7 +1171,7 @@ fn construction_object_offsets_participate_in_fresh_variable_collection() {
 #[test]
 fn construction_initialization_cannot_be_erased_or_seeded_by_a_proof_shortcut() {
     let _session = crate::kernel::VerificationSession::enter();
-    let source = OldAddress::symbolic(Variable(870_015));
+    let source = Address::symbolic(Variable(870_015));
     let raw = SymbolicMemory::new().with_uninitialized_block(source.base.clone(), 4);
     let assumptions = PureFactContext::new();
     let mut havoc = raw
@@ -1187,9 +1187,9 @@ fn construction_initialization_cannot_be_erased_or_seeded_by_a_proof_shortcut() 
 #[test]
 fn forgotten_construction_writes_keep_their_address_variables_reserved() {
     let _session = crate::kernel::VerificationSession::enter();
-    let source = OldAddress::symbolic(Variable(870_017));
+    let source = Address::symbolic(Variable(870_017));
     let alias_variable = Variable(870_018);
-    let alias = OldAddress::symbolic(alias_variable);
+    let alias = Address::symbolic(alias_variable);
     let written = SymbolicMemory::new()
         .with_uninitialized_block(source.base.clone(), 4)
         .store(alias.clone(), ProgramValue::Int32(37u32.into()));
@@ -1344,7 +1344,7 @@ fn construction_parameter_completion_checks_original_storage() {
 #[test]
 fn raw_object_footprint_does_not_resize_or_initialize_parent_storage() {
     let _session = crate::kernel::VerificationSession::enter();
-    let at = OldAddress::symbolic(Variable(873_031));
+    let at = Address::symbolic(Variable(873_031));
     let memory = SymbolicMemory::new()
         .with_block(at.base.clone(), 32)
         .with_uninitialized_object(at.offset_by_bytes(8), 8);
@@ -1567,7 +1567,7 @@ mod scaling_tests {
 #[test]
 fn aggregate_return_temporary_copy_requires_its_recorded_size() {
     let layout = node_layout();
-    let temporary = OldAddress::verifier_temporary(Variable(870_101));
+    let temporary = Address::verifier_temporary(Variable(870_101));
     let source = OldPointer::new(temporary.clone(), ProgramType::UInt8Pointer);
     let assumptions = PureFactContext::new();
     for bytes in [0, 8, 16] {
@@ -1588,10 +1588,7 @@ fn aggregate_return_temporary_copy_requires_its_recorded_size() {
         AddressBase::Heap(870_102),
         AddressBase::Symbolic(Variable(870_103)),
     ] {
-        let pointer = OldAddress {
-            base: block.clone(),
-            offset: AddressOffset::constant(0),
-        };
+        let pointer = Address::new(block.clone(), AddressOffset::constant(0));
         let source = OldPointer::new(pointer, ProgramType::UInt8Pointer);
         let state = ExecutionState::new().with_memory(SymbolicMemory::new().with_block(block, 16));
         assert!(

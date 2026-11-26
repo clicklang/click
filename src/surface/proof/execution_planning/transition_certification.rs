@@ -1246,10 +1246,10 @@ mod condition_transition_tests {
     fn condition_transition_still_checks_execution_obligations() {
         let state = ExecutionState::new().with_local(
             "p",
-            ProgramValue::pointer(OldAddress {
-                base: "havoc:condition-obligation".into(),
-                offset: AddressOffset::constant(0),
-            }),
+            ProgramValue::pointer(Address::new(
+                "havoc:condition-obligation".into(),
+                AddressOffset::constant(0),
+            )),
         );
         let condition = crate::kernel::program_expression::load(
             crate::kernel::program_expression::variable("p"),
@@ -1278,11 +1278,8 @@ mod condition_transition_tests {
     #[test]
     fn generated_load_binding_collection_tombstones_conflicting_keys() {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-        let pointer = OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::constant(0),
-        };
-        let load = |pointer: OldAddress| {
+        let pointer = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0));
+        let load = |pointer: Address| {
             OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&memory),
                 Box::new(pointer),
@@ -1290,7 +1287,7 @@ mod condition_transition_tests {
             )
         };
         let variable = Variable(0xfeed);
-        let producer_fact = |pointer: OldAddress| {
+        let producer_fact = |pointer: Address| {
             let mut facts = crate::kernel::ExecutionFacts::new();
             crate::kernel::record_load_variable_defining_fact(variable, load(pointer), &mut facts);
             facts.pop().expect("producer emits defining fact")
@@ -1305,14 +1302,14 @@ mod condition_transition_tests {
         ));
 
         let conflicting = generated_load_bindings_from_facts(&[
-            producer_fact(OldAddress {
-                base: AddressBase::ExternalArgument,
-                offset: AddressOffset::constant(0),
-            }),
-            producer_fact(OldAddress {
-                base: AddressBase::ExternalArgument,
-                offset: AddressOffset::constant(4),
-            }),
+            producer_fact(Address::new(
+                AddressBase::ExternalArgument,
+                AddressOffset::constant(0),
+            )),
+            producer_fact(Address::new(
+                AddressBase::ExternalArgument,
+                AddressOffset::constant(4),
+            )),
         ]);
         assert!(matches!(
             conflicting.as_slice(),
@@ -1324,10 +1321,7 @@ mod condition_transition_tests {
 
     #[test]
     fn real_scalar_load_transition_retains_its_read_without_a_binding() {
-        let pointer = OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::constant(0),
-        };
+        let pointer = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0));
         let parsed = crate::languages::c::syntax::parse_functions_for_source(
             r#"
             struct owner { int32 len; };
@@ -1410,10 +1404,7 @@ mod condition_transition_tests {
 
     #[test]
     fn parsed_compound_field_update_retains_its_structural_read() {
-        let pointer = OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::constant(0),
-        };
+        let pointer = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0));
         let parsed = crate::languages::c::syntax::parse_functions_for_source(
             r#"
             struct counter { uint32 value; };
@@ -1528,10 +1519,10 @@ mod condition_transition_tests {
     #[test]
     fn typed_load_source_metadata_is_semantically_neutral() {
         use std::collections::HashSet;
-        let pointer = ProgramExpression::Value(ProgramValue::pointer(OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::constant(8),
-        }));
+        let pointer = ProgramExpression::Value(ProgramValue::pointer(Address::new(
+            AddressBase::ExternalArgument,
+            AddressOffset::constant(8),
+        )));
         let source = |occurrence| {
             crate::kernel::ExpressionLoadSource::new(crate::kernel::LoadSourceId {
                 owner: crate::kernel::LoadSourceOwnerId {

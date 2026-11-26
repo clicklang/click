@@ -21,7 +21,7 @@ fn folded_view_preparation_uses_the_indexed_owner() {
     let samples = [4, 16, 64].map(|count| {
         let _session = crate::kernel::VerificationSession::enter();
         let assumptions = PureFactContext::new();
-        let pointer = OldAddress::symbolic(Variable(890_001));
+        let pointer = Address::symbolic(Variable(890_001));
         let owner = ResourceFact::own_composite(
             "wide".into(),
             vec![ProgramValue::pointer(pointer.clone())],
@@ -96,10 +96,7 @@ fn preparing_a_reserved_fold_leaves_unrelated_caller_heads_unmaterialized() {
         ))],
         vec![],
     )]);
-    let heap = |id| OldAddress {
-        base: AddressBase::Heap(id),
-        offset: AddressOffset::constant(0),
-    };
+    let heap = |id| Address::new(AddressBase::Heap(id), AddressOffset::constant(0));
     let cell =
         |id| ResourceFact::own_composite("cell".into(), vec![ProgramValue::pointer(heap(id))]);
     let samples = [16, 64, 256].map(|extras| {
@@ -169,7 +166,7 @@ fn verified_call_borrow_requirement_building_does_not_visit_live_borrows() {
                 lender,
                 reader,
                 MemoryRange::new(
-                    OldAddress::symbolic(Variable(93_000 + i)),
+                    Address::symbolic(Variable(93_000 + i)),
                     0u32.into(),
                     1u32.into(),
                 ),
@@ -446,9 +443,11 @@ fn returning_one_borrowed_owner_does_not_rebuild_its_memory_block() {
 /// unrelated owners. Each query forks the same prepared residual frame.
 #[test]
 fn call_borrow_restoration_ignores_ambient_aliases_and_frame() {
-    let symbolic = |id| OldAddress {
-        base: AddressBase::Symbolic(Variable(id)),
-        offset: AddressOffset::constant(0),
+    let symbolic = |id| {
+        Address::new(
+            AddressBase::Symbolic(Variable(id)),
+            AddressOffset::constant(0),
+        )
     };
     let own = |base| ResourceFact::own_memory(MemoryRange::new(base, 0u32.into(), 4u32.into()));
     for axis in ["aliases", "frame"] {
@@ -522,7 +521,7 @@ fn call_borrow_restoration_ignores_ambient_aliases_and_frame() {
 }
 
 fn check_produced_call_return_lowering(axis: &str, overlap: bool) {
-    let symbolic = |id| OldAddress::symbolic(Variable(id));
+    let symbolic = |id| Address::symbolic(Variable(id));
     let mut samples = Vec::new();
     for count in [4_u64, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();

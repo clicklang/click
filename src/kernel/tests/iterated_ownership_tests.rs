@@ -21,14 +21,11 @@ const DATA: u64 = 7_000_001;
 const OCCUPIED: u64 = 7_000_002;
 const UNRELATED: u64 = 7_000_003;
 
-fn heap_base(identity: u64) -> OldAddress {
-    OldAddress {
-        base: AddressBase::Heap(identity),
-        offset: AddressOffset::constant(0),
-    }
+fn heap_base(identity: u64) -> Address {
+    Address::new(AddressBase::Heap(identity), AddressOffset::constant(0))
 }
 
-fn cell(base: u64, index: u32) -> OldAddress {
+fn cell(base: u64, index: u32) -> Address {
     heap_base(base).offset_by_elements(OldMachineTerm::constant(index), 4)
 }
 
@@ -280,24 +277,23 @@ mod scaling_tests {
 
 #[test]
 fn indexed_slots_use_the_selected_clause_across_states() {
-    let source = OldAddress {
-        base: "iterated-pointer-slot".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let source = Address::new("iterated-pointer-slot".into(), AddressOffset::constant(0));
     let before = SymbolicMemory::new()
         .with_block("iterated-pointer-slot", 8)
         .store(cell(OCCUPIED, 0), int32(0));
     let after = before.clone().store(cell(UNRELATED, 0), int32(1));
-    let read = |memory: &SymbolicMemory, address: &OldAddress| OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scaled_int32_node(
-            OldMachineTerm::read_named(
-                ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
-                Box::new(address.clone()),
-                LoadKind::of_type(ProgramType::Int32Pointer).unwrap(),
+    let read = |memory: &SymbolicMemory, address: &Address| {
+        Address::new(
+            AddressBase::ExternalArgument,
+            AddressOffset::scaled_int32_node(
+                OldMachineTerm::read_named(
+                    ProgramPoint::at(&(crate::kernel::intern_memory(memory.clone()))),
+                    Box::new(address.clone()),
+                    LoadKind::of_type(ProgramType::Int32Pointer).unwrap(),
+                ),
+                4,
             ),
-            4,
-        ),
+        )
     };
     let held_base = read(&before, &source);
     let current_base = read(&after, &source);

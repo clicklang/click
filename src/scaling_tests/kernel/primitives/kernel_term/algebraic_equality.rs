@@ -27,7 +27,7 @@ fn common_algebraic_equality_visits_shared_constructor_pairs_once() {
             ))),
         };
         let pointer = OldPointer::new(
-            OldAddress::symbolic(Variable(999674)),
+            Address::symbolic(Variable(999674)),
             ProgramType::Int32Pointer,
         );
         let mut roots = [pointer.clone(), pointer].map(|pointer| {

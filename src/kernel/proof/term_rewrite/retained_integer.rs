@@ -524,7 +524,7 @@ mod tests {
     fn exact_observation_rewrite_preserves_historical_reads() {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let address = OldAddress::symbolic(Variable(992842));
+        let address = Address::symbolic(Variable(992842));
         let before = intern_memory(SymbolicMemory::new());
         let after = intern_memory(SymbolicMemory::new().store(
             address.clone(),
@@ -613,7 +613,7 @@ mod tests {
     fn retained_integer_replacements_preserve_registered_and_structural_observations() {
         let _session = VerificationSession::enter();
         let from = Variable(991930);
-        let address = OldAddress::symbolic(Variable(991931));
+        let address = Address::symbolic(Variable(991931));
         let memory = intern_memory(SymbolicMemory::new());
         let load = crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
@@ -706,10 +706,10 @@ mod tests {
     fn retained_machine_observations_match_native_widths_literals_reads_and_changes() {
         let _session = VerificationSession::enter();
         let from = Variable(991970);
-        let address = OldAddress {
-            base: AddressBase::Symbolic(Variable(991971)),
-            offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(from), 4),
-        };
+        let address = Address::new(
+            AddressBase::Symbolic(Variable(991971)),
+            AddressOffset::scaled_int32_node(OldMachineTerm::Variable(from), 4),
+        );
         let memory = intern_memory(SymbolicMemory::new());
         let read = OldMachineTerm::read_named(
             ProgramPoint::at(&memory),

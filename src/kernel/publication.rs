@@ -221,7 +221,7 @@ pub(super) fn execute_publication_paths(
 /// Consumes the flag's explicit storage ownership and mints both rights.
 fn initialize(
     state: &ExecutionState,
-    flag: &OldAddress,
+    flag: &Address,
     value: &ProgramValue,
     payload: &crate::kernel::ResourceDescription,
     assumptions: &PureFactContext,
@@ -297,7 +297,7 @@ fn payload_fact(right: &PublicationRight) -> ResourceFact {
 /// payload's memory as an unlock forgets protected memory.
 fn release_store(
     state: &ExecutionState,
-    flag: &OldAddress,
+    flag: &Address,
     desired: &ProgramValue,
     order: &ProgramValue,
     assumptions: &PureFactContext,
@@ -389,7 +389,7 @@ fn release_store(
 /// some value and receives nothing.
 fn acquire_load(
     state: &ExecutionState,
-    flag: &OldAddress,
+    flag: &Address,
     order: &ProgramValue,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -507,11 +507,11 @@ mod tests {
     use super::*;
     use crate::kernel::{ResourceDescription, ResourceFieldSchema};
 
-    fn flag(index: usize) -> OldAddress {
-        OldAddress {
-            base: format!("publication-flag-{index}").into(),
-            offset: AddressOffset::constant(0),
-        }
+    fn flag(index: usize) -> Address {
+        Address::new(
+            format!("publication-flag-{index}").into(),
+            AddressOffset::constant(0),
+        )
     }
 
     fn payload(index: usize) -> ResourceDescription {
@@ -539,10 +539,10 @@ mod tests {
             resources = resources.unchecked_with_fact(right(PublicationSide::Subscriber, index));
         }
         for index in subscribers..subscribers + unrelated {
-            let cell = OldAddress {
-                base: format!("unrelated-cell-{index}").into(),
-                offset: AddressOffset::constant(0),
-            };
+            let cell = Address::new(
+                format!("unrelated-cell-{index}").into(),
+                AddressOffset::constant(0),
+            );
             memory = memory
                 .with_block(cell.base.clone(), 4)
                 .store(cell.clone(), int32(0));

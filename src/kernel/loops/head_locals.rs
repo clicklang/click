@@ -12,7 +12,7 @@ struct LoopHeadLocal {
     name: BindingName,
     program_type: ProgramType,
     value: ProgramValue,
-    slot: Option<OldAddress>,
+    slot: Option<Address>,
 }
 
 impl<'a> LoopHeadLocals<'a> {

@@ -40,10 +40,7 @@ fn variable_collection_walks_a_shared_state_dag_once() {
 #[test]
 fn variable_collection_after_a_store_costs_the_store() {
     let block = AddressBase::Concrete("counted-history".to_string());
-    let at = |offset: i64| OldAddress {
-        base: block.clone(),
-        offset: AddressOffset::constant(offset),
-    };
+    let at = |offset: i64| Address::new(block.clone(), AddressOffset::constant(offset));
     let samples = [16usize, 64, 256, 1024].map(|cells| {
         let mut memory = SymbolicMemory::new().with_block("counted-history", 4 * cells as u32 + 8);
         for index in 0..cells {

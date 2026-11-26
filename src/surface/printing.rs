@@ -1834,7 +1834,7 @@ mod tests {
                 panic!("expected a pointer-to-address cast");
             };
             **expression = ProgramExpression::Value(ProgramValue::typed_pointer(
-                OldAddress::null(),
+                Address::null(),
                 ProgramType::Int32Pointer,
             ));
 

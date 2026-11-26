@@ -1487,25 +1487,24 @@ fn known_compound_comparison_work_is_linear_in_selected_clauses() {
 #[test]
 fn automatic_object_separation_ignores_ambient_address_facts() {
     use crate::kernel::{
-        AddressBase, AddressOffset, LocalBindingId, LocalFunctionId, LocalStorageInstance,
-        MemoryRange, OldAddress, OldConditionTerm, Resource, Variable,
+        Address, AddressBase, AddressOffset, LocalBindingId, LocalFunctionId, LocalStorageInstance,
+        MemoryRange, OldConditionTerm, Resource, Variable,
     };
 
     let _session = crate::kernel::VerificationSession::enter();
     let function = LocalFunctionId::new(Some("separation.c".into()), "f".into());
-    let local = |index| OldAddress {
-        base: AddressBase::AutomaticLocal {
-            binding: LocalBindingId::new(function.clone(), false, index, None),
-            instance: LocalStorageInstance::Implicit,
-        },
-        offset: AddressOffset::constant(0),
+    let local = |index| {
+        Address::new(
+            AddressBase::AutomaticLocal {
+                binding: LocalBindingId::new(function.clone(), false, index, None),
+                instance: LocalStorageInstance::Implicit,
+            },
+            AddressOffset::constant(0),
+        )
     };
     let selected = local(0);
-    let incoming = OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::constant(0),
-    };
-    let alias = OldAddress::symbolic(Variable(1));
+    let incoming = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0));
+    let alias = Address::symbolic(Variable(1));
     let resource = |pointer| {
         Box::new(Resource::Memory(MemoryRange::new_with_element_width(
             pointer,
@@ -1535,10 +1534,7 @@ fn automatic_object_separation_ignores_ambient_address_facts() {
         )];
         for i in 0..size {
             facts.push(Proposition::condition_is(
-                OldConditionTerm::address_equal(
-                    alias.clone(),
-                    OldAddress::symbolic(Variable(10 + i)),
-                ),
+                OldConditionTerm::address_equal(alias.clone(), Address::symbolic(Variable(10 + i))),
                 true,
             ));
             facts.push(Proposition::Predicate {

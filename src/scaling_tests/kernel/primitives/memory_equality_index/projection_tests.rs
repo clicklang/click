@@ -24,7 +24,7 @@ fn projection_context_attachment_does_not_scan_unrelated_facts() {
             crate::instrumentation::measure_deterministic_work(|| {
                 let context = projection_context(&head, &definition, &memory, &facts);
                 let children = prior_child(context, &head);
-                let alias = OldAddress::symbolic(Variable(881_002));
+                let alias = Address::symbolic(Variable(881_002));
                 assert!(
                     children
                         .concrete_read_entries(&alias, 4, &facts)
@@ -64,7 +64,7 @@ fn owned_frontier_attachment_ignores_unrelated_facts_and_caller_resources() {
                 true,
             );
             ambient = ambient.unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
-                OldAddress::symbolic(Variable(895_000 + i)),
+                Address::symbolic(Variable(895_000 + i)),
                 OldMachineTerm::constant(0),
                 OldMachineTerm::constant(1),
             )));
@@ -81,7 +81,7 @@ fn owned_frontier_attachment_ignores_unrelated_facts_and_caller_resources() {
                     "frontier expansion must not import ambient authority"
                 );
                 let children = prior_child(context, &head);
-                let alias = OldAddress::symbolic(Variable(881_002));
+                let alias = Address::symbolic(Variable(881_002));
                 assert!(
                     children
                         .concrete_read_entries(&alias, 4, &facts)
@@ -90,7 +90,7 @@ fn owned_frontier_attachment_ignores_unrelated_facts_and_caller_resources() {
                 );
                 assert!(children.permits_memory_read(&alias, 4, &facts));
                 assert!(!children.permits_memory_read(
-                    &OldAddress::symbolic(Variable(895_000)),
+                    &Address::symbolic(Variable(895_000)),
                     4,
                     &facts
                 ));
@@ -130,7 +130,7 @@ fn frontier_coverage_does_not_scan_unrelated_equality_facts() {
                     coverage_context(available, std::slice::from_ref(&wanted), &facts);
                 assert!(
                     input
-                        .concrete_write_entries(&OldAddress::symbolic(Variable(881_002)), 4, &facts)
+                        .concrete_write_entries(&Address::symbolic(Variable(881_002)), 4, &facts)
                         .unwrap()
                         .exact()
                 );
@@ -219,7 +219,7 @@ fn fresh_and_framing_publication_do_not_scan_ambient_inputs() {
             crate::instrumentation::measure_deterministic_work(|| {
                 let fresh = ResourceContext::new_with_equalities(&facts)
                     .unchecked_with_fact(coverage_piece(881_000, 0, 1));
-                let alias = OldAddress::symbolic(Variable(881_002));
+                let alias = Address::symbolic(Variable(881_002));
                 assert!(
                     fresh
                         .concrete_write_entries(&alias, 4, &facts)

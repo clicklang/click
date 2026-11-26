@@ -186,7 +186,7 @@ mod tests {
                 ))],
             }),
             ProgramValue::typed_pointer(
-                OldAddress::symbolic(Variable(996937)),
+                Address::symbolic(Variable(996937)),
                 ProgramType::Int32Pointer,
             ),
             ProgramValue::Parameter(Box::new(AlgebraicTerm {

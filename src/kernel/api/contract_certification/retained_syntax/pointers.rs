@@ -1,24 +1,21 @@
 //! Borrow exact pointer payloads and written addresses during certification.
 use super::*;
 use crate::kernel::{
-    AddressBase, AddressOffset, KernelAddressOffset, OffsetTree, OffsetView, OldAddress,
-    OldPointer, RetainedPointerMetadata, SharedAddress, SharedAddressOffset, SharedPointer,
+    Address, AddressBase, AddressOffset, KernelAddressOffset, OffsetTree, OffsetView, OldPointer,
+    RetainedPointerMetadata, SharedAddress, SharedAddressOffset, SharedPointer,
 };
 use std::borrow::Cow;
 
 #[derive(Clone, Copy)]
 enum BorrowedAddress<'a> {
-    Native(&'a OldAddress),
+    Native(&'a Address),
     Shared(&'a SharedAddress),
 }
 impl<'a> BorrowedAddress<'a> {
     fn parts(self) -> (&'a AddressBase, Offset<'a>) {
         match self {
             Self::Native(value) => (&value.base, Offset::Native(&value.offset)),
-            Self::Shared(value) => (
-                value.node().base.native_atom(),
-                Offset::Shared(&value.node().offset),
-            ),
+            Self::Shared(value) => (value.atom(), Offset::Shared(value.offset())),
         }
     }
 }
@@ -244,7 +241,7 @@ impl Comparison {
             (None, None) => None,
         }
     }
-    pub(super) fn pointer(&mut self, a: &OldAddress, b: &OldAddress) -> bool {
+    pub(super) fn pointer(&mut self, a: &Address, b: &Address) -> bool {
         self.addresses(BorrowedAddress::Native(a), BorrowedAddress::Native(b))
     }
     pub(super) fn shared_addresses(&mut self, a: &SharedAddress, b: &SharedAddress) -> bool {

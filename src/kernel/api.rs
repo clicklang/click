@@ -61,7 +61,7 @@ pub(crate) struct MemoryAccessElementBound {
 
 pub(crate) fn memory_access_element_bound(
     memory: &SymbolicMemory,
-    pointer: &OldAddress,
+    pointer: &Address,
     byte_width: u32,
 ) -> Option<MemoryAccessElementBound> {
     let size = memory.block_size(&pointer.base)?;
@@ -318,7 +318,7 @@ pub fn float64(bits: impl Into<OldMachineTerm>) -> ProgramValue {
 /// materialization of loads embedded in the key and pointer forms.
 pub(crate) fn memory_holds_live_heap_allocation_at(
     memory: &super::SymbolicMemory,
-    pointer: &OldAddress,
+    pointer: &Address,
     assumptions: &PureFactContext,
 ) -> bool {
     memory.is_live_heap_address(pointer, assumptions)
@@ -2067,7 +2067,7 @@ fn abstract_execution_state_for_join_across_with_policy(
                     join_variable(&mut variables, &mut budget)?,
                 )),
                 ProgramType::FunctionPointer(_) => ProgramValue::typed_pointer(
-                    OldAddress::symbolic_function(join_variable(&mut variables, &mut budget)?),
+                    Address::symbolic_function(join_variable(&mut variables, &mut budget)?),
                     *program_type,
                 ),
                 ProgramType::Int8Array(_) => {
@@ -2087,7 +2087,7 @@ fn abstract_execution_state_for_join_across_with_policy(
                     unreachable!("array objects use LocalBinding::ArrayObject")
                 }
                 _ => ProgramValue::typed_pointer(
-                    OldAddress::symbolic(join_variable(&mut variables, &mut budget)?),
+                    Address::symbolic(join_variable(&mut variables, &mut budget)?),
                     *program_type,
                 ),
             }
@@ -3816,7 +3816,7 @@ pub(crate) fn execution_state_with_assumed_mutex_inputs(
 
 pub(crate) fn program_mutex_guard_resource(
     state: &ExecutionState,
-    mutex: &OldAddress,
+    mutex: &Address,
     abstract_entry: bool,
 ) -> Option<ResourceFact> {
     crate::kernel::mutexes::guard_resource(state, mutex, abstract_entry)
@@ -3824,7 +3824,7 @@ pub(crate) fn program_mutex_guard_resource(
 
 pub(crate) fn program_mutex_live_resource(
     state: &ExecutionState,
-    mutex: &OldAddress,
+    mutex: &Address,
     abstract_entry: bool,
 ) -> Option<ResourceFact> {
     crate::kernel::mutexes::live_resource(state, mutex, abstract_entry)
@@ -3833,7 +3833,7 @@ pub(crate) fn program_mutex_live_resource(
 /// Construct a contract requirement; this does not establish ownership.
 pub(crate) fn program_mutex_use_resource_with_type(
     state: &ExecutionState,
-    mutex: &OldAddress,
+    mutex: &Address,
     protected: ResourceDescription,
 ) -> ResourceFact {
     let fact = program_mutex_use_resource(state, mutex);
@@ -3844,10 +3844,7 @@ pub(crate) fn program_mutex_use_resource_with_type(
     ResourceFact::own(Resource::MutexUse(identity))
 }
 
-pub(crate) fn program_mutex_use_resource(
-    state: &ExecutionState,
-    mutex: &OldAddress,
-) -> ResourceFact {
+pub(crate) fn program_mutex_use_resource(state: &ExecutionState, mutex: &Address) -> ResourceFact {
     crate::kernel::mutexes::use_resource(state, mutex)
 }
 
@@ -4307,7 +4304,7 @@ fn install_borrowed_contract_inputs(
                     BorrowRefusalSubject::with_support_id(occurrence),
                 )
             })?;
-        // OldAddress-backed aggregate parameters and compiler-created local
+        // Address-backed aggregate parameters and compiler-created local
         // arrays are storage owned by this activation. Their bounded views
         // use the existing local-storage check at each call; they are not
         // caller-supplied shared borrows and therefore need no external root.
@@ -4892,8 +4889,8 @@ pub fn forall_guided_instantiation_candidate_values(
 /// instantiation and closing tactic still check the guards and read point.
 fn guided_byte_read_index(
     binder: Variable,
-    pattern: &OldAddress,
-    pointer: &OldAddress,
+    pattern: &Address,
+    pointer: &Address,
 ) -> Option<OldMachineTerm> {
     crate::instrumentation::record_deterministic_work(1);
     let (base_offset, index_offset) = match pattern.offset.view() {
@@ -4911,10 +4908,7 @@ fn guided_byte_read_index(
     if value.operand_view().variable() != Some(&binder) {
         return None;
     }
-    let base = OldAddress {
-        base: pattern.base.clone(),
-        offset: base_offset,
-    };
+    let base = pattern.with_offset(base_offset);
     let index = pointer.shared_wide_element_index_from_base(&base, 1)?;
     let index = index.operand_view();
     index
@@ -6212,10 +6206,7 @@ mod proof_case_evidence_tests {
 
     #[test]
     fn branch_memory_delta_uses_the_full_changed_cell_width() {
-        let pointer = OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::constant(0),
-        };
+        let pointer = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0));
         let escrow = ResourceFact::own_memory(MemoryRange::new(
             pointer.clone(),
             OldMachineTerm::constant(0),
@@ -6233,18 +6224,12 @@ mod proof_case_evidence_tests {
         let base = SymbolicMemory::new()
             .with_block("arg", 8)
             .store(pointer.clone(), int32(0));
-        let later_byte = OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::constant(1),
-        };
+        let later_byte = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(1));
         let changed = base.clone().store(later_byte, int32(1));
         let mut requirements = BTreeSet::new();
         branch_memory_delta_requirements(&base, &changed, &ledger, &mut requirements).unwrap();
         let changed_range = MemoryRange::new_with_element_width(
-            OldAddress {
-                base: AddressBase::ExternalArgument,
-                offset: AddressOffset::constant(1),
-            },
+            Address::new(AddressBase::ExternalArgument, AddressOffset::constant(1)),
             0u32.into(),
             4u32.into(),
             1,
@@ -8975,7 +8960,7 @@ pub fn prove_uint32_ge_implies_reversed_le(
 }
 
 #[cfg(test)]
-pub fn prove_memory_load(memory: SymbolicMemory, pointer: OldAddress) -> Theorem {
+pub fn prove_memory_load(memory: SymbolicMemory, pointer: Address) -> Theorem {
     let outcome = match memory.known_retained_value(&pointer) {
         Some(value) => ExpressionOutcome::Value(value),
         None => ExpressionOutcome::UndefinedBehavior(UndefinedBehavior::InvalidMemory),
@@ -8990,7 +8975,7 @@ pub fn prove_memory_load(memory: SymbolicMemory, pointer: OldAddress) -> Theorem
 #[cfg(test)]
 pub fn prove_memory_load_after_store_same(
     memory: SymbolicMemory,
-    pointer: OldAddress,
+    pointer: Address,
     value: ProgramValue,
 ) -> Theorem {
     let stored = memory.store(pointer.clone(), value.clone());
@@ -9004,9 +8989,9 @@ pub fn prove_memory_load_after_store_same(
 #[cfg(test)]
 pub fn prove_memory_load_after_store_other(
     memory: SymbolicMemory,
-    stored_pointer: OldAddress,
+    stored_pointer: Address,
     stored_value: ProgramValue,
-    loaded_pointer: OldAddress,
+    loaded_pointer: Address,
 ) -> Option<Theorem> {
     if stored_pointer == loaded_pointer {
         return None;

@@ -609,10 +609,7 @@ mod tests {
     #[test]
     fn framed_index_transport_retains_read_authority_at_each_state() {
         let _session = VerificationSession::enter();
-        let pointer = OldAddress {
-            base: "transport-index".into(),
-            offset: AddressOffset::constant(0),
-        };
+        let pointer = Address::new("transport-index".into(), AddressOffset::constant(0));
         let before = SymbolicMemory::new()
             .with_block("transport-index", 16)
             .store(
@@ -660,10 +657,7 @@ mod tests {
     #[test]
     fn framed_index_transport_moves_registered_read_variables() {
         let _session = VerificationSession::enter();
-        let pointer = OldAddress {
-            base: "registered-index".into(),
-            offset: AddressOffset::constant(0),
-        };
+        let pointer = Address::new("registered-index".into(), AddressOffset::constant(0));
         let before = SymbolicMemory::new().with_block("registered-index", 16);
         let load = OldMachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory(before.clone()))),
@@ -718,7 +712,7 @@ mod tests {
         let _session = VerificationSession::enter();
         let after = SymbolicMemory::new();
         let null = OldMachineTerm::IntegerAddress(
-            Box::new(OldAddress::null()),
+            Box::new(Address::null()),
             crate::kernel::AddressObjectClass::NONE,
         );
         let x = OldMachineTerm::Variable(Variable(1018912));
@@ -943,10 +937,7 @@ mod tests {
             }
         }
         let index = OldMachineTerm::Variable(Variable(1018953));
-        let query = OldAddress {
-            base: pointer.base.clone(),
-            offset: AddressOffset::scaled_int32_node(index.clone(), 4),
-        };
+        let query = pointer.with_offset(AddressOffset::scaled_int32_node(index.clone(), 4));
         let load = OldMachineTerm::read_named(
             ProgramPoint::at(
                 &(crate::kernel::intern_memory(
@@ -989,8 +980,8 @@ mod tests {
             ty,
             &OldMachineTerm::If {
                 condition: Box::new(OldConditionTerm::address_equal(
-                    OldAddress::symbolic(Variable(1007510)),
-                    OldAddress::symbolic(Variable(1007511)),
+                    Address::symbolic(Variable(1007510)),
+                    Address::symbolic(Variable(1007511)),
                 )),
                 then_term: Box::new(OldMachineTerm::constant(1)),
                 else_term: Box::new(OldMachineTerm::constant(0)),

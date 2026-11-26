@@ -9,7 +9,7 @@ fn evaluated_memory_range_keeps_existing_common_bounds() {
         let state = ExecutionState::new().with_retained_local("bound", root.clone().into());
         let bound = SpecExpression::ProgramExpression(ProgramExpression::Variable("bound".into()));
         let resource = SpecResource::Memory {
-            base: SpecExpression::Value(ProgramValue::pointer(OldAddress::symbolic(Variable(
+            base: SpecExpression::Value(ProgramValue::pointer(Address::symbolic(Variable(
                 10993612,
             )))),
             start: bound.clone(),

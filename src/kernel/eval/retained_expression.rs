@@ -526,7 +526,7 @@ fn retain_pointer_arithmetic_path(
             operation,
             byte_width,
             operands.clone(),
-            SharedPointer::import_produced(&pointer),
+            SharedPointer::import(&pointer),
         )
         .into(),
         value => ExecutionValue::retain_native(value),
@@ -684,7 +684,7 @@ mod tests {
     fn retained_pointer_numeric_results_match_native_casts_and_differences() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = ProgramExpression::Value(ProgramValue::Pointer(OldPointer::new(
-            OldAddress::symbolic(Variable(1024100)),
+            Address::symbolic(Variable(1024100)),
             ProgramType::Int32Pointer,
         )));
         let cast = |expression: ProgramExpression, target_type| ProgramExpression::Cast {
@@ -703,7 +703,7 @@ mod tests {
             expressions.push(cast(ProgramExpression::FunctionAddress("f".into()), ty));
             expressions.push(cast(
                 ProgramExpression::Value(ProgramValue::typed_pointer(
-                    OldAddress::null(),
+                    Address::null(),
                     ProgramType::Int32Pointer,
                 )),
                 ty,
@@ -720,7 +720,7 @@ mod tests {
         expressions.push(ProgramExpression::Subtract(
             Box::new(pointer),
             Box::new(ProgramExpression::Value(ProgramValue::typed_pointer(
-                OldAddress::symbolic(Variable(1024101)),
+                Address::symbolic(Variable(1024101)),
                 ProgramType::Int32Pointer,
             ))),
         ));
@@ -759,7 +759,7 @@ mod tests {
     fn retained_pointer_arithmetic_preserves_operands_metadata_and_refusals() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = ProgramExpression::Value(ProgramValue::Pointer(OldPointer::new(
-            OldAddress::symbolic(Variable(1023000)),
+            Address::symbolic(Variable(1023000)),
             ProgramType::Int32Pointer,
         )));
         let index = ProgramExpression::Add(
@@ -789,7 +789,7 @@ mod tests {
             },
             ProgramExpression::Add(
                 Box::new(ProgramExpression::Value(ProgramValue::typed_pointer(
-                    OldAddress::null(),
+                    Address::null(),
                     ProgramType::Int32Pointer,
                 ))),
                 Box::new(ProgramExpression::Value(ProgramValue::Int32(
@@ -849,19 +849,19 @@ mod tests {
         state
             .locals
             .set("x", ProgramValue::Int32(OldMachineTerm::constant(7)));
-        let array = OldAddress::symbolic(Variable(1022001));
+        let array = Address::symbolic(Variable(1022001));
         state
             .locals
             .set_array_object_at("array", ProgramType::Int32, 4, array.clone());
-        state.set_memory(SymbolicMemory::new().with_block(array.base, 16));
+        state.set_memory(SymbolicMemory::new().with_block(array.base.clone(), 16));
         let pointer = OldPointer::new(
-            OldAddress::symbolic(Variable(1022000)),
+            Address::symbolic(Variable(1022000)),
             ProgramType::Int32Pointer,
         );
         let source = ProgramExpression::Value(ProgramValue::Pointer(pointer));
         let mut expressions = vec![
             ProgramExpression::Value(ProgramValue::typed_pointer(
-                OldAddress::null(),
+                Address::null(),
                 ProgramType::VoidPointer,
             )),
             source.clone(),
@@ -933,7 +933,7 @@ mod tests {
     #[test]
     fn retained_pointer_reads_preserve_freed_value_refusal() {
         let _session = crate::kernel::VerificationSession::enter();
-        let cell = OldAddress::symbolic(Variable(1021001));
+        let cell = Address::symbolic(Variable(1021001));
         let assumptions = PureFactContext::new();
         let memory = SymbolicMemory::new();
         let native = memory.symbolic_pointer_load(None, &cell, ProgramType::Int32Pointer);
@@ -1118,11 +1118,11 @@ mod tests {
     fn pointer_conditional_paths_keep_scoped_facts_and_complete_values() {
         let _session = crate::kernel::VerificationSession::enter();
         let left = ProgramValue::Pointer(OldPointer::new(
-            OldAddress::symbolic(Variable(1026200)),
+            Address::symbolic(Variable(1026200)),
             ProgramType::Int32Pointer,
         ));
         let right = ProgramValue::Pointer(OldPointer::new(
-            OldAddress::symbolic(Variable(1026201)),
+            Address::symbolic(Variable(1026201)),
             ProgramType::Int32Pointer,
         ));
         let expression = ProgramExpression::Ternary {
@@ -1964,7 +1964,7 @@ mod tests {
     fn pointer_steps_keep_nested_read_call_and_arithmetic_roots_through_storage() {
         let _session = crate::kernel::VerificationSession::enter();
         let source_memory = SymbolicMemory::new();
-        let source_address = OldAddress::symbolic(Variable(1027900));
+        let source_address = Address::symbolic(Variable(1027900));
         let read = ExecutionValue::retain_native(source_memory.symbolic_pointer_load(
             None,
             &source_address,
@@ -1983,10 +1983,14 @@ mod tests {
             )),
         );
         let mut state = ExecutionState::new();
-        state.set_memory(SymbolicMemory::new().with_block(
-            SymbolicMemory::local_pointer("pointer_step_pointee").base,
-            16,
-        ));
+        state.set_memory(
+            SymbolicMemory::new().with_block(
+                SymbolicMemory::local_pointer("pointer_step_pointee")
+                    .base
+                    .clone(),
+                16,
+            ),
+        );
         state.locals.set_retained_typed_with_all_qualifiers(
             "p",
             ExecutionValue::Shared(call_root.clone()),

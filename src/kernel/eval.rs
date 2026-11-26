@@ -88,7 +88,7 @@ fn guard_conditional_arithmetic(prefix: &ExecutionFacts, obligations: &mut [Proo
 fn volatile_access_fact(
     budget: &mut ExecutionBudget,
     kind: VolatileAccessKind,
-    pointer: OldAddress,
+    pointer: Address,
     value_type: ProgramType,
     value: impl Into<crate::kernel::StoredProgramValue>,
 ) -> ExecutionResult<ExecutionPureFact> {

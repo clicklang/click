@@ -2,10 +2,7 @@ use super::*;
 
 #[test]
 fn write_span_must_fit_inside_owned_byte_footprint() {
-    let base = OldAddress {
-        base: "global:owned".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let base = Address::new("global:owned".into(), AddressOffset::constant(0));
     let owned = MemoryRange::new_with_element_width(
         base.clone(),
         OldMachineTerm::constant(0),
@@ -36,10 +33,7 @@ fn write_span_must_fit_inside_owned_byte_footprint() {
 /// displacement, across several elements, and against a symbolic end.
 #[test]
 fn a_symbolic_index_write_is_placed_by_its_element_bounds() {
-    let base = OldAddress {
-        base: "global:owned".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let base = Address::new("global:owned".into(), AddressOffset::constant(0));
     let j = OldMachineTerm::Variable(Variable(99_001));
     let n = OldMachineTerm::Variable(Variable(99_002));
     let owned = |end: OldMachineTerm| {
@@ -65,10 +59,9 @@ fn a_symbolic_index_write_is_placed_by_its_element_bounds() {
             )
     };
     let at_j = base.offset_by_elements(j.clone(), 4);
-    let within =
-        |pointer: &OldAddress, bytes: u32, owned: &[MemoryRange], facts: &PureFactContext| {
-            storage_write_within_owned_footprint(pointer, bytes, owned, facts)
-        };
+    let within = |pointer: &Address, bytes: u32, owned: &[MemoryRange], facts: &PureFactContext| {
+        storage_write_within_owned_footprint(pointer, bytes, owned, facts)
+    };
     let thousand = owned(OldMachineTerm::constant(1000));
     assert!(within(&at_j, 4, &thousand, &bounded(1000)));
     assert!(!within(&at_j, 4, &thousand, &bounded(1001)));
@@ -104,10 +97,7 @@ fn a_symbolic_index_write_is_placed_by_its_element_bounds() {
 
 #[test]
 fn memory_effect_write_collection_preserves_each_access_width() {
-    let pointer = OldAddress {
-        base: "global:owned".into(),
-        offset: AddressOffset::constant(3),
-    };
+    let pointer = Address::new("global:owned".into(), AddressOffset::constant(3));
     let fact = ExecutionPureFact::new(Proposition::MemoryMutatesOnly {
         before: SymbolicMemory::new(),
         after: SymbolicMemory::new(),

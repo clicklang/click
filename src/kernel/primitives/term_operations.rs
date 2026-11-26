@@ -244,11 +244,11 @@ impl OldMachineTerm {
 impl OldMachineTerm {
     /// Keep pointer-to-integer casts canonical when checked rewriting turns
     /// a symbolic pointer into null, just as C cast evaluation does.
-    pub(crate) fn integer_address(pointer: OldAddress) -> Self {
+    pub(crate) fn integer_address(pointer: Address) -> Self {
         if let Some(bits) = pointer.integer_address_bits() {
             return bits.clone();
         }
-        if pointer == OldAddress::null() {
+        if pointer == Address::null() {
             Self::uint64_constant(0)
         } else {
             Self::IntegerAddress(Box::new(pointer), crate::kernel::AddressObjectClass::NONE)
@@ -256,10 +256,10 @@ impl OldMachineTerm {
     }
 
     pub(crate) fn object_pointer_address(
-        pointer: OldAddress,
+        pointer: Address,
         class: Option<crate::kernel::effective_type::CAccessClass>,
     ) -> Self {
-        if pointer == OldAddress::null() {
+        if pointer == Address::null() {
             Self::uint64_constant(0)
         } else {
             Self::IntegerAddress(
@@ -269,7 +269,7 @@ impl OldMachineTerm {
         }
     }
 
-    pub(crate) fn address_pointer(&self) -> Option<&OldAddress> {
+    pub(crate) fn address_pointer(&self) -> Option<&Address> {
         match self {
             Self::IntegerAddress(pointer, _) => Some(pointer),
             _ => None,
@@ -1106,7 +1106,7 @@ fn uint64_constant(term: &OldMachineTerm) -> Option<u64> {
         // Null converts to the integer zero, exactly as evaluating the C
         // cast `(uint64)p` yields it. The address term reaches a proof only
         // when a pointer proved null is substituted into `(uint64)p`.
-        OldMachineTerm::IntegerAddress(pointer, _) if **pointer == OldAddress::null() => Some(0),
+        OldMachineTerm::IntegerAddress(pointer, _) if **pointer == Address::null() => Some(0),
         cast_term!(UInt64From32, value) => match value.as_ref() {
             bits32_constant!(value) => Some(u64::from(constant_u32(*value))),
             _ => uint64_constant(value),
@@ -3174,7 +3174,7 @@ impl OldConditionTerm {
             {
                 Some(Self::address_equal(
                     pointer.as_ref().clone(),
-                    OldAddress::null(),
+                    Address::null(),
                 ))
             }
             _ => None,
@@ -3220,7 +3220,7 @@ impl OldConditionTerm {
     /// `address(pointer) & (alignment - 1) == 0`: the low address bits are
     /// zero. This is the kernel form of the spec proposition
     /// `aligned(pointer, alignment)`; `alignment` must be a power of two.
-    pub(crate) fn pointer_aligned(pointer: OldAddress, alignment: u64) -> Self {
+    pub(crate) fn pointer_aligned(pointer: Address, alignment: u64) -> Self {
         debug_assert!(alignment.is_power_of_two());
         Self::uint64_equal(
             OldMachineTerm::uint64_bitwise_and(
@@ -3236,7 +3236,7 @@ impl OldConditionTerm {
 
     /// Recognizes the alignment shape in either operand order and with any
     /// constant spelling of the mask and the zero.
-    pub(crate) fn as_pointer_alignment(&self) -> Option<(&OldAddress, u64)> {
+    pub(crate) fn as_pointer_alignment(&self) -> Option<(&Address, u64)> {
         use crate::kernel::MachineOperandView as V;
         let masked = match self {
             Self::Compare {
@@ -3276,7 +3276,7 @@ impl OldConditionTerm {
         else {
             return None;
         };
-        fn address(word: V<'_>) -> Option<&OldAddress> {
+        fn address(word: V<'_>) -> Option<&Address> {
             let native = match word {
                 V::Old(native) => Some(native),
                 V::Shared(root) => root.machine_conversion_leaf(),
@@ -3306,7 +3306,7 @@ impl OldConditionTerm {
         | (other, OldMachineTerm::IntegerAddress(pointer, _)) = (&left, &right)
             && other.uint64_as_const() == Some(0)
         {
-            return Self::address_equal(pointer.as_ref().clone(), OldAddress::null());
+            return Self::address_equal(pointer.as_ref().clone(), Address::null());
         }
         match (left.bitvector64_as_const(), right.bitvector64_as_const()) {
             (Some(left), Some(right)) => Self::Constant(left == right),
@@ -3777,7 +3777,7 @@ impl OldConditionTerm {
         }
     }
 
-    pub fn address_equal(left: OldAddress, right: OldAddress) -> Self {
+    pub fn address_equal(left: Address, right: Address) -> Self {
         if left.blocks_proven_distinct(&right) {
             Self::Constant(false)
         } else {
@@ -4448,7 +4448,7 @@ pub(crate) fn single_variable_of_program_value(value: &ProgramValue) -> Option<V
 
 impl ProgramValue {
     /// An unconstrained complete C word has identity but no pointer authority.
-    pub(crate) fn complete_word(self, identity: OldAddress) -> Self {
+    pub(crate) fn complete_word(self, identity: Address) -> Self {
         if !matches!(self, Self::Int64(_) | Self::UInt64(_)) {
             return self;
         }
@@ -4478,11 +4478,11 @@ impl ProgramValue {
         }
     }
 
-    pub(crate) fn pointer(pointer: OldAddress) -> Self {
+    pub(crate) fn pointer(pointer: Address) -> Self {
         Self::typed_pointer(pointer, ProgramType::Int32Pointer)
     }
 
-    pub(crate) fn typed_pointer(pointer: OldAddress, program_type: ProgramType) -> Self {
+    pub(crate) fn typed_pointer(pointer: Address, program_type: ProgramType) -> Self {
         Self::Pointer(OldPointer::new(pointer, program_type))
     }
 
@@ -4614,7 +4614,7 @@ impl LValue {
     }
 
     pub(in crate::kernel) fn memory_with_volatile(
-        pointer: OldAddress,
+        pointer: Address,
         value_type: ProgramType,
         volatile: bool,
     ) -> Self {
@@ -4622,7 +4622,7 @@ impl LValue {
     }
 
     pub(in crate::kernel) fn memory_with_qualifiers(
-        pointer: OldAddress,
+        pointer: Address,
         value_type: ProgramType,
         volatile: bool,
         pointee_volatile: bool,
@@ -4660,9 +4660,7 @@ impl LValue {
         self
     }
 
-    pub(in crate::kernel) fn access_provenance(
-        &self,
-    ) -> Option<(&OldAddress, Option<&OldAddress>)> {
+    pub(in crate::kernel) fn access_provenance(&self) -> Option<(&Address, Option<&Address>)> {
         self.provenance.as_deref().map(|root| {
             (
                 root,
@@ -4706,7 +4704,7 @@ impl LValue {
         self.array.as_ref().is_some_and(ArrayObject::is_known)
     }
 
-    pub(in crate::kernel) fn bounds_owner(&self) -> Option<&std::sync::Arc<OldAddress>> {
+    pub(in crate::kernel) fn bounds_owner(&self) -> Option<&std::sync::Arc<Address>> {
         self.array.as_ref()?.owner()
     }
 
@@ -4730,7 +4728,7 @@ impl LValue {
         self.pointee_constant
     }
 
-    pub(in crate::kernel) fn pointer(&self, state: &ExecutionState) -> Option<OldAddress> {
+    pub(in crate::kernel) fn pointer(&self, state: &ExecutionState) -> Option<Address> {
         match &self.storage {
             LValueStorage::Local { name } => {
                 let pointer = state.locals.slot(name)?.clone();
@@ -4761,7 +4759,7 @@ impl OldPointer {
     }
 }
 
-impl OldAddress {
+impl Address {
     pub(in crate::kernel) fn integer_address_bits(&self) -> Option<&OldMachineTerm> {
         if matches!(self.offset.view(), OffsetView::Constant(0))
             && let AddressBase::PureFunctionApplication(application) = &self.base
@@ -4786,14 +4784,11 @@ impl OldAddress {
             }
         }
 
-        Self {
-            base: self.base.clone(),
-            offset: if self.base == AddressBase::ExternalArgument {
-                external_base(&self.offset).clone()
-            } else {
-                AddressOffset::constant(0)
-            },
-        }
+        self.with_offset(if self.base == AddressBase::ExternalArgument {
+            external_base(&self.offset).clone()
+        } else {
+            AddressOffset::constant(0)
+        })
     }
 
     /// The C object identity carried by this pointer.
@@ -4816,28 +4811,19 @@ impl OldAddress {
                 OffsetView::Constant(_) | OffsetView::Add(_, _) => None,
             };
             if let Some(variable) = variable {
-                return Self {
-                    base: AddressBase::ExternalObject(variable),
-                    offset: AddressOffset::constant(0),
-                };
+                return Address::new(
+                    AddressBase::ExternalObject(variable),
+                    AddressOffset::constant(0),
+                );
             }
-            return Self {
-                base: self.base.clone(),
-                offset: base.offset,
-            };
+            return self.with_offset(base.offset.clone());
         }
 
-        Self {
-            base: self.base.clone(),
-            offset: AddressOffset::constant(0),
-        }
+        self.with_offset(AddressOffset::constant(0))
     }
 
     pub(crate) fn null() -> Self {
-        Self {
-            base: "null".into(),
-            offset: AddressOffset::constant(0),
-        }
+        Address::new("null".into(), AddressOffset::constant(0))
     }
 
     /// Whether this pointer is in the null object's block, at any offset.
@@ -4855,20 +4841,17 @@ impl OldAddress {
         if bits.uint64_as_const() == Some(0) {
             return Self::null();
         }
-        Self {
-            base: AddressBase::PureFunctionApplication(SharedPureApplication::intern(
+        Address::new(
+            AddressBase::PureFunctionApplication(SharedPureApplication::intern(
                 "$integer-address".into(),
                 vec![PureFunctionArgument::Value(ProgramValue::UInt64(bits))],
             )),
-            offset: AddressOffset::constant(0),
-        }
+            AddressOffset::constant(0),
+        )
     }
 
     pub(crate) fn symbolic(variable: Variable) -> Self {
-        Self {
-            base: AddressBase::Symbolic(variable),
-            offset: AddressOffset::constant(0),
-        }
+        Address::new(AddressBase::Symbolic(variable), AddressOffset::constant(0))
     }
 
     /// The base of storage the verifier introduced for an object the C
@@ -4876,10 +4859,10 @@ impl OldAddress {
     /// come from the single kernel variable allocator, so that it is fresh.
     /// See [`AddressBase::Temporary`].
     pub(crate) fn verifier_temporary(identity: Variable) -> Self {
-        Self {
-            base: AddressBase::Temporary(identity.0),
-            offset: AddressOffset::constant(0),
-        }
+        Address::new(
+            AddressBase::Temporary(identity.0),
+            AddressOffset::constant(0),
+        )
     }
 
     /// Name an eight-byte pointer read as a typed graph application. The
@@ -4888,7 +4871,7 @@ impl OldAddress {
     /// A memory-named load (`ReadKey::Memory`): for a caller that holds only
     /// a memory state. A caller with a program point uses
     /// [`Self::loaded_value_at`].
-    pub(crate) fn loaded_value(memory: &SharedMemory, address: &OldAddress) -> Self {
+    pub(crate) fn loaded_value(memory: &SharedMemory, address: &Address) -> Self {
         crate::kernel::Load::at(ProgramPoint::unplaced(memory), address).address()
     }
 
@@ -4897,13 +4880,13 @@ impl OldAddress {
     /// the point has no path of its own, so the load's identity, the
     /// memory's read key, is the one `loaded_value` gives
     /// (`design/point-named-reads.md`, stage 1: a point everywhere).
-    pub(crate) fn loaded_value_at(point: &ProgramPoint, address: &OldAddress) -> Self {
+    pub(crate) fn loaded_value_at(point: &ProgramPoint, address: &Address) -> Self {
         Self::loaded_value_read_at(point.shared_memory(), Some(point), address)
     }
 
     /// [`Self::loaded_value_at`] of the unchanged-bytes source of `point`'s
     /// memory, the state a memory-named read is keyed by, read at `point`.
-    pub(crate) fn loaded_source_value_at(point: &ProgramPoint, address: &OldAddress) -> Self {
+    pub(crate) fn loaded_source_value_at(point: &ProgramPoint, address: &Address) -> Self {
         let source = point.shared_memory().unchanged_bytes_source();
         Self::loaded_value_read_at(&source, Some(point), address)
     }
@@ -4916,7 +4899,7 @@ impl OldAddress {
     pub(crate) fn loaded_value_read_at(
         memory: &SharedMemory,
         site: Option<&ProgramPoint>,
-        address: &OldAddress,
+        address: &Address,
     ) -> Self {
         crate::kernel::Load::at(ProgramPoint::read_at_optional(memory, site), address).address()
     }
@@ -4930,7 +4913,7 @@ impl OldAddress {
     pub(crate) fn canonical_read(
         memory: &SharedMemory,
         site: Option<&ProgramPoint>,
-        address: &OldAddress,
+        address: &Address,
     ) -> Self {
         // A pointer read covers the whole pointer cell. Record that width
         // before the walk, so a write to any of its bytes stops the walk even
@@ -4948,7 +4931,7 @@ impl OldAddress {
 
     /// The pointer read of `address` in `memory`, named at the canonical
     /// read of that cell, as a direct lowering of the same place names it.
-    pub(crate) fn canonical_loaded_value(memory: &SharedMemory, address: &OldAddress) -> Self {
+    pub(crate) fn canonical_loaded_value(memory: &SharedMemory, address: &Address) -> Self {
         // A cell holding a complete stored pointer reads as that pointer.
         if let Some(ProgramValue::Pointer(stored)) = memory.memory().known_value(address) {
             return stored.address().clone();
@@ -5005,7 +4988,7 @@ impl OldAddress {
     /// (`eval::pointer_read_over_write_value`). A cell holding its own read
     /// is that read.
     #[cfg(test)]
-    pub(crate) fn version_read(memory: &SharedMemory, address: &OldAddress) -> Self {
+    pub(crate) fn version_read(memory: &SharedMemory, address: &Address) -> Self {
         Self::version_read_at(memory, None, address)
     }
 
@@ -5014,7 +4997,7 @@ impl OldAddress {
     pub(crate) fn version_read_at(
         memory: &SharedMemory,
         site: Option<&ProgramPoint>,
-        address: &OldAddress,
+        address: &Address,
     ) -> Self {
         match Self::version_read_value(memory, site, address) {
             Ok(held) => held.address().clone(),
@@ -5030,7 +5013,7 @@ impl OldAddress {
     pub(crate) fn version_read_value(
         memory: &SharedMemory,
         site: Option<&ProgramPoint>,
-        address: &OldAddress,
+        address: &Address,
     ) -> Result<OldPointer, Self> {
         let source = memory.unchanged_bytes_source();
         let canonical = crate::kernel::memory_history::canonical_value_load_memory(
@@ -5046,11 +5029,11 @@ impl OldAddress {
                     read.defining_address == *address
                         && matches!(read.displacement.view(), OffsetView::Constant(0))
                 }) || matches!(
-                    stored.address(),
-                    OldAddress {
+                    &**stored.address(),
+                    AddressParts {
                         base: AddressBase::Symbolic(variable),
                         offset,
-                    } if matches!(offset.view(), OffsetView::Constant(0))
+                     .. } if matches!(offset.view(), OffsetView::Constant(0))
                         && crate::kernel::registered_load_for_variable(variable)
                         .is_some_and(|(_, registered)| registered == *address)
                 ) =>
@@ -5079,17 +5062,17 @@ impl OldAddress {
     }
 
     pub(crate) fn symbolic_function(variable: Variable) -> Self {
-        Self {
-            base: AddressBase::FunctionSymbolic(variable),
-            offset: AddressOffset::constant(0),
-        }
+        Address::new(
+            AddressBase::FunctionSymbolic(variable),
+            AddressOffset::constant(0),
+        )
     }
 
     pub(crate) fn function(name: impl Into<String>) -> Self {
-        Self {
-            base: AddressBase::Function(name.into()),
-            offset: AddressOffset::constant(0),
-        }
+        Address::new(
+            AddressBase::Function(name.into()),
+            AddressOffset::constant(0),
+        )
     }
     pub(in crate::kernel) fn has_symbolic_block(&self) -> bool {
         matches!(
@@ -5109,13 +5092,10 @@ impl OldAddress {
     }
 
     pub(crate) fn offset_by_bytes(&self, bytes: u32) -> Self {
-        Self {
-            base: self.base.clone(),
-            offset: AddressOffset::add(
-                self.offset.clone(),
-                AddressOffset::constant(i64::from(bytes)),
-            ),
-        }
+        self.with_offset(AddressOffset::add(
+            self.offset.clone(),
+            AddressOffset::constant(i64::from(bytes)),
+        ))
     }
 
     /// The address of a field `offset` into the object here: a byte count,
@@ -5123,13 +5103,10 @@ impl OldAddress {
     pub(crate) fn offset_by_layout(&self, offset: super::LayoutOffset) -> Self {
         match offset {
             super::LayoutOffset::Bytes(bytes) => self.offset_by_bytes(bytes),
-            super::LayoutOffset::Field(..) => Self {
-                base: self.base.clone(),
-                offset: AddressOffset::add(
-                    self.offset.clone(),
-                    AddressOffset::scaled_int64_node(offset.term(), 1, true),
-                ),
-            },
+            super::LayoutOffset::Field(..) => self.with_offset(AddressOffset::add(
+                self.offset.clone(),
+                AddressOffset::scaled_int64_node(offset.term(), 1, true),
+            )),
         }
     }
 
@@ -5142,10 +5119,7 @@ impl OldAddress {
             Some(value) => AddressOffset::constant(i64::from(value as i32) * i64::from(byte_width)),
             None => AddressOffset::int32_scaled(elements, i64::from(byte_width)),
         };
-        Self {
-            base: self.base.clone(),
-            offset: AddressOffset::add(self.offset.clone(), displacement),
-        }
+        self.with_offset(AddressOffset::add(self.offset.clone(), displacement))
     }
 
     pub(in crate::kernel) fn offset_by_elements(
@@ -5153,13 +5127,10 @@ impl OldAddress {
         elements: OldMachineTerm,
         byte_width: u32,
     ) -> Self {
-        Self {
-            base: self.base.clone(),
-            offset: AddressOffset::add(
-                self.offset.clone(),
-                AddressOffset::scale_int32(elements, i64::from(byte_width)),
-            ),
-        }
+        self.with_offset(AddressOffset::add(
+            self.offset.clone(),
+            AddressOffset::scale_int32(elements, i64::from(byte_width)),
+        ))
     }
 
     pub(in crate::kernel) fn offset_by_typed_elements(
@@ -5169,17 +5140,14 @@ impl OldAddress {
         unsigned: bool,
         wide: bool,
     ) -> Self {
-        Self {
-            base: self.base.clone(),
-            offset: AddressOffset::add(
-                self.offset.clone(),
-                if wide {
-                    AddressOffset::scale_int64(elements, i64::from(byte_width), unsigned)
-                } else {
-                    AddressOffset::scale_int32(elements, i64::from(byte_width))
-                },
-            ),
-        }
+        self.with_offset(AddressOffset::add(
+            self.offset.clone(),
+            if wide {
+                AddressOffset::scale_int64(elements, i64::from(byte_width), unsigned)
+            } else {
+                AddressOffset::scale_int32(elements, i64::from(byte_width))
+            },
+        ))
     }
 
     /// This pointer's offset less `base`'s, exactly, when both name one block
@@ -6389,11 +6357,11 @@ fn canonical_pointer_read(bits: &OldMachineTerm) -> Option<OldMachineTerm> {
     Some(read)
 }
 
-fn named_pointer_read(read: OldMachineTerm) -> OldAddress {
+fn named_pointer_read(read: OldMachineTerm) -> Address {
     let OldMachineTerm::MemoryLoad(point, address, _) = &read else {
         unreachable!("selected pointer read");
     };
-    let value = OldAddress::loaded_source_value_at(point, address);
+    let value = Address::loaded_source_value_at(point, address);
     if let AddressBase::Load(load) = &value.base {
         crate::kernel::eval::record_pointer_load_source(load, &read);
     }
@@ -6671,19 +6639,19 @@ mod untyped_pointer_type_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = ProgramType::Pointer;
         let typed = ProgramValue::typed_pointer(
-            OldAddress::symbolic(Variable(4_321)),
+            Address::symbolic(Variable(4_321)),
             ProgramType::Int32Pointer,
         );
         assert!(pointer.accepts(&typed));
         assert_eq!(pointer.read_cell(&typed), Some(typed.clone()));
         assert!(ProgramType::Int32Pointer.accepts(&typed.clone().retag_pointer(pointer)));
         assert!(pointer.accepts(&ProgramValue::typed_pointer(
-            OldAddress::null(),
+            Address::null(),
             ProgramType::Int32Pointer
         )));
         assert!(!pointer.accepts(&ProgramValue::UInt64(OldMachineTerm::uint64_constant(0))));
         assert!(!pointer.accepts(&ProgramValue::typed_pointer(
-            OldAddress::symbolic_function(Variable(4_322)),
+            Address::symbolic_function(Variable(4_322)),
             ProgramType::Pointer
         )));
         assert_eq!(

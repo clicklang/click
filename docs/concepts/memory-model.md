@@ -157,7 +157,7 @@ Kernel memory is a map of named byte-sized blocks plus known cells. A
 pointer is a semantic object:
 
 ```text
-OldAddress { base, offset }
+Address { base, offset }
 ```
 
 These coordinates describe the raw address. A complete C pointer separately

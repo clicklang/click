@@ -108,7 +108,7 @@ impl KernelTerm {
                     {
                         return native(OldConditionTerm::address_equal(
                             pointer.as_ref().clone(),
-                            OldAddress::null(),
+                            Address::null(),
                         ));
                     }
                 }
@@ -212,7 +212,7 @@ mod tests {
     fn retained_comparison_constructors_preserve_address_and_mask_rules() {
         let _session = crate::kernel::VerificationSession::enter();
         let address = OldMachineTerm::IntegerAddress(
-            Box::new(OldAddress::symbolic(Variable(971_103))),
+            Box::new(Address::symbolic(Variable(971_103))),
             crate::kernel::AddressObjectClass::NONE,
         );
         let values = [

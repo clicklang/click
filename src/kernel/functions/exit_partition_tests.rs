@@ -75,7 +75,7 @@ fn ordinary_exceptional_and_fallthrough_exits_retain_split_occurrences() {
 
 #[test]
 fn raw_observation_still_refuses_concretely_overlapping_descriptions() {
-    let pointer = OldAddress::symbolic(Variable(8_918_000));
+    let pointer = Address::symbolic(Variable(8_918_000));
     let raw =
         ResourceContext::new().unchecked_with_facts([(0u32, 4u32), (2, 6)].map(|(start, end)| {
             ResourceFact::own_memory(MemoryRange::new_with_element_width(

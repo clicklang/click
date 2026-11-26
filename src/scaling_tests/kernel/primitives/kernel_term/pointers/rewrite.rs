@@ -23,7 +23,7 @@ fn pointer_rewrites_visit_shared_offset_dags_once_and_reuse_numeric_results() {
             .map(|i| KernelTerm::variable(KernelType::Integer, Variable(1005000 + i)))
             .collect::<Vec<_>>();
         for size in [16, 64, 256] {
-            let source = SharedAddress::import(&OldAddress::symbolic(Variable(1006000)));
+            let source = Address::symbolic(Variable(1006000)).shared().clone();
             let from =
                 KernelTerm::variable(KernelType::Program(ProgramType::Int32), Variable(1006001));
             let to =
@@ -39,7 +39,7 @@ fn pointer_rewrites_visit_shared_offset_dags_once_and_reuse_numeric_results() {
                     .into_shared()
                     .unwrap();
             }
-            let source = SharedAddress::new(source.node().base.clone(), offset);
+            let source = SharedAddress::new(source.block(), offset);
             let mut selected = Replace { from, to, calls: 0 };
             let exports = KernelTermExport::machine_export_count();
             let (output, work) = crate::instrumentation::measure_deterministic_work(|| {

@@ -298,9 +298,9 @@ fn loop_kept_pointer_frame_ignores_unrelated_owners_and_ambiguous_buckets() {
     let mut samples = Vec::new();
     for size in [4u32, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let field = OldAddress::symbolic(Variable(980115));
-        let ambiguous = OldAddress::symbolic(Variable(980116));
-        let range = |base: OldAddress, count: u32| {
+        let field = Address::symbolic(Variable(980115));
+        let ambiguous = Address::symbolic(Variable(980116));
+        let range = |base: Address, count: u32| {
             MemoryRange::new_with_element_width(base, 0u32.into(), count.into(), 1)
         };
         let mut owners = ResourceContext::new()
@@ -308,7 +308,7 @@ fn loop_kept_pointer_frame_ignores_unrelated_owners_and_ambiguous_buckets() {
         for index in 0..size {
             owners = owners
                 .unchecked_with_fact(ResourceFact::own_memory(range(
-                    OldAddress::symbolic(Variable(981000 + u64::from(index))),
+                    Address::symbolic(Variable(981000 + u64::from(index))),
                     8,
                 )))
                 .unchecked_with_fact(ResourceFact::own_memory(range(
@@ -326,10 +326,10 @@ fn loop_kept_pointer_frame_ignores_unrelated_owners_and_ambiguous_buckets() {
             Some(CallKeptRanges::new(owners, vec![], None)),
         ));
         let context = PureFactContext::new();
-        let query = |address: &OldAddress| {
+        let query = |address: &Address| {
             crate::kernel::memory_history::complete_pointer_reads_equal_across_frame(
-                &OldAddress::loaded_value(&before, address),
-                &OldAddress::loaded_value(&after, address),
+                &Address::loaded_value(&before, address),
+                &Address::loaded_value(&after, address),
                 &context,
             )
         };
@@ -367,16 +367,14 @@ fn cold_cell_source_lookup_does_not_search_older_stores() {
         costs.push(work);
         // N fresh cell queries after N stores must be linear in N, including
         // cells whose value was never stored. Each query is cold for its address.
+        // Building a query address admits its block: the caller's work.
+        let queries = (1..=size)
+            .map(|index| at(block("global:kept"), index * 4))
+            .collect::<Vec<_>>();
         let (_, total) = crate::instrumentation::measure_deterministic_work(|| {
-            for index in 1..=size {
-                let answer = cell_source::memory_dag_cell_source(
-                    &memory,
-                    &at(block("global:kept"), index * 4),
-                    4,
-                    &facts,
-                    false,
-                )
-                .unwrap();
+            for query in &queries {
+                let answer =
+                    cell_source::memory_dag_cell_source(&memory, query, 4, &facts, false).unwrap();
                 assert!(
                     matches!(answer, cell_source::MemoryDagCell::Unwritten { ref path, .. }
                     if path.len() == 1)
@@ -429,7 +427,7 @@ fn shared_pointer_resource_read_collection_visits_each_node_once() {
     let mut costs = Vec::new();
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let address = OldAddress::symbolic(crate::kernel::Variable(1081601));
+        let address = Address::symbolic(crate::kernel::Variable(1081601));
         let memory = intern_memory(SymbolicMemory::new().store(address.clone(), one()));
         let read = OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
@@ -598,22 +596,33 @@ fn legacy_walk_naming_of_fresh_cells_still_grows_with_same_block_stores() {
         let samples = [16usize, 32, 64, 128].map(|size| {
             let _session = crate::kernel::VerificationSession::enter();
             let mut memory = entry_memory();
-            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                for index in 0..size {
-                    memory = memory
-                        .clone()
-                        .store(at(base.clone(), index as i64 * 4), one());
-                    let fresh = at(base.clone(), (size + index) as i64 * 4);
-                    let version = last_same_version_point(
+            // Only the fresh-cell reads are measured: building an address
+            // admits its block and each store records the cell, linear work
+            // that is not the walk's.
+            let cells = (0..size)
+                .map(|index| {
+                    (
+                        at(base.clone(), index as i64 * 4),
+                        at(base.clone(), (size + index) as i64 * 4),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let mut work = 0;
+            for (stored, fresh) in &cells {
+                memory = memory.clone().store(stored.clone(), one());
+                let current = point(&memory);
+                let (version, read) = crate::instrumentation::measure_deterministic_work(|| {
+                    last_same_version_point(
                         TrackedResource::Cell {
-                            pointer: &fresh,
+                            pointer: fresh,
                             bytes: crate::kernel::AccessExtent::from(4),
                         },
-                        &point(&memory),
-                    );
-                    assert!(version.is_some());
-                }
-            });
+                        &current,
+                    )
+                });
+                assert!(version.is_some());
+                work += read;
+            }
             work
         });
         // Per doubling, n log n grows by a falling factor (2.5, 2.4, 2.33

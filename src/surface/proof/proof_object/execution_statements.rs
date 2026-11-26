@@ -1121,7 +1121,7 @@ impl<'a> Proof<'a> {
                 && matches!(&argument, SyntaxTerm::IntegerLiteral(text) if text == "0")
             {
                 arguments.push(ProgramValue::typed_pointer(
-                    crate::kernel::OldAddress::null(),
+                    crate::kernel::Address::null(),
                     parameter.program_type(),
                 ));
                 continue;

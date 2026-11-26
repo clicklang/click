@@ -77,7 +77,7 @@ fn construction_completion_work_scales_with_value_fields() {
                     })
                     .collect(),
             );
-            let at = OldAddress::symbolic(Variable(873_004));
+            let at = Address::symbolic(Variable(873_004));
             register_block_alignment(&at.base, 8);
             // Native constructor contracts hold separate field owners; include
             // their growing index, rather than only one whole-object owner.
@@ -182,7 +182,7 @@ fn construction_initialization_lookup_ignores_unrelated_caller_storage() {
 fn aggregate_return_copy_permission_ignores_unrelated_storage() {
     let mut samples = Vec::new();
     for count in [4, 32, 256] {
-        let temporary = OldAddress::verifier_temporary(Variable(870_201));
+        let temporary = Address::verifier_temporary(Variable(870_201));
         let mut memory = SymbolicMemory::new().with_block(temporary.base.clone(), 16);
         for index in 0..count {
             memory = memory.with_block(AddressBase::Heap(880_000 + index), 16);
@@ -221,7 +221,7 @@ fn materialized_return_storage_ignores_unrelated_local_declarations() {
                 .with_block(source.base.clone(), 16)
                 .store(
                     source.clone(),
-                    ProgramValue::typed_pointer(OldAddress::null(), ProgramType::Int32Pointer),
+                    ProgramValue::typed_pointer(Address::null(), ProgramType::Int32Pointer),
                 )
                 .store(source.offset_by_bytes(8), int32(37)),
         );

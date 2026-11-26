@@ -240,11 +240,11 @@ pub fn float64_literal(bits: u64) -> ProgramExpression {
     ProgramExpression::Value(float64(OldMachineTerm::uint64_constant(bits)))
 }
 
-pub fn pointer_value(pointer: OldAddress) -> ProgramExpression {
+pub fn pointer_value(pointer: Address) -> ProgramExpression {
     ProgramExpression::Value(ProgramValue::pointer(pointer))
 }
 
-pub fn typed_pointer_value(pointer: OldAddress, program_type: ProgramType) -> ProgramExpression {
+pub fn typed_pointer_value(pointer: Address, program_type: ProgramType) -> ProgramExpression {
     ProgramExpression::Value(ProgramValue::typed_pointer(pointer, program_type))
 }
 

@@ -8,11 +8,11 @@ use crate::kernel::{
     Variable,
 };
 
-fn cell(index: u64) -> OldAddress {
-    OldAddress {
-        base: AddressBase::Concrete("local:load-cells".into()),
-        offset: AddressOffset::constant(8 * index as i64),
-    }
+fn cell(index: u64) -> Address {
+    Address::new(
+        AddressBase::Concrete("local:load-cells".into()),
+        AddressOffset::constant(8 * index as i64),
+    )
 }
 
 /// Interning a load is one hash probe: the work to intern one more load,
@@ -101,10 +101,10 @@ fn one_load_per_cell_regardless_of_exactness_or_type() {
         ProgramType::Pointer,
         ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
     ];
-    let slot = OldAddress {
-        base: AddressBase::Concrete("local:load-slot".into()),
-        offset: AddressOffset::constant(0),
-    };
+    let slot = Address::new(
+        AddressBase::Concrete("local:load-slot".into()),
+        AddressOffset::constant(0),
+    );
     let mut samples = Vec::new();
     for reads in [4usize, 64, 512] {
         let _session = crate::kernel::VerificationSession::enter();
@@ -113,7 +113,7 @@ fn one_load_per_cell_regardless_of_exactness_or_type() {
         let written = start.clone().with_memory(start.memory().clone().store(
             slot.clone(),
             ProgramValue::Pointer(OldPointer::new(
-                OldAddress::symbolic(Variable(984_001)),
+                Address::symbolic(Variable(984_001)),
                 ProgramType::Int32Pointer,
             )),
         ));

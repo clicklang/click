@@ -16,9 +16,9 @@ use crate::persistent::{PersistentMap, PersistentSet};
 
 use super::cell_version_intervals::CellVersionIntervals;
 use super::{
-    AddressBase, AddressOffset, LoadKind, MemoryDerivation, MemoryRange, OldAddress,
-    OldMachineTerm, ProgramType, ProgramValue, SharedMemory, StoredMemoryValue, SymbolicMemory,
-    intern_memory, intern_memory_ref,
+    Address, AddressBase, AddressOffset, LoadKind, MemoryDerivation, MemoryRange, OldMachineTerm,
+    ProgramType, ProgramValue, SharedMemory, StoredMemoryValue, SymbolicMemory, intern_memory,
+    intern_memory_ref,
 };
 use crate::kernel::{OffsetTree, OffsetView};
 
@@ -435,7 +435,7 @@ impl ExternalEntryWrites {
     /// entry reached them.
     fn unwritten_entry_read(
         &self,
-        pointer: &OldAddress,
+        pointer: &Address,
         bytes: u32,
         allow_materialized_entry: bool,
     ) -> Option<ProgramPoint> {
@@ -1032,7 +1032,7 @@ fn read_displacement(offset: &AddressOffset) -> Option<(Option<&AddressOffset>, 
 }
 
 fn read_origin(
-    pointer: &OldAddress,
+    pointer: &Address,
     anchor: Option<&AddressOffset>,
 ) -> Option<(AddressBase, AddressOffset)> {
     if anchor.is_some() || external_storage(&pointer.base) {
@@ -1906,11 +1906,7 @@ impl ProgramPoint {
     /// A scalar supplied by the caller can have a version even when no
     /// store supplies a value. Use the recorded disjoint suffix only when
     /// it reaches a verified function-entry view.
-    pub(crate) fn entry_integer_version(
-        &self,
-        pointer: &OldAddress,
-        kind: LoadKind,
-    ) -> Option<Self> {
+    pub(crate) fn entry_integer_version(&self, pointer: &Address, kind: LoadKind) -> Option<Self> {
         if !kind.is_word32()
             && !matches!(
                 kind,
@@ -1930,7 +1926,7 @@ impl ProgramPoint {
 
     pub(crate) fn generic_entry_version(
         &self,
-        pointer: &OldAddress,
+        pointer: &Address,
         parameter: super::TypeParameterName,
     ) -> Option<Self> {
         if parameter.is_enum() {
@@ -1944,7 +1940,7 @@ impl ProgramPoint {
     /// a known width, from a record of the caller bytes written since entry.
     fn external_entry_read(
         &self,
-        pointer: &OldAddress,
+        pointer: &Address,
         bytes: Option<u32>,
         allow_materialized_entry: bool,
     ) -> Option<Self> {
@@ -1968,7 +1964,7 @@ impl ProgramPoint {
 
     fn external_entry_read_from_suffix(
         &self,
-        pointer: &OldAddress,
+        pointer: &Address,
         allow_materialized_entry: bool,
     ) -> Option<Self> {
         let mut entry = self.parameter_read_start(&pointer.base);
@@ -1997,7 +1993,7 @@ impl ProgramPoint {
     /// select it for the new cell too.
     pub(in crate::kernel) fn entry_version_after_rewrite(
         &self,
-        pointer: &OldAddress,
+        pointer: &Address,
         kind: LoadKind,
     ) -> Option<Self> {
         if self.is_entry_read() {
@@ -2011,7 +2007,7 @@ impl ProgramPoint {
     /// observation can name even when entry setup attached a proof view.
     pub(crate) fn entry_cell_version(
         &self,
-        pointer: &OldAddress,
+        pointer: &Address,
         value_type: ProgramType,
     ) -> Option<Self> {
         match value_type {
@@ -2042,7 +2038,7 @@ impl ProgramPoint {
     /// therefore leaves the caller cell it designates at the entry version.
     fn entry_read_through_loaded_pointer(
         &self,
-        pointer: &OldAddress,
+        pointer: &Address,
         value_type: ProgramType,
     ) -> Option<Self> {
         let loaded = pointer.as_loaded_value()?;
@@ -2066,7 +2062,7 @@ impl ProgramPoint {
     }
 
     pub(in crate::kernel) fn supports_static_entry_version(
-        pointer: &OldAddress,
+        pointer: &Address,
         value_type: ProgramType,
     ) -> bool {
         pointer.base.is_static_storage_block()
@@ -2077,7 +2073,7 @@ impl ProgramPoint {
     /// path has no writes to any byte it reads.
     pub(in crate::kernel) fn unwritten_static_scalar_version(
         &self,
-        pointer: &OldAddress,
+        pointer: &Address,
         value_type: ProgramType,
     ) -> Option<Self> {
         if !Self::supports_static_entry_version(pointer, value_type)
@@ -2124,7 +2120,7 @@ impl ProgramPoint {
     /// The view only certifies the choice; the entry point identifies the read.
     pub(in crate::kernel) fn static_entry_matching_resolved_read(
         &self,
-        pointer: &OldAddress,
+        pointer: &Address,
         value_type: ProgramType,
         resolved: &SharedMemory,
     ) -> Option<Self> {
@@ -2167,11 +2163,7 @@ impl ProgramPoint {
     /// one question, asked after a value the memory holds for the cell
     /// (`design/point-named-reads.md`, P1), so that two producers of one cell
     /// at one point name it alike. Logical integer reads ask it.
-    pub(crate) fn read_version(
-        &self,
-        pointer: &OldAddress,
-        value_type: ProgramType,
-    ) -> Option<Self> {
+    pub(crate) fn read_version(&self, pointer: &Address, value_type: ProgramType) -> Option<Self> {
         if MachineIntegerType::from_program_type(value_type).is_none() && !value_type.is_pointer() {
             return None;
         }
@@ -2181,7 +2173,7 @@ impl ProgramPoint {
 
     pub(crate) fn ordinary_typed_version(
         &self,
-        pointer: &OldAddress,
+        pointer: &Address,
         value_type: ProgramType,
     ) -> Option<Self> {
         self.indexed_typed_version(pointer, value_type)
@@ -2193,13 +2185,13 @@ impl ProgramPoint {
             .or_else(|| self.entry_cell_version(pointer, value_type))
     }
 
-    pub(in crate::kernel) fn supports_local_call_output(pointer: &OldAddress) -> bool {
+    pub(in crate::kernel) fn supports_local_call_output(pointer: &Address) -> bool {
         indexed_local(&pointer.base) && matches!(pointer.offset.view(), OffsetView::Constant(0))
     }
 
     pub(in crate::kernel) fn call_output_integer_version(
         &self,
-        pointer: &OldAddress,
+        pointer: &Address,
         kind: LoadKind,
     ) -> Option<Self> {
         if pointer.base.is_static_storage_block() {
@@ -2221,7 +2213,7 @@ impl ProgramPoint {
 
     /// A call with one complete static scalar in its checked footprint creates
     /// that word's next version, even though the caller does not know its bits.
-    fn whole_static_call_output(&self, pointer: &OldAddress, bytes: u32) -> Option<Self> {
+    fn whole_static_call_output(&self, pointer: &Address, bytes: u32) -> Option<Self> {
         use crate::kernel::effective_type::CAccessClass;
 
         let memory = self.memory();
@@ -2249,7 +2241,7 @@ impl ProgramPoint {
         Some(version)
     }
 
-    pub(crate) fn supports_indexed_version(pointer: &OldAddress) -> bool {
+    pub(crate) fn supports_indexed_version(pointer: &Address) -> bool {
         read_bucket(&pointer.base).is_some()
             || (pointer.base.is_static_storage_block()
                 && matches!(pointer.offset.view(), OffsetView::Constant(0)))
@@ -2259,7 +2251,7 @@ impl ProgramPoint {
     /// and the transitions after it preserve the object by construction.
     pub(crate) fn indexed_integer_version(
         &self,
-        pointer: &OldAddress,
+        pointer: &Address,
         kind: LoadKind,
     ) -> Option<Self> {
         self.indexed_version(pointer, kind.byte_width(), |store| {
@@ -2269,7 +2261,7 @@ impl ProgramPoint {
 
     pub(crate) fn indexed_typed_version(
         &self,
-        pointer: &OldAddress,
+        pointer: &Address,
         value_type: ProgramType,
     ) -> Option<Self> {
         let indexed_algebraic = matches!(value_type, ProgramType::Parameter(ty)
@@ -2299,7 +2291,7 @@ impl ProgramPoint {
     /// decoding of them: a store of a pointer of either category answers.
     pub(crate) fn indexed_pointer_version(
         &self,
-        pointer: &OldAddress,
+        pointer: &Address,
         category: Option<super::PointerLoadCategory>,
     ) -> Option<Self> {
         self.indexed_version(pointer, super::C_POINTER_BYTE_WIDTH, |store| {
@@ -2311,7 +2303,7 @@ impl ProgramPoint {
 
     pub(super) fn abstract_local_version(
         &self,
-        pointer: &OldAddress,
+        pointer: &Address,
         parameter: super::TypeParameterName,
     ) -> Option<Self> {
         if !indexed_local(&pointer.base)
@@ -2327,7 +2319,7 @@ impl ProgramPoint {
 
     fn indexed_version(
         &self,
-        pointer: &OldAddress,
+        pointer: &Address,
         bytes: u32,
         matches_source: impl FnOnce(&MemoryDerivation) -> bool,
     ) -> Option<Self> {
@@ -2371,7 +2363,7 @@ impl ProgramPoint {
     /// Select one store from the sealed point, without searching older effects.
     fn indexed_whole_static_store(
         &self,
-        pointer: &OldAddress,
+        pointer: &Address,
         bytes: u32,
         matches_source: impl FnOnce(&MemoryDerivation) -> bool,
     ) -> Option<Self> {
@@ -2407,7 +2399,7 @@ impl ProgramPoint {
     pub(in crate::kernel) fn names_detached_store_read(
         &self,
         detached: &Self,
-        address: &OldAddress,
+        address: &Address,
         kind: LoadKind,
     ) -> bool {
         crate::instrumentation::record_deterministic_work(1);
@@ -2458,20 +2450,14 @@ mod tests {
 
     fn memory_holding(value: u32) -> SymbolicMemory {
         let block: AddressBase = "local:slot".into();
-        let slot = OldAddress {
-            base: block.clone(),
-            offset: AddressOffset::constant(0),
-        };
+        let slot = Address::new(block.clone(), AddressOffset::constant(0));
         SymbolicMemory::new()
             .with_block(block, 4)
             .store(slot, ProgramValue::Int32(OldMachineTerm::constant(value)))
     }
 
-    fn slot() -> OldAddress {
-        OldAddress {
-            base: "local:slot".into(),
-            offset: AddressOffset::constant(0),
-        }
+    fn slot() -> Address {
+        Address::new("local:slot".into(), AddressOffset::constant(0))
     }
 
     fn stored(state: &ExecutionState, value: u32) -> ExecutionState {
@@ -2642,10 +2628,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let entry = ExecutionState::new().begin_function_entry_memory();
         let block = AddressBase::ExternalArgument;
-        let cell = OldAddress {
-            base: block.clone(),
-            offset: AddressOffset::constant(0),
-        };
+        let cell = Address::new(block.clone(), AddressOffset::constant(0));
         let effect = entry.clone().with_memory(
             entry
                 .memory()
@@ -2667,10 +2650,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let entry = ExecutionState::new().begin_function_entry_memory();
         let other_entry = ExecutionState::new().begin_function_entry_memory();
-        let pointer = OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::constant(0),
-        };
+        let pointer = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0));
         let select = |state: &ExecutionState| {
             state
                 .program_point()
@@ -2723,10 +2703,7 @@ mod tests {
     fn int32_through_an_entry_pointer_keeps_entry_after_a_local_store() {
         let _session = crate::kernel::VerificationSession::enter();
         let entry = ExecutionState::new().begin_function_entry_memory();
-        let pointer_slot = OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::constant(0),
-        };
+        let pointer_slot = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0));
         let pointer = OldPointer::from_point_read(
             entry.program_point().for_exact_read(),
             ProgramType::Int32Pointer,
@@ -2735,7 +2712,7 @@ mod tests {
         assert!(matches!(pointer.address().base, AddressBase::Load(_)));
         let declared = entry
             .clone()
-            .with_memory(entry.memory().clone().with_block(slot().base, 4));
+            .with_memory(entry.memory().clone().with_block(slot().base.clone(), 4));
         let after_local_store = stored(&declared, 3);
         let select = |state: &ExecutionState| {
             state
@@ -2760,10 +2737,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let entry = ExecutionState::new().begin_function_entry_memory();
         let point = entry.program_point();
-        let slot = OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::constant(0),
-        };
+        let slot = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0));
         let pointer = OldPointer::from_point_read(
             point.clone().for_legacy_read(),
             ProgramType::Int32Pointer,
@@ -2781,16 +2755,13 @@ mod tests {
     fn caller_read_versions_survive_both_outcomes_of_fresh_allocation() {
         let _session = crate::kernel::VerificationSession::enter();
         let entry = ExecutionState::new().begin_function_entry_memory();
-        let caller_cell = OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::constant(0),
-        };
+        let caller_cell = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0));
         let loaded = OldPointer::from_point_read(
             entry.program_point().for_exact_read(),
             ProgramType::UInt64Pointer,
             &caller_cell.offset_by_bytes(8),
         );
-        let allocation = OldAddress::symbolic(Variable(38_132));
+        let allocation = Address::symbolic(Variable(38_132));
         let pending =
             entry
                 .clone()
@@ -2827,13 +2798,10 @@ mod tests {
         let entry = ExecutionState::new().begin_function_entry_memory();
         let declared = entry
             .clone()
-            .with_memory(entry.memory().clone().with_block(slot().base, 4));
+            .with_memory(entry.memory().clone().with_block(slot().base.clone(), 4));
         let first = stored(&declared, 1);
         let second = stored(&declared, 2);
-        let pointer = OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::constant(4),
-        };
+        let pointer = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(4));
         let join = |left: &ExecutionState, right: &ExecutionState| {
             let mut joined = left.clone();
             joined.join_program_points(left, right, declared.path_link());
@@ -2866,13 +2834,13 @@ mod tests {
         let other = slot();
         let entry = ExecutionState::new().begin_function_entry_memory();
         let entry_id = entry.observation_point_id();
-        let write = |state: &ExecutionState, address: &OldAddress, bits| {
+        let write = |state: &ExecutionState, address: &Address, bits| {
             state.clone().with_memory(state.memory().clone().store(
                 address.clone(),
                 ProgramValue::Int32(OldMachineTerm::constant(bits)),
             ))
         };
-        let version = |point: &ProgramPoint, address: &OldAddress| {
+        let version = |point: &ProgramPoint, address: &Address| {
             point
                 .indexed_array_version(&address.base)
                 .and_then(|point| point.read_version_id())
@@ -2890,7 +2858,7 @@ mod tests {
                 let local = SymbolicMemory::local_pointer(format!("unrelated_{index}"));
                 before = before
                     .clone()
-                    .with_memory(before.memory().clone().with_block(local.base, 4));
+                    .with_memory(before.memory().clone().with_block(local.base.clone(), 4));
             }
             let before = write(&before, &local_array, 7);
             let left = write(&before, &other, 1);
@@ -2914,7 +2882,7 @@ mod tests {
             let joined = join(&left, &changed);
             assert_eq!(version(&joined, &static_cell), joined.id());
 
-            let unclassified = write(&right, &OldAddress::symbolic(Variable(1_037_601)), 7);
+            let unclassified = write(&right, &Address::symbolic(Variable(1_037_601)), 7);
             assert!(version(&join(&left, &unclassified), &static_cell).is_none());
         }
         assert!(work.iter().all(|&cost| cost <= work[0] + 64), "{work:?}");
@@ -2927,7 +2895,7 @@ mod tests {
         let right = left.offset_by_bytes(4);
         let start = ExecutionState::new()
             .with_memory(SymbolicMemory::new().with_block(left.base.clone(), 8));
-        let store_word = |state: &ExecutionState, address: OldAddress, bits| {
+        let store_word = |state: &ExecutionState, address: Address, bits| {
             state.clone().with_memory(
                 state
                     .memory()
@@ -2999,7 +2967,7 @@ mod tests {
         let right = write_sibling(3);
         let mut joined = left.clone();
         joined.join_program_points(&left, &right, split.path_link());
-        let version = |state: &ExecutionState, pointer: &OldAddress| {
+        let version = |state: &ExecutionState, pointer: &Address| {
             state
                 .program_point()
                 .indexed_integer_version(pointer, LoadKind::Int32)
@@ -3027,10 +2995,7 @@ mod tests {
     fn checked_call_and_loop_footprints_keep_the_other_object_version() {
         let _session = crate::kernel::VerificationSession::enter();
         let slot = slot();
-        let other = OldAddress {
-            base: "local:other".into(),
-            offset: AddressOffset::constant(0),
-        };
+        let other = Address::new("local:other".into(), AddressOffset::constant(0));
         let start = ExecutionState::new().with_memory(
             SymbolicMemory::new()
                 .with_block(slot.base.clone(), 4)
@@ -3041,7 +3006,7 @@ mod tests {
             other.clone(),
             ProgramValue::Int32(OldMachineTerm::constant(2)),
         ));
-        let version = |state: &ExecutionState, pointer: &OldAddress| {
+        let version = |state: &ExecutionState, pointer: &Address| {
             state
                 .program_point()
                 .indexed_integer_version(pointer, LoadKind::Int32)
@@ -3110,7 +3075,7 @@ mod tests {
         let (address, value) = store(second.clone(), 8);
         let batch = initial.clone().store(address, value);
         let kind = LoadKind::Int32;
-        let version = |state: &ExecutionState, place: &OldAddress| {
+        let version = |state: &ExecutionState, place: &Address| {
             state.program_point().indexed_integer_version(place, kind)
         };
         let overlap = start.clone().with_memory(batch.store(
@@ -3128,7 +3093,7 @@ mod tests {
             Some(&OldMachineTerm::constant(8))
         );
 
-        let gap = initial.with_uninitialized_object(OldAddress::symbolic(Variable(38_130)), 4);
+        let gap = initial.with_uninitialized_object(Address::symbolic(Variable(38_130)), 4);
         let (address, value) = store(second, 9);
         let detached = start.with_memory(gap.store(address, value));
         assert!(version(&detached, &first).is_none());
@@ -3149,7 +3114,7 @@ mod tests {
         let mut work = Vec::new();
         for count in [4, 64, 1024] {
             let mut memory = written.memory().clone();
-            let external = OldAddress::symbolic(Variable(38_127));
+            let external = Address::symbolic(Variable(38_127));
             for index in 0..count {
                 memory = memory.materialize_named_cell(
                     external.offset_by_bytes(4 * index),
@@ -3187,7 +3152,7 @@ mod tests {
         assert_eq!(version(&indexed), indexed.program_point_id());
         let unlogged = written.clone().with_materialized_memory_at_current_point(
             same_contents.materialize_named_cell(
-                OldAddress::symbolic(Variable(38_129)),
+                Address::symbolic(Variable(38_129)),
                 ProgramValue::Int32(OldMachineTerm::constant(99)),
             ),
         );
@@ -3336,10 +3301,7 @@ mod tests {
     #[test]
     fn the_mixed_read_name_audit_reports_a_cell_named_both_ways() {
         let _session = crate::kernel::VerificationSession::enter();
-        let cell = OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::constant(0),
-        };
+        let cell = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0));
         let entry = ExecutionState::new().begin_function_entry_memory();
         let selected = entry
             .program_point()

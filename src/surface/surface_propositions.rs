@@ -15,8 +15,8 @@ use super::{
     ClickError, ClickType, ProgramPointSelector, SurfaceBinder, SyntaxProposition, SyntaxTerm,
     clone_click_proposition_iteratively, proof,
 };
+use crate::kernel::{Address, OldConditionTerm, OldMachineTerm, Proposition, Sort, Variable};
 use crate::kernel::{CompareRelation, MachineIntegerType};
-use crate::kernel::{OldAddress, OldConditionTerm, OldMachineTerm, Proposition, Sort, Variable};
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -32,7 +32,7 @@ pub struct SurfacePropositionMap {
 pub(in crate::surface) struct SurfacePropositionStorage {
     /// Source names for qualified storage reads, independent of the heap
     /// state. These are synthesis hints, never evidence of a fact.
-    pub(in crate::surface) qualified_load_sources: PersistentMap<OldAddress, SyntaxTerm>,
+    pub(in crate::surface) qualified_load_sources: PersistentMap<Address, SyntaxTerm>,
     /// Source forms for certified stores, indexed by the versioned read that
     /// identifies the written cell. Keep the producer's exact fact for lookup.
     store_sources: PersistentMap<StoreReadKey, (Arc<Proposition>, Arc<SyntaxProposition>)>,
@@ -77,7 +77,7 @@ struct StoreReadKey {
 }
 
 impl StoreReadKey {
-    fn of(equation: &Proposition) -> Option<(Self, &OldAddress)> {
+    fn of(equation: &Proposition) -> Option<(Self, &Address)> {
         use crate::kernel::{AddressBase, LoadKind};
         let Some((
             OldConditionTerm::Compare {
@@ -836,7 +836,7 @@ impl SurfacePropositionMap {
         &mut self,
         equation: &Arc<Proposition>,
         surface: &SyntaxProposition,
-        source_address: &OldAddress,
+        source_address: &Address,
     ) -> bool {
         let Some((key, address)) = StoreReadKey::of(equation) else {
             return false;
@@ -1352,10 +1352,10 @@ mod store_source_tests {
         use crate::kernel::{AddressBase, AddressOffset, LoadKind, ProgramPoint, SymbolicMemory};
 
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-        let address = OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::variable(Variable(1)),
-        };
+        let address = Address::new(
+            AddressBase::ExternalArgument,
+            AddressOffset::variable(Variable(1)),
+        );
         let read = OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(address.clone()),
@@ -1374,10 +1374,10 @@ mod store_source_tests {
             right: SyntaxTerm::Binding("value".into()),
         };
         let mut map = SurfacePropositionMap::default();
-        let other = OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::variable(Variable(2)),
-        };
+        let other = Address::new(
+            AddressBase::ExternalArgument,
+            AddressOffset::variable(Variable(2)),
+        );
         assert!(!map.record_store_source(&stored, &source, &other));
         assert!(map.record_store_source(&stored, &source, &address));
         assert_eq!(map.recorded_surface(&equation(1)), Some(&source));
@@ -1393,10 +1393,7 @@ mod store_source_tests {
         };
 
         let _session = VerificationSession::enter();
-        let address = OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::constant(0),
-        };
+        let address = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0));
         let write = || {
             let state = ExecutionState::new().begin_function_entry_memory();
             let memory = state.memory().clone().store(

@@ -235,10 +235,10 @@ fn direct_call_map_is_checked_in_kernel_like_named_proof_arguments() {
 
 #[test]
 fn resource_transition_retains_borrow_role_for_owned_entry_fact() {
-    let pointer = OldAddress {
-        base: AddressBase::Concrete("local:borrow-role:data".to_string()),
-        offset: AddressOffset::constant(0),
-    };
+    let pointer = Address::new(
+        AddressBase::Concrete("local:borrow-role:data".to_string()),
+        AddressOffset::constant(0),
+    );
     let range = MemoryRange::new(
         pointer.clone(),
         OldMachineTerm::constant(0),
@@ -290,12 +290,14 @@ fn resource_transition_retains_borrow_role_for_owned_entry_fact() {
 
 #[test]
 fn call_site_and_function_boundary_transitions_agree_on_the_callee_entry() {
-    let block = |name: &str| OldAddress {
-        base: AddressBase::Concrete(format!("local:purpose:{name}")),
-        offset: AddressOffset::constant(0),
+    let block = |name: &str| {
+        Address::new(
+            AddressBase::Concrete(format!("local:purpose:{name}")),
+            AddressOffset::constant(0),
+        )
     };
     let (owned, viewed) = (block("owned"), block("viewed"));
-    let range = |pointer: &OldAddress| {
+    let range = |pointer: &Address| {
         MemoryRange::new(
             pointer.clone(),
             OldMachineTerm::constant(0),
@@ -427,10 +429,10 @@ fn call_site_and_function_boundary_transitions_agree_on_the_callee_entry() {
 
 #[test]
 fn stable_view_refinement_uses_checked_variance_for_subranges() {
-    let base = OldAddress {
-        base: AddressBase::Concrete("refinement:stable-view".to_string()),
-        offset: AddressOffset::constant(0),
-    };
+    let base = Address::new(
+        AddressBase::Concrete("refinement:stable-view".to_string()),
+        AddressOffset::constant(0),
+    );
     let state = ExecutionState::new()
         .with_local(
             "p",
@@ -496,10 +498,10 @@ fn stable_view_refinement_uses_checked_variance_for_subranges() {
 
 #[test]
 fn stable_view_refinement_does_not_confuse_disjoint_same_mode_inputs() {
-    let base = OldAddress {
-        base: AddressBase::Concrete("refinement:mixed".to_string()),
-        offset: AddressOffset::constant(0),
-    };
+    let base = Address::new(
+        AddressBase::Concrete("refinement:mixed".to_string()),
+        AddressOffset::constant(0),
+    );
     let state = ExecutionState::new()
         .with_local(
             "p",
@@ -598,10 +600,7 @@ fn named_contract_application_discards_template_body_and_storage() {
     );
 
     let argument = ProgramExpression::Value(ProgramValue::typed_pointer(
-        OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::constant(0),
-        },
+        Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0)),
         ProgramType::UInt8Pointer,
     ));
     // One caller state, so both applications start from one creation ledger.
@@ -736,10 +735,7 @@ fn direct_and_callback_resource_transition(
 
 #[test]
 fn direct_and_named_callback_resource_interfaces_agree_across_families() {
-    let memory_pointer = OldAddress {
-        base: "parity-memory".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let memory_pointer = Address::new("parity-memory".into(), AddressOffset::constant(0));
     let memory_spec = ResourceSpec::owned_memory(MemorySegment::new(
         crate::kernel::program_expression::pointer_value(memory_pointer.clone()),
         crate::kernel::program_expression::int32_literal(0),
@@ -956,10 +952,10 @@ fn check_executed_refinement_shape(return_type: ProgramType, alter_result: bool)
             Term::ExecutionState(Box::new(ExecutionState::new())),
             Term::ProgramValue(
                 (ProgramValue::Pointer(OldPointer::new(
-                    OldAddress {
-                        base: AddressBase::FunctionSymbolic(Variable(0)),
-                        offset: AddressOffset::constant(0),
-                    },
+                    Address::new(
+                        AddressBase::FunctionSymbolic(Variable(0)),
+                        AddressOffset::constant(0),
+                    ),
                     pointer_type,
                 )))
                 .into(),
@@ -1107,10 +1103,10 @@ fn pure_callback_preparation_does_not_enumerate_the_resource_frame() {
 
 #[test]
 fn resource_derived_refinement_compares_checked_ranges() {
-    let pointer = OldAddress {
-        base: AddressBase::Concrete("local:resource-refinement:data".to_string()),
-        offset: AddressOffset::constant(0),
-    };
+    let pointer = Address::new(
+        AddressBase::Concrete("local:resource-refinement:data".to_string()),
+        AddressOffset::constant(0),
+    );
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(pointer.clone()))
         .with_memory(SymbolicMemory::new().with_block(pointer.base.clone(), 8));
@@ -1154,10 +1150,10 @@ fn resource_derived_refinement_compares_checked_ranges() {
 
 #[test]
 fn resource_derived_frame_rejects_mixed_explicit_effect_metadata() {
-    let pointer = OldAddress {
-        base: AddressBase::Concrete("local:mixed-resource-frame:data".to_string()),
-        offset: AddressOffset::constant(0),
-    };
+    let pointer = Address::new(
+        AddressBase::Concrete("local:mixed-resource-frame:data".to_string()),
+        AddressOffset::constant(0),
+    );
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(pointer.clone()))
         .with_memory(SymbolicMemory::new().with_block(pointer.base.clone(), 4));
@@ -1207,10 +1203,10 @@ fn resource_derived_frame_rejects_mixed_explicit_effect_metadata() {
 
 #[test]
 fn declared_loop_frame_is_installed_from_the_loop_specs_not_from_segments() {
-    let pointer = OldAddress {
-        base: AddressBase::Concrete("local:loop-declared:data".to_string()),
-        offset: AddressOffset::constant(0),
-    };
+    let pointer = Address::new(
+        AddressBase::Concrete("local:loop-declared:data".to_string()),
+        AddressOffset::constant(0),
+    );
     let definition = CompositeResourceDefinition::new(
         "LoopWrapper",
         vec![program_parameter("data", ProgramType::Int32Pointer)],
@@ -1305,10 +1301,10 @@ fn declared_loop_frame_is_installed_from_the_loop_specs_not_from_segments() {
 
 #[test]
 fn resource_derived_loop_setup_does_not_fallback_to_surface_metadata() {
-    let pointer = OldAddress {
-        base: AddressBase::Concrete("local:loop-fallback:data".to_string()),
-        offset: AddressOffset::constant(0),
-    };
+    let pointer = Address::new(
+        AddressBase::Concrete("local:loop-fallback:data".to_string()),
+        AddressOffset::constant(0),
+    );
     let source_segment = MemorySegment::new(
         ProgramExpression::Variable("p".into()),
         ProgramExpression::Value(int32(0)),
@@ -1363,7 +1359,7 @@ fn resource_derived_loop_setup_does_not_fallback_to_surface_metadata() {
     .with_resource_derived_mutable_frame();
     let state = ExecutionState::new()
         .with_local("p", ProgramValue::pointer(pointer.clone()))
-        .with_memory(SymbolicMemory::new().with_block(pointer.base, 4));
+        .with_memory(SymbolicMemory::new().with_block(pointer.base.clone(), 4));
     let result = establish_resource_derived_loop_frames(
         function,
         &state,
@@ -1574,7 +1570,7 @@ fn requirement_capability_describes_the_complete_source_tree() {
         &[&contract],
         &[
             crate::kernel::program_expression::typed_pointer_value(
-                OldAddress::symbolic(Variable(901)),
+                Address::symbolic(Variable(901)),
                 ProgramType::Int32Pointer,
             ),
             crate::kernel::program_expression::int32_literal(7),
@@ -1955,7 +1951,7 @@ fn opaque_callback_contract() -> FunctionContract {
     .unwrap()
 }
 
-fn named_contract_fact(contract: &FunctionContract, pointer: OldAddress) -> Proposition {
+fn named_contract_fact(contract: &FunctionContract, pointer: Address) -> Proposition {
     Proposition::Predicate {
         name: contract.predicate_name(),
         arguments: vec![
@@ -1968,14 +1964,14 @@ fn named_contract_fact(contract: &FunctionContract, pointer: OldAddress) -> Prop
 }
 
 fn opaque_callback_state(count: u64) -> (ExecutionState, ProgramExpression, ResourceFact) {
-    let p = OldAddress::symbolic(Variable(8_960_000));
+    let p = Address::symbolic(Variable(8_960_000));
     let owner =
         |pointer| ResourceFact::own_memory(MemoryRange::new(pointer, 0u32.into(), 1u32.into()));
-    let held = owner(OldAddress::symbolic(Variable(8_960_100)));
+    let held = owner(Address::symbolic(Variable(8_960_100)));
     let resources = ResourceContext::new()
         .unchecked_with_fact(owner(p.clone()))
         .unchecked_with_facts(
-            (0..count).map(|i| owner(OldAddress::symbolic(Variable(8_960_100 + i)))),
+            (0..count).map(|i| owner(Address::symbolic(Variable(8_960_100 + i)))),
         );
     (
         ExecutionState::new()
@@ -1991,7 +1987,7 @@ fn opaque_callback_state(count: u64) -> (ExecutionState, ProgramExpression, Reso
 fn established_named_contract_frames_opaque_outputs_but_a_declaration_does_not() {
     let _session = crate::kernel::VerificationSession::enter();
     let contract = opaque_callback_contract();
-    let callback = OldAddress::symbolic_function(Variable(8_960_010));
+    let callback = Address::symbolic_function(Variable(8_960_010));
     let (state, argument, held) = opaque_callback_state(1);
     let environment = ExecutionEnvironment::new().with_function_contract(contract.clone());
     let empty = PureFactContext::new();
@@ -2038,7 +2034,7 @@ fn established_named_contract_frames_opaque_outputs_but_a_declaration_does_not()
     );
     assert!(
         contracts_for_pointer(
-            &OldAddress::symbolic_function(Variable(8_960_011)),
+            &Address::symbolic_function(Variable(8_960_011)),
             &facts,
             &environment,
             &contract.function_pointer_type()
@@ -2099,7 +2095,7 @@ fn supplementary_callback_postcondition_uses_the_return_point() {
             exact: false,
         })],
     );
-    let callback = OldAddress::symbolic_function(Variable(8_960_012));
+    let callback = Address::symbolic_function(Variable(8_960_012));
     let assumptions = PureFactContext::new()
         .assume_proposition(named_contract_fact(&primary, callback.clone()))
         .assume_proposition(named_contract_fact(&supplementary, callback.clone()));
@@ -2115,7 +2111,7 @@ fn supplementary_callback_postcondition_uses_the_return_point() {
     );
     assert_eq!(contracts.len(), 2);
 
-    let pointer = OldAddress::symbolic(Variable(8_960_013));
+    let pointer = Address::symbolic(Variable(8_960_013));
     let memory = SymbolicMemory::new()
         .with_block(pointer.base.clone(), 4)
         .store(pointer.clone(), int32(7));

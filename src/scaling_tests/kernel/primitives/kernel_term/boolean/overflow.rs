@@ -37,7 +37,7 @@ fn overflow_conditions_reuse_shared_numeric_dags() {
                 crate::kernel::reasoning::substitute_pointer_variable_in_common_condition(
                     &nested,
                     Variable(999902),
-                    &OldAddress::null()
+                    &Address::null()
                 ),
                 Some(nested)
             );

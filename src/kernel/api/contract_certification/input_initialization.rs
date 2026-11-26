@@ -130,10 +130,10 @@ mod tests {
     use super::*;
 
     fn fixture() -> (ExecutionState, ProgramFunction, MemorySegment, MemoryRange) {
-        let base = OldAddress {
-            base: AddressBase::Concrete("initialized-input".into()),
-            offset: AddressOffset::constant(0),
-        };
+        let base = Address::new(
+            AddressBase::Concrete("initialized-input".into()),
+            AddressOffset::constant(0),
+        );
         let state = ExecutionState::new().with_local(
             "p",
             ProgramValue::typed_pointer(base.clone(), ProgramType::Int32Pointer),

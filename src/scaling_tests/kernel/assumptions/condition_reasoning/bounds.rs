@@ -254,7 +254,7 @@ fn initialized_range_order_collection_does_not_enumerate_elements() {
                 Box::new(Proposition::MemoryReadDefined {
                     at: None,
                     memory: SymbolicMemory::new(),
-                    pointer: OldAddress::symbolic(Variable(9_200_101)).offset_by_elements(index, 4),
+                    pointer: Address::symbolic(Variable(9_200_101)).offset_by_elements(index, 4),
                     value_type: ProgramType::Int32,
                 }),
             ),

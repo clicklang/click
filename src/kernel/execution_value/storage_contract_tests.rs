@@ -25,7 +25,7 @@ fn memory_matrix(values: &[ProgramValue]) {
             let root = match value {
                 ProgramValue::Parameter(value) => KernelTermImport::default().algebraic(value),
                 ProgramValue::Pointer(value) => {
-                    KernelTerm::shared_pointer_value(SharedPointer::import_produced(value))
+                    KernelTerm::shared_pointer_value(SharedPointer::import(value))
                 }
                 _ => KernelTermImport::default()
                     .argument(&PureFunctionArgument::Value(value.clone())),
@@ -77,7 +77,7 @@ fn nonnumeric_storage_keys_preserve_native_pairwise_order_and_hash_classes() {
         values.push(ProgramValue::Float64(OldMachineTerm::uint64_constant(bits)));
     }
     values.push(ProgramValue::Pointer(OldPointer::new(
-        OldAddress::symbolic(Variable(998603)),
+        Address::symbolic(Variable(998603)),
         ProgramType::Int32Pointer,
     )));
     for left in &values {
@@ -327,7 +327,7 @@ fn algebraic_storage_keys_preserve_native_order_and_carrier_classes() {
         }));
     }
     let pointer = OldPointer::new(
-        OldAddress::symbolic(Variable(998737)),
+        Address::symbolic(Variable(998737)),
         ProgramType::Int32Pointer,
     );
     for pointer in [pointer.clone(), pointer] {
@@ -339,7 +339,7 @@ fn algebraic_storage_keys_preserve_native_order_and_carrier_classes() {
     for address in [998738, 998739] {
         values.push(make(AlgebraicTermNode::MemoryLoad {
             point: crate::kernel::ProgramPoint::at(&intern_memory(SymbolicMemory::new())),
-            pointer: Box::new(OldAddress::symbolic(Variable(address))),
+            pointer: Box::new(Address::symbolic(Variable(address))),
         }));
     }
     let condition = OldConditionTerm::Variable(Variable(998736));
@@ -427,10 +427,10 @@ fn deep_algebraic_storage_keys_use_a_small_stack() {
 fn pointer_storage_keys_preserve_the_complete_native_identity_tuple() {
     let _session = VerificationSession::enter();
     let pointer = OldPointer::new(
-        OldAddress::symbolic(Variable(998750)),
+        Address::symbolic(Variable(998750)),
         ProgramType::Int32Pointer,
     );
-    let other = OldAddress::symbolic(Variable(998751));
+    let other = Address::symbolic(Variable(998751));
     let mut values = vec![
         pointer.clone(),
         pointer.clone(),
@@ -466,10 +466,7 @@ fn pointer_storage_keys_preserve_the_complete_native_identity_tuple() {
         AddressOffset::scaled_int64_node(OldMachineTerm::Variable(Variable(998754)), 8, true),
     ] {
         values.push(OldPointer::new(
-            OldAddress {
-                base: other.base.clone(),
-                offset: offset,
-            },
+            other.with_offset(offset),
             ProgramType::Int32Pointer,
         ));
     }
@@ -510,8 +507,8 @@ fn deep_pointer_storage_keys_use_a_small_stack() {
         .spawn(|| {
             use crate::kernel::{KernelAddressOffset, SharedAddress};
             let _session = VerificationSession::enter();
-            let value = SharedPointer::import_produced(&OldPointer::new(
-                OldAddress::symbolic(Variable(998755)),
+            let value = SharedPointer::import(&OldPointer::new(
+                Address::symbolic(Variable(998755)),
                 ProgramType::Int32Pointer,
             ));
             let mut payload = value.node().clone();
@@ -524,7 +521,7 @@ fn deep_pointer_storage_keys_use_a_small_stack() {
                     .into_shared()
                     .unwrap();
             }
-            payload.address = SharedAddress::new(payload.address.node().base.clone(), offset);
+            payload.address = SharedAddress::new(payload.address.block(), offset);
             payload.provenance = payload.address.clone();
             let stored = StoredExecutionValue::from(ExecutionValue::Shared(
                 KernelTerm::shared_pointer_value(SharedPointer::new(payload)),

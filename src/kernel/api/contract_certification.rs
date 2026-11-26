@@ -499,7 +499,7 @@ pub fn execution_state_justifies_loadability_obligation(
 /// bounded by the equalities stated about this one pointer.
 fn symbolic_base_aliases_a_held_cell(
     memory: &SymbolicMemory,
-    base: &OldAddress,
+    base: &Address,
     assumptions: &PureFactContext,
 ) -> bool {
     if !matches!(base.base, AddressBase::Symbolic(_)) {
@@ -512,10 +512,7 @@ fn symbolic_base_aliases_a_held_cell(
     else {
         return false;
     };
-    let object = OldAddress {
-        base: base.base.clone(),
-        offset: AddressOffset::constant(0),
-    };
+    let object = base.with_offset(AddressOffset::constant(0));
     assumptions.exact_pointer_aliases(&object).any(|alias| {
         crate::instrumentation::record_deterministic_work(1);
         matches!(
@@ -849,7 +846,7 @@ fn forall_loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Proposi
 pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
     assumptions: &PureFactContext,
     memory: &SymbolicMemory,
-    base: &OldAddress,
+    base: &Address,
 ) -> bool {
     if crate::kernel::assumptions::reasoning_interrupted() {
         return false;
@@ -2963,11 +2960,9 @@ fn freshen_proposition_bodies(
     ) {
         let pointer = match sort {
             Sort::ProgramPointer(ProgramType::FunctionPointer(_)) => {
-                OldAddress::symbolic_function(fresh)
+                Address::symbolic_function(fresh)
             }
-            Sort::ProgramPointer(_) | Sort::ProgramObjectPointer(_, _) => {
-                OldAddress::symbolic(fresh)
-            }
+            Sort::ProgramPointer(_) | Sort::ProgramObjectPointer(_, _) => Address::symbolic(fresh),
             _ => unreachable!("pointer freshening only handles pointer sorts"),
         };
         (
@@ -3021,10 +3016,10 @@ pub(crate) fn substitute_quantified_body_capture_free(
         ) {
             let pointer = match sort {
                 Sort::ProgramPointer(ProgramType::FunctionPointer(_)) => {
-                    OldAddress::symbolic_function(target)
+                    Address::symbolic_function(target)
                 }
                 Sort::ProgramPointer(_) | Sort::ProgramObjectPointer(_, _) => {
-                    OldAddress::symbolic(target)
+                    Address::symbolic(target)
                 }
                 _ => unreachable!("pointer substitution only handles pointer sorts"),
             };
@@ -3486,10 +3481,10 @@ mod shared_contract_operand_tests {
     #[test]
     fn shared_contract_read_matches_stored_arithmetic_without_export() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = OldAddress {
-            base: "contract-expression-cell".into(),
-            offset: AddressOffset::constant(0),
-        };
+        let pointer = Address::new(
+            "contract-expression-cell".into(),
+            AddressOffset::constant(0),
+        );
         let written = OldMachineTerm::add(
             OldMachineTerm::Variable(Variable(1017151)),
             OldMachineTerm::constant(7),
@@ -3533,10 +3528,7 @@ mod shared_contract_operand_tests {
     #[test]
     fn shared_contract_index_equality_keeps_read_states_and_sources() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = OldAddress {
-            base: "contract-index".into(),
-            offset: AddressOffset::constant(0),
-        };
+        let pointer = Address::new("contract-index".into(), AddressOffset::constant(0));
         let load = |id| {
             let memory = crate::kernel::SymbolicMemory::new()
                 .with_block("contract-index", 4)

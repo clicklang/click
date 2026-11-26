@@ -614,7 +614,7 @@ fn an_exact_read_marks_only_its_outermost_read() {
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
     let pp = ProgramValue::typed_pointer(
-        OldAddress::symbolic(Variable(914_101)),
+        Address::symbolic(Variable(914_101)),
         ProgramType::Int32PointerPointer,
     );
     let bindings = ProgramValueBindings::from([("pp".into(), pp.clone()), ("x".into(), int32(4))]);

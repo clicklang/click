@@ -1386,8 +1386,8 @@ mod tests {
         let carrier = BindingName::reference_carrier("x");
         let variable = ProgramExpression::Variable(carrier);
         let fake = ProgramExpression::Variable("&x".into());
-        let pointer = ProgramValue::pointer(OldAddress::symbolic(Variable(71)));
-        let other = ProgramValue::pointer(OldAddress::symbolic(Variable(72)));
+        let pointer = ProgramValue::pointer(Address::symbolic(Variable(71)));
+        let other = ProgramValue::pointer(Address::symbolic(Variable(72)));
         let spec = ResourceSpec::declared_with_argument_states(
             ResourceFamily::Composite,
             ResourceAccessMode::Own,

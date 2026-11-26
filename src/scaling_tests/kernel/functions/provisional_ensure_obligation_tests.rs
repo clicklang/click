@@ -7,10 +7,7 @@ use super::*;
 #[test]
 fn provisional_ensure_loadability_work_ignores_unrelated_facts() {
     let memory = SymbolicMemory::new();
-    let data = OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::constant(0),
-    };
+    let data = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0));
     let state = ExecutionState::new()
         .with_local("data", ProgramValue::pointer(data.clone()))
         .with_memory(memory.clone());

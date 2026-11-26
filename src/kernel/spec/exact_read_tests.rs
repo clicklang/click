@@ -5,10 +5,7 @@
 use super::*;
 
 fn read(point: &str, value_type: ProgramType, exact: bool) -> SpecExpression {
-    let cell = OldAddress {
-        base: point.into(),
-        offset: AddressOffset::constant(0),
-    };
+    let cell = Address::new(point.into(), AddressOffset::constant(0));
     SpecExpression::MemoryLoad {
         point: SpecPoint::Current,
         pointer: Box::new(SpecExpression::Value(ProgramValue::typed_pointer(
@@ -39,14 +36,8 @@ fn evaluate(state: &ExecutionState, read: &SpecExpression) -> ProgramValue {
 #[test]
 fn an_exact_read_is_named_by_its_own_state_not_the_version_point() {
     let _session = crate::kernel::VerificationSession::enter();
-    let cell = OldAddress {
-        base: "exact-read-cell".into(),
-        offset: AddressOffset::constant(0),
-    };
-    let other = OldAddress {
-        base: "exact-read-other".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let cell = Address::new("exact-read-cell".into(), AddressOffset::constant(0));
+    let other = Address::new("exact-read-other".into(), AddressOffset::constant(0));
     let stored = SymbolicMemory::new()
         .with_block("exact-read-cell", 4)
         .with_block("exact-read-other", 4)
@@ -74,14 +65,8 @@ fn an_exact_read_is_named_by_its_own_state_not_the_version_point() {
 #[test]
 fn an_exact_pointer_read_has_its_own_read_as_provenance() {
     let _session = crate::kernel::VerificationSession::enter();
-    let cell = OldAddress {
-        base: "exact-pointer-cell".into(),
-        offset: AddressOffset::constant(0),
-    };
-    let other = OldAddress {
-        base: "exact-pointer-other".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let cell = Address::new("exact-pointer-cell".into(), AddressOffset::constant(0));
+    let other = Address::new("exact-pointer-other".into(), AddressOffset::constant(0));
     let after = SymbolicMemory::new()
         .with_block("exact-pointer-cell", 8)
         .with_block("exact-pointer-other", 4)
@@ -114,7 +99,7 @@ fn an_exact_pointer_read_has_its_own_read_as_provenance() {
     };
     assert_eq!(
         ordinary.address(),
-        &OldAddress::canonical_read(&state, None, &cell)
+        &Address::canonical_read(&state, None, &cell)
     );
     assert_ne!(ordinary.address(), exact.address());
 }

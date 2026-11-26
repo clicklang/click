@@ -16,7 +16,7 @@ fn iterated_descriptor_handoffs_and_holes_preserve_growing_shared_operands() {
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             let operand = StoredMachineTerm::from_value(root.clone().into()).unwrap();
             let guard = IteratedGuard::new_stored(
-                OldAddress::symbolic(Variable(10993625)),
+                Address::symbolic(Variable(10993625)),
                 ProgramType::Int32,
                 4,
                 true,
@@ -24,7 +24,7 @@ fn iterated_descriptor_handoffs_and_holes_preserve_growing_shared_operands() {
             );
             let fact = IteratedMemory::new_stored(
                 "CommonGuard",
-                OldAddress::symbolic(Variable(10993626)),
+                Address::symbolic(Variable(10993626)),
                 4,
                 1,
                 0,

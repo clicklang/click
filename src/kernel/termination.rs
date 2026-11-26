@@ -782,10 +782,10 @@ fn call_passes_witness_child(
         let variable = Variable::produced(Producer::TerminationParameter, index as u64);
         let value = if parameter.program_type().is_pointer() {
             ProgramValue::typed_pointer(
-                OldAddress {
-                    base: AddressBase::ExternalArgument,
-                    offset: AddressOffset::scale_int32(OldMachineTerm::Variable(variable), 1),
-                },
+                Address::new(
+                    AddressBase::ExternalArgument,
+                    AddressOffset::scale_int32(OldMachineTerm::Variable(variable), 1),
+                ),
                 parameter.program_type(),
             )
         } else {
@@ -823,7 +823,7 @@ fn call_passes_witness_child(
             );
         }
         for (index, witness) in definition.witnesses().iter().enumerate() {
-            let pointer = OldAddress::symbolic(Variable::produced(
+            let pointer = Address::symbolic(Variable::produced(
                 Producer::TerminationWitness,
                 index as u64,
             ));
@@ -5158,7 +5158,7 @@ pub struct TerminationVerdicts {
     /// no evidence, and the caller of this check decides what an unjustified
     /// declaration means.
     pub unjustified_diverging: Vec<String>,
-    /// OldAddress-takings that keep every call through a function pointer
+    /// Address-takings that keep every call through a function pointer
     /// refused. While this is nonempty the verdicts are the strict ones, and
     /// `refusals` says why each named callback does not qualify.
     pub unsuitable_callbacks: Vec<UnsuitableCallback>,
@@ -5476,16 +5476,16 @@ mod ranking_member_tests {
         );
     }
 
-    fn int32_cell(name: &str) -> OldAddress {
-        OldAddress {
-            base: AddressBase::Concrete(name.to_string()),
-            offset: AddressOffset::constant(0),
-        }
+    fn int32_cell(name: &str) -> Address {
+        Address::new(
+            AddressBase::Concrete(name.to_string()),
+            AddressOffset::constant(0),
+        )
     }
 
     /// A pure component that reads memory: the load is against the state the
     /// component is read at, not a state the surface named.
-    fn current_load(cell: &OldAddress) -> SpecExpression {
+    fn current_load(cell: &Address) -> SpecExpression {
         SpecExpression::MemoryLoad {
             point: SpecPoint::Current,
             pointer: Box::new(SpecExpression::Value(ProgramValue::Pointer(

@@ -1,10 +1,10 @@
 use super::*;
 
-fn local_pointer() -> OldAddress {
-    OldAddress {
-        base: AddressBase::Concrete("local:caller:x".to_string()),
-        offset: AddressOffset::constant(0),
-    }
+fn local_pointer() -> Address {
+    Address::new(
+        AddressBase::Concrete("local:caller:x".to_string()),
+        AddressOffset::constant(0),
+    )
 }
 
 fn owned_cell_spec() -> ResourceSpec {
@@ -26,7 +26,7 @@ fn uninitialized_cell_spec() -> ResourceSpec {
     )
 }
 
-fn caller_state(pointer: &OldAddress) -> ExecutionState {
+fn caller_state(pointer: &Address) -> ExecutionState {
     let resources = ResourceContext::new().unchecked_with_fact(ResourceFact::own(
         Resource::Memory(MemoryRange::new(
             pointer.clone(),
@@ -43,7 +43,7 @@ fn caller_state(pointer: &OldAddress) -> ExecutionState {
 fn apply(
     function: ProgramFunction,
     state: &ExecutionState,
-    pointer: &OldAddress,
+    pointer: &Address,
 ) -> Vec<FunctionPath> {
     let environment =
         ExecutionEnvironment::new().with_verified_function_rule(VerifiedFunctionRule {
@@ -131,15 +131,15 @@ fn owned_write_keeps_an_uninitialized_output_writable() {
 fn aliased_byte_output_fixture(
     size: u32,
     initialized_output: bool,
-) -> (ExecutionState, ProgramFunction, PureFactContext, OldAddress) {
+) -> (ExecutionState, ProgramFunction, PureFactContext, Address) {
     let word = SymbolicMemory::local_pointer("output-word");
-    let alias = OldAddress::symbolic(Variable(987_000));
+    let alias = Address::symbolic(Variable(987_000));
     let mut memory =
         SymbolicMemory::new().with_declared_scalar_block(word.base.clone(), 4, ProgramType::UInt32);
     let mut assumptions = PureFactContext::new();
     let mut previous = alias.clone();
     for i in 0..size {
-        let next = OldAddress::symbolic(Variable(987_001 + u64::from(i)));
+        let next = Address::symbolic(Variable(987_001 + u64::from(i)));
         assumptions = assumptions.assume_condition(
             OldConditionTerm::address_equal(previous, next.clone()),
             true,

@@ -4,7 +4,7 @@ use super::*;
 fn comparing_conversions_of_a_read_reuses_the_native_operand() {
     use crate::instrumentation::measure_deterministic_work;
     use crate::kernel::{
-        KernelIntegerOperator, KernelTerm, KernelTermImport, LoadKind, OldAddress, ProgramPoint,
+        Address, KernelIntegerOperator, KernelTerm, KernelTermImport, LoadKind, ProgramPoint,
         SymbolicMemory, intern_memory,
     };
 
@@ -13,7 +13,7 @@ fn comparing_conversions_of_a_read_reuses_the_native_operand() {
         let _session = crate::kernel::VerificationSession::enter();
         let read = OldMachineTerm::read_named(
             ProgramPoint::at(&intern_memory(SymbolicMemory::new())),
-            Box::new(OldAddress::symbolic(Variable(999742))),
+            Box::new(Address::symbolic(Variable(999742))),
             LoadKind::UInt32,
         );
         let observed = IntegerTerm::from_machine(format, read).unwrap();

@@ -15,7 +15,7 @@ pub(super) struct ScalarReadDescriptor<'a> {
     term: &'a OldMachineTerm,
     point: &'a ProgramPoint,
     memory: &'a SharedMemory,
-    pointer: &'a OldAddress,
+    pointer: &'a Address,
     kind: LoadKind,
     narrow_bytes: Option<u32>,
 }
@@ -30,7 +30,7 @@ impl<'a> ScalarReadDescriptor<'a> {
         self.point
     }
 
-    pub(super) fn address(&self) -> &'a OldAddress {
+    pub(super) fn address(&self) -> &'a Address {
         self.pointer
     }
 

@@ -3,8 +3,8 @@ use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
 use crate::kernel::assumptions::{parameter_alias_bucket, parameter_partition_variable};
 use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
 use crate::kernel::{
-    AddressBase, MachineIntegerType, MachineOperandView, OldAddress, OldConditionTerm,
-    OldMachineTerm, Proposition, Variable,
+    Address, AddressBase, MachineIntegerType, MachineOperandView, OldConditionTerm, OldMachineTerm,
+    Proposition, Variable,
 };
 use crate::kernel::{OffsetTree, OffsetView};
 use crate::persistent::{PersistentComponents, PersistentMap, PersistentSet};
@@ -17,7 +17,7 @@ use std::collections::BTreeSet;
 #[derive(Clone, Debug, Default)]
 pub(in crate::kernel) struct NumericAddressConnectivity {
     operands: PersistentMap<Key, u64>,
-    other_objects: PersistentMap<OldAddress, u64>,
+    other_objects: PersistentMap<Address, u64>,
     owner_forest: NumericAddressForest,
     next_id: u64,
     pointer_alias_roots: PersistentSet<u64>,
@@ -36,7 +36,7 @@ enum RawStoreCoordinate {
 /// snapshot without retaining read operands that may name the cache itself.
 #[derive(Clone, Debug, Default)]
 struct NumericAddressForest {
-    objects: PersistentMap<OldAddress, u64>,
+    objects: PersistentMap<Address, u64>,
     components: PersistentComponents<u64>,
 }
 
@@ -44,7 +44,7 @@ impl NumericAddressConnectivity {
     pub(in crate::kernel) fn record(
         &mut self,
         endpoints: [(&Key, &OldMachineTerm); 2],
-        has_pointer_alias: impl Fn(&OldAddress) -> bool,
+        has_pointer_alias: impl Fn(&Address) -> bool,
     ) {
         let [left, right] = endpoints.map(|(key, term)| {
             if let Some(variable) = key.operand_view().variable() {
@@ -124,7 +124,7 @@ impl NumericAddressConnectivity {
     // The marks track which numeric components can reach an exact pointer
     // equality. An exact edge does not join numeric components or affect
     // the separate byte-overlap checks that read numeric connectivity.
-    pub(in crate::kernel) fn mark_pointer_alias_bucket(&mut self, bucket: &OldAddress) {
+    pub(in crate::kernel) fn mark_pointer_alias_bucket(&mut self, bucket: &Address) {
         if let Some(&node) = self.object_node(bucket) {
             self.mark_pointer_alias_node(node);
         }
@@ -139,21 +139,21 @@ impl NumericAddressConnectivity {
         self.pointer_alias_roots = Default::default();
     }
 
-    pub(super) fn reaches_pointer_alias(&self, bucket: &OldAddress) -> bool {
+    pub(super) fn reaches_pointer_alias(&self, bucket: &Address) -> bool {
         self.object_node(bucket).is_some_and(|node| {
             self.pointer_alias_roots
                 .contains(self.owner_forest.components.root(node))
         })
     }
 
-    fn object_node(&self, bucket: &OldAddress) -> Option<&u64> {
+    fn object_node(&self, bucket: &Address) -> Option<&u64> {
         self.owner_forest
             .objects
             .get(bucket)
             .or_else(|| self.other_objects.get(bucket))
     }
 
-    fn can_be_owner(bucket: &OldAddress) -> bool {
+    fn can_be_owner(bucket: &Address) -> bool {
         bucket.base == AddressBase::ExternalArgument
             && match bucket.offset.view() {
                 OffsetView::Variable(_) => true,
@@ -176,7 +176,7 @@ impl NumericAddressConnectivity {
         (id, true)
     }
 
-    pub(super) fn reaches_raw_store_coordinate(&self, bucket: &OldAddress) -> bool {
+    pub(super) fn reaches_raw_store_coordinate(&self, bucket: &Address) -> bool {
         // The write's own bucket may be absent from the numeric forest.
         parameter_partition_variable(bucket).is_some_and(|variable| {
             matches!(
@@ -190,7 +190,7 @@ impl NumericAddressConnectivity {
             })
     }
 
-    pub(in crate::kernel) fn connected(&self, left: &OldAddress, right: &OldAddress) -> bool {
+    pub(in crate::kernel) fn connected(&self, left: &Address, right: &Address) -> bool {
         let node = |address| self.object_node(&parameter_alias_bucket(address));
         let Some(left) = node(left) else {
             return false;
@@ -201,7 +201,7 @@ impl NumericAddressConnectivity {
 }
 
 impl NumericAddressForest {
-    fn component(&self, bucket: &OldAddress) -> Option<u64> {
+    fn component(&self, bucket: &Address) -> Option<u64> {
         self.objects
             .get(bucket)
             .map(|node| *self.components.root(node))
@@ -219,7 +219,7 @@ pub(in crate::kernel) struct NumericAddressOwners {
 
 #[derive(Clone, Default)]
 struct PopulatedOwners {
-    owner: Option<OldAddress>,
+    owner: Option<Address>,
     children: PersistentSet<u64>,
 }
 
@@ -245,7 +245,7 @@ impl NumericAddressOwners {
         }
     }
 
-    pub(in crate::kernel) fn owners(&self, base: &OldAddress) -> Option<BTreeSet<OldAddress>> {
+    pub(in crate::kernel) fn owners(&self, base: &Address) -> Option<BTreeSet<Address>> {
         let root = self.forest.component(base)?;
         let mut owners = BTreeSet::new();
         let mut pending = vec![root];
@@ -259,13 +259,13 @@ impl NumericAddressOwners {
         Some(owners)
     }
 
-    pub(in crate::kernel) fn update_owner(&mut self, owner: OldAddress, present: bool) {
+    pub(in crate::kernel) fn update_owner(&mut self, owner: Address, present: bool) {
         if let Some(&node) = self.forest.objects.get(&owner) {
             self.set_owner(node, present.then_some(owner));
         }
     }
 
-    fn set_owner(&mut self, node: u64, owner: Option<OldAddress>) {
+    fn set_owner(&mut self, node: u64, owner: Option<Address>) {
         let mut bucket = self.populated.get(&node).cloned().unwrap_or_default();
         if bucket.owner != owner {
             bucket.owner = owner;
@@ -314,7 +314,7 @@ impl NumericAddressOwners {
     pub(in crate::kernel) fn refresh(
         &mut self,
         newer: &NumericAddressConnectivity,
-        populated: impl Fn(&OldAddress) -> bool,
+        populated: impl Fn(&Address) -> bool,
     ) {
         let newer = &newer.owner_forest;
         let older = self.forest.clone();

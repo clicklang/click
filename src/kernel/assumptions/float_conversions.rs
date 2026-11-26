@@ -234,7 +234,10 @@ pub(super) fn collect_load_keys(root: &KernelTerm, keys: &mut BTreeSet<(AddressB
         }
         match root.node() {
             KernelTermNode::FloatRead(read) => {
-                collect_float_read_load_keys(read.parts().1.exact_cell_key(), keys);
+                collect_float_read_load_keys(
+                    read.parts().1.written().expect("retained read address"),
+                    keys,
+                );
             }
             // Scalar read leaves cannot contribute to the float transport index.
             KernelTermNode::MemoryLoad { .. } => {}
@@ -384,7 +387,7 @@ mod tests {
             (KernelFloatType::Float32, "c_float32_to_int32"),
             (KernelFloatType::Float64, "c_float64_to_int32"),
         ] {
-            let pointer = OldAddress::symbolic(Variable(999978));
+            let pointer = Address::symbolic(Variable(999978));
             let native = OldMachineTerm::opaque_conversion(
                 name,
                 OldMachineTerm::read_named(point.clone(), Box::new(pointer), format.load_kind()),
@@ -406,7 +409,7 @@ mod tests {
     #[test]
     fn conversion_index_fingerprints_and_load_keys_match_native_policies() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = OldAddress::symbolic(Variable(999979));
+        let pointer = Address::symbolic(Variable(999979));
         let mut policies = Vec::new();
         for memory in [
             SymbolicMemory::new(),

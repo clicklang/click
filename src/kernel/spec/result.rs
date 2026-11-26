@@ -609,7 +609,7 @@ mod pointer_observation_tests {
     fn numeric_pointer_projection_retains_the_address_without_changing_complete_values() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = OldPointer::new(
-            OldAddress::symbolic(Variable(1024900)),
+            Address::symbolic(Variable(1024900)),
             ProgramType::Int32Pointer,
         );
         let numeric = ProgramValue::UInt64(OldMachineTerm::object_pointer_address(

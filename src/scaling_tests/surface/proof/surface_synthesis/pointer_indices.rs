@@ -26,14 +26,11 @@ fn pointer_surface_index_readers_retain_shared_dags() {
             let value =
                 SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, root.clone())
                     .unwrap();
-            let base = OldAddress {
-                base: AddressBase::Concrete("surface-index-dag".into()),
-                offset: AddressOffset::constant(0),
-            };
-            let pointer = OldAddress {
-                base: base.base.clone(),
-                offset: AddressOffset::int32_scaled(value, 4),
-            };
+            let base = Address::new(
+                AddressBase::Concrete("surface-index-dag".into()),
+                AddressOffset::constant(0),
+            );
+            let pointer = base.with_offset(AddressOffset::int32_scaled(value, 4));
             let exports = KernelTermExport::machine_export_count();
             let (index, work) = crate::instrumentation::measure_deterministic_work(|| {
                 let index = synthesis_element_index(&pointer, &base, 4).unwrap();

@@ -318,7 +318,7 @@ mod tests {
         }
         let read = KernelTermImport::default().condition(&OldConditionTerm::boolean_cell_read(
             ProgramPoint::at(&intern_memory(SymbolicMemory::new())),
-            OldAddress::symbolic(Variable(992122)),
+            Address::symbolic(Variable(992122)),
         ));
         let mut rewrite = TermRewrite::empty();
         assert_eq!(rewrite.shared_boolean_operand(&read), Some(read.clone()));

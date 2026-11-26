@@ -26,15 +26,10 @@ fn loadable_count_production_retains_growing_bound_dags() {
                 );
             }
             let mut range = if wide {
-                MemoryRange::new_wide(
-                    OldAddress::symbolic(Variable(10993703)),
-                    zero.clone(),
-                    zero,
-                    1,
-                )
+                MemoryRange::new_wide(Address::symbolic(Variable(10993703)), zero.clone(), zero, 1)
             } else {
                 MemoryRange::new_with_element_width(
-                    OldAddress::symbolic(Variable(10993703)),
+                    Address::symbolic(Variable(10993703)),
                     zero.clone(),
                     zero,
                     1,

@@ -9,24 +9,24 @@ fn wide_borrow_alignment_retains_both_index_widths_without_alias_scans() {
     let mut samples = Vec::new();
     for size in [16_u64, 64, 256, 1024] {
         let mut graph = EqualityGraph::default();
-        let bytes = OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(index(999_200), 1),
-        };
-        let base = OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(index(999_201), 1),
-        };
+        let bytes = Address::new(
+            AddressBase::ExternalArgument,
+            AddressOffset::scale_int32(index(999_200), 1),
+        );
+        let base = Address::new(
+            AddressBase::ExternalArgument,
+            AddressOffset::scale_int32(index(999_201), 1),
+        );
         let computed = base.offset_by_elements(index(999_202), 1);
         let wide = bytes.offset_by_typed_elements(index(999_203), 1, true, true);
         assert!(graph.add_offset_equality(&computed.offset, &wide.offset));
         assert_eq!(graph.additive_address(&computed), Some(computed.clone()));
         assert_eq!(graph.wide_additive_address(&computed), Some(wide.clone()));
         for item in 0..size {
-            let alias = OldAddress::symbolic(Variable(1_100_000 + item));
+            let alias = Address::symbolic(Variable(1_100_000 + item));
             assert!(graph.add_equality(&alias, &computed));
         }
-        let cursor = OldAddress::symbolic(Variable(1_100_000 + size - 1));
+        let cursor = Address::symbolic(Variable(1_100_000 + size - 1));
         let (((aligned, lane), work), map_work) =
             crate::persistent::measure_persistent_work(|| {
                 crate::instrumentation::measure_deterministic_work(|| {
@@ -73,14 +73,8 @@ fn repeated_address_queries_reuse_registered_addresses() {
                 )
             })
         };
-        let left = OldAddress {
-            base: symbolic(1),
-            offset: offset(1_000),
-        };
-        let right = OldAddress {
-            base: symbolic(2),
-            offset: offset(5_000),
-        };
+        let left = Address::new(symbolic(1), offset(1_000));
+        let right = Address::new(symbolic(2), offset(5_000));
         let (first, first_work) =
             crate::instrumentation::measure_deterministic_work(|| graph.are_equal(&left, &right));
         let nodes = graph
@@ -276,23 +270,23 @@ fn mixed_pointer_queries_do_not_walk_growing_offset_classes() {
                 graph.add_offset_equality(&offset(i).clone(), &offset(i + 1).clone());
             }
             graph.add_equality(&y, &z);
-            graph.add_equality(&z, &OldAddress::null());
+            graph.add_equality(&z, &Address::null());
         });
         assert!(
             construction < 128 * size as usize,
             "size={size}, work={construction}"
         );
-        assert!(!graph.are_equal(&x, &OldAddress::null()));
+        assert!(!graph.are_equal(&x, &Address::null()));
         let sibling = graph.clone();
         let mut branch = graph.clone();
         let (_, query) = crate::instrumentation::measure_deterministic_work(|| {
             branch.add_offset_equality(&offset(0).clone(), &offset(1).clone());
-            assert!(branch.are_equal(&x, &OldAddress::null()));
-            assert!(branch.are_equal(&OldAddress::null(), &x));
+            assert!(branch.are_equal(&x, &Address::null()));
+            assert!(branch.are_equal(&Address::null(), &x));
         });
         assert!(query < 128, "size={size}, work={query}");
-        assert!(!graph.are_equal(&x, &OldAddress::null()));
-        assert!(!sibling.are_equal(&x, &OldAddress::null()));
+        assert!(!graph.are_equal(&x, &Address::null()));
+        assert!(!sibling.are_equal(&x, &Address::null()));
     }
 }
 
@@ -363,7 +357,7 @@ fn local_slot_alias_lookup_skips_unrelated_opaque_class_members() {
             let mut expected = graph
                 .pointer_spellings(&query)
                 .into_iter()
-                .map(|pointer| pointer.base)
+                .map(|pointer| pointer.base.clone())
                 .filter(|block| block.starts_with("local:"))
                 .collect::<Vec<_>>();
             let (mut actual, units) = crate::instrumentation::measure_deterministic_work(|| {
@@ -388,7 +382,7 @@ fn offset_queries_retain_typed_read_definitions_and_keep_blocks_distinct() {
     let memory = crate::kernel::intern_memory(SymbolicMemory::new());
     let p = at(symbolic(919_001), 0);
     let q = at(symbolic(919_002), 0);
-    let variable = |address: &OldAddress| {
+    let variable = |address: &Address| {
         crate::kernel::load_variable_for_cell_with_origin(
             &memory,
             address,
@@ -399,8 +393,8 @@ fn offset_queries_retain_typed_read_definitions_and_keep_blocks_distinct() {
     };
     let xv = variable(&p);
     let yv = variable(&q);
-    let x = OldAddress::loaded(&OldMachineTerm::Variable(xv)).unwrap();
-    let y = OldAddress::loaded(&OldMachineTerm::Variable(yv)).unwrap();
+    let x = Address::loaded(&OldMachineTerm::Variable(xv)).unwrap();
+    let y = Address::loaded(&OldMachineTerm::Variable(yv)).unwrap();
     // A typed read is named by its defining state and address, not by
     // its storage block or a scaled offset.
     for (value, address) in [(&x, &p), (&y, &q)] {
@@ -426,17 +420,17 @@ fn offset_queries_retain_typed_read_definitions_and_keep_blocks_distinct() {
     // A scalar-indexed address beside the same load is not the read.
     assert!(!graph.are_equal(
         &x,
-        &OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(yv), 4),
-        }
+        &Address::new(
+            AddressBase::ExternalArgument,
+            AddressOffset::scale_int32(OldMachineTerm::Variable(yv), 4)
+        )
     ));
     // New unrelated definitions must not make rediscovery visit more than
     // these two selected operands.
     for size in [16u64, 64, 256, 1024] {
         for i in 0..size {
             let address = at(symbolic(920_000 + i), 0);
-            let value = OldAddress::loaded_value(&memory, &address);
+            let value = Address::loaded_value(&memory, &address);
             graph.register_pointer_read_definition(&value, &memory, &address);
         }
         let ((equal, work), map_work) = crate::persistent::measure_persistent_work(|| {
@@ -453,8 +447,8 @@ fn offset_queries_retain_typed_read_definitions_and_keep_blocks_distinct() {
     }
     // The read's displacement does not transfer to unrelated blocks.
     assert!(!graph.are_equal(
-        &at_offset(symbolic(919_003), x.offset_by_bytes(8).offset),
-        &at_offset(symbolic(919_004), y.offset_by_bytes(8).offset)
+        &at_offset(symbolic(919_003), x.offset_by_bytes(8).offset.clone()),
+        &at_offset(symbolic(919_004), y.offset_by_bytes(8).offset.clone())
     ));
 }
 
@@ -463,7 +457,7 @@ fn offset_queries_retain_typed_read_definitions_and_keep_blocks_distinct() {
 /// classed loads read from other states.
 #[test]
 fn load_congruence_work_ignores_classed_loads_of_other_states() {
-    let name = |memory: &crate::kernel::SharedMemory, address: OldAddress| {
+    let name = |memory: &crate::kernel::SharedMemory, address: Address| {
         AddressBase::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
             memory,
             &address,
@@ -572,8 +566,8 @@ fn late_typed_load_merges_scale_with_existing_storage_relative_bridges() {
             for i in 0..size {
                 let p = at(symbolic(810_000 + i), 0);
                 let q = at(symbolic(820_000 + i), 0);
-                let old_value = |address: &OldAddress| {
-                    OldAddress::loaded(&OldMachineTerm::Variable(
+                let old_value = |address: &Address| {
+                    Address::loaded(&OldMachineTerm::Variable(
                         crate::kernel::load_variable_for_cell_with_origin(
                             &memory,
                             address,
@@ -586,8 +580,8 @@ fn late_typed_load_merges_scale_with_existing_storage_relative_bridges() {
                 };
                 let left = old_value(&p);
                 let right = old_value(&q);
-                graph.add_equality(&left, &OldAddress::loaded_value(&memory, &p));
-                graph.add_equality(&right, &OldAddress::loaded_value(&memory, &q));
+                graph.add_equality(&left, &Address::loaded_value(&memory, &p));
+                graph.add_equality(&right, &Address::loaded_value(&memory, &q));
                 graph.add_equality(&p, &q);
                 pairs.push((left, right));
             }
@@ -705,18 +699,18 @@ fn shifted_raw_read_dependency_lookup_ignores_unrelated_definitions() {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let mut graph = EqualityGraph::default();
         for item in 0..size {
-            let address = OldAddress::symbolic(Variable(1_200_000 + item));
+            let address = Address::symbolic(Variable(1_200_000 + item));
             let _ =
                 memory
                     .memory()
                     .symbolic_pointer_load(None, &address, ProgramType::Int32Pointer);
             graph.add_equality(
-                &OldAddress::symbolic(Variable(1_300_000 + item)),
-                &OldAddress::symbolic(Variable(1_400_000 + item)),
+                &Address::symbolic(Variable(1_300_000 + item)),
+                &Address::symbolic(Variable(1_400_000 + item)),
             );
         }
-        let address = OldAddress::symbolic(Variable(1_500_000));
-        let model = OldAddress::symbolic(Variable(1_500_001));
+        let address = Address::symbolic(Variable(1_500_000));
+        let model = Address::symbolic(Variable(1_500_001));
         let ProgramValue::Pointer(raw) =
             memory
                 .memory()
@@ -724,8 +718,8 @@ fn shifted_raw_read_dependency_lookup_ignores_unrelated_definitions() {
         else {
             panic!("typed pointer read");
         };
-        graph.add_equality(&OldAddress::loaded_value(&memory, &address), &model);
-        let read = |pointer: &OldAddress| {
+        graph.add_equality(&Address::loaded_value(&memory, &address), &model);
+        let read = |pointer: &Address| {
             OldMachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
                 &memory,
                 pointer,
@@ -757,7 +751,7 @@ fn pointer_fact_source_order_queries_ignore_unrelated_admissions() {
         let mut target = None;
         for id in 0..size {
             let domain = crate::kernel::OldPointer::new(
-                OldAddress::symbolic(Variable(9_000_000 + id)),
+                Address::symbolic(Variable(9_000_000 + id)),
                 crate::kernel::ProgramType::Int32Pointer,
             );
             let fact = std::sync::Arc::new(crate::kernel::ExecutionPureFact::certified(
@@ -806,7 +800,7 @@ fn wide_read_metadata_does_not_publish_a_value_without_an_equation() {
         let mut reads = Vec::new();
         let ((), production) = crate::instrumentation::measure_deterministic_work(|| {
             for item in 0..size {
-                let address = OldAddress::symbolic(Variable(9_800_000 + item));
+                let address = Address::symbolic(Variable(9_800_000 + item));
                 let named =
                     intern_memory(SymbolicMemory::new().with_block(format!("word-{item}"), 8));
                 let variable = crate::kernel::load_variable_for_cell_with_origin(

@@ -35,10 +35,7 @@ fn local_definedness_identity_ignores_unrelated_store_history() {
     let _session = crate::kernel::VerificationSession::enter();
     let mut samples = Vec::new();
     for size in [8u32, 32, 128, 512] {
-        let array = OldAddress {
-            base: "local:defined-array".into(),
-            offset: AddressOffset::constant(0),
-        };
+        let array = Address::new("local:defined-array".into(), AddressOffset::constant(0));
         let mut memory = SymbolicMemory::new().with_uninitialized_block(array.base.clone(), 4);
         for index in 0..size {
             memory = memory.with_block(format!("local:defined-unrelated-{index}"), 4);
@@ -47,10 +44,10 @@ fn local_definedness_identity_ignores_unrelated_store_history() {
         let key = proposition_identity_key(&local_definedness_fact(&memory, 82_000)).unwrap();
         for index in 0..size {
             memory = memory.store(
-                OldAddress {
-                    base: format!("local:defined-unrelated-{index}").into(),
-                    offset: AddressOffset::constant(0),
-                },
+                Address::new(
+                    format!("local:defined-unrelated-{index}").into(),
+                    AddressOffset::constant(0),
+                ),
                 ProgramValue::Int32(index.into()),
             );
         }

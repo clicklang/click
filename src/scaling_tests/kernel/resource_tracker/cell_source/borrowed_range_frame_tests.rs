@@ -8,8 +8,8 @@ use super::*;
 fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
     for size in [16u64, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
-        let field = OldAddress::symbolic(Variable(9_897_001));
-        let data = OldAddress::symbolic(Variable(9_897_002));
+        let field = Address::symbolic(Variable(9_897_001));
+        let data = Address::symbolic(Variable(9_897_002));
         let count = OldMachineTerm::Variable(Variable(9_897_003));
         let backing = MemoryRange::new_with_element_width(data, 0u32.into(), count.clone(), 4);
         let descriptor =
@@ -20,7 +20,7 @@ fn borrowed_range_frame_is_indexed_full_width_and_authority_scoped() {
         for index in 0..size {
             partition = partition.unchecked_with_fact(ResourceFact::own_memory(
                 MemoryRange::new_with_element_width(
-                    OldAddress::symbolic(Variable(9_898_000 + index)),
+                    Address::symbolic(Variable(9_898_000 + index)),
                     0u32.into(),
                     4u32.into(),
                     4,

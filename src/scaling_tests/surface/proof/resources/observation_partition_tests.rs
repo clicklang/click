@@ -6,7 +6,7 @@ fn constructed_state_observation_does_not_revisit_ambient_owners_or_aliases() {
         let mut samples = Vec::new();
         for count in [4_u32, 16, 64] {
             let _session = crate::kernel::VerificationSession::enter();
-            let pointer = OldAddress::symbolic(Variable(8_919_000));
+            let pointer = Address::symbolic(Variable(8_919_000));
             let mut aliases = Vec::new();
             let mut resources = ResourceContext::new().unchecked_with_fact(
                 ResourceFact::own_memory(MemoryRange::new_with_element_width(
@@ -21,7 +21,7 @@ fn constructed_state_observation_does_not_revisit_ambient_owners_or_aliases() {
                     aliases.push(Proposition::condition_is(
                         OldConditionTerm::address_equal(
                             pointer.clone(),
-                            OldAddress::symbolic(Variable(8_919_100 + u64::from(index))),
+                            Address::symbolic(Variable(8_919_100 + u64::from(index))),
                         ),
                         true,
                     ));
@@ -29,10 +29,7 @@ fn constructed_state_observation_does_not_revisit_ambient_owners_or_aliases() {
                     let (base, start) = if axis == "related" {
                         (pointer.clone(), (index + 1) * 8)
                     } else {
-                        (
-                            OldAddress::symbolic(Variable(8_919_200 + u64::from(index))),
-                            0,
-                        )
+                        (Address::symbolic(Variable(8_919_200 + u64::from(index))), 0)
                     };
                     resources = resources.unchecked_with_fact(ResourceFact::own_memory(
                         MemoryRange::new_with_element_width(
@@ -66,7 +63,7 @@ fn memory_load_outcome_checks_shared_current_read_dependencies_without_export() 
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let state = ExecutionState::new();
-        let pointer = OldAddress::symbolic(Variable(991_044));
+        let pointer = Address::symbolic(Variable(991_044));
         let read = OldMachineTerm::read_named(
             ProgramPoint::at(&crate::kernel::intern_memory_ref(state.memory())),
             Box::new(pointer.clone()),
@@ -114,7 +111,7 @@ fn stored_conditions_and_counts_check_current_dependency_without_export() {
     for size in [8, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
         let state = ExecutionState::new();
-        let pointer = OldAddress::symbolic(Variable(991_045));
+        let pointer = Address::symbolic(Variable(991_045));
         let point = ProgramPoint::at(&crate::kernel::intern_memory_ref(state.memory()));
         let word =
             OldMachineTerm::read_named(point.clone(), Box::new(pointer.clone()), LoadKind::Int32);

@@ -68,7 +68,7 @@ fn volatile_event_capture_shares_growing_operands_without_exporting() {
             let fact = volatile_access_fact(
                 &mut ExecutionBudget::default(),
                 VolatileAccessKind::Write,
-                OldAddress::symbolic(Variable(10993676)),
+                Address::symbolic(Variable(10993676)),
                 ProgramType::Int32,
                 crate::kernel::ExecutionValue::Shared(root.clone()),
             )

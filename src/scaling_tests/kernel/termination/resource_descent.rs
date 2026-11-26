@@ -58,7 +58,7 @@ fn child_witness_aliases_use_the_published_point_index() {
             ResourceFact::view_composite(
                 "list".into(),
                 vec![ProgramValue::typed_pointer(
-                    OldAddress::symbolic(Variable(id)),
+                    Address::symbolic(Variable(id)),
                     ProgramType::Int32Pointer,
                 )],
             )
@@ -99,11 +99,11 @@ fn child_witness_aliases_use_the_published_point_index() {
         let aliased = assumptions.assume_proposition(Proposition::condition_is(
             OldConditionTerm::PointerEqual(
                 Box::new(OldPointer::new(
-                    OldAddress::symbolic(Variable(2)),
+                    Address::symbolic(Variable(2)),
                     ProgramType::Int32Pointer,
                 )),
                 Box::new(OldPointer::new(
-                    OldAddress::symbolic(Variable(50)),
+                    Address::symbolic(Variable(50)),
                     ProgramType::Int32Pointer,
                 )),
             ),

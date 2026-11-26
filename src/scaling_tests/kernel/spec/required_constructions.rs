@@ -32,7 +32,7 @@ fn subslice(length: u64) -> AlgebraicTerm {
             variant: "Slice".to_string(),
             fields: vec![
                 AlgebraicValue::Program(ProgramValue::typed_pointer(
-                    OldAddress::null(),
+                    Address::null(),
                     ProgramType::UInt8Pointer,
                 )),
                 AlgebraicValue::Program(ProgramValue::UInt64(OldMachineTerm::uint64_constant(
@@ -60,9 +60,9 @@ fn recording_and_spelling_a_subslice_ignore_unrelated_subslices() {
         });
         assert!(found);
         assert!(work <= 2, "unrelated={unrelated}, work={work}");
-        let (missing, work) = crate::instrumentation::measure_deterministic_work(|| {
-            is_required_construction(&subslice(8))
-        });
+        let other = subslice(8);
+        let (missing, work) =
+            crate::instrumentation::measure_deterministic_work(|| is_required_construction(&other));
         assert!(!missing);
         assert!(work <= 1, "unrelated={unrelated}, work={work}");
     }

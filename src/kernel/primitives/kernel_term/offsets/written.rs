@@ -214,6 +214,20 @@ impl AddressOffset {
         Ok(Self(root))
     }
 
+    /// Whether a handle has a written view ([`Self::try_from_shared`]).
+    pub(crate) fn check_written(root: &SharedAddressOffset) -> Result<(), &'static str> {
+        root.written_hash().map(|_| ())
+    }
+
+    /// A handle stored beside an address's block, whose written view is
+    /// checked where the address is read as written
+    /// ([`crate::kernel::Address::try_from_shared`]).
+    pub(in crate::kernel::primitives::kernel_term) fn from_shared_unchecked(
+        root: SharedAddressOffset,
+    ) -> Self {
+        Self(root)
+    }
+
     pub(crate) fn shared(&self) -> &SharedAddressOffset {
         &self.0
     }

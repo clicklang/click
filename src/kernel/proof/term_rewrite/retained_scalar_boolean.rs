@@ -482,8 +482,8 @@ mod tests {
         for unsupported in [
             OldConditionTerm::bool_application("unsupported_scalar_application", Vec::new()),
             OldConditionTerm::AddressEqual(
-                Box::new(OldAddress::symbolic(Variable(998182))),
-                Box::new(OldAddress::null()),
+                Box::new(Address::symbolic(Variable(998182))),
+                Box::new(Address::null()),
             ),
         ] {
             let root = KernelTermImport::for_exact_field_inputs().condition(&unsupported);

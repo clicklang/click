@@ -4,11 +4,11 @@
 
 use super::*;
 
-fn object_slot(name: &str) -> OldAddress {
-    OldAddress {
-        base: AddressBase::Concrete(format!("local:{name}")),
-        offset: AddressOffset::constant(0),
-    }
+fn object_slot(name: &str) -> Address {
+    Address::new(
+        AddressBase::Concrete(format!("local:{name}")),
+        AddressOffset::constant(0),
+    )
 }
 
 /// A loop body that hands a local struct to a call writes it, so the loop's

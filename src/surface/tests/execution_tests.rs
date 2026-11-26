@@ -1364,10 +1364,7 @@ fn verifies_fill3_c_source_with_sidecar_specification() {
         ),
         instance: crate::kernel::LocalStorageInstance::Implicit,
     };
-    let local_i = OldAddress {
-        base: local_i_block.clone(),
-        offset: AddressOffset::constant(0),
-    };
+    let local_i = Address::new(local_i_block.clone(), AddressOffset::constant(0));
     let entry = verified
         .specification
         .state()

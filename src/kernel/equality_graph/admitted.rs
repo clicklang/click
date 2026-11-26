@@ -14,12 +14,12 @@ pub(in crate::kernel) struct InputData {
         crate::persistent::PersistentSet<OldConditionTerm>,
     >,
     pub(in crate::kernel) provenance_graph:
-        crate::kernel::pointer_provenance::ValueClasses<OldAddress>,
-    pub(in crate::kernel) bounds_graph: crate::kernel::pointer_provenance::ValueClasses<OldAddress>,
+        crate::kernel::pointer_provenance::ValueClasses<Address>,
+    pub(in crate::kernel) bounds_graph: crate::kernel::pointer_provenance::ValueClasses<Address>,
     /// The allocations (provenance roots) that a stated `same_allocation`
     /// names. A pointer with one of these provenances is not null: null has
     /// no provenance (`design/pointer-model.md`).
-    pub(in crate::kernel) nonnull_allocations: crate::persistent::PersistentSet<OldAddress>,
+    pub(in crate::kernel) nonnull_allocations: crate::persistent::PersistentSet<Address>,
     pub(in crate::kernel) pointer_value_classes:
         crate::kernel::pointer_provenance::ValueClasses<OldPointer>,
     pub(in crate::kernel) pointer_equalities:
@@ -36,7 +36,7 @@ pub(in crate::kernel) struct InputData {
     /// Full-width load premises by exact address and interpretation. MemoryState
     /// transport checks only this bucket; it never scans ambient conditions.
     pub(in crate::kernel) wide_load_sources: crate::persistent::PersistentMap<
-        (OldAddress, LoadKind),
+        (Address, LoadKind),
         crate::persistent::PersistentSet<OldConditionTerm>,
     >,
     /// True 64-bit equalities as an undirected adjacency map, derived
@@ -53,7 +53,7 @@ pub(in crate::kernel) struct InputData {
     >,
     /// Exact alignment premises, including their numeric address annotations.
     pub(in crate::kernel) pointer_alignment_facts: crate::persistent::PersistentMap<
-        (OldAddress, u64),
+        (Address, u64),
         crate::persistent::PersistentSet<OldConditionTerm>,
     >,
     /// Exact equalities between two pointers of *different* blocks, indexed
@@ -66,20 +66,18 @@ pub(in crate::kernel) struct InputData {
     /// every pointer comparison the path happens to hold.
     pub(in crate::kernel) local_pointer_aliases: crate::persistent::PersistentSet<OldConditionTerm>,
     pub(in crate::kernel) address_base_aliases: crate::persistent::PersistentMap<
-        OldAddress,
-        crate::persistent::PersistentMap<OldAddress, OldConditionTerm>,
+        Address,
+        crate::persistent::PersistentMap<Address, OldConditionTerm>,
     >,
     /// Cross-block alias endpoints grouped by object. External arguments
     /// use their offset stem, since all parameters share one block; other
     /// blocks use one bucket. Derived incrementally from exact aliases.
     pub(in crate::kernel) pointer_alias_endpoints_by_object:
-        crate::persistent::PersistentMap<OldAddress, crate::persistent::PersistentSet<OldAddress>>,
+        crate::persistent::PersistentMap<Address, crate::persistent::PersistentSet<Address>>,
     /// Pointer-address endpoints of full-width equalities, by object.
     /// Lets store framing follow address copies without scanning size facts.
-    pub(in crate::kernel) wide_pointer_alias_endpoints_by_object: crate::persistent::PersistentMap<
-        OldAddress,
-        crate::persistent::PersistentSet<OldMachineTerm>,
-    >,
+    pub(in crate::kernel) wide_pointer_alias_endpoints_by_object:
+        crate::persistent::PersistentMap<Address, crate::persistent::PersistentSet<OldMachineTerm>>,
     pub(in crate::kernel) algebraic_graph_equalities: crate::persistent::PersistentMap<
         (
             crate::kernel::SharedPureApplication,
@@ -95,7 +93,7 @@ pub(in crate::kernel) struct InputData {
     /// are required before a graph query may use the read as a bridge.
     pub(in crate::kernel) typed_pointer_read_definitions: crate::persistent::PersistentMap<
         Variable,
-        crate::persistent::PersistentMap<((u32, u32), OldAddress), (OldAddress, SharedMemory)>,
+        crate::persistent::PersistentMap<((u32, u32), Address), (Address, SharedMemory)>,
     >,
     pub(in crate::kernel) uint64_graph_equalities: crate::persistent::PersistentMap<
         (

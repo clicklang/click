@@ -25,7 +25,7 @@ fn direct_local_write_builds_borrow_obligation_without_visiting_aliases() {
     ));
     let slot = state.locals().slot("x").unwrap().clone();
     let borrow = active_memory_borrow(MemoryRange::new(
-        OldAddress::symbolic(Variable(930_000)),
+        Address::symbolic(Variable(930_000)),
         0u32.into(),
         1u32.into(),
     ));
@@ -39,7 +39,7 @@ fn direct_local_write_builds_borrow_obligation_without_visiting_aliases() {
             assumptions = assumptions.assume_condition(
                 OldConditionTerm::address_equal(
                     slot.clone(),
-                    OldAddress::symbolic(Variable(931_000 + i)),
+                    Address::symbolic(Variable(931_000 + i)),
                 ),
                 true,
             );
@@ -390,7 +390,7 @@ fn loop_freshness_ignores_unrelated_live_state() {
                 state = state.with_resource_context(ResourceContext::new().unchecked_with_facts(
                     (0..size).map(|index| {
                         ResourceFact::own(Resource::Memory(MemoryRange::new(
-                            OldAddress::symbolic(Variable(base + index)),
+                            Address::symbolic(Variable(base + index)),
                             0u32.into(),
                             1u32.into(),
                         )))

@@ -352,8 +352,8 @@ fn machine_literal_aliases_reach_canonical_integer_observations() {
 #[test]
 fn nested_operators_register_the_pointer_arguments_they_use() {
     let _session = crate::kernel::VerificationSession::enter();
-    let p = OldAddress::symbolic(Variable(940_051));
-    let q = OldAddress::symbolic(Variable(940_052));
+    let p = Address::symbolic(Variable(940_051));
+    let q = Address::symbolic(Variable(940_052));
     let call = |pointer| OldMachineTerm::ClickFunctionApplication {
         name: "pointer_getter".into(),
         arguments: vec![PureFunctionArgument::Value(ProgramValue::Pointer(
@@ -434,11 +434,11 @@ fn common_call_operands_register_complete_pointer_arguments() {
     };
     let _session = crate::kernel::VerificationSession::enter();
     let p = OldPointer::new(
-        OldAddress::symbolic(Variable(940_061)),
+        Address::symbolic(Variable(940_061)),
         ProgramType::Int32Pointer,
     );
     let q = OldPointer::new(
-        OldAddress::symbolic(Variable(940_062)),
+        Address::symbolic(Variable(940_062)),
         ProgramType::Int32Pointer,
     );
     let call = |pointer: OldPointer| {

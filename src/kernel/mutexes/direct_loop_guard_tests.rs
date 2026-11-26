@@ -4,11 +4,11 @@ use super::direct_loop_guard::{
 use super::*;
 use crate::kernel::*;
 
-fn address(index: usize) -> OldAddress {
-    OldAddress {
-        base: format!("direct-loop-{index}").into(),
-        offset: AddressOffset::constant(0),
-    }
+fn address(index: usize) -> Address {
+    Address::new(
+        format!("direct-loop-{index}").into(),
+        AddressOffset::constant(0),
+    )
 }
 fn spec() -> ResourceSpec {
     ResourceSpec::new(

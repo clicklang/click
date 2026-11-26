@@ -7,7 +7,7 @@ use crate::kernel::{KernelFold, KernelTermNode, KernelType};
 pub(super) fn collect_fold_memory_loads(
     fold: &KernelFold,
     current_memory: &SymbolicMemory,
-    loads: &mut Vec<(OldAddress, u32)>,
+    loads: &mut Vec<(Address, u32)>,
     width: Option<u32>,
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
@@ -31,7 +31,7 @@ pub(super) fn collect_fold_memory_loads(
 pub(super) fn collect_common_memory_loads(
     mut pending: Vec<(&KernelTerm, Option<u32>)>,
     current_memory: &SymbolicMemory,
-    loads: &mut Vec<(OldAddress, u32)>,
+    loads: &mut Vec<(Address, u32)>,
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
     let mut seen = BTreeSet::new();
@@ -131,7 +131,7 @@ pub(super) fn collect_common_memory_loads(
                     return Err("opaque fold operand may hide a current memory load".into());
                 };
                 push_offset_memory_loads(
-                    std::iter::once(&pointer.node().address.node().offset),
+                    std::iter::once(pointer.node().address.offset()),
                     &mut pending,
                 )?;
             }
@@ -159,13 +159,13 @@ pub(super) fn collect_common_memory_loads(
                     pair.arguments()
                         .iter()
                         .flat_map(|value| value.addresses())
-                        .map(|address| &address.node().offset),
+                        .map(|address| address.offset()),
                     &mut pending,
                 )?;
             }
             KernelTermNode::AddressEqual { arguments } => {
                 push_offset_memory_loads(
-                    arguments.iter().map(|address| &address.node().offset),
+                    arguments.iter().map(|address| address.offset()),
                     &mut pending,
                 )?;
             }
@@ -229,7 +229,7 @@ pub(super) fn collect_common_memory_loads(
 pub(super) fn collect_offset_memory_loads(
     offset: &crate::kernel::SharedAddressOffset,
     current_memory: &SymbolicMemory,
-    loads: &mut Vec<(OldAddress, u32)>,
+    loads: &mut Vec<(Address, u32)>,
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
     let mut pending = Vec::new();
@@ -288,8 +288,8 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = SymbolicMemory::new();
         let point = ProgramPoint::at(&crate::kernel::intern_memory_ref(&memory));
-        let word = OldAddress::symbolic(Variable(999967));
-        let wide = OldAddress::symbolic(Variable(999968));
+        let word = Address::symbolic(Variable(999967));
+        let wide = Address::symbolic(Variable(999968));
         let offset = AddressOffset::raw_add(
             AddressOffset::scaled_int32_node(
                 OldMachineTerm::read_named(point.clone(), Box::new(word.clone()), LoadKind::Int32),
@@ -377,7 +377,7 @@ mod tests {
         ] {
             let _session = crate::kernel::VerificationSession::enter();
             let current = SymbolicMemory::new();
-            let pointer = OldAddress::symbolic(Variable(991510));
+            let pointer = Address::symbolic(Variable(991510));
             let source = IntegerTerm::RangeFold {
                 index: IntegerRangeFoldIndex::Integer {
                     start: IntegerTerm::constant_i64(0).into(),
@@ -426,7 +426,7 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let current = SymbolicMemory::new();
         let memory = crate::kernel::intern_memory_ref(&current);
-        let pointer = OldAddress::symbolic(Variable(991501));
+        let pointer = Address::symbolic(Variable(991501));
         let read = OldMachineTerm::read_named(
             ProgramPoint::at(&memory),
             Box::new(pointer),
@@ -505,7 +505,7 @@ mod offset_condition_tests {
         let read = |id, kind| {
             OldMachineTerm::read_named(
                 ProgramPoint::at(&(crate::kernel::intern_memory_ref(&current))),
-                Box::new(OldAddress::symbolic(Variable(id))),
+                Box::new(Address::symbolic(Variable(id))),
                 kind,
             )
         };
@@ -548,9 +548,9 @@ mod boolean_read_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let current = SymbolicMemory::new().with_block("bool-index", 4);
         let memory = crate::kernel::intern_memory(current.clone());
-        let address = OldAddress {
-            base: AddressBase::Symbolic(Variable(999360)),
-            offset: AddressOffset::scaled_int32_node(
+        let address = Address::new(
+            AddressBase::Symbolic(Variable(999360)),
+            AddressOffset::scaled_int32_node(
                 OldMachineTerm::read_named(
                     ProgramPoint::at(&memory),
                     Box::new(SymbolicMemory::global_pointer("bool-index")),
@@ -558,7 +558,7 @@ mod boolean_read_tests {
                 ),
                 4,
             ),
-        };
+        );
         let byte =
             crate::kernel::eval::scalar_read_for_exact_cell(&memory, &address, LoadKind::UInt8, 1);
         let source = OldConditionTerm::nonzero_bool_word(&byte);

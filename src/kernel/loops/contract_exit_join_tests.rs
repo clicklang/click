@@ -57,10 +57,10 @@ fn marker_exits(count: usize, ambient: usize) -> Vec<ExecutionState> {
         .with_block("havoc:10000000", 0);
     for index in 0..ambient {
         memory = memory.store(
-            OldAddress {
-                base: AddressBase::Concrete("shared".into()),
-                offset: AddressOffset::constant((index * 4) as i64),
-            },
+            Address::new(
+                AddressBase::Concrete("shared".into()),
+                AddressOffset::constant((index * 4) as i64),
+            ),
             int32(index as u32),
         );
     }
@@ -238,10 +238,10 @@ fn partial_value_binding_join_cannot_supply_a_missing_read_or_drop_declared_stor
 #[test]
 fn numeric_float_equality_does_not_materialize_positive_zero_bits() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = OldAddress {
-        base: AddressBase::Concrete("shared".into()),
-        offset: AddressOffset::constant(0),
-    };
+    let pointer = Address::new(
+        AddressBase::Concrete("shared".into()),
+        AddressOffset::constant(0),
+    );
     let memory = SymbolicMemory::new().with_block("shared", 4);
     let zero = ProgramValue::Float32(OldMachineTerm::constant(0));
     let load =
@@ -271,10 +271,10 @@ fn joined_call_epochs_do_not_transport_uncached_loads_or_hide_real_blocks() {
     let _session = crate::kernel::VerificationSession::enter();
     let exits = marker_exits(2, 4);
     let (successor, _) = measured_join(&exits);
-    let pointer = OldAddress {
-        base: AddressBase::Concrete("unknown".into()),
-        offset: AddressOffset::constant(0),
-    };
+    let pointer = Address::new(
+        AddressBase::Concrete("unknown".into()),
+        AddressOffset::constant(0),
+    );
     let old_load =
         symbolic_storage_cell_value(exits[0].memory(), None, &pointer, ProgramType::Int32, true)
             .unwrap();

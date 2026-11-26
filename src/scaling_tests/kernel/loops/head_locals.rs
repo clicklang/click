@@ -41,7 +41,7 @@ fn loop_head_havoc_ignores_private_scalar_slots() {
         .map(|index| BindingName::from(format!("spare{index}")))
         .collect::<Vec<_>>();
     set_never_address_taken_locals(names.iter().cloned().collect());
-    let written = OldAddress::symbolic(Variable(954_020));
+    let written = Address::symbolic(Variable(954_020));
     let body = ProgramStatement::Store {
         pointer: ProgramExpression::Variable("p".into()),
         value: crate::kernel::program_expression::int32_literal(10),

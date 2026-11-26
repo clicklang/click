@@ -104,10 +104,10 @@ fn same_block_offset_rewrite_work(
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
-    let base = OldAddress {
-        base: crate::kernel::AddressBase::ExternalArgument,
-        offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(8_179_100)), 4),
-    };
+    let base = Address::new(
+        crate::kernel::AddressBase::ExternalArgument,
+        AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(8_179_100)), 4),
+    );
     let remaining = OldMachineTerm::Variable(Variable(8_179_101));
     // `k as uint32 as int32`: σ of the low word, as written.
     let k = OldMachineTerm::sign_cast32(
@@ -118,22 +118,19 @@ fn same_block_offset_rewrite_work(
             Box::new(remaining.clone()),
         ),
     );
-    let shifted = OldAddress {
-        base: base.base.clone(),
-        offset: AddressOffset::raw_add(
-            base.offset.clone(),
-            AddressOffset::scaled_int32_node(
-                binary_node!(
-                    Int32,
-                    Subtract,
-                    Box::new(OldMachineTerm::constant(4)),
-                    Box::new(k.clone()),
-                ),
-                4,
+    let shifted = base.with_offset(AddressOffset::raw_add(
+        base.offset.clone(),
+        AddressOffset::scaled_int32_node(
+            binary_node!(
+                Int32,
+                Subtract,
+                Box::new(OldMachineTerm::constant(4)),
+                Box::new(k.clone()),
             ),
+            4,
         ),
-    };
-    let cursor = OldAddress::symbolic(Variable(8_179_099));
+    ));
+    let cursor = Address::symbolic(Variable(8_179_099));
     let state = ExecutionState::new()
         .with_local("cursor", ProgramValue::pointer(cursor.clone()))
         .with_local("base", ProgramValue::pointer(base.clone()))
@@ -147,21 +144,18 @@ fn same_block_offset_rewrite_work(
             [
                 Proposition::condition_is(
                     OldConditionTerm::address_equal(
-                        OldAddress {
-                            base: base.base.clone(),
-                            offset: AddressOffset::raw_add(
-                                base.offset.clone(),
-                                AddressOffset::scaled_int32_node(
-                                    binary_node!(
-                                        Int32,
-                                        Subtract,
-                                        Box::new(OldMachineTerm::constant(4)),
-                                        Box::new(old.clone()),
-                                    ),
-                                    4,
+                        base.with_offset(AddressOffset::raw_add(
+                            base.offset.clone(),
+                            AddressOffset::scaled_int32_node(
+                                binary_node!(
+                                    Int32,
+                                    Subtract,
+                                    Box::new(OldMachineTerm::constant(4)),
+                                    Box::new(old.clone()),
                                 ),
+                                4,
                             ),
-                        },
+                        )),
                         base.clone(),
                     ),
                     true,
@@ -907,10 +901,7 @@ fn cursor_execution_load_binding_work_is_deterministic_and_output_sized() {
     )
     .expect("test C branch should parse");
     let function = parsed_function.to_kernel_function();
-    let pointer = OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::constant(0),
-    };
+    let pointer = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0));
     let state = ExecutionState::new().with_resource_context(
         ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
             pointer.clone(),
@@ -1312,7 +1303,7 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
 #[test]
 fn loop_entry_wide_span_guard_retains_its_own_source_and_scales() {
     let parsed = syntax::parse_function("void span(const uint8* buf, uint64 len) { }").unwrap();
-    let pointer = OldAddress::symbolic(Variable(812_000));
+    let pointer = Address::symbolic(Variable(812_000));
     let original = OldMachineTerm::Variable(Variable(812_001));
     let remaining =
         OldMachineTerm::uint64_subtract(original.clone(), OldMachineTerm::uint64_constant(16));
@@ -1516,10 +1507,10 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
         for index in 0..size {
             let load = OldMachineTerm::read_named(
                 crate::kernel::ProgramPoint::at(&memory),
-                Box::new(OldAddress {
-                    base: "rewrite_reads".into(),
-                    offset: AddressOffset::constant(index as i64 * 4),
-                }),
+                Box::new(Address::new(
+                    "rewrite_reads".into(),
+                    AddressOffset::constant(index as i64 * 4),
+                )),
                 crate::kernel::LoadKind::Int32,
             );
             let (variable, registered) = crate::kernel::load_variable_for_term(&load).unwrap();
@@ -1753,10 +1744,10 @@ fn mixed_entry_and_current_premise_spelling_ignores_unrelated_states() {
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
-    let pointer = OldAddress {
-        base: crate::kernel::AddressBase::Concrete("mixed-premise".into()),
-        offset: AddressOffset::constant(0),
-    };
+    let pointer = Address::new(
+        crate::kernel::AddressBase::Concrete("mixed-premise".into()),
+        AddressOffset::constant(0),
+    );
     let entry = ExecutionState::new()
         .with_memory(SymbolicMemory::new().with_block("mixed-premise", 4))
         .with_local(
@@ -1868,10 +1859,10 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
         let mut facts = Vec::new();
         let mut reads = Vec::new();
         for index in 0..size {
-            let pointer = OldAddress {
-                base: "rewrite_reads".into(),
-                offset: AddressOffset::constant(index as i64 * 4),
-            };
+            let pointer = Address::new(
+                "rewrite_reads".into(),
+                AddressOffset::constant(index as i64 * 4),
+            );
             let stored = binary_node!(
                 UInt32,
                 Remainder,
@@ -2495,7 +2486,7 @@ fn fixed_state_goal_opening_ignores_load_equality_buckets() {
     let read = |index| {
         OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&memory),
-            Box::new(crate::kernel::OldAddress::symbolic(Variable(index))),
+            Box::new(crate::kernel::Address::symbolic(Variable(index))),
             crate::kernel::LoadKind::Int32,
         )
     };
@@ -2960,7 +2951,7 @@ fn retained_conditional_premise_spelling_does_not_search_state_history() {
 fn proof_binding_name_production_and_queries_follow_only_changed_bindings() {
     let binding = |variable| {
         SyntaxTerm::ProgramExpression(ProgramExpression::Value(ProgramValue::typed_pointer(
-            OldAddress::symbolic(Variable(variable)),
+            Address::symbolic(Variable(variable)),
             ProgramType::Int32Pointer,
         )))
     };

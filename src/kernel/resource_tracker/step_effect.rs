@@ -297,7 +297,7 @@ pub(in crate::kernel) fn separation_check(
 /// verdict from the same premises.
 fn cell_effect(
     step: &MemoryDerivation,
-    pointer: &OldAddress,
+    pointer: &Address,
     extent: AccessExtent,
     evidence: &Evidence<'_>,
 ) -> StepEffect {
@@ -395,10 +395,10 @@ fn cell_effect(
             // its others, as for `HeapFreed` below. Only distinct *blocks*
             // decide without the size.
             if extended_dag_bridging_active()
-                && pointer.blocks_proven_distinct(&OldAddress {
-                    base: block.clone(),
-                    offset: AddressOffset::constant(0),
-                })
+                && pointer.blocks_proven_distinct(&Address::new(
+                    block.clone(),
+                    AddressOffset::constant(0),
+                ))
             {
                 hop(MemoryDagHopJustification::LocalLifetimeEndedOfOtherBlock)
             } else if pointer.base == *block {
@@ -418,10 +418,7 @@ fn cell_effect(
                     write_membership,
                     load_membership,
                 }) = typed_store_separated_ranges_evidence(
-                    &OldAddress {
-                        base: block.clone(),
-                        offset: AddressOffset::constant(0),
-                    },
+                    &Address::new(block.clone(), AddressOffset::constant(0)),
                     size,
                     pointer,
                     bytes,
@@ -429,10 +426,7 @@ fn cell_effect(
                 )
                 .or_else(|| {
                     owned_composition_store_separated_evidence(
-                        &OldAddress {
-                            base: block.clone(),
-                            offset: AddressOffset::constant(0),
-                        },
+                        &Address::new(block.clone(), AddressOffset::constant(0)),
                         size,
                         pointer,
                         bytes,
@@ -648,9 +642,9 @@ fn cell_effect(
 /// the same question asked of each store it stands for.
 fn store_cell_effect(
     step: &MemoryDerivation,
-    write: &OldAddress,
+    write: &Address,
     write_bytes: u32,
-    pointer: &OldAddress,
+    pointer: &Address,
     extent: AccessExtent,
     evidence: &Evidence<'_>,
 ) -> StepEffect {
@@ -844,8 +838,8 @@ fn store_cell_effect(
 /// different, weaker fact — a store can reach a read without starting where
 /// it starts.
 pub(in crate::kernel) fn write_is_at_read_address(
-    write: &OldAddress,
-    pointer: &OldAddress,
+    write: &Address,
+    pointer: &Address,
     assumptions: &PureFactContext,
 ) -> bool {
     write == pointer
@@ -871,7 +865,7 @@ pub(in crate::kernel) fn write_is_at_read_address(
 pub(in crate::kernel) enum SeededCellEffect {
     /// One of its stores writes the cell: the store's pointer, and the value
     /// the walk reads.
-    Written(OldAddress, ProgramValue),
+    Written(Address, ProgramValue),
     /// Every store it stands for is separate from the cell, in the order a
     /// walk meets them.
     Separate(Vec<MemoryDagHopJustification>),
@@ -884,7 +878,7 @@ pub(in crate::kernel) enum SeededCellEffect {
 /// separate.
 pub(in crate::kernel) fn seeded_cell_effect(
     step: &MemoryDerivation,
-    pointer: &OldAddress,
+    pointer: &Address,
     bytes: u32,
     evidence: &Evidence<'_>,
 ) -> SeededCellEffect {
@@ -955,7 +949,7 @@ pub(in crate::kernel) fn seeded_loads_preserve_base(step: &MemoryDerivation) -> 
 fn seeded_cell_effect_store_by_store(
     step: &MemoryDerivation,
     run: &crate::kernel::primitives::CellRun,
-    pointer: &OldAddress,
+    pointer: &Address,
     bytes: u32,
     evidence: &Evidence<'_>,
 ) -> SeededCellEffect {
@@ -1319,10 +1313,7 @@ fn footprint_effect(step: &MemoryDerivation, ranges: Option<&[MemoryRange]>) -> 
             }
         }
         MemoryDerivation::LocalLifetimeEnded { block, .. } => {
-            let retired = OldAddress {
-                base: block.clone(),
-                offset: AddressOffset::constant(0),
-            };
+            let retired = Address::new(block.clone(), AddressOffset::constant(0));
             if ranges
                 .iter()
                 .all(|range| range.base().blocks_proven_distinct(&retired))

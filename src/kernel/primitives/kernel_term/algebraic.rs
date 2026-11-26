@@ -65,7 +65,7 @@ impl KernelTermImport {
                     } => values.push(KernelTerm::algebraic_read(
                         term.algebraic_type.clone(),
                         memory.clone(),
-                        SharedAddress::import(pointer),
+                        pointer.shared().clone(),
                     )),
                 },
                 Task::If(ty, condition) => {
@@ -401,7 +401,7 @@ mod tests {
     fn algebraic_constructor_match_keys_keep_native_field_identity() {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = OldPointer::new(
-            OldAddress::symbolic(Variable(999620)),
+            Address::symbolic(Variable(999620)),
             ProgramType::Int32Pointer,
         );
         let make = |pointer| {
@@ -425,7 +425,7 @@ mod tests {
                     variant: "Arm".into(),
                     bindings: vec![
                         AlgebraicValue::Program(ProgramValue::Pointer(OldPointer::new(
-                            OldAddress::symbolic(Variable(999623)),
+                            Address::symbolic(Variable(999623)),
                             ProgramType::Int32Pointer,
                         ))),
                         AlgebraicValue::Program(ProgramValue::Int32(OldMachineTerm::Variable(
@@ -475,7 +475,7 @@ mod tests {
         assert_ne!(root, KernelTermImport::default().algebraic(&other));
 
         let pointer = OldPointer::new(
-            OldAddress::symbolic(Variable(999600)),
+            Address::symbolic(Variable(999600)),
             ProgramType::Int32Pointer,
         );
         let values = [pointer.clone(), pointer].map(|pointer| {

@@ -58,13 +58,13 @@ fn shared_read_order_bucket_ignores_unrelated_addresses() {
     let mut samples = Vec::new();
     for unrelated in [0usize, 32, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = OldAddress::symbolic(Variable(993_221));
+        let pointer = Address::symbolic(Variable(993_221));
         let mut context = PureFactContext::new();
         for index in 0..(unrelated + 8) {
             let address = if index < 8 {
                 pointer.clone()
             } else {
-                OldAddress::symbolic(Variable(993_300 + index as u64))
+                Address::symbolic(Variable(993_300 + index as u64))
             };
             let memory = crate::kernel::intern_memory(
                 SymbolicMemory::new().with_block(format!("order-retained_state-{index}"), 0),
@@ -110,10 +110,7 @@ fn aligned_shared_sums_check_selected_read_authority_in_linear_work() {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
         let write_index = OldMachineTerm::Variable(Variable(996_001));
-        let base = OldAddress {
-            base: "framed-sums".into(),
-            offset: AddressOffset::constant(0),
-        };
+        let base = Address::new("framed-sums".into(), AddressOffset::constant(0));
         let pointers: Vec<_> = (0..size)
             .map(|index| {
                 base.offset_by_elements(

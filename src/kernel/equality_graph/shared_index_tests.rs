@@ -21,8 +21,8 @@ fn shared_index_addresses_preserve_native_queries_and_late_aliases() {
             for successor in [false, true] {
                 for alias_first in [false, true] {
                     let mut graph = EqualityGraph::default();
-                    let p = OldAddress::symbolic(Variable(991403));
-                    let q = OldAddress::symbolic(Variable(991404)).offset_by_bytes(12);
+                    let p = Address::symbolic(Variable(991403));
+                    let q = Address::symbolic(Variable(991404)).offset_by_bytes(12);
                     if alias_first {
                         graph.add_equality(&p, &q);
                     }
