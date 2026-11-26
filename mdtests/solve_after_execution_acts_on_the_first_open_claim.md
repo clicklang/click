@@ -1,9 +1,7 @@
-# `solve` after execution acts on the first open claim
+# `close()` after execution acts on the first open claim
 
-After execution `close()` closes the first open goal, as the other closers do;
-the implicit closer is the catch-all that closes every goal still open. Here `close()`
-closes `result == 1` and leaves `result == n` for `normalize()`. When `solve`
-closed every claim it could, `normalize()` was refused for having no goal.
+After execution the first `close()` closes `result == 1`. The second closes
+`result == n`. An omitted proof tail can close the remaining claims together.
 
 ```c filename=solve_after_execution_acts_on_the_first_open_claim.c
 int32 f(int32 n) {
