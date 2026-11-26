@@ -24,7 +24,7 @@ int id(int x) {
 } by {
     step_until(function.exit);
     match r.model ensuring { fact result == x; } {
-        Tag::A => { have x == x + 1 by close(); contradiction(r.model == Tag::A); },
+        Tag::A => { have x == x + 1 by close(); close(); },
         Tag::B => { },
     }
     close();

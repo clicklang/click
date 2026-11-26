@@ -4429,6 +4429,7 @@ fn guarded_quantified_postcondition_expands_and_reverifies() {
         let claim = &claim[..claim[1..].find("\n}").expect("claim end")];
         assert!(!claim.contains("execute()"), "{expanded}");
         assert!(!claim.contains("solve()"), "{expanded}");
+        assert!(!claim.contains("contradiction("), "{expanded}");
         assert!(
             claim.contains("have result == 1 implies forall (k: int32)"),
             "{expanded}"
@@ -4751,12 +4752,8 @@ fn expand_mdtest_site_and_reverify(relative: &str, anchor: &str, skip: usize) ->
     expanded
 }
 
-/// A match arm that bridges with a `have` and then refutes itself is planned
-/// like a sole `contradiction`. Its bridge ran without the expansion capture,
-/// so expanding the `solve` inside it reported `has no source tactic` while
-/// `click verify` accepted the proof. At function exit the bridge `have` was
-/// also deferred to an outcome path the refuted arm does not have, so it was
-/// never checked at all.
+/// Expansion can select the closer inside a match arm's checked bridge.
+/// The refuted constructor has no outcome path for a deferred bridge.
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_10")]
 fn solve_in_a_refuted_match_arm_bridge_expands_and_reverifies() {
@@ -4776,10 +4773,7 @@ fn solve_in_a_refuted_match_arm_bridge_expands_and_reverifies() {
             .map(|(name, text)| (name.as_str(), text.as_str()))
             .collect::<Vec<_>>();
         let expanded = expand_function_proof_source(&source, &sources, "id").unwrap();
-        assert!(
-            expanded.contains("contradiction(r.model == Tag::A())"),
-            "{expanded}"
-        );
+        assert!(!expanded.contains("contradiction("), "{expanded}");
         with_proof_trace("id", || {
             without_implicit_solve_for_claim("id.contract", || {
                 verify_c_sources(&expanded, &sources).map_err(|error| error.report())
@@ -8708,6 +8702,21 @@ fn post_execution_solve_uses_the_introduced_antecedent_for_contradiction() {
         .expect("the introduced contradiction should check independently");
     let false_on_the_reachable_branch = expanded.replace("result == 1", "result == 2");
     assert!(verify_c_sources(&false_on_the_reachable_branch, &sources).is_err());
+}
+
+#[test]
+fn symbolic_false_antecedent_expands_into_an_explicit_negation() {
+    let source = r#"
+        theorem refuted(x: Integer) {
+            ensures ((-2 * x + 2 * x + 1) <= 0) implies x == 7 by close();
+        }
+    "#;
+    let expanded = expand_c_claim_source_by_label(source, &[], "refuted.ensures_0").unwrap();
+    assert!(expanded.contains("have not "), "{expanded}");
+    assert!(!expanded.contains("contradiction("), "{expanded}");
+    without_implicit_solve(|| verify_c_sources(&expanded, &[])).unwrap();
+    let reachable = source.replace("+ 1", "- 1");
+    assert!(verify_c_sources(&reachable, &[]).is_err());
 }
 
 #[test]
@@ -28769,10 +28778,8 @@ fn refuted_match_arm_retains_its_bridge_proof_from_propagated_false() {
         .unwrap_or_else(|| panic!("{expanded}"))
         .1;
     let body = bridge.split_once('}').unwrap().0;
-    assert!(
-        body.contains("close();") || body.contains("contradiction("),
-        "{expanded}"
-    );
+    assert!(body.contains("close();"), "{expanded}");
+    assert!(!expanded.contains("contradiction("), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
     let reachable = expanded.replace("requires r.model != Tag::A;", "");
     assert!(without_implicit_solve(|| verify_c_sources(&reachable, &sources)).is_err());

@@ -315,7 +315,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             ProofCertificate::from_steps(vec![ProofStep::Known]).expect("ordinary order lookup");
         let refute_order = ProofCertificate::from_steps(vec![
             ProofStep::Rewrite(equality.clone()),
-            ProofStep::CompatibilityNormalize(None),
+            ProofStep::Known,
         ])
         .expect("ordinary refutation of an irreflexive order");
         for order in orders {
@@ -330,7 +330,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     proposition: SyntaxProposition::Not(Box::new(order.clone())),
                     proof: Box::new(refute_order.clone()),
                 },
-                ProofStep::Contradiction(order),
+                ProofStep::Known,
             ])
             .expect("ordinary refutation of equal indices");
             let proof_steps = ProofCertificate::from_steps(vec![ProofStep::If {

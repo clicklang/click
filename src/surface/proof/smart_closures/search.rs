@@ -883,8 +883,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             // An antecedent that context-free normalization refutes, such as
             // `to_integer(i) == to_integer(i) + 1`, closes the implication
-            // once introduced: `intro() { contradiction(A); }`. Only the goal
-            // is read.
+            // once introduced and its negation has been proved.
             let refuted = match (proof.goal(), proof.surface_goal()) {
                 (
                     Some(Proposition::Implies(antecedent, _)),
@@ -900,11 +899,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 None => return Ok(None),
             }
             if let Some(antecedent) = refuted
-                && let Some(closed) = attempt::candidate_outcome(
-                    proof
-                        .driver()
-                        .apply_step(ProofStep::Contradiction(antecedent)),
-                )?
+                && let Some(closed) =
+                    attempt::candidate_outcome(Self::close_refuted_fact(&proof, &antecedent))?
             {
                 break 'close closed;
             }
@@ -5470,13 +5466,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(Some(atomic));
         }
         if matches!(search_input.context.as_ref(), ProofContext::Pure(_)) {
-            for (_, surface) in &anchored_pairs {
-                if let Some(contradiction) = attempt::candidate_outcome(
-                    search_input
-                        .driver()
-                        .apply_step(ProofStep::Contradiction(surface.clone())),
-                )? {
-                    return Ok(Some(contradiction));
+            for (kernel, surface) in &anchored_pairs {
+                if search_input.facts().contradicts(kernel)
+                    && let Some(closed) =
+                        attempt::candidate_outcome(Self::close_refuted_fact(search_input, surface))?
+                {
+                    return Ok(Some(closed));
                 }
             }
         }
@@ -8947,13 +8942,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
-        attempt::candidate_outcome(
-            introduced
-                .driver()
-                .apply_step(introduced.refutation_step(opposite)),
-        )?
-        .map(|closed| joined.finish_generated_intro(&introduced, closed))
-        .transpose()
+        attempt::candidate_outcome(Self::close_refuted_fact(&introduced, &opposite))?
+            .map(|closed| joined.finish_generated_intro(&introduced, closed))
+            .transpose()
     }
 
     // Walk consecutive implication guards without retaining a dispatcher
@@ -9001,11 +8992,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 && let Some(with_opposite) = attempt::candidate_outcome(proved.join())?
                 && let Some(with_antecedent) =
                     attempt::candidate_outcome(with_opposite.driver().apply_step(ProofStep::Intro))?
-                && let Some(closed) = attempt::candidate_outcome(
-                    with_antecedent
-                        .driver()
-                        .apply_step(with_antecedent.refutation_step(negated_antecedent)),
-                )?
+                && let Some(closed) = attempt::candidate_outcome(Self::close_refuted_fact(
+                    &with_antecedent,
+                    &antecedent,
+                ))?
             {
                 openings.push((with_opposite, with_antecedent));
                 break closed;
@@ -10107,11 +10097,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
-        if let Some(closed) = attempt::candidate_outcome(
-            search_input
-                .driver()
-                .apply_step(search_input.refutation_step(surface_antecedent.clone())),
-        )? {
+        if let Some(closed) =
+            attempt::candidate_outcome(Self::close_refuted_fact(search_input, surface_antecedent))?
+        {
             return Ok(Some(closed));
         }
         let surfaces = match search_input.context.as_ref() {
@@ -10134,11 +10122,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .collect::<Vec<_>>(),
         };
         for surface in surfaces {
-            if let Some(closed) = attempt::candidate_outcome(
-                search_input
-                    .driver()
-                    .apply_step(search_input.refutation_step(surface)),
-            )? {
+            if let Some(closed) =
+                attempt::candidate_outcome(Self::close_refuted_fact(search_input, &surface))?
+            {
                 return Ok(Some(closed));
             }
         }
@@ -12243,10 +12229,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .driver()
             .apply_have_step(&negated, &certificate)
             .ok()?;
-        let equal_done = refuted
-            .driver()
-            .apply_step(refuted.refutation_step(assumed.clone()))
-            .ok()?;
+        let equal_done = Self::close_refuted_fact(&refuted, assumed).ok()?;
         let unequal_done = equal_done
             .focus_branch(ids[1])
             .ok()?
@@ -12324,10 +12307,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 }) {
                     Self::try_word_order_exclusion_case(&focused_branch, assumed_surface)
                 } else {
-                    focused_branch
-                        .driver()
-                        .apply_step(focused_branch.refutation_step(assumed_surface.clone()))
-                        .ok()
+                    Self::close_refuted_fact(&focused_branch, assumed_surface).ok()
                 };
                 let selected = branch
                     .or_else(|| {
