@@ -1811,12 +1811,24 @@ fn explicit_store_step_with_unfolded_resource_facts_verifies() {
         } by {
             unfold(owned_string(owner));
             unfold(terminated_at(owner->data, owner->len));
+            have index != owner->len by { close(); }
+            have separate(memory(owner->data[index]), memory(owner->data[owner->len])) by {
+                apply(click::separation::separate_elements(owner->data, index, owner->len));
+            }
+            mark before_write;
             step();
-            have terminated_at(owner->data, owner->len) by {
-                unfold(terminated_at(owner->data, owner->len));
+            have separate(statement(0).footprint, memory(owner->data[owner->len])) by {
+                close() using {
+                    at(before_write, separate(memory(owner->data[index]), memory(owner->data[owner->len])));
+                };
+            }
+            have owner->data[owner->len] == at(before_write, owner->data[owner->len]) by {
+                preserve(memory(owner->data[owner->len]), statement(0));
+            }
+            have owner->data[owner->len] == 0 by {
+                rewrite(owner->data[owner->len], at(before_write, owner->data[owner->len]));
                 close();
             }
-            have owner->data[owner->len] == 0 by close();
             have 0 <= owner->len by close();
             have owner->len < owner->cap by close();
             have separate(

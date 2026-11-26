@@ -36,7 +36,9 @@ fn inventory() -> Vec<Entry> {
 /// `extract` steps. The live parity sweep still checks each archive's
 /// recorded outcome. The `rewrite` argument migration (2026-11-15)
 /// respells equality arguments as two expression arguments and updates only
-/// the frozen digests; original digests and expected outcomes stay fixed.
+/// the frozen digests. Retired `transport` calls use selected-premise
+/// `close() using` with the same premise and goal. Original digests and
+/// expected outcomes stay fixed.
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
