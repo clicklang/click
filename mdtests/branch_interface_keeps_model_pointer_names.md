@@ -28,6 +28,14 @@ void set_word(struct Node* q, struct Node* r, uint64 stamp) {
     owns q->tag;
     ensures q->tag == address(r) + stamp;
 } by { step_until(function.exit); close(); }
+theorem same_tag(base: uint64*, alias: uint64*) {
+    requires base == alias;
+    requires viewable(memory(*base));
+    ensures *alias == *base by {
+        rewrite(alias, base);
+        close();
+    }
+}
 void put(struct Node *p, struct Node *q, int32 x, uint64 stamp) {
     owns p->next;
     requires p->next == q;
@@ -43,21 +51,31 @@ void put(struct Node *p, struct Node *q, int32 x, uint64 stamp) {
         step(set_word);
         have child == q;
         have child->tag == address(id) + stamp by { rewrite(id, r); close(); }
+        have viewable(memory(q->tag)) by { observe(q->tag); }
+        have &child->tag == &q->tag by { rewrite(child, q); close(); }
+        apply(same_tag(&q->tag, &child->tag));
+        have q->tag == address(id) + stamp;
         branch ensuring { fact child->tag == address(id) + stamp; } {
             true => {
                 step();
+                have viewable(memory(q->tag)) by { observe(q->tag); }
+                have &child->tag == &q->tag by { rewrite(child, q); close(); }
+                apply(same_tag(&q->tag, &child->tag));
+                have q->tag == address(id) + stamp;
                 have child->tag == address(id) + stamp by {
-                    rewrite(at(region(6).entry, address(id) + stamp), at(region(6).entry, child->tag));
-                    rewrite(at(function.entry, p->next), at(function.entry, q));
-                    normalize() using {};
+                    rewrite(child->tag, q->tag);
+                    close();
                 }
             }
             false => {
                 step();
+                have viewable(memory(q->tag)) by { observe(q->tag); }
+                have &child->tag == &q->tag by { rewrite(child, q); close(); }
+                apply(same_tag(&q->tag, &child->tag));
+                have q->tag == address(id) + stamp;
                 have child->tag == address(id) + stamp by {
-                    rewrite(at(region(7).entry, address(id) + stamp), at(region(7).entry, child->tag));
-                    rewrite(at(function.entry, p->next), at(function.entry, q));
-                    normalize() using {};
+                    rewrite(child->tag, q->tag);
+                    close();
                 }
             }
         }
