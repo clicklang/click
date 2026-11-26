@@ -3587,6 +3587,12 @@ impl<'a> Proof<'a> {
         }
     }
 
+    fn apply_close_unreachable(&self) -> Result<KernelProofHandle, ClickError> {
+        self.state.close_unreachable_frontier().ok_or_else(|| {
+            self.step_error("`close()` requires an established `false` to end an execution path")
+        })
+    }
+
     fn apply_contradiction(
         &self,
         surface: &SyntaxProposition,
@@ -3977,6 +3983,7 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::CallOutcomes { .. } => "outcomes",
         ProofStep::Loop(_) => "loop",
         ProofStep::Rewrite(_) => "rewrite",
+        ProofStep::CloseUnreachable => "close",
         ProofStep::Contradiction(_) => "contradiction",
         ProofStep::Witness(_) => "witness",
         ProofStep::LetSatisfy(_) => "obtain",

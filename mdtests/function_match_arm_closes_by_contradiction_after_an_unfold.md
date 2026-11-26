@@ -1,10 +1,10 @@
-# A function-level `match` arm closes by `contradiction` after an `unfold`
+# A function-level `match` arm closes after unfolding an impossible resource
 
 The `Cell::Missing` arm of `peek` is impossible because the function requires
 `p != 0` and the arm's body says `p == 0`. That body is folded in the
-instance, so the arm first unfolds it, which publishes `p == 0`, and then
-refutes itself. The `unfold` runs inside the arm and the arm is excluded from
-the facts it reached; see
+instance. Unfolding in the arm publishes `p == 0`, so the opposite facts
+establish `false`. Then `close()` ends the execution path at the current
+point. An arm can also establish its refutation through a `have`. See
 [`function_match_arm_closes_by_contradiction_after_a_have.md`](function_match_arm_closes_by_contradiction_after_a_have.md).
 
 ```c filename=peek_nonnull.c
@@ -42,7 +42,7 @@ int32 peek(struct node* p) {
     match x.model {
         Cell::Missing => {
             unfold(x);
-            contradiction(p == 0);
+            close();
         },
         Cell::Present(identity) => {
             step_until(function.exit);

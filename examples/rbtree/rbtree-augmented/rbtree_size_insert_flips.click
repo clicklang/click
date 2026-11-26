@@ -29,7 +29,7 @@ tactic restore_sized_flip_state(root: struct rb_root*) {
     ensures sized_parent_is(whole.model, 0) == 1;
 } by {
     match state.model {
-        SizedTree::Empty => { unfold(state); contradiction(); },
+        SizedTree::Empty => { unfold(state); close(); },
         SizedTree::Node(node, parent, color, value, left, right) => {
             let { focus: focus, path: path } = unfold(state);
             have focus.model == old(state.model) by close();

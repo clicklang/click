@@ -1606,6 +1606,13 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         Ok(self.closed_focused())
     }
 
+    pub(crate) fn close_unreachable_frontier(&self) -> Option<Self> {
+        let branch = self.state.open_branches.get(self.focused_branch)?;
+        (matches!(branch.obligation, ProofObligation::Frontier(_))
+            && branch.state.facts.holds_false())
+        .then(|| self.closed_focused())
+    }
+
     pub(crate) fn apply_contradiction(
         &self,
         fact: &Proposition,

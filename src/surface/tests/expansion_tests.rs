@@ -6321,7 +6321,7 @@ fn whole_claim_expansion_spells_an_inner_call_result_by_its_call() {
 }
 
 /// Refuted helper arms have no generated return/postcondition suffix. Both
-/// certification and whole-claim expansion must preserve their contradiction.
+/// certification and whole-claim expansion retain the terminal close.
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_18")]
 fn whole_claim_expansion_of_a_user_tactic_preserves_refuted_arms() {
@@ -6332,7 +6332,11 @@ fn whole_claim_expansion_of_a_user_tactic_preserves_refuted_arms() {
         .collect::<Vec<_>>();
     let expanded = expand_c_claim_source_by_label(&click, &sources, "keep.contract")
         .unwrap_or_else(|error| panic!("{}", error.message()));
-    assert!(expanded.contains("contradiction("), "{expanded}");
+    let (refuted, _) = expanded
+        .split_once("Model::Empty => {")
+        .and_then(|(_, rest)| rest.split_once('}'))
+        .expect("the expanded match retains the empty arm");
+    assert_eq!(refuted.trim(), "close();", "{expanded}");
     verify_c_sources(&expanded, &sources)
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }
@@ -6345,6 +6349,10 @@ fn whole_claim_expansion_of_a_user_tactic_preserves_refuted_arms() {
 fn whole_claim_expansion_of_proof_matches_rechecks() {
     for (mdtest, claim) in [
         ("proof_match_after_c_step", "read_after_step.contract"),
+        (
+            "function_match_arm_closes_by_contradiction_after_an_unfold",
+            "peek.contract",
+        ),
         ("loop_decreases_strict_descendant", "countdown.contract"),
         (
             "loop_preserve_branch_tactic",

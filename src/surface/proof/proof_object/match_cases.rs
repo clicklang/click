@@ -673,7 +673,7 @@ impl<'a> Proof<'a> {
     ) -> Result<Arc<CheckedProofCasePartition>, ClickError> {
         let fact = self.lower_surface_proposition(surface, "constructor-arm contradiction")?;
         plan.partition
-            .excluding_constructor_case_in(plan.case_indices[index], self.facts(), fact)
+            .excluding_constructor_case_in(plan.case_indices[index], self.facts(), Some(fact))
             .ok_or_else(|| {
                 self.step_error(format!(
                     "in match arm `{}::{}`: constructor-arm `contradiction({})` requires an exact fact and its negation in that arm",
@@ -682,6 +682,16 @@ impl<'a> Proof<'a> {
                     crate::surface::diagnostics::describe_click_proposition(surface)
                 ))
             })
+    }
+
+    /// Uses the arm's indexed falsehood to exclude this constructor.
+    pub(in crate::surface::proof) fn execution_match_arm_unreachable(
+        &self,
+        plan: &ExecutionMatchPlan,
+        index: usize,
+    ) -> Option<Arc<CheckedProofCasePartition>> {
+        plan.partition
+            .excluding_constructor_case_in(plan.case_indices[index], self.facts(), None)
     }
 
     /// Publishes the retained partition and the closed arm's certificate.

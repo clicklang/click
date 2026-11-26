@@ -6456,6 +6456,9 @@ pub enum ProofTactic {
     },
     CheckTerminationCallbacks,
     Close,
+    /// A checked execution-path refutation carried through certificate rendering.
+    /// The parser reads its written `close()` as `Close`.
+    CloseUnreachable,
     Known,
     CloseBounds(Vec<SyntaxProposition>),
     Normalize,
@@ -7039,7 +7042,9 @@ impl ProofTactic {
             Self::CheckTerminationLocal(_)
             | Self::CheckTerminationComponent { .. }
             | Self::CheckTerminationCallbacks => TacticClass::Simple(SimpleTactic::Termination),
-            Self::Known | Self::CloseBounds(_) => TacticClass::Simple(SimpleTactic::Known),
+            Self::Known | Self::CloseUnreachable | Self::CloseBounds(_) => {
+                TacticClass::Simple(SimpleTactic::Known)
+            }
             Self::Normalize | Self::NormalizeUsing(_) | Self::CompatibilityNormalize(_) => {
                 TacticClass::Simple(SimpleTactic::Normalize)
             }

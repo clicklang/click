@@ -279,18 +279,16 @@ that constructor. See [resources](resources.md) for the rule and
 `mdtests/loop_body_refutes_an_unfolded_child.md` for a body that decides an
 unfolded child this way.
 
-The `contradiction` need not be the arm's only tactic. It closes the path it
-stands on wherever it is reached, so an arm may run a `have`, a resource
-unfold, or any other checked operation first to bring the refuting fact into its own
-terms, and then close. Nothing written after it on that path is executed or
-proved (`mdtests/do_while_returns_rebound_resources.md`, whose loop body's
-`Empty` arm unfolds the binder and then closes by `contradiction`). In a
-`match` at the function's own level, whose arms otherwise each have to reach
-function exit, the bridge may not run C: `have`s, unfolds and theorem
-applications, then the `contradiction`. The arm is then excluded like one whose
-only tactic is the `contradiction`, from the facts its bridge reached
-(`mdtests/function_match_arm_closes_by_contradiction_after_a_have.md`,
-`mdtests/function_match_arm_closes_by_contradiction_after_an_unfold.md`).
+An execution `match` arm or a path inside loop `maintain` can end with
+`close()` when the path already holds `false`. An unfold can establish
+`false` by publishing a fact opposite to one already held. The closed path
+owes no function outcome or loop back-edge proof. At a function-level
+`match`, put any fact-only steps before the terminal `close()`, such as
+`have`, `unfold`, or a theorem application
+(`mdtests/function_match_arm_closes_by_contradiction_after_an_unfold.md`,
+`mdtests/do_while_returns_rebound_resources.md`).
+A cited `contradiction(P)` can also close an arm when its facts refute `P`
+(`mdtests/function_match_arm_closes_by_contradiction_after_a_have.md`).
 
 ## Naming a call result
 

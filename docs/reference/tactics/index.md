@@ -77,7 +77,8 @@ remains supported.
 - `rewrite(from, to)`: rewrite the goal with an available equality. See
   [Proposition reasoning](#proposition-reasoning).
 - `contradiction(P)`: close an impossible case from a fact and its negation.
-  For proposition goals, `close()` also uses an already established `false`.
+  Use `close()` for an established `false` in a proposition proof, an
+  execution `match` arm, or a loop `maintain` path.
   See [Proposition reasoning](#proposition-reasoning).
 
 ## Which to use
@@ -125,7 +126,9 @@ and then closes every open claim on every path with the implicit closer, per
 claim or once for a grouped proof. A written `close()` closes the first open goal and runs no C, so
 `by close();` restates the omitted proof only where no C is left to run, as
 for a pure theorem or a `have`; with C left it is refused, since its goals
-exist only at function exit. The implicit closer tries direct logical closure on each open claim,
+exist only at function exit. An execution `match` arm or loop `maintain`
+path holding `false` can end with `close()` at its current point.
+The implicit closer tries direct logical closure on each open claim,
 then bounded proof search. On a returned path that holds the body of a resource
 the contract produces, it first tries to fold the body, as `fold(R(...))` after the C
 would; a fold that does not check leaves the path as it was

@@ -1260,7 +1260,7 @@ impl PureFactStore {
     }
 
     /// Exact membership of false (or the equivalent negated true) in this branch.
-    pub(super) fn holds_false(&self) -> bool {
+    pub(crate) fn holds_false(&self) -> bool {
         let falsehood = Proposition::condition_is(OldConditionTerm::Constant(false), true);
         self.contains(&falsehood)
             || self.assumptions.contains_assumed_exact(&falsehood)

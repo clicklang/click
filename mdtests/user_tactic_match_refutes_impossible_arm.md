@@ -1,6 +1,7 @@
 # User tactic match refutation
 
-A helper may refute an impossible constructor arm. Generated return and postcondition checks must run only on the surviving arm.
+A helper may use `close()` in a constructor arm whose facts establish
+`false`. Generated return and postcondition checks run on the surviving arm.
 
 ```c filename=user_tactic_match_refutes_impossible_arm.c
 void user(int32 *p) {}
@@ -17,7 +18,7 @@ tactic keep(p: int32*) {
     ensures b.model == old(a.model);
 } by {
     match a.model {
-        Model::Empty => { contradiction(a.model == Model::Empty); },
+        Model::Empty => { close(); },
         Model::Full => {
             unfold(a);
             let b = fold(cell(p), { model: Model::Full });
