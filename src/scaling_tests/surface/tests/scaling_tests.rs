@@ -1454,7 +1454,7 @@ fn straight_line_project(statement_count: usize, program_point_claim: bool) -> (
     for _ in 0..=statement_count {
         click_source.push_str("    step();\n");
     }
-    click_source.push_str("    normalize();\n}\n");
+    click_source.push_str("    close();\n}\n");
     (c_source, click_source)
 }
 
@@ -3386,7 +3386,7 @@ fn wide_execution_match_project(width: usize) -> (String, String) {
                  \x20           have wide_code(old(c.model)) == {index} by {{\n\
                  \x20               rewrite(old(c.model), Wide::V{index});\n\
                  \x20               unfold(wide_code(Wide::V{index}));\n\
-                 \x20               normalize();\n\
+                 \x20               close();\n\
                  \x20           }}\n\
                  \x20           close();\n\
                  \x20       }},\n"
@@ -9516,7 +9516,7 @@ int32 count_once(int32 flag) {{
         decreases 1 - i;
         invariant i >= 0;
         invariant i <= 1;
-        initialize by {{ normalize(); }}
+        initialize by {{ close(); }}
         maintain by {{
             mark before_increment;
             step();
