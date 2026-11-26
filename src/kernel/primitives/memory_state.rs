@@ -318,7 +318,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         identity.push_str("os(");
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::PointerOffset(
-                            OldAddressOffset::Constant(byte_width),
+                            OldAddressOffset::constant(byte_width),
                         ));
                         tasks.push(HavocIdentityTask::Text(","));
                         tasks.push(HavocIdentityTask::Bitvector(
@@ -723,7 +723,7 @@ mod call_havoc_local_retention_tests {
         let block: AddressBase = "local:borrowed-guard".into();
         let at = |offset| OldAddress {
             base: block.clone(),
-            offset: OldAddressOffset::Constant(offset),
+            offset: OldAddressOffset::constant(offset),
         };
         let before = SymbolicMemory::new()
             .with_block(block.clone(), 16)
@@ -766,7 +766,7 @@ mod call_havoc_local_retention_tests {
     fn call_havoc_preserves_only_existing_local_initialization() {
         let at = |offset| OldAddress {
             base: "local:initialization".into(),
-            offset: OldAddressOffset::Constant(offset),
+            offset: OldAddressOffset::constant(offset),
         };
         let before = SymbolicMemory::new()
             .with_block(at(0).base.clone(), 16)
@@ -824,7 +824,7 @@ mod call_havoc_local_retention_tests {
     fn call_havoc_drops_explicitly_written_local_union_views() {
         let pointer = OldAddress {
             base: "local:borrowed-union".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         };
         let before = SymbolicMemory::new()
             .with_block(pointer.base.clone(), 8)
@@ -859,7 +859,7 @@ mod call_havoc_local_retention_tests {
     fn call_havoc_drops_a_local_cell_written_through_an_interior_alias() {
         let pointer = OldAddress {
             base: "local:interior-field".into(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         };
         let alias = OldAddress::symbolic(Variable(944_021));
         let before = SymbolicMemory::new()
@@ -903,11 +903,11 @@ mod call_havoc_local_retention_tests {
     fn call_havoc_drops_local_cell_when_write_range_is_assumed_equal_to_it() {
         let local = OldAddress {
             base: AddressBase::Concrete("local:t".to_string()),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         };
         let symbolic = OldAddress {
             base: AddressBase::Symbolic(Variable(944_001)),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         };
         let assumed_alias_range = MemoryRange::new(
             symbolic.clone(),
@@ -921,7 +921,7 @@ mod call_havoc_local_retention_tests {
         let unrelated_range = MemoryRange::new(
             OldAddress {
                 base: AddressBase::ExternalArgument,
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::constant(0),
             },
             OldMachineTerm::constant(0),
             OldMachineTerm::constant(1),
@@ -978,11 +978,11 @@ mod call_havoc_union_view_tests {
         let block: AddressBase = "global:union-havoc".into();
         let written = OldAddress {
             base: block.clone(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         };
         let sibling = OldAddress {
             base: block.clone(),
-            offset: OldAddressOffset::Constant(8),
+            offset: OldAddressOffset::constant(8),
         };
         let view = |pointer: &OldAddress, value: u32| {
             (
@@ -1049,7 +1049,7 @@ mod forget_cached_values_tests {
     fn zeroed_heap_with_cell() -> (SymbolicMemory, OldAddress) {
         let base = OldAddress {
             base: AddressBase::Heap(944_100),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         };
         let mut memory = SymbolicMemory::new().with_block(base.base.clone(), 8);
         let heap = std::sync::Arc::make_mut(&mut memory.heap);
@@ -1066,11 +1066,11 @@ mod forget_cached_values_tests {
     fn loop_havoc_drops_union_views_outside_preserved_blocks() {
         let written = OldAddress {
             base: "global:loop-union".into(),
-            offset: OldAddressOffset::Constant(4),
+            offset: OldAddressOffset::constant(4),
         };
         let preserved = OldAddress {
             base: "local:loop-union-kept".into(),
-            offset: OldAddressOffset::Constant(4),
+            offset: OldAddressOffset::constant(4),
         };
         let before = SymbolicMemory::new()
             .with_block(written.base.clone(), 12)
@@ -1136,7 +1136,7 @@ mod forget_cached_values_tests {
         let (before, base) = zeroed_heap_with_cell();
         let beside = OldAddress {
             base: base.base.clone(),
-            offset: OldAddressOffset::Constant(4),
+            offset: OldAddressOffset::constant(4),
         };
         // The cell covers the first four bytes, so only the bytes beside it
         // read as zero.
@@ -1159,11 +1159,11 @@ mod forget_cached_values_tests {
     fn a_zero_reading_is_refused_for_bytes_a_cell_covers() {
         let base = OldAddress {
             base: AddressBase::Heap(944_104),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         };
         let at = |offset: i64| OldAddress {
             base: base.base.clone(),
-            offset: OldAddressOffset::Constant(offset),
+            offset: OldAddressOffset::constant(offset),
         };
         let mut memory = SymbolicMemory::new().with_block(base.base.clone(), 16);
         let heap = std::sync::Arc::make_mut(&mut memory.heap);
@@ -1219,7 +1219,7 @@ mod forget_cached_values_tests {
             .expect("joinable arms");
         let beside = OldAddress {
             base: base.base.clone(),
-            offset: OldAddressOffset::Constant(4),
+            offset: OldAddressOffset::constant(4),
         };
         assert!(!from_wrote.is_zeroed_heap_address(&beside, 4, &PureFactContext::new()));
         assert_eq!(from_wrote.heap, from_untouched.heap);
@@ -1245,7 +1245,7 @@ mod havoc_identity_tests {
         MemoryRange::new(
             OldAddress {
                 base: "deep-havoc-range".into(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::constant(0),
             },
             nested_term(depth, tail),
             OldMachineTerm::constant(1_024),
@@ -1266,7 +1266,7 @@ mod havoc_identity_tests {
             let range = MemoryRange::new(
                 OldAddress {
                     base: block,
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::constant(0),
                 },
                 OldMachineTerm::constant(0),
                 OldMachineTerm::constant(1),
@@ -2034,7 +2034,7 @@ impl LocalEnvironment {
     pub(in crate::kernel) fn has_slot_in_block(&self, block: &AddressBase) -> bool {
         let first = OldAddress {
             base: block.clone(),
-            offset: OldAddressOffset::Constant(i64::MIN),
+            offset: OldAddressOffset::constant(i64::MIN),
         };
         self.slots.contains_key(&first)
             || self
@@ -2083,7 +2083,7 @@ impl LocalEnvironment {
         let mut names = Vec::new();
         let mut at = OldAddress {
             base: block.clone(),
-            offset: OldAddressOffset::Constant(i64::MIN),
+            offset: OldAddressOffset::constant(i64::MIN),
         };
         if let Some(name) = self.slots.get(&at) {
             names.push(name);
@@ -2848,21 +2848,21 @@ fn call_havoc_exact_byte_write(mutable_ranges: &[MemoryRange]) -> Option<(OldAdd
     if !base.base.is_local_block() || range.element_width() != 1 {
         return None;
     }
-    let OldAddressOffset::Constant(base_offset) = &base.offset else {
+    let OffsetView::Constant(base_offset) = base.offset.view() else {
         return None;
     };
     let exact = -CONSTANT_LIMIT..=CONSTANT_LIMIT;
-    if !exact.contains(base_offset) {
+    if !exact.contains(&base_offset) {
         return None;
     }
-    let start = *base_offset + range.signed_constant_start()?;
-    let end = *base_offset + range.signed_constant_end()?;
+    let start = base_offset + range.signed_constant_start()?;
+    let end = base_offset + range.signed_constant_end()?;
     if !exact.contains(&start) || !exact.contains(&end) || end <= start {
         return None;
     }
     let start_pointer = OldAddress {
         base: base.base.clone(),
-        offset: OldAddressOffset::Constant(start),
+        offset: OldAddressOffset::constant(start),
     };
     Some((start_pointer, (end - start) as u32))
 }
@@ -2877,8 +2877,8 @@ fn call_havoc_run_window(write: Option<&(OldAddress, u32)>, run: &CellRun) -> Op
     use crate::kernel::reasoning::store_gap::CONSTANT_LIMIT;
 
     let (pointer, bytes) = write?;
-    let (OldAddressOffset::Constant(start), OldAddressOffset::Constant(run_start)) =
-        (&pointer.offset, &run.base().offset)
+    let (OffsetView::Constant(start), OffsetView::Constant(run_start)) =
+        (pointer.offset.view(), run.base().offset.view())
     else {
         return None;
     };
@@ -2894,7 +2894,7 @@ fn call_havoc_run_window(write: Option<&(OldAddress, u32)>, run: &CellRun) -> Op
     let span =
         i64::from(run.count().checked_sub(1)?).checked_mul(i64::from(run.element_width()))?;
     let exact = -CONSTANT_LIMIT..=CONSTANT_LIMIT;
-    if !exact.contains(run_start) || !exact.contains(&run_start.checked_add(span)?) {
+    if !exact.contains(&run_start) || !exact.contains(&run_start.checked_add(span)?) {
         return None;
     }
     Some(run_elements_meeting(
@@ -3767,17 +3767,17 @@ fn external_argument_offset_derives_from(base: &OldAddress, pointer: &OldAddress
     }
 
     fn contains_base_offset(term: &OldAddressOffset, base: &OldAddressOffset) -> bool {
-        match term {
-            OldAddressOffset::Add(left, right) => {
-                left.as_ref() == base
-                    || right.as_ref() == base
+        match term.view() {
+            OffsetView::Add(left, right) => {
+                left == base
+                    || right == base
                     || contains_base_offset(left, base)
                     || contains_base_offset(right, base)
             }
-            OldAddressOffset::Constant(_)
-            | OldAddressOffset::Variable(_)
-            | OldAddressOffset::Int32Scaled { .. }
-            | OldAddressOffset::Int64Scaled { .. } => false,
+            OffsetView::Constant(_)
+            | OffsetView::Variable(_)
+            | OffsetView::Int32Scaled { .. }
+            | OffsetView::Int64Scaled { .. } => false,
         }
     }
 
@@ -3829,7 +3829,7 @@ impl SymbolicMemory {
                 vec![diagnostic_base],
                 vec![ProgramValue::pointer(OldAddress {
                     base: block,
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::constant(0),
                 })],
             );
             return self;
@@ -4031,7 +4031,7 @@ impl SymbolicMemory {
             vec![
                 ProgramValue::pointer(OldAddress {
                     base: block.clone(),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::constant(0),
                 }),
                 ProgramValue::Int32(size.into()),
             ],
@@ -4039,7 +4039,7 @@ impl SymbolicMemory {
         self.with_uninitialized_object(
             OldAddress {
                 base: block,
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::constant(0),
             },
             size,
         )
@@ -4066,7 +4066,7 @@ impl SymbolicMemory {
         self.with_uninitialized_object(
             OldAddress {
                 base: block,
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::constant(0),
             },
             Self::UNBOUNDED_UNWRITTEN_SPAN,
         )
@@ -4185,7 +4185,7 @@ impl SymbolicMemory {
             vec![
                 ProgramValue::pointer(OldAddress {
                     base: block.clone(),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::constant(0),
                 }),
                 match size {
                     crate::kernel::LayoutSize::Bytes(bytes) => ProgramValue::Int32(bytes.into()),
@@ -4527,7 +4527,7 @@ impl SymbolicMemory {
             None => {
                 let at = |offset: i64| OldAddress {
                     base: pointer.base.clone(),
-                    offset: OldAddressOffset::Constant(offset),
+                    offset: OldAddressOffset::constant(offset),
                 };
                 let low = start.saturating_sub(WIDEST_CELL_BYTES - 1);
                 let cell_overlaps =
@@ -4868,7 +4868,7 @@ impl SymbolicMemory {
             AddressBase::Symbolic(variable) if self.heap.pending_allocations.contains_key(base) => {
                 let resolved = OldAddress {
                     base: AddressBase::Heap(variable.0),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::constant(0),
                 };
                 Some(crate::kernel::eval::rebase_resolved_allocation(
                     result, base, &resolved,
@@ -4899,7 +4899,7 @@ impl SymbolicMemory {
     pub(in crate::kernel) fn heap_identity_allocated(&self, identity: u64) -> bool {
         let base = |block| OldAddress {
             base: block,
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         };
         self.blocks.contains_key(&AddressBase::Heap(identity))
             // An `allocates(result, n)` call's block, claimed by its contract.
@@ -4922,7 +4922,7 @@ impl SymbolicMemory {
     pub(in crate::kernel) fn allocated_heap_identities(&self) -> Vec<u64> {
         let heap_base = |identity| OldAddress {
             base: AddressBase::Heap(identity),
-            offset: OldAddressOffset::Constant(i64::MIN),
+            offset: OldAddressOffset::constant(i64::MIN),
         };
         let mut identities = self
             .blocks
@@ -4982,7 +4982,7 @@ impl SymbolicMemory {
             };
             OldAddress {
                 base: AddressBase::Heap(variable.0),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::constant(0),
             }
         } else {
             OldAddress::null()
@@ -5087,7 +5087,7 @@ impl SymbolicMemory {
                 memory = memory.with_initialized_object(
                     &OldAddress {
                         base: resolved_base.base.clone(),
-                        offset: OldAddressOffset::Constant(*start),
+                        offset: OldAddressOffset::constant(*start),
                     },
                     *length,
                 );
@@ -5813,7 +5813,7 @@ impl SymbolicMemory {
             .expect("exact destination");
         let at = |offset| OldAddress {
             base: copy.source.base.clone(),
-            offset: OldAddressOffset::Constant(offset),
+            offset: OldAddressOffset::constant(offset),
         };
         let mut initialized = self.heap.initialized.clone();
         initialized
@@ -5828,7 +5828,7 @@ impl SymbolicMemory {
         let mut record = |start: i64, bytes| {
             let address = OldAddress {
                 base: copy.destination.base.clone(),
-                offset: OldAddressOffset::Constant(destination_start + (start - source_start)),
+                offset: OldAddressOffset::constant(destination_start + (start - source_start)),
             };
             initialized.record(&address, bytes);
         };
@@ -6492,7 +6492,7 @@ impl SymbolicMemory {
             || !valid_region(base)
             || !self.run_can_stand_for_cells_at(base)
             || (fresh
-                && (base.offset != OldAddressOffset::Constant(0)
+                && (!matches!(base.offset.view(), OffsetView::Constant(0))
                     || self
                         .block_size(&base.base)
                         .and_then(OldMachineTerm::as_const)
@@ -6521,7 +6521,7 @@ impl SymbolicMemory {
                 || !self.run_can_stand_for_cells_at(pointer)
                 || (bytes != 0 && !self.has_initialized_bytes_under(pointer, bytes, assumptions))
                 || (fresh
-                    && (pointer.offset != OldAddressOffset::Constant(0)
+                    && (!matches!(pointer.offset.view(), OffsetView::Constant(0))
                         || self
                             .block_size(&pointer.base)
                             .and_then(OldMachineTerm::as_const)
@@ -6580,7 +6580,7 @@ impl SymbolicMemory {
             }
             let at = |offset| OldAddress {
                 base: pointer.base.clone(),
-                offset: OldAddressOffset::Constant(offset),
+                offset: OldAddressOffset::constant(offset),
             };
             // Reject symbolic-address caches with one indexed lookup. Concrete
             // cells are visited only inside the selected byte region, plus the
@@ -6654,7 +6654,7 @@ impl SymbolicMemory {
         }
         let target_at = |index| OldAddress {
             base: base.base.clone(),
-            offset: OldAddressOffset::Constant(
+            offset: OldAddressOffset::constant(
                 base.offset.as_const().unwrap()
                     + i64::from(index) * i64::from(element_type.byte_width()),
             ),
@@ -6743,11 +6743,9 @@ impl SymbolicMemory {
             let (stem, constant) = offset_stem_and_constant(&pointer.offset);
             let width = i64::from(element.byte_width());
             let aligned = constant % width == 0
-                && match stem {
+                && match stem.map(|stem| stem.view()) {
                     None => true,
-                    Some(OldAddressOffset::Int32Scaled { byte_width, .. }) => {
-                        byte_width % width == 0
-                    }
+                    Some(OffsetView::Int32Scaled { byte_width, .. }) => byte_width % width == 0,
                     _ => false,
                 };
             pointer != &OldAddress::null()
@@ -6766,7 +6764,7 @@ impl SymbolicMemory {
         if !valid(base)
             || (fresh
                 && (!base.base.is_local_block()
-                    || base.offset != OldAddressOffset::Constant(0)
+                    || !matches!(base.offset.view(), OffsetView::Constant(0))
                     || self
                         .block_size(&base.base)
                         .and_then(OldMachineTerm::as_const)
@@ -7091,7 +7089,7 @@ impl SymbolicMemory {
         if matches!(pointer.base, AddressBase::Heap(_)) {
             let base = OldAddress {
                 base: pointer.base.clone(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::constant(0),
             };
             if (self.heap.uninitialized_allocations.contains(&base)
                 || self.heap.zeroed_allocations.contains(&base)
@@ -7413,7 +7411,7 @@ impl SymbolicMemory {
     pub(in crate::kernel) fn is_live_declared_local_uint32(&self, pointer: &OldAddress) -> bool {
         crate::instrumentation::record_deterministic_work(1);
         pointer.base.is_local_block()
-            && pointer.offset == OldAddressOffset::Constant(0)
+            && matches!(pointer.offset.view(), OffsetView::Constant(0))
             && !self.is_ended_local_address(pointer)
             && self.blocks.get(&pointer.base).is_some_and(|block| {
                 block.declared_scalar_type == Some(ProgramType::UInt32)
@@ -7513,7 +7511,7 @@ impl SymbolicMemory {
     fn written_interval(&self, block: &AddressBase, start: i64, end: i64) -> bool {
         let at = |offset: i64| OldAddress {
             base: block.clone(),
-            offset: OldAddressOffset::Constant(offset),
+            offset: OldAddressOffset::constant(offset),
         };
         let concrete = self.cells.concrete();
         let mut cursor = start;
@@ -7581,16 +7579,17 @@ impl SymbolicMemory {
         }
         let (atoms, shift) =
             crate::kernel::reasoning::memory_resolution::offset_atoms_and_constant(&pointer.offset);
-        let [
-            OldAddressOffset::Int32Scaled {
-                value,
-                byte_width: scale,
-            },
-        ] = atoms.as_slice()
+        let [atom] = atoms.as_slice() else {
+            return false;
+        };
+        let OffsetView::Int32Scaled {
+            index: value,
+            byte_width: scale,
+        } = atom.view()
         else {
             return false;
         };
-        if *scale <= 0 {
+        if scale <= 0 {
             return false;
         }
         let interval = match value.operand_view().read_source() {
@@ -7601,9 +7600,9 @@ impl SymbolicMemory {
             return false;
         };
         let (Some(start), Some(end)) = (
-            low.checked_mul(*scale)
+            low.checked_mul(scale)
                 .and_then(|bytes| bytes.checked_add(shift)),
-            high.checked_mul(*scale)
+            high.checked_mul(scale)
                 .and_then(|bytes| bytes.checked_add(shift))
                 .and_then(|bytes| bytes.checked_add(i64::from(byte_width))),
         ) else {
@@ -7796,7 +7795,7 @@ impl SymbolicMemory {
         memory.forget_initialized_bytes(
             &OldAddress {
                 base: base.base.clone(),
-                offset: OldAddressOffset::Constant(field_start),
+                offset: OldAddressOffset::constant(field_start),
             },
             program_type.byte_width(),
         );
@@ -8575,7 +8574,7 @@ impl SymbolicMemory {
         };
         OldAddress {
             base: block,
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         }
     }
 
@@ -8602,7 +8601,7 @@ impl SymbolicMemory {
         };
         OldAddress {
             base: block,
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         }
     }
 
@@ -8634,7 +8633,7 @@ impl SymbolicMemory {
         };
         OldAddress {
             base: block,
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         }
     }
 
@@ -8653,7 +8652,7 @@ impl SymbolicMemory {
         };
         OldAddress {
             base: block,
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         }
     }
 
@@ -8663,7 +8662,7 @@ impl SymbolicMemory {
                 identity: identity.clone(),
                 bytes: bytes.to_vec(),
             },
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         }
     }
 
@@ -8682,7 +8681,7 @@ impl SymbolicMemory {
         };
         OldAddress {
             base: block,
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         }
     }
 
@@ -8690,7 +8689,7 @@ impl SymbolicMemory {
     pub(in crate::kernel) fn aggregate_return_pointer(frame: u64) -> OldAddress {
         OldAddress {
             base: AddressBase::AggregateReturn { frame },
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         }
     }
 
@@ -8704,25 +8703,25 @@ impl SymbolicMemory {
                     slice: length,
                     instance: LocalStorageInstance::Frame(frame),
                 },
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::constant(0),
             },
             BindingName::ReferenceCarrier(referent) => OldAddress {
                 base: AddressBase::ReferenceCarrier {
                     referent,
                     instance: LocalStorageInstance::Frame(frame),
                 },
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::constant(0),
             },
             BindingName::Local(binding) => OldAddress {
                 base: AddressBase::AutomaticLocal {
                     binding,
                     instance: LocalStorageInstance::Frame(frame),
                 },
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::constant(0),
             },
             BindingName::Static(binding) => OldAddress {
                 base: AddressBase::StaticObject { binding },
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::constant(0),
             },
             BindingName::ContractResult
             | BindingName::ContractException
@@ -8731,7 +8730,7 @@ impl SymbolicMemory {
             }
             BindingName::Named(name) => OldAddress {
                 base: format!("local:frame:{frame}:{name}").into(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::constant(0),
             },
         }
     }
@@ -10043,7 +10042,7 @@ impl ExecutionState {
                 return Err("Requires owns authority(R(p))".into());
             }
             let external = is_external_population_anchor(anchor);
-            let count = if !external && anchor.offset == OldAddressOffset::Constant(0) {
+            let count = if !external && matches!(anchor.offset.view(), OffsetView::Constant(0)) {
                 events
                     .observe_term(&anchor.base, description.family())
                     .map_err(|_| "Requires a current authority count")?
@@ -10460,7 +10459,7 @@ impl ExecutionState {
 
     #[cfg(test)]
     pub(in crate::kernel) fn population_storage_created_here(&self, pointer: &OldAddress) -> bool {
-        pointer.offset == OldAddressOffset::Constant(0)
+        matches!(pointer.offset.view(), OffsetView::Constant(0))
             && (matches!(&pointer.base, AddressBase::Heap(_))
                 && self.memory.live_heap_block_size(pointer).is_some()
                 || pointer.base.is_local_block() && self.memory.has_block(&pointer.base))
@@ -10519,7 +10518,7 @@ impl ExecutionState {
                 .map_err(|_| format!("Requires count({}(...)) == 0 and no outstanding member custody before authority retirement", description.family()))?;
         }
         if !imported_retirement
-            && (anchor.offset != OldAddressOffset::Constant(0)
+            && (!matches!(anchor.offset.view(), OffsetView::Constant(0))
                 || !(matches!(&anchor.base, AddressBase::Heap(_))
                     && self.memory.live_heap_block_size(anchor).is_some()
                     || anchor.base.is_local_block() && self.memory.has_block(&anchor.base)))
@@ -10651,7 +10650,7 @@ impl ExecutionState {
             return Err(format!("Requires owns {name}(p)"));
         }
         if !imported_member_exchange
-            && (anchor.offset != OldAddressOffset::Constant(0)
+            && (!matches!(anchor.offset.view(), OffsetView::Constant(0))
                 || !(matches!(&anchor.base, AddressBase::Heap(_))
                     && self.memory.live_heap_block_size(anchor).is_some()
                     || anchor.base.is_local_block() && self.memory.has_block(&anchor.base)))
@@ -11616,7 +11615,7 @@ impl ExecutionState {
         let run_slots = self.memory.cells.runs().filter_map(|run| {
             let pointer = OldAddress {
                 base: run.base().base.clone(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::constant(0),
             };
             let index = run.live_slot_index(&pointer)?;
             Some((pointer, run.value(index)))
@@ -11626,7 +11625,7 @@ impl ExecutionState {
             .cells
             .concrete()
             .iter()
-            .filter(|(pointer, _)| pointer.offset == OldAddressOffset::Constant(0))
+            .filter(|(pointer, _)| matches!(pointer.offset.view(), OffsetView::Constant(0)))
             .map(|(pointer, value)| (pointer.clone(), value.native().clone()))
             .chain(run_slots)
             .filter_map(|(pointer, value)| {
@@ -11658,7 +11657,7 @@ impl ExecutionState {
             let Some(pointer) = self.locals.slot(name) else {
                 continue;
             };
-            if pointer.offset == OldAddressOffset::Constant(0)
+            if matches!(pointer.offset.view(), OffsetView::Constant(0))
                 && self.memory.cells.bitvector_variable_at(pointer) == Some(variable)
                 && held.is_none_or(|(first, _): (&OldAddress, &BindingName)| pointer < first)
             {
@@ -12077,21 +12076,21 @@ mod contract_retirement_tests {
     fn retirement_drops_zeroed_status_under_each_equal_base_spelling() {
         let base = OldAddress {
             base: AddressBase::Heap(922_200),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         };
         let aliases = [
             OldAddress {
                 base: AddressBase::Symbolic(Variable(922_201)),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::constant(0),
             },
             OldAddress {
                 base: AddressBase::Symbolic(Variable(922_202)),
-                offset: OldAddressOffset::Constant(4),
+                offset: OldAddressOffset::constant(4),
             },
         ];
         let unrelated = OldAddress {
             base: AddressBase::Heap(922_203),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         };
         let assumptions = aliases.iter().fold(PureFactContext::new(), |facts, alias| {
             facts.assume_proposition(Proposition::condition_is(
@@ -12135,7 +12134,7 @@ mod union_store_tests {
     fn union_store_invalidates_the_other_members_stale_overlay() {
         let base = OldAddress {
             base: AddressBase::Concrete("local:u".to_string()),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         };
         let memory = SymbolicMemory::new()
             .store_union(base.clone(), ProgramType::UInt8, crate::kernel::uint8(0xAA))
@@ -12168,7 +12167,7 @@ mod interface_join_tombstone_tests {
     fn interface_join_keeps_one_arm_deallocation() {
         let base = OldAddress {
             base: AddressBase::Heap(923_001),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         };
         // Arm B kept it live.
         let alive = SymbolicMemory::new()
@@ -12212,7 +12211,7 @@ mod join_allocation_spelling_tests {
     fn heap_base(identity: u64) -> OldAddress {
         OldAddress {
             base: AddressBase::Heap(identity),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         }
     }
 
@@ -12252,7 +12251,7 @@ mod join_allocation_spelling_tests {
         let p = heap_base(924_001);
         let q = OldAddress {
             base: AddressBase::Symbolic(Variable(924_005)),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         };
         let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
             OldConditionTerm::address_equal(p.clone(), q.clone()),
@@ -12479,7 +12478,7 @@ mod initialization_record_tests {
     fn element(block: &str, index: i64) -> OldAddress {
         OldAddress {
             base: AddressBase::from(block),
-            offset: OldAddressOffset::Constant(4 * index),
+            offset: OldAddressOffset::constant(4 * index),
         }
     }
 
@@ -12720,7 +12719,7 @@ mod local_variable_spelling_tests {
                     &name,
                     ProgramValue::pointer(OldAddress {
                         base: blocks[step % 2].clone(),
-                        offset: OldAddressOffset::Constant(step as i64),
+                        offset: OldAddressOffset::constant(step as i64),
                     }),
                 );
             }
