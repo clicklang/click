@@ -829,8 +829,15 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         have defined(tmp[1u64]) by {
                             preserve(memory(tmp[1u64]), statement(22).statement(1));
                         }
-                        have defined(tmp[2u64]) by { normalize() using { j == 1; }; }
-                        have tmp[2u64] == 0u8 by { normalize() using { j == 1; }; }
+                        have &tmp[j + 1] == &tmp[2u64] by { rewrite(j, 1); close(); }
+                        have defined(tmp[2u64]) by {
+                            rewrite(&tmp[2u64], &tmp[j + 1]);
+                            close();
+                        }
+                        have tmp[2u64] == 0u8 by {
+                            rewrite(&tmp[2u64], &tmp[j + 1]);
+                            close();
+                        }
                         have tmp_len(j) == 2u64 by { unfold(tmp_len(j)); close(); }
                         have tmp[tmp_len(j)] == 0u8 by { rewrite(tmp_len(j), 2u64); close(); }
                         have to_integer(tmp_len(j)) + 1 <= 18446744073709551615;
@@ -903,8 +910,15 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         have defined(tmp[2u64]) by {
                             preserve(memory(tmp[2u64]), statement(22).statement(1));
                         }
-                        have defined(tmp[3u64]) by { normalize() using { j == 2; }; }
-                        have tmp[3u64] == 0u8 by { normalize() using { j == 2; }; }
+                        have &tmp[j + 1] == &tmp[3u64] by { rewrite(j, 2); close(); }
+                        have defined(tmp[3u64]) by {
+                            rewrite(&tmp[3u64], &tmp[j + 1]);
+                            close();
+                        }
+                        have tmp[3u64] == 0u8 by {
+                            rewrite(&tmp[3u64], &tmp[j + 1]);
+                            close();
+                        }
                         have tmp_len(j) == 3u64 by { unfold(tmp_len(j)); close(); }
                         have tmp[tmp_len(j)] == 0u8 by { rewrite(tmp_len(j), 3u64); close(); }
                         have to_integer(tmp_len(j)) + 1 <= 18446744073709551615;
