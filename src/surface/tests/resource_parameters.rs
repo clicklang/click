@@ -219,7 +219,7 @@ fn generic_pointer_struct_parameters_apply_and_expand() {
         );
     }
 
-    let no_origin = source.replace("theorem identity<T>", "theorem requires_item(p: struct item*) { ensures p == p by { normalize(); } }\ntheorem identity<T>")
+    let no_origin = source.replace("theorem identity<T>", "theorem requires_item(p: struct item*) { ensures p == p by { close(); } }\ntheorem identity<T>")
         .replace("have p == p by { apply(identity(p)); }", "have p == p by { apply(identity(p)); }\n    have p == p by { apply(requires_item(p)); }");
     assert!(no_origin.contains("apply(requires_item(p));"));
     let error = without_implicit_solve(|| verify_c_sources(&no_origin, &sources)).unwrap_err();

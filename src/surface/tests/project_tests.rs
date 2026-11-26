@@ -1059,7 +1059,7 @@ int32 identity(int32 x) throws int32 {
 "#;
     let rewritten = source.replace(
         "\n}\n",
-        "\n} by { step(); have result == x by { normalize(); } close(); }\n",
+        "\n} by { step(); have result == x by { close(); } close(); }\n",
     );
     let position = expansion::position_at_offset(&rewritten, rewritten.find("step();").unwrap());
     let (session, _) = ProgramVerificationSession::new(
