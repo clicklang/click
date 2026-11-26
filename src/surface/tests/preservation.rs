@@ -594,8 +594,10 @@ fn single_write_transport_expansion_replays_without_search() {
     assert!(!expanded.contains("transport("), "{expanded}");
     assert!(!expanded.contains("transport_certificate"), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
-    let overlap = source.replace("have *q == at(statement(0).entry, *q)", "have *p == at(statement(0).entry, *p)")
-        .replace("transport(at(statement(0).entry, *q) == at(statement(0).entry, *q),\n            *q == at(statement(0).entry, *q))", "transport(at(statement(0).entry, *p) == at(statement(0).entry, *p),\n            *p == at(statement(0).entry, *p))");
+    let overlap = source.replace(
+        "have *q == at(statement(0).entry, *q)",
+        "have *p == at(statement(0).entry, *p)",
+    );
     assert!(verify_c_sources(&overlap, &sources).is_err());
 }
 
@@ -660,7 +662,7 @@ fn multiple_write_resource_transport_expands_to_ordinary_equalities() {
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect::<Vec<_>>();
-    let legacy = source.replace(
+    let inferred = source.replace(
         r#"    have at(statement(0).exit, m.value) == at(statement(0).entry, m.value) by {
         preserve(m, statement(0));
     }
@@ -669,12 +671,11 @@ fn multiple_write_resource_transport_expands_to_ordinary_equalities() {
     }
     have m.value == at(statement(0).entry, m.value) by { close(); }"#,
         r#"    have m.value == at(statement(0).entry, m.value) by {
-        transport(at(statement(0).entry, m.value) == at(statement(0).entry, m.value),
-            m.value == at(statement(0).entry, m.value));
+        close();
     }"#,
     );
-    assert_ne!(legacy, source);
-    for source in [source, legacy] {
+    assert_ne!(inferred, source);
+    for source in [source, inferred] {
         let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
         assert!(!expanded.contains("transport("), "{expanded}");
         assert!(!expanded.contains("transport_certificate"), "{expanded}");
@@ -694,7 +695,7 @@ fn multiple_write_transport_rejects_changed_reads_and_invalid_separation() {
     let c = sources[0].1.replace("*p = 1;", "*q = 1;");
     let overlapping = source.replace("views *q;", "owns *q;");
     assert!(verify_c_sources(&overlapping, &[(sources[0].0.as_str(), c.as_str())]).is_err());
-    let invalid = source.replace("        transport(", "        have separate(statement(0).footprint, memory(*p)) by { close(); }\n        transport(");
+    let invalid = source.replace("        close();\n    }\n    step();", "        have separate(statement(0).footprint, memory(*p)) by { close(); }\n        close();\n    }\n    step();");
     let sources = sources
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
@@ -720,9 +721,7 @@ fn inequality_transport_expands_to_ordinary_steps() {
     }
     let missing_source = source.replace("    requires *q > 0;\n", "");
     assert!(verify_c_sources(&missing_source, &sources).is_err());
-    let changed_goal = source
-        .replace("have *q > 0", "have *q > 1")
-        .replace(", *q > 0)", ", *q > 1)");
+    let changed_goal = source.replace("have *q > 0", "have *q > 1");
     assert!(verify_c_sources(&changed_goal, &sources).is_err());
 }
 
@@ -771,10 +770,7 @@ fn known_value_transport_expands_to_ordinary_steps() {
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect::<Vec<_>>();
-    let reversed = source.replace("*q == 7", "7 == *q").replace(
-        "at(statement(0).entry, *q) == 7",
-        "7 == at(statement(0).entry, *q)",
-    );
+    let reversed = source.replace("*q == 7", "7 == *q");
     for source in [source.clone(), reversed] {
         let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
         assert!(!expanded.contains("transport("), "{expanded}");
@@ -783,9 +779,7 @@ fn known_value_transport_expands_to_ordinary_steps() {
     }
     let missing_source = source.replace("    requires *q == 7;\n", "");
     assert!(verify_c_sources(&missing_source, &sources).is_err());
-    let changed_value = source
-        .replace("have *q == 7", "have *q == 8")
-        .replace(", *q == 7)", ", *q == 8)");
+    let changed_value = source.replace("have *q == 7", "have *q == 8");
     assert!(verify_c_sources(&changed_value, &sources).is_err());
 }
 
@@ -857,20 +851,13 @@ fn state_comparison_transport_retains_the_other_operands_state() {
             "    requires *q == 7;",
             "    requires *q == 7;\n    requires *p == 7;",
         )
-        .replace(
-            "at(statement(0).entry, *q == 7)",
-            "at(statement(0).entry, *q == *p)",
-        )
-        .replace("have *q == 7", "have *q == at(statement(0).entry, *p)")
-        .replace(", *q == 7)", ", *q == at(statement(0).entry, *p))");
+        .replace("have *q == 7", "have *q == at(statement(0).entry, *p)");
     let expanded = expand_c_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
     assert!(!expanded.contains("transport("), "{expanded}");
     assert!(!expanded.contains("transport_certificate"), "{expanded}");
     without_implicit_solve(|| verify_c_sources(&expanded, &sources)).unwrap();
     // The write changes p from 7 to 0. Its old value may not become its current value.
-    let wrong = source
-        .replace("have *q == at(statement(0).entry, *p)", "have *q == *p")
-        .replace(", *q == at(statement(0).entry, *p))", ", *q == *p)");
+    let wrong = source.replace("have *q == at(statement(0).entry, *p)", "have *q == *p");
     assert!(verify_c_sources(&wrong, &sources).is_err());
 }
 
@@ -947,7 +934,7 @@ fn two_read_transport_refuses_changed_reads_and_missing_source() {
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect::<Vec<_>>();
     assert!(verify_c_sources(&source.replace("    requires *q == *r;\n", ""), &sources).is_err());
-    let invalid = source.replace("        transport(", "        have separate(statement(0).footprint, memory(*p)) by { close(); }\n        transport(");
+    let invalid = source.replace("        close();\n    }\n    step();", "        have separate(statement(0).footprint, memory(*p)) by { close(); }\n        close();\n    }\n    step();");
     assert!(verify_c_sources(&invalid, &sources).is_err());
 }
 
@@ -1036,7 +1023,7 @@ fn conjunction_transport_requires_both_facts_and_preservations() {
         );
         assert!(verify_c_sources(&missing, &sources).is_err());
     }
-    let invalid = source.replace("        transport(", "        have separate(statement(0).footprint, memory(*p)) by { close(); }\n        transport(");
+    let invalid = source.replace("        close();\n    }\n    step();", "        have separate(statement(0).footprint, memory(*p)) by { close(); }\n        close();\n    }\n    step();");
     assert!(verify_c_sources(&invalid, &sources).is_err());
 }
 
@@ -1135,7 +1122,7 @@ fn nested_conjunction_transport_checks_deep_leaves_and_all_evidence() {
         .collect::<Vec<_>>();
     for invalid in [
         source.replace("requires *q == 7 and (*r == 8 and *s == 9);", "requires *q == 7 and *r == 8;"),
-        source.replace("        transport(", "        have separate(statement(0).footprint, memory(*p)) by { close(); }\n        transport("),
+        source.replace("        close();\n    }\n    step();", "        have separate(statement(0).footprint, memory(*p)) by { close(); }\n        close();\n    }\n    step();"),
     ] {
         assert!(verify_c_sources(&invalid, &files).is_err());
     }
@@ -1191,7 +1178,7 @@ fn conjunction_projection_transport_checks_source_and_preservation() {
     for invalid in [
         source.replace("requires *p == 8 and *q == 7;", "requires *p == 8;"),
         source.replace("have *q == 7", "have *q == 9").replace(", *q == 7)", ", *q == 9)"),
-        source.replace("        transport(", "        have separate(statement(0).footprint, memory(*p)) by { close(); }\n        transport("),
+        source.replace("        close();\n    }\n    step();", "        have separate(statement(0).footprint, memory(*p)) by { close(); }\n        close();\n    }\n    step();"),
     ] {
         assert!(verify_c_sources(&invalid, &files).is_err());
     }
@@ -1279,7 +1266,7 @@ fn conjunction_selection_transport_checks_every_selected_leaf() {
     for invalid in [
         source.replace("requires *q == 7 and (*p == 8 and *r == 8);", "requires *q == 7 and *p == 8;"),
         source.replace("*q == 7 and *r == 8", "*q == 7 and *r == 9"),
-        source.replace("        transport(", "        have separate(statement(0).footprint, memory(*p)) by { close(); }\n        transport("),
+        source.replace("        close();\n    }\n    step();", "        have separate(statement(0).footprint, memory(*p)) by { close(); }\n        close();\n    }\n    step();"),
     ] {
         assert!(verify_c_sources(&invalid, &files).is_err());
     }
@@ -1405,7 +1392,7 @@ fn implication_transport_rejects_changed_guard_and_conclusion() {
         .collect::<Vec<_>>();
     for invalid in [
         source.replace("    requires *q == 7 implies *r == 8;", ""),
-        source.replace("        transport(", "        have separate(statement(0).footprint, memory(*p)) by { close(); }\n        transport("),
+        source.replace("        close();\n    }\n    step();", "        have separate(statement(0).footprint, memory(*p)) by { close(); }\n        close();\n    }\n    step();"),
     ] {
         assert!(verify_c_sources(&invalid, &files).is_err());
     }
@@ -1502,7 +1489,7 @@ fn compound_implication_transport_rejects_changed_nested_guards() {
         .collect::<Vec<_>>();
     for invalid in [
         source.replace(&format!("    requires {original};"), ""),
-        source.replace("        transport(", "        have separate(statement(0).footprint, memory(*p)) by { close(); }\n        transport("),
+        source.replace("        close();\n    }\n    step();", "        have separate(statement(0).footprint, memory(*p)) by { close(); }\n        close();\n    }\n    step();"),
     ] { assert!(verify_c_sources(&invalid, &files).is_err()); }
 }
 

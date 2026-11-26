@@ -3625,7 +3625,7 @@ target alone fail. When search finds no checked proof, the diagnostic shows
 the source and wanted target with their read identities. Expansion writes the
 ordinary checks, such as `preserve` and `rewrite`, for a successful proof.
 
-**Checked examples:** [`known_value_transport_expansion.md`](https://github.com/clicklang/click/blob/master/mdtests/known_value_transport_expansion.md), [`transport_model_pointer_binding.md`](https://github.com/clicklang/click/blob/master/mdtests/transport_model_pointer_binding.md)
+**Checked replacement:** [`known_value_transport_expansion.md`](https://github.com/clicklang/click/blob/master/mdtests/known_value_transport_expansion.md) uses `close()` to establish the preserved value.
 
 ### Unfolding predicates
 

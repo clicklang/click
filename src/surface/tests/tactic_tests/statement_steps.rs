@@ -2,7 +2,7 @@ use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
-fn pure_proofs_use_rewrite_instead_of_transport_using() {
+fn pure_proofs_can_rewrite_from_a_known_equality() {
     let source = r#"
         theorem transfer(a: int32, b: int32) {
             requires a == 1;
@@ -14,15 +14,6 @@ fn pure_proofs_use_rewrite_instead_of_transport_using() {
         }
     "#;
     verify_c_sources(source, &[]).unwrap();
-    let retired = source.replace(
-        "rewrite(b, a);\n                close();",
-        "transport(a == 1, b == 1) using { a == 1; a == b; };",
-    );
-    let error = verify_c_sources(&retired, &[]).unwrap_err();
-    assert!(
-        error.message().contains("`transport ... using` is retired"),
-        "{error}"
-    );
 }
 
 #[test]
