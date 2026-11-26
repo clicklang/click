@@ -156,9 +156,15 @@ decreases ctx
                 },
                 Color::Red => match near {
                     RbTree::Empty => plug(up, RbTree::Node(sid, above, Color::Black, far, RbTree::Node(id, sid, Color::Black, rb_recolor(rb_reparent(near, id), Color::Red), focus))),
-                    RbTree::Node(nid, np, nc, nl, nr) => match rb_color(nl) {
-                        Color::Black => match rb_color(nr) { Color::Black => plug(up, RbTree::Node(sid, above, Color::Black, far, RbTree::Node(id, sid, Color::Black, rb_recolor(rb_reparent(near, id), Color::Red), focus))), Color::Red => match nr { RbTree::Empty => plug(up, RbTree::Node(sid, above, Color::Black, far, RbTree::Node(id, sid, Color::Black, rb_recolor(rb_reparent(near, id), Color::Red), focus))), RbTree::Node(iid, ip, ic, il, ir) => plug(Context::Right(sid, above, Color::Black, far, up), RbTree::Node(iid, sid, Color::Red, RbTree::Node(nid, iid, Color::Black, nl, rb_reparent(il, nid)), RbTree::Node(id, iid, Color::Black, rb_reparent(ir, id), focus))), }, },
-                        Color::Red => match nl { RbTree::Empty => plug(up, RbTree::Node(sid, above, Color::Black, far, RbTree::Node(id, sid, Color::Black, rb_recolor(rb_reparent(near, id), Color::Red), focus))), RbTree::Node(rid, rp, rc, rl, rr) => plug(Context::Right(sid, above, Color::Black, far, up), RbTree::Node(nid, sid, Color::Red, RbTree::Node(rid, nid, Color::Black, rl, rr), RbTree::Node(id, nid, Color::Black, rb_reparent(nr, id), focus))), }, },
+                    RbTree::Node(nid, np, nc, nl, nr) => if rb_color(nl) == Color::Black {
+                        if rb_color(nr) == Color::Black {
+                            plug(up, RbTree::Node(sid, above, Color::Black, far, RbTree::Node(id, sid, Color::Black, rb_recolor(rb_reparent(near, id), Color::Red), focus)))
+                        } else {
+                            match nr { RbTree::Empty => plug(up, RbTree::Node(sid, above, Color::Black, far, RbTree::Node(id, sid, Color::Black, rb_recolor(rb_reparent(near, id), Color::Red), focus))), RbTree::Node(iid, ip, ic, il, ir) => plug(Context::Right(sid, above, Color::Black, far, up), RbTree::Node(iid, sid, Color::Red, RbTree::Node(nid, iid, Color::Black, nl, rb_reparent(il, nid)), RbTree::Node(id, iid, Color::Black, rb_reparent(ir, id), focus))), }
+                        }
+                    } else {
+                        match nl { RbTree::Empty => plug(up, RbTree::Node(sid, above, Color::Black, far, RbTree::Node(id, sid, Color::Black, rb_recolor(rb_reparent(near, id), Color::Red), focus))), RbTree::Node(rid, rp, rc, rl, rr) => plug(Context::Right(sid, above, Color::Black, far, up), RbTree::Node(nid, sid, Color::Red, RbTree::Node(rid, nid, Color::Black, rl, rr), RbTree::Node(id, nid, Color::Black, rb_reparent(nr, id), focus))), }
+                    },
                 },
             },
         },
@@ -201,9 +207,15 @@ decreases ctx
                 },
                 Color::Red => match near {
                     RbTree::Empty => plug(up, RbTree::Node(sid, above, Color::Black, RbTree::Node(id, sid, Color::Black, focus, rb_recolor(rb_reparent(near, id), Color::Red)), far)),
-                    RbTree::Node(nid, np, nc, nr, nl) => match rb_color(nl) {
-                        Color::Black => match rb_color(nr) { Color::Black => plug(up, RbTree::Node(sid, above, Color::Black, RbTree::Node(id, sid, Color::Black, focus, rb_recolor(rb_reparent(near, id), Color::Red)), far)), Color::Red => match nr { RbTree::Empty => plug(up, RbTree::Node(sid, above, Color::Black, RbTree::Node(id, sid, Color::Black, focus, rb_recolor(rb_reparent(near, id), Color::Red)), far)), RbTree::Node(iid, ip, ic, ir, il) => plug(Context::Left(sid, above, Color::Black, far, up), RbTree::Node(iid, sid, Color::Red, RbTree::Node(id, iid, Color::Black, focus, rb_reparent(ir, id)), RbTree::Node(nid, iid, Color::Black, rb_reparent(il, nid), nl))), }, },
-                        Color::Red => match nl { RbTree::Empty => plug(up, RbTree::Node(sid, above, Color::Black, RbTree::Node(id, sid, Color::Black, focus, rb_recolor(rb_reparent(near, id), Color::Red)), far)), RbTree::Node(rid, rp, rc, rr, rl) => plug(Context::Left(sid, above, Color::Black, far, up), RbTree::Node(nid, sid, Color::Red, RbTree::Node(id, nid, Color::Black, focus, rb_reparent(nr, id)), RbTree::Node(rid, nid, Color::Black, rr, rl))), }, },
+                    RbTree::Node(nid, np, nc, nr, nl) => if rb_color(nl) == Color::Black {
+                        if rb_color(nr) == Color::Black {
+                            plug(up, RbTree::Node(sid, above, Color::Black, RbTree::Node(id, sid, Color::Black, focus, rb_recolor(rb_reparent(near, id), Color::Red)), far))
+                        } else {
+                            match nr { RbTree::Empty => plug(up, RbTree::Node(sid, above, Color::Black, RbTree::Node(id, sid, Color::Black, focus, rb_recolor(rb_reparent(near, id), Color::Red)), far)), RbTree::Node(iid, ip, ic, ir, il) => plug(Context::Left(sid, above, Color::Black, far, up), RbTree::Node(iid, sid, Color::Red, RbTree::Node(id, iid, Color::Black, focus, rb_reparent(ir, id)), RbTree::Node(nid, iid, Color::Black, rb_reparent(il, nid), nl))), }
+                        }
+                    } else {
+                        match nl { RbTree::Empty => plug(up, RbTree::Node(sid, above, Color::Black, RbTree::Node(id, sid, Color::Black, focus, rb_recolor(rb_reparent(near, id), Color::Red)), far)), RbTree::Node(rid, rp, rc, rr, rl) => plug(Context::Left(sid, above, Color::Black, far, up), RbTree::Node(nid, sid, Color::Red, RbTree::Node(id, nid, Color::Black, focus, rb_reparent(nr, id)), RbTree::Node(rid, nid, Color::Black, rr, rl))), }
+                    },
                 },
             },
         },
@@ -480,7 +492,7 @@ theorem erase_flips_red_all_right_red_result(id: struct rb_node*, above: struct 
         unfold(erase_flips_red_all_result(Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Red, far, RbTree::Node(nid, sid, Color::Black, nl, nr)), up), focus));
         unfold(rb_reparent(RbTree::Node(nid, sid, Color::Black, nl, nr), id));
         unfold(rb_recolor(RbTree::Node(nid, id, Color::Black, nl, nr), Color::Red));
-        rewrite(rb_color(nl), Color::Black); rewrite(rb_color(nr), Color::Black); normalize();
+        rewrite(rb_color(nl), Color::Black); rewrite(rb_color(nr), Color::Black); close();
     }
 }
 
@@ -493,7 +505,7 @@ theorem erase_flips_red_all_left_red_result(id: struct rb_node*, above: struct r
         unfold(erase_flips_red_all_result(Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Red, RbTree::Node(nid, sid, Color::Black, nl, nr), far), up), focus));
         unfold(rb_reparent(RbTree::Node(nid, sid, Color::Black, nl, nr), id));
         unfold(rb_recolor(RbTree::Node(nid, id, Color::Black, nl, nr), Color::Red));
-        rewrite(rb_color(nr), Color::Black); rewrite(rb_color(nl), Color::Black); normalize();
+        rewrite(rb_color(nr), Color::Black); rewrite(rb_color(nl), Color::Black); close();
     }
 }
 
@@ -1423,13 +1435,10 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                     have sibling == parent->rb_left by close();
                                     have sibling == sid by close();
                                     have sibling->__rb_parent_color == sid->__rb_parent_color by {
-                                        normalize() using { sibling == sid; };
+                                        close();
                                     }
                                     have (sibling->__rb_parent_color & 1) == 1 by {
-                                        normalize() using {
-                                            sibling->__rb_parent_color == sid->__rb_parent_color;
-                                            (sid->__rb_parent_color & 1) == 1;
-                                        };
+                                        close();
                                     }
                                     step(); step(); // Skip the red-sibling rotation.
                                     step(); // Read the sibling's left child.
@@ -1541,14 +1550,14 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     have separate(memory(id->__rb_parent_color), memory(id->rb_right)) by close();
                                                     step(); step(); // Select the red parent and blacken it.
                                                     have separate(statement(1).statement(1).statement(14).statement(1).statement(1).statement(0).footprint, memory(id->rb_left)) by {
-                                                        normalize() using { separate(memory(id->__rb_parent_color), memory(id->rb_left)); };
+                                                        close();
                                                     }
                                                     have id->rb_left == at(red_flip, id->rb_left) by {
                                                         preserve(memory(id->rb_left), statement(1).statement(1).statement(14).statement(1).statement(1).statement(0));
                                                     }
                                                     have id->rb_left == sid by { rewrite(id->rb_left, at(red_flip, id->rb_left)); close(); }
                                                     have separate(statement(1).statement(1).statement(14).statement(1).statement(1).statement(0).footprint, memory(id->rb_right)) by {
-                                                        normalize() using { separate(memory(id->__rb_parent_color), memory(id->rb_right)); };
+                                                        close();
                                                     }
                                                     have id->rb_right == at(red_flip, id->rb_right) by {
                                                         preserve(memory(id->rb_right), statement(1).statement(1).statement(14).statement(1).statement(1).statement(0));
@@ -1660,7 +1669,10 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     have erase_flips_red_all(u.model) == 1 by {
                                                         rewrite(u.model, um);
                                                         have erase_flips_red_all(Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, srm, slm), um)) == erase_flips_red_all(um) by {
-                                                            unfold(erase_flips_red_all(Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, srm, slm), um))); normalize() using { rb_root_black(slm) == 1; rb_root_black(srm) == 1; };
+                                                            unfold(erase_flips_red_all(Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, srm, slm), um)));
+                                                            rewrite(rb_root_black(slm), 1);
+                                                            rewrite(rb_root_black(srm), 1);
+                                                            close();
                                                         }
                                                         rewrite(erase_flips_red_all(um), erase_flips_red_all(Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, srm, slm), um)));
                                                         rewrite(Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, srm, slm), um), Context::Right(id, above, pc, RbTree::Node(sid, id, Color::Black, srm, slm), um)); rewrite(Context::Right(id, above, pc, RbTree::Node(sid, id, Color::Black, srm, slm), um), at(iteration, c.model)); close();
@@ -1889,17 +1901,17 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                 rewrite(cid->__rb_parent_color, (address(sid) | 1));
                                                                 apply(sets_low_parent_bit(address(sid)));
                                                             }
-                                                            have cid->__rb_parent_color == address(sid) + (cid->__rb_parent_color & 1) by { normalize() using { cid->__rb_parent_color == address(sid) + 1; (cid->__rb_parent_color & 1) == 1; }; }
+                                                            have cid->__rb_parent_color == address(sid) + (cid->__rb_parent_color & 1) by { close(); }
                                                             have (cid->__rb_parent_color & 1) == color_bit(Color::Black) by { unfold(color_bit(Color::Black)); close(); }
                                                             let first_near = fold(rb_at(tmp1), { model: RbTree::Node(cid, sid, Color::Black, clm, crm), left: cl, right: cr });
                                                             have first_near.model == rb_reparent(ilm, sid) by { rewrite(ilm, RbTree::Node(cid, cp, cc, clm, crm)); rewrite(cc, Color::Black); unfold(rb_reparent(RbTree::Node(cid, cp, Color::Black, clm, crm), sid)); close(); }
-                                                            have parent->__rb_parent_color == at(inner_inputs, parent->__rb_parent_color) by { normalize() using { at(first_update, parent->__rb_parent_color == at(inner_inputs, parent->__rb_parent_color)); tmp1 == cid; sibling == sid; tmp2 == iid; }; }
-                                                            have parent->rb_right == node by { normalize() using { at(first_update, parent->rb_right == node); tmp1 == cid; sibling == sid; tmp2 == iid; }; }
-                                                            have parent->rb_left == iid by { normalize() using { at(first_update, parent->rb_left == iid); tmp1 == cid; sibling == sid; tmp2 == iid; }; }
-                                                            have iid->rb_left == sid by { normalize() using { at(first_update, iid->rb_left == sid); tmp1 == cid; sibling == sid; tmp2 == iid; }; }
-                                                            have sid->rb_right == tmp1 by { normalize() using { at(first_update, sid->rb_right == tmp1); tmp1 == cid; sibling == sid; tmp2 == iid; }; }
-                                                            have sid->rb_left == at(inner_inputs, sid->rb_left) by { normalize() using { at(first_update, sid->rb_left == at(inner_inputs, sid->rb_left)); tmp1 == cid; sibling == sid; tmp2 == iid; }; }
-                                                            have iid->rb_right == at(inner_inputs, iid->rb_right) by { normalize() using { at(first_update, iid->rb_right == at(inner_inputs, iid->rb_right)); tmp1 == cid; sibling == sid; tmp2 == iid; }; }
+                                                            have parent->__rb_parent_color == at(inner_inputs, parent->__rb_parent_color) by { close(); }
+                                                            have parent->rb_right == node by { close(); }
+                                                            have parent->rb_left == iid by { close(); }
+                                                            have iid->rb_left == sid by { close(); }
+                                                            have sid->rb_right == tmp1 by { close(); }
+                                                            have sid->rb_left == at(inner_inputs, sid->rb_left) by { close(); }
+                                                            have iid->rb_right == at(inner_inputs, iid->rb_right) by { close(); }
                                                         },
                                                     }
                                                     let callback_parent_tag = fold(rb_context_tag(parent, above), { color: pc });
@@ -2023,10 +2035,10 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             have tmp2->__rb_parent_color == address(parent) + (tmp2->__rb_parent_color & 1) by { rewrite((tmp2->__rb_parent_color & 1), color_bit(nc)); close(); }
                                                             let near = fold(rb_at(tmp2), { model: RbTree::Node(nid, parent, nc, nlm, nrm), left: nl, right: nr });
                                                             have near.model == rb_reparent(irm, parent) by { rewrite(irm, RbTree::Node(nid, np, nc, nlm, nrm)); unfold(rb_reparent(RbTree::Node(nid, np, nc, nlm, nrm), parent)); close(); }
-                                                            have parent->__rb_parent_color == at(inner_inputs, parent->__rb_parent_color) by { normalize() using { at(near_update, parent->__rb_parent_color == at(inner_inputs, parent->__rb_parent_color)); tmp2 == nid; sibling == iid; tmp1 == sid; }; }
+                                                            have parent->__rb_parent_color == at(inner_inputs, parent->__rb_parent_color) by { close(); }
                                                             have id->rb_right == node;
                                                             have parent->rb_right == node;
-                                                            have parent->rb_left == tmp2 by { normalize() using { at(near_update, parent->rb_left == tmp2); tmp2 == nid; sibling == iid; tmp1 == sid; }; }
+                                                            have parent->rb_left == tmp2 by { close(); }
                                                             have iid->rb_right == parent by close();
                                                             have sibling->rb_right == parent by { rewrite(sibling, iid); close(); }
                                                             have iid->rb_left == sid by { close(); }
@@ -2064,7 +2076,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     unfold(rb_child_links(iid, sid, parent));
                                                     unfold(rb_child_links(parent, tmp2, node));
                                                     have sibling->__rb_parent_color == at(outer_rotation, parent->__rb_parent_color);
-                                                    have iid->__rb_parent_color == sibling->__rb_parent_color by { normalize() using { sibling == iid; parent == id; }; }
+                                                    have iid->__rb_parent_color == sibling->__rb_parent_color by { close(); }
                                                     have iid->__rb_parent_color == at(outer_rotation, parent->__rb_parent_color) by { rewrite(iid->__rb_parent_color, sibling->__rb_parent_color); close(); }
                                                     have iid->__rb_parent_color == address(above) + color_bit(pc) by { rewrite(iid->__rb_parent_color, at(outer_rotation, parent->__rb_parent_color)); close(); }
                                                     have (iid->__rb_parent_color & 1) == color_bit(pc) by {
@@ -2245,7 +2257,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 unfold(rb_child_links(sid, rid, parent));
                                                 unfold(rb_child_links(parent, tmp2, node));
                                                 have sibling->__rb_parent_color == at(outer_rotation, parent->__rb_parent_color);
-                                                have sid->__rb_parent_color == sibling->__rb_parent_color by { normalize() using { sibling == sid; parent == id; }; }
+                                                have sid->__rb_parent_color == sibling->__rb_parent_color by { close(); }
                                                 have sid->__rb_parent_color == at(outer_rotation, parent->__rb_parent_color);
                                                 have sid->__rb_parent_color == address(above) + color_bit(pc);
                                                 have (sid->__rb_parent_color & 1) == color_bit(pc) by {
@@ -2365,7 +2377,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                             have slm == RbTree::Node(zid, zp, zc, zlm, zrm) by { rewrite(slm, sl.model); close(); }
                                             have zc == Color::Black by {
                                                 if zc == Color::Black { close(); } else {
-                                                    have erase_flips_red_all(at(iteration, c.model)) == 0 by { rewrite(at(iteration, c.model), Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Red, srm, slm), um)); rewrite(slm, RbTree::Node(zid, zp, zc, zlm, zrm)); unfold(erase_flips_red_all(Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Red, srm, RbTree::Node(zid, zp, zc, zlm, zrm)), um))); normalize() using { not(zc == Color::Black); }; }
+                                                    have erase_flips_red_all(at(iteration, c.model)) == 0 by { rewrite(at(iteration, c.model), Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Red, srm, slm), um)); rewrite(slm, RbTree::Node(zid, zp, zc, zlm, zrm)); unfold(erase_flips_red_all(Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Red, srm, RbTree::Node(zid, zp, zc, zlm, zrm)), um))); close(); }
                                                     have not(erase_flips_red_all(at(iteration, c.model)) == 1) by { rewrite(erase_flips_red_all(at(iteration, c.model)), 0); close(); }
                                                     contradiction(erase_flips_red_all(at(iteration, c.model)) == 1);
                                                 }
@@ -2413,13 +2425,13 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                             mark near_color;
                                             step(rb_set_parent_color); // Set the near child's black parent word.
                                             have separate(statement(1).statement(1).statement(12).statement(3).footprint, memory(tmp1->rb_left)) by {
-                                                normalize() using { separate(memory(tmp1->__rb_parent_color), memory(tmp1->rb_left)); };
+                                                close();
                                             }
                                             have tmp1->rb_left == at(near_color, tmp1->rb_left) by {
                                                 preserve(memory(tmp1->rb_left), statement(1).statement(1).statement(12).statement(3));
                                             }
                                             have separate(statement(1).statement(1).statement(12).statement(3).footprint, memory(tmp1->rb_right)) by {
-                                                normalize() using { separate(memory(tmp1->__rb_parent_color), memory(tmp1->rb_right)); };
+                                                close();
                                             }
                                             have tmp1->rb_right == at(near_color, tmp1->rb_right) by {
                                                 preserve(memory(tmp1->rb_right), statement(1).statement(1).statement(12).statement(3));
@@ -2435,7 +2447,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 apply(sets_low_parent_bit(address(id)));
                                             }
                                             have (zid->__rb_parent_color & 1) == color_bit(Color::Black) by { unfold(color_bit(Color::Black)); close(); }
-                                            have zid->__rb_parent_color == address(id) + (zid->__rb_parent_color & 1) by { normalize() using { zid->__rb_parent_color == address(id) + 1; (zid->__rb_parent_color & 1) == 1; }; }
+                                            have zid->__rb_parent_color == address(id) + (zid->__rb_parent_color & 1) by { close(); }
                                             let kept_near_tag = fold(rb_context_tag(tmp1, id), { color: Color::Black });
                                             unfold(red_parent_left);
                                             unfold(red_parent_right);
@@ -2487,14 +2499,14 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                             unfold(rb_written_right_link(sid, parent));
                                             unfold(rb_child_links(parent, zid, node));
                                             have sibling->__rb_parent_color == at(red_rotation, parent->__rb_parent_color) by { close(); }
-                                            have sid->__rb_parent_color == sibling->__rb_parent_color by { normalize() using { sibling == sid; parent == id; }; }
+                                            have sid->__rb_parent_color == sibling->__rb_parent_color by { close(); }
                                             have sid->__rb_parent_color == at(red_rotation, parent->__rb_parent_color) by { rewrite(sid->__rb_parent_color, sibling->__rb_parent_color); close(); }
                                             have sid->__rb_parent_color == address(above) + 1 by { rewrite(sid->__rb_parent_color, at(red_rotation, parent->__rb_parent_color)); close(); }
                                             have (sid->__rb_parent_color & 1) == 1 by { rewrite(sid->__rb_parent_color, address(above) + 1); close() using { aligned(above, 8); }; }
                                             have (sid->__rb_parent_color & 1) == color_bit(Color::Black) by { unfold(color_bit(Color::Black)); close(); }
                                             have sid->__rb_parent_color == address(above) + (sid->__rb_parent_color & 1) by { rewrite((sid->__rb_parent_color & 1), 1); close(); }
                                             have parent->__rb_parent_color == address(sibling) by { close(); }
-                                            have parent->__rb_parent_color == address(sid) by { rewrite(sid, sibling); normalize() using { parent->__rb_parent_color == address(sibling); }; }
+                                            have parent->__rb_parent_color == address(sid) by { rewrite(sid, sibling); close(); }
                                             have (parent->__rb_parent_color & 1) == 0 by { rewrite(parent->__rb_parent_color, address(sid)); close() using { aligned(sid, 8); }; }
                                             have (parent->__rb_parent_color & 1) == color_bit(Color::Red) by { unfold(color_bit(Color::Red)); close(); }
                                             have parent->__rb_parent_color == address(sid) + (parent->__rb_parent_color & 1) by { rewrite((parent->__rb_parent_color & 1), 0); close(); }
@@ -2508,13 +2520,13 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                             mark red_sibling;
                                             step(); // The near node becomes the new sibling.
                                             have separate(statement(1).statement(1).statement(12).statement(6).footprint, memory(tmp1->rb_left)) by {
-                                                normalize() using { separate(memory(*(&sibling)), memory(tmp1->rb_left)); };
+                                                close();
                                             }
                                             have tmp1->rb_left == at(red_sibling, tmp1->rb_left) by {
                                                 preserve(memory(tmp1->rb_left), statement(1).statement(1).statement(12).statement(6));
                                             }
                                             have separate(statement(1).statement(1).statement(12).statement(6).footprint, memory(tmp1->rb_right)) by {
-                                                normalize() using { separate(memory(*(&sibling)), memory(tmp1->rb_right)); };
+                                                close();
                                             }
                                             have tmp1->rb_right == at(red_sibling, tmp1->rb_right) by {
                                                 preserve(memory(tmp1->rb_right), statement(1).statement(1).statement(12).statement(6));
@@ -2528,13 +2540,13 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                             mark far_read;
                                             step(); // Read the new sibling's far child.
                                             have separate(statement(1).statement(1).statement(13).footprint, memory(sibling->rb_left)) by {
-                                                normalize() using { separate(memory(*(&tmp1)), memory(sibling->rb_left)); };
+                                                close();
                                             }
                                             have sibling->rb_left == at(far_read, sibling->rb_left) by {
                                                 preserve(memory(sibling->rb_left), statement(1).statement(1).statement(13));
                                             }
                                             have separate(statement(1).statement(1).statement(13).footprint, memory(sibling->rb_right)) by {
-                                                normalize() using { separate(memory(*(&tmp1)), memory(sibling->rb_right)); };
+                                                close();
                                             }
                                             have sibling->rb_right == at(far_read, sibling->rb_right) by {
                                                 preserve(memory(sibling->rb_right), statement(1).statement(1).statement(13));
@@ -2574,13 +2586,13 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     mark near_read;
                                                     step(); // Read the sibling's right child.
                                                     have separate(statement(1).statement(1).statement(14).statement(0).footprint, memory(sibling->rb_left)) by {
-                                                        normalize() using { separate(memory(((&tmp2) as (uint8 *))[0..8]), memory(sibling->rb_left)); };
+                                                        close();
                                                     }
                                                     have sibling->rb_left == at(near_read, sibling->rb_left) by {
                                                         preserve(memory(sibling->rb_left), statement(1).statement(1).statement(14).statement(0));
                                                     }
                                                     have separate(statement(1).statement(1).statement(14).statement(0).footprint, memory(sibling->rb_right)) by {
-                                                        normalize() using { separate(memory(((&tmp2) as (uint8 *))[0..8]), memory(sibling->rb_right)); };
+                                                        close();
                                                     }
                                                     have sibling->rb_right == at(near_read, sibling->rb_right) by {
                                                         preserve(memory(sibling->rb_right), statement(1).statement(1).statement(14).statement(0));
@@ -2614,13 +2626,13 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     mark near_flip;
                                                     step(); // Recolor the sibling red, preserving its parent.
                                                     have separate(statement(1).statement(1).statement(14).statement(1).statement(0).footprint, memory(sibling->rb_left)) by {
-                                                        normalize() using { separate(memory(sibling->__rb_parent_color), memory(sibling->rb_left)); };
+                                                        close();
                                                     }
                                                     have sibling->rb_left == at(near_flip, sibling->rb_left) by {
                                                         preserve(memory(sibling->rb_left), statement(1).statement(1).statement(14).statement(1).statement(0));
                                                     }
                                                     have separate(statement(1).statement(1).statement(14).statement(1).statement(0).footprint, memory(sibling->rb_right)) by {
-                                                        normalize() using { separate(memory(sibling->__rb_parent_color), memory(sibling->rb_right)); };
+                                                        close();
                                                     }
                                                     have sibling->rb_right == at(near_flip, sibling->rb_right) by {
                                                         preserve(memory(sibling->rb_right), statement(1).statement(1).statement(14).statement(1).statement(0));
@@ -2641,14 +2653,14 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     have separate(memory(parent->__rb_parent_color), memory(parent->rb_right)) by close();
                                                     step(); step(); // Select the red parent and blacken it.
                                                     have separate(statement(1).statement(1).statement(14).statement(1).statement(1).statement(0).footprint, memory(parent->rb_left)) by {
-                                                        normalize() using { separate(memory(parent->__rb_parent_color), memory(parent->rb_left)); };
+                                                        close();
                                                     }
                                                     have parent->rb_left == at(red_flip, parent->rb_left) by {
                                                         preserve(memory(parent->rb_left), statement(1).statement(1).statement(14).statement(1).statement(1).statement(0));
                                                     }
                                                     have parent->rb_left == zid by { rewrite(parent->rb_left, at(red_flip, parent->rb_left)); close(); }
                                                     have separate(statement(1).statement(1).statement(14).statement(1).statement(1).statement(0).footprint, memory(parent->rb_right)) by {
-                                                        normalize() using { separate(memory(parent->__rb_parent_color), memory(parent->rb_right)); };
+                                                        close();
                                                     }
                                                     have parent->rb_right == at(red_flip, parent->rb_right) by {
                                                         preserve(memory(parent->rb_right), statement(1).statement(1).statement(14).statement(1).statement(1).statement(0));
@@ -2721,13 +2733,13 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     mark near_read;
                                                     step(); // Read the sibling's right child.
                                                     have separate(statement(1).statement(1).statement(14).statement(0).footprint, memory(sibling->rb_left)) by {
-                                                        normalize() using { separate(memory(((&tmp2) as (uint8 *))[0..8]), memory(sibling->rb_left)); };
+                                                        close();
                                                     }
                                                     have sibling->rb_left == at(near_read, sibling->rb_left) by {
                                                         preserve(memory(sibling->rb_left), statement(1).statement(1).statement(14).statement(0));
                                                     }
                                                     have separate(statement(1).statement(1).statement(14).statement(0).footprint, memory(sibling->rb_right)) by {
-                                                        normalize() using { separate(memory(((&tmp2) as (uint8 *))[0..8]), memory(sibling->rb_right)); };
+                                                        close();
                                                     }
                                                     have sibling->rb_right == at(near_read, sibling->rb_right) by {
                                                         preserve(memory(sibling->rb_right), statement(1).statement(1).statement(14).statement(0));
@@ -2861,17 +2873,17 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                         rewrite(cid->__rb_parent_color, (address(zid) | 1));
                                                                         apply(sets_low_parent_bit(address(zid)));
                                                                     }
-                                                                    have cid->__rb_parent_color == address(zid) + (cid->__rb_parent_color & 1) by { normalize() using { cid->__rb_parent_color == address(zid) + 1; (cid->__rb_parent_color & 1) == 1; }; }
+                                                                    have cid->__rb_parent_color == address(zid) + (cid->__rb_parent_color & 1) by { close(); }
                                                                     have (cid->__rb_parent_color & 1) == color_bit(Color::Black) by { unfold(color_bit(Color::Black)); close(); }
                                                                     let first_near = fold(rb_at(tmp1), { model: RbTree::Node(cid, zid, Color::Black, clm, crm), left: cl, right: cr });
                                                                     have first_near.model == rb_reparent(ilm, zid) by { rewrite(ilm, RbTree::Node(cid, cp, cc, clm, crm)); rewrite(cc, Color::Black); unfold(rb_reparent(RbTree::Node(cid, cp, Color::Black, clm, crm), zid)); close(); }
-                                                                    have parent->__rb_parent_color == at(inner_inputs, parent->__rb_parent_color) by { normalize() using { at(first_update, parent->__rb_parent_color == at(inner_inputs, parent->__rb_parent_color)); tmp1 == cid; sibling == zid; tmp2 == iid; }; }
-                                                                    have parent->rb_right == node by { normalize() using { at(first_update, parent->rb_right == node); tmp1 == cid; sibling == zid; tmp2 == iid; }; }
-                                                                    have parent->rb_left == iid by { normalize() using { at(first_update, parent->rb_left == iid); tmp1 == cid; sibling == zid; tmp2 == iid; }; }
-                                                                    have iid->rb_left == zid by { normalize() using { at(first_update, iid->rb_left == zid); tmp1 == cid; sibling == zid; tmp2 == iid; }; }
-                                                                    have zid->rb_right == tmp1 by { normalize() using { at(first_update, zid->rb_right == tmp1); tmp1 == cid; sibling == zid; tmp2 == iid; }; }
-                                                                    have zid->rb_left == at(inner_inputs, zid->rb_left) by { normalize() using { at(first_update, zid->rb_left == at(inner_inputs, zid->rb_left)); tmp1 == cid; sibling == zid; tmp2 == iid; }; }
-                                                                    have iid->rb_right == at(inner_inputs, iid->rb_right) by { normalize() using { at(first_update, iid->rb_right == at(inner_inputs, iid->rb_right)); tmp1 == cid; sibling == zid; tmp2 == iid; }; }
+                                                                    have parent->__rb_parent_color == at(inner_inputs, parent->__rb_parent_color) by { close(); }
+                                                                    have parent->rb_right == node by { close(); }
+                                                                    have parent->rb_left == iid by { close(); }
+                                                                    have iid->rb_left == zid by { close(); }
+                                                                    have zid->rb_right == tmp1 by { close(); }
+                                                                    have zid->rb_left == at(inner_inputs, zid->rb_left) by { close(); }
+                                                                    have iid->rb_right == at(inner_inputs, iid->rb_right) by { close(); }
                                                                 },
                                                             }
                                                             let outer_sibling_left = fold(rb_saved_link(&zid->rb_left), { model: RbSavedLink::Link(at(inner_inputs, zid->rb_left)) });
@@ -2997,13 +3009,13 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                     have tmp2->__rb_parent_color == address(parent) + (tmp2->__rb_parent_color & 1) by { rewrite((tmp2->__rb_parent_color & 1), color_bit(nc)); close(); }
                                                                     let near = fold(rb_at(tmp2), { model: RbTree::Node(nid, parent, nc, nlm, nrm), left: nl, right: nr });
                                                                     have near.model == rb_reparent(irm, parent) by { rewrite(irm, RbTree::Node(nid, np, nc, nlm, nrm)); unfold(rb_reparent(RbTree::Node(nid, np, nc, nlm, nrm), parent)); close(); }
-                                                                    have parent->__rb_parent_color == at(inner_inputs, parent->__rb_parent_color) by { normalize() using { at(near_update, parent->__rb_parent_color == at(inner_inputs, parent->__rb_parent_color)); tmp2 == nid; sibling == iid; tmp1 == zid; }; }
+                                                                    have parent->__rb_parent_color == at(inner_inputs, parent->__rb_parent_color) by { close(); }
                                                                     have id->rb_right == node;
                                                                     have parent->rb_right == node;
-                                                                    have parent->rb_left == tmp2 by { normalize() using { at(near_update, parent->rb_left == tmp2); tmp2 == nid; sibling == iid; tmp1 == zid; }; }
+                                                                    have parent->rb_left == tmp2 by { close(); }
                                                                     have iid->rb_right == parent by close();
                                                                     have iid->rb_left == tmp1;
-                                                                    have iid->rb_left == zid by { normalize() using { tmp1 == zid; }; }
+                                                                    have iid->rb_left == zid by { close(); }
                                                                 },
                                                             }
                                                             unfold(kept_far_tag);
@@ -3037,7 +3049,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             unfold(rb_child_links(iid, zid, parent));
                                                             unfold(rb_child_links(parent, tmp2, node));
                                                             have iid->__rb_parent_color == at(outer_rotation, parent->__rb_parent_color);
-                                                            have iid->__rb_parent_color == iid->__rb_parent_color by { normalize() using { sibling == iid; parent == id; }; }
+                                                            have iid->__rb_parent_color == iid->__rb_parent_color by { close(); }
                                                             have iid->__rb_parent_color == at(outer_rotation, parent->__rb_parent_color) by close();
                                                             have iid->__rb_parent_color == address(sid) + color_bit(Color::Red) by { rewrite(iid->__rb_parent_color, at(outer_rotation, parent->__rb_parent_color)); close(); }
                                                             have (iid->__rb_parent_color & 1) == color_bit(Color::Red) by {
@@ -3064,7 +3076,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             have rb_tree_parent_consistent(plug(nc.model, nt.model)) == 1 by { unfold(rb_tree_parent_consistent(plug(nc.model, nt.model))); rewrite(plug(nc.model, nt.model), plug(Context::Right(sid, above, Color::Black, srm, um), RbTree::Node(iid, sid, Color::Red, RbTree::Node(zid, iid, Color::Black, zlm, rb_reparent(ilm, zid)), RbTree::Node(id, iid, Color::Black, rb_reparent(irm, id), nt.model)))); close(); }
                                                             have plug(Context::Right(sid, above, Color::Black, srm, um), RbTree::Node(iid, sid, Color::Red, RbTree::Node(zid, iid, Color::Black, zlm, rb_reparent(ilm, zid)), RbTree::Node(id, iid, Color::Black, rb_reparent(irm, id), nt.model))) == erase_flips_red_all_result(Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Red, srm, RbTree::Node(zid, sid, Color::Black, zlm, RbTree::Node(iid, zid, Color::Red, ilm, irm))), um), nt.model) by {
                                                                 unfold(erase_flips_red_all_result(Context::Right(id, above, Color::Black, RbTree::Node(sid, id, Color::Red, srm, RbTree::Node(zid, sid, Color::Black, zlm, RbTree::Node(iid, zid, Color::Red, ilm, irm))), um), nt.model));
-                                                                apply(black_root_has_black_color(zlm)); rewrite(rb_color(zlm), Color::Black); unfold(rb_color(RbTree::Node(iid, zid, Color::Red, ilm, irm))); normalize();
+                                                                apply(black_root_has_black_color(zlm)); rewrite(rb_color(zlm), Color::Black); unfold(rb_color(RbTree::Node(iid, zid, Color::Red, ilm, irm))); close();
                                                             }
                                                             have plug(nc.model, nt.model) == erase_flips_red_all_result(old(c.model), RbTree::Empty) by {
                                                                 rewrite(plug(nc.model, nt.model), plug(Context::Right(sid, above, Color::Black, srm, um), RbTree::Node(iid, sid, Color::Red, RbTree::Node(zid, iid, Color::Black, zlm, rb_reparent(ilm, zid)), RbTree::Node(id, iid, Color::Black, rb_reparent(irm, id), nt.model))));
@@ -3207,7 +3219,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         unfold(rb_child_links(zid, rid, parent));
                                                         unfold(rb_child_links(parent, tmp2, node));
                                                         have sibling->__rb_parent_color == at(outer_rotation, parent->__rb_parent_color);
-                                                        have at(direct_inputs, sibling)->__rb_parent_color == sibling->__rb_parent_color by { normalize() using { sibling == zid; parent == id; }; }
+                                                        have at(direct_inputs, sibling)->__rb_parent_color == sibling->__rb_parent_color by { close(); }
                                                         have at(direct_inputs, sibling)->__rb_parent_color == at(outer_rotation, parent->__rb_parent_color);
                                                         have at(direct_inputs, sibling)->__rb_parent_color == address(sid) + color_bit(Color::Red);
                                                         have (at(direct_inputs, sibling)->__rb_parent_color & 1) == color_bit(Color::Red) by {
@@ -3327,13 +3339,10 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                     have sibling == parent->rb_right by close();
                                     have sibling == sid by close();
                                     have sibling->__rb_parent_color == sid->__rb_parent_color by {
-                                        normalize() using { sibling == sid; };
+                                        close();
                                     }
                                     have (sibling->__rb_parent_color & 1) == 1 by {
-                                        normalize() using {
-                                            sibling->__rb_parent_color == sid->__rb_parent_color;
-                                            (sid->__rb_parent_color & 1) == 1;
-                                        };
+                                        close();
                                     }
                                     step(); step(); // Skip the red-sibling rotation.
                                     step(); // Read the sibling's right child.
@@ -3445,14 +3454,14 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     have separate(memory(id->__rb_parent_color), memory(id->rb_left)) by close();
                                                     step(); step(); // Select the red parent and blacken it.
                                                     have separate(statement(1).statement(1).statement(2).statement(1).statement(1).statement(0).footprint, memory(id->rb_right)) by {
-                                                        normalize() using { separate(memory(id->__rb_parent_color), memory(id->rb_right)); };
+                                                        close();
                                                     }
                                                     have id->rb_right == at(red_flip, id->rb_right) by {
                                                         preserve(memory(id->rb_right), statement(1).statement(1).statement(2).statement(1).statement(1).statement(0));
                                                     }
                                                     have id->rb_right == sid by { rewrite(id->rb_right, at(red_flip, id->rb_right)); close(); }
                                                     have separate(statement(1).statement(1).statement(2).statement(1).statement(1).statement(0).footprint, memory(id->rb_left)) by {
-                                                        normalize() using { separate(memory(id->__rb_parent_color), memory(id->rb_left)); };
+                                                        close();
                                                     }
                                                     have id->rb_left == at(red_flip, id->rb_left) by {
                                                         preserve(memory(id->rb_left), statement(1).statement(1).statement(2).statement(1).statement(1).statement(0));
@@ -3564,7 +3573,10 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     have erase_flips_red_all(u.model) == 1 by {
                                                         rewrite(u.model, um);
                                                         have erase_flips_red_all(Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, slm, srm), um)) == erase_flips_red_all(um) by {
-                                                            unfold(erase_flips_red_all(Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, slm, srm), um))); normalize() using { rb_root_black(slm) == 1; rb_root_black(srm) == 1; };
+                                                            unfold(erase_flips_red_all(Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, slm, srm), um)));
+                                                            rewrite(rb_root_black(slm), 1);
+                                                            rewrite(rb_root_black(srm), 1);
+                                                            close();
                                                         }
                                                         rewrite(erase_flips_red_all(um), erase_flips_red_all(Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, slm, srm), um)));
                                                         rewrite(Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Black, slm, srm), um), Context::Left(id, above, pc, RbTree::Node(sid, id, Color::Black, slm, srm), um)); rewrite(Context::Left(id, above, pc, RbTree::Node(sid, id, Color::Black, slm, srm), um), at(iteration, c.model)); close();
@@ -3795,17 +3807,17 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                 rewrite(cid->__rb_parent_color, (address(sid) | 1));
                                                                 apply(sets_low_parent_bit(address(sid)));
                                                             }
-                                                            have cid->__rb_parent_color == address(sid) + (cid->__rb_parent_color & 1) by { normalize() using { cid->__rb_parent_color == address(sid) + 1; (cid->__rb_parent_color & 1) == 1; }; }
+                                                            have cid->__rb_parent_color == address(sid) + (cid->__rb_parent_color & 1) by { close(); }
                                                             have (cid->__rb_parent_color & 1) == color_bit(Color::Black) by { unfold(color_bit(Color::Black)); close(); }
                                                             let first_near = fold(rb_at(tmp1), { model: RbTree::Node(cid, sid, Color::Black, clm, crm), right: cr, left: cl });
                                                             have first_near.model == rb_reparent(irm, sid) by { rewrite(irm, RbTree::Node(cid, cp, cc, clm, crm)); rewrite(cc, Color::Black); unfold(rb_reparent(RbTree::Node(cid, cp, Color::Black, clm, crm), sid)); close(); }
-                                                            have parent->__rb_parent_color == at(inner_inputs, parent->__rb_parent_color) by { normalize() using { at(first_update, parent->__rb_parent_color == at(inner_inputs, parent->__rb_parent_color)); tmp1 == cid; sibling == sid; tmp2 == iid; }; }
-                                                            have parent->rb_left == node by { normalize() using { at(first_update, parent->rb_left == node); tmp1 == cid; sibling == sid; tmp2 == iid; }; }
-                                                            have parent->rb_right == iid by { normalize() using { at(first_update, parent->rb_right == iid); tmp1 == cid; sibling == sid; tmp2 == iid; }; }
-                                                            have iid->rb_right == sid by { normalize() using { at(first_update, iid->rb_right == sid); tmp1 == cid; sibling == sid; tmp2 == iid; }; }
-                                                            have sid->rb_left == tmp1 by { normalize() using { at(first_update, sid->rb_left == tmp1); tmp1 == cid; sibling == sid; tmp2 == iid; }; }
-                                                            have sid->rb_right == at(inner_inputs, sid->rb_right) by { normalize() using { at(first_update, sid->rb_right == at(inner_inputs, sid->rb_right)); tmp1 == cid; sibling == sid; tmp2 == iid; }; }
-                                                            have iid->rb_left == at(inner_inputs, iid->rb_left) by { normalize() using { at(first_update, iid->rb_left == at(inner_inputs, iid->rb_left)); tmp1 == cid; sibling == sid; tmp2 == iid; }; }
+                                                            have parent->__rb_parent_color == at(inner_inputs, parent->__rb_parent_color) by { close(); }
+                                                            have parent->rb_left == node by { close(); }
+                                                            have parent->rb_right == iid by { close(); }
+                                                            have iid->rb_right == sid by { close(); }
+                                                            have sid->rb_left == tmp1 by { close(); }
+                                                            have sid->rb_right == at(inner_inputs, sid->rb_right) by { close(); }
+                                                            have iid->rb_left == at(inner_inputs, iid->rb_left) by { close(); }
                                                         },
                                                     }
                                                     let callback_parent_tag = fold(rb_context_tag(parent, above), { color: pc });
@@ -3929,10 +3941,10 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             have tmp2->__rb_parent_color == address(parent) + (tmp2->__rb_parent_color & 1) by { rewrite((tmp2->__rb_parent_color & 1), color_bit(nc)); close(); }
                                                             let near = fold(rb_at(tmp2), { model: RbTree::Node(nid, parent, nc, nlm, nrm), right: nr, left: nl });
                                                             have near.model == rb_reparent(ilm, parent) by { rewrite(ilm, RbTree::Node(nid, np, nc, nlm, nrm)); unfold(rb_reparent(RbTree::Node(nid, np, nc, nlm, nrm), parent)); close(); }
-                                                            have parent->__rb_parent_color == at(inner_inputs, parent->__rb_parent_color) by { normalize() using { at(near_update, parent->__rb_parent_color == at(inner_inputs, parent->__rb_parent_color)); tmp2 == nid; sibling == iid; tmp1 == sid; }; }
+                                                            have parent->__rb_parent_color == at(inner_inputs, parent->__rb_parent_color) by { close(); }
                                                             have id->rb_left == node;
                                                             have parent->rb_left == node;
-                                                            have parent->rb_right == tmp2 by { normalize() using { at(near_update, parent->rb_right == tmp2); tmp2 == nid; sibling == iid; tmp1 == sid; }; }
+                                                            have parent->rb_right == tmp2 by { close(); }
                                                             have iid->rb_left == parent by close();
                                                             have sibling->rb_left == parent by { rewrite(sibling, iid); close(); }
                                                             have iid->rb_right == sid by { close(); }
@@ -3970,7 +3982,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     unfold(rb_child_links(iid, parent, sid));
                                                     unfold(rb_child_links(parent, node, tmp2));
                                                     have sibling->__rb_parent_color == at(outer_rotation, parent->__rb_parent_color);
-                                                    have iid->__rb_parent_color == sibling->__rb_parent_color by { normalize() using { sibling == iid; parent == id; }; }
+                                                    have iid->__rb_parent_color == sibling->__rb_parent_color by { close(); }
                                                     have iid->__rb_parent_color == at(outer_rotation, parent->__rb_parent_color) by { rewrite(iid->__rb_parent_color, sibling->__rb_parent_color); close(); }
                                                     have iid->__rb_parent_color == address(above) + color_bit(pc) by { rewrite(iid->__rb_parent_color, at(outer_rotation, parent->__rb_parent_color)); close(); }
                                                     have (iid->__rb_parent_color & 1) == color_bit(pc) by {
@@ -4151,7 +4163,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 unfold(rb_child_links(sid, parent, rid));
                                                 unfold(rb_child_links(parent, node, tmp2));
                                                 have sibling->__rb_parent_color == at(outer_rotation, parent->__rb_parent_color);
-                                                have sid->__rb_parent_color == sibling->__rb_parent_color by { normalize() using { sibling == sid; parent == id; }; }
+                                                have sid->__rb_parent_color == sibling->__rb_parent_color by { close(); }
                                                 have sid->__rb_parent_color == at(outer_rotation, parent->__rb_parent_color);
                                                 have sid->__rb_parent_color == address(above) + color_bit(pc);
                                                 have (sid->__rb_parent_color & 1) == color_bit(pc) by {
@@ -4270,7 +4282,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                             have slm == RbTree::Node(zid, zp, zc, zlm, zrm) by { rewrite(slm, sl.model); close(); }
                                             have zc == Color::Black by {
                                                 if zc == Color::Black { close(); } else {
-                                                    have erase_flips_red_all(at(iteration, c.model)) == 0 by { rewrite(at(iteration, c.model), Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Red, slm, srm), um)); rewrite(slm, RbTree::Node(zid, zp, zc, zlm, zrm)); unfold(erase_flips_red_all(Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Red, RbTree::Node(zid, zp, zc, zlm, zrm), srm), um))); normalize() using { not(zc == Color::Black); }; }
+                                                    have erase_flips_red_all(at(iteration, c.model)) == 0 by { rewrite(at(iteration, c.model), Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Red, slm, srm), um)); rewrite(slm, RbTree::Node(zid, zp, zc, zlm, zrm)); unfold(erase_flips_red_all(Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Red, RbTree::Node(zid, zp, zc, zlm, zrm), srm), um))); close(); }
                                                     have not(erase_flips_red_all(at(iteration, c.model)) == 1) by { rewrite(erase_flips_red_all(at(iteration, c.model)), 0); close(); }
                                                     contradiction(erase_flips_red_all(at(iteration, c.model)) == 1);
                                                 }
@@ -4290,7 +4302,6 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                             have aligned(sid, 8) by { close(); }
                                             have (sid->__rb_parent_color & 1) == 0 by { rewrite((sid->__rb_parent_color & 1), color_bit(Color::Red)); unfold(color_bit(Color::Red)); close(); }
                                             unfold(saved_red_parent_tag);
-                                            have parent->__rb_parent_color == id->__rb_parent_color by { rewrite(parent, id); normalize(); }
                                             have (parent->__rb_parent_color & 1) == color_bit(pc) by close();
                                             have (parent->__rb_parent_color & 1) == 1 by { rewrite((parent->__rb_parent_color & 1), color_bit(pc)); rewrite(pc, Color::Black); unfold(color_bit(Color::Black)); close(); }
                                             have parent->__rb_parent_color == address(above) + 1 by { rewrite(parent->__rb_parent_color, address(above) + (parent->__rb_parent_color & 1)); rewrite((parent->__rb_parent_color & 1), 1); close(); }
@@ -4318,13 +4329,13 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                             mark near_color;
                                             step(rb_set_parent_color); // Set the near child's black parent word.
                                             have separate(statement(1).statement(1).statement(0).statement(3).footprint, memory(tmp1->rb_right)) by {
-                                                normalize() using { separate(memory(tmp1->__rb_parent_color), memory(tmp1->rb_right)); };
+                                                close();
                                             }
                                             have tmp1->rb_right == at(near_color, tmp1->rb_right) by {
                                                 preserve(memory(tmp1->rb_right), statement(1).statement(1).statement(0).statement(3));
                                             }
                                             have separate(statement(1).statement(1).statement(0).statement(3).footprint, memory(tmp1->rb_left)) by {
-                                                normalize() using { separate(memory(tmp1->__rb_parent_color), memory(tmp1->rb_left)); };
+                                                close();
                                             }
                                             have tmp1->rb_left == at(near_color, tmp1->rb_left) by {
                                                 preserve(memory(tmp1->rb_left), statement(1).statement(1).statement(0).statement(3));
@@ -4340,7 +4351,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                 apply(sets_low_parent_bit(address(id)));
                                             }
                                             have (zid->__rb_parent_color & 1) == color_bit(Color::Black) by { unfold(color_bit(Color::Black)); close(); }
-                                            have zid->__rb_parent_color == address(id) + (zid->__rb_parent_color & 1) by { normalize() using { zid->__rb_parent_color == address(id) + 1; (zid->__rb_parent_color & 1) == 1; }; }
+                                            have zid->__rb_parent_color == address(id) + (zid->__rb_parent_color & 1) by { close(); }
                                             let kept_near_tag = fold(rb_context_tag(tmp1, id), { color: Color::Black });
                                             unfold(red_parent_right);
                                             unfold(red_parent_left);
@@ -4392,14 +4403,14 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                             unfold(rb_written_left_link(sid, parent));
                                             unfold(rb_child_links(parent, node, zid));
                                             have sibling->__rb_parent_color == at(red_rotation, parent->__rb_parent_color) by { close(); }
-                                            have sid->__rb_parent_color == sibling->__rb_parent_color by { normalize() using { sibling == sid; parent == id; }; }
+                                            have sid->__rb_parent_color == sibling->__rb_parent_color by { close(); }
                                             have sid->__rb_parent_color == at(red_rotation, parent->__rb_parent_color) by { rewrite(sid->__rb_parent_color, sibling->__rb_parent_color); close(); }
                                             have sid->__rb_parent_color == address(above) + 1 by { rewrite(sid->__rb_parent_color, at(red_rotation, parent->__rb_parent_color)); close(); }
                                             have (sid->__rb_parent_color & 1) == 1 by { rewrite(sid->__rb_parent_color, address(above) + 1); close() using { aligned(above, 8); }; }
                                             have (sid->__rb_parent_color & 1) == color_bit(Color::Black) by { unfold(color_bit(Color::Black)); close(); }
                                             have sid->__rb_parent_color == address(above) + (sid->__rb_parent_color & 1) by { rewrite((sid->__rb_parent_color & 1), 1); close(); }
                                             have parent->__rb_parent_color == address(sibling) by { close(); }
-                                            have parent->__rb_parent_color == address(sid) by { rewrite(sid, sibling); normalize() using { parent->__rb_parent_color == address(sibling); }; }
+                                            have parent->__rb_parent_color == address(sid) by { rewrite(sid, sibling); close(); }
                                             have (parent->__rb_parent_color & 1) == 0 by { rewrite(parent->__rb_parent_color, address(sid)); close() using { aligned(sid, 8); }; }
                                             have (parent->__rb_parent_color & 1) == color_bit(Color::Red) by { unfold(color_bit(Color::Red)); close(); }
                                             have parent->__rb_parent_color == address(sid) + (parent->__rb_parent_color & 1) by { rewrite((parent->__rb_parent_color & 1), 0); close(); }
@@ -4413,13 +4424,13 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                             mark red_sibling;
                                             step(); // The near node becomes the new sibling.
                                             have separate(statement(1).statement(1).statement(0).statement(6).footprint, memory(tmp1->rb_right)) by {
-                                                normalize() using { separate(memory(*(&sibling)), memory(tmp1->rb_right)); };
+                                                close();
                                             }
                                             have tmp1->rb_right == at(red_sibling, tmp1->rb_right) by {
                                                 preserve(memory(tmp1->rb_right), statement(1).statement(1).statement(0).statement(6));
                                             }
                                             have separate(statement(1).statement(1).statement(0).statement(6).footprint, memory(tmp1->rb_left)) by {
-                                                normalize() using { separate(memory(*(&sibling)), memory(tmp1->rb_left)); };
+                                                close();
                                             }
                                             have tmp1->rb_left == at(red_sibling, tmp1->rb_left) by {
                                                 preserve(memory(tmp1->rb_left), statement(1).statement(1).statement(0).statement(6));
@@ -4433,13 +4444,13 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                             mark far_read;
                                             step(); // Read the new sibling's far child.
                                             have separate(statement(1).statement(1).statement(1).footprint, memory(sibling->rb_right)) by {
-                                                normalize() using { separate(memory(*(&tmp1)), memory(sibling->rb_right)); };
+                                                close();
                                             }
                                             have sibling->rb_right == at(far_read, sibling->rb_right) by {
                                                 preserve(memory(sibling->rb_right), statement(1).statement(1).statement(1));
                                             }
                                             have separate(statement(1).statement(1).statement(1).footprint, memory(sibling->rb_left)) by {
-                                                normalize() using { separate(memory(*(&tmp1)), memory(sibling->rb_left)); };
+                                                close();
                                             }
                                             have sibling->rb_left == at(far_read, sibling->rb_left) by {
                                                 preserve(memory(sibling->rb_left), statement(1).statement(1).statement(1));
@@ -4478,13 +4489,13 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     mark near_read;
                                                     step(); // Read the sibling's left child.
                                                     have separate(statement(1).statement(1).statement(2).statement(0).footprint, memory(sibling->rb_right)) by {
-                                                        normalize() using { separate(memory(((&tmp2) as (uint8 *))[0..8]), memory(sibling->rb_right)); };
+                                                        close();
                                                     }
                                                     have sibling->rb_right == at(near_read, sibling->rb_right) by {
                                                         preserve(memory(sibling->rb_right), statement(1).statement(1).statement(2).statement(0));
                                                     }
                                                     have separate(statement(1).statement(1).statement(2).statement(0).footprint, memory(sibling->rb_left)) by {
-                                                        normalize() using { separate(memory(((&tmp2) as (uint8 *))[0..8]), memory(sibling->rb_left)); };
+                                                        close();
                                                     }
                                                     have sibling->rb_left == at(near_read, sibling->rb_left) by {
                                                         preserve(memory(sibling->rb_left), statement(1).statement(1).statement(2).statement(0));
@@ -4518,13 +4529,13 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     mark near_flip;
                                                     step(); // Recolor the sibling red, preserving its parent.
                                                     have separate(statement(1).statement(1).statement(2).statement(1).statement(0).footprint, memory(sibling->rb_right)) by {
-                                                        normalize() using { separate(memory(sibling->__rb_parent_color), memory(sibling->rb_right)); };
+                                                        close();
                                                     }
                                                     have sibling->rb_right == at(near_flip, sibling->rb_right) by {
                                                         preserve(memory(sibling->rb_right), statement(1).statement(1).statement(2).statement(1).statement(0));
                                                     }
                                                     have separate(statement(1).statement(1).statement(2).statement(1).statement(0).footprint, memory(sibling->rb_left)) by {
-                                                        normalize() using { separate(memory(sibling->__rb_parent_color), memory(sibling->rb_left)); };
+                                                        close();
                                                     }
                                                     have sibling->rb_left == at(near_flip, sibling->rb_left) by {
                                                         preserve(memory(sibling->rb_left), statement(1).statement(1).statement(2).statement(1).statement(0));
@@ -4545,14 +4556,14 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     have separate(memory(parent->__rb_parent_color), memory(parent->rb_left)) by close();
                                                     step(); step(); // Select the red parent and blacken it.
                                                     have separate(statement(1).statement(1).statement(2).statement(1).statement(1).statement(0).footprint, memory(parent->rb_right)) by {
-                                                        normalize() using { separate(memory(parent->__rb_parent_color), memory(parent->rb_right)); };
+                                                        close();
                                                     }
                                                     have parent->rb_right == at(red_flip, parent->rb_right) by {
                                                         preserve(memory(parent->rb_right), statement(1).statement(1).statement(2).statement(1).statement(1).statement(0));
                                                     }
                                                     have parent->rb_right == zid by { rewrite(parent->rb_right, at(red_flip, parent->rb_right)); close(); }
                                                     have separate(statement(1).statement(1).statement(2).statement(1).statement(1).statement(0).footprint, memory(parent->rb_left)) by {
-                                                        normalize() using { separate(memory(parent->__rb_parent_color), memory(parent->rb_left)); };
+                                                        close();
                                                     }
                                                     have parent->rb_left == at(red_flip, parent->rb_left) by {
                                                         preserve(memory(parent->rb_left), statement(1).statement(1).statement(2).statement(1).statement(1).statement(0));
@@ -4625,13 +4636,13 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     mark near_read;
                                                     step(); // Read the sibling's left child.
                                                     have separate(statement(1).statement(1).statement(2).statement(0).footprint, memory(sibling->rb_right)) by {
-                                                        normalize() using { separate(memory(((&tmp2) as (uint8 *))[0..8]), memory(sibling->rb_right)); };
+                                                        close();
                                                     }
                                                     have sibling->rb_right == at(near_read, sibling->rb_right) by {
                                                         preserve(memory(sibling->rb_right), statement(1).statement(1).statement(2).statement(0));
                                                     }
                                                     have separate(statement(1).statement(1).statement(2).statement(0).footprint, memory(sibling->rb_left)) by {
-                                                        normalize() using { separate(memory(((&tmp2) as (uint8 *))[0..8]), memory(sibling->rb_left)); };
+                                                        close();
                                                     }
                                                     have sibling->rb_left == at(near_read, sibling->rb_left) by {
                                                         preserve(memory(sibling->rb_left), statement(1).statement(1).statement(2).statement(0));
@@ -4765,17 +4776,17 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                         rewrite(cid->__rb_parent_color, (address(zid) | 1));
                                                                         apply(sets_low_parent_bit(address(zid)));
                                                                     }
-                                                                    have cid->__rb_parent_color == address(zid) + (cid->__rb_parent_color & 1) by { normalize() using { cid->__rb_parent_color == address(zid) + 1; (cid->__rb_parent_color & 1) == 1; }; }
+                                                                    have cid->__rb_parent_color == address(zid) + (cid->__rb_parent_color & 1) by { close(); }
                                                                     have (cid->__rb_parent_color & 1) == color_bit(Color::Black) by { unfold(color_bit(Color::Black)); close(); }
                                                                     let first_near = fold(rb_at(tmp1), { model: RbTree::Node(cid, zid, Color::Black, clm, crm), right: cr, left: cl });
                                                                     have first_near.model == rb_reparent(irm, zid) by { rewrite(irm, RbTree::Node(cid, cp, cc, clm, crm)); rewrite(cc, Color::Black); unfold(rb_reparent(RbTree::Node(cid, cp, Color::Black, clm, crm), zid)); close(); }
-                                                                    have parent->__rb_parent_color == at(inner_inputs, parent->__rb_parent_color) by { normalize() using { at(first_update, parent->__rb_parent_color == at(inner_inputs, parent->__rb_parent_color)); tmp1 == cid; sibling == zid; tmp2 == iid; }; }
-                                                                    have parent->rb_left == node by { normalize() using { at(first_update, parent->rb_left == node); tmp1 == cid; sibling == zid; tmp2 == iid; }; }
-                                                                    have parent->rb_right == iid by { normalize() using { at(first_update, parent->rb_right == iid); tmp1 == cid; sibling == zid; tmp2 == iid; }; }
-                                                                    have iid->rb_right == zid by { normalize() using { at(first_update, iid->rb_right == zid); tmp1 == cid; sibling == zid; tmp2 == iid; }; }
-                                                                    have zid->rb_left == tmp1 by { normalize() using { at(first_update, zid->rb_left == tmp1); tmp1 == cid; sibling == zid; tmp2 == iid; }; }
-                                                                    have zid->rb_right == at(inner_inputs, zid->rb_right) by { normalize() using { at(first_update, zid->rb_right == at(inner_inputs, zid->rb_right)); tmp1 == cid; sibling == zid; tmp2 == iid; }; }
-                                                                    have iid->rb_left == at(inner_inputs, iid->rb_left) by { normalize() using { at(first_update, iid->rb_left == at(inner_inputs, iid->rb_left)); tmp1 == cid; sibling == zid; tmp2 == iid; }; }
+                                                                    have parent->__rb_parent_color == at(inner_inputs, parent->__rb_parent_color) by { close(); }
+                                                                    have parent->rb_left == node by { close(); }
+                                                                    have parent->rb_right == iid by { close(); }
+                                                                    have iid->rb_right == zid by { close(); }
+                                                                    have zid->rb_left == tmp1 by { close(); }
+                                                                    have zid->rb_right == at(inner_inputs, zid->rb_right) by { close(); }
+                                                                    have iid->rb_left == at(inner_inputs, iid->rb_left) by { close(); }
                                                                 },
                                                             }
                                                             let outer_sibling_right = fold(rb_saved_link(&zid->rb_right), { model: RbSavedLink::Link(at(inner_inputs, zid->rb_right)) });
@@ -4901,13 +4912,13 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                                     have tmp2->__rb_parent_color == address(parent) + (tmp2->__rb_parent_color & 1) by { rewrite((tmp2->__rb_parent_color & 1), color_bit(nc)); close(); }
                                                                     let near = fold(rb_at(tmp2), { model: RbTree::Node(nid, parent, nc, nlm, nrm), right: nr, left: nl });
                                                                     have near.model == rb_reparent(ilm, parent) by { rewrite(ilm, RbTree::Node(nid, np, nc, nlm, nrm)); unfold(rb_reparent(RbTree::Node(nid, np, nc, nlm, nrm), parent)); close(); }
-                                                                    have parent->__rb_parent_color == at(inner_inputs, parent->__rb_parent_color) by { normalize() using { at(near_update, parent->__rb_parent_color == at(inner_inputs, parent->__rb_parent_color)); tmp2 == nid; sibling == iid; tmp1 == zid; }; }
+                                                                    have parent->__rb_parent_color == at(inner_inputs, parent->__rb_parent_color) by { close(); }
                                                                     have id->rb_left == node;
                                                                     have parent->rb_left == node;
-                                                                    have parent->rb_right == tmp2 by { normalize() using { at(near_update, parent->rb_right == tmp2); tmp2 == nid; sibling == iid; tmp1 == zid; }; }
+                                                                    have parent->rb_right == tmp2 by { close(); }
                                                                     have iid->rb_left == parent by close();
                                                                     have iid->rb_right == tmp1;
-                                                                    have iid->rb_right == zid by { normalize() using { tmp1 == zid; }; }
+                                                                    have iid->rb_right == zid by { close(); }
                                                                 },
                                                             }
                                                             unfold(kept_far_tag);
@@ -4941,7 +4952,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             unfold(rb_child_links(iid, parent, zid));
                                                             unfold(rb_child_links(parent, node, tmp2));
                                                             have iid->__rb_parent_color == at(outer_rotation, parent->__rb_parent_color);
-                                                            have iid->__rb_parent_color == iid->__rb_parent_color by { normalize() using { sibling == iid; parent == id; }; }
+                                                            have iid->__rb_parent_color == iid->__rb_parent_color by { close(); }
                                                             have iid->__rb_parent_color == at(outer_rotation, parent->__rb_parent_color) by close();
                                                             have iid->__rb_parent_color == address(sid) + color_bit(Color::Red) by { rewrite(iid->__rb_parent_color, at(outer_rotation, parent->__rb_parent_color)); close(); }
                                                             have (iid->__rb_parent_color & 1) == color_bit(Color::Red) by {
@@ -4968,7 +4979,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             have rb_tree_parent_consistent(plug(nc.model, nt.model)) == 1 by { unfold(rb_tree_parent_consistent(plug(nc.model, nt.model))); rewrite(plug(nc.model, nt.model), plug(Context::Left(sid, above, Color::Black, srm, um), RbTree::Node(iid, sid, Color::Red, RbTree::Node(id, iid, Color::Black, nt.model, rb_reparent(ilm, id)), RbTree::Node(zid, iid, Color::Black, rb_reparent(irm, zid), zrm)))); close(); }
                                                             have plug(Context::Left(sid, above, Color::Black, srm, um), RbTree::Node(iid, sid, Color::Red, RbTree::Node(id, iid, Color::Black, nt.model, rb_reparent(ilm, id)), RbTree::Node(zid, iid, Color::Black, rb_reparent(irm, zid), zrm))) == erase_flips_red_all_result(Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Red, RbTree::Node(zid, sid, Color::Black, RbTree::Node(iid, zid, Color::Red, ilm, irm), zrm), srm), um), nt.model) by {
                                                                 unfold(erase_flips_red_all_result(Context::Left(id, above, Color::Black, RbTree::Node(sid, id, Color::Red, RbTree::Node(zid, sid, Color::Black, RbTree::Node(iid, zid, Color::Red, ilm, irm), zrm), srm), um), nt.model));
-                                                                apply(black_root_has_black_color(zrm)); rewrite(rb_color(zrm), Color::Black); unfold(rb_color(RbTree::Node(iid, zid, Color::Red, ilm, irm))); normalize();
+                                                                apply(black_root_has_black_color(zrm)); rewrite(rb_color(zrm), Color::Black); unfold(rb_color(RbTree::Node(iid, zid, Color::Red, ilm, irm))); close();
                                                             }
                                                             have plug(nc.model, nt.model) == erase_flips_red_all_result(old(c.model), RbTree::Empty) by {
                                                                 rewrite(plug(nc.model, nt.model), plug(Context::Left(sid, above, Color::Black, srm, um), RbTree::Node(iid, sid, Color::Red, RbTree::Node(id, iid, Color::Black, nt.model, rb_reparent(ilm, id)), RbTree::Node(zid, iid, Color::Black, rb_reparent(irm, zid), zrm))));
@@ -5111,7 +5122,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                         unfold(rb_child_links(zid, parent, rid));
                                                         unfold(rb_child_links(parent, node, tmp2));
                                                         have sibling->__rb_parent_color == at(outer_rotation, parent->__rb_parent_color);
-                                                        have at(direct_inputs, sibling)->__rb_parent_color == sibling->__rb_parent_color by { normalize() using { sibling == zid; parent == id; }; }
+                                                        have at(direct_inputs, sibling)->__rb_parent_color == sibling->__rb_parent_color by { close(); }
                                                         have at(direct_inputs, sibling)->__rb_parent_color == at(outer_rotation, parent->__rb_parent_color);
                                                         have at(direct_inputs, sibling)->__rb_parent_color == address(sid) + color_bit(Color::Red);
                                                         have (at(direct_inputs, sibling)->__rb_parent_color & 1) == color_bit(Color::Red) by {
