@@ -3242,13 +3242,8 @@ fn plan_explicit_strict_implies_nonstrict(
     None
 }
 
-/// Plans a vacuous-implication certificate: an implication chain whose
-/// antecedent at some depth is refuted by a listed premise closes by
-/// introducing antecedents down to the refuted one, then naming the
-/// contradiction. Check pushes each introduced antecedent exactly as the
-/// goal writes it, so the refuting premise must be that form's exact
-/// opposite (flipped condition polarity or a stripped `not`); anything looser
-/// would not survive the `contradiction` tactic's exact-match check.
+/// Introduce the implication's antecedents until one meets its exact
+/// opposite from the listed premises. The resulting false closes the body.
 fn plan_explicit_implies_refuted_antecedent(
     goal: &Proposition,
     premise_pairs: &[(Proposition, SyntaxProposition)],
@@ -3257,17 +3252,17 @@ fn plan_explicit_implies_refuted_antecedent(
     let mut current = goal;
     while let Proposition::Implies(antecedent, consequent) = current {
         depth += 1;
-        let refutation = premise_pairs
+        let refuted = premise_pairs
             .iter()
-            .find(|(kernel, _)| match antecedent.as_ref() {
+            .any(|(kernel, _)| match antecedent.as_ref() {
                 Proposition::ConditionIs(condition, expected) => {
                     kernel == &Proposition::condition_is(condition.clone(), !expected)
                 }
                 Proposition::Not(inner) => kernel == inner.as_ref(),
                 _ => false,
             });
-        if let Some((_, surface)) = refutation {
-            let mut body = vec![ProofTactic::Contradiction(surface.clone())];
+        if refuted {
+            let mut body = vec![ProofTactic::Known];
             for _ in 0..depth {
                 body = vec![ProofTactic::IntroBlock { binder: None, body }];
             }

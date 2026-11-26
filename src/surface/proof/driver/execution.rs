@@ -3734,7 +3734,9 @@ fn advance_prepared_execution_match<'a>(
         if !matches!(
             last.tactic,
             ProofTactic::Contradiction(_) | ProofTactic::Close | ProofTactic::CloseUnreachable
-        ) || (matches!(last.tactic, ProofTactic::Close) && proof.is_at_function_exit())
+        ) || (matches!(last.tactic, ProofTactic::Close)
+            && proof.is_at_function_exit()
+            && !plan.arm_holds_false(index))
             || !matches!(continuation.as_ref(), InternalProofNode::Done)
             || !bridge
                 .iter()

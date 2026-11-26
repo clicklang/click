@@ -883,39 +883,31 @@ pub(super) fn note_refusal(message: impl Into<String>) {
 }
 
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
-    fn close_refuted_comparison(
+    /// Close an impossible branch by establishing the selected fact's
+    /// opposite. Only the written comparison enters the algebra planner.
+    pub(in crate::surface::proof) fn close_refuted_fact(
         proof: &Proof<'a>,
-        fact: SyntaxProposition,
-        prove_negation: bool,
+        fact: &SyntaxProposition,
     ) -> Result<Proof<'a>, ClickError> {
         #[cfg(test)]
-        crate::kernel::search::record_discovery("close_refuted_comparison");
+        crate::kernel::search::record_discovery("close_refuted_fact");
         if proof.facts().holds_false() {
             return proof.driver().apply_step(ProofStep::Known);
         }
-        if prove_negation {
-            let close_explicitly = || {
-                let negated = SyntaxProposition::Not(Box::new(fact.clone()));
-                let scope = proof.driver().open_have(negated)?;
-                let scope = match attempt::candidate_outcome(
-                    scope.driver().apply_step(ProofStep::Known),
-                )? {
-                    Some(closed) => closed,
-                    // The plan can reduce to a constant while its written
-                    // operands still contain products and anchored values.
-                    None => match scope.driver().try_integer_algebra()? {
-                        Some(closed) => closed,
-                        None => return Ok(None),
-                    },
-                };
-                let refuted = scope.join()?;
-                refuted.driver().apply_step(ProofStep::Known).map(Some)
-            };
-            if let Some(closed) = attempt::candidate_outcome(close_explicitly())?.flatten() {
-                return Ok(closed);
-            }
-        }
-        proof.driver().apply_step(ProofStep::Contradiction(fact))
+        let scope = proof
+            .driver()
+            .open_have(SyntaxProposition::Not(Box::new(fact.clone())))?;
+        let proved = match attempt::candidate_outcome(scope.driver().apply_step(ProofStep::Known))?
+        {
+            Some(closed) => closed,
+            // The plan can reduce to a constant while its written
+            // operands still contain products and anchored values.
+            None => scope.driver().try_integer_algebra()?.ok_or_else(|| {
+                proof.step_error("could not prove the negation of the selected fact")
+            })?,
+        };
+        let refuted = proved.join()?;
+        refuted.driver().apply_step(ProofStep::Known)
     }
 
     /// Refute an equality with one listed constant bound. Keeping the
@@ -1002,7 +994,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let equal_arm = proof.focus_branch(ids[0])?;
             let scope = equal_arm.driver().open_have(impossible.clone())?;
             let refuted = scope.driver().apply_step(substitution)?.join()?;
-            let equal_done = Self::close_refuted_comparison(&refuted, impossible, true)?;
+            let equal_done = Self::close_refuted_fact(&refuted, &impossible)?;
             let unequal_done = equal_done
                 .focus_branch(ids[1])?
                 .driver()
@@ -1026,11 +1018,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(goal) = proof.goal() else {
             return Ok(None);
         };
-        // Contradiction checks a selected false fact directly. The written
-        // citation keeps premise selection visible in the expanded proof.
         for (kernel, surface) in pairs {
-            if normalizes_context_free(&Proposition::Not(Box::new(kernel.clone()))) {
-                return Self::close_refuted_comparison(proof, surface.clone(), false).map(Some);
+            if normalizes_context_free(&Proposition::Not(Box::new(kernel.clone())))
+                && let Some(closed) =
+                    attempt::candidate_outcome(Self::close_refuted_fact(proof, surface))?
+            {
+                return Ok(Some(closed));
             }
         }
         let observed_goal = observed_native_surface_comparison(goal, surface_goal);
@@ -1433,14 +1426,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             );
         }
         let conclusion = &nodes[&plan.conclusion];
-        if contradictory {
-            steps.push(ProofStep::Contradiction(conclusion.claim.clone()));
+        let refuted_fact = if contradictory {
+            Some(conclusion.claim.clone())
         } else if goal_surface.is_none() {
             steps.push(have(
                 SyntaxProposition::Not(Box::new(conclusion.claim.clone())),
                 vec![ProofStep::Known],
             ));
-            steps.push(ProofStep::Contradiction(conclusion.claim.clone()));
+            Some(conclusion.claim.clone())
         } else {
             let (Some(relation), Some(canonical)) = (goal_reading, goal_surface) else {
                 return Ok(None);
@@ -1459,11 +1452,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 ));
             }
             if uses_negated_goal {
-                steps.push(ProofStep::Contradiction(surface_goal.clone()));
+                Some(surface_goal.clone())
             } else {
                 steps = vec![have(canonical.clone(), steps), ProofStep::Known];
+                None
             }
-        }
+        };
         // The theorem's arguments can contain partial native operations.
         // Cite their already established domains explicitly, so the simple
         // using checker sees the same argument evidence during replay.
@@ -1649,9 +1643,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             let scope = result.driver().open_have(proposition)?;
                             run_scope(scope, proof.steps()).and_then(|scope| scope.join())
                         }
-                        ProofStep::Contradiction(fact) => {
-                            Self::close_refuted_comparison(&result, fact, contradictory)
-                        }
                         step => result.driver().apply_step(step),
                     };
                     #[cfg(test)]
@@ -1668,6 +1659,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if prepared.focused_discharged() {
             return Ok(Some(prepared));
         }
+        let finish = |branch: Proof<'a>| match &refuted_fact {
+            Some(fact) if !branch.focused_discharged() => Self::close_refuted_fact(&branch, fact),
+            _ => Ok(branch),
+        };
         let result = if uses_negated_goal {
             let (proof, split, ids) = prepared.split_focused_if(surface_goal.clone())?;
             let marker = proof.checkpoint();
@@ -1675,10 +1670,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .focus_branch(ids[0])?
                 .driver()
                 .apply_step(ProofStep::Known)?;
-            let negative = apply(positive.focus_branch(ids[1])?, steps)?;
+            let negative = finish(apply(positive.focus_branch(ids[1])?, steps)?)?;
             negative.join_focused_if(&marker, split, ids, surface_goal.clone())?
         } else {
-            apply(prepared, steps)?
+            finish(apply(prepared, steps)?)?
         };
         if !result.focused_discharged() {
             return Err(result.step_error("Integer composition did not close the written goal"));

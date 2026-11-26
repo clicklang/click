@@ -1064,7 +1064,7 @@ fn definition_refutation_expands_with_branch_equations() {
         let expanded = expand_c_claim_source_by_label(source, &[], "forced.ensures_0")
             .unwrap_or_else(|error| panic!("{}\n{source}", error.message()));
         assert!(expanded.contains("unfold("), "{expanded}");
-        assert!(expanded.contains("contradiction("), "{expanded}");
+        assert!(!expanded.contains("contradiction("), "{expanded}");
         assert!(!expanded.contains("normalize("), "{expanded}");
         assert!(!expanded.contains("solve("), "{expanded}");
         without_implicit_solve(|| verify_c_sources(&expanded, &[]))

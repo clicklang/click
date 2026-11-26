@@ -46,6 +46,12 @@ impl ExecutionMatchPlan {
     ) -> Option<&ProofCertificate> {
         self.excluded[index].as_ref()
     }
+    pub(in crate::surface::proof) fn arm_holds_false(&self, index: usize) -> bool {
+        self.partition
+            .facts_for_case(self.case_indices[index])
+            .is_some_and(|facts| facts.holds_false())
+    }
+
     /// The arms this match still has to execute: every constructor whose arm
     /// was not closed by a checked `contradiction`.
     pub(in crate::surface::proof) fn live_cases(&self) -> Vec<usize> {

@@ -31,28 +31,15 @@ fn disjunction_proof(
         ))];
         return Ok((surface, body));
     }
-    let opposite = match source {
-        Proposition::ConditionIs(condition, value) => {
-            Proposition::condition_is(condition.clone(), !value)
-        }
-        Proposition::Not(inner) => inner.as_ref().clone(),
-        other => Proposition::Not(Box::new(other.clone())),
-    };
-    // Each leaf is assumed by its case arm. Cite that assumption when an
-    // exact opposite is already held, rather than asking `known` to derive
-    // a conclusion from an inconsistent branch.
-    let body = if proof.facts().holds_contradiction_fact(&opposite) {
-        vec![ProofTactic::Contradiction(surface.clone())]
-    } else {
-        vec![ProofTactic::Known]
-    };
-    Ok((surface.clone(), body))
+    // The arm introduces its selected alternative. A held opposite
+    // publishes false in that arm, so both cases use the checked closer.
+    Ok((surface.clone(), vec![ProofTactic::Known]))
 }
 
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// Establish one selected fact through ordinary explicit proof syntax.
     /// A failed candidate leaves the immutable input untouched. Candidates
-    /// are known, one implication application, or cases with known/contradiction
+    /// are direct closure, one implication application, or cases with checked
     /// leaves. Each runs under the current work budget without recursive solve.
     pub(in crate::surface::proof) fn publish_selected_fact(
         search_input: &Proof<'a>,
