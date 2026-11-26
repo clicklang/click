@@ -95,7 +95,8 @@ int32 main() {
 
 ```console
 $ click verify hello.click
-assumptions: main -> C library: printf
+assumptions: loaded interface theorems -> stdout_non_null
+assumptions: main -> C library: printf, stdout
 3 selected proofs verified
 ```
 

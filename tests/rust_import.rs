@@ -4886,7 +4886,7 @@ fn bits(x: u8) -> u8 { requires x == 128; ensures result == 128; }
 fn narrow(x: i32) -> u8 { requires x == -1; ensures result == 255; }
 fn signed(x: u32) -> i32 { requires x == 4294967295u32; ensures result == -1; }
 fn shift(x: u32, n: i32) -> u32 { requires x == 4294967295u32; requires n == 31; ensures result == 1u32; }
-fn byte_count(x: u32, n: u8) -> u32 { requires n < 32u32; ensures result == (x << n as u32); }";
+fn byte_count(x: u32, n: u8) -> u32 { requires n < 32u32; ensures result == (x << n as i32); }";
     ProgramVerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     assert!(
         ProgramVerificationSession::new_program_prepared(
@@ -7270,7 +7270,7 @@ fn rust_u16_arithmetic_checks_its_own_width() {
         fn sub(x: u16) -> u16 { requires 1 <= x; ensures result as u32 == x as u32 - 1u32; }
         fn mul(x: u16) -> u16 { requires x <= 21845; ensures result as u32 == x as u32 * 3u32; } by { have 0 <= (x as i32) * 3 by { close() using { 0 <= x; x <= 21845; } } have (x as i32) * 3 <= 65535 by { close() using { 0 <= x; x <= 21845; } } step_until(function.exit); close(); }
         fn div(x: u16, d: u16) -> u16 { requires 0 < d; ensures result as u32 == x as u32 / d as u32; }
-        fn rem(x: u16, d: u16) -> u16 { requires 0 < d; ensures result as u32 == x as u32 % d as u32; }";
+        fn rem(x: u16, d: u16) -> u16 { requires 0 < d; ensures result as i32 == x as i32 % d as i32; }";
     ProgramVerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     for (operator, input, divisor, label) in [
         ("+", 65535, 1, "Rust add panic check"),
