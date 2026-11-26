@@ -316,7 +316,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "target",
     "theorem",
     "then",
-    "transport",
     "uint8",
     "unfold",
     "uninitialized",
