@@ -1620,7 +1620,7 @@ fn grouped_claim_project(claim_count: usize) -> (String, String) {
     for _ in 0..claim_count {
         click_source.push_str("    ensures result == x;\n");
     }
-    click_source.push_str("} by {\n    step();\n    normalize();\n}\n");
+    click_source.push_str("} by {\n    step();\n    close();\n}\n");
     (c_source, click_source)
 }
 
@@ -10582,8 +10582,7 @@ fn explicit_claim_closers_have_near_linear_finishing_work() {
         .into_iter()
         .map(|size| {
             let (c_source, click_source) = grouped_claim_project(size);
-            let click_source =
-                click_source.replace("    normalize();", &"    normalize();\n".repeat(size));
+            let click_source = click_source.replace("    close();", &"    close();\n".repeat(size));
             let (verified, sample) = scaling_sample(size, || {
                 verify_c_sources(&click_source, &[("shared_claims.c", c_source.as_str())])
             });
