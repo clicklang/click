@@ -876,19 +876,8 @@ fn read_verification_inputs_with_c_target(
     target: crate::languages::c::target::CTarget,
     refresh: bool,
 ) -> Result<VerificationInput, String> {
-    let name = sidecar
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| format!("sidecar path `{}` has no valid filename", sidecar.display()))?;
-    let config = sidecar.with_file_name(format!("{name}.import.json"));
+    refuse_per_sidecar_config(sidecar)?;
     let unit_selection = project_unit_selection(sidecar, click_source)?;
-    match fs::symlink_metadata(&config) {
-        Ok(_) => return Err(per_sidecar_config_refusal(&config)),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => {
-            return Err(format!("failed to inspect `{}`: {error}", config.display()));
-        }
-    }
     if let Some((project, requested)) = unit_selection {
         let inputs = if refresh {
             project.prepared_sources_with_refresh(&requested)
@@ -909,6 +898,19 @@ fn read_verification_inputs_with_c_target(
     ))
 }
 
+fn refuse_per_sidecar_config(sidecar: &Path) -> Result<(), String> {
+    let name = sidecar
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| format!("sidecar path `{}` has no valid filename", sidecar.display()))?;
+    let config = sidecar.with_file_name(format!("{name}.import.json"));
+    match fs::symlink_metadata(&config) {
+        Ok(_) => Err(per_sidecar_config_refusal(&config)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("failed to inspect `{}`: {error}", config.display())),
+    }
+}
+
 /// The refusal of a per-sidecar `<sidecar>.import.json`, naming its
 /// replacement.
 pub fn per_sidecar_config_refusal(config: &Path) -> String {
@@ -923,6 +925,7 @@ pub fn per_sidecar_config_refusal(config: &Path) -> String {
 pub fn capture_sidecar(sidecar: &Path) -> Result<(), String> {
     let source = fs::read_to_string(sidecar)
         .map_err(|error| format!("read `{}`: {error}", sidecar.display()))?;
+    refuse_per_sidecar_config(sidecar)?;
     let (project, requested) = project_unit_selection(sidecar, &source)?.ok_or_else(|| {
         format!(
             "`{}` selects no configured compiler sources",
@@ -2310,6 +2313,7 @@ mod tests {
         assert!(error.contains("main.click.import.json"), "{error}");
         assert!(error.contains("per-sidecar import config"), "{error}");
         assert!(error.contains(crate::project::FILE_NAME), "{error}");
+        assert_eq!(capture_sidecar(&sidecar).unwrap_err(), error);
     }
 
     /// A bare file name has an empty `Path::parent`; it selects the current

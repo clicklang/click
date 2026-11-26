@@ -111,6 +111,8 @@ fn learning_a_literal_does_not_revisit_unrelated_boolean_parents() {
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn a_byte_product_merge_is_keyed_and_ignores_unrelated_products() {
+    use crate::kernel::AddressOffset;
+
     let mut unrelated_samples = Vec::new();
     let mut related_samples = Vec::new();
     for size in [16u64, 64, 256, 1024] {
@@ -118,14 +120,25 @@ fn a_byte_product_merge_is_keyed_and_ignores_unrelated_products() {
         for i in 0..size {
             let id = 1_000 + i;
             graph.add_condition(&no_overflow(id, 4, true), false);
-            graph.add_offset_equality(&byte_product(id, 8, true), &offset(10_000 + i));
-            graph.add_offset_equality(&scaled(id, 4), &offset(20_000 + i));
+            graph.add_offset_equality(
+                &AddressOffset::from(byte_product(id, 8, true)),
+                &AddressOffset::from(offset(10_000 + i)),
+            );
+            graph.add_offset_equality(
+                &AddressOffset::from(scaled(id, 4)),
+                &AddressOffset::from(offset(20_000 + i)),
+            );
         }
-        graph.add_offset_equality(&nested(byte_product(1, 4, true)), &offset(10));
-        graph.add_offset_equality(&nested(scaled(1, 4)), &offset(11));
+        let first = AddressOffset::from(offset(10));
+        let second = AddressOffset::from(offset(11));
+        graph.add_offset_equality(
+            &AddressOffset::from(nested(byte_product(1, 4, true))),
+            &first,
+        );
+        graph.add_offset_equality(&AddressOffset::from(nested(scaled(1, 4))), &second);
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             graph.add_condition(&no_overflow(1, 4, true), false);
-            assert!(graph.are_offsets_equal(&offset(10), &offset(11)));
+            assert!(graph.are_offsets_equal(&first, &second));
         });
         unrelated_samples.push(work);
 
@@ -136,9 +149,11 @@ fn a_byte_product_merge_is_keyed_and_ignores_unrelated_products() {
                 &offset(40_000 + i),
             );
         }
+        let bytes = AddressOffset::from(byte_product(1, 4, true));
+        let elements = AddressOffset::from(scaled(1, 4));
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             related.add_condition(&no_overflow(1, 4, true), false);
-            assert!(related.are_offsets_equal(&byte_product(1, 4, true), &scaled(1, 4)));
+            assert!(related.are_offsets_equal(&bytes, &elements));
         });
         assert!(
             work < 100 * size as usize,

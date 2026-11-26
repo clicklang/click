@@ -7362,7 +7362,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
             crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
             Box::new(OldAddress {
                 base: "data".into(),
-                offset,
+                offset: offset.into(),
             }),
             crate::kernel::LoadKind::Int32,
         )

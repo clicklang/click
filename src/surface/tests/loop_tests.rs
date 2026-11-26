@@ -2597,7 +2597,7 @@ fn loop_return_closers_expand_in_their_preservation_arms() {
     ] {
         let (click, sources) = loop_fixture(fixture);
         let sources = borrowed_sources(&sources);
-        verify_c_sources(&click, &sources).unwrap();
+        let verified = verify_c_sources(&click, &sources).unwrap();
         for site in c_smart_tactic_source_sites(&click, &sources).unwrap() {
             let position =
                 c_tactic_source_position(&click, &sources, &site.claim_label, site.source_index)
@@ -2609,17 +2609,23 @@ fn loop_return_closers_expand_in_their_preservation_arms() {
                     });
             verify_c_sources(&expanded, &sources).unwrap();
         }
-        let expanded = expand_function_proof_source(&click, &sources, function).unwrap();
+        let expansion =
+            expand_checked_grouped_claim_with_spans(&click, &verified, function).unwrap();
+        let expanded = &expansion.source;
         assert!(!expanded.contains("if result =="), "{expanded}");
         assert!(
-            c_smart_tactic_source_sites(&expanded, &sources)
+            expansion
+                .with_checked_closers(|| c_smart_tactic_source_sites(expanded, &sources))
+                .unwrap()
                 .unwrap()
                 .is_empty(),
             "{expanded}"
         );
         let (result, planning) =
             crate::surface::proof::count_planning_statement_transitions(|| {
-                verify_c_sources(&expanded, &sources)
+                expansion
+                    .with_checked_closers(|| verify_c_sources(expanded, &sources))
+                    .unwrap()
             });
         result.unwrap();
         assert_eq!(

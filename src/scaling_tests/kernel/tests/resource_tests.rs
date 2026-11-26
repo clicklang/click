@@ -2783,7 +2783,8 @@ fn returned_scalar_and_bytewise_padding_rejoin_over_symbolic_objects() {
                 offset: AddressOffset::scale_int32(
                     OldMachineTerm::Variable(Variable(88_300 + index as u64)),
                     4,
-                ),
+                )
+                .into(),
             };
             pieces.push(ResourceFact::own_memory(MemoryRange::new(
                 base.offset_by_bytes(8),

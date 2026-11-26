@@ -8368,7 +8368,7 @@ impl Parser {
                 Err(error) => {
                     self.position = start;
                     match self.parse_contract_primary() {
-                        Ok(base) if Self::is_allocation_address(&base) => {
+                        Ok(base) if Self::is_recorded_pointer_source(&base) => {
                             self.parse_saved_memory_range(base)?
                         }
                         _ => {
@@ -15822,18 +15822,17 @@ impl Parser {
         self.lower_qualified_click_cast(target_type, false, false, operand)
     }
 
-    // A recorded allocation names an identity, even if the pointer returned
-    // by the allocator has since been reassigned. OldAddress transformations of
-    // that identity do not read a pointer value from another program state.
-    fn is_allocation_address(expression: &SyntaxTerm) -> bool {
+    // A recorded allocation or result names a value independently of later
+    // assignments. Casting it or offsetting its address needs no `at` scope.
+    fn is_recorded_pointer_source(expression: &SyntaxTerm) -> bool {
         match expression {
-            SyntaxTerm::RegionAllocation(_) => true,
+            SyntaxTerm::RegionAllocation(_) | SyntaxTerm::RegionResult(_) => true,
             SyntaxTerm::CUnary { operand, lowered }
                 if matches!(lowered, ProgramExpression::PointerOffsetBytes { .. })
                     || matches!(lowered, ProgramExpression::Cast { target_type, .. }
                         if target_type.is_pointer()) =>
             {
-                Self::is_allocation_address(operand)
+                Self::is_recorded_pointer_source(operand)
             }
             _ => false,
         }
@@ -15846,9 +15845,9 @@ impl Parser {
         pointee_volatile: bool,
         operand: SyntaxTerm,
     ) -> Result<SyntaxTerm, ClickError> {
-        let allocation_address = Self::is_allocation_address(&operand);
+        let recorded_pointer_source = Self::is_recorded_pointer_source(&operand);
         let historical = crate::surface::validation::contains_old_expression(&operand)
-            || (!allocation_address
+            || (!recorded_pointer_source
                 && crate::surface::validation::contains_at_expression(&operand));
         // Numeric casts consume the value observed by their operand.
         // Pointer casts retain their current-expression validation.
@@ -15872,7 +15871,7 @@ impl Parser {
         }
         let expression = contract_expression_as_program_expression(&operand)
             .unwrap_or(ProgramExpression::Value(int32(0)));
-        if target_type == ProgramType::VoidPointer && !allocation_address {
+        if target_type == ProgramType::VoidPointer && !recorded_pointer_source {
             crate::surface::validation::validate_void_pointer_cast_source(
                 &expression,
                 &self.names.program_parameter_types,

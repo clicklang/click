@@ -700,7 +700,8 @@ fn selected_native_cursor_normalization_is_stable_across_context_orders() {
                 1,
                 true,
             ),
-        ),
+        )
+        .into(),
     });
     let full = |left: OldPointer, right: OldPointer| {
         Proposition::condition_is(

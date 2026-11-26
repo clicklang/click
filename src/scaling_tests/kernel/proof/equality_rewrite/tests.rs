@@ -502,7 +502,10 @@ fn same_block_pointer_view_rewrite_preserves_span_and_selected_work() {
     let source = AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(192_920)), 1);
     let target = AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(192_921)), 1);
     let cited = Proposition::condition_is(
-        OldConditionTerm::AddressOffsetEqual(Box::new(source.clone()), Box::new(target.clone())),
+        OldConditionTerm::AddressOffsetEqual(
+            Box::new(source.clone().into()),
+            Box::new(target.clone().into()),
+        ),
         true,
     );
     let memory = SymbolicMemory::new().with_block("offset-view-rewrite", 8);
