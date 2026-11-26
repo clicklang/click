@@ -241,6 +241,7 @@ fn cpp_reference_binding_lookup_uses_the_call_and_argument_indexes() {
             function_name: "acquire".into(),
             arguments: vec![],
             callee: None,
+            dispatch: crate::kernel::CallDispatch::Direct,
             cpp_binding: Some(CppBindingSource {
                 slot: CppBindingSlot::Argument(0),
                 call_offset: 1,

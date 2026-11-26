@@ -310,9 +310,17 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
         .map(|definition| definition.function_block().clone())
         .collect::<Vec<_>>();
     contract_and_function_blocks.extend(combined_external_function_blocks(file)?);
-    for function in contract_and_function_blocks {
+    let function_blocks = contract_and_function_blocks
+        .iter()
+        .map(|block| (block, false))
+        .chain(
+            file.cpp_virtual_interfaces
+                .values()
+                .map(|block| (block, true)),
+        );
+    for (function, virtual_interface) in function_blocks {
         crate::surface::enter_ambient_declaration(function.signature().name());
-        if !function_specs.insert(function.signature().name().to_string()) {
+        if !virtual_interface && !function_specs.insert(function.signature().name().to_string()) {
             return Err(ClickError::new(format!(
                 "duplicate contract or C function spec `{}`",
                 function.signature().name()

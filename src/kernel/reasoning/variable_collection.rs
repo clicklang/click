@@ -2175,7 +2175,12 @@ fn collect_execution_environment_variables_uncached(
     environment: &ExecutionEnvironment,
     variables: &mut BTreeSet<Variable>,
 ) {
-    for function in environment.functions.values() {
+    for function in environment.functions.values().chain(
+        environment
+            .cpp_virtual_rules
+            .values()
+            .map(|rule| &rule.function),
+    ) {
         collect_program_function_bitvector_variables(function, variables);
         collect_program_function_bound_variables(function, variables);
     }

@@ -395,7 +395,7 @@ pub(super) fn rewrite_class_objects(
                 .is_some_and(|interface| interface.parameters.len() == own.len())
         {
             dispatches.insert(
-                crate::languages::cpp::names::object_dispatch_name(class, &head.method),
+                method_name(class, &head.method),
                 (class.clone(), head.method.clone()),
             );
         }
@@ -1569,36 +1569,15 @@ fn dispatch_contracts(
             records,
             &mut rewritten,
         )?;
-        // Its head names the dispatch and its receiver.
-        let mut dispatch = at(&position, vec![ident("extern")]);
-        dispatch.extend(head.result.iter().cloned());
-        dispatch.extend(at(
-            &position,
-            vec![
-                ident(&crate::languages::cpp::names::object_dispatch_name(
-                    class,
-                    &head.method,
-                )),
-                Token::LParen,
-            ],
-        ));
-        if head.is_const {
-            dispatch.push((ident("const"), position.clone()));
-        }
-        dispatch.extend(at(
-            &position,
-            vec![
-                ident("struct"),
-                ident(&record_of(class, records)),
-                Token::Star,
-                ident("this"),
-            ],
-        ));
-        for parameter in &own {
-            dispatch.push((Token::Comma, position.clone()));
-            dispatch.extend(parameter.tokens.iter().cloned());
-        }
-        dispatch.extend(at(&position, vec![Token::RParen, Token::LBrace]));
+        // Parse this as the real method's signature, keeping its contract in
+        // the virtual-interface table rather than the direct declaration table.
+        let mut dispatch = at(&position, vec![Token::CppVirtualInterface, ident("extern")]);
+        dispatch.extend(
+            source[head.start + usize::from(is_ident(source.get(head.start), "extern"))
+                ..=head.body_open]
+                .iter()
+                .cloned(),
+        );
         let body = interface_head.body_open - interface_head.start + 1;
         dispatch.extend(rewritten.into_iter().skip(body));
         output.extend(dispatch);

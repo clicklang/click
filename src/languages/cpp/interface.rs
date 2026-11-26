@@ -14,33 +14,27 @@ pub(super) fn prepare(
     layouts: BTreeMap<String, crate::languages::interface::RecordLayout>,
     library_contracts: String,
     object_coercions: &BTreeSet<(String, String)>,
-    dispatches: &BTreeMap<String, String>,
-    receiver_calls: &BTreeMap<String, Vec<(String, Option<String>)>>,
+    dispatches: &BTreeSet<String>,
+    receiver_calls: &BTreeMap<String, Vec<crate::languages::interface::CppReceiverCall>>,
+    overload_paths: BTreeMap<String, String>,
 ) -> Result<PreparedExecution, String> {
     let shared_layouts = std::sync::Arc::new(layouts.clone());
+    let shared_paths = std::sync::Arc::new(overload_paths.clone());
     let mut functions = prepare_functions(import, selected, reachable, &layouts)?
         .into_iter()
         .map(|mut function| {
             crate::instrumentation::record_deterministic_work(1);
             function.prepared_record_layouts = shared_layouts.clone();
+            function.cpp_overload_paths = Some(shared_paths.clone());
+            if dispatches.contains(function.name()) {
+                function = function.with_cpp_virtual_call();
+            }
             match receiver_calls.get(function.name()) {
                 Some(calls) => function.with_receiver_calls(calls.clone()),
                 None => function,
             }
         })
         .collect::<Vec<_>>();
-    // A call through a reference to a class another derives from, to its
-    // method that overrides another, names a dispatch with the method's
-    // interface. Its contract is the sidecar's, or the method's.
-    for (dispatch, method) in dispatches {
-        crate::instrumentation::record_deterministic_work(1);
-        let alias = functions
-            .iter()
-            .find(|function| function.name() == method)
-            .ok_or("C++ dispatch names a method outside the artifact")?
-            .external_alias(dispatch.clone());
-        functions.push(alias);
-    }
     // Where a reference to a derived class becomes a reference to its
     // polymorphic base, the importer places a pack before the call and an
     // unpack after it, each taking the derived class's address. Their
@@ -95,7 +89,7 @@ pub(super) fn prepare(
         library_contracts,
         library_models: BTreeSet::new(),
         record_spellings,
-        overload_paths: BTreeMap::new(),
+        overload_paths,
     })
 }
 

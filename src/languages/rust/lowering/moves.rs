@@ -726,6 +726,7 @@ pub(super) fn lower(
                             .map(|scalar| scalar.to_kernel_type()),
                         result_aggregate_layout: aggregate_layout,
                         result_pointee_constant: false,
+                        dispatch: crate::kernel::CallDispatch::Direct,
                         callee: None,
                     }
                 } else if callee.return_type == Type::Unit

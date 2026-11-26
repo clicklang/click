@@ -43,7 +43,7 @@ fn checked_callee_summary_reuse_scales_with_input_not_product() {
         });
         eprintln!("summary reuse size={size}, dependency work={work}");
         assert_eq!(calls.len(), size);
-        assert!(calls.contains(&format!("callee_{}", size - 1)));
+        assert!(calls.contains(&format!("callee_{}", size - 1).into()));
         if let Some(before) = previous {
             assert!(
                 work <= 5 * before,

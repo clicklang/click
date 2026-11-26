@@ -150,6 +150,7 @@ pub(crate) use spec::{retained_sequence_equality_view, sequence_membership_view}
 mod termination;
 pub(crate) use termination::StatementProofInput;
 pub(crate) use termination::descent_completion::DescentStep;
+pub(crate) use termination::{CallDependency, program_function_call_dependencies};
 // Checked internal fork/join; binding to imported pthread declarations is a
 // separate checkpoint, so no C execution path invokes these rules yet.
 mod threads;

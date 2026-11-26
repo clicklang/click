@@ -2303,40 +2303,9 @@ pub(super) fn execute_program_function_call_paths(
         .environment
         .get_external_function_rule(function.name())
     {
-        // External summaries use the same body-independent application
-        // interface as verified rules, but remain an assumption: do not
-        // repackage one as `VerifiedFunctionRule`, whose type carries body
-        // safety evidence. Applying the shared rule engine does not execute,
-        // inspect, or certify the external body's storage.
-        let binder_application = match selected_call_binder_application(
-            rule.function.name(),
-            rule.function.contract_interface(),
+        return execute_external_function_rule(
             caller_state,
-            execution_context.environment,
-            Some(&mut *budget),
-        ) {
-            Ok(application) => application,
-            Err(message) => return Ok(vec![resource_call_failure(message)]),
-        };
-        return execute_verified_function_applications(
-            caller_state,
-            &[FunctionContractApplication {
-                pointer_result: None,
-                name: rule.function.name(),
-                interface_name: rule.function.name(),
-                interface: rule.function.contract_interface(),
-                storage: Some(&rule.function),
-                evidence: None,
-                framed_rule: rule
-                    .is_scoped_unselected()
-                    .then_some(FramedCallRule::ScopedHypothesis { _rule: rule }),
-                representation_copy: rule.representation_copy(),
-                value_arguments: &[],
-            }],
-            None,
-            binder_application
-                .as_ref()
-                .map(|application| (0, application)),
+            rule,
             arguments,
             assumptions,
             execution_context.environment,
@@ -2562,6 +2531,55 @@ pub(super) fn execute_program_function_call_paths(
 
     budget.check_path_width(paths.len())?;
     Ok(paths)
+}
+
+pub(super) fn execute_external_function_rule(
+    caller_state: &ExecutionState,
+    rule: &ExternalFunctionRule,
+    arguments: &[ProgramExpression],
+    assumptions: &PureFactContext,
+    environment: &ExecutionEnvironment,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<FunctionPath>> {
+    // External summaries use the same body-independent application
+    // interface as verified rules, but remain an assumption: do not
+    // repackage one as `VerifiedFunctionRule`, whose type carries body
+    // safety evidence. Applying the shared rule engine does not execute,
+    // inspect, or certify the external body's storage.
+    let binder_application = match selected_call_binder_application(
+        rule.function.name(),
+        rule.function.contract_interface(),
+        caller_state,
+        environment,
+        Some(&mut *budget),
+    ) {
+        Ok(application) => application,
+        Err(message) => return Ok(vec![resource_call_failure(message)]),
+    };
+    execute_verified_function_applications(
+        caller_state,
+        &[FunctionContractApplication {
+            pointer_result: None,
+            name: rule.function.name(),
+            interface_name: rule.function.name(),
+            interface: rule.function.contract_interface(),
+            storage: Some(&rule.function),
+            evidence: None,
+            framed_rule: rule
+                .is_scoped_unselected()
+                .then_some(FramedCallRule::ScopedHypothesis { _rule: rule }),
+            representation_copy: rule.representation_copy(),
+            value_arguments: &[],
+        }],
+        None,
+        binder_application
+            .as_ref()
+            .map(|application| (0, application)),
+        arguments,
+        assumptions,
+        environment,
+        budget,
+    )
 }
 
 /// The successor of one statement-free application of a verified tactic rule.

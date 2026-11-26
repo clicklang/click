@@ -62,6 +62,36 @@ fn cpp_reference_binding_expands_with_its_source_path() {
         .unwrap();
 }
 
+#[test]
+fn cpp_virtual_method_call_expands_and_replays() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/cpp_virtual_call_through_a_derived_class_reference.md");
+    let fixture = crate::cli::read_mdtest(&path).unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let inputs = crate::cli::prepare_mdtest_inputs(&fixture).unwrap();
+    let project = crate::cli::read_mdtest_project_if_needed(&path, source, &inputs)
+        .unwrap()
+        .unwrap();
+    let expanded =
+        expand_project_claim_source_by_label(&project, &inputs.program_inputs(), "caller.contract")
+            .unwrap();
+    assert!(
+        expanded.contains("call(Square::area, 0).result"),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("__click_dispatch"), "{expanded}");
+    assert!(!expanded.contains("step_until("), "{expanded}");
+    crate::surface::check_audit_claim("caller.contract", true, || {
+        crate::surface::verify_project_with_summary(
+            &project.with_entry_source(expanded),
+            &inputs.program_inputs(),
+        )
+        .and_then(|(_, result)| result)
+        .map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
 #[cfg(feature = "fast-gate")]
 crate::surface::tests::test_batches! {
     file: "tests.rs",
@@ -4139,6 +4169,7 @@ fn a_caught_call_can_bypass_its_branch_return() {
         crate::kernel::program_expression::int32_literal(1),
         program_seq(
             ProgramStatement::Call {
+                dispatch: crate::kernel::CallDispatch::Direct,
                 cpp_binding: None,
                 function_name: "may_throw".into(),
                 arguments: Vec::new(),

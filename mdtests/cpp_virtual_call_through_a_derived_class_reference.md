@@ -2,9 +2,9 @@
 
 `Tile` derives from `Square` and overrides `area`, so `caller`'s call
 through a `const Square&` may run either. Without object state, the
-importer's dispatch `Square__click_dispatch__area` has the contract of
-`Square::area`, which `Tile::area` refines, so the caller knows the exact
-result.
+call uses the contract of `Square::area`, which `Tile::area` refines, so
+the caller knows the exact result. The proof refers to the call by the
+method selected at the call site.
 
 ```cpp filename=shapes.cpp function=caller profile=normal_only
 struct Shape {
@@ -33,6 +33,10 @@ int Tile::area(int scale) const {
 int caller(const Square& square, int scale) {
     requires 0 <= scale and scale <= 1000;
     ensures to_integer(result) == to_integer(scale + 1);
+} by {
+    step_until(call(Square::area, 0).entry);
+    let { result: area } = step(Square::area);
+    have to_integer(call(Square::area, 0).result) == to_integer(area) by { close(); }
 }
 ```
 

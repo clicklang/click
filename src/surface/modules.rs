@@ -473,6 +473,7 @@ fn merge_modules(
         theorem_definitions: Vec::new(),
         contract_definitions: Vec::new(),
         function_blocks: Vec::new(),
+        cpp_virtual_interfaces: BTreeMap::new(),
         tactic_definitions: Vec::new(),
         termination_proof: locals
             .get(entry)
@@ -557,6 +558,18 @@ fn merge_modules(
         merged
             .function_blocks
             .extend(local.function_blocks.iter().cloned());
+        for (method, interface) in &local.cpp_virtual_interfaces {
+            if merged
+                .cpp_virtual_interfaces
+                .insert(method.clone(), interface.clone())
+                .is_some()
+            {
+                return Err(ClickError::new(format!(
+                    "conflicting virtual interfaces for `{}`",
+                    crate::languages::display_source_names(method),
+                )));
+            }
+        }
         merged
             .tactic_definitions
             .extend(local.tactic_definitions.iter().cloned());

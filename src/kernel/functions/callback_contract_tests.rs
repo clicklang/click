@@ -1027,6 +1027,7 @@ fn check_executed_refinement_shape(return_type: ProgramType, alter_result: bool)
             ],
             if return_type == ProgramType::Void {
                 ProgramStatement::Call {
+                    dispatch: crate::kernel::CallDispatch::Direct,
                     cpp_binding: None,
                     function_name: callee.to_string(),
                     arguments: vec![argument],

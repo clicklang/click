@@ -815,6 +815,8 @@ fn append_library_module(file: &mut ClickFile, module: ClickFile) {
     file.contract_definitions
         .extend(module.contract_definitions);
     file.function_blocks.extend(module.function_blocks);
+    file.cpp_virtual_interfaces
+        .extend(module.cpp_virtual_interfaces);
     file.tactic_definitions.extend(module.tactic_definitions);
 }
 
@@ -1148,7 +1150,11 @@ fn expand_declared_resource_clauses_with_rules(
         )?;
     }
 
-    for function in &mut file.function_blocks {
+    for function in file
+        .function_blocks
+        .iter_mut()
+        .chain(file.cpp_virtual_interfaces.values_mut())
+    {
         resource_definitions.begin_declaration();
         expand_declared_resources_in_function_block(function, &resource_definitions)?;
     }

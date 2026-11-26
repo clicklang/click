@@ -714,6 +714,7 @@ fn verify_click_file_theorem_context(
     let mut function_environment = build_function_environment(
         &parsed_sources,
         &external_and_user_function_blocks,
+        &file.cpp_virtual_interfaces,
         file.contract_definitions(),
         spec_definitions,
         &resource_environment,
@@ -2262,6 +2263,7 @@ fn verify_program_in_context(
         let built_function_environment = build_function_environment(
             &parsed_sources,
             &external_and_user_function_blocks,
+            &file.cpp_virtual_interfaces,
             file.contract_definitions(),
             spec_definitions,
             &resource_environment,
@@ -2559,6 +2561,7 @@ fn verify_program_in_context(
                         },
                         plans: &termination_plans,
                         assumed_terminating: &assumed_terminating,
+                        cpp_virtual_terminating: &BTreeSet::new(),
                         diverging_contracts: &diverging_contracts,
                         has_unselected_functions: false,
                     })
@@ -2874,6 +2877,14 @@ fn verify_program_in_context(
     {
         assumed_terminating.extend(modeled_thread_runtime_names());
     }
+    let cpp_virtual_terminating = file
+        .cpp_virtual_interfaces
+        .values()
+        .filter(|interface| !interface.signature().diverges())
+        .map(|interface| {
+            executing_function_name(&termination_kernel_names, interface.signature().name())
+        })
+        .collect();
     let generated_program = program_contracts
         .generate_termination(crate::kernel::ProgramTerminationInputs {
             independent: crate::kernel::IndependentTerminationInputs {
@@ -2882,6 +2893,7 @@ fn verify_program_in_context(
             },
             plans: &termination_plans,
             assumed_terminating: &assumed_terminating,
+            cpp_virtual_terminating: &cpp_virtual_terminating,
             diverging_contracts: &diverging_contracts,
             has_unselected_functions: !unselected_executing_names.is_empty(),
         })
@@ -3150,6 +3162,7 @@ struct AssumptionWalk<'a> {
     operations: &'a mut BTreeSet<(ModelFamily, &'static str)>,
     /// Every `extern` function, by name.
     externals: &'a BTreeMap<String, ModelFamily>,
+    virtual_methods: &'a mut BTreeSet<String>,
 }
 
 /// The closure [`verification_required_functions_with_blocks`] computes.
@@ -3228,13 +3241,22 @@ fn required_functions(
             report.operations.insert((ModelFamily::CppStd, constructor));
         }
         if let Some(lowered) = parsed.prelowered_kernel_function() {
-            pending.extend(
-                crate::kernel::program_function_callees(lowered)
-                    .into_iter()
-                    .filter(|callee| {
-                        parsed_sources.contains_key(callee) || report.externals.contains_key(callee)
-                    }),
-            );
+            for dependency in crate::kernel::program_function_call_dependencies(lowered) {
+                match dependency {
+                    crate::kernel::CallDependency::Named(callee) => {
+                        if parsed_sources.contains_key(&callee)
+                            || report.externals.contains_key(&callee)
+                        {
+                            pending.push(callee);
+                        }
+                    }
+                    crate::kernel::CallDependency::CppVirtual(method) => {
+                        report
+                            .virtual_methods
+                            .insert(parsed.cpp_call_path(&method).unwrap_or(method));
+                    }
+                }
+            }
         }
     }
     required.insert(function_name.to_string());
@@ -3552,6 +3574,7 @@ fn program_assumptions_parsed(
         .filter(|function| !function.is_external())
     {
         let mut operations = BTreeSet::new();
+        let mut virtual_methods = BTreeSet::new();
         let required = required_functions(
             parsed_sources,
             function.signature().name(),
@@ -3560,6 +3583,7 @@ fn program_assumptions_parsed(
             Some(AssumptionWalk {
                 operations: &mut operations,
                 externals: &external_families,
+                virtual_methods: &mut virtual_methods,
             }),
         )?;
         let mut assumed = required
@@ -3570,6 +3594,10 @@ fn program_assumptions_parsed(
                     name: name.clone(),
                 })
             })
+            .chain(virtual_methods.into_iter().map(|name| ModelAssumption {
+                family: ModelFamily::Extern,
+                name: crate::languages::display_source_names(&name).into_owned(),
+            }))
             .chain(
                 operations
                     .into_iter()
@@ -4816,14 +4844,16 @@ impl parser::ProgramLayouts {
                     function
                         .receiver_calls()
                         .iter()
-                        .map(|(callee, holder)| {
-                            (
-                                source_names
-                                    .get(callee.as_str())
-                                    .map_or(callee.as_str(), |name| name)
-                                    .to_string(),
-                                holder.clone(),
-                            )
+                        .map(|call| crate::languages::interface::CppReceiverCall {
+                            method: execution
+                                .overload_paths
+                                .get(&call.method)
+                                .map(String::as_str)
+                                .or_else(|| source_names.get(call.method.as_str()).copied())
+                                .unwrap_or(&call.method)
+                                .to_string(),
+                            dispatch: call.dispatch,
+                            holder: call.holder.clone(),
                         })
                         .collect(),
                 );
@@ -4894,12 +4924,10 @@ impl parser::ProgramLayouts {
                     .or_default()
                     .insert(arguments);
             }
-            if let Some(method) = function.dispatched_method()
-                && let Some(method) = source_names.get(method)
-            {
+            if function.has_cpp_virtual_call() {
                 tables
                     .virtual_dispatches
-                    .push((function.source_name().to_string(), method.to_string()));
+                    .insert(function.source_name().to_string());
             }
             tables.local_struct_pointers.insert(
                 function.source_name().to_string(),
@@ -5362,6 +5390,7 @@ fn generic_instance_example(name: &str) -> String {
 pub(in crate::surface) fn build_function_environment(
     parsed_sources: &BTreeMap<String, (String, crate::languages::interface::ImportedFunction)>,
     function_blocks: &[FunctionBlock],
+    cpp_virtual_interfaces: &BTreeMap<String, FunctionBlock>,
     contract_definitions: &[ContractDefinition],
     spec_definitions: SpecDefinitions<'_>,
     resource_environment: &ResourceEnvironment,
@@ -5669,9 +5698,15 @@ pub(in crate::surface) fn build_function_environment(
         .values()
         .filter_map(|(_, function)| function.trait_interface())
         .collect::<BTreeSet<_>>();
-    for function_block in function_blocks
+    for (function_block, dispatch) in function_blocks
         .iter()
         .filter(|function| function.is_external())
+        .map(|block| (block, crate::kernel::CallDispatch::Direct))
+        .chain(
+            cpp_virtual_interfaces
+                .values()
+                .map(|block| (block, crate::kernel::CallDispatch::CppVirtual)),
+        )
     {
         let name = function_block.signature().name();
         if !referenced.contains(name)
@@ -5680,6 +5715,9 @@ pub(in crate::surface) fn build_function_environment(
             continue;
         }
         let parsed_function = match prepared_interfaces.get(name) {
+            Some(prepared) if dispatch == crate::kernel::CallDispatch::CppVirtual => {
+                prepared.cpp_virtual_declaration()
+            }
             Some(prepared) => (*prepared).clone(),
             None => with_linked_globals(
                 external_c_function_with_layouts(
@@ -5716,6 +5754,10 @@ pub(in crate::surface) fn build_function_environment(
                     ),
                 )
             })?;
+        if dispatch == crate::kernel::CallDispatch::CppVirtual {
+            environment = environment.with_cpp_virtual_rule(rule);
+            continue;
+        }
         // A crate trait method's interface is also the named contract its
         // implementations refine.
         if interfaces.contains(name) {

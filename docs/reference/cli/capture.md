@@ -2100,10 +2100,10 @@ refer to an object of the derived class, so it holds the object class's
 object as a `Shape&` does, and reads `size(square)` as its field; a contract
 on it cannot read `square.side`. Where such a reference becomes a reference
 to a base, nothing is packed. A call through it, or through `this`, to a
-method that overrides one of the object class's names the dispatch
-`Square__click_dispatch__area`, whose contract is that interface on the
-object, whichever override runs; without a sidecar `class` block deriving
-from the class, the dispatch's contract is the method's own
+method that overrides one of the object class's methods uses that interface
+on the object, whichever override runs. A proof names the call using
+`call(Square::area, 0)`. Without a defining sidecar `class` block, the
+virtual interface is the method's own contract
 (`mdtests/cpp_virtual_call_through_a_derived_class_reference.md`). A qualified
 call, `square.Square::area(scale)`, and a call on a complete object, a
 local or by-value parameter, run the method named, against its own

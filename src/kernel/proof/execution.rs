@@ -6743,7 +6743,7 @@ fn collect_applied_tactics<'e>(
 fn collect_checked_callees<'e>(
     events: impl IntoIterator<Item = &'e CheckedExecutionEvent>,
     seen: &mut std::collections::HashSet<usize>,
-    callees: &mut std::collections::BTreeSet<String>,
+    callees: &mut std::collections::BTreeSet<crate::kernel::termination::CallDependency>,
 ) {
     for event in events {
         crate::kernel::termination::charge_termination_work(1);
@@ -8267,7 +8267,9 @@ impl ExecutionProofCore {
         self.checked_call_events.clone()
     }
 
-    fn retained_checked_callees(&self) -> Option<Arc<std::collections::BTreeSet<String>>> {
+    fn retained_checked_callees(
+        &self,
+    ) -> Option<Arc<std::collections::BTreeSet<crate::kernel::termination::CallDependency>>> {
         if self.execution_evidence.is_empty() {
             return None;
         }

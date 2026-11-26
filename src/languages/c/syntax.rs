@@ -4317,6 +4317,7 @@ impl CStatement {
                     .as_ref()
                     .map(RecordLayout::to_kernel_aggregate_layout),
                 result_pointee_constant: *result_pointee_constant,
+                dispatch: crate::kernel::CallDispatch::Direct,
                 callee: callee.as_ref().map(CCallee::to_kernel),
             },
             Self::Call {
@@ -4331,6 +4332,7 @@ impl CStatement {
                     .map(CExpression::to_kernel_expression)
                     .collect(),
                 callee: callee.as_ref().map(CCallee::to_kernel),
+                dispatch: crate::kernel::CallDispatch::Direct,
                 cpp_binding: None,
             },
             Self::IndirectCall { .. } => {
@@ -9830,7 +9832,7 @@ impl Parser {
             closure_captures: 0,
             trait_interface: None,
             generic_instance: None,
-            dispatched_method: None,
+            cpp_virtual: false,
             receiver_calls: Vec::new(),
             program_entry_state: None,
             prelowered_kernel_function: None,
@@ -9843,6 +9845,7 @@ impl Parser {
             control_targets,
             structs: self.structs.clone(),
             prepared_record_layouts: std::sync::Arc::default(),
+            cpp_overload_paths: None,
             enums: self.enums.clone(),
             unions: self.unions.clone(),
             globals: self.globals.clone(),

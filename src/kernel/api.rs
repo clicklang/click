@@ -2372,6 +2372,7 @@ pub fn program_call_value(
             result_type: None,
             result_aggregate_layout: None,
             result_pointee_constant: false,
+            dispatch: CallDispatch::Direct,
             callee: None,
         },
         result,
@@ -2429,6 +2430,7 @@ pub fn program_call(
         function_name: function_name.into(),
         arguments,
         callee: None,
+        dispatch: crate::kernel::CallDispatch::Direct,
         cpp_binding: None,
     }
 }
@@ -8155,6 +8157,7 @@ pub(crate) fn prove_executed_contract_refinement(
             function_name: callback.name().to_string(),
             arguments,
             callee: None,
+            dispatch: crate::kernel::CallDispatch::Direct,
             cpp_binding: None,
         }
     } else {
@@ -8363,6 +8366,7 @@ pub(crate) fn prove_executed_concrete_contract_refinement(
             function_name: callee_name.to_string(),
             arguments,
             callee: None,
+            dispatch: crate::kernel::CallDispatch::Direct,
             cpp_binding: None,
         }
     } else {

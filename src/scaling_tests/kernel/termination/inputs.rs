@@ -34,6 +34,7 @@ fn completed_input_selection_and_consumption_ignore_unrelated_source_and_bodies(
             &BTreeSet::new(),
             &BTreeSet::new(),
             &BTreeSet::new(),
+            &BTreeSet::new(),
             false,
             None,
         )
