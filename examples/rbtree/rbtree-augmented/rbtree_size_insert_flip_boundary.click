@@ -225,7 +225,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                 SizedContext::Top => {
                                     have not (sized_flip_black_boundary(ctx) == 1) by {
                                         rewrite(ctx, SizedContext::Top);
-                                        unfold(sized_flip_black_boundary(SizedContext::Top)); normalize();
+                                        unfold(sized_flip_black_boundary(SizedContext::Top)); close();
                                     }
                                     contradiction(sized_flip_black_boundary(ctx) == 1);
                                 },
@@ -245,7 +245,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                     let { metadata: a_size, sibling: held_sibling, up: held_up } = unfold(path);
                                     have (a->__rb_parent_color & 1) == 1 by {
                                         rewrite((a->__rb_parent_color & 1), color_bit(color));
-                                        rewrite(color_bit(color), 1); normalize();
+                                        rewrite(color_bit(color), 1); close();
                                     }
                                     step(); step(); step();
                                     unfold(loop_root);
@@ -299,7 +299,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                     let { metadata: a_size, sibling: held_sibling, up: held_up } = unfold(path);
                                     have (a->__rb_parent_color & 1) == 1 by {
                                         rewrite((a->__rb_parent_color & 1), color_bit(color));
-                                        rewrite(color_bit(color), 1); normalize();
+                                        rewrite(color_bit(color), 1); close();
                                     }
                                     step(); step(); step();
                                     unfold(loop_root);
@@ -352,7 +352,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                     have sized_value(focus.model) == stopped_value by {
                         rewrite(focus.model, SizedTree::Node(stopped_node, stopped_parent, stopped_shade, stopped_value, stopped_left, stopped_right));
                         unfold(sized_value(SizedTree::Node(stopped_node, stopped_parent, stopped_shade, stopped_value, stopped_left, stopped_right)));
-                        normalize();
+                        close();
                     }
                     have stopped_parent == sized_context_parent(path.model, 0) by close();
                     have sized_parent_is(focus.model, sized_context_parent(path.model, 0)) == 1 by {
