@@ -26,15 +26,20 @@ theorem zlib_full_stream_remaining_step(total: uint64, remaining: uint64, amount
  requires remaining <= total;
  requires total <= 2147483647u64;
  requires amount <= remaining;
- ensures to_integer(remaining - amount) <= to_integer(total) by close() using { remaining <= total; total <= 2147483647u64; amount <= remaining; };
- ensures to_integer(total - (remaining - amount)) <= to_integer(2147483647u64) by close() using { remaining <= total; total <= 2147483647u64; amount <= remaining; };
+ ensures to_integer(remaining - amount) <= to_integer(total) by {
+  apply(zlib_uint64_difference_bound(remaining, amount, total));
+ }
+ ensures to_integer(total - (remaining - amount)) <= to_integer(2147483647u64) by {
+  apply(zlib_uint64_difference_bound(remaining, amount, total));
+  apply(zlib_uint64_difference_bound(total, remaining - amount, 2147483647u64));
+ }
  ensures to_integer(remaining - amount) == to_integer(remaining) - to_integer(amount) by {
   have to_integer(remaining - amount) == to_integer(remaining) - to_integer(amount); close();
  }
  ensures to_integer(zlib_prefix_count(total, remaining - amount)) == to_integer(zlib_prefix_count(total, remaining)) + to_integer(amount) by {
-  have to_integer(total - remaining) <= to_integer(2147483647u64) by close() using { remaining <= total; total <= 2147483647u64; };
-  have to_integer(remaining - amount) <= to_integer(total) by close() using { remaining <= total; total <= 2147483647u64; amount <= remaining; };
-  have to_integer(total - (remaining - amount)) <= to_integer(2147483647u64) by close() using { remaining <= total; total <= 2147483647u64; amount <= remaining; };
+  apply(zlib_uint64_difference_bound(total, remaining, 2147483647u64));
+  apply(zlib_uint64_difference_bound(remaining, amount, total));
+  apply(zlib_uint64_difference_bound(total, remaining - amount, 2147483647u64));
   apply(zlib_full_prefix_observation(total, remaining));
   apply(zlib_full_prefix_observation(total, remaining - amount));
   have to_integer(total - remaining) == to_integer(total) - to_integer(remaining);
@@ -58,7 +63,7 @@ theorem zlib_full_stream_prefix_step(total: uint64, remaining: uint64, amount: u
  ensures defined(zlib_prefix_count(total, remaining) + amount as uint32 as int32)
      and to_integer(zlib_prefix_count(total, remaining - amount)) == to_integer(zlib_prefix_count(total, remaining) + amount as uint32 as int32) by {
   apply(zlib_full_stream_remaining_step(total, remaining, amount));
-  have to_integer(total - remaining) <= to_integer(2147483647u64) by close() using { remaining <= total; total <= 2147483647u64; };
+  apply(zlib_uint64_difference_bound(total, remaining, 2147483647u64));
   have amount <= 2147483647u64 by close() using { amount <= remaining; remaining <= total; total <= 2147483647u64; };
   apply(zlib_full_prefix_observation(total, remaining));
   apply(zlib_full_prefix_observation(total, remaining - amount));
@@ -86,9 +91,9 @@ theorem zlib_full_stream_split_count(total: uint64, middle: uint64, remaining: u
      and to_integer(zlib_prefix_count(total, remaining)) == to_integer(zlib_prefix_count(total, middle) + zlib_prefix_count(middle, remaining)) by {
   have remaining <= total by close() using { remaining <= middle; middle <= total; total <= 2147483647u64; };
   have middle <= 2147483647u64 by close() using { middle <= total; total <= 2147483647u64; };
-  have to_integer(total - middle) <= to_integer(2147483647u64) by close() using { middle <= total; total <= 2147483647u64; };
-  have to_integer(total - remaining) <= to_integer(2147483647u64) by close() using { remaining <= total; total <= 2147483647u64; };
-  have to_integer(middle - remaining) <= to_integer(2147483647u64) by close() using { remaining <= middle; middle <= 2147483647u64; };
+  apply(zlib_uint64_difference_bound(total, middle, 2147483647u64));
+  apply(zlib_uint64_difference_bound(total, remaining, 2147483647u64));
+  apply(zlib_uint64_difference_bound(middle, remaining, 2147483647u64));
   apply(zlib_full_prefix_observation(total, middle)); apply(zlib_full_prefix_observation(total, remaining)); apply(zlib_full_prefix_observation(middle, remaining));
   have to_integer(middle) <= to_integer(total); have to_integer(remaining) <= to_integer(middle); have to_integer(remaining) <= to_integer(total);
   have to_integer(total - middle) == to_integer(total) - to_integer(middle); have to_integer(total - remaining) == to_integer(total) - to_integer(remaining); have to_integer(middle - remaining) == to_integer(middle) - to_integer(remaining);
@@ -126,13 +131,15 @@ theorem zlib_full_stream_scalar_read_bound(total: uint64, remaining: uint64) {
 // A concatenation must fit its actual total, even at the signed endpoint.
 theorem zlib_full_concat_bound(total: uint64, middle: uint64, remaining: uint64) {
  requires remaining <= middle; requires middle <= total; requires total <= 2147483647u64;
- ensures to_integer(zlib_prefix_count(total, middle)) <= to_integer(2147483647 - zlib_prefix_count(middle, remaining)) and defined(zlib_prefix_count(total, middle) + zlib_prefix_count(middle, remaining)) by {
+ ensures defined(2147483647 - zlib_prefix_count(middle, remaining))
+     and to_integer(zlib_prefix_count(total, middle)) <= to_integer(2147483647 - zlib_prefix_count(middle, remaining))
+     and defined(zlib_prefix_count(total, middle) + zlib_prefix_count(middle, remaining)) by {
 
   have remaining <= total by close() using { remaining <= middle; middle <= total; total <= 2147483647u64; };
   have middle <= 2147483647u64 by close() using { middle <= total; total <= 2147483647u64; };
-  have to_integer(total - middle) <= to_integer(2147483647u64) by close() using { middle <= total; total <= 2147483647u64; };
-  have to_integer(total - remaining) <= to_integer(2147483647u64) by close() using { remaining <= total; total <= 2147483647u64; };
-  have to_integer(middle - remaining) <= to_integer(2147483647u64) by close() using { remaining <= middle; middle <= 2147483647u64; };
+  apply(zlib_uint64_difference_bound(total, middle, 2147483647u64));
+  apply(zlib_uint64_difference_bound(total, remaining, 2147483647u64));
+  apply(zlib_uint64_difference_bound(middle, remaining, 2147483647u64));
   apply(zlib_full_prefix_observation(total, middle)); apply(zlib_full_prefix_observation(total, remaining)); apply(zlib_full_prefix_observation(middle, remaining));
   have to_integer(middle) <= to_integer(total); have to_integer(remaining) <= to_integer(middle); have to_integer(remaining) <= to_integer(total);
   have to_integer(total - middle) == to_integer(total) - to_integer(middle); have to_integer(total - remaining) == to_integer(total) - to_integer(remaining); have to_integer(middle - remaining) == to_integer(middle) - to_integer(remaining);
@@ -173,9 +180,11 @@ theorem zlib_full_concat_bound(total: uint64, middle: uint64, remaining: uint64)
 
 theorem zlib_full_chunk_bound(total: uint64, remaining: uint64, amount: uint64) {
  requires amount <= remaining; requires remaining <= total; requires total <= 2147483647u64;
- ensures to_integer(zlib_prefix_count(total, remaining)) <= to_integer(2147483647 - amount as uint32 as int32) and defined(zlib_prefix_count(total, remaining) + amount as uint32 as int32) by {
+ ensures defined(2147483647 - amount as uint32 as int32)
+     and to_integer(zlib_prefix_count(total, remaining)) <= to_integer(2147483647 - amount as uint32 as int32)
+     and defined(zlib_prefix_count(total, remaining) + amount as uint32 as int32) by {
   have remaining <= 2147483647u64 by close() using { remaining <= total; total <= 2147483647u64; };
-  have to_integer(remaining - amount) <= to_integer(remaining) by close() using { amount <= remaining; remaining <= 2147483647u64; };
+  apply(zlib_uint64_difference_bound(remaining, amount, remaining));
   apply(zlib_full_concat_bound(total, remaining, remaining - amount));
   apply(zlib_full_stream_prefix_step(remaining, remaining, amount));
   have zlib_prefix_count(remaining, remaining) == 0 by { unfold(zlib_prefix_count(remaining, remaining)); close(); }
