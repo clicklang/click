@@ -36,10 +36,10 @@
   {
     "sidecar": "examples/rust-chunks-exact/chunks.click",
     "outcome": "proof-gap",
-    "diagnostic": "local `chunks_remaining` has no value at this frontier",
+    "diagnostic": "tactic 1 > have body tactic 1: `normalize using` goal did not normalize to true using the listed conditions",
     "migrated_sidecar": "design/charon-trial/chunk-proof/chunks.click",
     "frozen_sidecar": "design/charon-trial/chunk-proof/frozen.click",
-    "frozen_sha256": "33ee0ebd00dc2399ba507513b846cbaad05cfecf6f7fb3dc3a5802cf740afda7",
+    "frozen_sha256": "73428e5d20f461c019ac2593e737ad3f0ddadf4e2d192ce6760151baa2fc676b",
     "original_sha256": "204ae1f5cd7ef4f0ceb5ed697674a9c0510300728d6964c85be45f51cbaa448c"
   },
   {
@@ -63,7 +63,7 @@
     "diagnostic": "unbound variable `__rust_iter_3_5_remaining`",
     "migrated_sidecar": "design/charon-trial/iterator-proof/rust-iter-references/sum.click",
     "frozen_sidecar": "design/charon-trial/iterator-proof/rust-iter-references/frozen.click",
-    "frozen_sha256": "95dd0167ae06222391ab81d5c55433b92c51f7528208607ae5a27f6c134d5b08",
+    "frozen_sha256": "a7a20a3025ab021a4ceedd51dcfaa4edf5e59c4f6fcccd8a2703feaa675ee3b4",
     "original_sha256": "b36a9f6fd4f25cf172e82ed3df23f8811f1862c89f992093f4d7bc62948553d8"
   },
   {

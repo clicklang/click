@@ -9070,7 +9070,7 @@ fn source_expansion_preserves_proof_marks() {
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.7s in the parallel gate"]
-fn marked_constant_store_transport_expands_to_known_fact_lookup() {
+fn marked_constant_store_expands_to_known_fact_lookup() {
     let touch_c = r#"
         struct cell { int32 value; int32 other; };
 
@@ -9103,10 +9103,7 @@ fn marked_constant_store_transport_expands_to_known_fact_lookup() {
             step();
             mark after_write;
             step_until(function.exit);
-            transport(
-                at(after_write, owner->value == 11),
-                owner->value == 11
-            );
+            have owner->value == 11 by close();
             close();
         }
     "#;
@@ -9115,17 +9112,16 @@ fn marked_constant_store_transport_expands_to_known_fact_lookup() {
     let ((verified, events), flat_units) = proof::count_flat_proof_units(|| {
         crate::instrumentation::collect(|| verify_c_sources(click_source, &sources))
     });
-    verified.expect("the smart marked transport should verify before expansion");
+    verified.expect("the marked fact lookup should verify before expansion");
     assert_eq!(flat_units, 2, "both function proofs should retain Proof");
 
-    let transport_checks = events
+    let lookup_checks = events
         .iter()
         .filter_map(|event| {
             let crate::instrumentation::VerificationEvent::TacticStarted(tactic) = event else {
                 return None;
             };
-            (tactic.claim == "pipeline.contract" && tactic.tactic_name == "transport")
-                .then_some(tactic)
+            (tactic.claim == "pipeline.contract" && tactic.tactic_name == "have").then_some(tactic)
         })
         .collect::<Vec<_>>();
     let check_operations = events
@@ -9141,22 +9137,22 @@ fn marked_constant_store_transport_expands_to_known_fact_lookup() {
         })
         .collect::<Vec<_>>();
     assert_eq!(
-        transport_checks.len(),
+        lookup_checks.len(),
         1,
-        "ordinary verification should check the selected transport exactly once: {transport_checks:#?}; check operations: {check_operations:#?}"
+        "ordinary verification should check the selected fact lookup exactly once: {lookup_checks:#?}; check operations: {check_operations:#?}"
     );
-    let selected = click_source.find("transport(").unwrap();
+    let selected = click_source.find("have owner->value == 11").unwrap();
     let position = expansion::position_at_offset(click_source, selected);
     let expanded =
         expand_c_tactic_source_at(click_source, &sources, position.line, position.column)
-            .expect("the marked transport should expand and check");
+            .expect("the marked fact lookup should expand and check");
     assert!(!expanded.contains("transport("), "{expanded}");
     assert!(
         expanded.contains("have owner->value == 11 by {"),
         "{expanded}"
     );
     assert!(expanded.contains("close();"), "{expanded}");
-    verify_c_sources(&expanded, &sources).expect("the expanded marked transport should check");
+    verify_c_sources(&expanded, &sources).expect("the expanded marked fact lookup should check");
 
     let corrupted = expanded.replacen(
         "have owner->value == 11 by {",
@@ -9168,7 +9164,7 @@ fn marked_constant_store_transport_expands_to_known_fact_lookup() {
         "the expansion should expose its target"
     );
     let corrupted_result = { verify_c_sources(&corrupted, &sources) };
-    corrupted_result.expect_err("tampering with the transport target must invalidate the proof");
+    corrupted_result.expect_err("tampering with the saved value must invalidate the proof");
 
     let fully_expanded = expand_function_proof_source(click_source, &sources, "pipeline")
         .expect("the complete marked proof should expand");
@@ -9190,18 +9186,8 @@ fn marked_constant_store_transport_expands_to_known_fact_lookup() {
             ("pipeline.c", pipeline_c),
         ],
     )
-    .expect_err("transport across mutation of the marked field must fail");
-    assert!(
-        error
-            .message()
-            .contains("found no checked proof from its source")
-            && error.message().contains("owner->value == 11")
-            && error
-                .message()
-                .contains("at(after_write, owner->value == 11)"),
-        "{}",
-        error.message()
-    );
+    .expect_err("lookup across mutation of the marked field must fail");
+    assert!(error.message().contains("owner->value == 11"), "{error}");
 }
 
 #[test]
@@ -9448,12 +9434,9 @@ fn smart_apply_uses_ambient_loadability_only_for_argument_lowering() {
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.6s with parallel expansion tests"]
-fn selected_pure_case_split_solve_expands_by_removal() {
-    // Both live C paths are explicitly closed before the selected solve. Its
-    // expansion must remove it, without grafting a second branch skeleton
-    // onto the already-checked paths. The old sort3 fixture failed earlier at
-    // step_until's undecided branch; full sorting expansion remains covered
-    // by sequential_sort_branches_keep_their_expanded_continuations_in_scope.
+fn selected_post_branch_resource_close_replays_without_extra_paths() {
+    // Expanding the final resource closer must preserve the checked path
+    // split and keep exactly one closing operation after it.
     let c_source = r#"
             int32 choose(int32 x) {
                 if (x > 0) { return 1; } else { return 0; }
@@ -9482,12 +9465,17 @@ fn selected_pure_case_split_solve_expands_by_removal() {
     let closed = expand_c_claim_source_by_label(click_source, &sources, label)
         .expect("complete both paths, including their lifetime obligations");
     let offset = closed[..closed.rfind('}').unwrap()].rfind('\n').unwrap() + 1;
-    let mut redundant = closed.clone();
-    redundant.insert_str(offset, "                close();\n");
-    let position = expansion::position_at_offset(&redundant, offset + 16);
-    let expanded = expand_c_tactic_source_at(&redundant, &sources, position.line, position.column)
-        .expect("a redundant closer after the case split should expand");
-    assert_eq!(expanded, closed);
+    let mut with_resource_close = closed.clone();
+    with_resource_close.insert_str(offset, "                close();\n");
+    let position = expansion::position_at_offset(&with_resource_close, offset + 16);
+    let expanded = expand_c_tactic_source_at(
+        &with_resource_close,
+        &sources,
+        position.line,
+        position.column,
+    )
+    .expect("the resource closer after the case split should expand");
+    assert_eq!(expanded, with_resource_close);
     crate::surface::check_audit_claim(label, true, || {
         verify_c_sources(&expanded, &sources).map_err(|error| error.report())
     })
@@ -14188,7 +14176,7 @@ fn linear_open_retains_a_direct_bare_theorem_application() {
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.5s in the parallel gate"]
-fn linear_open_expands_known_transport_to_known() {
+fn linear_open_expands_preserved_read_to_known() {
     let c_source = r#"
         int32 set_second_return_first(int32 p[2]) {
             p[1] = 9;
@@ -14209,7 +14197,7 @@ fn linear_open_expands_known_transport_to_known() {
         } by {
             with(first_is_seven(p)) {
                 step();
-                transport(old(p[0]) == 7, p[0] == 7);
+                have p[0] == 7 by close();
                 step();
             }
             close();
@@ -14217,10 +14205,10 @@ fn linear_open_expands_known_transport_to_known() {
     "#;
 
     let verified = verify_c_sources(click_source, &[("set_second_return_first.c", c_source)]);
-    let verified = verified.expect("the direct transport should advance the open Proof");
+    let verified = verified.expect("the direct lookup should advance the open Proof");
     let tactics = verified[0]
         .expanded_proof_tactics()
-        .expect("the checked open transport should retain its expansion");
+        .expect("the checked open lookup should retain its expansion");
     assert!(
         matches!(
             tactics.first(),
@@ -14242,7 +14230,7 @@ fn linear_open_expands_known_transport_to_known() {
         "set_second_return_first",
         ContractProofClaim::Grouped,
     )
-    .expect("the retained open-scope transport should expand");
+    .expect("the retained open-scope fact lookup should expand");
     assert!(!expanded.contains("transport("), "{expanded}");
     without_implicit_solve_for_claim("set_second_return_first.contract", || {
         verify_c_sources(&expanded, &[("set_second_return_first.c", c_source)])

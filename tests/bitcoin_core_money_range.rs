@@ -71,6 +71,21 @@ fn bitcoin_unit_arguments_are_the_cmake_command() {
     assert!(actual.iter().any(|argument| argument == "-O2"));
 }
 
+// When the advertised result fits, its strict bound can already exclude
+// zero size. Expose a reachable zero denominator in the domain mutation.
+fn fee_evaluation_with_zero_size(source: &str, strict_fit: Option<&str>) -> String {
+    const SIZE_GUARD: &str = "requires this->size > 0;";
+    assert!(source.contains(SIZE_GUARD));
+    let weakened_fit = strict_fit.map(|fit| {
+        assert!(source.contains(fit));
+        source.replace(fit, &fit.replace(" < ", " <= "))
+    });
+    weakened_fit.as_deref().unwrap_or(source).replace(
+        SIZE_GUARD,
+        "requires this->size == 0; requires at_size == 0;",
+    )
+}
+
 fn check_upstream_fee_frac(selected: &str, name: &str, source: &str) {
     check_upstream_cpp(
         selected,
@@ -470,9 +485,10 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                 "CFeeRateGetFeeMissingFeeAuthority" => ("views this->m_feerate.base.fee;", ""),
                 "CFeeRateGetFeeMissingSizeAuthority" => ("views this->m_feerate.base.size;", ""),
                 "CFeeRateGetFeeMissingAmountGuard" => ("requires 0 <= virtual_bytes;", ""),
-                "CFeeRateGetFeeMissingSizeGuard" => {
-                    ("requires this->m_feerate.base.size >= 0;", "")
-                }
+                "CFeeRateGetFeeMissingSizeGuard" => (
+                    "requires this->m_feerate.base.size >= 0;",
+                    "requires this->m_feerate.base.size == -1; requires virtual_bytes == 0; requires this->m_feerate.base.fee == 0i64;",
+                ),
                 "CFeeRateGetFeeMissingLowerFit" => (
                     "requires this->m_feerate.base.size != 0 implies -9223372036854775809 * to_integer(this->m_feerate.base.size) < to_integer(this->m_feerate.base.fee) * to_integer(virtual_bytes);",
                     "",
@@ -523,6 +539,14 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                 "{helpers}{root_signature}{}",
                 root_source.replacen(from, to, 1)
             );
+            if name == "CFeeRateGetFeeMissingSizeGuard" {
+                // The signed fit bounds are inconsistent at a negative size.
+                // Keep them for positive sizes so this witness reaches EvaluateFeeUp.
+                hostile = hostile.replace(
+                    "requires this->m_feerate.base.size != 0 implies",
+                    "requires this->m_feerate.base.size > 0 implies",
+                );
+            }
             if name == "CFeeRateGetFeePerKMissingSizeGuard" {
                 // The strict result-fit bound also excludes zero size. Remove
                 // it so the zero-sized witness reaches the callee's domain check.
@@ -724,7 +748,7 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
             if phase == Some(RoundingPhase::Rejections) {
                 vec![
                     source.replace("views this->size;", ""),
-                    source.replace("requires this->size > 0;", ""),
+                    fee_evaluation_with_zero_size(source, down.then_some(fit)),
                     source.replace("requires 0 <= at_size;", ""),
                     // `at_size <= 2147483647` holds of any `int32`; removing it weakens nothing.
                     source.replace(fit, ""),
@@ -761,7 +785,9 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                     source
                         .replace("requires this->fee < 8589934592i64;", "")
                         .replace("requires to_integer(this->fee) <= 8589934591;", ""),
-                    source.replace("requires 0 <= to_integer(this->fee);", ""),
+                    source
+                        .replace("requires this->fee >= 0i64;", "")
+                        .replace("requires 0 <= to_integer(this->fee);", ""),
                 ]
             } else {
                 assert!(phase == Some(RoundingPhase::RoundingRejections));
@@ -798,7 +824,7 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                     source.replace("views this->size;", ""),
                 ],
                 RoundingPhase::Rejections => vec![
-                    source.replace("requires this->size > 0;", ""),
+                    fee_evaluation_with_zero_size(source, Some(if down { upper } else { lower })),
                     source.replace("requires 0 <= at_size;", ""),
                     // `at_size <= 2147483647` holds of any `int32`; removing it weakens nothing.
                 ],
@@ -846,7 +872,7 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                 let strict = if down { upper } else { lower };
                 vec![
                     source.replace("views this->size;", ""),
-                    source.replace("requires this->size > 0;", ""),
+                    fee_evaluation_with_zero_size(source, Some(if down { upper } else { lower })),
                     source.replace("requires 0 <= at_size;", ""),
                     // `at_size <= 2147483647` holds of any `int32`; removing it weakens nothing.
                     source.replace(lower, ""),
@@ -916,7 +942,9 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
                     source
                         .replace("requires this->fee < 8589934592i64;", "")
                         .replace("requires to_integer(this->fee) <= 8589934591;", ""),
-                    source.replace("requires 0 <= to_integer(this->fee);", ""),
+                    source
+                        .replace("requires this->fee >= 0i64;", "")
+                        .replace("requires 0 <= to_integer(this->fee);", ""),
                     source.replace(
                         "ensures to_integer(result) == truncating_quotient(",
                         "ensures to_integer(result) != truncating_quotient(",

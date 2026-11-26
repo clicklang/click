@@ -240,7 +240,18 @@ fn clone_field_stores_with_observed_source_resource_verify() {
             observe(cursor(source));
             step();
             step();
+            have contains(memory(*target), memory(target->data)) by close();
+            have contains(memory(*source), memory(source->pos)) by close();
+            apply(click::separation::separate_restrict(
+                memory(*target), memory(*source), memory(target->data), memory(source->pos)));
+            mark before_data;
             step();
+            have separate(statement(2).footprint, memory(source->pos)) by {
+                close() using { separate(memory(target->data), memory(source->pos)); };
+            }
+            have source->pos == at(before_data, source->pos) by {
+                preserve(memory(source->pos), statement(2));
+            }
             step();
             close();
         }

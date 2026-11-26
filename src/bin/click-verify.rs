@@ -2330,13 +2330,33 @@ int32 read_first(int32 m) {
         } else {
             step_until(statement(3).entry);
             have q[0] == 7 by close();
+            have (m - 1) != 0 by close() using { 2 <= m; m <= 1000; };
+            apply(click::separation::separate_elements(q, m - 1, 0));
+            mark before_store;
+            step();
+            have separate(statement(3).footprint, memory(q[0])) by {
+                close() using { separate(memory(q[m - 1]), memory(q[0])); };
+            }
+            have q[0] == at(before_store, q[0]) by {
+                preserve(memory(q[0]), statement(3));
+            }
+            have q[0] == 7 by {
+                rewrite(q[0], at(before_store, q[0]));
+                close();
+            }
             step_until(function.exit);
         }
     }
 }
 "#,
         );
-        for (line, arm) in [(9, "then"), (11, "else"), (12, "else"), (13, "else")] {
+        for (line, arm) in [
+            (9, "then"),
+            (11, "else"),
+            (12, "else"),
+            (13, "else"),
+            (14, "else"),
+        ] {
             let arguments = [
                 "--trace-proof",
                 "read_first",
@@ -2352,10 +2372,8 @@ int32 read_first(int32 m) {
         fs::remove_dir_all(root).unwrap();
     }
 
-    /// The trace shows a store dropping a cached cell, with the index
-    /// comparison it lacked, and a later read whose history stops at the
-    /// store. The report names the store's statement and the fact the
-    /// store search spelled and could not prove before it.
+    /// The trace shows which index comparison would keep a cached cell
+    /// beside a store, and where a later read runs out of history.
     #[test]
     fn trace_shows_a_dropped_cell_and_the_read_history_stop() {
         let (root, path) = temporary_project(
@@ -2394,9 +2412,6 @@ int32 read_first(int32 m) {
         ]
         .map(str::to_string);
         let report = entry_with(arguments).expect_err("the cell `q[0]` was dropped");
-        let statement = "statement(3) may have overwritten `q[0]`; it is kept if you state \
-                         `have ((m - 1) as int32) != 0 by { ... };` before statement(3)";
-        assert!(report.contains(statement), "{report}");
         let (_, trace) = report
             .split_once("proof trace (checked tactics and branch facts):")
             .unwrap_or_else(|| panic!("missing proof trace: {report}"));
@@ -2416,9 +2431,10 @@ int32 read_first(int32 m) {
             read.contains("read history stopped after crossing 0 recorded transitions (a read follows at most one)"),
             "{trace}"
         );
+        assert!(store.contains("(m-1)"), "{store}");
         assert!(
-            trace.contains(&format!("store search: {statement}")),
-            "{trace}"
+            read.contains("step not proved separate from the queried bytes"),
+            "{read}"
         );
         fs::remove_dir_all(root).unwrap();
     }

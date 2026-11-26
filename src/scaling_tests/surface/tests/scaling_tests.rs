@@ -9321,15 +9321,15 @@ ensures result == {expected};
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 0.8s in the parallel gate"]
-fn source_only_transport_does_not_reconstruct_unrelated_integer_facts() {
+fn exact_fact_lookup_does_not_reconstruct_unrelated_integer_facts() {
     let mut work = Vec::new();
     let sizes = [8usize, 16, 32];
     for size in sizes {
         let (_, mut source) = function_with_unrelated_facts(
             size,
-            "    step();\n    transport(target == 7, target == 7);\n    step_until(function.exit);\n    close();\n",
+            "    step();\n    have target == 7 by close();\n    step_until(function.exit);\n    close();\n",
         );
-        // Keep transport at a live statement frontier. A return would enter
+        // Keep the lookup at a live statement frontier. A return would enter
         // the distinct post-execution premise-search path.
         let c = "int32 exact_fact_target(int32 target) { int32 copy = target; return copy; }";
         for index in 0..size {
@@ -9344,7 +9344,7 @@ fn source_only_transport_does_not_reconstruct_unrelated_integer_facts() {
         result.unwrap_or_else(|error| panic!("{size}: {}", error.message()));
         let selected = samples
             .iter()
-            .filter(|sample| sample.tactic.tactic_name == "transport")
+            .filter(|sample| sample.tactic.tactic_name == "have")
             .collect::<Vec<_>>();
         assert_eq!(selected.len(), 1);
         assert!(!selected[0].failed);
@@ -9353,10 +9353,10 @@ fn source_only_transport_does_not_reconstruct_unrelated_integer_facts() {
     assert!(work.iter().all(|count| *count > 0));
     assert!(
         work.windows(2).all(|pair| pair[1] <= pair[0] * 2),
-        "source-only transport must not reconstruct an ambient fact per input: {work:?}"
+        "exact fact lookup must not reconstruct an ambient fact per input: {work:?}"
     );
     let indexed = |costs: &[usize]| costs.iter().all(|work| *work <= costs[0] + 16);
-    eprintln!("source-only transport work: {work:?}");
+    eprintln!("exact fact lookup work: {work:?}");
     assert!(indexed(&work), "{work:?}");
     let rebuilt = work
         .iter()

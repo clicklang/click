@@ -27,7 +27,7 @@ struct pair make(struct pair input) {
 int32 call_field(struct pair input) {
     ensures result == input.right;
 } by {
-    step();
+    step_until(call(make, 0).entry); step();
     have statement(0).call(make, 0).result.right == input.right;
     have statement(0).call(make, 0).result.nested.value == input.nested.value;
     have statement(0).call(make, 0).result.items[1] == input.items[1];
