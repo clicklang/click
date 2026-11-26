@@ -2,6 +2,8 @@
 
 The call postcondition reads `src` before the copy. A later state of
 the same pointer must remain visibly distinct in the missing-fact report.
+The call lowers that postcondition before its exit, so the report names
+its reads at the call's `.effect` point.
 
 ```c filename=t.c
 #include <string.h>
@@ -27,5 +29,5 @@ void copy_t(char* dst, const char* src) {
 ```
 
 ```expect
-fail: click::bytes::equal(at(statement(0).exit, dst), 0u64, at(statement(0).exit, src), 0u64, 4u64)
+fail: click::bytes::equal(at(statement(0).effect, dst), 0u64, at(statement(0).effect, src), 0u64, 4u64)
 ```

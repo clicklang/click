@@ -8383,6 +8383,7 @@ pub(super) fn describe_program_point_ref_as_recorded(point: &ProgramPointRef) ->
     let kind = match point.kind {
         ProgramPointKind::Entry => "entry",
         ProgramPointKind::Exit => "exit",
+        ProgramPointKind::Effect => "effect",
     };
     format!("{}.{}", describe_code_region_ref(&point.region), kind)
 }

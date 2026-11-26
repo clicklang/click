@@ -1031,6 +1031,29 @@ pub(super) fn record_code_region_program_state(
         }
         CodeRegion::Statement(index) => CodeRegionRef::Region(index),
     };
+    // A contract call's exit is reached from its effect point, which the
+    // call's reads before its exit are made at: it is named with the exit,
+    // with the locals of the call's entry, which the call has not changed
+    // there.
+    if kind == ProgramPointKind::Exit
+        && let CodeRegionRef::Region(index) = point_region
+    {
+        let entry = recorded_states
+            .get(&ProgramPointRef {
+                region: CodeRegionRef::Region(index),
+                kind: ProgramPointKind::Entry,
+            })
+            .cloned();
+        if let Some(effect) = state.call_effect_state(entry.as_ref()) {
+            recorded_states.insert(
+                ProgramPointRef {
+                    region: point_region.clone(),
+                    kind: ProgramPointKind::Effect,
+                },
+                effect,
+            );
+        }
+    }
     recorded_states.insert(
         ProgramPointRef {
             region: point_region,

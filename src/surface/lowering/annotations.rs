@@ -9542,6 +9542,9 @@ impl AnnotationLowerer<'_> {
         }
         let region = self.resolve_code_region_ref(&program_point.region)?;
         match (region, program_point.kind) {
+            (CodeRegion::Function | CodeRegion::Loop(_), ProgramPointKind::Effect) => {
+                Err("`.effect` names a point of a call's region".to_string())
+            }
             (CodeRegion::Function, ProgramPointKind::Entry) => {
                 Ok(ResolvedProgramPoint::FunctionEntry)
             }

@@ -292,6 +292,7 @@ pub(super) fn summary_result(
 /// A certified construction rule, or an explicit external construction-return
 /// assumption, justifies these initialized fields. Ordinary owns clauses do not.
 /// The call's existing effect transition forgets their old values first.
+/// The initialization is a step of the call in progress, which completes it.
 pub(super) fn initialize_summary(state: &mut ExecutionState, entry: &ExecutionState) {
     let selected = entry
         .aggregate_destination
@@ -300,7 +301,7 @@ pub(super) fn initialize_summary(state: &mut ExecutionState, entry: &ExecutionSt
         .clone();
     for field in selected.layout.fields() {
         let pointer = selected.pointer.offset_by_layout(field.offset());
-        state.set_memory(
+        state.stage_memory(
             state
                 .memory
                 .clone()

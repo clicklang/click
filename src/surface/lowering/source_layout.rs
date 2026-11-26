@@ -2252,7 +2252,10 @@ impl SourceExecutionLayout {
                 .flat_map(|(_, regions)| regions)
                 .min()
                 .expect("a statement that exists has a region")),
-            ProgramPointKind::Exit => Ok(self.source_statement_exit(&path)),
+            // A call's effect point is at its own region, as its exit is.
+            ProgramPointKind::Exit | ProgramPointKind::Effect => {
+                Ok(self.source_statement_exit(&path))
+            }
         }
     }
 

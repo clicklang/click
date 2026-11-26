@@ -3,30 +3,55 @@
 use super::*;
 
 pub(super) fn initialize_program_function_globals_owned(
+    state: ExecutionState,
+    function: &ProgramFunction,
+    initialize_missing_storage: bool,
+) -> ExecutionState {
+    initialize_program_function_globals_with(state, function, initialize_missing_storage, false)
+}
+
+/// The static storage a contract call's callee reads, materialized as it
+/// builds the callee's entry: one step of the call in progress, installed
+/// together at one point before the callee's requirements are read.
+pub(super) fn initialize_callee_globals(
+    state: &ExecutionState,
+    function: &ProgramFunction,
+) -> ExecutionState {
+    let mut state = initialize_program_function_globals_with(state.clone(), function, false, true);
+    state.complete_staged_memory();
+    state
+}
+
+fn initialize_program_function_globals_with(
     mut state: ExecutionState,
     function: &ProgramFunction,
     initialize_missing_storage: bool,
+    stage: bool,
 ) -> ExecutionState {
     for literal in function.string_literals() {
         let slot = SymbolicMemory::string_literal_pointer(literal.identity(), literal.bytes());
         if !state.memory.has_block(&slot.base) {
-            state.set_memory(
+            state.set_or_stage_memory(
                 state
                     .memory
                     .clone()
                     .with_read_only_block(slot.base.clone(), literal.bytes().len() as u32),
+                stage,
             );
             for (offset, byte) in literal.bytes().iter().copied().enumerate() {
                 if crate::instrumentation::deadline_exceeded() {
                     break;
                 }
-                state.set_memory(state.memory.clone().store(
-                    OldAddress {
-                        base: slot.base.clone(),
-                        offset: OldAddressOffset::Constant(offset as i64),
-                    },
-                    literal.element_value(byte),
-                ));
+                state.set_or_stage_memory(
+                    state.memory.clone().store(
+                        OldAddress {
+                            base: slot.base.clone(),
+                            offset: OldAddressOffset::Constant(offset as i64),
+                        },
+                        literal.element_value(byte),
+                    ),
+                    stage,
+                );
             }
         }
         let value = ExecutionValue::from(ProgramValue::typed_pointer(
@@ -59,18 +84,22 @@ pub(super) fn initialize_program_function_globals_owned(
         let slot = SymbolicMemory::global_pointer(global.kernel_name());
         register_block_alignment(&slot.base, global.program_type().abi_alignment());
         if !state.memory.has_block(&slot.base) {
-            state.set_memory(state.memory.clone().with_classed_block_or_read_only(
-                slot.base.clone(),
-                global.declared_class(),
-                global.program_type().byte_width(),
-                global.is_constant(),
-            ));
+            state.set_or_stage_memory(
+                state.memory.clone().with_classed_block_or_read_only(
+                    slot.base.clone(),
+                    global.declared_class(),
+                    global.program_type().byte_width(),
+                    global.is_constant(),
+                ),
+                stage,
+            );
             if initialize_missing_storage || global.is_constant() {
-                state.set_memory(
+                state.set_or_stage_memory(
                     state
                         .memory
                         .clone()
                         .store(slot.clone(), global.initial_value().clone()),
+                    stage,
                 );
             }
         }
@@ -110,19 +139,25 @@ pub(super) fn initialize_program_function_globals_owned(
             .checked_mul(global_array.element_type().byte_width())
             .expect("validated C global array size");
         if !state.memory.has_block(&slot.base) {
-            state.set_memory(state.memory.clone().with_classed_block_or_read_only(
-                slot.base.clone(),
-                global_array.declared_class(),
-                bytes,
-                global_array.is_constant(),
-            ));
+            state.set_or_stage_memory(
+                state.memory.clone().with_classed_block_or_read_only(
+                    slot.base.clone(),
+                    global_array.declared_class(),
+                    bytes,
+                    global_array.is_constant(),
+                ),
+                stage,
+            );
             if initialize_missing_storage || global_array.is_constant() {
-                state.set_memory(store_array_contents(
-                    state.memory.clone(),
-                    &slot,
-                    global_array.element_type(),
-                    global_array.initial_values(),
-                ));
+                state.set_or_stage_memory(
+                    store_array_contents(
+                        state.memory.clone(),
+                        &slot,
+                        global_array.element_type(),
+                        global_array.initial_values(),
+                    ),
+                    stage,
+                );
             }
         }
         state.locals.set_array_object_at_with_constant(
@@ -148,23 +183,28 @@ pub(super) fn initialize_program_function_globals_owned(
         let slot = SymbolicMemory::global_pointer(global_aggregate.kernel_name());
         register_block_alignment(&slot.base, global_aggregate.layout().alignment_bytes());
         if !state.memory.has_block(&slot.base) {
-            state.set_memory(state.memory.clone().with_classed_block_or_read_only(
-                slot.base.clone(),
-                global_aggregate.declared_class.clone(),
-                global_aggregate.layout().size_bytes(),
-                global_aggregate.is_constant(),
-            ));
+            state.set_or_stage_memory(
+                state.memory.clone().with_classed_block_or_read_only(
+                    slot.base.clone(),
+                    global_aggregate.declared_class.clone(),
+                    global_aggregate.layout().size_bytes(),
+                    global_aggregate.is_constant(),
+                ),
+                stage,
+            );
             if initialize_missing_storage || global_aggregate.is_constant() {
-                state.set_memory(zero_aggregate_fields(
-                    state.memory.clone(),
-                    &slot,
-                    global_aggregate.layout(),
-                ));
-                state.set_memory(initialize_aggregate_fields(
-                    state.memory.clone(),
-                    &slot,
-                    global_aggregate.initializers(),
-                ));
+                state.set_or_stage_memory(
+                    zero_aggregate_fields(state.memory.clone(), &slot, global_aggregate.layout()),
+                    stage,
+                );
+                state.set_or_stage_memory(
+                    initialize_aggregate_fields(
+                        state.memory.clone(),
+                        &slot,
+                        global_aggregate.initializers(),
+                    ),
+                    stage,
+                );
             }
         }
         state.locals.set_aggregate_object_at_with_constant(
@@ -195,24 +235,33 @@ pub(super) fn initialize_program_function_globals_owned(
             .checked_mul(global_aggregate_array.layout().size_bytes())
             .expect("validated C global aggregate array size");
         if !state.memory.has_block(&slot.base) {
-            state.set_memory(state.memory.clone().with_classed_block_or_read_only(
-                slot.base.clone(),
-                global_aggregate_array.declared_class.clone(),
-                bytes,
-                global_aggregate_array.is_constant(),
-            ));
+            state.set_or_stage_memory(
+                state.memory.clone().with_classed_block_or_read_only(
+                    slot.base.clone(),
+                    global_aggregate_array.declared_class.clone(),
+                    bytes,
+                    global_aggregate_array.is_constant(),
+                ),
+                stage,
+            );
             if initialize_missing_storage || global_aggregate_array.is_constant() {
-                state.set_memory(zero_aggregate_array_fields(
-                    state.memory.clone(),
-                    &slot,
-                    global_aggregate_array.layout(),
-                    global_aggregate_array.length(),
-                ));
-                state.set_memory(initialize_aggregate_fields(
-                    state.memory.clone(),
-                    &slot,
-                    global_aggregate_array.initializers(),
-                ));
+                state.set_or_stage_memory(
+                    zero_aggregate_array_fields(
+                        state.memory.clone(),
+                        &slot,
+                        global_aggregate_array.layout(),
+                        global_aggregate_array.length(),
+                    ),
+                    stage,
+                );
+                state.set_or_stage_memory(
+                    initialize_aggregate_fields(
+                        state.memory.clone(),
+                        &slot,
+                        global_aggregate_array.initializers(),
+                    ),
+                    stage,
+                );
             }
         }
         state.locals.set_array_object_at_with_constant(
@@ -241,22 +290,26 @@ pub(super) fn initialize_program_function_globals_owned(
         let slot = SymbolicMemory::static_pointer(function.name(), static_local.kernel_name());
         register_block_alignment(&slot.base, static_local.program_type().abi_alignment());
         if !state.memory.has_block(&slot.base) {
-            state.set_memory(state.memory.clone().with_block_or_read_only(
-                slot.base.clone(),
-                static_local.program_type().byte_width(),
-                static_local.is_constant(),
-            ));
+            state.set_or_stage_memory(
+                state.memory.clone().with_block_or_read_only(
+                    slot.base.clone(),
+                    static_local.program_type().byte_width(),
+                    static_local.is_constant(),
+                ),
+                stage,
+            );
             // A qualified resource can materialize the cell before this
             // function's storage declaration is installed. Adding block
             // metadata must not overwrite that existing value.
             if (initialize_missing_storage || static_local.is_constant())
                 && state.memory.known_value(&slot).is_none()
             {
-                state.set_memory(
+                state.set_or_stage_memory(
                     state
                         .memory
                         .clone()
                         .store(slot.clone(), static_local.initial_value().clone()),
+                    stage,
                 );
             }
         }
@@ -297,18 +350,24 @@ pub(super) fn initialize_program_function_globals_owned(
             .checked_mul(static_array.element_type().byte_width())
             .expect("validated C static local array size");
         if !state.memory.has_block(&slot.base) {
-            state.set_memory(state.memory.clone().with_block_or_read_only(
-                slot.base.clone(),
-                bytes,
-                static_array.is_constant(),
-            ));
+            state.set_or_stage_memory(
+                state.memory.clone().with_block_or_read_only(
+                    slot.base.clone(),
+                    bytes,
+                    static_array.is_constant(),
+                ),
+                stage,
+            );
             if initialize_missing_storage || static_array.is_constant() {
-                state.set_memory(store_array_contents(
-                    state.memory.clone(),
-                    &slot,
-                    static_array.element_type(),
-                    static_array.initial_values(),
-                ));
+                state.set_or_stage_memory(
+                    store_array_contents(
+                        state.memory.clone(),
+                        &slot,
+                        static_array.element_type(),
+                        static_array.initial_values(),
+                    ),
+                    stage,
+                );
             }
         }
         state.locals.set_array_object_at_with_constant(
@@ -334,22 +393,27 @@ pub(super) fn initialize_program_function_globals_owned(
         let slot = SymbolicMemory::static_pointer(function.name(), static_aggregate.kernel_name());
         register_block_alignment(&slot.base, static_aggregate.layout().alignment_bytes());
         if !state.memory.has_block(&slot.base) {
-            state.set_memory(state.memory.clone().with_block_or_read_only(
-                slot.base.clone(),
-                static_aggregate.layout().size_bytes(),
-                static_aggregate.is_constant(),
-            ));
+            state.set_or_stage_memory(
+                state.memory.clone().with_block_or_read_only(
+                    slot.base.clone(),
+                    static_aggregate.layout().size_bytes(),
+                    static_aggregate.is_constant(),
+                ),
+                stage,
+            );
             if initialize_missing_storage || static_aggregate.is_constant() {
-                state.set_memory(zero_aggregate_fields(
-                    state.memory.clone(),
-                    &slot,
-                    static_aggregate.layout(),
-                ));
-                state.set_memory(initialize_aggregate_fields(
-                    state.memory.clone(),
-                    &slot,
-                    static_aggregate.initializers(),
-                ));
+                state.set_or_stage_memory(
+                    zero_aggregate_fields(state.memory.clone(), &slot, static_aggregate.layout()),
+                    stage,
+                );
+                state.set_or_stage_memory(
+                    initialize_aggregate_fields(
+                        state.memory.clone(),
+                        &slot,
+                        static_aggregate.initializers(),
+                    ),
+                    stage,
+                );
             }
         }
         state.locals.set_aggregate_object_at_with_constant(
@@ -381,23 +445,32 @@ pub(super) fn initialize_program_function_globals_owned(
             .checked_mul(static_aggregate_array.layout().size_bytes())
             .expect("validated C static aggregate array size");
         if !state.memory.has_block(&slot.base) {
-            state.set_memory(state.memory.clone().with_block_or_read_only(
-                slot.base.clone(),
-                bytes,
-                static_aggregate_array.is_constant(),
-            ));
+            state.set_or_stage_memory(
+                state.memory.clone().with_block_or_read_only(
+                    slot.base.clone(),
+                    bytes,
+                    static_aggregate_array.is_constant(),
+                ),
+                stage,
+            );
             if initialize_missing_storage || static_aggregate_array.is_constant() {
-                state.set_memory(zero_aggregate_array_fields(
-                    state.memory.clone(),
-                    &slot,
-                    static_aggregate_array.layout(),
-                    static_aggregate_array.length(),
-                ));
-                state.set_memory(initialize_aggregate_fields(
-                    state.memory.clone(),
-                    &slot,
-                    static_aggregate_array.initializers(),
-                ));
+                state.set_or_stage_memory(
+                    zero_aggregate_array_fields(
+                        state.memory.clone(),
+                        &slot,
+                        static_aggregate_array.layout(),
+                        static_aggregate_array.length(),
+                    ),
+                    stage,
+                );
+                state.set_or_stage_memory(
+                    initialize_aggregate_fields(
+                        state.memory.clone(),
+                        &slot,
+                        static_aggregate_array.initializers(),
+                    ),
+                    stage,
+                );
             }
         }
         state.locals.set_array_object_at_with_constant(

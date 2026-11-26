@@ -3858,7 +3858,11 @@ fn execute_verified_function_applications_with_suspension(
                 result
             }
         };
-        let mut post_state = entry_state.clone().with_memory(memory);
+        // The call's value effects are steps of its region: they reach the
+        // call's effect point together, and its initialization, liveness and
+        // allocation effects then reach its exit.
+        let mut post_state = entry_state.clone();
+        post_state.stage_memory(memory);
         if interface.aggregate_return_mode() == AggregateReturnMode::Construction
             || interface.construction_parameter().is_some()
         {
@@ -3884,6 +3888,15 @@ fn execute_verified_function_applications_with_suspension(
         // Protocol effects remain in the caller scope. The ordinary summary
         // partition below is recovered before this checked successor is
         // published, so no call-local hold can escape or be discarded.
+        // The mutex protocol stages still make their own points.
+        if transfer.helper_call.is_some()
+            || transfer
+                .stable_view_plan
+                .as_ref()
+                .is_some_and(|plan| !plan.mutex_uses.is_empty())
+        {
+            post_state.complete_staged_memory();
+        }
         let helper_effect = if let Some(helper) = &transfer.helper_call {
             let payload = helper
                 .contract
@@ -4012,8 +4025,11 @@ fn execute_verified_function_applications_with_suspension(
             }
         }
         if interface.return_type() != ProgramType::Void {
-            set_contract_result(&mut post_state, interface, result.clone());
+            stage_contract_result(&mut post_state, interface, result.clone());
         }
+        // Every value the call writes is in place: the call's effect point,
+        // at which everything it reads before its exit is read.
+        post_state.complete_staged_memory_as_call_effect();
         // A `produces` binder owns nothing at entry: the call creates the
         // instance under the identity the caller's `let` introduced. It is
         // built once, here, so the population transition and the returned
@@ -4365,13 +4381,12 @@ fn execute_verified_function_applications_with_suspension(
         // An undecided continuity relation remains symbolic in this one call
         // successor; it is not an execution-path split.
         post_state.resources = return_resources.clone();
-        let symbolic_initialized_bytes = match initialize_produced_memory(
+        let (symbolic_initialized_bytes, produced_words) = match initialize_produced_memory(
             &entry_resource_state,
             &output_resource_state,
             interface,
             &mut post_state,
             &effective_assumptions,
-            &mut facts,
             budget,
             application.evidence.is_none() && application.representation_copy.is_none(),
         )? {
@@ -4869,7 +4884,10 @@ fn execute_verified_function_applications_with_suspension(
             continue;
         };
         facts.extend(allocation_effects);
+        // The call's exit: its staged initialization and its allocation
+        // effects, reached from its effect point.
         post_state.set_memory(memory);
+        produced_word_equations(&post_state, &produced_words, &mut facts, budget);
         // A consumed allocation named through a pointer proven equal to it,
         // a contract's `result == p`, retires the storage the call's entry
         // transfer moved: its unique storage coordinate.
@@ -13288,10 +13306,9 @@ fn initialize_produced_memory(
     interface: &FunctionContractInterface,
     post_state: &mut ExecutionState,
     assumptions: &PureFactContext,
-    facts: &mut ExecutionFacts,
     budget: &mut ExecutionBudget,
     opaque_output: bool,
-) -> ExecutionResult<Result<Vec<MemoryRange>, RuntimeError>> {
+) -> ExecutionResult<Result<(Vec<MemoryRange>, Vec<OldAddress>), RuntimeError>> {
     let mut memory = post_state.memory().clone();
     let mut word_outputs = Vec::new();
     let mut symbolic_initialized_bytes = Vec::new();
@@ -13395,20 +13412,33 @@ fn initialize_produced_memory(
             word_outputs.push(start);
         }
     }
-    post_state.set_memory_directly(memory);
-    if !word_outputs.is_empty() {
-        let point = post_state.program_point();
-        for address in word_outputs {
-            if let Some(equation) = crate::kernel::eval::declared_uint32_read_representation(
-                &point,
-                &address,
-                budget.program_byte_order(),
-            ) {
-                facts.push(ExecutionPureFact::certified(equation));
-            }
+    // A step of the call in progress, which reaches its exit after the
+    // allocation effects; the produced words' equations are made there.
+    post_state.stage_memory(memory);
+    Ok(Ok((symbolic_initialized_bytes, word_outputs)))
+}
+
+/// The equations of the produced 32-bit output words at `exit`, the call's
+/// exit, which no effect after their initialization changes.
+fn produced_word_equations(
+    exit: &ExecutionState,
+    word_outputs: &[OldAddress],
+    facts: &mut ExecutionFacts,
+    budget: &ExecutionBudget,
+) {
+    if word_outputs.is_empty() {
+        return;
+    }
+    let point = exit.program_point();
+    for address in word_outputs {
+        if let Some(equation) = crate::kernel::eval::declared_uint32_read_representation(
+            &point,
+            address,
+            budget.program_byte_order(),
+        ) {
+            facts.push(ExecutionPureFact::certified(equation));
         }
     }
-    Ok(Ok(symbolic_initialized_bytes))
 }
 
 /// Evaluates the first `count` returned resources of a contract as one

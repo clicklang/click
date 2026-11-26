@@ -124,10 +124,29 @@ pub(super) fn set_function_result(
     set_contract_result(state, function.contract_interface(), value);
 }
 
+/// [`set_contract_result`] as a step of the contract call in progress,
+/// which completes it.
+pub(super) fn stage_contract_result(
+    state: &mut ExecutionState,
+    interface: &FunctionContractInterface,
+    value: impl Into<StoredExecutionValue>,
+) {
+    set_contract_result_with(state, interface, value, true);
+}
+
 pub(super) fn set_contract_result(
     state: &mut ExecutionState,
     interface: &FunctionContractInterface,
     value: impl Into<StoredExecutionValue>,
+) {
+    set_contract_result_with(state, interface, value, false);
+}
+
+fn set_contract_result_with(
+    state: &mut ExecutionState,
+    interface: &FunctionContractInterface,
+    value: impl Into<StoredExecutionValue>,
+    stage: bool,
 ) {
     let value = value.into();
     if value.shared().is_some_and(|root| {
@@ -153,7 +172,7 @@ pub(super) fn set_contract_result(
         && let ProgramValue::Pointer(pointer) = &value
     {
         if interface.aggregate_return_mode() == AggregateReturnMode::Copy {
-            state.set_memory(
+            let memory =
                 // A returned-by-value temporary is fresh caller storage. Its
                 // declaration must remain in the memory history so copying
                 // its fields does not disconnect unrelated input states.
@@ -168,8 +187,12 @@ pub(super) fn set_contract_result(
                         .memory
                         .clone()
                         .with_block(pointer.base.clone(), layout.size())
-                },
-            );
+                };
+            if stage {
+                state.stage_memory(memory);
+            } else {
+                state.set_memory(memory);
+            }
         }
         state.locals.set_aggregate_object_at(
             CONTRACT_RESULT,
@@ -1249,7 +1272,7 @@ pub(super) fn bind_contract_arguments(
     callee_state.borrow_participant = caller_state.borrow_participant;
     callee_state.borrow_bindings = caller_state.borrow_bindings.clone();
     if let Some(function) = storage {
-        callee_state = initialize_program_function_globals(&callee_state, function);
+        callee_state = initialize_callee_globals(&callee_state, function);
     }
     for (index, parameter) in interface.parameters().iter().enumerate() {
         let value = native.map(|values| &values[index]);
