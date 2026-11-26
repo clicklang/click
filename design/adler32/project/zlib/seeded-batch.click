@@ -1,3 +1,4 @@
+import click::integer;
 import "batch-helpers.click";
 
 // Native DO16 arithmetic for a batch entered with reduced components.
@@ -77,6 +78,16 @@ theorem zlib_seeded_component_step(bytes: uint8[], n: int32, a: uint64, b: uint6
  }
 }
 
+// The native MOD result has the same bound as the mathematical remainder.
+theorem zlib_reduced_component_bound(value: uint64) {
+ ensures to_integer(value % 65521u64) <= 65520 by {
+  apply(integer::uint64_remainder_to_integer(value, 65521u64));
+  apply(integer::remainder_upper_from_divisor(to_integer(value), 65521, 65521, 65520));
+  rewrite(to_integer(value % 65521u64), truncating_remainder(to_integer(value), 65521));
+  close();
+ }
+}
+
 // The original MOD operations return canonical components for this local batch.
 theorem zlib_seeded_reduced_components(bytes: uint8[], length: int32, a: uint64, b: uint64, a0: uint64, b0: uint64) {
  requires to_integer(a) == to_integer(a0) + adler_byte_sum(bytes, length);
@@ -92,18 +103,8 @@ theorem zlib_seeded_reduced_components(bytes: uint8[], length: int32, a: uint64,
   rewrite(to_integer(b0) + to_integer(length) * to_integer(a0) + adler_weighted_sum(bytes, length, length), to_integer(b)); close();
  }
  ensures a % 65521u64 <= 65520u64 and b % 65521u64 <= 65520u64 by {
-  apply(integer::uint64_remainder_to_integer(a, 65521u64));
-  apply(integer::uint64_remainder_to_integer(b, 65521u64));
-  apply(integer::positive_divisor_remainder_upper(to_integer(a), 65521));
-  apply(integer::positive_divisor_remainder_upper(to_integer(b), 65521));
-  have to_integer(a % 65521u64) <= 65520 by close() using {
-   to_integer(a % 65521u64) == truncating_remainder(to_integer(a), 65521);
-   truncating_remainder(to_integer(a), 65521) <= to_integer(65521 - 1);
-  };
-  have to_integer(b % 65521u64) <= 65520 by close() using {
-   to_integer(b % 65521u64) == truncating_remainder(to_integer(b), 65521);
-   truncating_remainder(to_integer(b), 65521) <= to_integer(65521 - 1);
-  };
+  apply(zlib_reduced_component_bound(a));
+  apply(zlib_reduced_component_bound(b));
   close();
  }
 }
@@ -523,18 +524,10 @@ theorem zlib_components_pack(bytes: uint8[], length: int32, a: uint64, b: uint64
  requires to_integer(a % 65521u64) == adler_spec_a(bytes, length, 1);
  requires to_integer(b % 65521u64) == adler_spec_b(bytes, length, 1, 0);
  ensures to_integer((a % 65521u64) | ((b % 65521u64) << 16)) == adler_spec_checksum(bytes, length, 1, 0) by {
-  apply(integer::uint64_remainder_to_integer(a, 65521u64));
-  apply(integer::uint64_remainder_to_integer(b, 65521u64));
-  apply(integer::positive_divisor_remainder_upper(to_integer(a), 65521));
-  apply(integer::positive_divisor_remainder_upper(to_integer(b), 65521));
-  have to_integer(a % 65521u64) <= 65535 by close() using {
-   to_integer(a % 65521u64) == truncating_remainder(to_integer(a), 65521);
-   truncating_remainder(to_integer(a), 65521) <= to_integer(65521 - 1);
-  };
-  have to_integer(b % 65521u64) <= 65535 by close() using {
-   to_integer(b % 65521u64) == truncating_remainder(to_integer(b), 65521);
-   truncating_remainder(to_integer(b), 65521) <= to_integer(65521 - 1);
-  };
+  apply(zlib_reduced_component_bound(a));
+  apply(zlib_reduced_component_bound(b));
+  have to_integer(a % 65521u64) <= 65535 by close() using { to_integer(a % 65521u64) <= 65520; };
+  have to_integer(b % 65521u64) <= 65535 by close() using { to_integer(b % 65521u64) <= 65520; };
   apply(integer::uint64_pack_uint16_to_integer(a % 65521u64, b % 65521u64));
   unfold(adler_spec_checksum(bytes, length, 1, 0));
   close() using {
