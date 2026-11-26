@@ -249,9 +249,22 @@ theorem singleton_null() {
     ensures singleton(0) == List<struct node*>::Cons(0, List<struct node*>::Nil)
         by { unfold(singleton(0)); close(); }
 }
+theorem singleton_return_same(node: struct node*) {
+    ensures singleton_return(node) == singleton(node) by {
+        unfold(singleton_return(node));
+        unfold(singleton(node));
+        unfold(keep_node(node));
+        close();
+    }
+}
 theorem singleton_return_null() {
     ensures singleton_return(0) == List<struct node*>::Cons(0, List<struct node*>::Nil)
-        by { unfold(singleton_return(0)); unfold(keep_node(0)); normalize(); }
+        by {
+            apply(singleton_return_same(0));
+            apply(singleton_null());
+            rewrite(singleton_return(0), singleton(0));
+            close();
+        }
 }
 theorem typed_membership(xs: List<struct node*>, target: struct node*) {
     ensures list::contains(xs, target) == list::contains(xs, target)
@@ -1026,7 +1039,7 @@ fn generic_template_expansion_checks_arbitrary_types() {
 theorem client<T>(xs: List<T>, ys: List<T>) {
     requires not(xs == ys);
     ensures (if xs == ys { 1 } else { 0 }) == 0 by {
-        normalize() using { not(xs == ys); }
+        close() using { not(xs == ys); }
     }
 }
 "#;

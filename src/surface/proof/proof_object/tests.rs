@@ -5991,7 +5991,7 @@ fn result_aware_fixed_state_apply_scales_with_unrelated_facts() {
     let click_file = crate::surface::parse(
         r#"
             theorem result_reflexive(value: int32) {
-                ensures value == value by { normalize(); }
+                ensures value == value by { close(); }
             }
 
             int32 identity(int32 x) {
@@ -12155,7 +12155,7 @@ fn nonempty_execution_branch_retains_checked_arm_steps_at_the_join() {
     let click_file = crate::surface::parse(
         r#"
             theorem int32_reflexive(value: int32) {
-                ensures value == value by { normalize(); }
+                ensures value == value by { close(); }
             }
 
             int32 constant(int32 x) {
