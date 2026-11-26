@@ -77,6 +77,24 @@ theorem kilo_divide(x: uint64, d: uint32) {
     }
 }
 
+theorem padded_length_at_least_width(value: uint64, width: uint64) {
+    ensures width <= stdio::padded_length(value, width) by {
+        unfold(stdio::padded_length(value, width));
+        if stdio::decimal_length(value) < width {
+            close() using { stdio::decimal_length(value) < width; };
+        } else {
+            have width <= stdio::decimal_length(value) by {
+                close() using { not (stdio::decimal_length(value) < width); };
+            }
+            have (if stdio::decimal_length(value) < width { width } else { stdio::decimal_length(value) }) == stdio::decimal_length(value) by {
+                close() using { not (stdio::decimal_length(value) < width); };
+            }
+            rewrite((if stdio::decimal_length(value) < width { width } else { stdio::decimal_length(value) }), stdio::decimal_length(value));
+            close();
+        }
+    }
+}
+
 int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], int32 len) {
     requires 9 <= len;
     owns buf[0..len as uint64];
@@ -743,21 +761,13 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                 fact tmp[tmp_len(j)] == 0u8;
             } {
                 true => {
-                    have 3u64 <= stdio::padded_length(remainder as uint64, 3u64) by {
-                        unfold(stdio::padded_length(remainder as uint64, 3u64));
-                        if stdio::decimal_length(remainder as uint64) < 3u64 {
-                            normalize() using { stdio::decimal_length(remainder as uint64) < 3u64; };
-                        } else {
-                            have 3u64 <= stdio::decimal_length(remainder as uint64);
-                            normalize() using { 3u64 <= stdio::decimal_length(remainder as uint64); };
-                        }
-                    }
+                    apply(padded_length_at_least_width(remainder as uint64, 3u64));
                     step();
                     have tmp[0u64] == 46u8;
                     have tmp[0u64] != 0u8;
                     have defined(tmp[0u64]) by { close(); }
                     have 0u64 < stdio::padded_length(remainder as uint64, 3u64);
-                    have 1u64 + 0u64 + 1u64 < 12u64 by { normalize(); }
+                    have 1u64 + 0u64 + 1u64 < 12u64 by { close(); }
                     have tmp[1] == stdio::padded_digit(remainder as uint64, 3u64, 48u8, 0u64) by {
                         instantiate(forall (k: uint64) { k < stdio::padded_length(remainder as uint64, 3u64) and 1u64 + k + 1u64 < 12u64 implies tmp[1u64 + k] == stdio::padded_digit(remainder as uint64, 3u64, 48u8, k) }, 0u64);
                         close();
@@ -770,7 +780,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         close();
                     }
                     have 1u64 < stdio::padded_length(remainder as uint64, 3u64);
-                    have 1u64 + 1u64 + 1u64 < 12u64 by { normalize(); }
+                    have 1u64 + 1u64 + 1u64 < 12u64 by { close(); }
                     have tmp[2] == stdio::padded_digit(remainder as uint64, 3u64, 48u8, 1u64) by {
                         instantiate(forall (k: uint64) { k < stdio::padded_length(remainder as uint64, 3u64) and 1u64 + k + 1u64 < 12u64 implies tmp[1u64 + k] == stdio::padded_digit(remainder as uint64, 3u64, 48u8, k) }, 1u64);
                         close();
@@ -791,12 +801,12 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         mark fmt;
                         step();
                         // The terminator changes one cell; preserve the earlier bytes explicitly.
-                        have ((j + 1) as int32) != 0 by { rewrite(j, 1); normalize(); }
+                        have ((j + 1) as int32) != 0 by { rewrite(j, 1); close(); }
                         have separate(memory(tmp[j + 1]), memory(tmp[0u64])) by {
                             apply(separation::separate_elements(tmp, j + 1, 0));
                         }
                         have separate(statement(22).statement(1).footprint, memory(tmp[0u64])) by {
-                            normalize() using { j == 1; separate(memory(tmp[j + 1]), memory(tmp[0u64])); };
+                            close();
                         }
                         have tmp[0u64] == at(fmt, tmp[0u64]) by {
                             preserve(memory(tmp[0u64]), statement(22).statement(1));
@@ -805,12 +815,12 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         have defined(tmp[0u64]) by {
                             preserve(memory(tmp[0u64]), statement(22).statement(1));
                         }
-                        have ((j + 1) as int32) != 1 by { rewrite(j, 1); normalize(); }
+                        have ((j + 1) as int32) != 1 by { rewrite(j, 1); close(); }
                         have separate(memory(tmp[j + 1]), memory(tmp[1u64])) by {
                             apply(separation::separate_elements(tmp, j + 1, 1));
                         }
                         have separate(statement(22).statement(1).footprint, memory(tmp[1u64])) by {
-                            normalize() using { j == 1; separate(memory(tmp[j + 1]), memory(tmp[1u64])); };
+                            close();
                         }
                         have tmp[1u64] == at(fmt, tmp[1u64]) by {
                             preserve(memory(tmp[1u64]), statement(22).statement(1));
@@ -851,12 +861,12 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         have j == 2 by { close() using { 2 <= j; j <= 2; }; }
                         mark fmt;
                         step();
-                        have ((j + 1) as int32) != 0 by { rewrite(j, 2); normalize(); }
+                        have ((j + 1) as int32) != 0 by { rewrite(j, 2); close(); }
                         have separate(memory(tmp[j + 1]), memory(tmp[0u64])) by {
                             apply(separation::separate_elements(tmp, j + 1, 0));
                         }
                         have separate(statement(22).statement(1).footprint, memory(tmp[0u64])) by {
-                            normalize() using { j == 2; separate(memory(tmp[j + 1]), memory(tmp[0u64])); };
+                            close();
                         }
                         have tmp[0u64] == at(fmt, tmp[0u64]) by {
                             preserve(memory(tmp[0u64]), statement(22).statement(1));
@@ -865,12 +875,12 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         have defined(tmp[0u64]) by {
                             preserve(memory(tmp[0u64]), statement(22).statement(1));
                         }
-                        have ((j + 1) as int32) != 1 by { rewrite(j, 2); normalize(); }
+                        have ((j + 1) as int32) != 1 by { rewrite(j, 2); close(); }
                         have separate(memory(tmp[j + 1]), memory(tmp[1u64])) by {
                             apply(separation::separate_elements(tmp, j + 1, 1));
                         }
                         have separate(statement(22).statement(1).footprint, memory(tmp[1u64])) by {
-                            normalize() using { j == 2; separate(memory(tmp[j + 1]), memory(tmp[1u64])); };
+                            close();
                         }
                         have tmp[1u64] == at(fmt, tmp[1u64]) by {
                             preserve(memory(tmp[1u64]), statement(22).statement(1));
@@ -879,12 +889,12 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         have defined(tmp[1u64]) by {
                             preserve(memory(tmp[1u64]), statement(22).statement(1));
                         }
-                        have ((j + 1) as int32) != 2 by { rewrite(j, 2); normalize(); }
+                        have ((j + 1) as int32) != 2 by { rewrite(j, 2); close(); }
                         have separate(memory(tmp[j + 1]), memory(tmp[2u64])) by {
                             apply(separation::separate_elements(tmp, j + 1, 2));
                         }
                         have separate(statement(22).statement(1).footprint, memory(tmp[2u64])) by {
-                            normalize() using { j == 2; separate(memory(tmp[j + 1]), memory(tmp[2u64])); };
+                            close();
                         }
                         have tmp[2u64] == at(fmt, tmp[2u64]) by {
                             preserve(memory(tmp[2u64]), statement(22).statement(1));
