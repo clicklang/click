@@ -51,6 +51,18 @@ impl<'a> TypingEnvironment<'a> {
         }
     }
 
+    /// Whether a name is bound to an Integer: an Integer binder, or an outer
+    /// name lowering bound among the Integer bindings.
+    pub(super) fn is_integer_binding<Q: crate::surface::binders::BinderKey + ?Sized>(
+        &self,
+        name: &Q,
+    ) -> bool {
+        match self.binders.get(name) {
+            Some(click_type) => *click_type == ClickType::Integer,
+            None => self.outer.integer_values.contains_key(name),
+        }
+    }
+
     /// Whether a name is bound to an algebraic value.
     pub(super) fn binding_is_algebraic<Q: crate::surface::binders::BinderKey + ?Sized>(
         &self,
