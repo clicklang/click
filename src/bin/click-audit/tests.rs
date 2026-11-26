@@ -54,7 +54,7 @@ fn generic_rust_clause_proofs_stay_on_the_generic_function() {
     let original = fs::read_to_string(&path).unwrap();
     let invalid = original.replacen(
         "ensures result == Option<T>::Some(value);",
-        "ensures result == Option<T>::Some(value) by { have 0 == 1 by normalize(); }",
+        "ensures result == Option<T>::Some(value) by { have 0 == 1 by close(); }",
         1,
     );
     assert_ne!(invalid, original);
@@ -63,7 +63,7 @@ fn generic_rust_clause_proofs_stay_on_the_generic_function() {
         Ok(_) => panic!("the generic function's invalid proof must still be checked"),
         Err(error) => error,
     };
-    assert!(error.contains("normalize"), "{error}");
+    assert!(error.contains("goal: 0 == 1"), "{error}");
     assert!(
         !error.contains("external function contracts cannot carry proof"),
         "{error}"
@@ -76,7 +76,7 @@ fn generic_rust_clause_proofs_stay_on_the_generic_function() {
     let original = fs::read_to_string(path.with_file_name("ffi.interface.click")).unwrap();
     let invalid = original.replacen(
         "ensures 0 <= result and result <= 100;",
-        "ensures 0 <= result and result <= 100 by { normalize(); }",
+        "ensures 0 <= result and result <= 100 by { close(); }",
         1,
     );
     assert_ne!(invalid, original);
@@ -186,7 +186,7 @@ fn generic_cpp_clause_proofs_stay_on_the_generic_method() {
     let original = fs::read_to_string(&path).unwrap();
     let invalid = original.replacen(
         "ensures result == this->value;",
-        "ensures result == this->value by { have 0 == 1 by normalize(); }",
+        "ensures result == this->value by { have 0 == 1 by close(); }",
         1,
     );
     assert_ne!(invalid, original);
@@ -195,14 +195,14 @@ fn generic_cpp_clause_proofs_stay_on_the_generic_method() {
         Ok(_) => panic!("the generic method's invalid proof must still be checked"),
         Err(error) => error,
     };
-    assert!(error.contains("normalize"), "{error}");
+    assert!(error.contains("goal: 0 == 1"), "{error}");
     assert!(
         !error.contains("external function contracts cannot carry proof"),
         "{error}"
     );
 
     let error = verify_c_sources(
-        "extern int32 f() { ensures result == 0 by { normalize(); } }",
+        "extern int32 f() { ensures result == 0 by { close(); } }",
         &[],
     )
     .unwrap_err();
@@ -2763,7 +2763,7 @@ fn a_fully_explicit_script_has_an_auditable_fixed_point() {
         "```c filename=explicit_identity.c\nint32 identity(int32 x) {\n    return x;\n}\n```\n\n\
          ```click\nverifying \"explicit_identity.c\";\n\n\
          int32 identity(int32 x) {\n    ensures result == x;\n} by {\n    step();\n    \
-         normalize();\n}\n```\n\n\
+         close();\n}\n```\n\n\
          ```expect\npass\n```\n",
     )
     .unwrap();

@@ -1921,16 +1921,16 @@ theorem split(x: int32) {
         cases {
             x == 1 => {
                 rewrite(x, 1);
-                normalize();
+                close();
             }
             x == 2 => {
                 rewrite(x, 2);
-                normalize();
+                close();
             }
         }
     }
 }
-theorem unproved(x: int32) { ensures x == 0 by { normalize(); } }
+theorem unproved(x: int32) { ensures x == 0 by { close(); } }
 int32 f() { ensures result == 2; } by { step(); close(); }
 "#;
     let project = ClickProject::new(
@@ -1980,7 +1980,7 @@ int32 f() { ensures result == 2; } by { step(); close(); }
         .unwrap();
         assert!(
             right.ends_with(
-                "\ntactic@12: cases (right arm)\n  adds: x == 2\n  tactic@18: rewrite\n  tactic@19: normalize()"
+                "\ntactic@12: cases (right arm)\n  adds: x == 2\n  tactic@18: rewrite\n  tactic@19: close()"
             ),
             "{right}"
         );
