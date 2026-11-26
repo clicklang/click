@@ -1158,7 +1158,7 @@ int32 check(struct link* node) {
         .unwrap();
         fs::write(
             &sidecar,
-            "verifying \"f.c\";\nint32 f() { ensures result == 1; } by { step(); have 0 == 1 by { normalize(); } step(); close(); }\n",
+            "verifying \"f.c\";\nint32 f() { ensures result == 1; } by { step(); have 0 == 1 by { close(); } step(); close(); }\n",
         )
         .unwrap();
         let nested = entry([
@@ -1168,12 +1168,12 @@ int32 check(struct link* node) {
             sidecar.display().to_string(),
         ])
         .unwrap_err();
-        assert!(nested.contains("tactic@2:66:\n  normalize();"), "{nested}");
+        assert!(nested.contains("tactic@2:66:\n  close();"), "{nested}");
         assert!(
             nested.contains("location: tactic 1 > have body tactic 1"),
             "{nested}"
         );
-        assert!(nested.contains("required evidence: 0 == 1"), "{nested}");
+        assert!(nested.contains("goal: 0 == 1"), "{nested}");
         assert!(nested.contains("steps through: declare x"), "{nested}");
 
         let wrong = entry([
@@ -2088,7 +2088,7 @@ theorem bad(x: int32, y: int32) {
     requires x == y;
     ensures x == 0 by {
         have y == x by { close(); }
-        have x == 0 by { normalize(); }
+        have x == 0 by { close(); }
         close();
     }
 }
@@ -2099,7 +2099,7 @@ theorem arms(x: int32) {
         } else {
             have x != 0 by { close(); }
         }
-        normalize();
+        close();
     }
 }
 int32 f() { ensures result == 2; } by { step(); close(); }
@@ -2118,7 +2118,7 @@ int32 f() { ensures result == 2; } by { step(); close(); }
         };
 
         let error = entry(["verify".to_string(), path.clone()]).unwrap_err();
-        assert!(error.contains("tactic@13:26:\n  normalize();"), "{error}");
+        assert!(error.contains("tactic@13:26:\n  close();"), "{error}");
         let hint = error
             .split_once("\n\nTo get a trace:\n  click ")
             .expect("a failing theorem suggests a trace")
@@ -2131,7 +2131,7 @@ int32 f() { ensures result == 2; } by { step(); close(); }
             traced.contains("\n\nproof trace (checked tactics and branch facts):\ntactic@12: have y == x\n  adds: y == x"),
             "{traced}"
         );
-        assert!(traced.contains("tactic@13:26:\n  normalize();"), "{traced}");
+        assert!(traced.contains("tactic@13:26:\n  close();"), "{traced}");
         assert!(!traced.contains("tactic@14"), "{traced}");
         assert!(!traced.contains("To get a trace:"), "{traced}");
         assert!(traced.len() < 2_000, "{traced}");
@@ -2719,8 +2719,8 @@ int32 f() { ensures result == 2; } by { step(); close(); }
                 "proof",
                 format!(
                     "theorem too_deep_proof() {{ ensures 0 == 0 by {{ {} }} }}\n",
-                    (0..=STRUCTURAL_LIMIT).fold("normalize();".to_string(), |body, _| format!(
-                        "all {{ true => {{ {body} }} true => {{ normalize(); }} }}"
+                    (0..=STRUCTURAL_LIMIT).fold("close();".to_string(), |body, _| format!(
+                        "all {{ true => {{ {body} }} true => {{ close(); }} }}"
                     ))
                 ),
                 "too_deep_proof.ensures_0",
