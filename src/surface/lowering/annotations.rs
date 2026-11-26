@@ -241,6 +241,8 @@ use declarations::Declarations;
 use elaborator::Elaborator;
 use typing_environment::TypingEnvironment;
 #[cfg(test)]
+mod elaboration_tests;
+#[cfg(test)]
 mod tests;
 
 /// The typing environment elaboration reads: the type each name bound
