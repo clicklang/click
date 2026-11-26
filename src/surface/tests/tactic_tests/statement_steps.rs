@@ -1348,7 +1348,7 @@ void change(struct node *g, struct node *source, struct node *t) {
     have separate(memory(g->right), memory(p->tag)) by { close(); }
     step();
     have separate(statement(2).footprint, memory(g->right)) by {
-        normalize() using { separate(memory(g->right), memory(p->tag)); };
+        close() using { separate(memory(g->right), memory(p->tag)); };
     }
     have g->right == at(before_tag, g->right) by {
         preserve(memory(g->right), statement(2));
@@ -1390,8 +1390,8 @@ void change(struct node *g, struct node *source, struct node *t) {
     );
 
     let absent_premise = click_source.replace(
-        "normalize() using { separate(memory(g->right), memory(p->tag)); };",
-        "normalize() using { false; };",
+        "close() using { separate(memory(g->right), memory(p->tag)); };",
+        "close() using { false; };",
     );
     let error = verify_c_sources(&absent_premise, &[("join.c", c_source)])
         .expect_err("an available target must not bypass an unavailable premise");
@@ -1411,7 +1411,9 @@ void change(struct node *g, struct node *source, struct node *t) {
     let error = verify_c_sources(&overwritten_proof, &[("join.c", &overwritten_c)])
         .expect_err("separation must refuse the store that overwrites the pointer");
     assert!(
-        error.message().contains("did not normalize to true"),
+        error
+            .message()
+            .contains("could not prove the current goal from only its listed premises"),
         "{}",
         error.message()
     );
@@ -1468,7 +1470,7 @@ int32 caller(int32 a, int32 b) {
 } by {
     step() {
         requires positive(a) == 1 by {
-            unfold(positive(a)); normalize() using { a > 0; };
+            unfold(positive(a)); close() using { a > 0; };
         }
     }
     step(); close();
