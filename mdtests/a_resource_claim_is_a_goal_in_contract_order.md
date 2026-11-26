@@ -2,7 +2,7 @@
 
 `owns p[0..1]` claims that the function still holds the cell at exit. Like an
 `ensures`, it is a goal, in the order the contract writes it: here it comes
-first, so a `normalize()` written for `result == 7` acts on it instead and is
+first, so the proposition closer `all` acts on the resource goal and is
 refused. `close()` closes a resource goal whose instance the path holds
 (`closers_after_execution_close_a_resource_goal_first.md`).
 
@@ -20,10 +20,10 @@ int32 g(int32 p[]) {
     ensures result == 7;
 } by {
     step_until(function.exit);
-    normalize();
+    all { result == 7 => { close(); } true => { close(); } }
 }
 ```
 
 ```expect
-fail: `normalize` did not prove the current goal `owns p[0..1]`
+fail: `all` did not prove the current goal `owns p[0..1]`
 ```

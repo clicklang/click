@@ -810,7 +810,7 @@ fn explicit_constructor_unfold_has_near_linear_nested_match_work() {
         }
         let source = format!(
             "function nested(n: Nat) -> Nat {{ {body} }}\n\
-            theorem nested_result(n: Nat) {{ ensures nested(n) == n by {{ unfold(nested(n)); normalize(); }} }}"
+            theorem nested_result(n: Nat) {{ ensures nested(n) == n by {{ unfold(nested(n)); close(); }} }}"
         );
         if size > parser::MATCH_NESTING_LIMIT {
             let error = verify_click_theorems(&source)
@@ -852,7 +852,7 @@ fn symbolic_integer_match_lowering_has_near_linear_width_work() {
              theorem nested(value: Integer) {{\n\
                  ensures match Choice::V0(value) {{\n\
                      {arms}\n\
-                 }} == value by {{ normalize(); }}\n\
+                 }} == value by {{ close(); }}\n\
              }}"
         );
         let (result, sample) = scaling_sample(width, || verify_click_theorems(&source));
@@ -881,7 +881,7 @@ fn symbolic_integer_match_lowering_has_near_linear_nested_depth_work() {
         }
         let source = format!(
             "spec enum Box {{ Empty, Wrapped(Integer) }}\n\
-             theorem nested() {{ ensures {body} == 0 by {{ normalize(); }} }}"
+             theorem nested() {{ ensures {body} == 0 by {{ close(); }} }}"
         );
         if depth > parser::MATCH_NESTING_LIMIT {
             let error = verify_click_theorems(&source)
@@ -912,9 +912,13 @@ fn symbolic_integer_match_lowering_has_near_linear_nested_depth_work() {
 fn parametric_theorem_declarations_have_near_linear_checking_work() {
     let mut samples = Vec::new();
     for size in [16, 32, 64, 128] {
-        let source = (0..size).map(|index| format!(
-            "theorem reflexive_{index}<T>(x: T) {{ ensures x == x by {{ normalize(); }} }}\n"
-        )).collect::<String>();
+        let source = (0..size)
+            .map(|index| {
+                format!(
+                    "theorem reflexive_{index}<T>(x: T) {{ ensures x == x by {{ close(); }} }}\n"
+                )
+            })
+            .collect::<String>();
         let (verified, sample) = scaling_sample(size, || verify_click_theorems(&source));
         assert_eq!(
             verified.expect("every unused generic proof checks").len(),
@@ -1413,7 +1417,7 @@ fn unrelated_identity_project(function_count: usize) -> (Vec<(String, String)>, 
     click_source.push('\n');
     for index in 0..function_count {
         click_source.push_str(&format!(
-            "int32 scaling_identity_{index}(int32 x) {{\n    ensures result == x;\n}} by {{\n    step();\n    normalize();\n}}\n\n"
+            "int32 scaling_identity_{index}(int32 x) {{\n    ensures result == x;\n}} by {{\n    step();\n    close();\n}}\n\n"
         ));
     }
     (c_sources, click_source)
@@ -3658,7 +3662,7 @@ fn array_fact_across_local_stores(statement_count: usize, observe_each: bool) ->
     c_source.push_str("}\n");
 
     let mut click_source = String::from(
-        "verifying \"bump.c\";\n\nfunction icount(p: int32[], lo: int32, hi: int32) -> Integer {\n    (lo..hi).fold(0, |acc, k| { acc + to_integer(p[k]) })\n}\n\nvoid bump(int32 a[], int32 n) {\n    requires 0 < n;\n    requires viewable(a[0..n]);\n    views a[0..n];\n} by {\n    step();\n    step();\n    have 0 <= 0 by { close(); }\n    have icount(a, 0, 0) == 0 by {\n        unfold(icount(a, 0, 0));\n        normalize();\n    }\n",
+        "verifying \"bump.c\";\n\nfunction icount(p: int32[], lo: int32, hi: int32) -> Integer {\n    (lo..hi).fold(0, |acc, k| { acc + to_integer(p[k]) })\n}\n\nvoid bump(int32 a[], int32 n) {\n    requires 0 < n;\n    requires viewable(a[0..n]);\n    views a[0..n];\n} by {\n    step();\n    step();\n    have 0 <= 0 by { close(); }\n    have icount(a, 0, 0) == 0 by {\n        unfold(icount(a, 0, 0));\n        close();\n    }\n",
     );
     // One use of the fact after every step: the walk is asked from a fresh
     // state each time, which is the shape that goes quadratic when an
@@ -3686,7 +3690,7 @@ fn array_fact_across_declarations(statement_count: usize) -> (String, String) {
     c_source.push_str("}\n");
 
     let mut click_source = String::from(
-        "verifying \"bump.c\";\n\nfunction icount(p: int32[], lo: int32, hi: int32) -> Integer {\n    (lo..hi).fold(0, |acc, k| { acc + to_integer(p[k]) })\n}\n\nvoid bump(int32 a[], int32 n) {\n    requires 0 < n;\n    requires viewable(a[0..n]);\n    views a[0..n];\n} by {\n    have 0 <= 0 by { close(); }\n    have icount(a, 0, 0) == 0 by {\n        unfold(icount(a, 0, 0));\n        normalize();\n    }\n",
+        "verifying \"bump.c\";\n\nfunction icount(p: int32[], lo: int32, hi: int32) -> Integer {\n    (lo..hi).fold(0, |acc, k| { acc + to_integer(p[k]) })\n}\n\nvoid bump(int32 a[], int32 n) {\n    requires 0 < n;\n    requires viewable(a[0..n]);\n    views a[0..n];\n} by {\n    have 0 <= 0 by { close(); }\n    have icount(a, 0, 0) == 0 by {\n        unfold(icount(a, 0, 0));\n        close();\n    }\n",
     );
     for _ in 0..statement_count {
         click_source.push_str("    step();\n");
@@ -3708,7 +3712,7 @@ fn array_fact_across_calls(statement_count: usize) -> (String, String) {
     c_source.push_str("    return h[0];\n}\n");
 
     let mut click_source = String::from(
-        "verifying \"keep_h.c\";\n\nfunction icount(p: int32[], lo: int32, hi: int32) -> Integer {\n    (lo..hi).fold(0, |acc, k| { acc + to_integer(p[k]) })\n}\n\nvoid touch_g() {\n    owns g[0..1];\n}\n\nint32 keep_h() {\n    requires h[0] == 5;\n    owns g[0..1];\n    views h[0..1];\n    ensures result == 5;\n} by {\n    have 0 <= 0 by { close(); }\n    have icount(h, 0, 0) == 0 by {\n        unfold(icount(h, 0, 0));\n        normalize();\n    }\n",
+        "verifying \"keep_h.c\";\n\nfunction icount(p: int32[], lo: int32, hi: int32) -> Integer {\n    (lo..hi).fold(0, |acc, k| { acc + to_integer(p[k]) })\n}\n\nvoid touch_g() {\n    owns g[0..1];\n}\n\nint32 keep_h() {\n    requires h[0] == 5;\n    owns g[0..1];\n    views h[0..1];\n    ensures result == 5;\n} by {\n    have 0 <= 0 by { close(); }\n    have icount(h, 0, 0) == 0 by {\n        unfold(icount(h, 0, 0));\n        close();\n    }\n",
     );
     for _ in 0..statement_count {
         click_source.push_str("    step();\n");
@@ -10616,9 +10620,13 @@ fn multi_statement_transport_replay_scales_with_explicit_links() {
             "void keep(unsigned char *p, unsigned char *q) {{ {} }}",
             (0..size).map(|i| format!("*p = {i};")).collect::<String>()
         );
-        let separations = (0..size).map(|i| format!(
-            "step(); have separate(statement({i}).footprint, memory(*q)) by {{ normalize() using {{ separate(memory(*p), memory(*q)); }}; }}"
-        )).collect::<String>();
+        let separations = (0..size)
+            .map(|i| {
+                format!(
+                    "step(); have separate(statement({i}).footprint, memory(*q)) by {{ close(); }}"
+                )
+            })
+            .collect::<String>();
         let links = written_preservation_links(size, "*q");
         let source = format!(
             r#"
@@ -10663,9 +10671,13 @@ fn inequality_transport_replay_scales_with_explicit_links() {
             "void keep(int *p, int *q) {{ {} }}",
             (0..size).map(|i| format!("*p = {i};")).collect::<String>()
         );
-        let separations = (0..size).map(|i| format!(
-            "step(); have separate(statement({i}).footprint, memory(*q)) by {{ normalize() using {{ separate(memory(*p), memory(*q)); }}; }}"
-        )).collect::<String>();
+        let separations = (0..size)
+            .map(|i| {
+                format!(
+                    "step(); have separate(statement({i}).footprint, memory(*q)) by {{ close(); }}"
+                )
+            })
+            .collect::<String>();
         let links = written_preservation_links(size, "*q");
         let source = format!(
             r#"
@@ -10710,9 +10722,13 @@ fn known_value_transport_replay_scales_with_explicit_links() {
             "void keep(int *p, int *q) {{ {} }}",
             (0..size).map(|i| format!("*p = {i};")).collect::<String>()
         );
-        let separations = (0..size).map(|i| format!(
-            "step(); have separate(statement({i}).footprint, memory(*q)) by {{ normalize() using {{ separate(memory(*p), memory(*q)); }}; }}"
-        )).collect::<String>();
+        let separations = (0..size)
+            .map(|i| {
+                format!(
+                    "step(); have separate(statement({i}).footprint, memory(*q)) by {{ close(); }}"
+                )
+            })
+            .collect::<String>();
         let links = written_preservation_links(size, "*q");
         let source = format!(
             r#"
@@ -10757,9 +10773,13 @@ fn state_comparison_transport_replay_scales_with_explicit_links() {
             "void keep(int *p, int *q) {{ {} }}",
             (0..size).map(|i| format!("*p = {i};")).collect::<String>()
         );
-        let separations = (0..size).map(|i| format!(
-            "step(); have separate(statement({i}).footprint, memory(*q)) by {{ normalize() using {{ separate(memory(*p), memory(*q)); }}; }}"
-        )).collect::<String>();
+        let separations = (0..size)
+            .map(|i| {
+                format!(
+                    "step(); have separate(statement({i}).footprint, memory(*q)) by {{ close(); }}"
+                )
+            })
+            .collect::<String>();
         let links = written_preservation_links(size, "*q");
         let source = format!(
             r#"
@@ -10821,7 +10841,9 @@ fn two_read_transport_replay_cost(indexed: bool) {
         for i in 0..size {
             setup.push_str("step();");
             for read in ["q", "r"] {
-                setup.push_str(&format!("have separate(statement({i}).footprint, memory(*{read})) by {{ normalize() using {{ separate(memory(*p), memory(*{read})); }}; }}"));
+                setup.push_str(&format!(
+                    "have separate(statement({i}).footprint, memory(*{read})) by {{ close(); }}"
+                ));
             }
         }
         let source = format!(
@@ -10881,7 +10903,9 @@ fn conjunction_transport_replay_scales_with_explicit_links() {
         for i in 0..size {
             setup.push_str("step();");
             for read in ["q", "r"] {
-                setup.push_str(&format!("have separate(statement({i}).footprint, memory(*{read})) by {{ normalize() using {{ separate(memory(*p), memory(*{read})); }}; }}"));
+                setup.push_str(&format!(
+                    "have separate(statement({i}).footprint, memory(*{read})) by {{ close(); }}"
+                ));
             }
         }
         let source = format!(
@@ -11045,7 +11069,7 @@ fn conjunction_projection_transport_scales_with_written_source() {
             }} by {{
                 step();
                 have separate(statement(0).footprint, memory(*q)) by {{
-                    normalize() using {{ separate(memory(*p), memory(*q)); }};
+                    close();
                 }}
                 have *q == 7 by {{
                     {links} close();
@@ -11107,7 +11131,9 @@ fn conjunction_selection_transport_scales_with_sources_targets_and_premises() {
                 "views *q{i}; requires separate(memory(*p), memory(*q{i}));"
             ));
             if i % 2 == 0 {
-                setup.push_str(&format!("have separate(statement(0).footprint, memory(*q{i})) by {{ normalize() using {{ separate(memory(*p), memory(*q{i})); }}; }}"));
+                setup.push_str(&format!(
+                    "have separate(statement(0).footprint, memory(*q{i})) by {{ close(); }}"
+                ));
                 links.push_str(&written_preservation_links(1, &format!("*q{i}")));
             }
         }
@@ -11167,7 +11193,9 @@ fn implication_transport_replay_scales_with_explicit_links() {
         for i in 0..size {
             setup.push_str("step();");
             for read in ["q", "r"] {
-                setup.push_str(&format!("have separate(statement({i}).footprint, memory(*{read})) by {{ normalize() using {{ separate(memory(*p), memory(*{read})); }}; }}"));
+                setup.push_str(&format!(
+                    "have separate(statement({i}).footprint, memory(*{read})) by {{ close(); }}"
+                ));
             }
         }
         let source = format!(
@@ -11244,7 +11272,9 @@ fn compound_implication_transport_scales_with_reads_and_logical_depth() {
                 requirements.push_str(&format!(
                     "views *q{i}; requires separate(memory(*p), memory(*q{i}));"
                 ));
-                setup.push_str(&format!("have separate(statement(0).footprint, memory(*q{i})) by {{ normalize() using {{ separate(memory(*p), memory(*q{i})); }}; }}"));
+                setup.push_str(&format!(
+                    "have separate(statement(0).footprint, memory(*q{i})) by {{ close(); }}"
+                ));
                 links.push_str(&written_preservation_links(1, &format!("*q{i}")));
             }
             let leaves = (0..size)
@@ -11845,7 +11875,7 @@ int32 probe() {{
         apply(click::separation::separate_elements(g, 255, 0));
     }}
     have separate(statement({calls}).footprint, memory(g[0])) by {{
-        normalize() using {{ separate(memory(g[255]), memory(g[0])); }};
+        close();
     }}
     have at(after, g[0]) == at(before, g[0]) by {{
         preserve(memory(g[0]), statement({calls}));

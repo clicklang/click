@@ -1,7 +1,7 @@
 # A closer with no open goal is refused
 
 The companion of `closers_after_execution_close_a_resource_goal_first.md`
-with an extra `normalize()`. Once its source clauses and contract-closing
+with an extra `all` closer. Once its source clauses and contract-closing
 obligations are closed there is nothing left
 for a closer to act on, and the extra closer is refused rather than silently
 ignored.
@@ -23,10 +23,10 @@ int32 g(int32 p[]) {
     close();
     close();
     close(); close(); close();
-    normalize();
+    all { result == 7 => { close(); } true => { close(); } }
 }
 ```
 
 ```expect
-fail: `normalize` has no goal to close
+fail: `all` has no goal to close
 ```
