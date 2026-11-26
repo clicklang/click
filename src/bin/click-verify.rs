@@ -1993,35 +1993,21 @@ mod tests {
 
     #[test]
     #[ignore = "nightly: 0.5s in the parallel gate"]
-    fn refused_transport_names_the_cell_and_prints_checked_effects() {
+    fn refused_preserve_names_the_cell_and_missing_separation() {
         let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("mdtests/loop_binder_instance_footprint_includes_its_memory.md");
         let report =
             entry_with([fixture.display().to_string()]).expect_err("the loop may write the cell");
         assert!(
-            report.contains("effect facts relating states at this frontier"),
+            report.contains("preserve separation is not exactly available"),
             "{report}"
         );
-        assert!(report.contains("checked source (holds)"), "{report}");
-        assert!(report.contains("checked target (wanted)"), "{report}");
         assert!(
-            report.contains(
-                "transport label definitions (shared by checked source, target, and effects)"
-            ),
+            report.contains("preserve(memory(occupied[start]), loop(0));"),
             "{report}"
         );
-        assert!(report.contains("loop effect: may write"), "{report}");
-        assert!(report.contains("store to occupied[start]"), "{report}");
+        assert!(report.contains("required evidence: at(<state A>, occupied[start]) == at(statement(1).exit, occupied[start])"), "{report}");
         assert!(report.contains("i >= end"), "{report}");
-        assert!(report.contains("at(pre, occupied[start])"), "{report}");
-        assert!(!report.contains("lowered target"), "{report}");
-        assert_eq!(
-            report
-                .matches("some effect facts have no exact Click spelling")
-                .count(),
-            0,
-            "{report}"
-        );
     }
 
     #[test]

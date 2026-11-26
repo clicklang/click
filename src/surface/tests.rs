@@ -9,28 +9,28 @@ fn expand_checked_grouped_claim(
     verified: &[VerifiedProgramTheorem],
     function: &str,
 ) -> Result<String, ClickError> {
+    expand_checked_grouped_claim_with_spans(source, verified, function)
+        .map(|expanded| expanded.source)
+}
+
+fn expand_checked_grouped_claim_with_spans(
+    source: &str,
+    verified: &[VerifiedProgramTheorem],
+    function: &str,
+) -> Result<SelectedTacticExpansion, ClickError> {
     // An omitted proof of one claim is that claim's own proof.
-    let grouped = expand_verified_function_claim_source_by_label(
-        source,
-        verified,
-        &format!("{function}.contract"),
-    )?;
-    let single = || {
-        expand_verified_function_claim_source_by_label(
+    for label in ["contract", "ensures_0"] {
+        if let Some(expanded) = expansion::expand_verified_function_claim_with_span(
             source,
             verified,
-            &format!("{function}.ensures_0"),
-        )
-    };
-    match grouped {
-        Some(expanded) => Some(expanded),
-        None => single()?,
+            &format!("{function}.{label}"),
+        )? {
+            return Ok(expanded);
+        }
     }
-    .ok_or_else(|| {
-        ClickError::new(format!(
-            "checked claim for `{function}` is not declared in this source"
-        ))
-    })
+    Err(ClickError::new(format!(
+        "checked claim for `{function}` is not declared in this source"
+    )))
 }
 
 /// Expands a function's whole proof: its grouped proof, or, when its one

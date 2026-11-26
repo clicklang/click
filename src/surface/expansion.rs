@@ -295,6 +295,15 @@ pub fn expand_verified_function_claim_source_by_label(
     verified: &[VerifiedProgramTheorem],
     claim_label: &str,
 ) -> Result<Option<String>, ClickError> {
+    expand_verified_function_claim_with_span(click_source, verified, claim_label)
+        .map(|expanded| expanded.map(|expanded| expanded.source))
+}
+
+pub(super) fn expand_verified_function_claim_with_span(
+    click_source: &str,
+    verified: &[VerifiedProgramTheorem],
+    claim_label: &str,
+) -> Result<Option<SelectedTacticExpansion>, ClickError> {
     let Some((function_block, claim)) = verified.iter().find_map(|theorem| {
         function_expansion_claim_by_label(&theorem.function_block, claim_label)
             .map(|claim| (&theorem.function_block, claim))
@@ -327,12 +336,11 @@ pub fn expand_verified_function_claim_source_by_label(
         }
         ProofSourceEdit::OmittedLoopPhase { .. } => unreachable!(),
     };
-    Ok(Some(splice_source(
-        click_source,
-        &tokens,
-        span,
-        &replacement,
-    )?))
+    let (source, span) = splice_source_with_span(click_source, &tokens, span, &replacement)?;
+    Ok(Some(SelectedTacticExpansion {
+        source,
+        replacement_spans: std::iter::once(span).collect(),
+    }))
 }
 
 fn expand_project_claim_source(
