@@ -139,7 +139,7 @@ void write(struct job *job, int32 *dest) {
     mark after_{index};
     have job->output == at(before_{index}, job->output) by {{
         have separate(statement({index}).footprint, memory(job->output)) by {{
-            normalize() using {{ at(entry, separate(memory(job->output), memory(dest[0..1]))); }};
+            close();
         }}
         preserve(memory(job->output), statement({index}));
     }}
@@ -188,7 +188,7 @@ fn prepared_call_obligations_execute_once_as_contract_and_context_grow() {
             let ambient = (1..=size)
                 .map(|n| format!("requires unrelated != -{n};\n"))
                 .collect::<String>();
-            let body = "have positive(a) == 1 by { unfold(positive(a)); normalize() using { a > 0; }; } close();";
+            let body = "have positive(a) == 1 by { unfold(positive(a)); close(); } close();";
             let step = if mode == "bare" {
                 "step();".to_string()
             } else if mode == "by" {
@@ -428,7 +428,7 @@ resource positive_value(x: int32) {{ field value: int32; fact positive(value) ==
 void make(int32 x) {{ requires x > 0; produces p: positive_value(x); }} by {{
     {steps}
     let p = fold(positive_value(x), {{ value: x }}) by {{
-        have positive(x) == 1 by {{ unfold(positive(x)); normalize() using {{ x > 0; }}; }}
+        have positive(x) == 1 by {{ unfold(positive(x)); close(); }}
         close();
     }}
     have positive(x) == 1 by close();
@@ -464,7 +464,7 @@ void make(int32 x) {{ requires x > 0; produces p: positive_value(x); }} by {{
 fn prepared_return_fold_constructs_once_without_recovering_history() {
     let mut samples = Vec::new();
     for count in [1, 8, 32] {
-        let facts = "have x == x by { normalize(); }\n".repeat(count);
+        let facts = "have x == x by { close(); }\n".repeat(count);
         let source = format!(
             r#"
 verifying "fold.c";
@@ -516,7 +516,7 @@ fn prepared_population_fold_constructs_once() {
     for named in [true, false] {
         for returned in [false, true] {
             for count in [1, 8, 32] {
-                let history = "have x == x by { normalize(); }\n".repeat(count);
+                let history = "have x == x by { close(); }\n".repeat(count);
                 let before = if returned {
                     "step_until(function.exit);"
                 } else {
@@ -645,7 +645,7 @@ fn prepared_legacy_outcome_fold_applies_once() {
     let mut samples = Vec::new();
     for opaque in [false, true] {
         for size in [1, 8, 32] {
-            let history = "have x == x by { normalize(); }\n".repeat(size);
+            let history = "have x == x by { close(); }\n".repeat(size);
             let source = format!(
                 r#"
 verifying "legacy.c";
@@ -701,7 +701,7 @@ fn prepared_view_call_does_not_retry_borrow_recovery() {
     let mut samples = Vec::new();
     for callback in [false, true] {
         for size in [1, 8, 32] {
-            let history = "have a == a by { normalize(); }\n".repeat(size);
+            let history = "have a == a by { close(); }\n".repeat(size);
             let source = format!(
                 r#"
 verifying "call.c";
@@ -774,7 +774,7 @@ fn prepared_guarded_statement_does_not_retry_execution() {
     let mut samples = Vec::new();
     for assertion in [false, true] {
         for size in [1, 8, 32] {
-            let history = "have x == x by { normalize(); }\n".repeat(size);
+            let history = "have x == x by { close(); }\n".repeat(size);
             let (c, contract, steps, operation) = if assertion {
                 (
                     "int32 values[4]; int32 f(int32 x) { int32 r; r = values[x]; return r; }",

@@ -387,7 +387,7 @@ fn parser_rejects_excessive_parenthesis_depth_with_a_source_diagnostic() {
 fn parser_bounds_non_parenthesized_surface_nesting_before_ast_construction() {
     let supported_not = "not ".repeat(32);
     let supported_source = format!(
-        "theorem shallow() {{ requires {supported_not}0 == 0; ensures 0 == 0 by {{ normalize(); }} }}"
+        "theorem shallow() {{ requires {supported_not}0 == 0; ensures 0 == 0 by {{ close(); }} }}"
     );
     let supported = parse(&supported_source).expect("the supported unary boundary should validate");
     verify_click_theorems(&supported_source)
@@ -467,9 +467,9 @@ fn parser_bounds_non_parenthesized_surface_nesting_before_ast_construction() {
             .contains("bracket nesting exceeds Click's supported depth")
     );
 
-    let mut proof_body = String::from("normalize();");
+    let mut proof_body = String::from("close();");
     for _ in 0..=parser::STRUCTURAL_NESTING_LIMIT {
-        proof_body = format!("have 0 == 0 by {{ {proof_body} }} normalize();");
+        proof_body = format!("have 0 == 0 by {{ {proof_body} }} close();");
     }
     let proof_error = parser::parse_file_items(&format!(
         "theorem too_deep_proof() {{ ensures 0 == 0 by {{ {proof_body} }} }}"
@@ -620,7 +620,7 @@ fn surface_depths_survive_consumption(
         quantifier_body = format!("forall (q{index}: Integer) {{ {quantifier_body} }}");
     }
     let quantifier_source = format!(
-        "theorem at_limit_quantifiers() {{ requires {quantifier_body}; ensures 0 == 0 by {{ normalize(); }} }}"
+        "theorem at_limit_quantifiers() {{ requires {quantifier_body}; ensures 0 == 0 by {{ close(); }} }}"
     );
     verify_click_theorems(&quantifier_source)
         .expect("the supported quantifier boundary should verify");
@@ -658,9 +658,9 @@ fn surface_depths_survive_consumption(
     drop(sequence_file);
 
     let proof_goal = "0 == 0";
-    let mut proof_body = String::from("normalize();");
+    let mut proof_body = String::from("close();");
     for _ in 0..structural_depth - 2 {
-        proof_body = format!("have 0 == 0 by {{ {proof_body} }} normalize();");
+        proof_body = format!("have 0 == 0 by {{ {proof_body} }} close();");
     }
     let proof_source =
         format!("theorem at_limit_proof() {{ ensures {proof_goal} by {{ {proof_body} }} }}");
@@ -696,7 +696,7 @@ fn surface_depths_survive_consumption(
         format!("if 0 == 0 {{ {body} }} else {{ 0 }}")
     });
     let conditional_source = format!(
-        "theorem at_limit_conditionals() {{ requires {nested_conditionals} == 0; ensures 0 == 0 by {{ normalize(); }} }}"
+        "theorem at_limit_conditionals() {{ requires {nested_conditionals} == 0; ensures 0 == 0 by {{ close(); }} }}"
     );
     verify_click_theorems(&conditional_source)
         .expect("the supported conditional boundary should verify");
@@ -1235,7 +1235,7 @@ fn parses_and_prints_pure_function_unfold() {
             requires n <= 0;
             ensures clamp(n) == 0 by {
                 unfold(clamp(n));
-                normalize();
+                close();
             }
         }
     "#;
@@ -2298,7 +2298,7 @@ theorem reflexive_pair() {
     let explicit = r#"
 theorem reflexive_pair() {
     ensures 1 == 1 and 2 == 2 by {
-        all { 1 == 1 => { normalize(); } 2 == 2 => { normalize(); } }
+        all { 1 == 1 => { close(); } 2 == 2 => { close(); } }
     }
 }
 "#;
@@ -2330,7 +2330,7 @@ theorem reflexive_choice() {
     let explicit_left = r#"
 theorem reflexive_choice() {
     ensures 1 == 1 or 2 == 3 by {
-        have 1 == 1 by { normalize(); }
+        have 1 == 1 by { close(); }
         close();
     }
 }
@@ -2340,7 +2340,7 @@ theorem reflexive_choice() {
     let explicit_right = r#"
 theorem reflexive_choice() {
     ensures 2 == 3 or 1 == 1 by {
-        have 1 == 1 by { normalize(); }
+        have 1 == 1 by { close(); }
         close();
     }
 }
@@ -3283,14 +3283,14 @@ fn integer_datatype_match_iota_survives_function_substitution_and_recheck() {
             } == observe(value) by {
                 unfold(make(value));
                 unfold(observe(value));
-                normalize();
+                close();
             }
         }
     "#;
     let verified = verify_click_theorems(source).unwrap();
     let expanded = verified[0].expanded_proof_source().unwrap();
     let rechecked = source.replace(
-        "by {\n                unfold(make(value));\n                unfold(observe(value));\n                normalize();\n            }",
+        "by {\n                unfold(make(value));\n                unfold(observe(value));\n                close();\n            }",
         &expanded,
     );
     verify_click_theorems(&rechecked).unwrap();
@@ -3316,20 +3316,20 @@ fn integer_datatype_match_numeral_arm_inherits_integer_result_and_rechecks() {
         theorem extraction(value: Integer) {
             ensures project(Box::Wrapped(value)) == value by {
                 unfold(project(Box::Wrapped(value)));
-                normalize();
+                close();
             }
         }
         theorem arithmetic_match() {
             ensures match Box::Empty {
                 Box::Empty => 0,
                 Box::Wrapped(inner) => inner + 1,
-            } == 0 by { normalize(); }
+            } == 0 by { close(); }
         }
     "#;
     let verified = verify_click_theorems(source).unwrap();
     let expanded = verified[0].expanded_proof_source().unwrap();
     let rechecked = source.replace(
-        "by {\n                unfold(project(Box::Wrapped(value)));\n                normalize();\n            }",
+        "by {\n                unfold(project(Box::Wrapped(value)));\n                close();\n            }",
         &expanded,
     );
     verify_click_theorems(&rechecked).unwrap();
@@ -3350,14 +3350,14 @@ fn integer_match_constructor_fields_retain_unused_conversion_definedness() {
                 Pair::Make(unused, kept) => kept,
             } == 0 by {
                 unfold(make(value));
-                normalize();
+                close();
             }
         }
     "#;
     let verified = verify_click_theorems(source).unwrap();
     let expanded = verified[0].expanded_proof_source().unwrap();
     let rechecked = source.replace(
-        "by {\n                unfold(make(value));\n                normalize();\n            }",
+        "by {\n                unfold(make(value));\n                close();\n            }",
         &expanded,
     );
     verify_click_theorems(&rechecked).unwrap();
@@ -3417,7 +3417,7 @@ fn symbolic_integer_datatype_match_does_not_capture_outer_binding() {
             ensures match boxed {
                 Box::Empty => to_integer(0),
                 Box::Wrapped(value) => value,
-            } == value by { normalize(); }
+            } == value by { close(); }
         }
     "#;
     let error =
@@ -4735,7 +4735,7 @@ fn inline_callback_identity_rejects_ambiguous_translation_units() {
         verifying "alpha.c";
         verifying "beta.c";
         contract int32 One() { ensures result == 1; }
-        int32 callback() { ensures result == 1; } by { step_until(function.exit); normalize(); }
+        int32 callback() { ensures result == 1; } by { step_until(function.exit); close(); }
         theorem callback_contract() {
             ensures One(&callback) by { unfold(One(&callback)); close(); }
         }
@@ -4775,10 +4775,10 @@ fn a_rust_sidecar_writes_click_types_in_rust() {
             (0..end).fold(0, |acc, k| { acc + to_integer(bytes[k] as int32) })
         }
         theorem three_hundred_is_big() {
-            ensures big(300u32) by { unfold(big(300u32)); normalize(); }
+            ensures big(300u32) by { unfold(big(300u32)); close(); }
         }
         theorem three_hundred_keeps_its_low_byte() {
-            ensures low(300u32) == 44 by { unfold(low(300u32)); normalize(); }
+            ensures low(300u32) == 44 by { unfold(low(300u32)); close(); }
         }
         theorem a_comparison_is_a_bool_value(b: bool) {
             requires b == (5u32 > 3u32);
@@ -4791,15 +4791,16 @@ fn a_rust_sidecar_writes_click_types_in_rust() {
     let error = verify_c_sources(
         "verifying \"bytes.rs\"; function big(x: u32) -> bool { x > 255u32 }
          theorem two_hundred_is_big() {
-             ensures big(200u32) by { unfold(big(200u32)); normalize(); }
+             ensures big(200u32) by { unfold(big(200u32)); close(); }
          }",
         &rust_source,
     )
     .expect_err("200 is not big");
     assert!(
-        error.message.contains("did not normalize to true"),
+        error.message().contains("could not establish")
+            && error.message().contains("200u32 > 255u32"),
         "{}",
-        error.message
+        error.message()
     );
     let error = verify_c_sources(
         "verifying \"bytes.rs\"; theorem wrong(b: bool) {
