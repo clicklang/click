@@ -784,11 +784,11 @@ fn explicit_straight_line_swap_preserves_an_entry_bound() {
                 mark first_written;
                 step();
                 have to_integer($index) != to_integer($index + 1) by {
-                    normalize() using { j == 0; };
+                    close() using { j == 0; };
                 }
                 apply(separation::separate_elements(p, $index, $index + 1));
                 have separate(statement(3).footprint, memory(p[$index])) by {
-                    normalize() using { separate(memory(p[$index]), memory(p[$index + 1])); };
+                    close() using { separate(memory(p[$index]), memory(p[$index + 1])); };
                 }
                 have p[$index] == at(first_written, p[$index]) by {
                     preserve(memory(p[$index]), statement(3));
@@ -831,24 +831,24 @@ fn explicit_straight_line_swap_preserves_an_entry_bound() {
 fn explicit_swap_loop_fixture(include_entry_bounds: bool) -> (&'static str, String) {
     let c = "int32 swap(int32 p[3]) { int32 j; int32 tmp; j = 0; while (j < 1) { if (p[j + 1] < p[j]) { tmp = p[j]; p[j] = p[j + 1]; p[j + 1] = tmp; } j = j + 1; } return 0; }";
     let entry_bounds = r#"
-        have to_integer(j) != 2 by { normalize() using { j == 0; }; }
+        have to_integer(j) != 2 by { rewrite(j, 0); close(); }
         have to_integer(j + 1) == 1 by {
             rewrite(j, 0);
-            normalize();
+            close();
         }
-        have to_integer(j + 1) != 2 by { rewrite(to_integer(j + 1), 1); normalize(); }
-        have to_integer(j + 1) != 0 by { rewrite(to_integer(j + 1), 1); normalize(); }
+        have to_integer(j + 1) != 2 by { rewrite(to_integer(j + 1), 1); close(); }
+        have to_integer(j + 1) != 0 by { rewrite(to_integer(j + 1), 1); close(); }
         apply(click::separation::separate_elements(p, j, 2));
         apply(click::separation::separate_elements(p, j + 1, 2));
         apply(click::separation::separate_elements(p, j + 1, 0));
         have separate(statement(3).statement(0).statement(1).footprint, memory(p[2])) by {
-            normalize() using { separate(memory(p[j]), memory(p[2])); };
+            close() using { separate(memory(p[j]), memory(p[2])); };
         }
         have at(statement(3).statement(0).statement(1).exit, p[2]) == at(statement(3).statement(0).statement(1).entry, p[2]) by {
             preserve(memory(p[2]), statement(3).statement(0).statement(1));
         }
         have separate(statement(3).statement(0).statement(2).footprint, memory(p[2])) by {
-            normalize() using { separate(memory(p[j + 1]), memory(p[2])); };
+            close() using { separate(memory(p[j + 1]), memory(p[2])); };
         }
         have p[2] == at(statement(3).statement(0).statement(1).exit, p[2]) by {
             preserve(memory(p[2]), statement(3).statement(0).statement(2));
@@ -858,7 +858,7 @@ fn explicit_swap_loop_fixture(include_entry_bounds: bool) -> (&'static str, Stri
             close();
         }
         have separate(statement(3).statement(0).statement(2).footprint, memory(p[0])) by {
-            normalize() using { separate(memory(p[j + 1]), memory(p[0])); };
+            close() using { separate(memory(p[j + 1]), memory(p[0])); };
         }
         have p[0] == at(statement(3).statement(0).statement(1).exit, p[0]) by {
             preserve(memory(p[0]), statement(3).statement(0).statement(2));
