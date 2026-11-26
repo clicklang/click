@@ -119,7 +119,7 @@ void release_run(struct arena* arena, int32 start, int32 end) {
     let w = fold(arena_clear_window(arena->data, arena->occupied, arena->capacity, start, end), { next: initial_next });
     step(); step();
     loop clear_occupied {
-        decreases end - i;
+        decreases to_integer(end) - to_integer(i);
         owns w: arena_clear_window(arena->data, arena->occupied, arena->capacity, start, end);
         invariant w.next == i;
         invariant separate(memory(arena->occupied[0..arena->capacity]), memory(*arena));
@@ -336,6 +336,17 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                 next: at(opened, i) + 1
             });
             have start <= end;
+            have w.next == i;
+            have i <= end;
+            have to_integer(i) == to_integer(at(opened, i)) + 1;
+            have 0 <= to_integer(end) - to_integer(i) by {
+                close() using { i <= end; };
+            }
+            have to_integer(end) - to_integer(i) < to_integer(end) - to_integer(at(opened, i)) by {
+                rewrite(to_integer(i), to_integer(at(opened, i)) + 1);
+                close();
+            }
+            close();
         }
     }
     let { next: n } = unfold(w);

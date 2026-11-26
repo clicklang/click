@@ -59,17 +59,17 @@ theorem zeros_frame(
             unfold(zeros(b, lo, hi));
             have to_integer(if a[hi - 1] == 0 { 1 } else { 0 })
                 == to_integer(if b[hi - 1] == 0 { 1 } else { 0 }) by {
-                close() using { a[hi - 1] == b[hi - 1]; };
+                rewrite(b[hi - 1], a[hi - 1]);
+                close();
             }
             have zeros(a, lo, hi - 1)
                 + to_integer(if a[hi - 1] == 0 { 1 } else { 0 })
                 == zeros(b, lo, hi - 1)
                     + to_integer(if b[hi - 1] == 0 { 1 } else { 0 }) by {
-                close() using {
-                    zeros(a, lo, hi - 1) == zeros(b, lo, hi - 1);
-                    to_integer(if a[hi - 1] == 0 { 1 } else { 0 })
-                        == to_integer(if b[hi - 1] == 0 { 1 } else { 0 });
-                };
+                rewrite(zeros(a, lo, hi - 1), zeros(b, lo, hi - 1));
+                rewrite(to_integer(if a[hi - 1] == 0 { 1 } else { 0 }),
+                        to_integer(if b[hi - 1] == 0 { 1 } else { 0 }));
+                close();
             }
             close();
         }

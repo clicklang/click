@@ -183,6 +183,10 @@ void arena_write(struct region* region, int32 index, int32 value) {
     have region->arena->occupied == at(statement(0).entry, region->arena->occupied) by {
         preserve(memory(region->arena->occupied), statement(0));
     }
+    have separate(statement(0).footprint, memory(region->arena->live_regions)) by { close() using {}; }
+    have region->arena->live_regions == at(statement(0).entry, region->arena->live_regions) by {
+        preserve(memory(region->arena->live_regions), statement(0));
+    }
     step();
     have separate(statement(1).footprint, memory(region->arena)) by { close() using {}; }
     have region->arena == at(statement(1).entry, region->arena) by {
@@ -196,11 +200,16 @@ void arena_write(struct region* region, int32 index, int32 value) {
     have region->arena->occupied == at(statement(1).entry, region->arena->occupied) by {
         preserve(memory(region->arena->occupied), statement(1));
     }
+    have separate(statement(1).footprint, memory(region->arena->live_regions)) by { close() using {}; }
+    have region->arena->live_regions == at(statement(1).entry, region->arena->live_regions) by {
+        preserve(memory(region->arena->live_regions), statement(1));
+    }
     mark before_access;
     have at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena)));
     have at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->data)));
     have at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->occupied)));
     have at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->capacity)));
+    have at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->live_regions)));
     step();
     have separate(statement(2).footprint, memory(region->arena->capacity)) by {
         close() using { at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->capacity))); };
@@ -221,6 +230,13 @@ void arena_write(struct region* region, int32 index, int32 value) {
         preserve(memory(region->arena->occupied), statement(2));
     }
 
+    have separate(statement(2).footprint, memory(region->arena->live_regions)) by {
+        close() using { at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->live_regions))); };
+    }
+    have region->arena->live_regions == at(statement(2).entry, region->arena->live_regions) by {
+        preserve(memory(region->arena->live_regions), statement(2));
+    }
+    have region->arena->live_regions == n by { close(); }
     have region->arena == old(region->arena);
     have region->arena->data == old(region->arena->data);
 
