@@ -24,7 +24,7 @@ fn a_pure_function_slice_parameter_is_its_pointer_and_length() {
         theorem size_is_length(p: *const u8, n: usize) {{
             ensures size(slice::from_raw_parts(p, n)) == n by {{
                 unfold(size(slice::from_raw_parts(p, n)));
-                normalize();
+                close();
             }}
         }}
         theorem both_adds(p: *const u8, n: usize, k: usize) {{
@@ -33,7 +33,7 @@ fn a_pure_function_slice_parameter_is_its_pointer_and_length() {
             ensures to_integer(both(slice::from_raw_parts(p, n), k)) == to_integer(n + k) by {{
                 unfold(both(slice::from_raw_parts(p, n), k));
                 unfold(size(slice::from_raw_parts(p, n)));
-                normalize();
+                close();
             }}
         }}"
     ))
@@ -42,7 +42,7 @@ fn a_pure_function_slice_parameter_is_its_pointer_and_length() {
     let error = prove(&format!(
         "{SIZES}
         theorem spread(p: *const u8, n: usize) {{
-            ensures size(p, n) == n by {{ unfold(size(p, n)); normalize(); }}
+            ensures size(p, n) == n by {{ unfold(size(p, n)); close(); }}
         }}"
     ))
     .unwrap_err();
@@ -73,7 +73,7 @@ fn a_slice_argument_must_be_a_slice_parameter() {
     let error = prove(&format!(
         "{SIZES}
         theorem pointer(p: *const u8) {{
-            ensures size(p) == 0u64 by {{ normalize(); }}
+            ensures size(p) == 0u64 by {{ close(); }}
         }}"
     ))
     .unwrap_err();
