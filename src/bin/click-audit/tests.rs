@@ -1909,24 +1909,9 @@ fn loop_expansion_preserves_match_pointer_theorem_arguments_and_audits_every_sit
         expanded.contains("apply(ptr_equal(identity, parent))"),
         "{expanded}"
     );
-    let mut worker = AuditSessionWorker::start(&path, AuditLimits::default().session).unwrap();
-    let deadline = Instant::now() + Duration::from_secs(120);
-    for (index, site) in sites.iter().enumerate() {
-        audit_site(
-            site,
-            &mut worker,
-            &AuditLimits::default(),
-            index == 0,
-            deadline,
-        )
-        .unwrap_or_else(|message| {
-            panic!(
-                "{}:{} {}: {message}",
-                site.position.line, site.position.column, site.tactic_name
-            )
-        });
-    }
-    drop(worker);
+    // Audit the fixture through whole-claim replay. Exact closures can
+    // keep the same source spelling while the checked replay disables search.
+    audit_all_sites(&path);
     fs::remove_dir_all(directory).unwrap();
 }
 
