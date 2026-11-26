@@ -3086,7 +3086,7 @@ mod tests {
         )
         .unwrap();
         let entry = root.join("entry.click");
-        let source = "import \"models/mid.click\"; theorem ok() { ensures mid(0) == 0 by { unfold(mid(0)); unfold(base(0)); normalize(); } }";
+        let source = "import \"models/mid.click\"; theorem ok() { ensures mid(0) == 0 by { unfold(mid(0)); unfold(base(0)); close(); } }";
         fs::write(&entry, source).unwrap();
         let project = read_click_project(&entry, source).unwrap();
         assert_eq!(project.entry(), "entry.click");
