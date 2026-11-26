@@ -81,3 +81,42 @@ fn exact_propagation_blocked_clauses_consume_each_occurrence_once() {
     assert!(samples.iter().all(|s| s.1 <= samples[0].1 * s.0 / 4 * 2));
     assert!(samples.iter().all(|s| s.2 == samples[0].2));
 }
+
+#[test]
+fn exact_integer_opposites_ignore_unrelated_rules() {
+    use crate::instrumentation::measure_deterministic_work;
+    use crate::kernel::{IntegerTerm, Variable};
+
+    let _session = crate::kernel::VerificationSession::enter();
+    let x: SharedIntegerTerm = IntegerTerm::Variable(Variable(871_001)).into();
+    let y: SharedIntegerTerm = IntegerTerm::Variable(Variable(871_002)).into();
+    let [x_le_y, y_lt_x, x_eq_y, y_ne_x] = [
+        OldConditionTerm::IntegerLessEqual(x.clone(), y.clone()),
+        OldConditionTerm::IntegerLessThan(y.clone(), x.clone()),
+        OldConditionTerm::IntegerEqual(x.clone(), y.clone()),
+        OldConditionTerm::IntegerNotEqual(y, x),
+    ]
+    .map(|condition| Proposition::condition_is(condition, true));
+
+    let mut baseline = [None, None];
+    for size in [4, 16, 64, 256] {
+        let mut index = Index::default();
+        for i in 0..size {
+            index.admit(&implies(atom(&format!("u{i}")), atom(&format!("v{i}"))));
+        }
+        for ((left, right), baseline) in [(&x_le_y, &y_lt_x), (&x_eq_y, &y_ne_x)]
+            .into_iter()
+            .zip(&mut baseline)
+        {
+            let mut branch = index.clone();
+            assert!(!branch.admit(left).contains(&falsehood()));
+            let (derived, work) = measure_deterministic_work(|| branch.admit(right));
+            assert!(derived.contains(&falsehood()));
+            assert!(
+                work <= baseline.get_or_insert(work).saturating_mul(2) + 16,
+                "rule count {size}: update cost {work}"
+            );
+            assert!(!index.clone().admit(right).contains(&falsehood()));
+        }
+    }
+}

@@ -144,7 +144,7 @@ fn integer_comparison_operands(
 
 /// An Integer comparison as `left REL right` with its truth folded in:
 /// `>`/`>=` swap their operands, and a false comparison is negated.
-fn integer_relation(
+pub(in crate::kernel) fn integer_relation(
     condition: &OldConditionTerm,
     value: bool,
 ) -> Option<(Relation, &SharedIntegerTerm, &SharedIntegerTerm)> {

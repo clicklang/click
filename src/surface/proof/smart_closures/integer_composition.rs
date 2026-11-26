@@ -125,6 +125,31 @@ fn application(
 fn have(claim: SyntaxProposition, steps: Vec<ProofStep>) -> ProofStep {
     super::super::wide_arithmetic::have(claim, steps)
 }
+fn close_refuted_comparison<'a>(
+    proof: &Proof<'a>,
+    fact: SyntaxProposition,
+    prove_literal_negation: bool,
+) -> Result<Proof<'a>, ClickError> {
+    if proof.facts().holds_false() {
+        return proof.driver().apply_step(ProofStep::Known);
+    }
+    if prove_literal_negation {
+        let negated = have(
+            SyntaxProposition::Not(Box::new(fact.clone())),
+            vec![ProofStep::Known],
+        );
+        if let Some(closed) = attempt::candidate_outcome(
+            proof
+                .driver()
+                .apply_step(negated)
+                .and_then(|proof| proof.driver().apply_step(ProofStep::Known)),
+        )? {
+            return Ok(closed);
+        }
+    }
+    proof.driver().apply_step(ProofStep::Contradiction(fact))
+}
+
 fn computational_fact(claim: SyntaxProposition) -> ProofStep {
     // Let run_scope prefer known and explicit algebra for goal-local
     // identities. Other identities still use the existing checked rule.
@@ -966,12 +991,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let marker = proof.checkpoint();
             let equal_arm = proof.focus_branch(ids[0])?;
             let scope = equal_arm.driver().open_have(impossible.clone())?;
-            let equal_done = scope
-                .driver()
-                .apply_step(substitution)?
-                .join()?
-                .driver()
-                .apply_step(ProofStep::Contradiction(impossible))?;
+            let refuted = scope.driver().apply_step(substitution)?.join()?;
+            let equal_done = close_refuted_comparison(&refuted, impossible, true)?;
             let unequal_done = equal_done
                 .focus_branch(ids[1])?
                 .driver()
@@ -999,10 +1020,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // citation keeps premise selection visible in the expanded proof.
         for (kernel, surface) in pairs {
             if normalizes_context_free(&Proposition::Not(Box::new(kernel.clone()))) {
-                return proof
-                    .driver()
-                    .apply_step(ProofStep::Contradiction(surface.clone()))
-                    .map(Some);
+                return close_refuted_comparison(proof, surface.clone(), false).map(Some);
             }
         }
         let observed_goal = observed_native_surface_comparison(goal, surface_goal);
@@ -1620,6 +1638,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         ProofStep::Have { proposition, proof } => {
                             let scope = result.driver().open_have(proposition)?;
                             run_scope(scope, proof.steps()).and_then(|scope| scope.join())
+                        }
+                        ProofStep::Contradiction(fact) => {
+                            close_refuted_comparison(&result, fact, contradictory)
                         }
                         step => result.driver().apply_step(step),
                     };

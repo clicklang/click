@@ -7,6 +7,7 @@
 //! produced facts; queries never traverse clauses or dependency buckets.
 
 use super::{OldConditionTerm, Proposition, PureFactContext};
+use crate::kernel::SharedIntegerTerm;
 use crate::kernel::proof::PersistentSequence;
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::sync::Arc;
@@ -53,6 +54,11 @@ impl Clone for Index {
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 enum LiteralKey {
     Comparison(super::observation_comparisons::Key, bool),
+    IntegerComparison {
+        ordered: bool,
+        operands: [SharedIntegerTerm; 2],
+        positive: bool,
+    },
     Exact(Proposition),
 }
 
@@ -87,7 +93,6 @@ impl Ord for Literal {
 // Read only these cached root relations (at most three conversions), retaining
 // shared operands. This does not simplify arithmetic or consult facts.
 fn observation_reading(condition: &OldConditionTerm) -> Option<OldConditionTerm> {
-    use crate::kernel::SharedIntegerTerm;
     let (left, right, rebuild): (
         &SharedIntegerTerm,
         &SharedIntegerTerm,
@@ -149,6 +154,25 @@ fn literal(proposition: &Proposition, mut positive: bool) -> Literal {
                     Relation::Equal | Relation::Less => *truth,
                 };
                 LiteralKey::Comparison(super::observation_comparisons::key(&view), truth)
+            } else if let Some((relation, left, right)) =
+                comparison::integer_relation(condition, *truth)
+            {
+                // Use equality or strict order as the positive spelling.
+                // Operand handles retain the exact typed terms and their state.
+                let (ordered, mut operands, positive) = match relation {
+                    Relation::Equal => (false, [left.clone(), right.clone()], true),
+                    Relation::NotEqual => (false, [left.clone(), right.clone()], false),
+                    Relation::Less => (true, [left.clone(), right.clone()], true),
+                    Relation::LessEqual => (true, [right.clone(), left.clone()], false),
+                };
+                if !ordered && operands[1] < operands[0] {
+                    operands.swap(0, 1);
+                }
+                LiteralKey::IntegerComparison {
+                    ordered,
+                    operands,
+                    positive,
+                }
             } else {
                 LiteralKey::Exact(
                     reading

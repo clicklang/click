@@ -2321,6 +2321,7 @@ fn selected_interval_exclusion_expands_and_rechecks() {
     ] {
         let expanded = expand_c_claim_source_by_label(&source, &[], label).unwrap();
         assert!(!expanded.contains("normalize()"), "{expanded}");
+        assert!(!expanded.contains("contradiction("), "{expanded}");
         without_implicit_solve_for_claim(label, || {
             verify_click_theorems(&expanded).map_err(|error| error.report())
         })
@@ -2567,7 +2568,7 @@ fn established_false_expands_to_checked_close() {
     let label = "integer_lt_neq_arithmetic.ensures_0";
     let expanded = expand_c_claim_source_by_label(&source, &[], label).unwrap();
     assert!(expanded.contains("have false by"), "{expanded}");
-    assert!(!expanded.contains("contradiction();"), "{expanded}");
+    assert!(!expanded.contains("contradiction("), "{expanded}");
     without_proof_search_for_claim(label, || {
         verify_click_theorems(&expanded).map_err(|error| error.report())
     })
