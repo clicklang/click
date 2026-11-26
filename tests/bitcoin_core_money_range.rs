@@ -5924,20 +5924,23 @@ fn pinned_spanreader_read_verifies_and_replays_both_outcomes_offline() {
         click::languages::cpp::names::path_name(&["SpanReader".to_owned(), "read".to_owned()])
     );
     let inputs = ProgramInputs::program(&import);
-    let expanded = expand_project_claim_source_by_label(&project, &inputs, &label).unwrap();
+    let expanded = expand_project_claim_source_by_label(&project, &inputs, &label)
+        .unwrap_or_else(|error| panic!("{}", error.report()));
     let rewritten = project.with_entry_source(expanded.clone());
-    click::surface::check_audit_claim(&label, true, || {
-        verify_program_prepared_project(&rewritten, &import)
-            .map_err(|error| error.message().to_string())
+    click::surface::without_proof_search_for_claim(&label, || {
+        verify_program_prepared_project(&rewritten, &import).map_err(|error| error.report())
     })
     .unwrap();
     let site = project_tactic_source_position(&rewritten, &inputs, &label, 0).unwrap();
     // Start the retained session after the cold verification replaced its kernel state.
     let (session, _) =
         ProgramVerificationSession::new_program_prepared_project(&project, &import).unwrap();
-    session
-        .verify_at_project(&expanded, site.line, site.column)
-        .unwrap();
+    click::surface::without_proof_search_for_claim(&label, || {
+        session
+            .verify_at_project(&expanded, site.line, site.column)
+            .map_err(|error| error.report())
+    })
+    .unwrap();
     fs::remove_dir_all(root).unwrap();
 }
 

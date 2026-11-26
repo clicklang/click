@@ -836,15 +836,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 continue;
             };
             let kernel = equality.clone();
-            // A fact recorded at a statement's entry is spelled there; its
-            // unanchored form denotes the same fact where the proof stands
-            // when nothing it names has changed since, which lowering and
-            // the checked rewrite decide. Offer the unanchored form first.
+            // An anchored premise may read a different value after its
+            // selector is removed. A retained source pair can still cite
+            // the historical fact without that selector in memory, where
+            // a reparsed rewrite would lower the unanchored read afresh.
             if let Some(unanchored) = unanchored_equality(&surface)
-                && let Ok(lowered) =
-                    search_input.lower_surface_proposition(&unanchored, "`solve` rewrite equality")
+                && search_input
+                    .lower_proposition_spelling(&unanchored)
+                    .is_ok_and(|lowered| lowered == kernel)
             {
-                candidates.push(forms(lowered, unanchored));
+                candidates.push(forms(kernel.clone(), unanchored));
             }
             candidates.push(forms(kernel, surface));
         }
