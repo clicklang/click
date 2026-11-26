@@ -480,7 +480,7 @@ An otherwise unplaced write forgets the whole run. It does not enumerate
 logical slots or search separation-fact buckets. Fixed-offset writes query hole
 coverage only for the two partially covered boundary intervals, including when
 value widths exceed slot strides. Initialization records and immutable
-source history remain available; explicit separation and a frame proof recover
+source history remain available. Explicit separation and a frame proof recover
 selected values, as in
 `mdtests/store_geometry_uses_explicit_order_and_transport.md`. Scaling tests
 grow order chains, separation buckets and logical run lengths independently;

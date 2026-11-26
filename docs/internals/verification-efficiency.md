@@ -433,8 +433,8 @@ kernel executes the statement with the whole proof context visible, reading
 it through the proof object's persistent indexed `PureFactContext`, and a
 cell the context proves outside the effect keeps its name, with ownership
 consulted by direct lookup only. A fact about a cell it cannot prove
-untouched stays at its pre-step state; a separate frame proof handles
-any later use at the new point. Term comparison performs no frame reasoning. The user-facing
+untouched stays at its pre-step state. A separate frame proof handles any
+later use at the new point. Term comparison performs no frame reasoning. The user-facing
 statement of this rule is
 [What a step carries](../concepts/proof-state.md#what-a-step-carries).
 
@@ -730,8 +730,8 @@ Terms have one canonical identity and state changes are explicit:
   write set contains through one alias and a constant displacement is decided
   before any separation search runs.
 - **Explicit proof steps remain the completeness escape hatch.** `rewrite`
-  uses a proved equality and `preserve` uses checked frame evidence; the
-  canonical comparator uses neither.
+  uses a proved equality and `preserve` uses checked frame evidence. Both
+  steps apply outside canonical comparison.
 
 ## Indexed contradiction and premise search
 
