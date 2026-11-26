@@ -3727,21 +3727,18 @@ impl PureFactContext {
             {
                 candidates.insert(OldMachineTerm::constant(0));
             }
-            match (pattern, target) {
-                (
-                    OldAddressOffset::Add(left_a, left_b),
-                    OldAddressOffset::Add(right_a, right_b),
-                ) => {
+            match (pattern.view(), target.view()) {
+                (OffsetView::Add(left_a, left_b), OffsetView::Add(right_a, right_b)) => {
                     collect_offset_candidates(left_a, right_a, bound, candidates);
                     collect_offset_candidates(left_b, right_b, bound, candidates);
                 }
                 (
-                    OldAddressOffset::Int32Scaled {
-                        value: left,
+                    OffsetView::Int32Scaled {
+                        index: left,
                         byte_width: left_width,
                     },
-                    OldAddressOffset::Int32Scaled {
-                        value: right,
+                    OffsetView::Int32Scaled {
+                        index: right,
                         byte_width: right_width,
                     },
                 ) if left_width == right_width => {
@@ -3753,12 +3750,12 @@ impl PureFactContext {
                     );
                 }
                 (
-                    OldAddressOffset::Int32Scaled {
-                        value: left,
+                    OffsetView::Int32Scaled {
+                        index: left,
                         byte_width,
                     },
-                    OldAddressOffset::Constant(bytes),
-                ) if *byte_width != 0 && bytes % byte_width == 0 => {
+                    OffsetView::Constant(bytes),
+                ) if byte_width != 0 && bytes % byte_width == 0 => {
                     let elements = bytes / byte_width;
                     collect_index_candidates(
                         left.operand_view(),
@@ -3770,13 +3767,13 @@ impl PureFactContext {
                     );
                 }
                 (
-                    OldAddressOffset::Int64Scaled {
-                        value: left,
+                    OffsetView::Int64Scaled {
+                        index: left,
                         byte_width: left_width,
                         unsigned: left_unsigned,
                     },
-                    OldAddressOffset::Int64Scaled {
-                        value: right,
+                    OffsetView::Int64Scaled {
+                        index: right,
                         byte_width: right_width,
                         unsigned: right_unsigned,
                     },
@@ -3789,15 +3786,15 @@ impl PureFactContext {
                     );
                 }
                 (
-                    OldAddressOffset::Int64Scaled {
-                        value: left,
+                    OffsetView::Int64Scaled {
+                        index: left,
                         byte_width,
                         unsigned,
                     },
-                    OldAddressOffset::Constant(bytes),
-                ) if *byte_width != 0 && bytes % byte_width == 0 => {
+                    OffsetView::Constant(bytes),
+                ) if byte_width != 0 && bytes % byte_width == 0 => {
                     let elements = bytes / byte_width;
-                    let value = if *unsigned {
+                    let value = if unsigned {
                         let Ok(elements) = u64::try_from(elements) else {
                             return;
                         };
@@ -4831,14 +4828,14 @@ impl PureFactContext {
             return true;
         }
 
-        match (left, right) {
+        match (left.view(), right.view()) {
             (
-                OldAddressOffset::Int32Scaled {
-                    value: left,
+                OffsetView::Int32Scaled {
+                    index: left,
                     byte_width: left_width,
                 },
-                OldAddressOffset::Int32Scaled {
-                    value: right,
+                OffsetView::Int32Scaled {
+                    index: right,
                     byte_width: right_width,
                 },
             ) => {
@@ -4848,7 +4845,7 @@ impl PureFactContext {
                         right.operand_view(),
                     )
             }
-            (OldAddressOffset::Add(left_a, left_b), OldAddressOffset::Add(right_a, right_b)) => {
+            (OffsetView::Add(left_a, left_b), OffsetView::Add(right_a, right_b)) => {
                 self.address_offsets_equal_for_transport(left_a, right_a)
                     && self.address_offsets_equal_for_transport(left_b, right_b)
                     || self.address_offsets_equal_for_transport(left_a, right_b)
@@ -4866,21 +4863,21 @@ impl PureFactContext {
         if left == right {
             return true;
         }
-        match (left, right) {
+        match (left.view(), right.view()) {
             (
-                OldAddressOffset::Int32Scaled {
-                    value: left,
+                OffsetView::Int32Scaled {
+                    index: left,
                     byte_width: left_width,
                 },
-                OldAddressOffset::Int32Scaled {
-                    value: right,
+                OffsetView::Int32Scaled {
+                    index: right,
                     byte_width: right_width,
                 },
             ) => {
                 left_width == right_width
                     && self.operands_state_equivalent(left.operand_view(), right.operand_view())
             }
-            (OldAddressOffset::Add(left_a, left_b), OldAddressOffset::Add(right_a, right_b)) => {
+            (OffsetView::Add(left_a, left_b), OffsetView::Add(right_a, right_b)) => {
                 self.address_offsets_state_equivalent(left_a, right_a)
                     && self.address_offsets_state_equivalent(left_b, right_b)
                     || self.address_offsets_state_equivalent(left_a, right_b)

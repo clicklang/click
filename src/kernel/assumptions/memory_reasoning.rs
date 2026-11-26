@@ -557,10 +557,10 @@ impl PureFactContext {
         // A cursor commonly advances from an exact parent offset, or from
         // offset zero in its symbolic block. Query only those structural
         // anchors; do not enumerate the other views in the block.
-        let mut offsets = vec![base.offset.clone(), OldAddressOffset::Constant(0)];
-        if let OldAddressOffset::Add(left, right) = &base.offset {
-            offsets.push(left.as_ref().clone());
-            offsets.push(right.as_ref().clone());
+        let mut offsets = vec![base.offset.clone(), OldAddressOffset::constant(0)];
+        if let OffsetView::Add(left, right) = base.offset.view() {
+            offsets.push(left.clone());
+            offsets.push(right.clone());
         }
         let mut seen = Vec::new();
         for offset in offsets {
@@ -1162,7 +1162,7 @@ impl PureFactContext {
         Some((
             OldAddress {
                 base: block,
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::constant(0),
             },
             extent.size(),
         ))
@@ -1746,7 +1746,7 @@ impl PureFactContext {
         };
         let base = OldAddress {
             base: pointer.base.clone(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         };
         self.proves_loadable_cell_from_region(&base, bytes, pointer, byte_width)
     }
@@ -1848,18 +1848,18 @@ impl PureFactContext {
         let mut summands = Vec::new();
         let mut pending = vec![&delta];
         while let Some(term) = pending.pop() {
-            match term {
-                OldAddressOffset::Add(left, right) => {
+            match term.view() {
+                OffsetView::Add(left, right) => {
                     pending.push(right);
                     pending.push(left);
                 }
-                other => summands.push(other),
+                _ => summands.push(term),
             }
         }
-        let scaled = |term: &OldAddressOffset| match term {
-            OldAddressOffset::Int32Scaled { value, byte_width } => u32::try_from(*byte_width)
-                .ok()
-                .map(|stride| (value.clone(), stride)),
+        let scaled = |term: &OldAddressOffset| match term.view() {
+            OffsetView::Int32Scaled { index, byte_width } => {
+                u32::try_from(byte_width).ok().map(|stride| (index, stride))
+            }
             _ => None,
         };
         let Some(stride) = summands
@@ -1904,10 +1904,10 @@ impl PureFactContext {
             .filter(|(other, _)| *other != position)
             .map(|(_, term)| (*term).clone())
             .reduce(OldAddressOffset::add)
-            .unwrap_or(OldAddressOffset::Constant(0));
+            .unwrap_or(OldAddressOffset::constant(0));
         let element = OldAddress {
             base: base.base.clone(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         };
         let within = OldAddress {
             base: base.base.clone(),
@@ -2077,14 +2077,14 @@ impl PureFactContext {
         bytes: u32,
         authorized: &MemoryRange,
     ) -> Option<(&ResourceContext, OldAddress)> {
-        let OldAddressOffset::Add(anchor, displacement) = &write.offset else {
+        let OffsetView::Add(anchor, displacement) = write.offset.view() else {
             return None;
         };
         let owner = authorized.base();
         if displacement.as_const().is_some()
             || bytes != authorized.element_width()
             || write.base != owner.base
-            || **anchor != owner.offset
+            || *anchor != owner.offset
             || self
                 .equality_graph
                 .offset_has_source_dependencies(&write.offset)
@@ -2617,11 +2617,11 @@ impl PureFactContext {
         // The exact split, not `element_index_from_offset`: this rule ends in a
         // membership conclusion, and the index that function returns names the
         // pointer's element delta only modulo `2^32`.
-        let delta = match &pointer.offset {
-            OldAddressOffset::Add(left, right) if offset_matches(left, &base.offset) => {
+        let delta = match pointer.offset.view() {
+            OffsetView::Add(left, right) if offset_matches(left, &base.offset) => {
                 exact_element_delta_from_offset(right, element_width)
             }
-            OldAddressOffset::Add(left, right) if offset_matches(right, &base.offset) => {
+            OffsetView::Add(left, right) if offset_matches(right, &base.offset) => {
                 exact_element_delta_from_offset(left, element_width)
             }
             _ if offset_matches(&pointer.offset, &base.offset) => Some(ExactElementDelta::zero()),
@@ -2680,15 +2680,11 @@ impl PureFactContext {
         };
         let index = pointer
             .shared_element_index_from_base_with_width(range.base(), range.element_width())
-            .or_else(|| match &pointer.offset {
-                OldAddressOffset::Add(left, right)
-                    if offset_matches(left, &range.base().offset) =>
-                {
+            .or_else(|| match pointer.offset.view() {
+                OffsetView::Add(left, right) if offset_matches(left, &range.base().offset) => {
                     shared_element_index_from_offset(right, range.element_width())
                 }
-                OldAddressOffset::Add(left, right)
-                    if offset_matches(right, &range.base().offset) =>
-                {
+                OffsetView::Add(left, right) if offset_matches(right, &range.base().offset) => {
                     shared_element_index_from_offset(left, range.element_width())
                 }
                 _ if offset_matches(&pointer.offset, &range.base().offset) => Some(
@@ -3125,7 +3121,7 @@ impl PureFactContext {
                 right.clone(),
             )) == Some(true)
         };
-        if let OldAddressOffset::Add(left, right) = &pointer.offset {
+        if let OffsetView::Add(left, right) = pointer.offset.view() {
             if offsets_equal(left, &base.offset) {
                 return shared_element_index_from_offset_with_facts(right, byte_width, self);
             }
@@ -3134,7 +3130,7 @@ impl PureFactContext {
             }
         }
 
-        if let OldAddressOffset::Add(left, right) = &base.offset {
+        if let OffsetView::Add(left, right) = base.offset.view() {
             if offsets_equal(&pointer.offset, left) {
                 return shared_element_index_from_offset_with_facts(right, byte_width, self).map(
                     |index| {
@@ -3188,7 +3184,7 @@ impl PureFactContext {
         // A zero-offset object base leaves the pointer's scaled offset as
         // the exact element index. Preserve that symbolic index so the
         // ordinary endpoint checks can certify an in-bounds access directly.
-        if base.offset == OldAddressOffset::Constant(0) {
+        if matches!(base.offset.view(), OffsetView::Constant(0)) {
             return shared_element_index_from_offset_with_facts(&pointer.offset, byte_width, self);
         }
         let offsets_match_for_resolution = |left: &OldAddressOffset, right: &OldAddressOffset| {
@@ -3197,7 +3193,7 @@ impl PureFactContext {
                     left, right, self,
                 )
         };
-        if let OldAddressOffset::Add(left, right) = &pointer.offset {
+        if let OffsetView::Add(left, right) = pointer.offset.view() {
             if offsets_match_for_resolution(left, &base.offset) {
                 return shared_element_index_from_offset_with_facts(right, byte_width, self);
             }
@@ -3205,7 +3201,7 @@ impl PureFactContext {
                 return shared_element_index_from_offset_with_facts(left, byte_width, self);
             }
         }
-        if let OldAddressOffset::Add(left, right) = &base.offset {
+        if let OffsetView::Add(left, right) = base.offset.view() {
             if offsets_match_for_resolution(&pointer.offset, left) {
                 return shared_element_index_from_offset_with_facts(right, byte_width, self).map(
                     |index| {
@@ -3591,11 +3587,11 @@ impl PureFactContext {
         // displacement is a constant, so the element it lands on is decided
         // without a search, and a cell inside the range is never separate
         // from it.
-        let OldAddressOffset::Add(object, displacement) = &pointer.offset else {
+        let OffsetView::Add(object, displacement) = pointer.offset.view() else {
             return false;
         };
-        let (OldAddressOffset::Constant(displacement), Some(start), Some(end)) = (
-            displacement.as_ref(),
+        let (OffsetView::Constant(displacement), Some(start), Some(end)) = (
+            displacement.view(),
             range.signed_constant_start(),
             range.signed_constant_end(),
         ) else {
@@ -3608,7 +3604,7 @@ impl PureFactContext {
         let element = displacement / width;
         let object = OldAddress {
             base: pointer.base.clone(),
-            offset: object.as_ref().clone(),
+            offset: object.clone(),
         };
         start <= element
             && element < end
@@ -4224,23 +4220,17 @@ impl PureFactContext {
             if offset == base {
                 return Some(0);
             }
-            match (offset, base) {
-                (OldAddressOffset::Constant(a), OldAddressOffset::Constant(b)) => a.checked_sub(*b),
-                (OldAddressOffset::Add(a, b), _) => match b.as_ref() {
-                    OldAddressOffset::Constant(bytes) => {
-                        constant_delta(a, base)?.checked_add(*bytes)
-                    }
-                    _ => match a.as_ref() {
-                        OldAddressOffset::Constant(bytes) => {
-                            constant_delta(b, base)?.checked_add(*bytes)
-                        }
+            match (offset.view(), base.view()) {
+                (OffsetView::Constant(a), OffsetView::Constant(b)) => a.checked_sub(b),
+                (OffsetView::Add(a, b), _) => match b.view() {
+                    OffsetView::Constant(bytes) => constant_delta(a, base)?.checked_add(bytes),
+                    _ => match a.view() {
+                        OffsetView::Constant(bytes) => constant_delta(b, base)?.checked_add(bytes),
                         _ => None,
                     },
                 },
-                (_, OldAddressOffset::Add(a, b)) => match b.as_ref() {
-                    OldAddressOffset::Constant(bytes) => {
-                        constant_delta(offset, a)?.checked_sub(*bytes)
-                    }
+                (_, OffsetView::Add(a, b)) => match b.view() {
+                    OffsetView::Constant(bytes) => constant_delta(offset, a)?.checked_sub(bytes),
                     _ => None,
                 },
                 _ => None,
@@ -4554,11 +4544,12 @@ impl PureFactContext {
         }
         // A negative signed index has its high bit set when read unsigned,
         // placing it beyond every permitted wide range endpoint.
-        if let Some(OldAddressOffset::Int64Scaled {
-            value,
-            byte_width,
-            unsigned: false,
-        }) = pointer.offset_from_base(base)
+        if let Some(delta) = pointer.offset_from_base(base)
+            && let OffsetView::Int64Scaled {
+                index: value,
+                byte_width,
+                unsigned: false,
+            } = delta.view()
             && byte_width == i64::from(element_width)
         {
             return Some(if let Some(value) = value.operand_view().int64_constant() {
@@ -4571,32 +4562,34 @@ impl PureFactContext {
                 )
             });
         }
-        if let Some(OldAddressOffset::Add(first, second)) = pointer.offset_from_base(base) {
+        if let Some(delta) = pointer.offset_from_base(base)
+            && let OffsetView::Add(first, second) = delta.view()
+        {
             let width = i64::from(element_width);
-            let whole_elements = |offset: &OldAddressOffset| match offset {
-                OldAddressOffset::Constant(bytes) if *bytes >= 0 && bytes % width == 0 => {
+            let whole_elements = |offset: &OldAddressOffset| match offset.view() {
+                OffsetView::Constant(bytes) if bytes >= 0 && bytes % width == 0 => {
                     Some((bytes / width) as u64)
                 }
-                OldAddressOffset::Int64Scaled {
-                    value,
+                OffsetView::Int64Scaled {
+                    index,
                     byte_width,
                     unsigned: true,
-                } if *byte_width == width => value.operand_view().uint64_constant(),
+                } if byte_width == width => index.operand_view().uint64_constant(),
                 _ => None,
             };
-            let symbolic_index = |offset: &OldAddressOffset| match offset {
-                OldAddressOffset::Int64Scaled {
-                    value,
+            let symbolic_index = |offset: &OldAddressOffset| match offset.view() {
+                OffsetView::Int64Scaled {
+                    index,
                     byte_width,
                     unsigned: true,
-                } if *byte_width == width && value.operand_view().uint64_constant().is_none() => {
-                    Some(value.clone())
+                } if byte_width == width && index.operand_view().uint64_constant().is_none() => {
+                    Some(index)
                 }
                 _ => None,
             };
-            let stepped = symbolic_index(&first)
-                .zip(whole_elements(&second))
-                .or_else(|| symbolic_index(&second).zip(whole_elements(&first)));
+            let stepped = symbolic_index(first)
+                .zip(whole_elements(second))
+                .or_else(|| symbolic_index(second).zip(whole_elements(first)));
             // Advancing a native index requires the same complete no-wrap bound.
             if let Some((index, elements)) = stepped
                 && self.decide(&wide_index_comparison(
@@ -4611,7 +4604,7 @@ impl PureFactContext {
                     literal(elements).operand_view(),
                 ));
             }
-            if let (Some(outer), Some(inner)) = (symbolic_index(&first), symbolic_index(&second)) {
+            if let (Some(outer), Some(inner)) = (symbolic_index(first), symbolic_index(second)) {
                 let small = |index: &SharedMachineIntegerTerm| {
                     self.decide(&wide_index_comparison(
                         CompareRelation::LessEqual,
@@ -4628,7 +4621,11 @@ impl PureFactContext {
                 }
             }
         }
-        let OldAddressOffset::Int32Scaled { value, byte_width } = pointer.offset_from_base(base)?
+        let delta = pointer.offset_from_base(base)?;
+        let OffsetView::Int32Scaled {
+            index: value,
+            byte_width,
+        } = delta.view()
         else {
             return None;
         };
@@ -4793,7 +4790,7 @@ impl PureFactContext {
         let Some(offset) = pointer.offset_from_base(range.base()) else {
             return false;
         };
-        if let OldAddressOffset::Constant(field) = offset {
+        if let OffsetView::Constant(field) = offset.view() {
             // A constant offset before the range is never inside it.
             let Some(last) = (field >= 0)
                 .then(|| field.checked_add(bytes))
@@ -5452,14 +5449,14 @@ impl PureFactContext {
         if left == right {
             return true;
         }
-        match (left, right) {
+        match (left.view(), right.view()) {
             (
-                OldAddressOffset::Int32Scaled {
-                    value: left,
+                OffsetView::Int32Scaled {
+                    index: left,
                     byte_width: left_width,
                 },
-                OldAddressOffset::Int32Scaled {
-                    value: right,
+                OffsetView::Int32Scaled {
+                    index: right,
                     byte_width: right_width,
                 },
             ) => {
@@ -5485,7 +5482,7 @@ impl PureFactContext {
                     .retain(MachineIntegerType::Int32),
             );
         }
-        if let OldAddressOffset::Add(left, right) = &pointer.offset {
+        if let OffsetView::Add(left, right) = pointer.offset.view() {
             if self.pointer_offsets_equal_from_facts(left, &base.offset) {
                 return shared_element_index_from_offset(right, element_width);
             }
@@ -5513,7 +5510,7 @@ impl PureFactContext {
         if self.pointer_offsets_equal_from_facts(&pointer.offset, &base.offset) {
             return Some(ExactElementDelta::zero());
         }
-        if let OldAddressOffset::Add(left, right) = &pointer.offset {
+        if let OffsetView::Add(left, right) = pointer.offset.view() {
             if self.pointer_offsets_equal_from_facts(left, &base.offset) {
                 return exact_element_delta_from_offset(right, element_width);
             }
@@ -5728,16 +5725,16 @@ impl PureFactContext {
         // Direct address arithmetic on the range's base offset, last: it
         // decides only what the layers above could not name, and each
         // attempt costs two decisions.
-        if let OldAddressOffset::Add(left, right) = &range.base.offset {
+        if let OffsetView::Add(left, right) = range.base.offset.view() {
             let forward_offset = if self.decide(&OldConditionTerm::address_offset_equal(
                 pointer.offset.clone(),
-                left.as_ref().clone(),
+                left.clone(),
             )) == Some(true)
             {
                 shared_element_index_from_offset(right, range.element_width())
             } else if self.decide(&OldConditionTerm::address_offset_equal(
                 pointer.offset.clone(),
-                right.as_ref().clone(),
+                right.clone(),
             )) == Some(true)
             {
                 shared_element_index_from_offset(left, range.element_width())
@@ -5968,10 +5965,10 @@ pub(in crate::kernel) fn parameter_alias_bucket(pointer: &OldAddress) -> OldAddr
     if pointer.base != crate::kernel::AddressBase::ExternalArgument {
         return OldAddress {
             base: pointer.base.clone(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         };
     }
-    while let OldAddressOffset::Add(left, right) = stem {
+    while let OffsetView::Add(left, right) = stem.view() {
         if right.as_const().is_none() {
             break;
         }
@@ -5985,7 +5982,7 @@ pub(in crate::kernel) fn parameter_alias_bucket(pointer: &OldAddress) -> OldAddr
 
 pub(in crate::kernel) fn parameter_partition_root(pointer: &OldAddress) -> Option<OldAddress> {
     let mut stem = &pointer.offset;
-    while let OldAddressOffset::Add(left, right) = stem {
+    while let OffsetView::Add(left, right) = stem.view() {
         right.as_const()?;
         stem = left;
     }
@@ -6017,17 +6014,17 @@ fn structural_element_index(
     }
     // From a base at offset zero, such as a loaded pointer's own read or a
     // symbolic pointer, the whole offset is the displacement.
-    if base.offset == OldAddressOffset::Constant(0) {
+    if matches!(base.offset.view(), OffsetView::Constant(0)) {
         return shared_element_index_from_offset_with_facts(
             &pointer.offset,
             element_width,
             assumptions,
         );
     }
-    let OldAddressOffset::Add(left, right) = &pointer.offset else {
+    let OffsetView::Add(left, right) = pointer.offset.view() else {
         return None;
     };
-    if left.as_ref() != &base.offset {
+    if left != &base.offset {
         return None;
     }
     shared_element_index_from_offset_with_facts(right, element_width, assumptions)
@@ -6063,21 +6060,23 @@ pub(in crate::kernel) fn owned_instances_naming_access_base<'a>(
 pub(in crate::kernel) fn additive_base_spellings(pointer: &OldAddress) -> Vec<OldAddress> {
     let mut spellings = vec![pointer.clone()];
     let mut offset = &pointer.offset;
-    while let OldAddressOffset::Add(left, _) = offset {
+    while let OffsetView::Add(left, _) = offset.view() {
         crate::instrumentation::record_deterministic_work(1);
         spellings.push(OldAddress {
             base: pointer.base.clone(),
-            offset: left.as_ref().clone(),
+            offset: left.clone(),
         });
         offset = left;
     }
     // Outside the shared parameter block, a pointer's block at offset zero is
     // the base an access through it extends: a loaded pointer's own read, a
     // symbolic pointer such as a matched arm's binding, an allocation.
-    if pointer.base != AddressBase::ExternalArgument && *offset != OldAddressOffset::Constant(0) {
+    if pointer.base != AddressBase::ExternalArgument
+        && !matches!(offset.view(), OffsetView::Constant(0))
+    {
         spellings.push(OldAddress {
             base: pointer.base.clone(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         });
     }
     spellings

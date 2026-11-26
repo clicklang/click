@@ -135,7 +135,7 @@ fn address_bases_equal_with_load_atoms(
             (AddressBase::Symbolic(_), AddressBase::Symbolic(_)) => {
                 let base = |block: &AddressBase| OldAddress {
                     base: block.clone(),
-                    offset: OldAddressOffset::Constant(0),
+                    offset: OldAddressOffset::constant(0),
                 };
                 let (Some(first), Some(second)) = (
                     super::equality_graph::logical_pointer_read_term(&base(left)),
@@ -154,18 +154,18 @@ fn offsets_equal_with_load_atoms(
     right: &OldAddressOffset,
     loads_match: LoadAtomsMatch<'_>,
 ) -> bool {
-    match (left, right) {
-        (OldAddressOffset::Add(ll, lr), OldAddressOffset::Add(rl, rr)) => {
+    match (left.view(), right.view()) {
+        (OffsetView::Add(ll, lr), OffsetView::Add(rl, rr)) => {
             offsets_equal_with_load_atoms(ll, rl, loads_match)
                 && offsets_equal_with_load_atoms(lr, rr, loads_match)
         }
         (
-            OldAddressOffset::Int32Scaled {
-                value: left_value,
+            OffsetView::Int32Scaled {
+                index: left_value,
                 byte_width: left_width,
             },
-            OldAddressOffset::Int32Scaled {
-                value: right_value,
+            OffsetView::Int32Scaled {
+                index: right_value,
                 byte_width: right_width,
             },
         ) => {
@@ -786,9 +786,9 @@ fn condition_has_an_open_side(condition: &OldConditionTerm) -> bool {
             true
         }
     };
-    let open_offset = |offset: &OldAddressOffset| match offset {
-        OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => false,
-        OldAddressOffset::Int32Scaled { value, .. } => open(value.operand_view()),
+    let open_offset = |offset: &OldAddressOffset| match offset.view() {
+        OffsetView::Constant(_) | OffsetView::Variable(_) => false,
+        OffsetView::Int32Scaled { index, .. } => open(index.operand_view()),
         _ => true,
     };
     match condition {
@@ -1697,22 +1697,22 @@ pub(in crate::kernel) fn pointer_offsets_equal_after_exact_materialization(
     if left == right {
         return true;
     }
-    match (left, right) {
+    match (left.view(), right.view()) {
         (
-            OldAddressOffset::Int32Scaled {
-                value: left_value,
+            OffsetView::Int32Scaled {
+                index: left_value,
                 byte_width: left_width,
             },
-            OldAddressOffset::Int32Scaled {
-                value: right_value,
+            OffsetView::Int32Scaled {
+                index: right_value,
                 byte_width: right_width,
             },
         ) => {
             if left_width != right_width {
                 return false;
             }
-            let left = exact_materialized_index_fixed_point(left_value);
-            let right = exact_materialized_index_fixed_point(right_value);
+            let left = exact_materialized_index_fixed_point(&left_value);
+            let right = exact_materialized_index_fixed_point(&right_value);
             let left_view = left.operand_view();
             let right_view = right.operand_view();
             let equal = match (left_view, right_view) {
@@ -1730,7 +1730,7 @@ pub(in crate::kernel) fn pointer_offsets_equal_after_exact_materialization(
             };
             equal || loads_equal_by_bounded_state_match(left_view, right_view)
         }
-        (OldAddressOffset::Add(left_a, left_b), OldAddressOffset::Add(right_a, right_b)) => {
+        (OffsetView::Add(left_a, left_b), OffsetView::Add(right_a, right_b)) => {
             (pointer_offsets_equal_after_exact_materialization(left_a, right_a)
                 && pointer_offsets_equal_after_exact_materialization(left_b, right_b))
                 || (pointer_offsets_equal_after_exact_materialization(left_a, right_b)
@@ -2046,22 +2046,22 @@ fn hash_memory_blind_pointer_offset<H: std::hash::Hasher>(
     hasher: &mut H,
 ) {
     std::hash::Hash::hash(&std::mem::discriminant(offset), hasher);
-    match offset {
-        OldAddressOffset::Constant(value) => std::hash::Hash::hash(value, hasher),
-        OldAddressOffset::Variable(variable) => std::hash::Hash::hash(variable, hasher),
-        OldAddressOffset::Add(left, right) => {
+    match offset.view() {
+        OffsetView::Constant(value) => std::hash::Hash::hash(&value, hasher),
+        OffsetView::Variable(variable) => std::hash::Hash::hash(&variable, hasher),
+        OffsetView::Add(left, right) => {
             hash_memory_blind_pointer_offset(left, hasher);
             hash_memory_blind_pointer_offset(right, hasher);
         }
-        OldAddressOffset::Int32Scaled { value, byte_width }
-        | OldAddressOffset::Int64Scaled {
-            value, byte_width, ..
+        OffsetView::Int32Scaled { index, byte_width }
+        | OffsetView::Int64Scaled {
+            index, byte_width, ..
         } => {
             std::hash::Hash::hash(
-                &memory_blind_operand_fingerprint(value.operand_view()),
+                &memory_blind_operand_fingerprint(index.operand_view()),
                 hasher,
             );
-            std::hash::Hash::hash(byte_width, hasher);
+            std::hash::Hash::hash(&byte_width, hasher);
         }
     }
 }
@@ -2822,21 +2822,21 @@ fn collect_pointer_offset_memory_loads(
     loads: &mut Vec<(OldAddress, u32)>,
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
-    match offset {
-        OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => Ok(()),
-        OldAddressOffset::Add(left, right) => {
+    match offset.view() {
+        OffsetView::Constant(_) | OffsetView::Variable(_) => Ok(()),
+        OffsetView::Add(left, right) => {
             collect_pointer_offset_memory_loads(left, current_memory, loads, seen_integers)?;
             collect_pointer_offset_memory_loads(right, current_memory, loads, seen_integers)
         }
-        OldAddressOffset::Int32Scaled { value, .. } => collect_shared_machine_memory_loads(
-            value,
+        OffsetView::Int32Scaled { index, .. } => collect_shared_machine_memory_loads(
+            &index,
             current_memory,
             loads,
             Some(4),
             seen_integers,
         ),
-        OldAddressOffset::Int64Scaled { value, .. } => collect_shared_machine_memory_loads(
-            value,
+        OffsetView::Int64Scaled { index, .. } => collect_shared_machine_memory_loads(
+            &index,
             current_memory,
             loads,
             Some(8),
@@ -4751,25 +4751,25 @@ impl PureFactContext {
         fn constant_spine(pointer: &OldAddress) -> Option<(OldAddress, i64)> {
             let mut offset = &pointer.offset;
             let mut bytes = 0i64;
-            while let OldAddressOffset::Add(left, right) = offset {
+            while let OffsetView::Add(left, right) = offset.view() {
                 crate::instrumentation::record_deterministic_work(1);
-                let (rest, extra) = match (left.as_ref(), right.as_ref()) {
-                    (rest, OldAddressOffset::Constant(extra))
-                    | (OldAddressOffset::Constant(extra), rest) => (rest, extra),
+                let (rest, extra) = match (left.view(), right.view()) {
+                    (_, OffsetView::Constant(extra)) => (left, extra),
+                    (OffsetView::Constant(extra), _) => (right, extra),
                     _ => break,
                 };
-                bytes = bytes.checked_add(*extra)?;
+                bytes = bytes.checked_add(extra)?;
                 offset = rest;
             }
             // A wholly constant offset is its block's origin displaced by
             // it, as `parent->right` is `parent` plus the field's offset.
-            if let OldAddressOffset::Constant(extra) = offset {
+            if let OffsetView::Constant(extra) = offset.view() {
                 return Some((
                     OldAddress {
                         base: pointer.base.clone(),
-                        offset: OldAddressOffset::Constant(0),
+                        offset: OldAddressOffset::constant(0),
                     },
-                    bytes.checked_add(*extra)?,
+                    bytes.checked_add(extra)?,
                 ));
             }
             Some((
@@ -4785,8 +4785,8 @@ impl PureFactContext {
         // For residual symbolic arithmetic, consult only recorded affine
         // coordinates. Term registration here would revisit array-index
         // dependencies after the direct membership check already failed.
-        if matches!(origin.offset, OldAddressOffset::Add(..))
-            || matches!(base_origin.offset, OldAddressOffset::Add(..))
+        if matches!(origin.offset.view(), OffsetView::Add(..))
+            || matches!(base_origin.offset.view(), OffsetView::Add(..))
         {
             return self.equality_graph.pointer_at_constant_base(pointer, base);
         }
@@ -4795,7 +4795,7 @@ impl PureFactContext {
                 base: base.base.clone(),
                 offset: OldAddressOffset::add(
                     base.offset.clone(),
-                    OldAddressOffset::Constant(displacement.checked_sub(base_displacement)?),
+                    OldAddressOffset::constant(displacement.checked_sub(base_displacement)?),
                 ),
             });
         }
@@ -6253,13 +6253,13 @@ impl PureFactContext {
         // visited by the caller. Only a planner can append other spellings.
         let mut anchors = vec![OldAddress {
             base: base.base.clone(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         }];
         let mut offsets = vec![&base.offset];
         while let Some(offset) = offsets.pop() {
             crate::instrumentation::record_deterministic_work(1);
-            if let OldAddressOffset::Add(left, right) = offset {
-                for part in [left.as_ref(), right.as_ref()] {
+            if let OffsetView::Add(left, right) = offset.view() {
+                for part in [left, right] {
                     anchors.push(OldAddress {
                         base: base.base.clone(),
                         offset: part.clone(),
@@ -6275,7 +6275,7 @@ impl PureFactContext {
         {
             anchors.push(OldAddress {
                 base: coordinate.representative.clone(),
-                offset: OldAddressOffset::Constant(0),
+                offset: OldAddressOffset::constant(0),
             });
             anchors.push(OldAddress {
                 base: coordinate.representative,
@@ -6285,7 +6285,7 @@ impl PureFactContext {
         let storage = self.equality_graph.storage_address(base);
         anchors.push(OldAddress {
             base: storage.base.clone(),
-            offset: OldAddressOffset::Constant(0),
+            offset: OldAddressOffset::constant(0),
         });
         anchors.push(storage);
         if let Some(permission) = permission {
@@ -9829,18 +9829,18 @@ fn pointer_offsets_match_by_shallow_fact_graph(
     if left == right {
         return true;
     }
-    match (left, right) {
-        (OldAddressOffset::Add(left_a, left_b), OldAddressOffset::Add(right_a, right_b)) => {
+    match (left.view(), right.view()) {
+        (OffsetView::Add(left_a, left_b), OffsetView::Add(right_a, right_b)) => {
             pointer_offsets_match_by_shallow_fact_graph(left_a, right_a, assumptions)
                 && pointer_offsets_match_by_shallow_fact_graph(left_b, right_b, assumptions)
         }
         (
-            OldAddressOffset::Int32Scaled {
-                value: left,
+            OffsetView::Int32Scaled {
+                index: left,
                 byte_width: left_width,
             },
-            OldAddressOffset::Int32Scaled {
-                value: right,
+            OffsetView::Int32Scaled {
+                index: right,
                 byte_width: right_width,
             },
         ) => {
@@ -9908,7 +9908,7 @@ fn pointer_in_range_for_memory_resolution(
         .and_then(|delta| delta.as_index_term())
         .into_iter()
         .collect::<Vec<_>>();
-    if let OldAddressOffset::Add(left, right) = &pointer.offset {
+    if let OffsetView::Add(left, right) = pointer.offset.view() {
         crate::instrumentation::measure_operation(
             "kernel",
             "explicit range arms",
@@ -10054,28 +10054,28 @@ pub(in crate::kernel) fn exact_wide_scaled_offset_constant(
     offset: &OldAddressOffset,
     assumptions: &PureFactContext,
 ) -> Option<i64> {
-    match offset {
-        OldAddressOffset::Constant(value) => Some(*value),
-        OldAddressOffset::Int64Scaled {
-            value,
+    match offset.view() {
+        OffsetView::Constant(value) => Some(value),
+        OffsetView::Int64Scaled {
+            index,
             byte_width,
             unsigned,
         } => {
-            let view = value.operand_view();
-            let literal = if *unsigned {
+            let view = index.operand_view();
+            let literal = if unsigned {
                 view.uint64_constant().and_then(|n| i64::try_from(n).ok())
             } else {
                 view.int64_constant()
             };
             let number = literal.or_else(|| {
                 let bits = assumptions.wide_constant_from_equalities_view(view)?;
-                if *unsigned {
+                if unsigned {
                     i64::try_from(bits).ok()
                 } else {
                     Some(bits as i64)
                 }
             })?;
-            number.checked_mul(*byte_width)
+            number.checked_mul(byte_width)
         }
         _ => None,
     }
@@ -13670,21 +13670,21 @@ impl OrderFactsByLower {
 pub(in crate::kernel) fn offset_state_shape(offset: &OldAddressOffset) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    match offset {
-        OldAddressOffset::Int32Scaled { value, byte_width } => (
+    match offset.view() {
+        OffsetView::Int32Scaled { index, byte_width } => (
             0u8,
             byte_width,
             operand_fingerprint(
-                value.operand_view(),
+                index.operand_view(),
                 OperandFingerprintPolicy::MemoryState(true),
             ),
         )
             .hash(&mut hasher),
-        OldAddressOffset::Add(left, right) => {
+        OffsetView::Add(left, right) => {
             let (left, right) = (offset_state_shape(left), offset_state_shape(right));
             (1u8, left.min(right), left.max(right)).hash(&mut hasher)
         }
-        other => (2u8, other).hash(&mut hasher),
+        _ => (2u8, offset).hash(&mut hasher),
     }
     hasher.finish()
 }
