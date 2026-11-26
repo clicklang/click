@@ -94,7 +94,12 @@ impl AnnotationLowerer<'_> {
                     "mathematical Integer expressions cannot be compared with C values".to_string(),
                 );
             }
-            return comparison(ComparisonKind::Integer);
+            return Ok(SurfaceProposition::Comparison {
+                kind: ComparisonKind::Integer,
+                left: integer_surface_term(left.clone()),
+                operator,
+                right: integer_surface_term(right.clone()),
+            });
         }
         // Two values of one struct are equal when each field is: the
         // constructor is injective, so the comparison is its fields'.
@@ -247,6 +252,70 @@ impl AnnotationLowerer<'_> {
         Ok(lowered.pop().expect("lowered proposition has one root"))
     }
 
+    /// Lower an Integer Surface term. Integer arithmetic is lowered as
+    /// `lower_contract_integer_to_spec` lowers it: one unit of integer work,
+    /// then the operands, combined over Integer terms when both are terms.
+    /// An `Untyped` term is lowered by that Syntax lowering.
+    fn lower_surface_integer(
+        &mut self,
+        term: &SurfaceTerm,
+        environment: &SpecElaborationContext,
+    ) -> Result<crate::kernel::SpecIntegerExpression, String> {
+        use crate::kernel::SpecIntegerExpression;
+        match term {
+            SurfaceTerm::Untyped(syntax) => {
+                self.lower_contract_integer_to_spec(syntax, environment)
+            }
+            SurfaceTerm::Negate {
+                kind: ArithmeticKind::Integer,
+                operand,
+            } => {
+                check_integer_lowering_work(1)?;
+                match self.lower_surface_integer(operand, environment)? {
+                    SpecIntegerExpression::Term(term) => {
+                        check_integer_lowering_work(integer_root_work(&term))?;
+                        construct_integer_operation(
+                            crate::kernel::KernelIntegerOperator::Negate,
+                            vec![term],
+                        )
+                    }
+                    inner => Ok(SpecIntegerExpression::Negate(Box::new(inner))),
+                }
+            }
+            SurfaceTerm::Binary {
+                op,
+                kind: ArithmeticKind::Integer,
+                left,
+                right,
+            } => {
+                check_integer_lowering_work(1)?;
+                let left = self.lower_surface_integer(left, environment)?;
+                let right = self.lower_surface_integer(right, environment)?;
+                let operation = match op {
+                    ArithmeticOperator::Add => IntegerOperation::Add,
+                    ArithmeticOperator::Subtract => IntegerOperation::Subtract,
+                    ArithmeticOperator::Multiply => IntegerOperation::Multiply,
+                };
+                match (&left, &right) {
+                    (SpecIntegerExpression::Term(_), SpecIntegerExpression::Term(_)) => {
+                        lower_integer_operation(left, right, operation)
+                    }
+                    _ => Ok(match operation {
+                        IntegerOperation::Add => {
+                            SpecIntegerExpression::Add(Box::new(left), Box::new(right))
+                        }
+                        IntegerOperation::Subtract => {
+                            SpecIntegerExpression::Subtract(Box::new(left), Box::new(right))
+                        }
+                        IntegerOperation::Multiply => {
+                            SpecIntegerExpression::Multiply(Box::new(left), Box::new(right))
+                        }
+                    }),
+                }
+            }
+        }
+    }
+
     /// Lower an elaborated comparison. Each operand is lowered as its
     /// comparison's kind says; nothing here looks at the operands to decide.
     fn lower_surface_comparison(
@@ -257,14 +326,17 @@ impl AnnotationLowerer<'_> {
         right: &SurfaceTerm,
         environment: &SpecElaborationContext,
     ) -> Result<SpecProposition, String> {
-        let (left, right) = (left.syntax(), right.syntax());
+        if kind == ComparisonKind::Integer {
+            return Ok(SpecProposition::IntegerComparison {
+                left: self.lower_surface_integer(left, environment)?,
+                operator: integer_comparison_operator(operator)?,
+                right: self.lower_surface_integer(right, environment)?,
+            });
+        }
+        let (left, right) = (left.untyped_syntax(), right.untyped_syntax());
         let equal = operator == ComparisonOperator::Equal;
         match kind {
-            ComparisonKind::Integer => Ok(SpecProposition::IntegerComparison {
-                left: self.lower_contract_integer_to_spec(left, environment)?,
-                operator: integer_comparison_operator(operator)?,
-                right: self.lower_contract_integer_to_spec(right, environment)?,
-            }),
+            ComparisonKind::Integer => unreachable!("lowered above"),
             ComparisonKind::Algebraic => Ok(SpecProposition::AlgebraicComparison {
                 left: self.lower_contract_algebraic_to_spec(left, environment)?,
                 equal,
@@ -287,5 +359,31 @@ impl AnnotationLowerer<'_> {
                 right: self.lower_contract_expression_to_spec(right, environment)?,
             }),
         }
+    }
+}
+
+/// The Integer Surface form of an operand of an Integer comparison: its `+`,
+/// `-`, `*` and negation are Integer arithmetic, and every other construct
+/// stays `Untyped`. A negated literal stays `Untyped`: lowering reads it as
+/// the literal `-n`, not as a negation.
+fn integer_surface_term(term: SyntaxTerm) -> SurfaceTerm {
+    let binary = |op, left: Box<SyntaxTerm>, right: Box<SyntaxTerm>| SurfaceTerm::Binary {
+        op,
+        kind: ArithmeticKind::Integer,
+        left: Box::new(integer_surface_term(*left)),
+        right: Box::new(integer_surface_term(*right)),
+    };
+    if matches!(term, SyntaxTerm::Negate(_)) && integer_literal_spelling(&term).is_some() {
+        return SurfaceTerm::Untyped(term);
+    }
+    match term {
+        SyntaxTerm::Add(left, right) => binary(ArithmeticOperator::Add, left, right),
+        SyntaxTerm::Subtract(left, right) => binary(ArithmeticOperator::Subtract, left, right),
+        SyntaxTerm::Multiply(left, right) => binary(ArithmeticOperator::Multiply, left, right),
+        SyntaxTerm::Negate(operand) => SurfaceTerm::Negate {
+            kind: ArithmeticKind::Integer,
+            operand: Box::new(integer_surface_term(*operand)),
+        },
+        term => SurfaceTerm::Untyped(term),
     }
 }
