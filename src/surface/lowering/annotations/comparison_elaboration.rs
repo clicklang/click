@@ -174,9 +174,9 @@ impl AnnotationLowerer<'_> {
         }
         Ok(SurfaceProposition::Comparison {
             kind: ComparisonKind::Native,
-            left: native_surface_term(left.clone()),
+            left: self.native_surface_term(left.clone(), environment),
             operator,
-            right: native_surface_term(right.clone()),
+            right: self.native_surface_term(right.clone(), environment),
         })
     }
 
@@ -276,6 +276,30 @@ impl AnnotationLowerer<'_> {
             SurfaceTerm::BitwiseNot { operand } => Ok(SpecExpression::BitwiseNot(Box::new(
                 self.lower_surface_native(operand, environment)?,
             ))),
+            // As the Syntax lowering builds a pointer step: `p - k` moves
+            // by `0 - k` elements.
+            SurfaceTerm::PointerStep {
+                pointer,
+                elements,
+                element_width,
+                backward,
+            } => {
+                let pointer = Box::new(self.lower_surface_native(pointer, environment)?);
+                let elements = self.lower_surface_native(elements, environment)?;
+                let elements = if *backward {
+                    SpecExpression::Subtract(
+                        Box::new(SpecExpression::Value(int32(0))),
+                        Box::new(elements),
+                    )
+                } else {
+                    elements
+                };
+                Ok(SpecExpression::PointerOffset {
+                    pointer,
+                    elements: Box::new(elements),
+                    byte_width: *element_width,
+                })
+            }
             SurfaceTerm::Binary {
                 op,
                 kind: ArithmeticKind::Native,
@@ -295,9 +319,8 @@ impl AnnotationLowerer<'_> {
                     Op::BitwiseAnd => SpecExpression::BitwiseAnd(left, right),
                     Op::BitwiseOr => SpecExpression::BitwiseOr(left, right),
                     Op::BitwiseXor => SpecExpression::BitwiseXor(left, right),
-                    Op::Add | Op::Subtract => {
-                        unreachable!("native + and - are not typed yet: they may be pointer steps")
-                    }
+                    Op::Subtract => SpecExpression::Subtract(left, right),
+                    Op::Add => unreachable!("native + is not typed yet: it may be a pointer step"),
                 })
             }
             SurfaceTerm::Binary {
@@ -325,6 +348,7 @@ impl AnnotationLowerer<'_> {
                 self.lower_contract_integer_to_spec(syntax, environment)
             }
             SurfaceTerm::BitwiseNot { .. }
+            | SurfaceTerm::PointerStep { .. }
             | SurfaceTerm::Negate {
                 kind: ArithmeticKind::Native,
                 ..
@@ -459,33 +483,81 @@ fn integer_surface_term(term: SyntaxTerm) -> SurfaceTerm {
     }
 }
 
-/// The native Surface form of an operand of a native comparison: its `*`,
-/// `/`, `%`, shifts and bitwise operators are native arithmetic, and every
-/// other construct stays `Untyped`. Native `+`, `-` and negation stay
-/// `Untyped` for now: `+` and `-` may be pointer steps, which lowering
-/// decides from the operands, and a negated literal is the literal.
-fn native_surface_term(term: SyntaxTerm) -> SurfaceTerm {
-    let binary = |op, left: Box<SyntaxTerm>, right: Box<SyntaxTerm>| SurfaceTerm::Binary {
-        op,
-        kind: ArithmeticKind::Native,
-        left: Box::new(native_surface_term(*left)),
-        right: Box::new(native_surface_term(*right)),
-    };
-    use ArithmeticOperator as Op;
-    match term {
-        SyntaxTerm::Multiply(left, right) => binary(Op::Multiply, left, right),
-        SyntaxTerm::Divide(left, right) => binary(Op::Divide, left, right),
-        SyntaxTerm::Remainder(left, right) => binary(Op::Remainder, left, right),
-        SyntaxTerm::ShiftLeft(left, right) => binary(Op::ShiftLeft, left, right),
-        SyntaxTerm::RustShiftLeft(left, right) => binary(Op::RustShiftLeft, left, right),
-        SyntaxTerm::ShiftRight(left, right) => binary(Op::ShiftRight, left, right),
-        SyntaxTerm::RustShiftRight(left, right) => binary(Op::RustShiftRight, left, right),
-        SyntaxTerm::BitwiseAnd(left, right) => binary(Op::BitwiseAnd, left, right),
-        SyntaxTerm::BitwiseOr(left, right) => binary(Op::BitwiseOr, left, right),
-        SyntaxTerm::BitwiseXor(left, right) => binary(Op::BitwiseXor, left, right),
-        SyntaxTerm::BitwiseNot(operand) => SurfaceTerm::BitwiseNot {
-            operand: Box::new(native_surface_term(*operand)),
-        },
-        term => SurfaceTerm::Untyped(term),
+impl AnnotationLowerer<'_> {
+    /// The native Surface form of an operand of a native comparison, in the
+    /// lowering context it is lowered in: its `-`, `*`, `/`, `%`, shifts and
+    /// bitwise operators are native arithmetic, and every other construct
+    /// stays `Untyped`. A `-` is a backward pointer step when its left
+    /// operand is a pointer with an element width and its right is not, as
+    /// lowering decides; a `-` that lowering would refuse as an untyped
+    /// pointer step stays `Untyped`, so lowering refuses it as before. Native
+    /// `+` and negation stay `Untyped` for now.
+    fn native_surface_term(
+        &self,
+        term: SyntaxTerm,
+        environment: &SpecElaborationContext,
+    ) -> SurfaceTerm {
+        use ArithmeticOperator as Op;
+        if matches!(term, SyntaxTerm::Subtract(..))
+            && self
+                .refuse_untyped_pointer_access(&term, environment)
+                .is_err()
+        {
+            return SurfaceTerm::Untyped(term);
+        }
+        let mut native =
+            |term: Box<SyntaxTerm>| Box::new(self.native_surface_term(*term, environment));
+        let binary = |op, left, right| SurfaceTerm::Binary {
+            op,
+            kind: ArithmeticKind::Native,
+            left,
+            right,
+        };
+        match term {
+            SyntaxTerm::Subtract(left, right) => {
+                match (
+                    self.contract_pointer_element_width(&left, environment),
+                    self.contract_pointer_element_width(&right, environment),
+                ) {
+                    (Some(element_width), None) => SurfaceTerm::PointerStep {
+                        pointer: native(left),
+                        elements: native(right),
+                        element_width,
+                        backward: true,
+                    },
+                    _ => binary(Op::Subtract, native(left), native(right)),
+                }
+            }
+            SyntaxTerm::Multiply(left, right) => binary(Op::Multiply, native(left), native(right)),
+            SyntaxTerm::Divide(left, right) => binary(Op::Divide, native(left), native(right)),
+            SyntaxTerm::Remainder(left, right) => {
+                binary(Op::Remainder, native(left), native(right))
+            }
+            SyntaxTerm::ShiftLeft(left, right) => {
+                binary(Op::ShiftLeft, native(left), native(right))
+            }
+            SyntaxTerm::RustShiftLeft(left, right) => {
+                binary(Op::RustShiftLeft, native(left), native(right))
+            }
+            SyntaxTerm::ShiftRight(left, right) => {
+                binary(Op::ShiftRight, native(left), native(right))
+            }
+            SyntaxTerm::RustShiftRight(left, right) => {
+                binary(Op::RustShiftRight, native(left), native(right))
+            }
+            SyntaxTerm::BitwiseAnd(left, right) => {
+                binary(Op::BitwiseAnd, native(left), native(right))
+            }
+            SyntaxTerm::BitwiseOr(left, right) => {
+                binary(Op::BitwiseOr, native(left), native(right))
+            }
+            SyntaxTerm::BitwiseXor(left, right) => {
+                binary(Op::BitwiseXor, native(left), native(right))
+            }
+            SyntaxTerm::BitwiseNot(operand) => SurfaceTerm::BitwiseNot {
+                operand: native(operand),
+            },
+            term => SurfaceTerm::Untyped(term),
+        }
     }
 }

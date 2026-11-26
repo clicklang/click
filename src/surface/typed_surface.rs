@@ -78,6 +78,16 @@ pub(crate) enum SurfaceTerm {
     },
     /// `~operand`, which exists only on machine words.
     BitwiseNot { operand: Box<SurfaceTerm> },
+    /// C pointer arithmetic: `pointer` moved by `elements` whole elements of
+    /// `element_width` bytes, backward when `backward` (`p - k`). The width
+    /// is the pointee's size, which elaboration reads from the pointer's
+    /// type.
+    PointerStep {
+        pointer: Box<SurfaceTerm>,
+        elements: Box<SurfaceTerm>,
+        element_width: u32,
+        backward: bool,
+    },
     /// A term elaboration has not typed yet; lowering reads it the old way,
     /// as the surrounding typed node says.
     Untyped(SyntaxTerm),
