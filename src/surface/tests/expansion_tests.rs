@@ -2559,13 +2559,14 @@ fn induction_application_proves_a_moved_range_span_and_cold_replays() {
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.4s in the parallel gate"]
-fn established_false_expands_to_empty_contradiction() {
+fn established_false_expands_to_checked_close() {
     let (source, _) =
         mdtest_sources("mdtests/arithmetic_proves_a_disequality_by_refuting_its_equality.md");
     let label = "integer_lt_neq_arithmetic.ensures_0";
     let expanded = expand_c_claim_source_by_label(&source, &[], label).unwrap();
-    assert!(expanded.contains("contradiction();"), "{expanded}");
-    without_implicit_solve_for_claim(label, || {
+    assert!(expanded.contains("have false by"), "{expanded}");
+    assert!(!expanded.contains("contradiction();"), "{expanded}");
+    without_proof_search_for_claim(label, || {
         verify_click_theorems(&expanded).map_err(|error| error.report())
     })
     .unwrap();

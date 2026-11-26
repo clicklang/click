@@ -1,7 +1,7 @@
 # Refuting a condition or equality with a proof if
 
 A proof `if` on the denied proposition puts it in scope in one arm.
-That arm can close with `contradiction`; the other arm has the goal as a fact.
+That arm can close once it holds `false`. The other arm has the goal as a fact.
 
 ```c filename=intro_opens_a_written_negation_and_a_disequality.c
 void unused(void) {}
@@ -15,7 +15,7 @@ theorem written_negation(n: int32) {
     ensures not (n == 1) by {
         if n == 1 {
             have false by { close() using { n == 0; n == 1; }; }
-            contradiction();
+            close();
         } else {
             close();
         }
@@ -38,7 +38,7 @@ theorem written_order_negation(x: int32, y: int32) {
     requires x < y;
     ensures not (x >= y) by {
         if x >= y {
-            contradiction(x < y);
+            close();
         } else {
             close();
         }

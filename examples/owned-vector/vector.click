@@ -213,7 +213,7 @@ int32 vector_copy(
                                     have false by {
                                         close() using { at(region(4).entry, k) < at(region(4).entry, (i as int32)); at(region(4).entry, k) == at(region(4).entry, (i as int32)); };
                                     }
-                                    contradiction();
+                                    close();
                                 } else {
                                     close();
                                 }

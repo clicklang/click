@@ -284,14 +284,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let marker = split_proof.checkpoint();
             let equal_arm = split_proof.focus_branch(ids[0])?;
             let falsehood = SyntaxProposition::Value(crate::surface::bool_literal(false));
-            let refuted_scope = equal_arm.driver().open_have(falsehood.clone())?;
+            let refuted_scope = equal_arm.driver().open_have(falsehood)?;
             let refuted = refuted_scope
                 .driver()
                 .apply_step(ProofStep::ArithmeticUsing(listed))?
                 .join()?;
-            let equal_done = refuted
-                .driver()
-                .apply_step(ProofStep::Contradiction(falsehood))?;
+            let equal_done = refuted.driver().apply_step(ProofStep::Known)?;
             let unequal_done = equal_done
                 .focus_branch(ids[1])?
                 .driver()

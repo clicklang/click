@@ -595,9 +595,7 @@ mod certificate_tests {
                 theorem impossible(x: int32) {
                     requires x >= 0;
                     requires not (x >= 0);
-                    ensures x == 0 by {
-                        contradiction(x >= 0);
-                    }
+                    ensures x == 0 by close();
                 }
             "#,
         )
@@ -607,15 +605,18 @@ mod certificate_tests {
         let click_function_environment =
             ClickFunctionEnvironment::new(file.click_function_definitions());
 
-        let verified = verify_theorem_definitions(
-            TheoremEnvironment::new(&[]),
-            file.theorem_definitions(),
-            SpecDefinitions::new(&predicate_environment, &click_function_environment),
-            None,
-            &ResourceEnvironment::new(&[]),
-            std::sync::Arc::new(FunctionSourceRegistry::default()),
-        );
-        let verified = verified.expect("direct checked pure proofs should verify");
+        let verified = without_proof_search_for_claim("impossible.ensures_0", || {
+            verify_theorem_definitions(
+                TheoremEnvironment::new(&[]),
+                file.theorem_definitions(),
+                SpecDefinitions::new(&predicate_environment, &click_function_environment),
+                None,
+                &ResourceEnvironment::new(&[]),
+                std::sync::Arc::new(FunctionSourceRegistry::default()),
+            )
+            .map_err(|error| error.report())
+        })
+        .expect("direct checked pure proofs should verify");
         assert_eq!(
             verified[0].proof_tactics().as_deref(),
             Some([ProofTactic::Known].as_slice())
@@ -650,7 +651,7 @@ mod certificate_tests {
         );
         assert!(matches!(
             verified[7].proof_tactics().as_deref(),
-            Some([ProofTactic::Contradiction(_)])
+            Some([ProofTactic::Known])
         ));
     }
 

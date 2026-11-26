@@ -5,6 +5,44 @@
 use super::*;
 
 #[test]
+fn close_on_exact_contradiction_uses_bounded_work() {
+    use crate::instrumentation::measure_deterministic_work;
+
+    let _session = crate::kernel::VerificationSession::enter();
+    let goal = Proposition::Predicate {
+        name: "goal".into(),
+        arguments: vec![],
+    };
+    let positive = Proposition::Predicate {
+        name: "guard".into(),
+        arguments: vec![],
+    };
+    let negative = Proposition::Not(Box::new(positive.clone()));
+
+    let mut baseline = None;
+    for size in [0, 16, 64, 256] {
+        let unrelated = (0..size)
+            .map(|i| Proposition::Predicate {
+                name: format!("unrelated_{i}"),
+                arguments: vec![],
+            })
+            .collect::<Vec<_>>();
+        let facts = PureFactStore::from_ordered(&unrelated).with_fact(positive.clone());
+        let consistent = known_computation_proof(goal.clone(), facts.clone());
+        let inconsistent = known_computation_proof(goal.clone(), facts.with_fact(negative.clone()));
+        let (closed, work) =
+            measure_deterministic_work(|| inconsistent.apply_known(PropositionKnownContext::Exact));
+        assert!(closed.is_ok(), "fact count {size}");
+        assert_eq!(work, *baseline.get_or_insert(work), "fact count {size}");
+        assert!(
+            consistent
+                .apply_known(PropositionKnownContext::Exact)
+                .is_err()
+        );
+    }
+}
+
+#[test]
 fn invariant_body_evidence_requires_exact_complete_root_and_context() {
     use crate::kernel::proof::{
         ExecutionFrontier, ExecutionProofCore, ExecutionRegionKind, FrontierPosition,

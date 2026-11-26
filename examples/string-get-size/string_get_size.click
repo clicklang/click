@@ -95,7 +95,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
             intro() {
                 intro() {
                     have false by { close() using { k < 0u64; }; }
-                    contradiction();
+                    close();
                 }
             }
         }
@@ -156,7 +156,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                 intro() {
                     intro() {
                         have false by { close() using { k < 0u64; }; }
-                        contradiction();
+                        close();
                     }
                 }
             }
@@ -250,7 +250,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                 to_integer(at(head, blk_size)) * 1000000000000 <= 18446744073709551615;
                                 4294967296 <= to_integer(at(head, blk_size));
                             }; }
-                            contradiction();
+                            close();
                         }
                     }
                     have i == 1 implies to_integer(blk_size) * 1000 <= 18446744073709551615;
@@ -334,7 +334,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                 to_integer(at(head, size)) * 1000000000000 <= 18446744073709551615;
                                 4294967296 <= to_integer(at(head, size));
                             }; }
-                            contradiction();
+                            close();
                         }
                     }
                     have i == at(loop(1).entry, i) + 1 implies to_integer(size) * 1000 <= 18446744073709551615 by {
@@ -447,7 +447,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                         to_integer(at(head, size)) * 1000000000000000000 <= 18446744073709551615;
                                         1024 <= to_integer(at(head, size));
                                     }; }
-                                    contradiction();
+                                    close();
                                 }
                             }
                             have i == at(loop(2).entry, i) + 1 implies to_integer(size) * 1000 <= 18446744073709551615 by {
@@ -534,7 +534,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                         to_integer(at(head, size)) * 1000000000000000000 <= 18446744073709551615;
                                         1000 <= to_integer(at(head, size));
                                     }; }
-                                    contradiction();
+                                    close();
                                 }
                             }
                             have i == at(loop(2).entry, i) + 1 implies to_integer(size) * 1000 <= 18446744073709551615 by {
@@ -929,7 +929,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         intro() {
                             intro() {
                                 have false by { close() using { k < tmp_len(j); tmp_len(j) == 0u64; }; }
-                                contradiction();
+                                close();
                             }
                         }
                     }
