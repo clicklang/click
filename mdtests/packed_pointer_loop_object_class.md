@@ -34,8 +34,18 @@ void follow(struct node* p, int32 more) {
         maintain by {
             let { word: saved_word } = unfold(held);
             have p->parent_word == address(p) by { rewrite(p, old(p)); close(); }
+            have 0 < more;
+            mark before_decrement;
             step(); step();
+            have p == old(p);
+            have 0 <= more;
+            have to_integer(more) == to_integer(at(before_decrement, more)) - 1;
+            have to_integer(more) < to_integer(at(before_decrement, more)) by {
+                rewrite(to_integer(more), to_integer(at(before_decrement, more)) - 1);
+                close();
+            }
             let held = fold(self_link(old(p)), { word: saved_word });
+            close();
         }
     }
 }

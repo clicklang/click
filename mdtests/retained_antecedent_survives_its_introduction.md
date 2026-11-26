@@ -24,7 +24,7 @@ int32 retained_antecedent(int32 n) {
         intro() {
             intro() {
                 have n / k == n;
-                normalize();
+                close();
             }
         }
     }

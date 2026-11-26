@@ -14,7 +14,7 @@ int32 echo(int32 x) {
     ensures result == x;
 } by {
     step_until(function.exit);
-    have exact(x) == x by normalize();
+    have exact(x) == x by close();
 }
 ```
 

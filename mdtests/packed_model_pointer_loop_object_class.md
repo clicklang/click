@@ -32,12 +32,24 @@ void follow_model(struct model_node* p, int32 more) {
         invariant 0 <= more;
         initialize by close();
         maintain by {
-            match held.model { PackedLink::At(q) => {
-            let { word: saved_word } = unfold(held);
-            have p->parent_word == address(q) by { rewrite(p, old(p)); close(); }
-            step(); step();
-            let held = fold(model_link(old(p)), { word: saved_word, model: PackedLink::At(q) });
-            } }
+            match held.model {
+                PackedLink::At(q) => {
+                    let { word: saved_word } = unfold(held);
+                    have p->parent_word == address(q) by { rewrite(p, old(p)); close(); }
+                    have 0 < more;
+                    mark before_decrement;
+                    step(); step();
+                    have p == old(p);
+                    have 0 <= more;
+                    have to_integer(more) == to_integer(at(before_decrement, more)) - 1;
+                    have to_integer(more) < to_integer(at(before_decrement, more)) by {
+                        rewrite(to_integer(more), to_integer(at(before_decrement, more)) - 1);
+                        close();
+                    }
+                    let held = fold(model_link(old(p)), { word: saved_word, model: PackedLink::At(q) });
+                    close();
+                },
+            }
         }
     }
 }

@@ -707,27 +707,6 @@ fn rejects_apply_theorem_with_explicit_premises() {
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_07")]
-fn rejects_transport_with_explicit_premises() {
-    let source = FILL3_CLICK.replace(
-        "== 2;",
-        "== 2 by {
-            step();
-            transport(old(p[0]) == 0, p[0] == 0) using {
-                old(p[0]) == 0;
-            }
-            step_until(function.exit);
-            close();
-        }",
-    );
-    let error = parse(&source).expect_err("the selected-premise form is retired");
-    assert!(
-        error.message().contains("`transport ... using` is retired"),
-        "{error}"
-    );
-}
-
-#[test]
-#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_07")]
 fn parses_and_classifies_simple_and_smart_tactics() {
     let source = r#"
             theorem rewritten(x: int32, y: int32) {
@@ -1460,7 +1439,6 @@ test_batches! {
         rejects_apply_theorem_with_explicit_premises,
     ],
     control_batch_07: [
-        rejects_transport_with_explicit_premises,
         parses_and_classifies_simple_and_smart_tactics,
         canonical_tactic_printer_round_trips_nested_surface_certificate,
         canonical_tactic_printer_round_trips_cases_certificate,

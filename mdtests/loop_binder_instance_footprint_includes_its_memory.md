@@ -102,12 +102,12 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
                                 apply(click::separation::separate_elements(occupied, at(opened, i), k));
                             }
                             have separate(loop(0).statement(0).footprint, memory(occupied[k])) by {
-                                normalize() using { at(opened, separate(memory(occupied[i]), memory(occupied[k]))); };
+                                close() using { at(opened, separate(memory(occupied[i]), memory(occupied[k]))); };
                             }
                             have at(loop(0).statement(0).exit, occupied[k]) == at(opened, occupied[k]) by {
                                 preserve(memory(occupied[k]), loop(0).statement(0));
                             }
-                            have separate(loop(0).statement(1).footprint, memory(occupied[k])) by { normalize() using { }; }
+                            have separate(loop(0).statement(1).footprint, memory(occupied[k])) by { close() using { }; }
                             have occupied[k] == at(loop(0).statement(1).entry, occupied[k]) by {
                                 preserve(memory(occupied[k]), loop(0).statement(1));
                             }
@@ -116,7 +116,7 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
                             have k <= at(opened, i);
                             have k == at(opened, i);
                             rewrite(k, at(opened, i));
-                            normalize();
+                            close();
                         }
                     }
                 }
@@ -161,7 +161,7 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
         rewrite(n, end);
         close();
     }
-    have start <= start by normalize();
+    have start <= start by close();
     have occupied[start] == 1 by {
         instantiate(forall (j: int32) {
             start <= j and j < n implies occupied[j] == 1

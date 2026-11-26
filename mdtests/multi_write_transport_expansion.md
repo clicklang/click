@@ -20,8 +20,7 @@ void keep(uint8* p, uint8* q) {
         close() using { separate(memory(*p), memory(*q)); };
     }
     have *q == at(statement(0).entry, *q) by {
-        transport(at(statement(0).entry, *q) == at(statement(0).entry, *q),
-            *q == at(statement(0).entry, *q));
+        close();
     }
     step();
 }

@@ -17,8 +17,7 @@ void keep(int *p) {
         close() using { separate(memory(*p), m); };
     }
     have m.value == at(statement(0).entry, m.value) by {
-        transport(at(statement(0).entry, m.value) == at(statement(0).entry, m.value),
-            m.value == at(statement(0).entry, m.value));
+        close();
     }
     step();
 }

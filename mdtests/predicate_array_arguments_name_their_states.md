@@ -20,12 +20,12 @@ void copy_t(char* dst, const char* src) {
     step();
     mark copied;
     step();
-    have bytes::equal(dst, 0u64, src, 0u64, 4u64) by {
-        transport(at(copied, bytes::equal(dst, 0u64, src, 0u64, 4u64)), bytes::equal(dst, 0u64, src, 0u64, 4u64));
+    have at(copied, bytes::equal(dst, 0u64, src, 0u64, 4u64)) by {
+        close();
     }
 }
 ```
 
 ```expect
-fail: missing pure fact: click::bytes::equal(at(<state A>, dst), 0u64, at(<state A>, src), 0u64, 4u64)
+fail: click::bytes::equal(at(statement(0).exit, dst), 0u64, at(statement(0).exit, src), 0u64, 4u64)
 ```
