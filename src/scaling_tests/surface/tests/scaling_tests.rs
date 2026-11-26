@@ -1431,7 +1431,7 @@ fn target_with_unrelated_theorems(theorem_count: usize) -> String {
         ));
     }
     click_source.push_str(
-        "int32 scaling_target(int32 x) {\n    ensures result == x;\n} by {\n    step();\n    normalize();\n}\n",
+        "int32 scaling_target(int32 x) {\n    ensures result == x;\n} by {\n    step();\n    close();\n}\n",
     );
     click_source
 }
