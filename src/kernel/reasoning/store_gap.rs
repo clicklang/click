@@ -61,7 +61,7 @@
 
 #[cfg(test)]
 use crate::kernel::OldMachineTerm;
-use crate::kernel::{OldAddress, OldAddressOffset, PureFactContext};
+use crate::kernel::{OffsetTree, OffsetView, OldAddress, OldAddressOffset, PureFactContext};
 
 /// The widest cell there is: no `ProgramValue` is wider, and a cell holding
 /// `Void` stands in this width too.
@@ -117,21 +117,22 @@ pub(in crate::kernel) fn store_gap_kept_ranges(
         base: store.base.clone(),
         offset,
     };
-    match &store.offset {
-        OldAddressOffset::Constant(k) => kept_shifts(*k, bytes, false)
+    let offset = &store.offset;
+    match offset.view() {
+        OffsetView::Constant(k) => kept_shifts(k, bytes, false)
             .into_iter()
             .map(|(low, high)| {
                 (
-                    key(OldAddressOffset::Constant(low)),
-                    key(OldAddressOffset::Constant(high)),
+                    key(OldAddressOffset::constant(low)),
+                    key(OldAddressOffset::constant(high)),
                 )
             })
             .collect(),
-        offset => {
+        view => {
             // `Add(S, Constant(k))`, or a bare anchor `S` at shift 0.
-            let (anchor, k, bare) = match offset {
-                OldAddressOffset::Add(anchor, trailing) => match trailing.as_ref() {
-                    OldAddressOffset::Constant(k) => (anchor.as_ref(), *k, false),
+            let (anchor, k, bare) = match view {
+                OffsetView::Add(anchor, trailing) => match trailing.view() {
+                    OffsetView::Constant(k) => (anchor, k, false),
                     _ => (offset, 0, true),
                 },
                 _ => (offset, 0, true),
@@ -139,7 +140,7 @@ pub(in crate::kernel) fn store_gap_kept_ranges(
             // Against a bare store the cancellation rung matches the anchor
             // itself as the store's whole offset, which only a non-sum
             // anchor is (a sum takes the two-sums branch of that rung).
-            if bare && matches!(anchor, OldAddressOffset::Add(..)) {
+            if bare && matches!(anchor.view(), OffsetView::Add(..)) {
                 return Vec::new();
             }
             if !anchor_is_normal(anchor, assumptions)
@@ -152,9 +153,9 @@ pub(in crate::kernel) fn store_gap_kept_ranges(
                 .into_iter()
                 .map(|(low, high)| {
                     let at = |shift: i64| {
-                        key(OldAddressOffset::Add(
-                            Box::new(anchor.clone()),
-                            Box::new(OldAddressOffset::Constant(shift)),
+                        key(OldAddressOffset::raw_add(
+                            anchor.clone(),
+                            OldAddressOffset::constant(shift),
                         ))
                     };
                     (at(low), at(high))
@@ -200,7 +201,7 @@ pub(in crate::kernel) fn anchor_is_normal(
     if anchor.as_const().is_some() {
         return false;
     }
-    if let OldAddressOffset::Add(_, trailing) = anchor
+    if let OffsetView::Add(_, trailing) = anchor.view()
         && trailing.as_const().is_some()
     {
         return false;

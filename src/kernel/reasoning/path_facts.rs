@@ -550,8 +550,8 @@ pub(in crate::kernel) fn element_index_from_offset(
     offset: &OldAddressOffset,
     element_width: u32,
 ) -> Option<OldMachineTerm> {
-    if let OldAddressOffset::Constant(bytes) = offset {
-        return element_index_literal(*bytes, element_width).map(OldMachineTerm::constant);
+    if let OffsetView::Constant(bytes) = offset.view() {
+        return element_index_literal(bytes, element_width).map(OldMachineTerm::constant);
     }
     shared_element_index_from_offset(offset, element_width)
         .map(|index| index.structural_value().clone())
@@ -571,12 +571,12 @@ pub(in crate::kernel) fn shared_element_index_from_offset(
     }
     let constant = |n: u32| S::intern(T::Int32, OldMachineTerm::constant(n));
     let root = |v: &S| KernelTerm::retained_machine_operand(T::Int32, v.operand_view());
-    match offset {
-        OldAddressOffset::Add(a, b) => {
-            if a.as_ref() == &OldAddressOffset::Constant(0) {
+    match offset.view() {
+        OffsetView::Add(a, b) => {
+            if matches!(a.view(), OffsetView::Constant(0)) {
                 return shared_element_index_from_offset(b, element_width);
             }
-            if b.as_ref() == &OldAddressOffset::Constant(0) {
+            if matches!(b.view(), OffsetView::Constant(0)) {
                 return shared_element_index_from_offset(a, element_width);
             }
             let a = shared_element_index_from_offset(a, element_width)?;
@@ -591,29 +591,25 @@ pub(in crate::kernel) fn shared_element_index_from_offset(
                 ),
             )
         }
-        OldAddressOffset::Int32Scaled { value, byte_width }
-            if *byte_width == i64::from(element_width) =>
-        {
-            Some(value.clone())
+        OffsetView::Int32Scaled { index, byte_width } if byte_width == i64::from(element_width) => {
+            Some(index)
         }
-        OldAddressOffset::Int32Scaled { value, byte_width } if element_width == 1 => {
-            let width = u32::try_from(*byte_width).ok()?;
+        OffsetView::Int32Scaled { index, byte_width } if element_width == 1 => {
+            let width = u32::try_from(byte_width).ok()?;
             match width {
                 0 => Some(constant(0)),
-                1 => Some(value.clone()),
+                1 => Some(index),
                 _ => S::from_shared(
                     T::Int32,
                     KernelTerm::machine_binary_shared(
                         T::Int32,
                         B::Multiply,
-                        [root(value), root(&constant(width))],
+                        [root(&index), root(&constant(width))],
                     ),
                 ),
             }
         }
-        OldAddressOffset::Constant(bytes) => {
-            element_index_literal(*bytes, element_width).map(constant)
-        }
+        OffsetView::Constant(bytes) => element_index_literal(bytes, element_width).map(constant),
         _ => None,
     }
 }
@@ -633,8 +629,8 @@ pub(in crate::kernel) fn element_index_from_offset_with_facts(
     element_width: u32,
     assumptions: &PureFactContext,
 ) -> Option<OldMachineTerm> {
-    if let OldAddressOffset::Constant(bytes) = offset {
-        return element_index_literal(*bytes, element_width).map(OldMachineTerm::constant);
+    if let OffsetView::Constant(bytes) = offset.view() {
+        return element_index_literal(bytes, element_width).map(OldMachineTerm::constant);
     }
     shared_element_index_from_offset_with_facts(offset, element_width, assumptions)
         .map(|index| index.structural_value().clone())
@@ -657,16 +653,16 @@ pub(in crate::kernel) fn shared_element_index_from_offset_with_facts(
     if let Some(index) = shared_element_index_from_offset(offset, element_width) {
         return Some(index);
     }
-    match offset {
-        OldAddressOffset::Add(left, right) => Some(shared_offset_sum(
+    match offset.view() {
+        OffsetView::Add(left, right) => Some(shared_offset_sum(
             shared_element_index_from_offset_with_facts(left, element_width, assumptions)?,
             shared_element_index_from_offset_with_facts(right, element_width, assumptions)?,
         )),
-        OldAddressOffset::Int64Scaled {
-            value,
+        OffsetView::Int64Scaled {
+            index: value,
             byte_width,
             unsigned,
-        } if *byte_width == i64::from(element_width) => {
+        } if byte_width == i64::from(element_width) => {
             // The value is sixty-four bits wide, so only a sixty-four-bit
             // fact pins it: a thirty-two-bit one names the low word and
             // leaves the rest, and `exact_signed_constant` accepts those.
@@ -674,14 +670,14 @@ pub(in crate::kernel) fn shared_element_index_from_offset_with_facts(
             // it, because the two readings of one word are different numbers.
             if let Some(index) = crate::kernel::assumptions::exact_sixty_four_bit_constant_view(
                 value.operand_view(),
-                *unsigned,
+                unsigned,
                 assumptions,
             ) {
                 return i32::try_from(index)
                     .ok()
                     .map(|index| V::Old(&OldMachineTerm::constant(index as u32)).retain(T::Int32));
             }
-            if !*unsigned {
+            if !unsigned {
                 // A signed index in `0..=INT_MAX` is its own low word.
                 return assumptions
                     .int64_index_fits_int32_view(value.operand_view())
@@ -878,28 +874,23 @@ pub(in crate::kernel) fn exact_element_delta_from_offset(
     if element_width == 0 {
         return None;
     }
-    match offset {
-        OldAddressOffset::Add(left, right) => exact_element_delta_from_offset(left, element_width)?
+    match offset.view() {
+        OffsetView::Add(left, right) => exact_element_delta_from_offset(left, element_width)?
             .add(exact_element_delta_from_offset(right, element_width)?),
-        OldAddressOffset::Int32Scaled { value, byte_width }
-            if *byte_width == i64::from(element_width) =>
-        {
-            Some(ExactElementDelta {
-                index: value.clone(),
-                constant: 0,
-            })
+        OffsetView::Int32Scaled { index, byte_width } if byte_width == i64::from(element_width) => {
+            Some(ExactElementDelta { index, constant: 0 })
         }
-        OldAddressOffset::Constant(offset) if offset % i64::from(element_width) == 0 => Some(
+        OffsetView::Constant(offset) if offset % i64::from(element_width) == 0 => Some(
             ExactElementDelta::constant(offset / i64::from(element_width)),
         ),
         // An `Int64Scaled` index scales its *64-bit* value, which is not the
         // signed value of the 32-bit term holding it, so the term cannot stand
         // for the delta. A constant one has already been folded into
         // `Constant` by `scale_int64`.
-        OldAddressOffset::Constant(_)
-        | OldAddressOffset::Variable(_)
-        | OldAddressOffset::Int32Scaled { .. }
-        | OldAddressOffset::Int64Scaled { .. } => None,
+        OffsetView::Constant(_)
+        | OffsetView::Variable(_)
+        | OffsetView::Int32Scaled { .. }
+        | OffsetView::Int64Scaled { .. } => None,
     }
 }
 
@@ -908,12 +899,12 @@ pub(in crate::kernel) fn common_pointer_offset_element_width(
     right: &OldAddressOffset,
 ) -> Option<u32> {
     fn offset_element_width(offset: &OldAddressOffset) -> Option<u32> {
-        match offset {
-            OldAddressOffset::Int32Scaled { byte_width, .. }
-            | OldAddressOffset::Int64Scaled { byte_width, .. } => {
-                u32::try_from(*byte_width).ok().filter(|width| *width > 0)
+        match offset.view() {
+            OffsetView::Int32Scaled { byte_width, .. }
+            | OffsetView::Int64Scaled { byte_width, .. } => {
+                u32::try_from(byte_width).ok().filter(|width| *width > 0)
             }
-            OldAddressOffset::Add(left, right) => {
+            OffsetView::Add(left, right) => {
                 match (offset_element_width(left), offset_element_width(right)) {
                     (Some(left), Some(right)) if left == right => Some(left),
                     (Some(width), None) | (None, Some(width)) => Some(width),
@@ -921,7 +912,7 @@ pub(in crate::kernel) fn common_pointer_offset_element_width(
                     _ => None,
                 }
             }
-            OldAddressOffset::Constant(_) | OldAddressOffset::Variable(_) => None,
+            OffsetView::Constant(_) | OffsetView::Variable(_) => None,
         }
     }
 
@@ -944,7 +935,7 @@ pub(in crate::kernel) fn shared_pointer_byte_offset_from_base(
             MachineOperandView::Old(&OldMachineTerm::constant(0)).retain(MachineIntegerType::Int32),
         );
     }
-    if base.offset == OldAddressOffset::Constant(0) {
+    if matches!(base.offset.view(), OffsetView::Constant(0)) {
         return shared_byte_offset_from_pointer_offset(&pointer.offset);
     }
 
@@ -965,13 +956,13 @@ pub(in crate::kernel) fn shared_pointer_byte_offset_from_base(
                     .retain(MachineIntegerType::Int32),
             );
         }
-        let OldAddressOffset::Add(left, right) = offset else {
+        let OffsetView::Add(left, right) = offset.view() else {
             return None;
         };
-        if left.as_ref() == base {
+        if left == base {
             return shared_byte_offset_from_pointer_offset(right);
         }
-        if right.as_ref() == base {
+        if right == base {
             return shared_byte_offset_from_pointer_offset(left);
         }
         if let Some(left_offset) = offset_from_nested_base(left, base) {
@@ -1014,8 +1005,8 @@ fn element_index_literal(bytes: i64, width: u32) -> Option<u32> {
 pub(in crate::kernel) fn byte_offset_from_pointer_offset(
     offset: &OldAddressOffset,
 ) -> Option<OldMachineTerm> {
-    if let OldAddressOffset::Constant(bytes) = offset {
-        return element_index_literal(*bytes, 1).map(OldMachineTerm::constant);
+    if let OffsetView::Constant(bytes) = offset.view() {
+        return element_index_literal(bytes, 1).map(OldMachineTerm::constant);
     }
     shared_byte_offset_from_pointer_offset(offset).map(|index| index.structural_value().clone())
 }
@@ -1039,19 +1030,22 @@ pub(in crate::kernel) fn shared_byte_offset_from_pointer_offset(
 ) -> Option<crate::kernel::SharedMachineIntegerTerm> {
     use crate::kernel::{KernelTerm, MachineIntegerType as T, MachineOperandView as V};
     let constant = |n| V::Old(&OldMachineTerm::constant(n)).retain(T::Int32);
-    match offset {
-        OldAddressOffset::Constant(offset) => (i32::MIN as i64..=i32::MAX as i64)
-            .contains(offset)
-            .then_some(constant((*offset as i32) as u32)),
-        OldAddressOffset::Add(left, right) => Some(shared_offset_sum(
+    match offset.view() {
+        OffsetView::Constant(offset) => (i32::MIN as i64..=i32::MAX as i64)
+            .contains(&offset)
+            .then_some(constant((offset as i32) as u32)),
+        OffsetView::Add(left, right) => Some(shared_offset_sum(
             shared_byte_offset_from_pointer_offset(left)?,
             shared_byte_offset_from_pointer_offset(right)?,
         )),
-        OldAddressOffset::Int32Scaled { value, byte_width } => {
-            let width = u32::try_from(*byte_width).ok()?;
+        OffsetView::Int32Scaled {
+            index: value,
+            byte_width,
+        } => {
+            let width = u32::try_from(byte_width).ok()?;
             match width {
                 0 => Some(constant(0)),
-                1 => Some(value.clone()),
+                1 => Some(value),
                 _ => Some(
                     V::Shared(&KernelTerm::machine_binary_shared(
                         T::Int32,
@@ -1068,10 +1062,10 @@ pub(in crate::kernel) fn shared_byte_offset_from_pointer_offset(
                 ),
             }
         }
-        OldAddressOffset::Int64Scaled { byte_width: 0, .. } => Some(constant(0)),
+        OffsetView::Int64Scaled { byte_width: 0, .. } => Some(constant(0)),
         // A 64-bit index is not a 32-bit byte residue, even when its stride
         // is one. Callers that need its numeric value must use a 64-bit bound.
-        OldAddressOffset::Int64Scaled { .. } | OldAddressOffset::Variable(_) => None,
+        OffsetView::Int64Scaled { .. } | OffsetView::Variable(_) => None,
     }
 }
 
@@ -1191,29 +1185,32 @@ pub(in crate::kernel) struct ScaledElementOffset {
 pub(in crate::kernel) fn scaled_element_offset(
     offset: &OldAddressOffset,
 ) -> Option<ScaledElementOffset> {
-    let (scaled, field) = match offset {
-        OldAddressOffset::Add(left, right) => match (left.as_ref(), right.as_ref()) {
-            (scaled, OldAddressOffset::Constant(field))
-            | (OldAddressOffset::Constant(field), scaled) => (scaled, *field),
+    let (scaled, field) = match offset.view() {
+        OffsetView::Add(left, right) => match (left.view(), right.view()) {
+            (_, OffsetView::Constant(field)) => (left, field),
+            (OffsetView::Constant(field), _) => (right, field),
             _ => return None,
         },
-        scaled => (scaled, 0),
+        _ => (offset, 0),
     };
     use crate::kernel::{
         KernelTerm, MachineBinaryOp, MachineIntegerType as Ty, SharedMachineIntegerTerm,
     };
-    let (index, signed, stride) = match scaled {
-        OldAddressOffset::Int32Scaled { value, byte_width } => {
+    let (index, signed, stride) = match scaled.view() {
+        OffsetView::Int32Scaled {
+            index: value,
+            byte_width,
+        } => {
             let root = KernelTerm::retained_machine_operand(Ty::Int32, value.operand_view());
             let wide = root.checking_legacy_machine_conversion(Ty::Int32, Ty::Int64);
             (
                 SharedMachineIntegerTerm::from_shared(Ty::Int64, wide)?,
                 true,
-                *byte_width,
+                byte_width,
             )
         }
-        OldAddressOffset::Int64Scaled {
-            value,
+        OffsetView::Int64Scaled {
+            index: value,
             byte_width: 1,
             unsigned: false,
         } => match value.operand_view().binary() {
@@ -1226,11 +1223,11 @@ pub(in crate::kernel) fn scaled_element_offset(
             }
             _ => (value.clone(), true, 1),
         },
-        OldAddressOffset::Int64Scaled {
-            value,
+        OffsetView::Int64Scaled {
+            index: value,
             byte_width,
             unsigned,
-        } => (value.clone(), !unsigned, *byte_width),
+        } => (value, !unsigned, byte_width),
         _ => return None,
     };
     (stride > 0).then_some(ScaledElementOffset {
@@ -1450,22 +1447,22 @@ pub(in crate::kernel) fn add_address_offset_equality_execution_pure_facts(
     // a constant multiple by its nonzero stride gives an equivalent native
     // index comparison in both polarities, without truncating to 32 bits.
     let wide_index_condition = |scaled: &OldAddressOffset, constant: &OldAddressOffset| {
-        let OldAddressOffset::Int64Scaled {
-            value: index,
+        let OffsetView::Int64Scaled {
+            index,
             byte_width,
             unsigned,
-        } = scaled
+        } = scaled.view()
         else {
             return None;
         };
-        let OldAddressOffset::Constant(target) = constant else {
+        let OffsetView::Constant(target) = constant.view() else {
             return None;
         };
-        if target.checked_rem(*byte_width)? != 0 {
+        if target.checked_rem(byte_width)? != 0 {
             return None;
         }
-        let element = target.checked_div(*byte_width)?;
-        let (format, constant) = if *unsigned {
+        let element = target.checked_div(byte_width)?;
+        let (format, constant) = if unsigned {
             (
                 MachineIntegerType::UInt64,
                 OldMachineTerm::uint64_constant(u64::try_from(element).ok()?),
