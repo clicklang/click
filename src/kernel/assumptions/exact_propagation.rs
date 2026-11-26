@@ -187,7 +187,12 @@ impl Index {
         }
         self.known = self.known.with_value(fact.clone());
         let mut derived = Vec::new();
-        if self.known.contains(&literal(&fact.proposition, false)) {
+        if self.known.contains(&literal(&fact.proposition, false))
+            || matches!(&fact.proposition, Proposition::ConditionIs(condition, truth)
+                if crate::kernel::machine_integer::comparison::literal_integer_comparison_value(
+                    condition.old_form(),
+                ) == Some(!*truth))
+        {
             derived.push(falsehood());
         }
         if fact.proposition != *proposition {

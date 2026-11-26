@@ -81,3 +81,45 @@ fn exact_propagation_blocked_clauses_consume_each_occurrence_once() {
     assert!(samples.iter().all(|s| s.1 <= samples[0].1 * s.0 / 4 * 2));
     assert!(samples.iter().all(|s| s.2 == samples[0].2));
 }
+
+#[test]
+fn exact_falsehood_from_literal_integer_comparisons_ignores_other_facts() {
+    use crate::instrumentation::measure_deterministic_work;
+    use crate::kernel::{IntegerTerm, SharedIntegerTerm};
+
+    let _session = crate::kernel::VerificationSession::enter();
+    let one: SharedIntegerTerm = IntegerTerm::constant_i64(1).into();
+    let zero: SharedIntegerTerm = IntegerTerm::constant_i64(0).into();
+    let comparisons = [
+        (
+            OldConditionTerm::IntegerEqual(one.clone(), zero.clone()),
+            true,
+        ),
+        (
+            OldConditionTerm::IntegerLessEqual(one.clone(), zero.clone()),
+            true,
+        ),
+        (OldConditionTerm::IntegerGreaterThan(one, zero), false),
+    ];
+    let mut baseline = [None; 3];
+    for size in [4, 16, 64, 256] {
+        let root = context(
+            (0..size)
+                .map(|i| implies(atom(&format!("u{i}")), atom(&format!("v{i}"))))
+                .collect(),
+        );
+        for ((comparison, impossible_polarity), baseline) in comparisons.iter().zip(&mut baseline) {
+            let (child, work) = measure_deterministic_work(|| {
+                root.clone()
+                    .assume_condition(comparison.clone(), *impossible_polarity)
+            });
+            assert!(child.contains_assumed_exact(&falsehood()));
+            assert_eq!(work, *baseline.get_or_insert(work), "fact count {size}");
+            let consistent = root
+                .clone()
+                .assume_condition(comparison.clone(), !*impossible_polarity);
+            assert!(!consistent.contains_assumed_exact(&falsehood()));
+        }
+        assert!(!root.contains_assumed_exact(&falsehood()));
+    }
+}

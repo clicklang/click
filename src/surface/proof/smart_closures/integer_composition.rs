@@ -965,13 +965,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let (proof, split, ids) = input.split_focused_if(equality.clone())?;
             let marker = proof.checkpoint();
             let equal_arm = proof.focus_branch(ids[0])?;
-            let scope = equal_arm.driver().open_have(impossible.clone())?;
+            let scope = equal_arm.driver().open_have(impossible)?;
             let equal_done = scope
                 .driver()
                 .apply_step(substitution)?
                 .join()?
                 .driver()
-                .apply_step(ProofStep::Contradiction(impossible))?;
+                .apply_step(ProofStep::Known)?;
             let unequal_done = equal_done
                 .focus_branch(ids[1])?
                 .driver()
@@ -1406,7 +1406,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         let conclusion = &nodes[&plan.conclusion];
         if contradictory {
-            steps.push(ProofStep::Contradiction(conclusion.claim.clone()));
+            // The last arithmetic fact is an impossible literal comparison.
+            // Fact admission has already put false in scope.
+            steps.push(ProofStep::Known);
         } else if goal_surface.is_none() {
             steps.push(have(
                 SyntaxProposition::Not(Box::new(conclusion.claim.clone())),
