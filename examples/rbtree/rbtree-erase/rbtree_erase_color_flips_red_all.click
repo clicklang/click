@@ -688,7 +688,7 @@ struct rb_root* root, int32 color) {
                             have not(ctx_parent_word(d.model, old->__rb_parent_color) == 1) by {
                                 rewrite(d.model, Context::Top);
                                 unfold(ctx_parent_word(Context::Top, old->__rb_parent_color));
-                                normalize() using { not(old->__rb_parent_color == 0); not(old->__rb_parent_color == 1); };
+                                close() using { not(old->__rb_parent_color == 0); not(old->__rb_parent_color == 1); };
                             }
                             contradiction(ctx_parent_word(d.model, old->__rb_parent_color) == 1);
                         }
@@ -727,7 +727,7 @@ struct rb_root* root, int32 color) {
                         if old->__rb_parent_color == address(id) + 1 { close(); } else {
                             have ctx_parent_word(d.model, old->__rb_parent_color) == 0 by {
                                 rewrite(d.model, Context::Left(id, above, pc, sibling, up)); unfold(ctx_parent_word(Context::Left(id, above, pc, sibling, up), old->__rb_parent_color));
-                                normalize() using { not(old->__rb_parent_color == address(id)); not(old->__rb_parent_color == address(id) + 1); };
+                                close() using { not(old->__rb_parent_color == address(id)); not(old->__rb_parent_color == address(id) + 1); };
                             }
                             have not(ctx_parent_word(d.model, old->__rb_parent_color) == 1) by {
                                 rewrite(ctx_parent_word(d.model, old->__rb_parent_color), 0);
@@ -776,7 +776,7 @@ struct rb_root* root, int32 color) {
                         if old->__rb_parent_color == address(id) + 1 { close(); } else {
                             have ctx_parent_word(d.model, old->__rb_parent_color) == 0 by {
                                 rewrite(d.model, Context::Right(id, above, pc, sibling, up)); unfold(ctx_parent_word(Context::Right(id, above, pc, sibling, up), old->__rb_parent_color));
-                                normalize() using { not(old->__rb_parent_color == address(id)); not(old->__rb_parent_color == address(id) + 1); };
+                                close() using { not(old->__rb_parent_color == address(id)); not(old->__rb_parent_color == address(id) + 1); };
                             }
                             have not(ctx_parent_word(d.model, old->__rb_parent_color) == 1) by {
                                 rewrite(ctx_parent_word(d.model, old->__rb_parent_color), 0);
