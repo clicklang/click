@@ -39,6 +39,10 @@ goal reduces through it while the child's arm premise keeps the opaque
 `color_bit(Color::Red)`, so the two no longer meet. The colors are concrete, so
 the check matches the premise directly instead.
 
+The helper contract records the copied links and the represented parent of
+each child. Its caller folds each child through the pointer named by the
+helper, then uses the copied links to fold the replacement tree.
+
 ```c filename=rbtree.h
 #ifndef RBTREE_H
 #define RBTREE_H
@@ -202,6 +206,214 @@ resource ctx_at(child: struct rb_node*, root: struct rb_root*) {
     }
 }
 
+void rb_replace_node(struct rb_node* victim, struct rb_node* new,
+                     struct rb_root* root) {
+    requires victim->__rb_parent_color == 1u64;
+    requires victim->rb_left != 0;
+    requires victim->rb_right != 0;
+    requires (victim->rb_left->__rb_parent_color & 1u64) == 0u64;
+    requires (victim->rb_right->__rb_parent_color & 1u64) == 0u64;
+    requires root->rb_node == victim;
+    requires aligned(new, 8);
+    views victim->__rb_parent_color;
+    views victim->rb_left;
+    views victim->rb_right;
+    owns victim->rb_left->__rb_parent_color;
+    owns victim->rb_right->__rb_parent_color;
+    owns new->__rb_parent_color;
+    owns new->rb_left;
+    owns new->rb_right;
+    owns root->rb_node;
+    ensures root->rb_node == new;
+    ensures new->rb_left == old(victim->rb_left);
+    ensures new->rb_right == old(victim->rb_right);
+    ensures new->__rb_parent_color == 1u64;
+    ensures new->rb_left->__rb_parent_color == address(new);
+    ensures new->rb_right->__rb_parent_color == address(new);
+    ensures victim->rb_left->__rb_parent_color == address(new);
+    ensures ((victim->rb_left->__rb_parent_color & ~3u64) as (struct rb_node *)) == new;
+    ensures victim->rb_right->__rb_parent_color == address(new);
+    ensures ((victim->rb_right->__rb_parent_color & ~3u64) as (struct rb_node *)) == new;
+} by {
+    have (address(new) & 3u64) == 0u64 by close() using { aligned(new, 8); };
+    apply(click::integer::uint64_mask_keep(address(new), ~3u64));
+    step_until(statement(1).entry);
+    have (victim->rb_left->__rb_parent_color & 1u64) == 0u64 by close();
+    have (victim->rb_right->__rb_parent_color & 1u64) == 0u64 by close();
+    step_until(statement(2).entry);
+    // The left link is written in the middle of the aggregate copy.
+    have at(statement(1).region(1).exit, new->rb_left) == old(victim->rb_left) by close();
+    have new->rb_left == old(victim->rb_left) by close();
+    have new->rb_right == old(victim->rb_right) by close();
+    have new->__rb_parent_color == 1u64 by close();
+    have separate(memory(root->rb_node), memory(new->rb_left)) by close();
+    have separate(memory(victim->rb_left->__rb_parent_color), memory(new->rb_left)) by close();
+    have separate(memory(victim->rb_right->__rb_parent_color), memory(new->rb_left)) by close();
+    have separate(memory(root->rb_node), memory(new->rb_right)) by close();
+    have separate(memory(victim->rb_left->__rb_parent_color), memory(new->rb_right)) by close();
+    have separate(memory(victim->rb_right->__rb_parent_color), memory(new->rb_right)) by close();
+    have separate(memory(root->rb_node), memory(new->__rb_parent_color)) by close();
+    have separate(memory(victim->rb_left->__rb_parent_color), memory(new->__rb_parent_color)) by close();
+    have separate(memory(victim->rb_right->__rb_parent_color), memory(new->__rb_parent_color)) by close();
+    // Frame the child tags across the three stores in the copy.
+    have separate(statement(1).region(0).footprint, memory(victim->rb_left->__rb_parent_color)) by close() using {
+        separate(memory(victim->rb_left->__rb_parent_color), memory(new->__rb_parent_color));
+    };
+    have at(statement(1).region(0).exit, victim->rb_left->__rb_parent_color) == at(statement(1).region(0).entry, victim->rb_left->__rb_parent_color) by {
+        preserve(memory(victim->rb_left->__rb_parent_color), statement(1).region(0));
+    }
+    have separate(statement(1).region(1).footprint, memory(victim->rb_left->__rb_parent_color)) by close() using {
+        separate(memory(victim->rb_left->__rb_parent_color), memory(new->rb_left));
+    };
+    have at(statement(1).region(1).exit, victim->rb_left->__rb_parent_color) == at(statement(1).region(1).entry, victim->rb_left->__rb_parent_color) by {
+        preserve(memory(victim->rb_left->__rb_parent_color), statement(1).region(1));
+    }
+    have separate(statement(1).region(2).footprint, memory(victim->rb_left->__rb_parent_color)) by close() using {
+        separate(memory(victim->rb_left->__rb_parent_color), memory(new->rb_right));
+    };
+    have at(statement(1).region(2).exit, victim->rb_left->__rb_parent_color) == at(statement(1).region(2).entry, victim->rb_left->__rb_parent_color) by {
+        preserve(memory(victim->rb_left->__rb_parent_color), statement(1).region(2));
+    }
+    have (victim->rb_left->__rb_parent_color & 1u64) == 0u64 by close();
+    have separate(statement(1).region(0).footprint, memory(victim->rb_right->__rb_parent_color)) by close() using {
+        separate(memory(victim->rb_right->__rb_parent_color), memory(new->__rb_parent_color));
+    };
+    have at(statement(1).region(0).exit, victim->rb_right->__rb_parent_color) == at(statement(1).region(0).entry, victim->rb_right->__rb_parent_color) by {
+        preserve(memory(victim->rb_right->__rb_parent_color), statement(1).region(0));
+    }
+    have separate(statement(1).region(1).footprint, memory(victim->rb_right->__rb_parent_color)) by close() using {
+        separate(memory(victim->rb_right->__rb_parent_color), memory(new->rb_left));
+    };
+    have at(statement(1).region(1).exit, victim->rb_right->__rb_parent_color) == at(statement(1).region(1).entry, victim->rb_right->__rb_parent_color) by {
+        preserve(memory(victim->rb_right->__rb_parent_color), statement(1).region(1));
+    }
+    have separate(statement(1).region(2).footprint, memory(victim->rb_right->__rb_parent_color)) by close() using {
+        separate(memory(victim->rb_right->__rb_parent_color), memory(new->rb_right));
+    };
+    have at(statement(1).region(2).exit, victim->rb_right->__rb_parent_color) == at(statement(1).region(2).entry, victim->rb_right->__rb_parent_color) by {
+        preserve(memory(victim->rb_right->__rb_parent_color), statement(1).region(2));
+    }
+    have (victim->rb_right->__rb_parent_color & 1u64) == 0u64 by close();
+    have separate(memory(victim->rb_left->__rb_parent_color), memory(victim->rb_right->__rb_parent_color)) by close();
+    have separate(memory(victim->rb_left->__rb_parent_color), memory(victim->rb_right)) by close();
+    mark copied;
+    step_until(statement(3).entry);
+    // Read the left child's parent at the update that wrote it.
+    have new->rb_left == at(copied, new->rb_left) by close();
+    have new->rb_right == at(copied, new->rb_right) by close();
+    have victim->rb_left->__rb_parent_color == address(new) by {
+        rewrite(at(copied, victim->rb_left->__rb_parent_color & 1u64), 0u64);
+        close();
+    }
+    have victim->rb_left->__rb_parent_color == address(new) by close();
+    have (victim->rb_left->__rb_parent_color & ~3u64) == address(new) by {
+        rewrite(victim->rb_left->__rb_parent_color, address(new));
+        close() using { (address(new) & ~3u64) == address(new); };
+    }
+    have ((victim->rb_left->__rb_parent_color & ~3u64) as (struct rb_node *)) == new by close();
+    have separate(statement(2).statement(0).footprint, memory(victim->rb_right)) by close();
+    have at(statement(2).statement(0).exit, victim->rb_right) == at(statement(2).statement(0).entry, victim->rb_right) by {
+        preserve(memory(victim->rb_right), statement(2).statement(0));
+    }
+    have victim->rb_right == at(copied, victim->rb_right) by close();
+    have separate(statement(2).statement(0).footprint, memory(victim->rb_right->__rb_parent_color)) by close();
+    have at(statement(2).statement(0).exit, victim->rb_right->__rb_parent_color) == at(statement(2).statement(0).entry, victim->rb_right->__rb_parent_color) by {
+        preserve(memory(victim->rb_right->__rb_parent_color), statement(2).statement(0));
+    }
+    have victim->rb_right->__rb_parent_color == at(copied, victim->rb_right->__rb_parent_color) by close();
+    have (victim->rb_right->__rb_parent_color & 1u64) == 0u64 by {
+        rewrite(victim->rb_right->__rb_parent_color, at(copied, victim->rb_right->__rb_parent_color));
+        close() using { at(copied, (victim->rb_right->__rb_parent_color & 1u64) == 0u64); };
+    }
+    mark after_left;
+    step_until(statement(4).entry);
+    have at(statement(3).statement(0).exit, victim->rb_right->__rb_parent_color) == address(new) by {
+        rewrite(at(after_left, victim->rb_right->__rb_parent_color & 1u64), 0u64);
+        close();
+    }
+    have victim->rb_right->__rb_parent_color == address(new) by close();
+    have (victim->rb_right->__rb_parent_color & ~3u64) == address(new) by {
+        rewrite(victim->rb_right->__rb_parent_color, address(new));
+        close() using { (address(new) & ~3u64) == address(new); };
+    }
+    have ((victim->rb_right->__rb_parent_color & ~3u64) as (struct rb_node *)) == new by close();
+    have separate(statement(3).statement(0).footprint, memory(victim->rb_left)) by close();
+    have at(statement(3).statement(0).exit, victim->rb_left) == at(statement(3).statement(0).entry, victim->rb_left) by {
+        preserve(memory(victim->rb_left), statement(3).statement(0));
+    }
+    have victim->rb_left == at(after_left, victim->rb_left) by close();
+    have separate(statement(3).statement(0).footprint, memory(victim->rb_left->__rb_parent_color)) by close();
+    have at(statement(3).statement(0).exit, victim->rb_left->__rb_parent_color) == at(statement(3).statement(0).entry, victim->rb_left->__rb_parent_color) by {
+        preserve(memory(victim->rb_left->__rb_parent_color), statement(3).statement(0));
+    }
+    have victim->rb_left->__rb_parent_color == at(after_left, victim->rb_left->__rb_parent_color) by close();
+    have victim->rb_left->__rb_parent_color == address(new) by close();
+    have new->rb_right == at(copied, new->rb_right) by close();
+    have new->rb_right == victim->rb_right by close();
+    have new->rb_right->__rb_parent_color == address(new) by {
+        close() using { victim->rb_right->__rb_parent_color == address(new); };
+    }
+    have new->rb_left == at(copied, new->rb_left) by close();
+    have separate(statement(2).statement(0).footprint, memory(new->__rb_parent_color)) by close();
+    have at(statement(2).statement(0).exit, new->__rb_parent_color) == at(statement(2).statement(0).entry, new->__rb_parent_color) by {
+        preserve(memory(new->__rb_parent_color), statement(2).statement(0));
+    }
+    have separate(statement(3).statement(0).footprint, memory(new->__rb_parent_color)) by close();
+    have at(statement(3).statement(0).exit, new->__rb_parent_color) == at(statement(3).statement(0).entry, new->__rb_parent_color) by {
+        preserve(memory(new->__rb_parent_color), statement(3).statement(0));
+    }
+    have new->__rb_parent_color == at(copied, new->__rb_parent_color) by close();
+    have separate(memory(root->rb_node), memory(new->rb_left->__rb_parent_color)) by close();
+    have separate(memory(root->rb_node), memory(new->rb_right->__rb_parent_color)) by close();
+    mark reparented;
+    step_until(function.exit);
+    // The root write preserves the copied links and both child tags.
+    have separate(statement(4).footprint, memory(new->rb_left)) by close();
+    have at(statement(4).exit, new->rb_left) == at(statement(4).entry, new->rb_left) by {
+        preserve(memory(new->rb_left), statement(4));
+    }
+    have separate(statement(4).footprint, memory(new->rb_right)) by close();
+    have at(statement(4).exit, new->rb_right) == at(statement(4).entry, new->rb_right) by {
+        preserve(memory(new->rb_right), statement(4));
+    }
+    have separate(statement(4).footprint, memory(new->__rb_parent_color)) by close();
+    have at(statement(4).exit, new->__rb_parent_color) == at(statement(4).entry, new->__rb_parent_color) by {
+        preserve(memory(new->__rb_parent_color), statement(4));
+    }
+    have separate(statement(4).footprint, memory(victim->rb_left)) by close();
+    have at(statement(4).exit, victim->rb_left) == at(statement(4).entry, victim->rb_left) by {
+        preserve(memory(victim->rb_left), statement(4));
+    }
+    have separate(statement(4).footprint, memory(victim->rb_right)) by close();
+    have at(statement(4).exit, victim->rb_right) == at(statement(4).entry, victim->rb_right) by {
+        preserve(memory(victim->rb_right), statement(4));
+    }
+    have separate(statement(4).footprint, memory(victim->rb_left->__rb_parent_color)) by close();
+    have at(statement(4).exit, victim->rb_left->__rb_parent_color) == at(statement(4).entry, victim->rb_left->__rb_parent_color) by {
+        preserve(memory(victim->rb_left->__rb_parent_color), statement(4));
+    }
+    have separate(statement(4).footprint, memory(victim->rb_right->__rb_parent_color)) by close();
+    have at(statement(4).exit, victim->rb_right->__rb_parent_color) == at(statement(4).entry, victim->rb_right->__rb_parent_color) by {
+        preserve(memory(victim->rb_right->__rb_parent_color), statement(4));
+    }
+    have new->rb_left == at(reparented, new->rb_left) by close();
+    have new->rb_right == at(reparented, new->rb_right) by close();
+    have new->__rb_parent_color == at(reparented, new->__rb_parent_color) by close();
+    have new->rb_left->__rb_parent_color == at(reparented, new->rb_left->__rb_parent_color) by close();
+    have new->rb_right->__rb_parent_color == at(reparented, new->rb_right->__rb_parent_color) by close();
+    have victim->rb_left->__rb_parent_color == at(statement(2).statement(0).exit, victim->rb_left->__rb_parent_color) by close();
+    have ((victim->rb_left->__rb_parent_color & ~3u64) as (struct rb_node *)) == new by {
+        rewrite(victim->rb_left->__rb_parent_color, at(statement(2).statement(0).exit, victim->rb_left->__rb_parent_color));
+        close();
+    }
+    have victim->rb_right->__rb_parent_color == at(statement(3).statement(0).exit, victim->rb_right->__rb_parent_color) by close();
+    have ((victim->rb_right->__rb_parent_color & ~3u64) as (struct rb_node *)) == new by {
+        rewrite(victim->rb_right->__rb_parent_color, at(statement(3).statement(0).exit, victim->rb_right->__rb_parent_color));
+        close();
+    }
+    close();
+}
+
 void replace_node_with_children(struct rb_node* victim, struct rb_node* new_node,
                                 struct rb_node* parent, struct rb_node* left_child,
                                 struct rb_node* right_child, struct rb_root* root) {
@@ -233,12 +445,73 @@ void replace_node_with_children(struct rb_node* victim, struct rb_node* new_node
     have separate(memory(victim->rb_right), memory(new_node->rb_left));
     have separate(memory(victim->rb_right), memory(new_node->rb_right));
     have separate(memory(victim->rb_right), memory(left_child->__rb_parent_color));
+    have color_bit(Color::Black) == 1 by {
+        unfold(color_bit(Color::Black));
+        close();
+    }
+    have (victim->__rb_parent_color & 1u64) == (color_bit(Color::Black) as uint64) by close();
+    have (color_bit(Color::Black) as uint64) == 1u64 by {
+        rewrite(color_bit(Color::Black), 1);
+        close();
+    }
+    have (victim->__rb_parent_color & 1u64) == 1u64 by {
+        rewrite((victim->__rb_parent_color & 1u64), (color_bit(Color::Black) as uint64));
+        close();
+    }
+    have victim->__rb_parent_color == address(parent) + (victim->__rb_parent_color & 1u64) by close();
+    have address(parent) == 0u64 by {
+        rewrite(parent, 0);
+        close();
+    }
+    have victim->__rb_parent_color == 1u64 by {
+        rewrite(victim->__rb_parent_color, address(parent) + (victim->__rb_parent_color & 1u64));
+        rewrite(address(parent), 0u64);
+        rewrite((victim->__rb_parent_color & 1u64), 1u64);
+        close();
+    }
+    have color_bit(Color::Red) == 0 by {
+        unfold(color_bit(Color::Red));
+        close();
+    }
+    have (color_bit(Color::Red) as uint64) == 0u64 by {
+        rewrite(color_bit(Color::Red), 0);
+        close();
+    }
+    have (victim->rb_left->__rb_parent_color & 1u64) == (color_bit(Color::Red) as uint64) by close();
+    have (victim->rb_left->__rb_parent_color & 1u64) == 0u64 by {
+        rewrite((victim->rb_left->__rb_parent_color & 1u64), (color_bit(Color::Red) as uint64));
+        close();
+    }
+    have (victim->rb_right->__rb_parent_color & 1u64) == (color_bit(Color::Red) as uint64) by close();
+    have (victim->rb_right->__rb_parent_color & 1u64) == 0u64 by {
+        rewrite((victim->rb_right->__rb_parent_color & 1u64), (color_bit(Color::Red) as uint64));
+        close();
+    }
     step_until(function.exit);
-    let l2 = fold(rb_at(new_node->rb_left), {
+    have (address(new_node) & 1u64) == 0u64 by close();
+    have victim->rb_left->__rb_parent_color == address(new_node) by close();
+    have (victim->rb_left->__rb_parent_color & 1u64) == 0u64 by {
+        rewrite(victim->rb_left->__rb_parent_color, address(new_node));
+        close();
+    }
+    have victim->rb_left->__rb_parent_color == address(new_node) + (victim->rb_left->__rb_parent_color & 1u64) by {
+        rewrite((victim->rb_left->__rb_parent_color & 1u64), 0u64);
+        close();
+    }
+    have victim->rb_right->__rb_parent_color == address(new_node) by close();
+    have (victim->rb_right->__rb_parent_color & 1u64) == 0u64 by {
+        rewrite(victim->rb_right->__rb_parent_color, address(new_node));
+        close();
+    }
+    have victim->rb_right->__rb_parent_color == address(new_node) + (victim->rb_right->__rb_parent_color & 1u64) by {
+        rewrite((victim->rb_right->__rb_parent_color & 1u64), 0u64);
+        close();
+    }
+    let l2 = fold(rb_at(victim->rb_left), {
         model: RbTree::Node(left_child, new_node, Color::Red, RbTree::Empty, RbTree::Empty),
         left: ll, right: lr
     });
-    let r2 = fold(rb_at(new_node->rb_right), {
+    let r2 = fold(rb_at(victim->rb_right), {
         model: RbTree::Node(right_child, new_node, Color::Red, RbTree::Empty, RbTree::Empty),
         left: rl, right: rr
     });
@@ -263,7 +536,7 @@ void replace_node_with_children(struct rb_node* victim, struct rb_node* new_node
         unfold(rb_reparent(
             RbTree::Node(right_child, victim, Color::Red, RbTree::Empty, RbTree::Empty),
             new_node));
-        normalize();
+        close();
     }
     close();
 }
