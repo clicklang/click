@@ -1449,7 +1449,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if let Some(guard) = taken.last()
             && let Ok(closed) = search_input
                 .driver()
-                .apply_step(ProofStep::Contradiction(guard.clone()))
+                .apply_step(search_input.refutation_step(guard.clone()))
         {
             return Ok(Some(closed));
         }
@@ -1499,10 +1499,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     if !differs.is_complete() {
                         differs = differs.driver().apply_step(ProofStep::Known)?;
                     }
-                    differs
-                        .join()?
+                    let branch = differs.join()?;
+                    branch
                         .driver()
-                        .apply_step(ProofStep::Contradiction(refutation.fact.clone()))
+                        .apply_step(branch.refutation_step(refutation.fact.clone()))
                 })();
                 if let Some(closed) =
                     attempt::candidate_outcome(refuted)?.filter(Proof::focused_discharged)
@@ -1521,7 +1521,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     .apply_step(have(refutation.differs.clone(), steps))
                     .and_then(|next| {
                         next.driver()
-                            .apply_step(ProofStep::Contradiction(refutation.fact.clone()))
+                            .apply_step(next.refutation_step(refutation.fact.clone()))
                     });
                 Ok(attempt::candidate_outcome(checked)?.filter(Proof::focused_discharged))
             }
