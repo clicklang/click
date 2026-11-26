@@ -466,7 +466,7 @@ fn execute_step_records_a_state_checked_surface_expansion() {
                 ensures to_integer(result) == to_integer(x + 1);
             } by {
                 step();
-                normalize();
+                close();
             }
         "#;
 
@@ -483,7 +483,7 @@ fn execute_step_records_a_state_checked_surface_expansion() {
         .expect("the linear smart step should have a surface expansion");
 
     assert_eq!(expanded[0], ProofTactic::Step);
-    assert_eq!(expanded[1], ProofTactic::Normalize);
+    assert_eq!(expanded[1], ProofTactic::Known);
     assert_eq!(verified[0].expansion_blocker(), None);
     ProofCertificate::from_proof_tactics(&expanded)
         .expect("the recorded expansion should be a surface certificate");
@@ -491,7 +491,7 @@ fn execute_step_records_a_state_checked_surface_expansion() {
         .expanded_proof_source()
         .expect("checked expansion should have canonical source");
     assert!(source.contains("step();"));
-    assert!(source.contains("normalize();"));
+    assert!(source.contains("close();"));
 
     let execute_offset = click_source
         .find("step()")

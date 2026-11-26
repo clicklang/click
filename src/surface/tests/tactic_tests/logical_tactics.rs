@@ -392,12 +392,12 @@ fn known_computes_leaves_and_uses_exact_propagation() {
                 apply(x == 0 implies y == 0);
             }
             step();
-            normalize();
+            close();
         }
     "#;
 
     verify_c_sources(click_source, &[("keep.c", c_source)])
-        .expect("explicit extraction and normalization should verify");
+        .expect("explicit extraction and the computational closer should verify");
 
     let implicit_extract = click_source.replace("apply(x == 0 implies y == 0);", "close();");
     verify_c_sources(&implicit_extract, &[("keep.c", c_source)])
@@ -412,10 +412,6 @@ fn known_computes_leaves_and_uses_exact_propagation() {
         "{}",
         error.message()
     );
-
-    let computed = click_source.replacen("normalize();", "close();", 1);
-    verify_c_sources(&computed, &[("keep.c", c_source)])
-        .expect("known should close a computational leaf after explicit proof steps");
 }
 
 #[test]

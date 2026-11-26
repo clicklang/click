@@ -1370,7 +1370,7 @@ fn checked_original_claim_can_close_after_rewrite_but_unrelated_have_cannot() {
             ensures result == 1;
         } by {
             step_until(function.exit); rewrite(x, 1);
-            have result == 1 by { rewrite(x, 1); normalize(); }
+            have result == 1 by { rewrite(x, 1); close(); }
             close();
         }
     "#;
