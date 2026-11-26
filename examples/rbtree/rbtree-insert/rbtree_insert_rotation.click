@@ -267,7 +267,16 @@ void __rb_rotate_set_parents(struct rb_node* old, struct rb_node* new,
                             have not(ctx_parent_word(d.model, old->__rb_parent_color) == 1) by {
                                 rewrite(d.model, Context::Top);
                                 unfold(ctx_parent_word(Context::Top, old->__rb_parent_color));
-                                normalize() using { not(old->__rb_parent_color == 0); not(old->__rb_parent_color == 1); };
+                                have (if old->__rb_parent_color == 1 { 1 } else { 0 }) == 0 by close();
+                                have (if old->__rb_parent_color == 0 { 1 } else { if old->__rb_parent_color == 1 { 1 } else { 0 } }) == 0 by {
+                                    have (if old->__rb_parent_color == 0 { 1 } else { if old->__rb_parent_color == 1 { 1 } else { 0 } }) ==
+                                        (if old->__rb_parent_color == 1 { 1 } else { 0 }) by close();
+                                    rewrite(if old->__rb_parent_color == 0 { 1 } else { if old->__rb_parent_color == 1 { 1 } else { 0 } },
+                                            if old->__rb_parent_color == 1 { 1 } else { 0 });
+                                    close();
+                                }
+                                rewrite(if old->__rb_parent_color == 0 { 1 } else { if old->__rb_parent_color == 1 { 1 } else { 0 } }, 0);
+                                close();
                             }
                             contradiction(ctx_parent_word(d.model, old->__rb_parent_color) == 1);
                         }
