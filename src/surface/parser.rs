@@ -269,7 +269,7 @@ struct SourceBindingInfo {
 pub(in crate::surface) struct ProgramLayouts {
     pub(in crate::surface) cpp_binding_conversions:
         std::sync::Arc<BTreeSet<crate::kernel::CppObjectConversion>>,
-    pub(in crate::surface) cpp_binding_functions:
+    pub(in crate::surface) reference_binding_functions:
         BTreeMap<String, crate::languages::interface::ImportedFunction>,
     pub(in crate::surface) local_bindings: std::sync::Arc<SourceBindingIndex>,
     pub(in crate::surface) string_literal_values:
@@ -1044,13 +1044,13 @@ fn reduce_contract_binary_expression(
 }
 
 struct Parser {
-    cpp_binding_functions: BTreeMap<String, crate::languages::interface::ImportedFunction>,
-    cpp_binding_layouts: BTreeMap<String, super::lowering::SourceExecutionLayout>,
+    reference_binding_functions: BTreeMap<String, crate::languages::interface::ImportedFunction>,
+    reference_binding_layouts: BTreeMap<String, super::lowering::SourceExecutionLayout>,
     cpp_binding_conversions: std::sync::Arc<BTreeSet<crate::kernel::CppObjectConversion>>,
     current_cpp_binding: Option<crate::kernel::CppBindingContract>,
     cpp_binding_binders:
         BTreeMap<crate::kernel::CppBindingContract, BTreeMap<String, CalleeResourceBinder>>,
-    cpp_binding_function: Option<String>,
+    reference_binding_function: Option<String>,
     checked_expansion_closers: BTreeSet<SourcePosition>,
     local_bindings: std::sync::Arc<SourceBindingIndex>,
     string_literal_values: std::sync::Arc<BTreeMap<crate::kernel::StringLiteralId, ProgramValue>>,
@@ -1934,7 +1934,7 @@ impl Parser {
             imported_models,
         )
         .map_err(|error| error.with_kind(ClickErrorKind::Syntax))?;
-        parser.cpp_binding_functions = layouts.cpp_binding_functions;
+        parser.reference_binding_functions = layouts.reference_binding_functions;
         parser.cpp_binding_conversions = layouts.cpp_binding_conversions;
         parser.local_bindings = layouts.local_bindings;
         parser.string_literal_values = layouts.string_literal_values;
@@ -2329,12 +2329,12 @@ impl Parser {
             loop_name_context: None,
             loop_proof_value_names: Default::default(),
             loop_predicate_bodies: BTreeMap::new(),
-            cpp_binding_functions: BTreeMap::new(),
-            cpp_binding_layouts: BTreeMap::new(),
+            reference_binding_functions: BTreeMap::new(),
+            reference_binding_layouts: BTreeMap::new(),
             cpp_binding_conversions: Default::default(),
             current_cpp_binding: None,
             cpp_binding_binders: BTreeMap::new(),
-            cpp_binding_function: None,
+            reference_binding_function: None,
             program_object_names_by_function: BTreeMap::new(),
             c_library_names_by_function: BTreeMap::new(),
             c_library_names: None,
@@ -5636,7 +5636,8 @@ impl Parser {
                 .get(&table_name)
                 .cloned(),
         );
-        let previous_cpp_binding_function = self.cpp_binding_function.replace(table_name.clone());
+        let previous_reference_binding_function =
+            self.reference_binding_function.replace(table_name.clone());
         let previous_c_library_names = std::mem::replace(
             &mut self.c_library_names,
             self.c_library_names_by_function.get(&table_name).cloned(),
@@ -6366,7 +6367,7 @@ impl Parser {
         self.names.program_parameter_types = previous_c_parameter_types;
         self.abstract_pointer_params = previous_abstract_pointer_params;
         self.names.program_object_names = previous_c_object_names;
-        self.cpp_binding_function = previous_cpp_binding_function;
+        self.reference_binding_function = previous_reference_binding_function;
         self.c_library_names = previous_c_library_names;
         self.rust_loop_iterators = previous_loop_iterators;
         self.rust_slice_locals = previous_slice_locals;
@@ -8523,7 +8524,7 @@ impl Parser {
                 CodeRegionRef::Path(steps)
                     if matches!(steps.last(), Some(SourcePathStep::Binding { .. }))
             ) {
-                return Err(self.error("`step` needs a callee or a C++ reference binding"));
+                return Err(self.error("`step` needs a callee or a reference binding"));
             }
             Some(region)
         } else {
@@ -8531,27 +8532,36 @@ impl Parser {
         };
         let binding_contract = if let Some(CodeRegionRef::Path(steps)) = &source_binding {
             let function = self
-                .cpp_binding_function
+                .reference_binding_function
                 .as_ref()
-                .ok_or_else(|| self.error("a C++ reference binding needs a function proof"))?;
-            if !self.cpp_binding_layouts.contains_key(function) {
+                .ok_or_else(|| self.error("a reference binding needs a function proof"))?;
+            if !self.reference_binding_layouts.contains_key(function) {
                 let imported = self
-                    .cpp_binding_functions
+                    .reference_binding_functions
                     .get(function)
-                    .ok_or_else(|| self.error("a reference binding needs an imported C++ body"))?;
+                    .ok_or_else(|| {
+                        self.error("a reference binding needs an imported function body")
+                    })?;
                 let layout = super::lowering::SourceExecutionLayout::for_function(imported)?;
-                self.cpp_binding_layouts.insert(function.clone(), layout);
+                self.reference_binding_layouts
+                    .insert(function.clone(), layout);
             }
             Some(
-                self.cpp_binding_layouts[function]
-                    .cpp_binding_target(steps)
+                self.reference_binding_layouts[function]
+                    .reference_binding_target(steps)
                     .map_err(|message| self.error(message))?
                     .clone(),
             )
         } else {
             None
         };
-        let mut callee = if let Some(region) = &source_binding {
+        let binding_contract_name = match &binding_contract {
+            Some(crate::kernel::CallBinderTarget::Function(name)) => Some(name.as_ref()),
+            _ => None,
+        };
+        let mut callee = if let Some(name) = binding_contract_name {
+            name.to_owned()
+        } else if let Some(region) = &source_binding {
             super::diagnostics::describe_code_region_ref(region)
         } else {
             self.expect_ident(if tactic {
@@ -8560,7 +8570,7 @@ impl Parser {
                 "call step callee"
             })?
         };
-        if !tactic && self.verifies_rust() {
+        if !tactic && source_binding.is_none() && self.verifies_rust() {
             // A Rust callee is named as its function head is: its path, and a
             // generic function's instance its type arguments,
             // `cells::write<u32>(...)`.
@@ -8575,21 +8585,27 @@ impl Parser {
                 }
             }
         }
+        let callee_spelling = source_binding
+            .as_ref()
+            .map(super::diagnostics::describe_code_region_ref)
+            .unwrap_or_else(|| callee.clone());
         let form = if tactic { "name(...)" } else { "step(...)" };
         // Select the declared named contract when present. Otherwise the name
         // must match the call at the frontier, which supplies the arguments.
-        let named_contract = !tactic && self.contract_resource_binders.contains_key(&callee);
+        let named_contract = !tactic
+            && source_binding.is_none()
+            && self.contract_resource_binders.contains_key(&callee);
         let named_function = !tactic && !named_contract;
         if !tactic && self.peek() == Some(&Token::LParen) {
             let followed_by_map = self.matching_parentheses[self.position]
                 .is_some_and(|close| self.tokens.get(close + 1) == Some(&Token::Comma));
             return Err(self.error(if followed_by_map {
                 format!(
-                    "`step({callee}(...), {{ ... }})` is retired: write `step({callee}, {{ ... }})`; the call's arguments come from the call at the frontier"
+                    "`step({callee_spelling}(...), {{ ... }})` is retired: write `step({callee_spelling}, {{ ... }})`; the call's arguments come from the call at the frontier"
                 )
             } else {
                 format!(
-                    "`step({callee}(...))` is retired; select a named contract with `step({callee})`, or `step({callee}, {{ handle: instance }})` when its body declares resource handles"
+                    "`step({callee_spelling}(...))` is retired; select a named contract with `step({callee_spelling})`, or `step({callee_spelling}, {{ handle: instance }})` when its body declares resource handles"
                 )
             }));
         }
@@ -8611,15 +8627,16 @@ impl Parser {
         } else if has_map {
             self.position += 1;
         }
-        let mut declared = if let Some(binding) = &binding_contract {
-            self.cpp_binding_binders.get(binding)
-        } else if named_contract {
-            self.contract_resource_binders.get(&callee)
-        } else {
-            self.callee_resource_binders.get(&callee)
-        }
-        .cloned()
-        .unwrap_or_default();
+        let mut declared =
+            if let Some(crate::kernel::CallBinderTarget::CppBinding(binding)) = &binding_contract {
+                self.cpp_binding_binders.get(binding)
+            } else if named_contract {
+                self.contract_resource_binders.get(&callee)
+            } else {
+                self.callee_resource_binders.get(&callee)
+            }
+            .cloned()
+            .unwrap_or_default();
         if has_map && binding_contract.is_none() && !named_contract && declared.is_empty() {
             declared = self.library_callee_value_parameters(&callee)?;
         }
@@ -8684,12 +8701,12 @@ impl Parser {
             crate::instrumentation::record_deterministic_work(1);
             let Some(declaration) = declared.get(&binder) else {
                 return Err(self.error(format!(
-                    "`{callee}` declares no resource instance binder `{binder}`"
+                    "`{callee_spelling}` declares no resource instance binder `{binder}`"
                 )));
             };
             if declaration.kind == CalleeResourceBinderKind::Produced {
                 return Err(self.error(format!(
-                    "`{callee}` produces `{binder}`; introduce it with `let {{ {binder}: name }} = {form}`"
+                    "`{callee_spelling}` produces `{binder}`; introduce it with `let {{ {binder}: name }} = {form}`"
                 )));
             }
             if !bound.insert(binder.clone()) {
@@ -8718,7 +8735,7 @@ impl Parser {
             }
             if !instances.insert((identity, path.to_owned())) {
                 return Err(self.error(format!(
-                    "resource instance `{instance}` cannot supply two binders of `{callee}`"
+                    "resource instance `{instance}` cannot supply two binders of `{callee_spelling}`"
                 )));
             }
             binders.push(CallBinderBinding {
@@ -8744,7 +8761,7 @@ impl Parser {
                 && self.peek_next() != Some(&Token::RBrace)
             {
                 return Err(self.error(format!(
-                    "the binder map is the last argument of a tactic application: write `{callee}(..., {{ binder: instance }})`"
+                    "the binder map is the last argument of a tactic application: write `{callee_spelling}(..., {{ binder: instance }})`"
                 )));
             }
         }
@@ -8764,7 +8781,9 @@ impl Parser {
                 ) && !bound.contains(*name)
             })
         {
-            return Err(self.error(format!("call map omits `{callee}` binder `{missing}`")));
+            return Err(self.error(format!(
+                "call map omits `{callee_spelling}` binder `{missing}`"
+            )));
         }
         // Instantiate the runtime's ordinary state output from the resource
         // type argument on the selected access input. This only names a type;
@@ -8823,12 +8842,12 @@ impl Parser {
                     .collect::<Vec<_>>()
                     .join(", ");
                 return Err(self.error(format!(
-                    "`{callee}` produces named resource instance(s) `{names}`; bind them with `let {{ ... }} = {form}`"
+                    "`{callee_spelling}` produces named resource instance(s) `{names}`; bind them with `let {{ ... }} = {form}`"
                 )));
             }
             (Some(CallOutputPattern::Single(_)), _) if tactic => {
                 return Err(self.error(format!(
-                    "user-defined tactic outputs require named bindings: write `let {{ binder: name }} = {callee}(...)`"
+                    "user-defined tactic outputs require named bindings: write `let {{ binder: name }} = {callee_spelling}(...)`"
                 )));
             }
             (Some(CallOutputPattern::Single(_)), _) => {
@@ -8870,7 +8889,7 @@ impl Parser {
                         .find(|(declared, _)| *declared == &binder)
                     else {
                         return Err(self.error(format!(
-                            "`{callee}` does not produce named resource `{binder}`"
+                            "`{callee_spelling}` does not produce named resource `{binder}`"
                         )));
                     };
                     // A step that names its function takes the call's
@@ -8917,7 +8936,7 @@ impl Parser {
             }
         }
         Ok(CallBinderTransport {
-            callee,
+            callee: callee_spelling,
             source_binding,
             named_contract,
             // A named function's arguments are the frontier call's.

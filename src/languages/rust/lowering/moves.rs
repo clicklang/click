@@ -14,13 +14,19 @@ use crate::languages::rust::schema::{MirBody, MirStatement as S, MirTerminator a
 pub(super) struct Sited {
     pub(super) statement: ProgramStatement,
     pub(super) sites: Vec<Option<u32>>,
+    /// The call region of each MIR block participating in an object binding.
+    pub(super) binding_calls: Vec<(usize, usize)>,
 }
 
 impl Sited {
     /// `statement`, every region of which comes from `site`.
     fn at(site: Option<u32>, statement: ProgramStatement) -> Self {
         let sites = vec![site; region_count(&statement)];
-        Self { statement, sites }
+        Self {
+            statement,
+            sites,
+            binding_calls: Vec::new(),
+        }
     }
 
     fn unsited(statement: ProgramStatement) -> Self {
@@ -29,10 +35,14 @@ impl Sited {
 
     /// `self`, then `next`: `program_seq(self, next)`.
     fn then(mut self, next: Sited) -> Self {
+        let offset = self.sites.len();
+        self.binding_calls
+            .extend(offset_calls(next.binding_calls, offset));
         self.sites.extend(next.sites);
         Self {
             statement: program_seq(self.statement, next.statement),
             sites: self.sites,
+            binding_calls: self.binding_calls,
         }
     }
 
@@ -44,11 +54,15 @@ impl Sited {
         otherwise: Sited,
     ) -> Self {
         let mut sites = vec![site];
+        let binding_calls = offset_calls(then.binding_calls, 1)
+            .chain(offset_calls(otherwise.binding_calls, 1 + then.sites.len()))
+            .collect();
         sites.extend(then.sites);
         sites.extend(otherwise.sites);
         Self {
             statement: program_if(condition, then.statement, otherwise.statement),
             sites,
+            binding_calls,
         }
     }
 
@@ -59,8 +73,15 @@ impl Sited {
         Self {
             statement: program_while(condition, Vec::new(), body.statement),
             sites,
+            binding_calls: offset_calls(body.binding_calls, 1).collect(),
         }
     }
+}
+
+fn offset_calls(calls: Vec<(usize, usize)>, offset: usize) -> impl Iterator<Item = (usize, usize)> {
+    calls
+        .into_iter()
+        .map(move |(block, region)| (block, region + offset))
 }
 
 /// How many regions the source layout numbers in `statement`: one for each
@@ -425,6 +446,11 @@ pub(super) fn lower(
         );
         escape_flags.insert(*header, flag);
     }
+    let binding_blocks = mir
+        .object_bindings
+        .iter()
+        .flat_map(|binding| [binding.call, binding.acquire, binding.release])
+        .collect::<BTreeSet<_>>();
     let mut nodes = vec![None; mir.blocks.len()];
     let check = |local: &MirLocalId, record: &str| -> Result<(), String> {
         if records.get(local).copied() != Some(record) {
@@ -448,6 +474,7 @@ pub(super) fn lower(
             statement: mir.blocks[block].statements.len(),
         });
         cx.mir_nodes.clear();
+        let mut binding_call = None;
         let terminal = match terminator {
             T::Goto { .. } | T::If { .. } | T::Switch { .. } => program_skip(),
             T::Return => {
@@ -697,6 +724,9 @@ pub(super) fn lower(
                     prepared.push(object);
                 }
                 let prefix = program_seq(prefix, binding);
+                if binding_blocks.contains(&block) {
+                    binding_call = Some((block, region_count(&prefix)));
+                }
                 let call = if let Some(step) = result {
                     // A call step: its successor reads the result as the
                     // value of the expression that holds the call.
@@ -1135,7 +1165,8 @@ pub(super) fn lower(
             };
             statements = statements.then(Sited::at(site, statement));
         }
-        let terminal = Sited::at(mir.blocks[block].terminator_site, terminal);
+        let mut terminal = Sited::at(mir.blocks[block].terminator_site, terminal);
+        terminal.binding_calls.extend(binding_call);
         // Each block keeps its leading unsited step, so proofs' region
         // numbers stay where they were when it held borrow endings.
         nodes[block] = Some(Sited::unsited(program_skip()).then(statements.then(terminal)));
@@ -1874,6 +1905,7 @@ mod tests {
             core_method: None,
             span: span.clone(),
             mir: Some(MirBody {
+                object_bindings: Vec::new(),
                 return_place: "__rust_mir_0".into(),
                 spellings: Default::default(),
                 unnamed_locals: Default::default(),
@@ -1968,6 +2000,7 @@ mod tests {
                 terminator: T::Return,
             });
             let mir = MirBody {
+                object_bindings: Vec::new(),
                 return_place: "__rust_mir_0".into(),
                 spellings: Default::default(),
                 unnamed_locals: Default::default(),

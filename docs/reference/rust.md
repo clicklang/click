@@ -840,8 +840,8 @@ object is a generic resource of the trait's type parameters,
 generic block's interface holds the object at `T`, and each instance's at
 its types, `bags::Bag::object<i32>`. An `impl` of an instance defines the
 functions at its types, `function items(self) -> List<i32> {
-List<i32>::Cons(self.value, List<i32>::Nil) }`, and its pack and unpack are
-named for the instance, `<bags::Slot as bags::Holder<i32>>::__pack`
+List<i32>::Cons(self.value, List<i32>::Nil) }`. The binding uses that instance's
+definitions
 ([`design/charon-trial/generic-trait-objects`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-trait-objects/shapes.click)).
 
 An implementation for every type of a generic struct, `impl<T: Copy>
@@ -853,10 +853,9 @@ parameters as its `trait` block does. Its methods are verified once, with
 generic_state::Holder<T>>::put`, and refine the generic block's interface
 read there. Where a caller passes a `&mut Wrap<u32>` as a `Holder<u32>`'s
 object, through a bound or `&mut dyn generic_state::Holder<u32>`, it is
-packed into `Holder::object<u32>` with the definitions read at `u32`, by
-`<generic_state::Wrap<u32> as generic_state::Holder<u32>>::__pack`; the
-sidecar writes the pack and unpack out at each instance of the trait the
-import declares. A struct is packed at an instance's scalar types only
+packed into `Holder::object<u32>` with the definitions read at `u32`. Its
+binding and release use the definitions at the trait instance the import
+declares. A struct is packed at an instance's scalar types only
 ([`design/charon-trial/generic-state`](https://github.com/clicklang/click/blob/master/design/charon-trial/generic-state/holders.click)).
 
 ### Trait object state
@@ -892,7 +891,13 @@ memory, an implementation's `contract fn` `..._iface`.
 
 Where a struct reference becomes the object, at a call that instantiates a
 bound type parameter with the struct or coerces it to `&dyn Trait`, the
-importer brackets the call with the struct's pack and unpack. For a `&mut`
+importer binds the object before the call and releases it afterward. Proofs can
+select the binding by its written call and argument, for example
+`statement(1).call(0).argument(0).binding`. A method call uses
+`.receiver.binding` for the receiver. The suffix `.release` selects the matching
+transfer back after the call. At the binding frontier,
+`let { object_resource(): packed } = step(statement(1).call(0).argument(0).binding);`
+names the resource so the proof can read `packed.size`. For a `&mut`
 reference, pack consumes the struct's memory and produces its object, whose
 fields are the definitions read on it, and unpack returns the memory with
 the definitions equal to the fields. For a shared reference, the shared pack

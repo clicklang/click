@@ -694,9 +694,10 @@ pub(super) fn unsized_objects(
 /// itself, and the unpacks, then go where the call went.
 pub(super) fn wrap_object_coercions(
     blocks: &mut Vec<out::MirBlock>,
-    coercions: Vec<(usize, Vec<(String, String, E)>)>,
-) -> Result<(), String> {
-    for (block, wraps) in coercions {
+    coercions: Vec<(usize, bool, Vec<(usize, String, String, E)>)>,
+) -> Result<Vec<out::MirObjectBinding>, String> {
+    let mut bindings = Vec::new();
+    for (block, method, wraps) in coercions {
         if wraps.is_empty() {
             continue;
         }
@@ -725,7 +726,15 @@ pub(super) fn wrap_object_coercions(
         let packs = wraps.len() - 1;
         let call_block = first + packs;
         let first_unpack = call_block + 1;
-        for (index, (pack, _, argument)) in wraps.iter().enumerate().skip(1) {
+        for (index, &(argument, ..)) in wraps.iter().enumerate() {
+            bindings.push(out::MirObjectBinding {
+                argument: argument.checked_sub(usize::from(method)),
+                call: call_block,
+                acquire: if index == 0 { block } else { first + index - 1 },
+                release: first_unpack + index,
+            });
+        }
+        for (index, (_, pack, _, argument)) in wraps.iter().enumerate().skip(1) {
             let next = if index == wraps.len() - 1 {
                 call_block
             } else {
@@ -745,12 +754,13 @@ pub(super) fn wrap_object_coercions(
         {
             *call_target = first_unpack;
         }
+        let terminator_site = blocks[block].terminator_site.take();
         blocks.push(out::MirBlock {
-            terminator_site: None,
+            terminator_site,
             statements: Vec::new(),
             terminator: call,
         });
-        for (index, (_, unpack, argument)) in wraps.iter().enumerate() {
+        for (index, (_, _, unpack, argument)) in wraps.iter().enumerate() {
             let next = if index == wraps.len() - 1 {
                 target
             } else {
@@ -762,14 +772,14 @@ pub(super) fn wrap_object_coercions(
                 terminator: call_with(unpack, argument, next),
             });
         }
-        let (first_pack, _, argument) = &wraps[0];
+        let (_, first_pack, _, argument) = &wraps[0];
         blocks[block].terminator = call_with(
             first_pack,
             argument,
             if packs == 0 { call_block } else { first },
         );
     }
-    Ok(())
+    Ok(bindings)
 }
 
 #[cfg(test)]

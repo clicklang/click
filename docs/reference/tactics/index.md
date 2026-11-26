@@ -933,7 +933,7 @@ contract inputs, and the `let` pattern names outputs such as
 - The `let` pattern names every `produces` binder. A produced instance's
   resource arguments are the call's arguments
   ([`c_call_binder_transport_multiple_produces.md`](https://github.com/clicklang/click/blob/master/mdtests/c_call_binder_transport_multiple_produces.md)).
-  In a Rust object pack contract or a C++ reference binding, `object_resource()`
+  In a Rust or C++ reference binding, `object_resource()`
   selects the object resource. For a C++ call `total(sq)`, write
   `let { object_resource(): packed } = step(call(total, 0).argument(0).binding);`
   to name that instance `packed`. A method's receiver uses `.receiver.binding`.

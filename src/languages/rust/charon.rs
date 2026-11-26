@@ -1426,7 +1426,7 @@ struct BodyAdapter<'a, 'b> {
     unsized_objects: BTreeMap<a::LocalId, (String, (a::TraitDeclId, String), bool)>,
     /// The pack, unpack, and argument of each object the block's call makes
     /// from a crate struct reference.
-    coercions: std::cell::RefCell<Vec<(String, String, E)>>,
+    coercions: std::cell::RefCell<Vec<(usize, String, String, E)>>,
 }
 impl BodyAdapter<'_, '_> {
     /// Named interpretations for compiler-resolved slice length and unsigned From.
@@ -2904,6 +2904,7 @@ impl BodyAdapter<'_, '_> {
                                 .borrow_mut()
                                 .insert((record, trait_id, instance));
                             self.coercions.borrow_mut().push((
+                                index,
                                 pack,
                                 unpack,
                                 arguments[index].clone(),
@@ -3861,7 +3862,6 @@ pub(super) fn decode_crate(
             .collect();
         for (id, block) in b.body.body.iter_enumerated() {
             if let Some(message) = panic_messages.get(&id) {
-                coercions.push((blocks.len(), Vec::new()));
                 blocks.push(out::MirBlock {
                     terminator_site: None,
                     statements: Vec::new(),
@@ -3968,14 +3968,19 @@ pub(super) fn decode_crate(
                     refusal_location(&krate, source, block.terminator.span, f.item_meta.span)
                 )
             })?;
-            coercions.push((blocks.len(), b.coercions.take()));
+            let wraps = b.coercions.take();
+            if !wraps.is_empty() {
+                let method = written_range(block.terminator.span)
+                    .is_some_and(|range| written.method_calls.contains(&range));
+                coercions.push((blocks.len(), method, wraps));
+            }
             blocks.push(out::MirBlock {
                 terminator_site,
                 statements,
                 terminator,
             });
         }
-        traits::wrap_object_coercions(&mut blocks, coercions)?;
+        let object_bindings = traits::wrap_object_coercions(&mut blocks, coercions)?;
         protocol::split_next_branches(&mut blocks)?;
         user_iterators::test_user_next_results(&mut blocks, &adapter.user_iterator_nexts);
         panics::assert_branches(&mut blocks);
@@ -4050,6 +4055,7 @@ pub(super) fn decode_crate(
                 unnamed_locals: temporaries,
                 compound_literals,
                 borrowed_scalars,
+                object_bindings,
                 locals,
                 blocks,
                 return_place,

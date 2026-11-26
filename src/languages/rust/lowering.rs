@@ -1219,10 +1219,32 @@ fn lower_function(
         records,
         functions,
     };
-    let (body, region_sites) = match &f.mir {
+    let (body, source_sites) = match &f.mir {
         Some(mir) if f.body.is_empty() => {
             let lowered = moves::lower(&mut cx, f, mir, &owner)?;
-            (lowered.statement, Some(lowered.sites))
+            let regions = lowered
+                .binding_calls
+                .into_iter()
+                .collect::<BTreeMap<_, _>>();
+            let mut object_bindings = Vec::new();
+            for binding in &mir.object_bindings {
+                let Some(&call) = regions.get(&binding.call) else {
+                    continue;
+                };
+                let region = |block| {
+                    regions
+                        .get(&block)
+                        .copied()
+                        .ok_or("Rust object binding lost its call region")
+                };
+                object_bindings.push(crate::languages::interface::ObjectBindingRegions {
+                    argument: binding.argument,
+                    call,
+                    acquire: region(binding.acquire)?,
+                    release: region(binding.release)?,
+                });
+            }
+            (lowered.statement, Some((lowered.sites, object_bindings)))
         }
         Some(_) => return Err("Rust function must select exactly one body representation".into()),
         None => (cx.body(&f.body)?, None),
@@ -1264,10 +1286,11 @@ fn lower_function(
         .with_loop_iterators(loop_iterators);
     // Only MIR lowering supplies a map from kernel regions to source sites.
     // A structured body must not claim to supply an empty map for its regions.
-    if let Some(regions) = region_sites {
+    if let Some((regions, object_bindings)) = source_sites {
         lowered = lowered.with_source_sites(crate::languages::interface::SourceSites {
             paths: f.sites.clone(),
             regions,
+            object_bindings,
             declarations: std::mem::take(&mut cx.declaration_sites),
         });
     }

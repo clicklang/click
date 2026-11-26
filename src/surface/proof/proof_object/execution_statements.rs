@@ -1237,21 +1237,24 @@ impl<'a> Proof<'a> {
         context: &ExecutionProofContext<'_>,
         transport: &CallBinderTransport,
     ) -> Result<FrontierCall, ClickError> {
-        if let Some(CodeRegionRef::Path(steps)) = &transport.source_binding {
-            let region = context
+        let binding_target = if let Some(CodeRegionRef::Path(steps)) = &transport.source_binding {
+            let (region, target) = context
                 .constants
                 .source_layout
-                .source_path_region(steps, ProgramPointKind::Entry)
+                .reference_binding_region(steps)
                 .map_err(|message| self.step_error(message))?;
             if !self
                 .execution()
-                .is_some_and(|execution| execution.core.frontier.next_statement_index == region)
+                .is_some_and(|execution| execution.core.frontier.next_statement_index == *region)
             {
                 return Err(self.step_error(format!(
                     "`{transport}` requires that reference binding at the current frontier"
                 )));
             }
-        }
+            Some(target)
+        } else {
+            None
+        };
         let written = transport.callee();
         let remaining =
             self.execution()
@@ -1331,9 +1334,14 @@ impl<'a> Proof<'a> {
                 || crate::languages::c::formatted_output::function_format(callee)
                     .is_some_and(|(function, _)| function.source_name() == written)
         };
-        let Some(call) = call.filter(|call| match &call.cpp_binding {
-            Some(_) => transport.source_binding.is_some(),
-            None => transport.source_binding.is_none() && names_written(&call.callee),
+        use crate::kernel::CallBinderTarget;
+        let Some(call) = call.filter(|call| match (&call.cpp_binding, binding_target) {
+            (Some(binding), Some(CallBinderTarget::CppBinding(contract))) => {
+                binding.contract == *contract
+            }
+            (None, Some(CallBinderTarget::Function(name))) => call.callee == name.as_ref(),
+            (None, None) => names_written(&call.callee),
+            _ => false,
         }) else {
             return Err(self.step_error(format!(
                 "`{transport}` requires a call to `{written}` at the current frontier"

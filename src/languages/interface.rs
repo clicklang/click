@@ -134,9 +134,19 @@ pub(crate) struct SourceSites {
     /// The statement each region comes from, by region in the order the
     /// source layout numbers them; `None` for a region the lowering added.
     pub(crate) regions: Vec<Option<u32>>,
+    pub(crate) object_bindings: Vec<ObjectBindingRegions>,
     /// The statement each declaration the lowering places at a source
     /// statement comes from, by the declaration's binding.
     pub(crate) declarations: Vec<(crate::kernel::BindingName, u32)>,
+}
+
+/// The source layout's regions for a coercion of one written call argument.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ObjectBindingRegions {
+    pub(crate) argument: Option<usize>,
+    pub(crate) call: usize,
+    pub(crate) acquire: usize,
+    pub(crate) release: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
