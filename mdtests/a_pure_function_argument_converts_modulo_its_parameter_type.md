@@ -10,16 +10,16 @@ Without the written cast, `byte_plus_one(256)` is refused where it is read:
 function byte_plus_one(word: uint8) -> int32 { word + 1 }
 theorem wraps() {
     ensures byte_plus_one(256 as uint8) == 1 by {
-        unfold(byte_plus_one(256 as uint8)); normalize();
+        unfold(byte_plus_one(256 as uint8)); close();
     }
 }
 theorem out_of_range() {
     ensures byte_plus_one(256 as uint8) == 257 by {
-        unfold(byte_plus_one(256 as uint8)); normalize();
+        unfold(byte_plus_one(256 as uint8)); close();
     }
 }
 ```
 
 ```expect
-fail: `out_of_range.ensures_0` proof step tactic 1: `normalize` goal did not normalize to true
+fail: `solve` failed for `out_of_range.ensures_0`
 ```
