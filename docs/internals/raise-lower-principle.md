@@ -69,6 +69,17 @@ distinguish those operations through the statement's existing atomic region
 selectors. A diagnostic points to the written update and identifies the
 operation that failed. [Program regions and points](../reference/language/index.md#at)
 
+Each atomic region is one transition: it reaches at most one new program
+point, its exit, from its entry. A region that changes memory in several steps
+stages each one (`ExecutionState::stage_memory`) and installs them together:
+the next install takes every staged step, and the leaf executor completes each
+path it returns (`complete_staged_memory`). A staged state stands between
+points, so a region reads only at its entry or its exit. A declaration's
+initializer is read at the region's entry, which the fresh block leaves
+unchanged, unless it names the object being declared. Test builds assert the
+rule for every leaf statement (`assert_one_point_per_region`); a contract call,
+which still makes its effects in stages, is not yet held to it.
+
 Review frontend and lowering changes against these checks.
 
 - Statement selectors still resolve to the same written constructs. Changes
