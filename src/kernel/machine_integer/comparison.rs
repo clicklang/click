@@ -144,7 +144,7 @@ fn integer_comparison_operands(
 
 /// An Integer comparison as `left REL right` with its truth folded in:
 /// `>`/`>=` swap their operands, and a false comparison is negated.
-fn integer_relation(
+pub(in crate::kernel) fn integer_relation(
     condition: &OldConditionTerm,
     value: bool,
 ) -> Option<(Relation, &SharedIntegerTerm, &SharedIntegerTerm)> {
@@ -239,23 +239,6 @@ pub(crate) fn literal_native_comparison_value(condition: &OldConditionTerm) -> O
         OldConditionTerm::Constant(value) => Some(value),
         _ => None,
     }
-}
-
-/// Decide an Integer comparison whose two operands are already literals.
-pub(in crate::kernel) fn literal_integer_comparison_value(
-    condition: &OldConditionTerm,
-) -> Option<bool> {
-    let (relation, left, right) = integer_relation(condition, true)?;
-    let (left, right) = (left.as_const()?, right.as_const()?);
-    crate::instrumentation::record_deterministic_work(
-        usize::try_from(left.bits().max(right.bits()).div_ceil(64)).unwrap_or(usize::MAX),
-    );
-    Some(match relation {
-        Relation::Equal => left == right,
-        Relation::NotEqual => left != right,
-        Relation::Less => left < right,
-        Relation::LessEqual => left <= right,
-    })
 }
 
 /// The value of a closed condition from its literal roots alone: a constant,

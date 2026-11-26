@@ -97,9 +97,9 @@ when the default misses or when a proof must not search.
   or write `close()` to close the first open goal and continue. Use
   `close() using { ... }` to restrict proof search to listed facts.
   If the focused branch already holds `false`, `close()` discharges its
-  proposition goal with no search. This includes branches that hold both a
-  proposition and its negation, or an Integer comparison whose literal operands
-  refute it.
+  proposition goal with no search. Exact proposition propagation establishes
+  `false` when the branch holds both a proposition and its negation, including
+  equivalent spellings of machine and Integer comparisons.
   For a proof that must replay without search, use `click verify --checked-only`.
 - **Equalities and states.** `rewrite(from, to)` rewrites the goal with an
   equality at the current state.

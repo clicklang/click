@@ -83,43 +83,40 @@ fn exact_propagation_blocked_clauses_consume_each_occurrence_once() {
 }
 
 #[test]
-fn exact_falsehood_from_literal_integer_comparisons_ignores_other_facts() {
+fn exact_integer_opposites_ignore_unrelated_rules() {
     use crate::instrumentation::measure_deterministic_work;
-    use crate::kernel::{IntegerTerm, SharedIntegerTerm};
+    use crate::kernel::{IntegerTerm, Variable};
 
     let _session = crate::kernel::VerificationSession::enter();
-    let one: SharedIntegerTerm = IntegerTerm::constant_i64(1).into();
-    let zero: SharedIntegerTerm = IntegerTerm::constant_i64(0).into();
-    let comparisons = [
-        (
-            OldConditionTerm::IntegerEqual(one.clone(), zero.clone()),
-            true,
-        ),
-        (
-            OldConditionTerm::IntegerLessEqual(one.clone(), zero.clone()),
-            true,
-        ),
-        (OldConditionTerm::IntegerGreaterThan(one, zero), false),
-    ];
-    let mut baseline = [None; 3];
+    let x: SharedIntegerTerm = IntegerTerm::Variable(Variable(871_001)).into();
+    let y: SharedIntegerTerm = IntegerTerm::Variable(Variable(871_002)).into();
+    let [x_le_y, y_lt_x, x_eq_y, y_ne_x] = [
+        OldConditionTerm::IntegerLessEqual(x.clone(), y.clone()),
+        OldConditionTerm::IntegerLessThan(y.clone(), x.clone()),
+        OldConditionTerm::IntegerEqual(x.clone(), y.clone()),
+        OldConditionTerm::IntegerNotEqual(y, x),
+    ]
+    .map(|condition| Proposition::condition_is(condition, true));
+
+    let mut baseline = [None, None];
     for size in [4, 16, 64, 256] {
-        let root = context(
-            (0..size)
-                .map(|i| implies(atom(&format!("u{i}")), atom(&format!("v{i}"))))
-                .collect(),
-        );
-        for ((comparison, impossible_polarity), baseline) in comparisons.iter().zip(&mut baseline) {
-            let (child, work) = measure_deterministic_work(|| {
-                root.clone()
-                    .assume_condition(comparison.clone(), *impossible_polarity)
-            });
-            assert!(child.contains_assumed_exact(&falsehood()));
-            assert_eq!(work, *baseline.get_or_insert(work), "fact count {size}");
-            let consistent = root
-                .clone()
-                .assume_condition(comparison.clone(), !*impossible_polarity);
-            assert!(!consistent.contains_assumed_exact(&falsehood()));
+        let mut index = Index::default();
+        for i in 0..size {
+            index.admit(&implies(atom(&format!("u{i}")), atom(&format!("v{i}"))));
         }
-        assert!(!root.contains_assumed_exact(&falsehood()));
+        for ((left, right), baseline) in [(&x_le_y, &y_lt_x), (&x_eq_y, &y_ne_x)]
+            .into_iter()
+            .zip(&mut baseline)
+        {
+            let mut branch = index.clone();
+            assert!(!branch.admit(left).contains(&falsehood()));
+            let (derived, work) = measure_deterministic_work(|| branch.admit(right));
+            assert!(derived.contains(&falsehood()));
+            assert!(
+                work <= baseline.get_or_insert(work).saturating_mul(2) + 16,
+                "rule count {size}: update cost {work}"
+            );
+            assert!(!index.clone().admit(right).contains(&falsehood()));
+        }
     }
 }
