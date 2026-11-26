@@ -4197,6 +4197,20 @@ it: an `if`'s own region is its test
 (`mdtests/a_chained_region_ends_in_an_assignment_or_read.md`,
 `mdtests/a_chained_assignment_counts_only_the_statement_s_own_regions.md`).
 
+A call to a function with a contract also has an `.effect` point between
+its `.entry` and `.exit`: the state once every value the call writes is in
+place, before its effects on initialization, liveness and allocation, which
+reach `.exit`. Every value is the same at `.effect` as at `.exit`; a read the
+call makes before its exit, such as one in a fact the call states about the
+memory it produced, is named there. `.effect` is a migration measure, to be
+removed once reads are named by the write that made their value
+(`mdtests/a_contract_call_names_its_effect_point.md`).
+
+<!-- verified-example: mdtests/a_contract_call_names_its_effect_point.md -->
+```click
+have at(call(set, 0).effect, *p) == 7 by close();
+```
+
 A call's region also has a value: `R.result` is the result of the call `R`
 names, such as `statement(0).call(make, 0).result`. It is the value the
 call returned, retained at the region's exit even if the source discards it.

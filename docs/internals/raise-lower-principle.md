@@ -77,8 +77,20 @@ path it returns (`complete_staged_memory`). A staged state stands between
 points, so a region reads only at its entry or its exit. A declaration's
 initializer is read at the region's entry, which the fresh block leaves
 unchanged, unless it names the object being declared. Test builds assert the
-rule for every leaf statement (`assert_one_point_per_region`); a contract call,
-which still makes its effects in stages, is not yet held to it.
+rule for every leaf statement (`assert_one_point_per_region`).
+
+A contract call reaches two points: its effect point (`call(f, j).effect`,
+`ExecutionState::complete_staged_memory_as_call_effect`), once every value it
+writes is in place, and then its exit, after its effects on initialization,
+liveness and allocation. The call's reads before its exit, such as the
+provisional ensures that decide its allocation effects and its coordinate
+ensures, are made at the effect point; its produced words' equations are made
+at the exit. Every value is the same at both, so `.effect` is a migration
+measure, to be removed once reads are named by the write that made their
+value. A callee's static storage is materialized at one point before the
+effect (`initialize_callee_globals`). Calls under a mutex protocol still make
+the protocol's stages at points of their own and are not yet held to the
+rule.
 
 Review frontend and lowering changes against these checks.
 

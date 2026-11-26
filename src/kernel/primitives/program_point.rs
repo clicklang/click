@@ -265,6 +265,9 @@ impl PartialEq for PointReadWrite {
 pub(super) struct PointNode {
     id: ProgramPointId,
     function_entry: bool,
+    /// Whether this is a contract call's effect point
+    /// ([`PointTransition::CallEffect`]).
+    call_effect: bool,
     /// The memory state the path had here.
     memory: SharedMemory,
     /// The steps the path took from its predecessor to here, newest first;
@@ -690,6 +693,11 @@ pub(crate) struct PathLink(Option<Arc<PointNode>>, IndexedView);
 enum PointTransition {
     FunctionEntry,
     Execution,
+    /// The state of a contract call after its value effects, before the
+    /// effects on initialization, liveness and allocation that reach its
+    /// exit: `call(f, j).effect`, a migration measure until reads are named
+    /// by the write that made their value.
+    CallEffect,
     Provisional,
     LoopHead,
 }
@@ -772,6 +780,20 @@ impl PathLink {
         self.after_with_index(memory, steps, PointTransition::Execution)
     }
 
+    /// [`Self::after`], as a contract call's effect point.
+    pub(crate) fn after_call_effect(
+        &self,
+        memory: SharedMemory,
+        steps: Option<Arc<StepLog>>,
+    ) -> Self {
+        self.after_with_index(memory, steps, PointTransition::CallEffect)
+    }
+
+    /// Whether this is a contract call's effect point.
+    pub(crate) fn is_call_effect(&self) -> bool {
+        self.0.as_ref().is_some_and(|node| node.call_effect)
+    }
+
     pub(super) fn after_loop_head(
         &self,
         memory: SharedMemory,
@@ -843,6 +865,7 @@ impl PathLink {
             Some(Arc::new_cyclic(|joined| PointNode {
                 id,
                 function_entry: false,
+                call_effect: false,
                 memory,
                 steps: None,
                 predecessors,
@@ -900,6 +923,7 @@ impl PathLink {
             PointNode {
                 id,
                 function_entry: transition == PointTransition::FunctionEntry,
+                call_effect: transition == PointTransition::CallEffect,
                 memory,
                 steps,
                 predecessors,

@@ -18336,6 +18336,7 @@ impl Parser {
         let kind = match self.expect_ident("program point kind")?.as_str() {
             "entry" => ProgramPointKind::Entry,
             "exit" => ProgramPointKind::Exit,
+            "effect" => ProgramPointKind::Effect,
             kind => {
                 return Err(self.error(format!(
                     "expected program point kind `entry` or `exit`, got `{kind}`"

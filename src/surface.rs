@@ -7852,6 +7852,11 @@ pub struct ProgramPointRef {
 pub enum ProgramPointKind {
     Entry,
     Exit,
+    /// A contract call's state after its value effects, before the effects
+    /// on initialization, liveness and allocation that reach its exit:
+    /// `call(f, j).effect`. A migration measure: reads are named at it until
+    /// they are named by the write that made their value.
+    Effect,
 }
 
 /// A destination for forward execution. A loop back edge selects the

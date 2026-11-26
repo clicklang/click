@@ -192,18 +192,21 @@ fn byte_output_initializes_the_concrete_storage_held_through_an_alias() {
         let mut budget = ExecutionBudget::new();
         budget.install_program_byte_order(ByteOrder::Little);
         let mut post_state = state.clone();
-        initialize_produced_memory(
+        let (_, words) = initialize_produced_memory(
             &state,
             &state,
             function.contract_interface(),
             &mut post_state,
             &assumptions,
-            &mut facts,
             &mut budget,
             false,
         )
         .unwrap()
         .unwrap();
+        // The call's exit takes the staged initialization; the produced
+        // words' equations are made there.
+        post_state.complete_staged_memory();
+        produced_word_equations(&post_state, &words, &mut facts, &budget);
         assert_eq!(
             post_state.memory().has_initialized_bytes_at(&word, 4),
             initialized

@@ -11301,6 +11301,15 @@ impl ExecutionState {
         self.replace_memory(memory, false);
     }
 
+    /// [`Self::stage_memory`] when `stage`, [`Self::set_memory`] otherwise.
+    pub(crate) fn set_or_stage_memory(&mut self, memory: SymbolicMemory, stage: bool) {
+        if stage {
+            self.stage_memory(memory);
+        } else {
+            self.set_memory(memory);
+        }
+    }
+
     /// Ends the atomic region in progress: a state with staged memory moves
     /// to the one new point those steps reach. Without staged memory it
     /// stays where it is.
@@ -11311,6 +11320,36 @@ impl ExecutionState {
             return;
         }
         self.point = self.point.after(shared, steps);
+    }
+
+    /// Ends a contract call's value effects: the state moves to the call's
+    /// effect point (`call(f, j).effect`) with every staged step, even when
+    /// it staged none, so each contract call has one.
+    pub(crate) fn complete_staged_memory_as_call_effect(&mut self) {
+        let steps = self.memory.pending_steps.take();
+        let shared = super::intern_memory_ref(&self.memory);
+        self.point = self.point.after_call_effect(shared, steps);
+    }
+
+    /// The state at the effect point this state's call reached its exit
+    /// from: this state's resources, at that point's memory, with `entry`'s
+    /// locals when the call's entry is known, since the call has changed no
+    /// local there. None when this state is not a contract call's exit.
+    pub(crate) fn call_effect_state(&self, entry: Option<&Self>) -> Option<Self> {
+        let [effect] = self.point.predecessors() else {
+            return None;
+        };
+        if !effect.is_call_effect() {
+            return None;
+        }
+        let memory = effect.memory()?.memory().clone();
+        let mut state = self.clone();
+        state.memory = memory;
+        state.point = effect.clone();
+        if let Some(entry) = entry {
+            state.locals = entry.locals.clone();
+        }
+        Some(state)
     }
 
     /// Replace memory without the resource invalidation of
