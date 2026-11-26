@@ -141,7 +141,7 @@ impl KernelTermImport {
             return KernelTerm::float_read(
                 format,
                 point.point().clone(),
-                SharedAddress::import(pointer.address()),
+                pointer.address().shared().clone(),
             );
         }
         let view = FloatOperandView::Native(format, term);

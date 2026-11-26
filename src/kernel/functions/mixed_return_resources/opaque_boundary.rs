@@ -170,7 +170,7 @@ pub(super) mod tests {
     use crate::kernel::program_expression::{int32_literal, variable};
 
     pub(crate) fn case(
-        p: OldAddress,
+        p: Address,
         leaves: u32,
         identity: u64,
     ) -> (ResourceFact, Vec<CompositeResourceDefinition>) {
@@ -228,7 +228,7 @@ pub(super) mod tests {
     #[test]
     fn opaque_envelopes_preserve_identity_and_check_overlap_without_exposing_children() {
         let facts = PureFactContext::new();
-        let p = OldAddress::symbolic(Variable(8_930_000));
+        let p = Address::symbolic(Variable(8_930_000));
         let (head, definitions) = case(p.clone(), 1, 8_930_100);
         let outputs = EvaluatedReturnResources::new(&facts)
             .admit(head.clone(), ReturnOwnershipOrigin::Description, &facts)
@@ -272,7 +272,7 @@ pub(super) mod tests {
     #[test]
     fn viewed_instances_are_refused_before_envelope_construction() {
         let facts = PureFactContext::new();
-        let (head, _) = case(OldAddress::symbolic(Variable(8_930_800)), 1, 8_930_900);
+        let (head, _) = case(Address::symbolic(Variable(8_930_800)), 1, 8_930_900);
         let view = ResourceFact::View(head.resource().clone());
         let _fast = crate::kernel::search::FastOperationScope::enter("viewed opaque envelope");
         assert!(matches!(
@@ -288,7 +288,7 @@ pub(super) mod tests {
     #[test]
     fn opaque_envelopes_reserve_shared_input_supply_once() {
         let facts = PureFactContext::new();
-        let p = OldAddress::symbolic(Variable(8_930_200));
+        let p = Address::symbolic(Variable(8_930_200));
         let (head, definitions) = case(p.clone(), 1, 8_930_300);
         let mut plan = ConsumedCellReturns::default();
         plan.retain_frontier(
@@ -335,7 +335,7 @@ pub(super) mod tests {
     #[test]
     fn constructor_dependent_child_addresses_keep_an_opaque_refusal() {
         let facts = PureFactContext::new();
-        let (head, mut definitions) = case(OldAddress::symbolic(Variable(8_930_500)), 1, 8_930_600);
+        let (head, mut definitions) = case(Address::symbolic(Variable(8_930_500)), 1, 8_930_600);
         definitions[1].matched.as_mut().unwrap().arms[1].children[0].arguments[0] =
             SpecExpression::ProgramExpression(variable("ptr"));
         let outputs = EvaluatedReturnResources::new(&facts)

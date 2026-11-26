@@ -12,13 +12,10 @@ use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 /// symbolic: the shape a pure theorem's parameters reach a lowering in.
 fn indexed_pointer_site() -> (ProgramValueBindings, ExecutionState) {
     let pointer = ProgramValue::typed_pointer(
-        OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scaled_int32_node(
-                OldMachineTerm::Variable(Variable(100_000)),
-                4,
-            ),
-        },
+        Address::new(
+            AddressBase::ExternalArgument,
+            AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(100_000)), 4),
+        ),
         ProgramType::Int32Pointer,
     );
     let values = ProgramValueBindings::from([
@@ -32,7 +29,7 @@ fn indexed_pointer_site() -> (ProgramValueBindings, ExecutionState) {
 }
 
 /// The pointer `p` was passed, as the kernel holds it.
-fn pointer_base(values: &ProgramValueBindings) -> OldAddress {
+fn pointer_base(values: &ProgramValueBindings) -> Address {
     let ProgramValue::Pointer(pointer) = &values["p"] else {
         unreachable!("the probe binds `p` to a pointer");
     };
@@ -40,15 +37,15 @@ fn pointer_base(values: &ProgramValueBindings) -> OldAddress {
 }
 
 /// The cell `(p + index) as (int32 *)[0]`, as the kernel indexes it.
-fn indexed_cell(values: &ProgramValueBindings) -> OldAddress {
+fn indexed_cell(values: &ProgramValueBindings) -> Address {
     use crate::kernel::OffsetTree;
-    OldAddress {
-        base: pointer_base(values).base,
-        offset: AddressOffset::raw_add(
+    Address::new(
+        pointer_base(values).base.clone(),
+        AddressOffset::raw_add(
             AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(100_000)), 4),
             AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(1)), 4),
         ),
-    }
+    )
 }
 
 fn unproved(proposition: Proposition) -> Vec<crate::kernel::ProofObligation> {

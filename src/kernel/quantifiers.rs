@@ -63,7 +63,7 @@ fn rename_unreduced(
     to: Variable,
     sort: &Sort,
 ) -> Option<Proposition> {
-    let rename_program_occurrences = |body: &Proposition, pointer: OldAddress| {
+    let rename_program_occurrences = |body: &Proposition, pointer: Address| {
         let renamed =
             substitute_int32_variable_in_proposition(body, from, OldMachineTerm::Variable(to));
         let renamed =
@@ -93,9 +93,9 @@ fn rename_unreduced(
     match sort {
         Sort::ProgramPointer(program_type) | Sort::ProgramObjectPointer(program_type, _) => {
             let pointer = if matches!(program_type, ProgramType::FunctionPointer(_)) {
-                OldAddress::symbolic_function(to)
+                Address::symbolic_function(to)
             } else {
-                OldAddress::symbolic(to)
+                Address::symbolic(to)
             };
             rename_program_occurrences(body, pointer)
         }
@@ -120,7 +120,7 @@ fn rename_unreduced(
             )]);
             typed_rename(body, &Default::default(), &Default::default(), &algebraic)
         }
-        _ => rename_program_occurrences(body, OldAddress::symbolic(to)),
+        _ => rename_program_occurrences(body, Address::symbolic(to)),
     }
 }
 

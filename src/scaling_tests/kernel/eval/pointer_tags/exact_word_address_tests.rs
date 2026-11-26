@@ -9,7 +9,7 @@ use crate::kernel::{MachineCastSpelling, OldMachineTerm};
 fn object_class_origin_lookup_is_independent_of_unrelated_facts() {
     use crate::kernel::effective_type::{CAccessClass, CScalarClass};
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = OldAddress::symbolic(Variable(960010));
+    let pointer = Address::symbolic(Variable(960010));
     let class = CAccessClass::Scalar(CScalarClass::Int);
     let word = OldMachineTerm::Variable(Variable(960011));
     let premise = OldConditionTerm::uint64_equal(
@@ -56,7 +56,7 @@ fn object_class_origin_lookup_is_independent_of_unrelated_facts() {
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn compound_word_address_lookup_skips_unrelated_equalities() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = OldAddress::symbolic(Variable(960001));
+    let pointer = Address::symbolic(Variable(960001));
     let word = OldMachineTerm::Variable(Variable(960002));
     let expressions = [
         OldMachineTerm::uint64_bitwise_and(word.clone(), OldMachineTerm::uint64_constant(!3)),
@@ -121,7 +121,7 @@ fn bounded_symbolic_tag_lookup_ignores_unrelated_facts() {
     let costs = [4u64, 16, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
         let tag = OldMachineTerm::Variable(Variable(980_021));
-        let pointer = OldAddress::symbolic(Variable(980_022));
+        let pointer = Address::symbolic(Variable(980_022));
         let mut context = PureFactContext::new()
             .assume_condition(
                 OldConditionTerm::signed_less_equal(0u32.into(), tag.clone()),
@@ -315,7 +315,7 @@ fn retained_tag_forms_visit_shared_nodes_once_and_reuse_prefixes() {
         let context = PureFactContext::new().assume_condition(
             OldConditionTerm::uint64_equal(
                 OldMachineTerm::Variable(Variable(986021)),
-                OldMachineTerm::integer_address(OldAddress::symbolic(Variable(986022))),
+                OldMachineTerm::integer_address(Address::symbolic(Variable(986022))),
             ),
             true,
         );
@@ -356,7 +356,7 @@ fn mixed_tag_syntax_comparison_reuses_growing_shared_prefixes() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::UInt64;
-        let opaque = OldMachineTerm::integer_address(OldAddress::symbolic(Variable(986050)));
+        let opaque = OldMachineTerm::integer_address(Address::symbolic(Variable(986050)));
         let mut left = KernelTerm::retained_machine_operand(ty, MachineOperandView::Old(&opaque));
         let mut right = KernelTerm::retained_machine_operand(ty, MachineOperandView::Old(&opaque));
         assert_ne!(left, right);

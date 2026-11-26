@@ -8,7 +8,7 @@ use super::*;
 fn direct_loadable_span_graph_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let memory = SymbolicMemory::new();
-        let base = OldAddress::symbolic(Variable(9_320_010));
+        let base = Address::symbolic(Variable(9_320_010));
         let range_bytes = span(var(0));
         let fact = Proposition::MemoryLoadable {
             point: Default::default(),
@@ -55,7 +55,7 @@ fn filing_a_loadable_fact_in_a_fork_shares_every_other_block() {
     let loadable = |id: u64| Proposition::MemoryLoadable {
         point: Default::default(),
         memory: memory.clone(),
-        base: OldAddress::symbolic(Variable(9_330_000 + id)),
+        base: Address::symbolic(Variable(9_330_000 + id)),
         bytes: (span(var(id))).into(),
         wide: false,
     };
@@ -65,7 +65,7 @@ fn filing_a_loadable_fact_in_a_fork_shares_every_other_block() {
     }
     let fork = parent.clone().assume_proposition(loadable(1_000));
     for id in 0..64 {
-        let block = OldAddress::symbolic(Variable(9_330_000 + id)).base;
+        let block = Address::symbolic(Variable(9_330_000 + id)).base.clone();
         let (Some(before), Some(after)) = (
             parent.memory_loadable_facts.get(&block),
             fork.memory_loadable_facts.get(&block),
@@ -87,7 +87,7 @@ fn filing_a_loadable_fact_in_a_fork_shares_every_other_block() {
             "the fork rebuilt the shape index of an untouched block {id}"
         );
     }
-    let new_base = OldAddress::symbolic(Variable(9_330_000 + 1_000));
+    let new_base = Address::symbolic(Variable(9_330_000 + 1_000));
     assert_eq!(
         fork.memory_loadable_exact_candidates_for_base(&new_base)
             .cloned()
@@ -102,9 +102,11 @@ fn filing_a_loadable_fact_in_a_fork_shares_every_other_block() {
 /// every other load's bucket with its parent.
 #[test]
 fn filing_a_load_condition_in_a_fork_shares_every_other_load() {
-    let pointer = |id: u64| OldAddress {
-        base: format!("load-condition-index-{id}").into(),
-        offset: AddressOffset::constant(0),
+    let pointer = |id: u64| {
+        Address::new(
+            format!("load-condition-index-{id}").into(),
+            AddressOffset::constant(0),
+        )
     };
     let load_condition = |id: u64| {
         OldConditionTerm::float64_compare(
@@ -160,7 +162,7 @@ fn filing_a_load_condition_in_a_fork_shares_every_other_load() {
 fn integer_read_facts_do_not_grow_load_time_transport_work() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = crate::kernel::intern_memory(SymbolicMemory::new());
-    let pointer = OldAddress::symbolic(Variable(9_330_000));
+    let pointer = Address::symbolic(Variable(9_330_000));
     let read = OldMachineTerm::read_named(
         ProgramPoint::at(&memory),
         Box::new(pointer.clone()),

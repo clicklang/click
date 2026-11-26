@@ -47,7 +47,7 @@ fn float_read_construction_keeps_growing_shared_addresses_and_states() {
         }
         let memory = intern_memory(memory);
         let address = SharedAddress::new(
-            SharedAddressBase::import(&AddressBase::Symbolic(Variable(999921))),
+            SharedAddressBase::new(AddressBase::Symbolic(Variable(999921))),
             KernelAddressOffset::Int32Scaled {
                 value: index,
                 byte_width: 4,

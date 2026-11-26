@@ -1316,10 +1316,10 @@ mod tests {
         let memory = crate::kernel::intern_memory(
             crate::kernel::SymbolicMemory::new().with_block("static:test:values#static0", 16),
         );
-        let pointer = crate::kernel::OldAddress {
-            base: crate::kernel::AddressBase::Concrete("static:test:values#static0".into()),
-            offset: AddressOffset::constant(0),
-        };
+        let pointer = Address::new(
+            crate::kernel::AddressBase::Concrete("static:test:values#static0".into()),
+            AddressOffset::constant(0),
+        );
         // The named form has to be the same read as the spelled `MemoryLoad`
         // alternative below: its kind, and the width that term's naming
         // walks with.
@@ -1372,10 +1372,10 @@ mod tests {
             .unwrap()
         );
 
-        let dynamic_pointer = crate::kernel::OldAddress {
-            base: crate::kernel::AddressBase::Concrete("heap:test".into()),
-            offset: AddressOffset::constant(0),
-        };
+        let dynamic_pointer = Address::new(
+            crate::kernel::AddressBase::Concrete("heap:test".into()),
+            AddressOffset::constant(0),
+        );
         let dynamic_variable = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
             &dynamic_pointer,
@@ -1424,10 +1424,10 @@ mod tests {
     #[test]
     fn quantified_external_range_capability_is_frontier_exact() {
         let memory = crate::kernel::SymbolicMemory::new();
-        let pointer = crate::kernel::OldAddress {
-            base: crate::kernel::AddressBase::ExternalArgument,
-            offset: AddressOffset::constant(0),
-        };
+        let pointer = Address::new(
+            crate::kernel::AddressBase::ExternalArgument,
+            AddressOffset::constant(0),
+        );
         let range = Proposition::MemoryLoadable {
             point: Default::default(),
             memory: crate::kernel::SymbolicMemory::new(),
@@ -1579,8 +1579,10 @@ mod tests {
             && let Proposition::Implies(_, consequent) = body.as_mut()
             && let Proposition::MemoryLoadable { base, .. } = consequent.as_mut()
         {
-            base.offset =
-                AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(1 << 40)), 1);
+            base.set_offset(AddressOffset::scaled_int32_node(
+                OldMachineTerm::Variable(Variable(1 << 40)),
+                1,
+            ));
         }
         let unregistered_guarded = crate::kernel::quantifiers::test_exists(
             "len".to_string(),

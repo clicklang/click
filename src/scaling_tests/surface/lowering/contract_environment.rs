@@ -6,10 +6,7 @@ fn named_parameter_shadowing_ignores_unrelated_globals() {
     for size in [0, 16, 128] {
         let state = globals(size);
         let value = ProgramValue::typed_pointer(
-            OldAddress {
-                base: "parameter-bytes".into(),
-                offset: AddressOffset::constant(0),
-            },
+            Address::new("parameter-bytes".into(), AddressOffset::constant(0)),
             ProgramType::Int32Pointer,
         );
         let parameters = [crate::languages::interface::ImportedParameter::new(

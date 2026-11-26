@@ -38,10 +38,10 @@ fn exact_composition_observation_accepts_retained_views_but_not_foreign_ownershi
     ));
     let foreign =
         ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(MemoryRange::new(
-            OldAddress {
-                base: "local:foreign".into(),
-                offset: crate::kernel::AddressOffset::constant(0),
-            },
+            Address::new(
+                "local:foreign".into(),
+                crate::kernel::AddressOffset::constant(0),
+            ),
             0.into(),
             1.into(),
         )));
@@ -234,10 +234,10 @@ fn checked_member_events_conserve_one_occurrence_and_reject_forged_deltas() {
 #[test]
 fn member_exchange_requires_both_external_body_ownership_and_checked_span() {
     let (state, authority) = source_state();
-    let external = crate::kernel::OldAddress {
-        base: crate::kernel::AddressBase::ExternalArgument,
-        offset: crate::kernel::AddressOffset::constant(16),
-    };
+    let external = Address::new(
+        crate::kernel::AddressBase::ExternalArgument,
+        crate::kernel::AddressOffset::constant(16),
+    );
     let Resource::PopulationAuthority(description) = authority.resource() else {
         unreachable!()
     };

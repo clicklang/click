@@ -119,7 +119,7 @@ fn source_mutex(
     state: &ExecutionState,
     spec: &ResourceSpec,
     assumptions: &PureFactContext,
-) -> Result<OldAddress, String> {
+) -> Result<Address, String> {
     let ResourceTerm::MutexGuard {
         mutex,
         state_source: ResourceStateSource::Current,
@@ -185,7 +185,7 @@ pub(in crate::kernel) fn prepare_direct_loop_guard(
     spec: &ResourceSpec,
     identity: InstanceId,
     assumptions: &PureFactContext,
-) -> Result<(ExecutionState, OldAddress, ResourceFact), LoopResourceFailure> {
+) -> Result<(ExecutionState, Address, ResourceFact), LoopResourceFailure> {
     let mutex = source_mutex(entry, spec, assumptions)?;
     // A previous loop may have left an empty or held carrier at its exit.
     // Retire it only by the same checked ownership exchange as a runtime use.
@@ -280,7 +280,7 @@ pub(in crate::kernel) fn prepare_direct_loop_guard(
 
 pub(in crate::kernel) fn select_direct_loop_guards(
     state: &ExecutionState,
-    pointers: Vec<OldAddress>,
+    pointers: Vec<Address>,
 ) -> ExecutionState {
     let Some(ledger) = &state.mutex_ledger else {
         return state.clone();
@@ -300,7 +300,7 @@ pub(in crate::kernel) fn select_direct_loop_guards(
 impl MutexContext {
     pub(super) fn open_direct_loop_guard(
         &self,
-        mutex: &OldAddress,
+        mutex: &Address,
         assumptions: &PureFactContext,
     ) -> Result<Option<Self>, MutexTransitionError> {
         let Some(carrier) = self
@@ -360,7 +360,7 @@ pub(in crate::kernel) fn normalize_direct_loop_guards(
     top: &ExecutionState,
     next: &ExecutionState,
     assumptions: &PureFactContext,
-) -> Result<(ExecutionState, Vec<OldAddress>), String> {
+) -> Result<(ExecutionState, Vec<Address>), String> {
     let mut state = next.clone();
     let mut checked = Vec::new();
     let Some(ledger) = &top.mutex_ledger else {

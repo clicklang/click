@@ -4,10 +4,7 @@ use super::*;
 fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
     let samples = [(2, 16), (64, 64), (65536, 256)].map(|(amount, unrelated)| {
         let pointer = ProgramValue::typed_pointer(
-            OldAddress {
-                base: AddressBase::ExternalArgument,
-                offset: AddressOffset::constant(0),
-            },
+            Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0)),
             ProgramType::Int32Pointer,
         );
         let description = ResourceDescription::new(
@@ -33,10 +30,10 @@ fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
             let other = ResourceDescription::new(
                 "unrelated".into(),
                 vec![
-                    ProgramValue::pointer(OldAddress {
-                        base: AddressBase::ExternalArgument,
-                        offset: AddressOffset::variable(Variable(950_000 + index as u64)),
-                    })
+                    ProgramValue::pointer(Address::new(
+                        AddressBase::ExternalArgument,
+                        AddressOffset::variable(Variable(950_000 + index as u64)),
+                    ))
                     .into(),
                 ]
                 .into(),
@@ -201,10 +198,7 @@ fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
 
 #[test]
 fn contained_transfer_frontier_scales_with_selected_depth_and_indexed_definitions() {
-    let pointer = OldAddress {
-        base: "payload".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let pointer = Address::new("payload".into(), AddressOffset::constant(0));
     let memory = SymbolicMemory::new().with_block("payload", 4);
     let assumptions = PureFactContext::new();
     let root =
@@ -931,7 +925,7 @@ fn resource_expansion_diagnostics_bound_the_named_frontier() {
     let resources = ResourceContext::new().unchecked_with_facts((0..32).map(|id| {
         ResourceFact::own(Resource::Composite {
             name: format!("resource_{id}_{}", "x".repeat(1000)),
-            arguments: vec![ProgramValue::pointer(OldAddress::null()).into()].into(),
+            arguments: vec![ProgramValue::pointer(Address::null()).into()].into(),
         })
     }));
     let diagnostic = bounded_contract_resource_frontier(&resources);

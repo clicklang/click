@@ -29,7 +29,7 @@ fn authority_named_memory_rewrite_preserves_population_ledger() {
                 uninitialized: false,
                 value_runs: Default::default(),
                 base: ProgramExpression::Value(ProgramValue::pointer(
-                    crate::kernel::OldAddress::symbolic(Variable(9_850_002)),
+                    crate::kernel::Address::symbolic(Variable(9_850_002)),
                 )),
                 start: ProgramExpression::Value(int32(0)),
                 end: ProgramExpression::Value(int32(1)),
@@ -78,7 +78,7 @@ fn authority_named_memory_rewrite_preserves_population_ledger() {
         .with_fact(Proposition::MemoryReadDefined {
             at: open.program_point().id(),
             memory: open.memory().clone(),
-            pointer: crate::kernel::OldAddress::symbolic(Variable(9_850_004)),
+            pointer: crate::kernel::Address::symbolic(Variable(9_850_004)),
             value_type: ProgramType::Int32,
         });
     assert!(

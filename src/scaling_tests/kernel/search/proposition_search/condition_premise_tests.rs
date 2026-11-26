@@ -115,10 +115,10 @@ fn state_condition_index_builds_once_and_survives_scalar_updates() {
                 left: Box::new(term(20_000 + index as u64)),
                 right: Box::new(OldMachineTerm::read_named(
                     ProgramPoint::at(&memory),
-                    Box::new(OldAddress {
-                        base: "other".into(),
-                        offset: AddressOffset::constant(index as i64 * 4),
-                    }),
+                    Box::new(Address::new(
+                        "other".into(),
+                        AddressOffset::constant(index as i64 * 4),
+                    )),
                     crate::kernel::LoadKind::Int32,
                 )),
             };
@@ -153,10 +153,7 @@ fn state_condition_index_builds_once_and_survives_scalar_updates() {
             left: Box::new(term(90_000)),
             right: Box::new(OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
-                Box::new(OldAddress {
-                    base: "other".into(),
-                    offset: AddressOffset::constant(0),
-                }),
+                Box::new(Address::new("other".into(), AddressOffset::constant(0))),
                 crate::kernel::LoadKind::Int32,
             )),
         };
@@ -262,9 +259,11 @@ fn covering_loadability_avoids_unrelated_adjacency_search() {
         let memory = SymbolicMemory::new();
         // The theorem frontend represents these pointers in one block, so
         // unrelated ranges remain candidates for the adjacency search.
-        let pointer = |index| OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(term(index), 4),
+        let pointer = |index| {
+            Address::new(
+                AddressBase::ExternalArgument,
+                AddressOffset::scale_int32(term(index), 4),
+            )
         };
         let source = Proposition::MemoryLoadable {
             point: Default::default(),
@@ -324,10 +323,10 @@ fn arithmetic_candidates_omit_registered_read_definitions() {
         for index in 0..size {
             let read = OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
-                Box::new(OldAddress {
-                    base: "buffer".into(),
-                    offset: AddressOffset::constant(index * 4),
-                }),
+                Box::new(Address::new(
+                    "buffer".into(),
+                    AddressOffset::constant(index * 4),
+                )),
                 LoadKind::Int32,
             );
             let (variable, load) = load_variable_for_term(&read).unwrap();

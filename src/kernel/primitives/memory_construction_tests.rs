@@ -27,16 +27,13 @@ fn assert_explained(memory: &SymbolicMemory) {
 #[test]
 fn memory_constructions_cover_non_transition_producers() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = OldAddress {
-        base: "local:construction".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let pointer = Address::new("local:construction".into(), AddressOffset::constant(0));
     let memory = SymbolicMemory::new()
         .with_block("local:construction", 16)
         .store(pointer.clone(), ProgramValue::Int32(7.into()));
     let projected = crate::kernel::memory_history::canonical_program_memory_for_pointer_load(
         &memory,
-        &OldAddress::symbolic(Variable(990_810)),
+        &Address::symbolic(Variable(990_810)),
     );
     assert!(matches!(
         projected.diagnostic_construction(),
@@ -113,10 +110,7 @@ fn unrecorded_mutation_cannot_inherit_an_incorrect_origin() {
 
 #[test]
 fn construction_pins_detect_mutation_of_an_uninterned_state() {
-    let pointer = OldAddress {
-        base: "local:unpinned".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let pointer = Address::new("local:unpinned".into(), AddressOffset::constant(0));
     let mut memory = SymbolicMemory::new().with_uninitialized_object(pointer.clone(), 4);
     assert!(memory.diagnostic_construction().is_some());
     Arc::make_mut(&mut memory.heap)
@@ -131,8 +125,8 @@ fn construction_pins_detect_mutation_of_an_uninterned_state() {
 #[test]
 fn allocation_lifetimes_up_to_ended_admit_only_new_tombstones() {
     let _session = crate::kernel::VerificationSession::enter();
-    let freed = OldAddress::symbolic(Variable(990_901));
-    let live = OldAddress::symbolic(Variable(990_902));
+    let freed = Address::symbolic(Variable(990_901));
+    let live = Address::symbolic(Variable(990_902));
     let size = OldMachineTerm::constant(8);
     let mut head = HeapMemory::default();
     head.live_allocations

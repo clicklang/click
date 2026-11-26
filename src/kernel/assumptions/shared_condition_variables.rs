@@ -327,7 +327,7 @@ mod tests {
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let load = crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
-            &OldAddress::symbolic(Variable(994800)),
+            &Address::symbolic(Variable(994800)),
             LoadKind::Int32,
             4,
         );

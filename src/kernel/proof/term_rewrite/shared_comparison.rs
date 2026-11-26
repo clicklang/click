@@ -862,9 +862,11 @@ fn comparison_binary_uncached(
 fn comparison_read_fixture(value: OldMachineTerm) -> (Variable, Variable) {
     let ty = MachineIntegerType::Int32;
     let index = OldMachineTerm::Variable(Variable(992201));
-    let pointer = |value| OldAddress {
-        base: AddressBase::Concrete("opaque-comparison".into()),
-        offset: AddressOffset::scaled_int32_node(value, 4),
+    let pointer = |value| {
+        Address::new(
+            AddressBase::Concrete("opaque-comparison".into()),
+            AddressOffset::scaled_int32_node(value, 4),
+        )
     };
     let memory = crate::kernel::intern_memory(
         SymbolicMemory::new()

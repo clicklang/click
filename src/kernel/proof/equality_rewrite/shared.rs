@@ -1138,7 +1138,7 @@ mod tests {
     #[test]
     fn opaque_address_sources_keep_the_native_mask_matching_rule() {
         let _session = VerificationSession::enter();
-        let pointer = OldAddress::symbolic(Variable(1006440));
+        let pointer = Address::symbolic(Variable(1006440));
         let plain = OldMachineTerm::integer_address(pointer.clone());
         let annotated = OldMachineTerm::object_pointer_address(
             pointer,

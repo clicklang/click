@@ -176,7 +176,7 @@ fn read_type(result: &Proposition) -> Option<ReadType> {
 /// wrap to the width of a scalar. Use the actual signed endpoint difference
 /// and checked scaling instead. Symbolic spans need an explicit reduction
 /// to a complete cell before this primitive can use them.
-fn observation_footprint(range: &MemoryRange) -> Option<(OldAddress, u32)> {
+fn observation_footprint(range: &MemoryRange) -> Option<(Address, u32)> {
     let start = range.signed_constant_start()?;
     let end = range.signed_constant_end()?;
     let elements = u32::try_from(end.checked_sub(start)?).ok()?;
@@ -351,7 +351,7 @@ fn observation_type(comparison: ReadType, bytes: u32, result: &Proposition) -> O
 
 fn observation_equality(
     footprint: &crate::kernel::RegionFootprint,
-    address: OldAddress,
+    address: Address,
     kind: ReadType,
     comparison: ReadType,
 ) -> Option<Proposition> {
@@ -512,7 +512,7 @@ mod tests {
         history: u64,
         ty: ProgramType,
     ) -> (Preservation, Proposition, Proposition, Proposition) {
-        let pointer = OldAddress::symbolic(Variable(8_410_000));
+        let pointer = Address::symbolic(Variable(8_410_000));
         let mut memory = SymbolicMemory::new();
         for i in 0..history {
             // Grow both related history and unrelated memory.
@@ -521,13 +521,13 @@ mod tests {
                 ProgramValue::Int32(OldMachineTerm::constant(i as u32)),
             );
             memory = memory.store(
-                OldAddress::symbolic(Variable(8_420_000 + i)),
+                Address::symbolic(Variable(8_420_000 + i)),
                 ProgramValue::Int32(OldMachineTerm::constant(i as u32)),
             );
         }
         let before = ExecutionState::new().with_memory(memory.clone());
         let after = ExecutionState::new().with_memory(memory.store(
-            OldAddress::symbolic(Variable(8_430_000)),
+            Address::symbolic(Variable(8_430_000)),
             ProgramValue::Int32(1u32.into()),
         ));
         let footprint = crate::kernel::RegionFootprint::transition(
@@ -582,7 +582,7 @@ mod tests {
             (i32::MIN, i32::MAX, 4, None),
         ] {
             let range = MemoryRange::new_with_element_width(
-                OldAddress::symbolic(Variable(8_499_100)),
+                Address::symbolic(Variable(8_499_100)),
                 OldMachineTerm::constant(start as u32),
                 OldMachineTerm::constant(end as u32),
                 width,
@@ -626,7 +626,7 @@ mod tests {
                 };
                 match corruption {
                     0 => *memory = SymbolicMemory::new(),
-                    1 => *pointer = OldAddress::symbolic(Variable(8_499_000)),
+                    1 => *pointer = Address::symbolic(Variable(8_499_000)),
                     2 => {
                         *at = ExecutionState::new()
                             .with_memory(memory.clone())
@@ -853,7 +853,7 @@ mod tests {
 
     pub(super) fn observe(
         memory: &SymbolicMemory,
-        address: &OldAddress,
+        address: &Address,
         ty: ProgramType,
     ) -> ProgramValue {
         let paths = crate::kernel::eval::evaluate_logical_memory_load_paths(
@@ -875,7 +875,7 @@ mod tests {
 
     pub(super) fn observe_point(
         point: &ProgramPoint,
-        address: &OldAddress,
+        address: &Address,
         ty: ProgramType,
     ) -> ProgramValue {
         let value = observe(point.memory(), address, ty);
@@ -884,12 +884,12 @@ mod tests {
     }
 
     pub(super) fn fixture(history: u64, cached: bool) -> (Preservation, Proposition) {
-        let address = OldAddress::symbolic(Variable(8_310_000));
-        let changed = OldAddress::symbolic(Variable(8_310_001));
+        let address = Address::symbolic(Variable(8_310_000));
+        let changed = Address::symbolic(Variable(8_310_001));
         let mut before = SymbolicMemory::new();
         for i in 0..history {
             before = before.store(
-                OldAddress::symbolic(Variable(8_320_000 + i)),
+                Address::symbolic(Variable(8_320_000 + i)),
                 ProgramValue::Int32(OldMachineTerm::constant(i as u32)),
             );
         }
@@ -897,7 +897,7 @@ mod tests {
             before = before.store(
                 address.clone(),
                 ProgramValue::typed_pointer(
-                    OldAddress::symbolic(Variable(8_310_002)),
+                    Address::symbolic(Variable(8_310_002)),
                     ProgramType::Int32Pointer,
                 ),
             );
@@ -957,7 +957,7 @@ mod tests {
     pub(super) fn abstract_fixture(history: u64) -> (Preservation, Proposition) {
         let (mut preservation, _) = fixture(history, false);
         let (before, after) = preservation.points();
-        let address = OldAddress::symbolic(Variable(8_310_000));
+        let address = Address::symbolic(Variable(8_310_000));
         let ty = ProgramType::Parameter(TypeParameterName::intern("TransportValue"));
         let ProgramValue::Parameter(a) = observe_point(after, &address, ty) else {
             unreachable!()
@@ -1018,9 +1018,7 @@ mod tests {
         };
         **left = (**left)
             .clone()
-            .with_provenance(std::sync::Arc::new(OldAddress::symbolic(Variable(
-                8_399_099,
-            ))));
+            .with_provenance(std::sync::Arc::new(Address::symbolic(Variable(8_399_099))));
         wrong_domain.result = Proposition::condition_is(condition, true);
         assert!(
             wrong_domain
@@ -1031,8 +1029,8 @@ mod tests {
         let result = &mut preservation.result;
         *result = Proposition::condition_is(
             OldConditionTerm::AddressEqual(
-                Box::new(OldAddress::symbolic(Variable(8_399_000))),
-                Box::new(OldAddress::symbolic(Variable(8_399_001))),
+                Box::new(Address::symbolic(Variable(8_399_000))),
+                Box::new(Address::symbolic(Variable(8_399_001))),
             ),
             true,
         );
@@ -1052,7 +1050,7 @@ mod tests {
         let second = ExecutionState::new().with_memory(memory);
         assert_eq!(first.memory(), second.memory());
         assert_ne!(first.program_point_id(), second.program_point_id());
-        let address = OldAddress::symbolic(Variable(8_399_011));
+        let address = Address::symbolic(Variable(8_399_011));
         let read = ProgramValue::bool_constant(true);
         let _scope = typed_reads::ReadScope::enter();
         typed_reads::record_at(&first.program_point(), &address, &read);
@@ -1069,7 +1067,7 @@ mod tests {
     fn typed_read_observations_are_scoped_and_keep_the_selected_width() {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = SymbolicMemory::new();
-        let address = OldAddress::symbolic(Variable(8_399_010));
+        let address = Address::symbolic(Variable(8_399_010));
         let kind = ReadType::Integer(MachineIntegerType::Int64);
         observe(&memory, &address, ProgramType::UInt64);
         assert!(typed_reads::get(&memory, &address, kind).is_none());
@@ -1188,9 +1186,11 @@ mod tests {
     ) {
         let _session = crate::kernel::VerificationSession::enter();
         let _reads = typed_reads::ReadScope::enter();
-        let address = |name: &str| OldAddress {
-            base: AddressBase::Concrete(name.into()),
-            offset: AddressOffset::constant(0),
+        let address = |name: &str| {
+            Address::new(
+                AddressBase::Concrete(name.into()),
+                AddressOffset::constant(0),
+            )
         };
         let slot = address("local:unsigned");
         let other = address("local:signed");
@@ -1329,7 +1329,7 @@ mod tests {
                 };
                 if corruption == 0 {
                     **right = Resource::Memory(MemoryRange::new_with_element_width(
-                        OldAddress::symbolic(Variable(8_310_099)),
+                        Address::symbolic(Variable(8_310_099)),
                         0u32.into(),
                         1u32.into(),
                         C_POINTER_BYTE_WIDTH,

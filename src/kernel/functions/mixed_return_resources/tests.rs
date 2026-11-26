@@ -1,18 +1,18 @@
 use super::*;
 
-fn owner(pointer: OldAddress, start: u32, end: u32) -> ResourceFact {
+fn owner(pointer: Address, start: u32, end: u32) -> ResourceFact {
     ResourceFact::own_memory(MemoryRange::new(pointer, start.into(), end.into()))
 }
 
 #[test]
 fn mixed_composition_restores_symbolic_borrows_and_keeps_emitted_occurrence_order() {
     let facts = PureFactContext::new();
-    let pointer = OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::variable(Variable(8_810_000)),
-    };
+    let pointer = Address::new(
+        AddressBase::ExternalArgument,
+        AddressOffset::variable(Variable(8_810_000)),
+    );
     let borrow = owner(pointer.clone(), 0, 1);
-    let produced = owner(OldAddress::symbolic(Variable(8_810_001)), 0, 1);
+    let produced = owner(Address::symbolic(Variable(8_810_001)), 0, 1);
     let parent =
         ResourceContext::new_with_equalities(&facts).unchecked_with_fact(owner(pointer, 4, 5));
     parent.synchronize_memory_equalities(&facts);
@@ -73,7 +73,7 @@ fn mixed_composition_restores_symbolic_borrows_and_keeps_emitted_occurrence_orde
 #[test]
 fn raw_description_mode_never_authorizes_restoration_from_a_role_marker() {
     let facts = PureFactContext::new();
-    let borrow = owner(OldAddress::symbolic(Variable(8_810_010)), 0, 1);
+    let borrow = owner(Address::symbolic(Variable(8_810_010)), 0, 1);
     let parent = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(borrow.clone());
     parent.synchronize_memory_equalities(&facts);
     let descriptions = EvaluatedReturnResources::new(&facts)
@@ -221,7 +221,7 @@ pub(super) fn scalar_transfer_contract(output: MemorySegment) -> ProgramFunction
 
 pub(super) fn prepare_scalar_transfer(
     function: &ProgramFunction,
-    pointer: OldAddress,
+    pointer: Address,
     caller: ResourceContext,
     facts: &PureFactContext,
 ) -> FunctionResourceTransfer {
@@ -248,7 +248,7 @@ fn consumed_scalar_transfer_retains_entry_and_emitted_occurrences_on_branches() 
     use crate::kernel::program_expression::{int32_literal, variable};
     let _session = crate::kernel::VerificationSession::enter();
     let facts = PureFactContext::new();
-    let pointer = OldAddress::symbolic(Variable(8_860_000));
+    let pointer = Address::symbolic(Variable(8_860_000));
     let cell = owner(pointer.clone(), 0, 1);
     let held = owner(pointer.clone(), 1, 2);
     let caller = ResourceContext::new_with_equalities(&facts)
@@ -308,7 +308,7 @@ fn changed_scalar_output_keeps_description_validation_and_rejects_overlap() {
     use crate::kernel::program_expression::{int32_literal, variable};
     let _session = crate::kernel::VerificationSession::enter();
     let facts = PureFactContext::new();
-    let pointer = OldAddress::symbolic(Variable(8_860_010));
+    let pointer = Address::symbolic(Variable(8_860_010));
     for (start, end) in [(1, 2), (0, 2)] {
         let caller = ResourceContext::new_with_equalities(&facts)
             .unchecked_with_facts([owner(pointer.clone(), 0, 1), owner(pointer.clone(), 1, 2)]);
@@ -345,7 +345,7 @@ fn verified_scalar_call_uses_transfer_and_raw_return_descriptions_still_validate
     use crate::kernel::program_expression::{int32_literal, pointer_value, variable};
     let _session = crate::kernel::VerificationSession::enter();
     let facts = PureFactContext::new();
-    let pointer = OldAddress::symbolic(Variable(8_860_020));
+    let pointer = Address::symbolic(Variable(8_860_020));
     let function = scalar_transfer_contract(MemorySegment::new(
         variable("p"),
         int32_literal(0),
@@ -409,9 +409,9 @@ fn consumed_scalar_transfer_preserves_output_spelling_and_partial_residual() {
     use crate::kernel::program_expression::{int32_literal, variable};
     for alias in [false, true] {
         let _session = crate::kernel::VerificationSession::enter();
-        let original = OldAddress::symbolic(Variable(8_860_030));
+        let original = Address::symbolic(Variable(8_860_030));
         let returned = if alias {
-            OldAddress::symbolic(Variable(8_860_031))
+            Address::symbolic(Variable(8_860_031))
         } else {
             original.clone()
         };
@@ -461,7 +461,7 @@ fn consumed_scalar_transfer_preserves_output_spelling_and_partial_residual() {
 fn consumed_scalar_transfer_is_single_use_and_declines_entry_borrows() {
     use crate::kernel::program_expression::{int32_literal, variable};
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = OldAddress::symbolic(Variable(8_860_040));
+    let pointer = Address::symbolic(Variable(8_860_040));
     let facts = PureFactContext::new();
     let caller = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(owner(
         pointer.clone(),
@@ -570,7 +570,7 @@ pub(super) fn mixed_scalar_state() -> ExecutionState {
     let mut state = ExecutionState::new().with_population_creation_tracking();
     let mut resources = ResourceContext::new();
     for (index, name) in ["p", "q", "r"].into_iter().enumerate() {
-        let pointer = OldAddress::symbolic(Variable(8_880_000 + index as u64));
+        let pointer = Address::symbolic(Variable(8_880_000 + index as u64));
         let memory = state.memory().clone().with_block(pointer.base.clone(), 8);
         state = state
             .with_local(name, ProgramValue::pointer(pointer.clone()))
@@ -690,7 +690,7 @@ fn ordinary_outputs_still_validate_against_a_mixed_return_frame() {
     let _session = crate::kernel::VerificationSession::enter();
     let facts = PureFactContext::new();
     let state = mixed_scalar_state();
-    let retained = owner(OldAddress::symbolic(Variable(8_880_001)), 1, 2);
+    let retained = owner(Address::symbolic(Variable(8_880_001)), 1, 2);
     let state = state
         .clone()
         .with_resource_context(state.resources().clone().unchecked_with_fact(retained));
@@ -740,7 +740,7 @@ fn single_source_origin_stays_aligned_after_a_joined_borrow() {
     let _session = crate::kernel::VerificationSession::enter();
     let facts = PureFactContext::new();
     let state = mixed_scalar_state();
-    let q = OldAddress::symbolic(Variable(8_880_001));
+    let q = Address::symbolic(Variable(8_880_001));
     let state = state.clone().with_resource_context(
         state
             .resources()
@@ -782,9 +782,9 @@ fn a_borrowed_composites_post_footprint_cannot_overlap_a_transferred_cell() {
     use crate::kernel::program_expression::{int32_literal, variable};
     let _session = crate::kernel::VerificationSession::enter();
     let facts = PureFactContext::new();
-    let cell = OldAddress::symbolic(Variable(8_895_000));
-    let field = OldAddress::symbolic(Variable(8_895_001));
-    let old_child = OldAddress::symbolic(Variable(8_895_002));
+    let cell = Address::symbolic(Variable(8_895_000));
+    let field = Address::symbolic(Variable(8_895_001));
+    let old_child = Address::symbolic(Variable(8_895_002));
     let scalar = scalar_transfer_contract(MemorySegment::new(
         variable("p"),
         int32_literal(0),
@@ -949,7 +949,7 @@ fn fixed_range_transfers_preserve_typed_widths_and_partial_frames() {
     ] {
         let _session = crate::kernel::VerificationSession::enter();
         let facts = PureFactContext::new();
-        let pointer = OldAddress::symbolic(Variable(8_910_000));
+        let pointer = Address::symbolic(Variable(8_910_000));
         let owner = |from, to| {
             ResourceFact::own_memory(MemoryRange::new_with_element_width(
                 pointer.clone(),
@@ -1020,7 +1020,7 @@ fn fixed_range_matching_retains_bound_types_width_and_single_use() {
     use crate::kernel::program_expression::{int32_literal, uint64_literal, variable};
     let _session = crate::kernel::VerificationSession::enter();
     let facts = PureFactContext::new();
-    let pointer = OldAddress::symbolic(Variable(8_910_001));
+    let pointer = Address::symbolic(Variable(8_910_001));
     let segment =
         MemorySegment::new(variable("p"), int32_literal(2), int32_literal(5)).with_element_width(8);
     let function =
@@ -1116,7 +1116,7 @@ fn fixed_wide_range_returns_keep_their_original_index_kind() {
     use crate::kernel::program_expression::{uint64_literal, variable};
     let _session = crate::kernel::VerificationSession::enter();
     let facts = PureFactContext::new();
-    let pointer = OldAddress::symbolic(Variable(8_910_002));
+    let pointer = Address::symbolic(Variable(8_910_002));
     let range = |start, end| {
         ResourceFact::own_memory(MemoryRange::new_wide(
             pointer.clone(),
@@ -1163,7 +1163,7 @@ fn fixed_wide_range_returns_keep_their_original_index_kind() {
 
 pub(super) fn flat_body_definition(
     name: &str,
-    pointer: &OldAddress,
+    pointer: &Address,
     count: u32,
 ) -> CompositeResourceDefinition {
     use crate::kernel::program_expression::int32_literal;
@@ -1188,7 +1188,7 @@ pub(super) fn flat_body_definition(
 #[test]
 fn flat_composite_return_carries_its_body_through_frontier_and_projection() {
     let facts = PureFactContext::new();
-    let pointer = OldAddress::symbolic(Variable(8_819_001));
+    let pointer = Address::symbolic(Variable(8_819_001));
     let definition = flat_body_definition("flat_return", &pointer, 2);
     let state = ExecutionState::new();
     let head = ResourceFact::own_composite("flat_return".into(), vec![]);
@@ -1278,7 +1278,7 @@ fn flat_composite_return_carries_its_body_through_frontier_and_projection() {
 #[test]
 fn unsupported_return_families_refuse_in_dispatch() {
     let facts = PureFactContext::new();
-    let pointer = OldAddress::symbolic(Variable(8_819_002));
+    let pointer = Address::symbolic(Variable(8_819_002));
     let mut nested = flat_body_definition("nested", &pointer, 1);
     nested.contains.push(
         ResourceSpec::declared(
@@ -1318,7 +1318,7 @@ fn unsupported_return_families_refuse_in_dispatch() {
 #[test]
 fn nonunit_memory_returns_refuse_but_token_counts_keep_their_constructed_body() {
     let facts = PureFactContext::new();
-    let pointer = OldAddress::symbolic(Variable(8_819_003));
+    let pointer = Address::symbolic(Variable(8_819_003));
     for memory in [false, true] {
         let definition = if memory {
             flat_body_definition("many", &pointer, 1)
@@ -1355,7 +1355,7 @@ fn nonunit_memory_returns_refuse_but_token_counts_keep_their_constructed_body() 
 #[test]
 fn sealed_return_dispatch_retains_opaque_identity_and_projection_needs_no_definition() {
     let facts = PureFactContext::new();
-    let pointer = OldAddress::symbolic(Variable(8_819_004));
+    let pointer = Address::symbolic(Variable(8_819_004));
     let (head, mut definition) = super::specialized_return_tests::named(pointer, 8_819_008);
     definition.sealed = true;
     let evaluated = EvaluatedReturnResources::new(&facts)
@@ -1396,7 +1396,7 @@ fn sealed_return_dispatch_retains_opaque_identity_and_projection_needs_no_defini
 #[test]
 fn sealed_field_free_returns_keep_their_explicit_memory_frontier() {
     let facts = PureFactContext::new();
-    let p = OldAddress::symbolic(Variable(8_819_009));
+    let p = Address::symbolic(Variable(8_819_009));
     let mut definition = flat_body_definition("sealed_memory", &p, 1);
     definition.sealed = true;
     let head = ResourceFact::own_composite("sealed_memory".into(), vec![]);
@@ -1427,10 +1427,8 @@ fn sealed_field_free_returns_keep_their_explicit_memory_frontier() {
 #[test]
 fn logical_opaque_instances_do_not_invent_hidden_escrow_ownership() {
     let facts = PureFactContext::new();
-    let (head, mut definition) = super::specialized_return_tests::named(
-        OldAddress::symbolic(Variable(8_819_010)),
-        8_819_011,
-    );
+    let (head, mut definition) =
+        super::specialized_return_tests::named(Address::symbolic(Variable(8_819_010)), 8_819_011);
     definition.sealed = true;
     definition.contains.clear();
     let outputs = EvaluatedReturnResources::new(&facts)
@@ -1463,7 +1461,7 @@ fn logical_opaque_instances_do_not_invent_hidden_escrow_ownership() {
 #[test]
 fn opaque_instances_keep_the_actual_fields_without_opening_unhandled_children() {
     let facts = PureFactContext::new();
-    let p = OldAddress::symbolic(Variable(8_819_005));
+    let p = Address::symbolic(Variable(8_819_005));
     let (head, mut definition) = super::specialized_return_tests::named(p.clone(), 8_819_006);
     definition.contains.push(composite_spec(
         "unopened_child",
@@ -1492,7 +1490,7 @@ fn opaque_instances_keep_the_actual_fields_without_opening_unhandled_children() 
 #[test]
 fn nonunit_memory_cannot_hide_behind_borrowed_child_custody() {
     let facts = PureFactContext::new();
-    let p = OldAddress::symbolic(Variable(8_819_007));
+    let p = Address::symbolic(Variable(8_819_007));
     let head = ResourceFact::Own(
         Resource::Composite {
             name: "many".into(),
@@ -1531,7 +1529,7 @@ fn nonunit_memory_cannot_hide_behind_borrowed_child_custody() {
 }
 
 pub(super) fn constructed_flat_return(
-    pointer: &OldAddress,
+    pointer: &Address,
     count: u32,
     facts: &PureFactContext,
 ) -> (EvaluatedReturnResources, ConstructedReturnBodies) {
@@ -1554,8 +1552,8 @@ pub(super) fn constructed_flat_return(
 
 #[test]
 fn flat_body_admission_keeps_selected_alias_diagnostics_and_branch_isolation() {
-    let pointer = OldAddress::symbolic(Variable(8_819_100));
-    let alias = OldAddress::symbolic(Variable(8_819_101));
+    let pointer = Address::symbolic(Variable(8_819_100));
+    let alias = Address::symbolic(Variable(8_819_101));
     let facts = PureFactContext::new().assume_condition(
         OldConditionTerm::address_equal(pointer.clone(), alias.clone()),
         true,
@@ -1592,7 +1590,7 @@ fn flat_body_admission_keeps_selected_alias_diagnostics_and_branch_isolation() {
 #[test]
 fn flat_body_admission_uses_cold_coordinates_but_refuses_general_geometry() {
     let facts = PureFactContext::new();
-    let pointer = OldAddress::symbolic(Variable(8_819_102));
+    let pointer = Address::symbolic(Variable(8_819_102));
     let (evaluated, bodies) = constructed_flat_return(&pointer, 1, &facts);
     let body = bodies.get(evaluated.occurrences[0].source).unwrap();
     let cold = ResourceContext::new().unchecked_with_fact(owner(pointer.clone(), 0, 1));
@@ -1700,7 +1698,7 @@ pub(super) fn nested_transfer_function(depth: usize) -> ProgramFunction {
 fn composite_children_carry_consumed_sources_selected_before_return_lowering() {
     for depth in [1, 4] {
         let facts = PureFactContext::new();
-        let pointer = OldAddress::symbolic(Variable(8_819_200));
+        let pointer = Address::symbolic(Variable(8_819_200));
         let function = nested_transfer_function(depth);
         let caller = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(owner(
             pointer.clone(),
@@ -1760,7 +1758,7 @@ fn composite_children_carry_consumed_sources_selected_before_return_lowering() {
 #[test]
 fn invariant_borrowed_children_retain_origin_without_granting_it_to_descriptions() {
     let facts = PureFactContext::new();
-    let pointer = OldAddress::symbolic(Variable(8_819_201));
+    let pointer = Address::symbolic(Variable(8_819_201));
     let function = nested_transfer_function(3);
     let head =
         ResourceFact::own_composite("layer_0002".into(), vec![ProgramValue::pointer(pointer)]);
@@ -1790,7 +1788,7 @@ fn invariant_borrowed_children_retain_origin_without_granting_it_to_descriptions
 fn decided_conditional_bodies_and_opaque_guards_are_constructed_once() {
     use crate::kernel::program_expression::{int32_literal, variable};
     let facts = PureFactContext::new();
-    let pointer = OldAddress::symbolic(Variable(8_819_202));
+    let pointer = Address::symbolic(Variable(8_819_202));
     let mut definition = flat_body_definition("conditional_return", &pointer, 1);
     definition.parameters = vec![program_parameter("flag", ProgramType::Int32)];
     definition.condition = Some(SpecProposition::Comparison {
@@ -1841,7 +1839,7 @@ fn decided_conditional_bodies_and_opaque_guards_are_constructed_once() {
 #[test]
 fn nested_body_normalization_keeps_distinct_child_identities_and_checks_internal_overlap() {
     let facts = PureFactContext::new();
-    let pointer = OldAddress::symbolic(Variable(8_819_204));
+    let pointer = Address::symbolic(Variable(8_819_204));
     let function = nested_transfer_function(3);
     let evaluated = EvaluatedReturnResources::new(&facts)
         .admit(
@@ -1908,7 +1906,7 @@ fn composite_consumers_refuse_missing_construction_metadata() {
 }
 
 pub(super) fn viewed_child_definitions(
-    data: OldAddress,
+    data: Address,
     depth: usize,
 ) -> Vec<CompositeResourceDefinition> {
     use crate::kernel::program_expression::{int32_literal, variable};
@@ -1970,7 +1968,7 @@ pub(super) fn viewed_child_definitions(
 #[test]
 fn viewed_children_keep_ownership_incremental_without_acquiring_ownership_origins() {
     let facts = PureFactContext::new();
-    let own = OldAddress::symbolic(Variable(8_819_400));
+    let own = Address::symbolic(Variable(8_819_400));
     let (_, entry, post, data) = super::fresh_allocation_tests::allocated_call(16);
     for depth in [1, 4] {
         let definitions = viewed_child_definitions(data.clone(), depth);
@@ -2083,7 +2081,7 @@ fn selected_view_expansion_fixture_with_cells(
 ) {
     use crate::kernel::program_expression::{int32_literal, variable};
     let facts = PureFactContext::new();
-    let pointer = OldAddress::symbolic(Variable(8_819_401));
+    let pointer = Address::symbolic(Variable(8_819_401));
     let head = ResourceFact::view_composite(
         "selected_view".into(),
         vec![ProgramValue::pointer(pointer.clone())],
@@ -2163,7 +2161,7 @@ fn selected_view_expansion_fixture_with_cells(
         source,
         binding,
         definitions,
-        SymbolicMemory::new().with_block(pointer.base, cells * 4),
+        SymbolicMemory::new().with_block(pointer.base.clone(), cells * 4),
     )
 }
 
@@ -2213,7 +2211,7 @@ pub(in crate::kernel::functions) fn returned_hold_fixture_with_ledger(
     crate::kernel::borrows::BorrowParticipantId,
 ) {
     let facts = PureFactContext::new();
-    let pointer = OldAddress::symbolic(Variable(8_819_402));
+    let pointer = Address::symbolic(Variable(8_819_402));
     let range = MemoryRange::new(pointer, 0u32.into(), 1u32.into());
     let input = CheckedResourceFact {
         fact: ResourceFact::view_memory(range.clone()),
@@ -2293,7 +2291,7 @@ fn selected_view_expansion_keeps_raw_child_bindings_through_adjacent_normalizati
 fn packaged_views_keep_normalized_descriptions_and_the_raw_source_group() {
     use crate::kernel::program_expression::{int32_literal, variable};
     let facts = PureFactContext::new();
-    let pointer = OldAddress::symbolic(Variable(8_819_403));
+    let pointer = Address::symbolic(Variable(8_819_403));
     let definition = CompositeResourceDefinition::new(
         "adjacent_views",
         vec![program_parameter("p", ProgramType::Int32Pointer)],
@@ -2354,10 +2352,7 @@ fn packaged_views_keep_normalized_descriptions_and_the_raw_source_group() {
 fn escrow_boundary_checks_live_new_outputs_but_not_removed_occurrences() {
     let _session = crate::kernel::VerificationSession::enter();
     let facts = PureFactContext::new();
-    let pointer = OldAddress {
-        base: "escrow-boundary".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let pointer = Address::new("escrow-boundary".into(), AddressOffset::constant(0));
     let escrow = owner(pointer.clone(), 0, 8);
     let protected = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(escrow);
     let overlap = owner(pointer.clone(), 4, 12);
@@ -2381,10 +2376,10 @@ fn escrow_boundary_checks_live_new_outputs_but_not_removed_occurrences() {
 fn escrow_boundary_checks_body_frontiers_against_released_inherited_holds() {
     let _session = crate::kernel::VerificationSession::enter();
     let facts = PureFactContext::new();
-    let pointer = OldAddress {
-        base: "inherited-escrow-boundary".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let pointer = Address::new(
+        "inherited-escrow-boundary".into(),
+        AddressOffset::constant(0),
+    );
     let inherited = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(owner(
         pointer.clone(),
         0,
@@ -2408,10 +2403,7 @@ fn escrow_recovery_uses_the_lend_time_frontier_of_a_folded_owner() {
     };
     let _session = crate::kernel::VerificationSession::enter();
     let facts = PureFactContext::new();
-    let pointer = OldAddress {
-        base: "folded-escrow".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let pointer = Address::new("folded-escrow".into(), AddressOffset::constant(0));
     let piece = owner(pointer.clone(), 0, 8);
     let head = ResourceFact::own_composite("protected".into(), vec![]);
     let caller = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(head.clone());
@@ -2475,7 +2467,7 @@ fn an_opaque_return_frontier_cannot_hide_new_ownership_from_escrow() {
     let _session = crate::kernel::VerificationSession::enter();
     let facts = PureFactContext::new();
     let protected = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(owner(
-        OldAddress::symbolic(Variable(8_919_999)),
+        Address::symbolic(Variable(8_919_999)),
         0,
         1,
     ));
@@ -2552,7 +2544,7 @@ fn fact_only_view_expansion_keeps_ambient_child_identity_and_binding() {
 #[test]
 fn cached_composite_expansion_reuses_symbolic_endpoint_fragments() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = OldAddress::symbolic(Variable(9_831_200));
+    let pointer = Address::symbolic(Variable(9_831_200));
     let end = OldMachineTerm::Variable(Variable(9_831_201));
     let facts = PureFactContext::new().assume_condition(
         OldConditionTerm::signed_less_than(2u32.into(), end.clone()),

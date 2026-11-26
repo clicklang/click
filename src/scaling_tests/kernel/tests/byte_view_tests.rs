@@ -9,8 +9,11 @@ fn byte_assembly_masks_symbolic_bytes_and_ignores_unrelated_memory() {
     use crate::kernel::eval::assemble_declared_uint32_after_byte_store as assemble;
     let mut samples = Vec::new();
     for size in [0, 64, 128, 512] {
-        let mut memory =
-            SymbolicMemory::new().with_declared_scalar_block(word(0).base, 4, ProgramType::UInt32);
+        let mut memory = SymbolicMemory::new().with_declared_scalar_block(
+            word(0).base.clone(),
+            4,
+            ProgramType::UInt32,
+        );
         for byte in 0..3 {
             memory = memory.store(
                 word(byte),
@@ -19,10 +22,10 @@ fn byte_assembly_masks_symbolic_bytes_and_ignores_unrelated_memory() {
         }
         for index in 0..size {
             memory = memory.with_block(format!("global:other{index}"), 4).store(
-                OldAddress {
-                    base: format!("global:other{index}").into(),
-                    offset: AddressOffset::constant(0),
-                },
+                Address::new(
+                    format!("global:other{index}").into(),
+                    AddressOffset::constant(0),
+                ),
                 ProgramValue::UInt32(index.into()),
             );
         }
@@ -64,10 +67,10 @@ fn containing_cell_lookup_work_is_independent_of_unrelated_cells() {
         );
         for index in 0..unrelated {
             memory = memory.store(
-                OldAddress {
-                    base: AddressBase::from(format!("global:unrelated{index}").as_str()),
-                    offset: AddressOffset::constant(0),
-                },
+                Address::new(
+                    AddressBase::from(format!("global:unrelated{index}").as_str()),
+                    AddressOffset::constant(0),
+                ),
                 ProgramValue::UInt32(index.into()),
             );
             // Cells after the access in the same block are outside the range.
@@ -94,8 +97,11 @@ fn declared_word_read_representation_ignores_unrelated_memory() {
     let mut samples = Vec::new();
     for size in [8, 32, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let mut memory =
-            SymbolicMemory::new().with_declared_scalar_block(word(0).base, 4, ProgramType::UInt32);
+        let mut memory = SymbolicMemory::new().with_declared_scalar_block(
+            word(0).base.clone(),
+            4,
+            ProgramType::UInt32,
+        );
         for index in 0..size {
             memory = memory.with_block(format!("unrelated:{index}"), 4);
         }
@@ -115,10 +121,10 @@ fn declared_word_read_representation_ignores_unrelated_memory() {
 #[test]
 fn containing_cell_lookup_keeps_compact_runs_compact() {
     let value = ProgramValue::UInt64(OldMachineTerm::uint64_constant(0x0102_0304_0506_0708));
-    let absent = OldAddress {
-        base: AddressBase::from("global:other"),
-        offset: AddressOffset::constant(0),
-    };
+    let absent = Address::new(
+        AddressBase::from("global:other"),
+        AddressOffset::constant(0),
+    );
     let samples = [4, 16, 64, 256].map(|count| {
         let memory = SymbolicMemory::new()
             .with_constant_run(word(0), ProgramType::UInt64, count, value.clone())

@@ -27,10 +27,7 @@ fn loadability_explanation_ignores_unrelated_objects() {
             context = context.assume_proposition(Proposition::MemoryLoadable {
                 point: Default::default(),
                 memory: state.memory().clone(),
-                base: OldAddress {
-                    base: AddressBase::Heap(index),
-                    offset: AddressOffset::constant(0),
-                },
+                base: Address::new(AddressBase::Heap(index), AddressOffset::constant(0)),
                 bytes: (OldMachineTerm::constant(8)).into(),
                 wide: false,
             });

@@ -2,12 +2,12 @@ use super::*;
 
 fn candidate_work(steps: u64, unrelated: u64) -> usize {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = OldAddress::symbolic(Variable(977_000));
+    let base = Address::symbolic(Variable(977_000));
     let held = ResourceFact::own_allocation(base.clone(), 4);
     let mut resources = ResourceContext::new().unchecked_with_fact(held.clone());
     for i in 0..unrelated {
         resources = resources.unchecked_with_fact(ResourceFact::own_allocation(
-            OldAddress::symbolic(Variable(978_000 + i)),
+            Address::symbolic(Variable(978_000 + i)),
             4,
         ));
     }
@@ -16,7 +16,7 @@ fn candidate_work(steps: u64, unrelated: u64) -> usize {
     let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
         let mut previous = base;
         for i in 0..steps {
-            let next = OldAddress::symbolic(Variable(979_000 + i));
+            let next = Address::symbolic(Variable(979_000 + i));
             facts = facts.assume_proposition(Proposition::condition_is(
                 OldConditionTerm::pointer_equal(
                     OldPointer::new(previous, ProgramType::Int32Pointer),

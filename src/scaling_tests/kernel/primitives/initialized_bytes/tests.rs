@@ -14,9 +14,13 @@ fn recording_scales_with_the_merged_runs_not_the_record() {
         for block in 0..size {
             record.record(&at(&format!("local:other{block}"), 0), 4);
         }
+        // Building an address admits its block: that is the caller's work.
+        let elements = (0..size)
+            .map(|element| at("local:array", element * 4))
+            .collect::<Vec<_>>();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            for element in 0..size {
-                record.record(&at("local:array", element * 4), 4);
+            for element in &elements {
+                record.record(element, 4);
             }
         });
         assert!(record.covers(&at("local:array", 0), u32::try_from(size * 4).unwrap()));

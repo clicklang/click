@@ -3820,8 +3820,8 @@ impl PureFactContext {
             }
         }
         fn collect_pointer_candidates(
-            pattern: &OldAddress,
-            target: &OldAddress,
+            pattern: &Address,
+            target: &Address,
             bound: Variable,
             candidates: &mut BTreeSet<OldMachineTerm>,
         ) {
@@ -5664,10 +5664,10 @@ mod guided_condition_instantiation_tests {
     fn array_read(index: OldMachineTerm, kind: LoadKind) -> OldMachineTerm {
         OldMachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory(SymbolicMemory::new()))),
-            Box::new(OldAddress {
-                base: "quantified-cells".into(),
-                offset: AddressOffset::scale_int32(index, 4),
-            }),
+            Box::new(Address::new(
+                "quantified-cells".into(),
+                AddressOffset::scale_int32(index, 4),
+            )),
             kind,
         )
     }
@@ -5717,7 +5717,7 @@ mod annotated_alignment_conflict_tests {
 
     #[test]
     fn address_class_annotations_do_not_hide_opposite_alignment_facts() {
-        let pointer = OldAddress::symbolic(Variable(970_001));
+        let pointer = Address::symbolic(Variable(970_001));
         let class = crate::kernel::effective_type::CAccessClass::Struct(
             crate::kernel::effective_type::CStructClass::opaque("node"),
         );
@@ -5749,7 +5749,7 @@ mod annotated_alignment_conflict_tests {
                 relation: CompareRelation::Equal,
                 left: Box::new(OldMachineTerm::uint64_bitwise_and(
                     OldMachineTerm::object_pointer_address(
-                        OldAddress::symbolic(Variable(970_001)),
+                        Address::symbolic(Variable(970_001)),
                         None,
                     ),
                     OldMachineTerm::uint64_constant(7),
@@ -5788,8 +5788,8 @@ mod congruent_condition_conflict_tests {
 
     #[test]
     fn equal_address_alignment_conflicts_follow_merges() {
-        let p = OldAddress::symbolic(Variable(971_001));
-        let q = OldAddress::symbolic(Variable(971_002));
+        let p = Address::symbolic(Variable(971_001));
+        let q = Address::symbolic(Variable(971_002));
         let equality =
             Proposition::condition_is(OldConditionTerm::address_equal(p.clone(), q.clone()), true);
         let aligned = Proposition::condition_is(OldConditionTerm::pointer_aligned(p, 8), true);
@@ -5841,7 +5841,7 @@ mod comparison_operand_order_tests {
             arguments: (0..size)
                 .map(|index| {
                     PureFunctionArgument::Value(ProgramValue::typed_pointer(
-                        OldAddress::symbolic(Variable(9_992_000 + size * 1000 + index)),
+                        Address::symbolic(Variable(9_992_000 + size * 1000 + index)),
                         ProgramType::Int32Pointer,
                     ))
                 })
@@ -6092,7 +6092,7 @@ mod shared_wide_order_evidence_tests {
         let format = MachineIntegerType::UInt64;
         let x = OldMachineTerm::Variable(Variable(992570));
         let tagged = OldMachineTerm::uint64_add(
-            OldMachineTerm::integer_address(OldAddress::symbolic(Variable(992571))),
+            OldMachineTerm::integer_address(Address::symbolic(Variable(992571))),
             OldMachineTerm::uint64_constant(1),
         );
         let source =
@@ -6329,7 +6329,7 @@ mod shared_wide_order_evidence_tests {
     #[test]
     fn wide_order_evidence_connects_mixed_load_syntax_only_at_its_registered_variable() {
         use crate::kernel::{
-            AddressOffset, LoadKind, MachineOperandView, OldAddress, SymbolicMemory, intern_memory,
+            Address, AddressOffset, LoadKind, MachineOperandView, SymbolicMemory, intern_memory,
         };
         for ty in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
             let _session = crate::kernel::VerificationSession::enter();
@@ -6337,10 +6337,10 @@ mod shared_wide_order_evidence_tests {
             let load = |offset| {
                 OldMachineTerm::read_named(
                     ProgramPoint::at(&memory),
-                    Box::new(OldAddress {
-                        base: "wide-order".into(),
-                        offset: AddressOffset::constant(offset),
-                    }),
+                    Box::new(Address::new(
+                        "wide-order".into(),
+                        AddressOffset::constant(offset),
+                    )),
                     LoadKind::Bits64,
                 )
             };

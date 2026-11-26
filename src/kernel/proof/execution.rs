@@ -11,15 +11,15 @@ use super::{PersistentOrderedSet, PersistentSequence, PureFactStore, SharedValue
 use crate::kernel::population_authority::storage_creation::{
     CheckedPopulationAuthorityExchange, CheckedPopulationMemberExchange,
 };
-use crate::kernel::{BindingName, CompareRelation, InstanceId, MachineIntegerType};
 use crate::kernel::{
-    CompositeResourceDefinition, ConditionOutcome, ExecutionBudget, ExecutionLimit,
+    Address, CompositeResourceDefinition, ConditionOutcome, ExecutionBudget, ExecutionLimit,
     ExecutionPureFact, ExecutionState, FunctionExecutionCandidates, FunctionOutcome, MemoryRange,
-    OldAddress, OldConditionTerm, OldMachineTerm, ProgramExpression, ProgramFunction,
-    ProgramStatement, ProgramValue, ProofObligation, Proposition, PureFactContext, Resource,
-    ResourceContext, ResourceFact, ResourceSpec, RuntimeError, SpecProposition, StatementOutcome,
-    SymbolicMemory, Theorem, Variable, VerifiedLoopRule,
+    OldConditionTerm, OldMachineTerm, ProgramExpression, ProgramFunction, ProgramStatement,
+    ProgramValue, ProofObligation, Proposition, PureFactContext, Resource, ResourceContext,
+    ResourceFact, ResourceSpec, RuntimeError, SpecProposition, StatementOutcome, SymbolicMemory,
+    Theorem, Variable, VerifiedLoopRule,
 };
+use crate::kernel::{BindingName, CompareRelation, InstanceId, MachineIntegerType};
 use crate::kernel::{ExecutionFactSource, ExecutionFacts};
 use crate::kernel::{LoadKind, StoredExecutionValue};
 use crate::persistent::PersistentSet;
@@ -1189,7 +1189,7 @@ fn memory_only_adds_named_cells(
 /// search or ambient-fact scan.
 fn describe_unnamed_cell_addition(
     base: &crate::kernel::SharedMemory,
-    pointer: &crate::kernel::OldAddress,
+    pointer: &crate::kernel::Address,
     value: &ProgramValue,
     load: &OldMachineTerm,
 ) -> String {
@@ -5119,7 +5119,7 @@ fn arm_effect_deltas_are_exact(
 fn memory_diff_is_covered_by_writes(
     before: &SymbolicMemory,
     after: &SymbolicMemory,
-    changed: &[(OldAddress, crate::kernel::AccessExtent)],
+    changed: &[(Address, crate::kernel::AccessExtent)],
     assumptions: &PureFactContext,
     fact: &ExecutionPureFact,
 ) -> bool {
@@ -5492,7 +5492,7 @@ fn checked_interface_effect_facts_along(
 
 fn conditional_heap_frees(
     arm_effect_facts: [&(impl ExecutionFactSource + ?Sized); 2],
-) -> [Vec<(OldAddress, crate::kernel::AllocationSize)>; 2] {
+) -> [Vec<(Address, crate::kernel::AllocationSize)>; 2] {
     std::array::from_fn(|arm_index| {
         arm_effect_facts[arm_index]
             .fact_iter()
@@ -5513,10 +5513,10 @@ fn interface_resources_guard_heap_frees(
     arm_resources: &[Vec<ResourceFact>; 2],
     arm_states: [&ExecutionState; 2],
     arm_facts: [&PureFactStore; 2],
-    heap_frees: &[Vec<(OldAddress, crate::kernel::AllocationSize)>; 2],
+    heap_frees: &[Vec<(Address, crate::kernel::AllocationSize)>; 2],
 ) -> bool {
     let has_allocation = |arm_index: usize,
-                          base: &OldAddress,
+                          base: &Address,
                           bytes: &crate::kernel::AllocationSize| {
         arm_resources[arm_index].iter().any(|resource| {
             if resource
@@ -5838,7 +5838,7 @@ impl CheckedInterfaceLowering {
 #[derive(Default)]
 struct InterfaceReadPremises {
     by_base: std::collections::BTreeMap<
-        (crate::kernel::SymbolicMemory, crate::kernel::OldAddress),
+        (crate::kernel::SymbolicMemory, crate::kernel::Address),
         (u32, Proposition),
     >,
 }

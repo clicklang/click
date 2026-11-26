@@ -680,8 +680,8 @@ mod tests {
         Variable, program_function, program_skip,
     };
 
-    fn mutex() -> OldAddress {
-        OldAddress::symbolic(Variable(851))
+    fn mutex() -> Address {
+        Address::symbolic(Variable(851))
     }
 
     fn spec(guard: bool, role: ResourceTransferRole) -> ResourceSpec {

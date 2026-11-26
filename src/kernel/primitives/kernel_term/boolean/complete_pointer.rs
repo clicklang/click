@@ -154,7 +154,7 @@ impl KernelTerm {
         // A pointer equal to the null pointer is null: as in
         // `OldConditionTerm::pointer_equal`, a comparison with null states
         // address equality, which is how `p == 0` lowers.
-        let null = SharedAddress::import(&OldAddress::null());
+        let null = Address::null().shared().clone();
         if a.address.syntax_equal(&null) || b.address.syntax_equal(&null) {
             return Self::address_equal([a.address.clone(), b.address.clone()]);
         }
@@ -167,11 +167,8 @@ impl KernelTerm {
                 && matches!(b.program_type, ProgramType::FunctionPointer(_)))
         {
             fn bits(address: &SharedAddress) -> Option<&OldMachineTerm> {
-                if matches!(
-                    address.node().offset.node(),
-                    KernelAddressOffset::Constant(0)
-                ) && let AddressBase::PureFunctionApplication(call) =
-                    address.node().base.native_atom()
+                if matches!(address.offset().node(), KernelAddressOffset::Constant(0))
+                    && let AddressBase::PureFunctionApplication(call) = address.atom()
                 {
                     call.integer_address_bits()
                 } else {
@@ -184,7 +181,7 @@ impl KernelTerm {
                         return KernelTermImport::default()
                             .machine(MachineIntegerType::UInt64, bits);
                     }
-                    if address.syntax_equal(&SharedAddress::import(&OldAddress::null())) {
+                    if address.syntax_equal(&Address::null().shared().clone()) {
                         return KernelTermImport::default().machine(
                             MachineIntegerType::UInt64,
                             &OldMachineTerm::uint64_constant(0),
@@ -217,43 +214,46 @@ mod tests {
     fn values() -> Vec<OldPointer> {
         let mut values = Vec::new();
         for pointer in [
-            OldAddress::symbolic(Variable(999101)),
-            OldAddress::null(),
-            OldAddress::from_integer_address(OldMachineTerm::Variable(Variable(999102))),
-            OldAddress {
-                base: AddressBase::ExternalObject(Variable(999101)),
-                offset: AddressOffset::constant(0),
-            },
+            Address::symbolic(Variable(999101)),
+            Address::null(),
+            Address::from_integer_address(OldMachineTerm::Variable(Variable(999102))),
+            Address::new(
+                AddressBase::ExternalObject(Variable(999101)),
+                AddressOffset::constant(0),
+            ),
         ] {
             let raw = OldPointer::new(pointer, ProgramType::Int32Pointer);
             values.push(raw.clone());
             values.push(raw.clone());
             values.push(raw.clone().with_root_bounds());
             values.push(raw.clone().with_bounds(Some(SubobjectBounds {
-                start: OldAddress::symbolic(Variable(999101)),
+                start: Address::symbolic(Variable(999101)),
                 width: OldMachineTerm::Variable(Variable(999102)),
             })));
             values.push(
                 raw.clone()
-                    .with_provenance(Arc::new(OldAddress::symbolic(Variable(999103)))),
+                    .with_provenance(Arc::new(Address::symbolic(Variable(999103)))),
             );
-            values.push(raw.clone().with_address(OldAddress {
-                base: raw.base.clone(),
-                offset: AddressOffset::raw_add(
-                    AddressOffset::constant(0),
-                    AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(999102)), 4),
-                ),
-            }));
+            values.push(
+                raw.clone()
+                    .with_address(raw.with_offset(AddressOffset::raw_add(
+                        AddressOffset::constant(0),
+                        AddressOffset::scaled_int32_node(
+                            OldMachineTerm::Variable(Variable(999102)),
+                            4,
+                        ),
+                    ))),
+            );
         }
         values.push(OldPointer::new(
-            OldAddress {
-                base: AddressBase::FunctionSymbolic(Variable(999101)),
-                offset: AddressOffset::constant(0),
-            },
+            Address::new(
+                AddressBase::FunctionSymbolic(Variable(999101)),
+                AddressOffset::constant(0),
+            ),
             ProgramType::FunctionPointer(CallbackSignature::UNSPECIFIED),
         ));
         values.push(OldPointer::new(
-            OldAddress::symbolic(Variable(999101)),
+            Address::symbolic(Variable(999101)),
             ProgramType::VoidPointer,
         ));
         values
@@ -288,20 +288,17 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         for value in values() {
             for to in [
-                OldAddress::null(),
-                OldAddress::symbolic(Variable(999110)),
-                OldAddress {
-                    base: AddressBase::Symbolic(Variable(999110)),
-                    offset: AddressOffset::raw_add(
-                        AddressOffset::constant(1),
-                        AddressOffset::constant(2),
-                    ),
-                },
+                Address::null(),
+                Address::symbolic(Variable(999110)),
+                Address::new(
+                    AddressBase::Symbolic(Variable(999110)),
+                    AddressOffset::raw_add(AddressOffset::constant(1), AddressOffset::constant(2)),
+                ),
             ] {
                 let source = OldConditionTerm::PointerEqual(
                     Box::new(value.clone()),
                     Box::new(OldPointer::new(
-                        OldAddress::symbolic(Variable(999111)),
+                        Address::symbolic(Variable(999111)),
                         ProgramType::Int32Pointer,
                     )),
                 );
@@ -358,10 +355,10 @@ mod tests {
         // operand order, so a produced fact raises and lowers back to itself.
         let _session = crate::kernel::VerificationSession::enter();
         let value = OldPointer::new(
-            OldAddress::symbolic(Variable(999130)),
+            Address::symbolic(Variable(999130)),
             ProgramType::Int32Pointer,
         );
-        let null = OldPointer::new(OldAddress::null(), ProgramType::Int32Pointer);
+        let null = OldPointer::new(Address::null(), ProgramType::Int32Pointer);
         for (left, right) in [(value.clone(), null.clone()), (null, value)] {
             let expected =
                 OldConditionTerm::address_equal(left.address().clone(), right.address().clone());
@@ -380,16 +377,13 @@ mod tests {
     fn complete_pointer_conditions_observe_semantic_identity_without_erasing_producers() {
         let _session = crate::kernel::VerificationSession::enter();
         let value = OldPointer::new(
-            OldAddress::symbolic(Variable(999120)),
+            Address::symbolic(Variable(999120)),
             ProgramType::Int32Pointer,
         );
         let roots = [value.clone(), value].map(|value| {
             KernelTermImport::default().condition(&OldConditionTerm::PointerEqual(
                 Box::new(value),
-                Box::new(OldPointer::new(
-                    OldAddress::null(),
-                    ProgramType::Int32Pointer,
-                )),
+                Box::new(OldPointer::new(Address::null(), ProgramType::Int32Pointer)),
             ))
         });
         assert_ne!(roots[0], roots[1]);
@@ -426,10 +420,7 @@ mod tests {
             .map(|value| {
                 let guard = KernelTermImport::default().condition(&OldConditionTerm::PointerEqual(
                     Box::new(value.clone()),
-                    Box::new(OldPointer::new(
-                        OldAddress::null(),
-                        ProgramType::Int32Pointer,
-                    )),
+                    Box::new(OldPointer::new(Address::null(), ProgramType::Int32Pointer)),
                 ));
                 SharedMachineIntegerTerm::observe_shared(
                     MachineIntegerType::Int32,
@@ -458,9 +449,9 @@ mod tests {
             ProgramValue::Int32(OldMachineTerm::constant(1)),
         );
         let roots = [before, after].map(|memory| {
-            let pointer = OldAddress {
-                base: AddressBase::Symbolic(Variable(999130)),
-                offset: AddressOffset::scaled_int32_node(
+            let pointer = Address::new(
+                AddressBase::Symbolic(Variable(999130)),
+                AddressOffset::scaled_int32_node(
                     OldMachineTerm::read_named(
                         ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
                         Box::new(crate::kernel::SymbolicMemory::global_pointer(
@@ -470,13 +461,10 @@ mod tests {
                     ),
                     4,
                 ),
-            };
+            );
             KernelTermImport::default().condition(&OldConditionTerm::PointerEqual(
                 Box::new(OldPointer::new(pointer, ProgramType::Int32Pointer)),
-                Box::new(OldPointer::new(
-                    OldAddress::null(),
-                    ProgramType::Int32Pointer,
-                )),
+                Box::new(OldPointer::new(Address::null(), ProgramType::Int32Pointer)),
             ))
         });
         for allowed in [false, true] {

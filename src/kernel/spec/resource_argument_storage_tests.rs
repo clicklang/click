@@ -64,7 +64,7 @@ fn resource_argument_arrays_keep_native_identity_order_hash_and_debug() {
         ))),
         AlgebraicValue::Integer(IntegerTerm::Variable(Variable(10993603))),
         AlgebraicValue::Program(ProgramValue::typed_pointer(
-            OldAddress::symbolic(Variable(10993604)),
+            Address::symbolic(Variable(10993604)),
             ProgramType::Int32Pointer,
         )),
     ];

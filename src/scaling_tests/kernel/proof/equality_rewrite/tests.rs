@@ -13,14 +13,18 @@ fn pointer_rewrite_integer_reads_preserves_state_kind_and_scales() {
         let mut samples = Vec::new();
         for size in [4u64, 16, 64, 256] {
             let _session = VerificationSession::enter();
-            let mut p = OldAddress::symbolic(Variable(241_000));
-            let mut q = OldAddress::symbolic(Variable(241_001)).offset_by_bytes(3);
+            let mut p = Address::symbolic(Variable(241_000));
+            let mut q = Address::symbolic(Variable(241_001)).offset_by_bytes(3);
             if same_block {
-                p.offset =
-                    AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(241_002)), 1);
-                q.base = p.base.clone();
-                q.offset =
-                    AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(241_003)), 1);
+                p.set_offset(AddressOffset::scale_int32(
+                    OldMachineTerm::Variable(Variable(241_002)),
+                    1,
+                ));
+                q.set_base(p.base.clone());
+                q.set_offset(AddressOffset::scale_int32(
+                    OldMachineTerm::Variable(Variable(241_003)),
+                    1,
+                ));
             }
             let cited = Proposition::condition_is(
                 OldConditionTerm::address_equal(p.clone(), q.clone()),
@@ -30,7 +34,7 @@ fn pointer_rewrite_integer_reads_preserves_state_kind_and_scales() {
             let mut facts = PureFactStore::default().with_fact(cited.clone());
             for index in 0..size {
                 memory = memory.store(
-                    OldAddress::symbolic(Variable(242_000 + index)),
+                    Address::symbolic(Variable(242_000 + index)),
                     crate::kernel::uint8(7),
                 );
                 facts = facts.with_fact(integer_equality(
@@ -38,7 +42,7 @@ fn pointer_rewrite_integer_reads_preserves_state_kind_and_scales() {
                     IntegerTerm::constant_i64(index as i64),
                 ));
             }
-            let read = |memory: &SymbolicMemory, pointer: &OldAddress, kind| {
+            let read = |memory: &SymbolicMemory, pointer: &Address, kind| {
                 OldMachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
                     &crate::kernel::intern_memory(memory.clone()),
                     pointer,
@@ -116,11 +120,11 @@ fn pointer_read_rewrite_preserves_value_state_and_scales() {
     let mut samples = Vec::new();
     for size in [16u64, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
-        let owner = OldAddress::symbolic(Variable(211_000));
-        let alias = OldAddress {
-            base: AddressBase::Symbolic(Variable(211_001)),
-            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(211_002)), 4),
-        };
+        let owner = Address::symbolic(Variable(211_000));
+        let alias = Address::new(
+            AddressBase::Symbolic(Variable(211_001)),
+            AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(211_002)), 4),
+        );
         let address = owner.offset_by_bytes(16);
         let alias_address = alias.offset_by_bytes(16);
         let cited = Proposition::condition_is(
@@ -131,7 +135,7 @@ fn pointer_read_rewrite_preserves_value_state_and_scales() {
         let mut memory = SymbolicMemory::new();
         for i in 0..size {
             memory = memory.store(
-                OldAddress::symbolic(Variable(220_000 + i)),
+                Address::symbolic(Variable(220_000 + i)),
                 ProgramValue::Int32(OldMachineTerm::constant(7)),
             );
             facts = facts.with_fact(equality(
@@ -140,7 +144,7 @@ fn pointer_read_rewrite_preserves_value_state_and_scales() {
             ));
         }
         let context = PureFactContext::new();
-        let read = |memory: &SymbolicMemory, address: &OldAddress| {
+        let read = |memory: &SymbolicMemory, address: &Address| {
             let paths = crate::kernel::eval::evaluate_logical_memory_load_paths(
                 memory,
                 address.clone(),
@@ -161,7 +165,7 @@ fn pointer_read_rewrite_preserves_value_state_and_scales() {
             value.address().clone()
         };
         let original = read(&memory, &address);
-        let leaf = OldAddress::symbolic(Variable(211_003));
+        let leaf = Address::symbolic(Variable(211_003));
         let goal = Proposition::condition_is(
             OldConditionTerm::address_equal(original.clone(), leaf.clone()),
             true,
@@ -186,7 +190,7 @@ fn pointer_read_rewrite_preserves_value_state_and_scales() {
         let expected = read(&memory, &alias_address);
         assert!(context.pointers_known_equal(actual, &expected));
         assert!(!ResourceContext::new().permits_memory_read(&alias_address, 8, &context));
-        let replacement = OldAddress::symbolic(Variable(211_004));
+        let replacement = Address::symbolic(Variable(211_004));
         let later = memory.clone().store(
             alias_address.clone(),
             ProgramValue::typed_pointer(replacement.clone(), ProgramType::Int32Pointer),
@@ -209,7 +213,7 @@ fn pointer_read_rewrite_preserves_value_state_and_scales() {
         );
         // An unregistered scaled integer is still pointer arithmetic.
         let index = OldMachineTerm::Variable(Variable(211_005));
-        let indexed = OldAddress::loaded(&index.clone()).unwrap();
+        let indexed = Address::loaded(&index.clone()).unwrap();
         let arithmetic_goal =
             Proposition::condition_is(OldConditionTerm::address_equal(indexed, leaf.clone()), true);
         let arithmetic = facts
@@ -439,10 +443,7 @@ fn integer_equality_rewrite_scales_with_selected_dag_not_ambient_facts() {
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn cited_read_rewrite_requires_unchanged_cells_and_its_named_premise() {
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = OldAddress {
-        base: "rewrite-selected-read".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let pointer = Address::new("rewrite-selected-read".into(), AddressOffset::constant(0));
     crate::kernel::eval::declare_load_access_width(&pointer, 4);
     let before = SymbolicMemory::new().with_block("rewrite-selected-read", 4);
     let after = before.clone().with_block("local:rewrite-unrelated", 4);
@@ -512,10 +513,10 @@ fn same_block_pointer_view_rewrite_preserves_span_and_selected_work() {
     let span = OldMachineTerm::Variable(Variable(192_922));
     let goal = Proposition::MemoryLoadable {
         memory: memory.clone(),
-        base: OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::add(source, AddressOffset::constant(2)),
-        },
+        base: Address::new(
+            AddressBase::ExternalArgument,
+            AddressOffset::add(source, AddressOffset::constant(2)),
+        ),
         bytes: (span.clone()).into(),
         wide: false,
     };
@@ -571,8 +572,8 @@ fn same_block_pointer_view_rewrite_preserves_span_and_selected_work() {
 #[test]
 fn pointer_view_rewrite_preserves_state_span_and_ambient_scaling() {
     let _session = crate::kernel::VerificationSession::enter();
-    let source = OldAddress::symbolic(Variable(192_910));
-    let target = OldAddress::symbolic(Variable(192_911));
+    let source = Address::symbolic(Variable(192_910));
+    let target = Address::symbolic(Variable(192_911));
     let cited = Proposition::condition_is(
         OldConditionTerm::address_equal(source.clone(), target.clone()),
         true,
@@ -627,8 +628,8 @@ fn pointer_view_rewrite_preserves_state_span_and_ambient_scaling() {
 #[test]
 fn pointer_rewrite_enters_scalar_calls_and_preserves_scope_and_states() {
     let variable = Variable(920);
-    let source = OldAddress::symbolic(variable);
-    let target = OldAddress::symbolic(Variable(921));
+    let source = Address::symbolic(variable);
+    let target = Address::symbolic(Variable(921));
     let cited = Proposition::condition_is(
         OldConditionTerm::PointerEqual(
             Box::new(OldPointer::new(source.clone(), ProgramType::Int32Pointer)),
@@ -637,7 +638,7 @@ fn pointer_rewrite_enters_scalar_calls_and_preserves_scope_and_states() {
         true,
     );
     let memory = SymbolicMemory::new().with_block("unchanged", 4);
-    let goal_at = |pointer: OldAddress, count: usize| {
+    let goal_at = |pointer: Address, count: usize| {
         equality(
             OldMachineTerm::ClickFunctionApplication {
                 name: "observes".into(),
@@ -685,10 +686,7 @@ fn pointer_rewrite_enters_scalar_calls_and_preserves_scope_and_states() {
     }
     let displaced = Proposition::condition_is(
         OldConditionTerm::address_equal(
-            OldAddress {
-                base: source.base.clone(),
-                offset: AddressOffset::constant(4),
-            },
+            source.with_offset(AddressOffset::constant(4)),
             target.clone(),
         ),
         true,
@@ -751,7 +749,7 @@ fn rewrite_capture_collection_does_not_visit_state_contents() {
         let mut memory = SymbolicMemory::new();
         for i in 0..size {
             memory = memory.store(
-                OldAddress::symbolic(Variable(100_000 + i)),
+                Address::symbolic(Variable(100_000 + i)),
                 ProgramValue::Int32(OldMachineTerm::Variable(Variable(200_000 + i))),
             );
         }
@@ -762,7 +760,7 @@ fn rewrite_capture_collection_does_not_visit_state_contents() {
                 left: Box::new(OldMachineTerm::Variable(free)),
                 right: Box::new(OldMachineTerm::read_named(
                     ProgramPoint::at(&(crate::kernel::intern_memory(memory))),
-                    Box::new(OldAddress::symbolic(address)),
+                    Box::new(Address::symbolic(address)),
                     crate::kernel::LoadKind::Int32,
                 )),
             },
@@ -790,14 +788,14 @@ fn rewrite_integer_application_endpoint_keeps_byte_state_and_ignores_its_content
         let mut memory = SymbolicMemory::new();
         for i in 0..size {
             memory = memory.store(
-                OldAddress::symbolic(Variable(300000 + i)),
+                Address::symbolic(Variable(300000 + i)),
                 ProgramValue::Int32(OldMachineTerm::constant(i as u32)),
             );
         }
         let array = PureFunctionArgument::ArrayRef {
             point: crate::kernel::ProgramPoint::of_memory(&memory),
             pointer: ProgramValue::typed_pointer(
-                OldAddress::symbolic(Variable(48)),
+                Address::symbolic(Variable(48)),
                 ProgramType::UInt8Pointer,
             ),
             element_type: ProgramType::UInt8,
@@ -974,28 +972,28 @@ fn pointer_read_chain_rewrite_work(
     hit: bool,
 ) -> usize {
     let _session = VerificationSession::enter();
-    let from = OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(998_950)), 8),
-    };
-    let to = OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(998_951)), 8),
-    };
+    let from = Address::new(
+        AddressBase::ExternalArgument,
+        AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(998_950)), 8),
+    );
+    let to = Address::new(
+        AddressBase::ExternalArgument,
+        AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(998_951)), 8),
+    );
     let mut memory = SymbolicMemory::new();
     for index in 0..cells {
         memory = memory.store(
-            OldAddress {
-                base: AddressBase::Temporary(999_000 + index),
-                offset: AddressOffset::constant(0),
-            },
+            Address::new(
+                AddressBase::Temporary(999_000 + index),
+                AddressOffset::constant(0),
+            ),
             ProgramValue::Int32(7u32.into()),
         );
     }
     let memory = crate::kernel::intern_memory(memory);
-    let read = |address: &OldAddress| {
+    let read = |address: &Address| {
         if native {
-            OldAddress::version_read(&memory, address)
+            Address::version_read(&memory, address)
         } else {
             let term = OldMachineTerm::read_named(
                 ProgramPoint::at(&memory),
@@ -1004,14 +1002,14 @@ fn pointer_read_chain_rewrite_work(
             );
             let (variable, _) =
                 crate::kernel::load_variable_for_term(&term).expect("legacy read adapter");
-            OldAddress::symbolic(variable)
+            Address::symbolic(variable)
         }
     };
     let mut input = from.clone();
     for _ in 0..depth {
         input = read(&input);
     }
-    let rewrite = |address: &OldAddress| {
+    let rewrite = |address: &Address| {
         if hit && address == &from {
             to.clone()
         } else {
@@ -1270,15 +1268,12 @@ fn retained_pointer_index_rewrite_scales_with_distinct_nodes() {
                 KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [root.clone(), root]);
         }
         let index = SharedMachineIntegerTerm::from_shared(ty, root).unwrap();
-        let pointer = OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::int32_scaled(index.clone(), 4),
-        };
+        let pointer = Address::new(
+            AddressBase::ExternalArgument,
+            AddressOffset::int32_scaled(index.clone(), 4),
+        );
         let goal = Proposition::condition_is(
-            OldConditionTerm::address_equal(
-                pointer.clone(),
-                OldAddress::symbolic(Variable(1081303)),
-            ),
+            OldConditionTerm::address_equal(pointer.clone(), Address::symbolic(Variable(1081303))),
             true,
         );
         let equality = Proposition::condition_is(OldConditionTerm::equal(x, y.clone()), true);
@@ -1359,7 +1354,7 @@ fn selected_rewrite_does_not_discover_a_load_equality_chain() {
     let y = OldMachineTerm::Variable(Variable(800_002));
     let read = OldMachineTerm::read_named(
         ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
-        Box::new(OldAddress::symbolic(Variable(800_003))),
+        Box::new(Address::symbolic(Variable(800_003))),
         crate::kernel::LoadKind::Int32,
     );
     let eq = |a: OldMachineTerm, b: OldMachineTerm| {

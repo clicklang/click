@@ -485,7 +485,7 @@ mod tests {
             ))),
             AlgebraicValue::Integer(IntegerTerm::Variable(Variable(10993303))),
             AlgebraicValue::Program(ProgramValue::typed_pointer(
-                OldAddress::symbolic(Variable(10993304)),
+                Address::symbolic(Variable(10993304)),
                 ProgramType::Int32Pointer,
             )),
         ];

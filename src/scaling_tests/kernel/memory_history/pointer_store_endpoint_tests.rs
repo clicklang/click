@@ -9,9 +9,11 @@ use super::*;
 #[test]
 fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = |id| OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 4),
+    let base = |id| {
+        Address::new(
+            AddressBase::ExternalArgument,
+            AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 4),
+        )
     };
     let written = base(160_001).offset_by_bytes(8);
     let address = base(160_002).offset_by_bytes(8);
@@ -31,8 +33,8 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
         for index in 0..count {
             context = context.assume_condition(
                 OldConditionTerm::address_equal(
-                    OldAddress::symbolic(Variable(170_000 + index * 2)),
-                    OldAddress::symbolic(Variable(170_001 + index * 2)),
+                    Address::symbolic(Variable(170_000 + index * 2)),
+                    Address::symbolic(Variable(170_001 + index * 2)),
                 ),
                 true,
             );
@@ -41,7 +43,7 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
                 ProgramValue::UInt64(OldMachineTerm::uint64_constant(index)),
             );
         }
-        let stored = OldAddress::symbolic(Variable(180_000 + count));
+        let stored = Address::symbolic(Variable(180_000 + count));
         memory = memory.store(
             written.clone(),
             ProgramValue::typed_pointer(stored.clone(), ProgramType::Int32Pointer),
@@ -88,7 +90,7 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
         assert!(
             pointer_value_at_stopping_store(
                 &cell,
-                &OldAddress::symbolic(Variable(190_000 + count)).offset_by_bytes(8),
+                &Address::symbolic(Variable(190_000 + count)).offset_by_bytes(8),
                 LoadKind::Int32,
                 8,
                 &context
@@ -97,14 +99,11 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
         );
         let overwritten = endpoint(memory.clone().store(
             written.clone(),
-            ProgramValue::typed_pointer(OldAddress::null(), ProgramType::Int32Pointer),
+            ProgramValue::typed_pointer(Address::null(), ProgramType::Int32Pointer),
         ));
         assert_eq!(
             pointer_value_at_stopping_store(&overwritten, &address, LoadKind::Int32, 8, &context),
-            Some(OldPointer::new(
-                OldAddress::null(),
-                ProgramType::Int32Pointer
-            ))
+            Some(OldPointer::new(Address::null(), ProgramType::Int32Pointer))
         );
         assert_ne!(
             pointer_value_at_stopping_store(&overwritten, &address, LoadKind::Int32, 8, &context),

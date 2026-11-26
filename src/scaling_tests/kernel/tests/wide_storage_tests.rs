@@ -15,10 +15,10 @@ fn wide_storage_exact_load_and_validation_work_ignore_unrelated_memory() {
             .with_block("local:wide-storage", 16)
             .store(address(0), value.clone());
         for index in 0..size {
-            let pointer = OldAddress {
-                base: format!("wide-unrelated-{index}").into(),
-                offset: AddressOffset::constant(0),
-            };
+            let pointer = Address::new(
+                format!("wide-unrelated-{index}").into(),
+                AddressOffset::constant(0),
+            );
             memory = memory.with_block(pointer.base.clone(), 4).store(
                 pointer,
                 literal(crate::kernel::program_expression::int32_literal(index)),

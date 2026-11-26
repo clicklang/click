@@ -5,7 +5,7 @@ use crate::kernel::BooleanOperandView as B;
 pub(in crate::kernel) fn substitute_pointer_boolean_value(
     root: &KernelTerm,
     from: Variable,
-    to: &OldAddress,
+    to: &Address,
 ) -> Option<KernelTerm> {
     let mut rewrite = TermRewrite::for_pointer_variable(from, to);
     let mut variables = rewrite.new_carrier_variables();
@@ -120,10 +120,9 @@ fn collect_common_address_carriers(
     }
     // These entry points substitute variables, not exact pointer terms.
     debug_assert!(variables.pointer_terms.is_none());
-    collect_address_base_carriers(address.node().base.native_atom(), variables);
+    collect_address_base_carriers(address.atom(), variables);
     address
-        .node()
-        .offset
+        .offset()
         .visit_root_while(|node| collect_common_offset_node_carriers(node, variables));
 }
 
@@ -144,10 +143,10 @@ impl TermRewrite<'_> {
         &mut self,
         source: &crate::kernel::SharedAddress,
     ) -> Option<crate::kernel::SharedAddress> {
-        use crate::kernel::{SharedAddress as A, SharedAddressBase, SharedAddressOffset as S};
+        use crate::kernel::{SharedAddress as A, SharedAddressOffset as S};
         debug_assert!(!self.resolve_registered_loads && self.conditions.is_none());
-        let offset = self.rewrite_retained_offset(&source.node().offset).ok()?;
-        let block = source.node().base.native_atom();
+        let offset = self.rewrite_retained_offset(source.offset()).ok()?;
+        let block = source.atom();
         let replacement = self.pointer_variable.and_then(|(from, to)| match block {
             AddressBase::Symbolic(variable) | AddressBase::FunctionSymbolic(variable)
                 if *variable == from =>
@@ -162,17 +161,14 @@ impl TermRewrite<'_> {
         let result = if let Some(replacement) = replacement {
             self.changed = true;
             A::new(
-                SharedAddressBase::import(&replacement.base),
+                replacement.block(),
                 S::add(replacement.offset.shared().clone(), offset),
             )
         } else {
             // Only the opaque block atom crosses its existing native rewrite
             // boundary. The original shared displacement is handled above.
-            let atom = self.pointer(&OldAddress {
-                base: block.clone(),
-                offset: AddressOffset::constant(0),
-            });
-            A::new(SharedAddressBase::import(&atom.base), offset)
+            let atom = self.pointer(&Address::new(block.clone(), AddressOffset::constant(0)));
+            A::new(atom.block(), offset)
         };
         self.refusal().is_none().then_some(result)
     }
@@ -194,7 +190,7 @@ pub(in crate::kernel) fn substitute_application_address_bits(
 pub(in crate::kernel) fn substitute_application_address_pointer(
     source: &crate::kernel::SharedAddress,
     from: Variable,
-    to: &OldAddress,
+    to: &Address,
 ) -> Option<crate::kernel::SharedAddress> {
     let mut rewrite = TermRewrite::for_pointer_variable(from, to);
     let mut variables = rewrite.new_carrier_variables();
@@ -221,14 +217,15 @@ impl TermRewrite<'_> {
                 && !self.pointer_addresses_only
         );
         let p = source.node();
-        let base = A::import(&OldAddress {
-            base: p.address.node().base.native_atom().clone(),
-            offset: AddressOffset::constant(0),
-        });
-        let selected = |address: &A| matches!(address.node().base.native_atom(),AddressBase::Symbolic(v)|AddressBase::FunctionSymbolic(v) if *v == from);
+        let base = p
+            .address
+            .block()
+            .address(AddressOffset::constant(0))
+            .into_shared();
+        let selected = |address: &A| matches!(address.atom(),AddressBase::Symbolic(v)|AddressBase::FunctionSymbolic(v) if *v == from);
         let replacement = (selected(&p.address) && p.provenance.syntax_equal(&base))
             .then(|| V::import(&OldPointer::new(to.clone(), p.program_type)));
-        let target_identity = A::import(&to.object_identity());
+        let target_identity = to.object_identity().into_shared();
         let provenance = if let Some(target) = &replacement {
             target.node().provenance.clone()
         } else if selected(&p.provenance) {
@@ -266,7 +263,7 @@ impl TermRewrite<'_> {
         // the complete value, without rewriting the retained bounds width.
         V::new(mapped)
             .map_condition_addresses(|address| {
-                let offset = address.node().offset.try_map_root(|_, node| {
+                let offset = address.offset().try_map_root(|_, node| {
                     let mapped = match node {
                         O::Add([a, b]) => return Ok::<_, ()>(S::add(a, b)),
                         O::Int32Scaled { value, byte_width } => {
@@ -304,7 +301,7 @@ impl TermRewrite<'_> {
                     };
                     mapped.into_shared().map_err(|_| ())
                 })?;
-                Ok::<_, ()>(A::new(address.node().base.clone(), offset))
+                Ok::<_, ()>(A::new(address.block(), offset))
             })
             .ok()
             .filter(|_| self.refusal().is_none())

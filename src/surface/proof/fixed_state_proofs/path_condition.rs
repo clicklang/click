@@ -13,10 +13,7 @@ fn memory_erased_comparison(proposition: &Proposition) -> Option<Proposition> {
                     crate::kernel::ProgramPoint::unplaced(
                         &(crate::kernel::intern_memory(SymbolicMemory::default())),
                     ),
-                    OldAddress {
-                        base: pointer.base.clone(),
-                        offset: erase_offset(&pointer.offset),
-                    },
+                    pointer.with_offset(erase_offset(&pointer.offset)),
                     *kind,
                 )
             }

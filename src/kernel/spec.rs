@@ -2763,7 +2763,7 @@ fn integer_range_fold_index_is_empty(index: &IntegerFoldIndexResult) -> bool {
     index.is_empty()
 }
 
-fn integer_carrier_in_pointer(pointer: &OldAddress, variable: Variable) -> bool {
+fn integer_carrier_in_pointer(pointer: &Address, variable: Variable) -> bool {
     // Like an opaque algebraic application, a pointer call can carry the
     // accumulator through its arguments, and a loaded pointer through its
     // defining read's address. Retain the scope without expanding a shared
@@ -5727,10 +5727,7 @@ fn lower_spec_memory_loadable_at_state_in(
         {
             let (start, end) = crate::kernel::wide_range_bounds(start, end)?;
             let range = MemoryRange::new_wide(
-                OldAddress {
-                    base: base.base.clone(),
-                    offset: crate::kernel::eval::canonical_offset_term(&base.offset),
-                },
+                base.with_offset(crate::kernel::eval::canonical_offset_term(&base.offset)),
                 crate::kernel::eval::canonical_term(&start),
                 crate::kernel::eval::canonical_term(&end),
                 element_width,
@@ -5757,10 +5754,7 @@ fn lower_spec_memory_loadable_at_state_in(
             ProgramValue::UInt64(end),
         ] => {
             let range = MemoryRange::new_wide(
-                OldAddress {
-                    base: base.base.clone(),
-                    offset: crate::kernel::eval::canonical_offset_term(&base.offset),
-                },
+                base.with_offset(crate::kernel::eval::canonical_offset_term(&base.offset)),
                 OldMachineTerm::uint64_constant(0),
                 crate::kernel::eval::canonical_term(end),
                 element_width,
@@ -5790,13 +5784,10 @@ fn lower_spec_memory_loadable_at_state_in(
             let mut discarded_facts = ExecutionFacts::new();
             let start =
                 crate::kernel::canonicalized_offset_index_term(start.clone(), &mut discarded_facts);
-            let base = OldAddress {
-                base: base.base.clone(),
-                offset: canonical_offset_sum(
-                    base.offset.clone(),
-                    canonical_scaled_offset(start, i64::from(element_width)),
-                ),
-            };
+            let base = base.with_offset(canonical_offset_sum(
+                base.offset.clone(),
+                canonical_scaled_offset(start, i64::from(element_width)),
+            ));
             let mut obligations = path.obligations;
             if enforce_range_guards {
                 match crate::kernel::memory_range_byte_count_span(
@@ -6904,7 +6895,7 @@ fn evaluate_spec_add_chain_paths_in(
 fn aggregate_projection_pointer(
     expression: &SpecExpression,
     parameter: &BindingName,
-    slot: &OldAddress,
+    slot: &Address,
 ) -> Option<SpecExpression> {
     match expression {
         SpecExpression::ProgramExpression(ProgramExpression::Variable(name))
@@ -8631,14 +8622,12 @@ fn evaluate_spec_pure_function_application_paths_in(
                 .then(|| SharedPureApplication::intern(name.to_owned(), call_arguments(arguments)));
             let value = OldPointer::new(
                 if all_null {
-                    OldAddress::null()
+                    Address::null()
                 } else {
-                    OldAddress {
-                        base: AddressBase::PureFunctionApplication(
-                            application.as_ref().unwrap().clone(),
-                        ),
-                        offset: AddressOffset::constant(0),
-                    }
+                    Address::new(
+                        AddressBase::PureFunctionApplication(application.as_ref().unwrap().clone()),
+                        AddressOffset::constant(0),
+                    )
                 },
                 result_type,
             )
@@ -8648,11 +8637,7 @@ fn evaluate_spec_pure_function_application_paths_in(
                 SpecValue::Native(ProgramValue::Pointer(value))
             } else if let Some(application) = application {
                 KernelTermImport::default()
-                    .pointer_call(
-                        &application,
-                        retained,
-                        SharedPointer::import_produced(&value),
-                    )
+                    .pointer_call(&application, retained, SharedPointer::import(&value))
                     .into()
             } else {
                 SpecValue::retain_formed_pointer(ProgramValue::Pointer(value))
@@ -8792,7 +8777,7 @@ pub(crate) fn refine_object_pointer_argument(
         |facts, pointer| {
             facts.decide(&OldConditionTerm::address_equal(
                 pointer.clone(),
-                OldAddress::null(),
+                Address::null(),
             )) == Some(true)
         },
     )
@@ -8814,7 +8799,7 @@ pub(crate) fn refine_object_pointer_argument_using_facts(
         |facts, pointer| {
             facts.exact_condition_value(&OldConditionTerm::address_equal(
                 pointer.clone(),
-                OldAddress::null(),
+                Address::null(),
             )) == Some(true)
         },
     )
@@ -8825,7 +8810,7 @@ fn refine_object_pointer_argument_with_null(
     object_class: &crate::kernel::effective_type::CAccessClass,
     memory: &SymbolicMemory,
     assumptions: &PureFactContext,
-    proves_null: impl FnOnce(&PureFactContext, &OldAddress) -> bool,
+    proves_null: impl FnOnce(&PureFactContext, &Address) -> bool,
 ) -> bool {
     let ProgramValue::Pointer(pointer) = value else {
         return false;
@@ -11506,7 +11491,7 @@ mod pointer_integer_observation_tests {
     fn integer_specifications_observe_bits_without_a_pointer_record() {
         let context = PureFactContext::new();
         let pointer = OldPointer::new(
-            OldAddress::symbolic(Variable(994_001)),
+            Address::symbolic(Variable(994_001)),
             ProgramType::Int32Pointer,
         );
         let word = crate::kernel::eval::cast_program_value_to_type(

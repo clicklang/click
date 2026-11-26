@@ -87,10 +87,10 @@ fn interface_join_states(count: usize, claimed: usize) -> (ExecutionState, Execu
 fn parameter_view(variable: u64) -> ResourceFact {
     use crate::kernel::OffsetTree;
     ResourceFact::view_memory(MemoryRange::new_with_element_width(
-        OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::variable(Variable(variable)),
-        },
+        Address::new(
+            AddressBase::ExternalArgument,
+            AddressOffset::variable(Variable(variable)),
+        ),
         OldMachineTerm::constant(0),
         OldMachineTerm::constant(1),
         4,
@@ -121,10 +121,10 @@ fn cells_in_the_symbolic_block(count: usize) -> SymbolicMemory {
     let mut memory = SymbolicMemory::new();
     for index in 0..count {
         memory = memory.store(
-            OldAddress {
-                base: AddressBase::ExternalArgument,
-                offset: AddressOffset::constant(4 * index as i64),
-            },
+            Address::new(
+                AddressBase::ExternalArgument,
+                AddressOffset::constant(4 * index as i64),
+            ),
             int32(0),
         );
     }

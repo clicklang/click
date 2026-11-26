@@ -425,7 +425,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_anchored_field_preservation(
         search_input: &Proof<'a>,
         target: &SyntaxProposition,
-        address: &crate::kernel::OldAddress,
+        address: &crate::kernel::Address,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         #[cfg(test)]
         crate::kernel::search::record_discovery("try_anchored_field_preservation");

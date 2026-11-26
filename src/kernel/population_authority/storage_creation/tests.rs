@@ -29,7 +29,7 @@ fn resolved_malloc(pending: &ExecutionState, success: bool) -> ExecutionState {
         panic!("pending allocation has a result pointer");
     };
     let assumptions = PureFactContext::new().assume_proposition(Proposition::condition_is(
-        OldConditionTerm::address_equal(pointer.address().clone(), OldAddress::null()),
+        OldConditionTerm::address_equal(pointer.address().clone(), Address::null()),
         !success,
     ));
     crate::kernel::resolve_pending_heap_allocations(pending, &assumptions)
@@ -38,7 +38,7 @@ fn resolved_malloc(pending: &ExecutionState, success: bool) -> ExecutionState {
 #[test]
 fn only_successful_real_malloc_records_creation() {
     let entry = ExecutionState::new()
-        .with_local("p", ProgramValue::pointer(OldAddress::null()))
+        .with_local("p", ProgramValue::pointer(Address::null()))
         .with_population_creation_tracking();
     let pending = pending_malloc(&entry);
     let local_native_output_43 = pending.locals().get_native("p");
@@ -154,7 +154,7 @@ fn only_successful_real_malloc_records_creation() {
 
     let untracked = resolved_malloc(
         &pending_malloc(
-            &ExecutionState::new().with_local("p", ProgramValue::pointer(OldAddress::null())),
+            &ExecutionState::new().with_local("p", ProgramValue::pointer(Address::null())),
         ),
         true,
     );
@@ -164,7 +164,7 @@ fn only_successful_real_malloc_records_creation() {
 #[test]
 fn caller_pending_malloc_resolved_in_helper_keeps_caller_origin() {
     let caller = ExecutionState::new()
-        .with_local("p", ProgramValue::pointer(OldAddress::null()))
+        .with_local("p", ProgramValue::pointer(Address::null()))
         .with_population_creation_tracking();
     let pending = pending_malloc(&caller);
     let local_native_output_163 = pending.locals().get_native("p");
@@ -214,7 +214,7 @@ fn caller_pending_malloc_resolved_in_helper_keeps_caller_origin() {
             pending.population_effects.creation.as_ref(),
             state.population_effects.creation.as_ref(),
         );
-        if pointer.address() == &OldAddress::null() {
+        if pointer.address() == &Address::null() {
             saw_failure = true;
             assert_eq!(*value.native(), ProgramValue::Int32(0.into()));
             assert!(!resumed.population_storage_created_here(pointer));
@@ -385,14 +385,7 @@ fn rechecking_storage_creation_events_reuses_exact_successor_roots() {
 fn member_description(block: AddressBase) -> ResourceDescription {
     ResourceDescription::new(
         "reference".into(),
-        vec![
-            ProgramValue::pointer(OldAddress {
-                base: block,
-                offset: AddressOffset::constant(0),
-            })
-            .into(),
-        ]
-        .into(),
+        vec![ProgramValue::pointer(Address::new(block, AddressOffset::constant(0))).into()].into(),
         ResourceFieldSchema::new(vec![]).unwrap(),
     )
 }
@@ -402,10 +395,10 @@ fn opaque_helper_import_has_no_count_and_checks_each_member_exchange() {
     let description = ResourceDescription::new(
         "reference".into(),
         vec![
-            ProgramValue::pointer(OldAddress {
-                base: AddressBase::ExternalArgument,
-                offset: AddressOffset::variable(Variable(940_110)),
-            })
+            ProgramValue::pointer(Address::new(
+                AddressBase::ExternalArgument,
+                AddressOffset::variable(Variable(940_110)),
+            ))
             .into(),
         ]
         .into(),
@@ -489,10 +482,10 @@ fn opaque_helper_import_has_no_count_and_checks_each_member_exchange() {
     let other = ResourceDescription::new(
         "reference".into(),
         vec![
-            ProgramValue::pointer(OldAddress {
-                base: AddressBase::ExternalArgument,
-                offset: AddressOffset::variable(Variable(940_111)),
-            })
+            ProgramValue::pointer(Address::new(
+                AddressBase::ExternalArgument,
+                AddressOffset::variable(Variable(940_111)),
+            ))
             .into(),
         ]
         .into(),
@@ -1233,10 +1226,10 @@ fn independent_opaque_symbolic_populations_keep_their_own_counts_and_members() {
 
 #[test]
 fn two_authority_control_import_checks_each_custody_and_scope() {
-    let pointer = OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::variable(Variable(940_112)),
-    };
+    let pointer = Address::new(
+        AddressBase::ExternalArgument,
+        AddressOffset::variable(Variable(940_112)),
+    );
     let selected = ResourceFact::own(Resource::Composite {
         name: "control".into(),
         arguments: vec![ProgramValue::pointer(pointer.clone()).into()].into(),
@@ -1436,10 +1429,10 @@ fn two_authority_control_import_checks_each_custody_and_scope() {
             .is_err()
     );
     let mut wrong_args = member.arguments().to_vec();
-    wrong_args[0] = ProgramValue::pointer(OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::constant(912),
-    })
+    wrong_args[0] = ProgramValue::pointer(Address::new(
+        AddressBase::ExternalArgument,
+        AddressOffset::constant(912),
+    ))
     .into();
     let wrong = ResourceFact::own(Resource::Composite {
         name: member.family().into(),
@@ -1471,10 +1464,10 @@ fn two_authority_control_import_checks_each_custody_and_scope() {
 
 #[test]
 fn checked_control_import_observes_only_its_exact_entry_population() {
-    let pointer = OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::variable(Variable(940_112)),
-    };
+    let pointer = Address::new(
+        AddressBase::ExternalArgument,
+        AddressOffset::variable(Variable(940_112)),
+    );
     let selected = ResourceFact::own(Resource::Composite {
         name: "control".into(),
         arguments: vec![ProgramValue::pointer(pointer.clone()).into()].into(),
@@ -1782,10 +1775,10 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
     let wrong = ResourceDescription::new(
         "reference".into(),
         vec![
-            ProgramValue::pointer(OldAddress {
-                base: AddressBase::ExternalArgument,
-                offset: AddressOffset::variable(Variable(940_113)),
-            })
+            ProgramValue::pointer(Address::new(
+                AddressBase::ExternalArgument,
+                AddressOffset::variable(Variable(940_113)),
+            ))
             .into(),
         ]
         .into(),
@@ -1937,14 +1930,8 @@ fn checked_member_exchange_requires_exact_field_free_anchor_and_holder() {
     let base = member_description(block.clone());
     let offset = ResourceDescription::new(
         "reference".into(),
-        vec![
-            ProgramValue::pointer(OldAddress {
-                base: block.clone(),
-                offset: AddressOffset::constant(4),
-            })
+        vec![ProgramValue::pointer(Address::new(block.clone(), AddressOffset::constant(4))).into()]
             .into(),
-        ]
-        .into(),
         ResourceFieldSchema::new(vec![]).unwrap(),
     );
     let wrong_block = AddressBase::Heap(940_107);
@@ -2181,14 +2168,8 @@ fn checked_empty_retirement_survives_free_but_not_a_new_lifetime() {
     assert!(!freed.checked_empty_population(&wrong_family));
     let wrong_offset = ResourceDescription::new(
         "reference".into(),
-        vec![
-            ProgramValue::pointer(OldAddress {
-                base: block.clone(),
-                offset: AddressOffset::constant(4),
-            })
+        vec![ProgramValue::pointer(Address::new(block.clone(), AddressOffset::constant(4))).into()]
             .into(),
-        ]
-        .into(),
         ResourceFieldSchema::new(vec![]).unwrap(),
     );
     assert!(!freed.checked_empty_population(&wrong_offset));
@@ -2537,10 +2518,10 @@ fn count_uses_its_written_anchor_not_a_proven_alias() {
     else {
         panic!("pointer anchor")
     };
-    let alias = OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(9_850_100)), 4),
-    };
+    let alias = Address::new(
+        AddressBase::ExternalArgument,
+        AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(9_850_100)), 4),
+    );
     let count_of = |pointer: OldPointer| SpecExpression::CountedResourceCount {
         name: "reference".into(),
         arguments: vec![Some(SpecExpression::Value(ProgramValue::Pointer(pointer)))],
@@ -2686,11 +2667,7 @@ mod wildcard_scope_tests {
 
     fn description(block: &AddressBase, keys: &[u32]) -> ResourceDescription {
         let mut arguments = vec![
-            ProgramValue::pointer(OldAddress {
-                base: block.clone(),
-                offset: AddressOffset::constant(0),
-            })
-            .into(),
+            ProgramValue::pointer(Address::new(block.clone(), AddressOffset::constant(0))).into(),
         ];
         arguments.extend(keys.iter().map(|key| AlgebraicValue::Program(int32(*key))));
         ResourceDescription::new(
@@ -2706,10 +2683,10 @@ mod wildcard_scope_tests {
     }
 
     fn opaque_scope(index: u32) -> (ResourceDescription, ResourceDescription) {
-        let anchor = ProgramValue::pointer(OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::constant(i64::from(index) * 4),
-        });
+        let anchor = ProgramValue::pointer(Address::new(
+            AddressBase::ExternalArgument,
+            AddressOffset::constant(i64::from(index) * 4),
+        ));
         let scope = ResourceDescription::new(
             "slot".into(),
             vec![anchor.clone().into()].into(),
@@ -3258,10 +3235,10 @@ mod wildcard_scope_tests {
             .checked_establish(&pool, &scope)
             .unwrap();
         let mut arguments = description(&pool, &[0]).arguments().to_vec();
-        let pointer = ProgramValue::pointer(OldAddress {
-            base: AddressBase::Heap(950_005),
-            offset: AddressOffset::constant(4),
-        });
+        let pointer = ProgramValue::pointer(Address::new(
+            AddressBase::Heap(950_005),
+            AddressOffset::constant(4),
+        ));
         arguments[1] = pointer.clone().into();
         let member = ResourceDescription::new(
             "slot".into(),
@@ -3522,10 +3499,7 @@ fn helper_cleanup_must_retire_each_control_population_at_global_zero() {
 #[test]
 fn local_named_wildcard_members_count_occurrences_not_field_values() {
     let block = AddressBase::Heap(940_502);
-    let anchor = ProgramValue::pointer(OldAddress {
-        base: block.clone(),
-        offset: AddressOffset::constant(0),
-    });
+    let anchor = ProgramValue::pointer(Address::new(block.clone(), AddressOffset::constant(0)));
     let schema = ResourceFieldSchema::new(vec![(
         "serial".into(),
         ResourceFieldType::Program(ProgramType::Int32),
@@ -3672,10 +3646,7 @@ fn authority_contract_entry_retains_only_authenticated_member_bounds() {
         "reference".into(),
         vec![
             ProgramValue::typed_pointer(
-                OldAddress {
-                    base: block,
-                    offset: AddressOffset::constant(0),
-                },
+                Address::new(block, AddressOffset::constant(0)),
                 ProgramType::Int32Pointer,
             )
             .into(),
@@ -3889,10 +3860,7 @@ fn check_named_authority_import(arity: Option<usize>) {
         // select the first imported population merely by family or block.
         let other_pattern = pattern.map_values(|_| {
             AlgebraicValue::Program(ProgramValue::typed_pointer(
-                OldAddress {
-                    base: AddressBase::ExternalArgument,
-                    offset: AddressOffset::constant(4),
-                },
+                Address::new(AddressBase::ExternalArgument, AddressOffset::constant(4)),
                 ProgramType::Int32Pointer,
             ))
         });
@@ -4120,10 +4088,10 @@ fn numeric_member_birth_overflow_is_not_missing_custody() {
 
 #[test]
 fn imported_named_exact_counts_refuse_unresolved_neighbor_effects() {
-    let anchor = ProgramValue::pointer(OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::constant(0),
-    });
+    let anchor = ProgramValue::pointer(Address::new(
+        AddressBase::ExternalArgument,
+        AddressOffset::constant(0),
+    ));
     let schema = ResourceFieldSchema::new(vec![(
         "serial".into(),
         ResourceFieldType::Program(ProgramType::Int32),

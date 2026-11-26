@@ -615,6 +615,21 @@ In `src/kernel/`:
   feeds the same stream the deleted native offset tree's derived hash fed,
   so content hashes built from addresses keep their values. Tests build
   offsets through the same constructors; there is no other offset type.
+- `Address`: a raw address, `base` (an `AddressBase` atom) plus `offset`.
+  It is the written view of the kernel handle `SharedAddress`, so passing an
+  address into a kernel term is a clone. Building one with `Address::new`
+  interns the block of every kind without a scalar identity (names, string
+  literals, locals, statics, pure calls, ...); that interning is where an
+  address's block is admitted and charged, one unit plus the atom's name or
+  literal bytes, independent of what was interned before. The interner
+  assigns identity only: each handle keeps its producer's own atom, so a
+  binding's metadata (spelling, program type, struct name) is never another
+  declaration's that shares its identity. `Address` equality, order and hash
+  are the deleted native struct's (block atom, then written offset);
+  `SharedAddress` equality and hash are exact (interned block identity, a
+  pure call by payload, exact offset node) and are kernel-term identity.
+  Change an address with `with_offset`, `with_base`, `set_offset` or
+  `set_base`; a pattern matches `AddressParts` through `&*address`.
 - `OldConditionTerm`: proof-level truth-valued conditions: machine comparisons
   `Compare { format, relation, left, right }` and overflow tests
   `Overflows { format, op, left, right }` at every machine-integer format,
@@ -624,7 +639,7 @@ In `src/kernel/`:
   `int32`, whose order its canonical words compare exactly, so a fact has
   one representation. Every other order is filed at its own format: a `uint32`
   order is `Compare { format: UInt32, .. }` of the operands' words.
-- `ProgramValue`, `ProgramType`, `OldAddress`, `SymbolicMemory`, `ExecutionState`: C semantic state,
+- `ProgramValue`, `ProgramType`, `Address`, `SymbolicMemory`, `ExecutionState`: C semantic state,
   including the non-object `Void` return value, scalar `int8`, `int16`, `int32`,
   `uint8`, `uint16`, `uint32`, `int64`, and `uint64`, pointers, and typed
   memory loads/stores.
@@ -1219,7 +1234,7 @@ machine value, so `OldMachineTerm::add` and `OldMachineTerm::subtract` wrap:
 The two meet in `element_index_from_offset`, which divides a byte offset by an
 element width and folds the pieces with the *modular* add. What it returns is
 therefore the element delta only **modulo `2^32`**, and the same is true of
-`OldAddress::element_index_from_base_with_width` and of every endpoint a rule
+`Address::element_index_from_base_with_width` and of every endpoint a rule
 builds with `OldMachineTerm::add(base_index, range.start())`. So is
 `affine_bitvector_difference_constant`, which walks two index terms as affine
 forms in `i64`: the constant it returns is the true difference modulo `2^32`,
@@ -1236,7 +1251,7 @@ A residue is **not** enough for **membership**, in either its pointer form
 inside that one"). The wrapped reading of a residue `r` is `r - 2^32`, which is
 *outside*, so a positive conclusion has to rule it out. That is
 `exact_affine_index_difference`, which answers only for a residue it can show
-is the difference, and `OldAddress::exact_element_delta_from_base`, which keeps
+is the difference, and `Address::exact_element_delta_from_base`, which keeps
 the exact `i64` constant part of a delta beside its one symbolic index rather
 than folding them with an add that wraps.
 

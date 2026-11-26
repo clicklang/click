@@ -2,10 +2,7 @@ use super::*;
 
 fn entry_state() -> ExecutionState {
     use crate::kernel::*;
-    let source = OldAddress {
-        base: "local:caller".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let source = Address::new("local:caller".into(), AddressOffset::constant(0));
     let function = program_function(
         ProgramType::Void,
         "copy",
@@ -85,7 +82,7 @@ fn lower_recorded_input(state: &ExecutionState) -> (SpecExpression, usize) {
     let point = ProgramPointSelector::Mark("inside".into());
     retained_states.insert(point.clone(), state.clone());
     let caller_image = ProgramValue::typed_pointer(
-        crate::kernel::OldAddress::symbolic(Variable(71_001)),
+        crate::kernel::Address::symbolic(Variable(71_001)),
         ProgramType::UInt8Pointer,
     );
     let (mut lowerer, context) = fixed_state_elaboration(

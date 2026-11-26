@@ -114,7 +114,7 @@ fn shared_read_capture_visits_address_dags_and_nested_read_prefixes_once() {
             .collect::<Vec<_>>();
         let memory = crate::kernel::intern_memory(crate::kernel::SymbolicMemory::new());
         let blocks = [1016100, 1016101]
-            .map(|id| SharedAddressBase::import(&AddressBase::Symbolic(Variable(id))));
+            .map(|id| SharedAddressBase::new(AddressBase::Symbolic(Variable(id))));
         for size in [16, 64, 256] {
             let variable = Variable(1016102);
             let mut root = KernelTerm::variable(KernelType::Program(ProgramType::Int32), variable);
@@ -308,10 +308,10 @@ fn minted_scalar_comparison_readers_reuse_selected_native_read_work() {
             };
         }
         let memory = crate::kernel::intern_memory(crate::kernel::SymbolicMemory::new());
-        let pointer = crate::kernel::OldAddress {
-            base: AddressBase::Symbolic(Variable(979199)),
-            offset: AddressOffset::scaled_int32_node(offset, 4),
-        };
+        let pointer = Address::new(
+            AddressBase::Symbolic(Variable(979199)),
+            AddressOffset::scaled_int32_node(offset, 4),
+        );
         let native = OldConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,

@@ -164,11 +164,11 @@ fn nested_implication_lowering_records_in_linear_work() {
 
 #[test]
 fn qualified_storage_source_index_preserves_forks_and_scales() {
-    fn pair(index: u32) -> (OldAddress, SyntaxTerm, SyntaxProposition, Proposition) {
-        let pointer = OldAddress {
-            base: AddressBase::Concrete(format!("global:state#file-static:file{index}.c")),
-            offset: AddressOffset::constant(0),
-        };
+    fn pair(index: u32) -> (Address, SyntaxTerm, SyntaxProposition, Proposition) {
+        let pointer = Address::new(
+            AddressBase::Concrete(format!("global:state#file-static:file{index}.c")),
+            AddressOffset::constant(0),
+        );
         let expression = SyntaxTerm::QualifiedC {
             name: format!("file{index}::state"),
             lowered: ProgramExpression::TypedLoad {

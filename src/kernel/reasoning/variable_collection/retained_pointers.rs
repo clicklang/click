@@ -19,8 +19,8 @@ fn visit_components<'a>(
         if checked_collection_checkpoint() {
             return;
         }
-        visit(Component::Block(address.node().base.native_atom()));
-        let mut pending = vec![&address.node().offset];
+        visit(Component::Block(address.atom()));
+        let mut pending = vec![address.offset()];
         while let Some(offset) = pending.pop() {
             if checked_collection_checkpoint() {
                 return;
@@ -186,7 +186,7 @@ pub(super) fn collect_pointer_bound_identities(
         if checked_collection_checkpoint() {
             return;
         }
-        if let AddressBase::PureFunctionApplication(application) = address.node().base.native_atom()
+        if let AddressBase::PureFunctionApplication(application) = address.atom()
             && seen.pointers.insert(application.id())
         {
             for argument in application.arguments() {
@@ -201,7 +201,7 @@ mod tests {
     use super::*;
     use std::sync::Arc;
     pub(super) fn native_variables(
-        pointer: &OldAddress,
+        pointer: &Address,
         mode: FoldVariableRead,
     ) -> BTreeSet<Variable> {
         let mut result = BTreeSet::new();
@@ -241,27 +241,27 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = intern_memory(SymbolicMemory::new());
         let cases = [
-            OldAddress {
-                base: AddressBase::Symbolic(Variable(1001001)),
-                offset: AddressOffset::scaled_int64_node(
+            Address::new(
+                AddressBase::Symbolic(Variable(1001001)),
+                AddressOffset::scaled_int64_node(
                     OldMachineTerm::Variable(Variable(1001002)),
                     8,
                     true,
                 ),
-            },
-            OldAddress {
-                base: AddressBase::PureFunctionApplication(SharedPureApplication::intern(
+            ),
+            Address::new(
+                AddressBase::PureFunctionApplication(SharedPureApplication::intern(
                     "dependency_call".into(),
                     vec![PureFunctionArgument::Integer(
                         IntegerTerm::Variable(Variable(1001003)).into(),
                     )],
                 )),
-                offset: AddressOffset::variable(Variable(1001004)),
-            },
-            OldAddress::loaded_value(&memory, &OldAddress::symbolic(Variable(1001005))),
+                AddressOffset::variable(Variable(1001004)),
+            ),
+            Address::loaded_value(&memory, &Address::symbolic(Variable(1001005))),
         ];
         for source in cases {
-            let shared = SharedAddress::import(&source);
+            let shared = source.shared().clone();
             for mode in MODES {
                 let expected = native_variables(&source, mode);
                 let exports = KernelTermExport::machine_export_count();
@@ -290,20 +290,20 @@ mod tests {
             body: IntegerTerm::Variable(Variable(1001022)).into(),
         }
         .into();
-        let address = OldAddress {
-            base: AddressBase::PureFunctionApplication(SharedPureApplication::intern(
+        let address = Address::new(
+            AddressBase::PureFunctionApplication(SharedPureApplication::intern(
                 "fold_pointer".into(),
                 vec![PureFunctionArgument::Integer(fold.clone())],
             )),
-            offset: AddressOffset::scaled_int32_node(
+            AddressOffset::scaled_int32_node(
                 OldMachineTerm::IntegerToMachine {
                     value: fold,
                     destination: MachineIntegerType::Int32,
                 },
                 4,
             ),
-        };
-        let shared = SharedAddress::import(&address);
+        );
+        let shared = address.shared().clone();
         for mode in MODES {
             let mut actual = BTreeSet::new();
             collect_address_variables(&shared, mode, &mut actual);
@@ -327,13 +327,13 @@ mod tests {
     fn complete_pointer_readers_keep_native_metadata_and_coordinate_policy() {
         let _session = crate::kernel::VerificationSession::enter();
         let source = OldPointer::new(
-            OldAddress::symbolic(Variable(1001010)),
+            Address::symbolic(Variable(1001010)),
             ProgramType::VoidPointer,
         )
-        .with_provenance(Arc::new(OldAddress::symbolic(Variable(1001011))))
-        .with_bounds_owner(Some(Arc::new(OldAddress::symbolic(Variable(1001012)))))
+        .with_provenance(Arc::new(Address::symbolic(Variable(1001011))))
+        .with_bounds_owner(Some(Arc::new(Address::symbolic(Variable(1001012)))))
         .with_bounds(Some(SubobjectBounds {
-            start: OldAddress::symbolic(Variable(1001013)),
+            start: Address::symbolic(Variable(1001013)),
             width: OldMachineTerm::Variable(Variable(1001014)),
         }));
         let shared = SharedPointer::import(&source);
@@ -358,11 +358,11 @@ mod tests {
             )
             .max
         );
-        let source = OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::variable(Variable(1001015)),
-        };
-        let shared = SharedAddress::import(&source);
+        let source = Address::new(
+            AddressBase::ExternalArgument,
+            AddressOffset::variable(Variable(1001015)),
+        );
+        let shared = source.shared().clone();
         let before = COORDINATE_VARIABLES.with(|flag| flag.replace(true));
         let expected = native_variables(&source, FoldVariableRead::ExpressionFree);
         let mut actual = BTreeSet::new();

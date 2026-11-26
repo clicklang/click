@@ -243,7 +243,7 @@ enum StorageEvent {
 /// A pointer read is named by its read rather than spelled in the storage
 /// block it was read from; it is external exactly when that storage is, as
 /// the storage-block spelling of the same read was.
-pub(in crate::kernel) fn is_external_population_anchor(anchor: &crate::kernel::OldAddress) -> bool {
+pub(in crate::kernel) fn is_external_population_anchor(anchor: &crate::kernel::Address) -> bool {
     match &anchor.base {
         AddressBase::ExternalArgument => true,
         AddressBase::Load(load) => load.cell().base == AddressBase::ExternalArgument,
@@ -2037,7 +2037,7 @@ impl CreationEvents {
             AlgebraicValue::Program(ProgramValue::Pointer(pointer)) => {
                 let mut address = pointer.address().clone();
                 if let Some(offset) = address.offset.as_const() {
-                    address.offset = AddressOffset::constant(offset);
+                    address.set_offset(AddressOffset::constant(offset));
                 }
                 AlgebraicValue::Program(ProgramValue::pointer(address))
             }

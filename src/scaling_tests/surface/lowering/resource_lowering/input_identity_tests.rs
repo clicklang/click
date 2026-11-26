@@ -9,10 +9,10 @@ fn input_pointer_places_are_exact_and_do_not_scan_unrelated_functions() {
     let selected = input_scope("certificate-selected");
     let variable = input_pointer_variable(selected, 1).unwrap();
     let pointer = crate::kernel::OldPointer::new(
-        OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: scale_int32_offset(OldMachineTerm::Variable(variable), 4),
-        },
+        Address::new(
+            AddressBase::ExternalArgument,
+            scale_int32_offset(OldMachineTerm::Variable(variable), 4),
+        ),
         ProgramType::Int32Pointer,
     );
     INPUT_POINTER_PLACES.with(|places| {
@@ -25,10 +25,10 @@ fn input_pointer_places_are_exact_and_do_not_scan_unrelated_functions() {
             let scope = input_scope(&format!("certificate-unrelated-{index}"));
             let other = input_pointer_variable(scope, 0).unwrap();
             let mut value = pointer.clone();
-            value.replace_pointer(OldAddress {
-                base: AddressBase::ExternalArgument,
-                offset: scale_int32_offset(OldMachineTerm::Variable(other), 4),
-            });
+            value.replace_pointer(Address::new(
+                AddressBase::ExternalArgument,
+                scale_int32_offset(OldMachineTerm::Variable(other), 4),
+            ));
             INPUT_POINTER_PLACES.with(|places| {
                 places.borrow_mut().insert(other, (scope, 0, value));
             });
@@ -54,15 +54,15 @@ fn input_pointer_places_are_exact_and_do_not_scan_unrelated_functions() {
         Some(1)
     );
     let mut wrong_stride = pointer.clone();
-    wrong_stride.replace_pointer(OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: scale_int32_offset(OldMachineTerm::Variable(variable), 1),
-    });
+    wrong_stride.replace_pointer(Address::new(
+        AddressBase::ExternalArgument,
+        scale_int32_offset(OldMachineTerm::Variable(variable), 1),
+    ));
     assert_eq!(input_pointer_parameter(selected, &wrong_stride), None);
     let mut unknown = pointer;
-    unknown.replace_pointer(OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: scale_int32_offset(OldMachineTerm::Variable(Variable(999_999)), 4),
-    });
+    unknown.replace_pointer(Address::new(
+        AddressBase::ExternalArgument,
+        scale_int32_offset(OldMachineTerm::Variable(Variable(999_999)), 4),
+    ));
     assert_eq!(input_pointer_parameter(selected, &unknown), None);
 }

@@ -1,7 +1,7 @@
 use super::*;
 use crate::kernel::proof::PureFactStore;
 use crate::kernel::{
-    AddressOffset, LoadKind, OldAddress, ProgramValue, SymbolicMemory, intern_memory,
+    Address, AddressOffset, LoadKind, ProgramValue, SymbolicMemory, intern_memory,
 };
 
 fn loaded_fact(memory: &SharedMemory, binder: Variable, shared: bool) -> Proposition {
@@ -37,9 +37,9 @@ fn loaded_fact_of_format(
     };
     let read = OldMachineTerm::read_named(
         ProgramPoint::at(memory),
-        Box::new(OldAddress {
-            base: "loaded-quantifier".into(),
-            offset: match format {
+        Box::new(Address::new(
+            "loaded-quantifier".into(),
+            match format {
                 MachineIntegerType::Int32 => {
                     AddressOffset::scaled_int32_node(OldMachineTerm::Variable(binder), 4)
                 }
@@ -53,7 +53,7 @@ fn loaded_fact_of_format(
                 MachineIntegerType::UInt32 => AddressOffset::constant(0),
                 _ => unreachable!(),
             },
-        }),
+        )),
         LoadKind::Int32,
     );
     crate::kernel::quantifiers::test_forall(
@@ -85,10 +85,7 @@ fn loaded_quantifier_matches_shared_guard_but_keeps_exact_read_and_binder() {
         assert!(quantified_binder_equivalent(source, requested));
     }
     let changed_memory = intern_memory(memory.as_ref().clone().store(
-        OldAddress {
-            base: "loaded-quantifier".into(),
-            offset: AddressOffset::constant(0),
-        },
+        Address::new("loaded-quantifier".into(), AddressOffset::constant(0)),
         ProgramValue::Int32(OldMachineTerm::constant(7)),
     ));
     assert!(!quantified_binder_equivalent(
@@ -126,12 +123,12 @@ fn loaded_quantifier_matches_shared_guard_but_keeps_exact_read_and_binder() {
         };
         let (mut pointer, mut kind) = (pointer.address().clone(), *kind);
         match change {
-            3 => pointer.base = "other-block".into(),
+            3 => pointer.set_base("other-block".into()),
             4 => kind = LoadKind::UInt32,
-            5 => {
-                pointer.offset =
-                    AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(920_003)), 4)
-            }
+            5 => pointer.set_offset(AddressOffset::scaled_int32_node(
+                OldMachineTerm::Variable(Variable(920_003)),
+                4,
+            )),
             _ => {}
         }
         // A changed read is a new term, built by its constructor.
@@ -156,10 +153,7 @@ fn loaded_quantifier_shared_guard_does_not_rename_a_variable_inside_state() {
         SymbolicMemory::new()
             .with_block("loaded-quantifier", 64)
             .store(
-                OldAddress {
-                    base: "loaded-quantifier".into(),
-                    offset: AddressOffset::constant(0),
-                },
+                Address::new("loaded-quantifier".into(), AddressOffset::constant(0)),
                 ProgramValue::Int32(OldMachineTerm::Variable(Variable(920_001))),
             ),
     );
@@ -183,10 +177,7 @@ fn loaded_quantifier_native_guard_does_not_capture_a_variable_inside_state() {
                 SymbolicMemory::new()
                     .with_block("loaded-quantifier", 64)
                     .store(
-                        OldAddress {
-                            base: "loaded-quantifier".into(),
-                            offset: AddressOffset::constant(0),
-                        },
+                        Address::new("loaded-quantifier".into(), AddressOffset::constant(0)),
                         ProgramValue::Int32(OldMachineTerm::Variable(a)),
                     ),
             );
@@ -230,10 +221,7 @@ fn loaded_quantifier_matching_renames_both_state_binders_without_swapping_free_v
             SymbolicMemory::new()
                 .with_block("loaded-quantifier", 64)
                 .store(
-                    OldAddress {
-                        base: "loaded-quantifier".into(),
-                        offset: AddressOffset::constant(0),
-                    },
+                    Address::new("loaded-quantifier".into(), AddressOffset::constant(0)),
                     ProgramValue::Int32(OldMachineTerm::Variable(stored)),
                 ),
         );

@@ -5,19 +5,16 @@ use crate::kernel::assumptions::PointerDomain;
 fn an_opaque_candidate_does_not_walk_its_unusable_memory_frame() {
     let costs = [16u64, 64, 256, 1024].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
-        let field = OldAddress {
-            base: "opaque-frame".into(),
-            offset: AddressOffset::constant(0),
-        };
+        let field = Address::new("opaque-frame".into(), AddressOffset::constant(0));
         let base = SymbolicMemory::new();
-        let raw = OldAddress::symbolic(Variable(995_080));
+        let raw = Address::symbolic(Variable(995_080));
         let previous = OldPointer::new(
-            OldAddress::loaded_value(&intern_memory_ref(&base), &field),
+            Address::loaded_value(&intern_memory_ref(&base), &field),
             ProgramType::Int32Pointer,
         )
         .with_address(raw.clone());
         let alias = OldPointer::new(
-            OldAddress::symbolic(Variable(995_081)),
+            Address::symbolic(Variable(995_081)),
             ProgramType::Int32Pointer,
         );
         assert!(!alias.bounds_are_known());
@@ -31,7 +28,7 @@ fn an_opaque_candidate_does_not_walk_its_unusable_memory_frame() {
             );
         }
         let current = OldPointer::new(
-            OldAddress::loaded_value(&intern_memory_ref(&memory), &field),
+            Address::loaded_value(&intern_memory_ref(&memory), &field),
             ProgramType::Int32Pointer,
         )
         .with_address(raw);
@@ -51,7 +48,7 @@ fn provenance_misses_do_not_enumerate_direct_alias_stars() {
     let mut samples = Vec::new();
     for size in [8u64, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = |id| OldAddress::symbolic(Variable(963_000 + id));
+        let pointer = |id| Address::symbolic(Variable(963_000 + id));
         let value = |id| OldPointer::new(pointer(id), ProgramType::Int32Pointer);
         let mut facts = PureFactContext::new();
         for index in 1..=size {
@@ -82,10 +79,10 @@ fn framed_pointer_refusals_do_not_scan_same_address_sources() {
     let mut samples = Vec::new();
     for size in [8u64, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let field = OldAddress::symbolic(Variable(964_000));
-        let raw = OldAddress::symbolic(Variable(964_001));
+        let field = Address::symbolic(Variable(964_000));
+        let raw = Address::symbolic(Variable(964_001));
         let alias = OldPointer::new(
-            OldAddress::symbolic(Variable(964_002)),
+            Address::symbolic(Variable(964_002)),
             ProgramType::Int32Pointer,
         );
         let mut facts = PureFactContext::new();
@@ -95,7 +92,7 @@ fn framed_pointer_refusals_do_not_scan_same_address_sources() {
                 ProgramValue::UInt64(OldMachineTerm::uint64_constant(index)),
             );
             let source = OldPointer::new(
-                OldAddress::loaded_value(&intern_memory_ref(&memory), &field),
+                Address::loaded_value(&intern_memory_ref(&memory), &field),
                 ProgramType::Int32Pointer,
             )
             .with_address(raw.clone());
@@ -103,7 +100,7 @@ fn framed_pointer_refusals_do_not_scan_same_address_sources() {
                 .assume_condition(OldConditionTerm::pointer_equal(source, alias.clone()), true);
         }
         let current = OldPointer::new(
-            OldAddress::loaded_value(&intern_memory_ref(&SymbolicMemory::new()), &field),
+            Address::loaded_value(&intern_memory_ref(&SymbolicMemory::new()), &field),
             ProgramType::Int32Pointer,
         )
         .with_address(raw);

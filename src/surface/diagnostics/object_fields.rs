@@ -57,7 +57,9 @@ pub(crate) fn enter_ambient_object_fields(
         ..ObjectFields::default()
     };
     for aggregate in function.global_aggregates().values() {
-        let block = crate::kernel::SymbolicMemory::global_pointer(aggregate.kernel_name()).base;
+        let block = crate::kernel::SymbolicMemory::global_pointer(aggregate.kernel_name())
+            .base
+            .clone();
         let mut fields = Vec::new();
         collect_struct_fields(function, aggregate.layout(), "", 0, &mut fields, 0);
         objects.globals.insert(

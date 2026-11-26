@@ -49,13 +49,13 @@ pub struct CheckedExecutedScalarReferenceAccess<'a, 'e> {
 /// execution path. This is an execution record, not a borrow-recovery right.
 #[derive(Debug)]
 pub struct CheckedExecutedScalarReferenceEnd<'e> {
-    pointer: &'e crate::kernel::OldAddress,
+    pointer: &'e crate::kernel::Address,
     ending: crate::kernel::ExecutedReferenceAccess<'e>,
     execution: &'e crate::kernel::SymbolicExecution,
     path_index: usize,
 }
 impl CheckedExecutedScalarReferenceEnd<'_> {
-    pub fn address(&self) -> &crate::kernel::OldAddress {
+    pub fn address(&self) -> &crate::kernel::Address {
         self.pointer
     }
     pub fn execution(&self) -> &crate::kernel::SymbolicExecution {
@@ -64,7 +64,7 @@ impl CheckedExecutedScalarReferenceEnd<'_> {
     pub fn path_index(&self) -> usize {
         self.path_index
     }
-    pub fn ending_pointer(&self) -> &crate::kernel::OldAddress {
+    pub fn ending_pointer(&self) -> &crate::kernel::Address {
         self.ending.address()
     }
 }
@@ -72,7 +72,7 @@ impl CheckedExecutedScalarReferenceAccess<'_, '_> {
     pub fn source_access(&self) -> &CheckedScalarReferenceAccess<'_> {
         self.access
     }
-    pub fn address(&self) -> &crate::kernel::OldAddress {
+    pub fn address(&self) -> &crate::kernel::Address {
         self.event.address()
     }
     pub fn execution(&self) -> &crate::kernel::SymbolicExecution {
@@ -140,7 +140,7 @@ impl CheckedScalarReferenceEnd<'_> {
         use crate::kernel::ExecutedReferenceBoundary;
         #[derive(Default)]
         struct Candidate<'e> {
-            birth: Option<(&'e crate::kernel::OldAddress, usize)>,
+            birth: Option<(&'e crate::kernel::Address, usize)>,
             ending: Option<(crate::kernel::ExecutedReferenceAccess<'e>, usize)>,
             births: usize,
             endings: usize,
@@ -347,7 +347,7 @@ struct AccessCollector<'a, 'b> {
 }
 
 impl<'a> AccessCollector<'a, '_> {
-    // OldAddress computation does not read the addressed scalar. Operands used
+    // Address computation does not read the addressed scalar. Operands used
     // to compute an address (e.g. an index) still perform their normal reads.
     fn expression(
         &mut self,
@@ -1197,10 +1197,7 @@ mod tests {
         use crate::kernel::*;
         let (functions, _) =
             super::super::lowering::lower_with_identity(export, Some(identity)).unwrap();
-        let pointer = OldAddress {
-            base: "executed-child".into(),
-            offset: AddressOffset::constant(0),
-        };
+        let pointer = Address::new("executed-child".into(), AddressOffset::constant(0));
         let memory = SymbolicMemory::new()
             .with_block(pointer.base.clone(), if owned { 4 } else { 0 })
             .store(pointer.clone(), int32(4));
@@ -1280,10 +1277,10 @@ mod tests {
         for binding in bindings {
             assert_eq!(
                 binding.address(),
-                &crate::kernel::OldAddress {
-                    base: "executed-child".into(),
-                    offset: crate::kernel::AddressOffset::constant(0)
-                }
+                &crate::kernel::Address::new(
+                    "executed-child".into(),
+                    crate::kernel::AddressOffset::constant(0)
+                )
             );
             assert!(std::ptr::eq(binding.execution(), &execution));
             assert_eq!(binding.source_access().borrow_point(), point(0));

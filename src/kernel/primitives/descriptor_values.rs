@@ -775,7 +775,7 @@ mod protocol_value_tests {
 
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = OldPointer::new(
-            OldAddress::symbolic(Variable(998991)),
+            Address::symbolic(Variable(998991)),
             ProgramType::Int32Pointer,
         );
         let pointers = [CScalarClass::Int, CScalarClass::Char].map(|class| {
@@ -1014,7 +1014,7 @@ mod proposition_outcome_tests {
             KernelType::Program(ProgramType::Float32),
             Variable(10993662),
         );
-        let pointer = OldAddress::symbolic(Variable(10993663));
+        let pointer = Address::symbolic(Variable(10993663));
         let memory = SymbolicMemory::new().store_retained(pointer.clone(), root.clone().into());
         let exports = KernelTermExport::machine_export_count();
         let theorem = crate::kernel::prove_memory_load(memory, pointer);
@@ -1056,7 +1056,7 @@ mod loadable_count_tests {
                 let fact = Proposition::MemoryLoadable {
                     point: Default::default(),
                     memory: SymbolicMemory::new(),
-                    base: OldAddress::symbolic(Variable(10993682)),
+                    base: Address::symbolic(Variable(10993682)),
                     bytes: stored,
                     wide,
                 };
@@ -1140,7 +1140,7 @@ mod term_payload_contract_tests {
             assert_eq!(stored.into_native_compat(), *value);
         }
         let pointer = OldPointer::new(
-            OldAddress::symbolic(Variable(991701)),
+            Address::symbolic(Variable(991701)),
             ProgramType::Int32Pointer,
         );
         let values = [
@@ -1276,10 +1276,10 @@ mod term_payload_contract_tests {
                     AddressOffset::variable(Variable(991730 + index)),
                 );
             }
-            let value = ProgramValue::pointer(OldAddress {
-                base: AddressBase::Symbolic(Variable(991729)),
-                offset: offset,
-            });
+            let value = ProgramValue::pointer(Address::new(
+                AddressBase::Symbolic(Variable(991729)),
+                offset,
+            ));
             let ProgramValue::Pointer(pointer) = &value else {
                 unreachable!()
             };

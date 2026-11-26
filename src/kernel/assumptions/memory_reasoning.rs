@@ -90,7 +90,7 @@ fn authorized_access_element_length(byte_width: u32, element_width: u32) -> Opti
 /// widest scalar stands in where no typed load was ever seen. Over-stating a
 /// width can only shrink the set an exclusion rule calls separate, so the
 /// fallback is the safe direction.
-fn access_byte_width_for_separation(pointer: &OldAddress) -> u32 {
+fn access_byte_width_for_separation(pointer: &Address) -> u32 {
     crate::kernel::load_access_width_at_address_or_widest(pointer)
 }
 
@@ -224,14 +224,14 @@ impl PureFactContext {
     pub(crate) fn has_memory_read_defined_evidence(
         &self,
         memory: &SymbolicMemory,
-        pointer: &OldAddress,
+        pointer: &Address,
         value_type: ProgramType,
     ) -> bool {
         crate::instrumentation::record_deterministic_work(1);
         if self.memory_read_defined_facts.is_empty() {
             return false;
         }
-        let evidence_at = |candidate: &OldAddress| {
+        let evidence_at = |candidate: &Address| {
             let key = (
                 crate::kernel::api::canonicalize_pointer_loads(candidate),
                 value_type,
@@ -320,10 +320,7 @@ impl PureFactContext {
         }
         if let Some(coordinate) = self.equality_graph.canonical_pointer(pointer)
             && let Some(offset) = coordinate.offset.to_offset_term()
-            && evidence_at(&OldAddress {
-                base: coordinate.representative,
-                offset,
-            })
+            && evidence_at(&Address::new(coordinate.representative, offset))
         {
             return true;
         }
@@ -342,13 +339,13 @@ impl PureFactContext {
     pub(crate) fn proves_memory_read_defined(
         &self,
         memory: &SymbolicMemory,
-        pointer: &OldAddress,
+        pointer: &Address,
         value_type: ProgramType,
     ) -> bool {
         if self.has_memory_read_defined_evidence(memory, pointer, value_type) {
             return true;
         }
-        let initialized_cell = |address: &OldAddress| {
+        let initialized_cell = |address: &Address| {
             memory
                 .known_value(address)
                 .is_some_and(|value| value_type.read_cell(&value).is_some())
@@ -367,7 +364,7 @@ impl PureFactContext {
         // in a struct represented by 32-bit cells). Inspect only its selected
         // bytes, never the cache or memory history. Specification evaluation
         // below still checks the typed value, bounds, and lifetime.
-        let initialized_bytes = |address: &OldAddress| {
+        let initialized_bytes = |address: &Address| {
             let width = value_type.byte_width();
             if memory.has_initialized_bytes_at(address, width) {
                 return true;
@@ -390,10 +387,10 @@ impl PureFactContext {
             .equality_graph
             .canonical_pointer(pointer)
             .and_then(|coordinate| {
-                Some(OldAddress {
-                    base: coordinate.representative,
-                    offset: coordinate.offset.to_offset_term()?,
-                })
+                Some(Address::new(
+                    coordinate.representative,
+                    coordinate.offset.to_offset_term()?,
+                ))
             });
         if !initialized_bytes(pointer)
             && (storage == *pointer || !initialized_bytes(&storage))
@@ -453,7 +450,7 @@ impl PureFactContext {
     pub(crate) fn proves_memory_access(
         &self,
         memory: &SymbolicMemory,
-        pointer: &OldAddress,
+        pointer: &Address,
         byte_width: u32,
     ) -> bool {
         self.proves_memory_loadable(memory, pointer, &OldMachineTerm::constant(byte_width))
@@ -466,7 +463,7 @@ impl PureFactContext {
     pub(crate) fn proves_native_memory_loadable(
         &self,
         memory: &SymbolicMemory,
-        base: &OldAddress,
+        base: &Address,
         bytes: &OldMachineTerm,
     ) -> bool {
         // Exact evidence is an indexed lookup even when its address holds
@@ -570,10 +567,7 @@ impl PureFactContext {
                 continue;
             }
             seen.push(offset.clone());
-            let anchor = OldAddress {
-                base: base.base.clone(),
-                offset,
-            };
+            let anchor = base.with_offset(offset);
             if self
                 .memory_loadable_exact_candidates_for_base(&anchor)
                 .any(|fact| self.native_loadable_subrange_from(fact, memory, base, bytes))
@@ -597,7 +591,7 @@ impl PureFactContext {
         &self,
         fact: &Proposition,
         memory: &SymbolicMemory,
-        base: &OldAddress,
+        base: &Address,
         bytes: &OldMachineTerm,
     ) -> bool {
         crate::instrumentation::record_deterministic_work(1);
@@ -682,7 +676,7 @@ impl PureFactContext {
     pub(crate) fn proves_memory_loadable(
         &self,
         memory: &SymbolicMemory,
-        base: &OldAddress,
+        base: &Address,
         bytes: &OldMachineTerm,
     ) -> bool {
         // The loadable prover is the one consumer of the extended DAG
@@ -711,7 +705,7 @@ impl PureFactContext {
     fn proves_memory_loadable_inner(
         &self,
         memory: &SymbolicMemory,
-        base: &OldAddress,
+        base: &Address,
         bytes: &OldMachineTerm,
     ) -> bool {
         // Exact evidence is an indexed lookup even when its address holds
@@ -869,10 +863,10 @@ impl PureFactContext {
     pub(crate) fn adjacent_loadable_region_facts(
         &self,
         memory: &SymbolicMemory,
-        base: &OldAddress,
+        base: &Address,
         bytes: &OldMachineTerm,
     ) -> Option<Vec<Proposition>> {
-        let compatible = |fact_memory: &SymbolicMemory, fact_base: &OldAddress| {
+        let compatible = |fact_memory: &SymbolicMemory, fact_base: &Address| {
             fact_memory == memory
                 // Stores change cell contents, not whether the surrounding
                 // stack blocks or heap allocations are live. Pointer terms
@@ -926,7 +920,7 @@ impl PureFactContext {
             .collect::<Vec<_>>();
         // A materialized cell is selected at the requested address, never
         // by enumerating the memory's unrelated cells, runs or union fields.
-        let cell_region = |pointer: &OldAddress| {
+        let cell_region = |pointer: &Address| {
             memory
                 .cells
                 .contiguous_bytes_at(pointer)
@@ -1073,7 +1067,7 @@ impl PureFactContext {
     pub(crate) fn proves_memory_loadable_for_memory_resolution(
         &self,
         memory: &SymbolicMemory,
-        base: &OldAddress,
+        base: &Address,
         bytes: &OldMachineTerm,
     ) -> bool {
         // Exact evidence is an indexed lookup even when its address holds
@@ -1157,8 +1151,8 @@ impl PureFactContext {
     fn string_literal_loadable_span<'m>(
         &self,
         memory: &'m SymbolicMemory,
-        base: &OldAddress,
-    ) -> Option<(OldAddress, &'m OldMachineTerm)> {
+        base: &Address,
+    ) -> Option<(Address, &'m OldMachineTerm)> {
         let block = if matches!(base.base, AddressBase::StringLiteral { .. }) {
             base.base.clone()
         } else {
@@ -1172,10 +1166,7 @@ impl PureFactContext {
             .get(&block)
             .filter(|entry| entry.is_read_only())?;
         Some((
-            OldAddress {
-                base: block,
-                offset: AddressOffset::constant(0),
-            },
+            Address::new(block, AddressOffset::constant(0)),
             extent.size(),
         ))
     }
@@ -1215,7 +1206,7 @@ impl PureFactContext {
     /// refer to those terms, not to a reassociated affine difference. Equality
     /// can replace an exact selected address; otherwise only a different block
     /// needs the indexed coordinate projection.
-    fn loadable_query_at_source(&self, query: &OldAddress, source: &OldAddress) -> OldAddress {
+    fn loadable_query_at_source(&self, query: &Address, source: &Address) -> Address {
         if self.pointers_known_equal(query, source) {
             source.clone()
         } else if query.base == source.base {
@@ -1231,9 +1222,9 @@ impl PureFactContext {
     /// state before comparing its base and 32-bit byte span.
     fn same_base_and_loadable_span_match(
         &self,
-        range_base: &OldAddress,
+        range_base: &Address,
         range_bytes: &OldMachineTerm,
-        base: &OldAddress,
+        base: &Address,
         bytes: &OldMachineTerm,
     ) -> bool {
         range_base == base
@@ -1249,9 +1240,9 @@ impl PureFactContext {
 
     fn proves_loadable_region_from_structural_range(
         &self,
-        range_base: &OldAddress,
+        range_base: &Address,
         range_bytes: &OldMachineTerm,
-        base: &OldAddress,
+        base: &Address,
         bytes: &OldMachineTerm,
     ) -> bool {
         if base.blocks_proven_distinct(range_base) {
@@ -1420,9 +1411,9 @@ impl PureFactContext {
     /// `mdtests/wrapped_viewable_span_is_not_a_cell.md`, quarantined.
     fn proves_loadable_subrange_by_element_endpoints(
         &self,
-        range_base: &OldAddress,
+        range_base: &Address,
         range_bytes: &OldMachineTerm,
-        base: &OldAddress,
+        base: &Address,
         bytes: &OldMachineTerm,
     ) -> bool {
         if crate::kernel::assumptions::reasoning_interrupted() {
@@ -1711,9 +1702,9 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn proves_loadable_region_from_range(
         &self,
-        range_base: &OldAddress,
+        range_base: &Address,
         range_bytes: &OldMachineTerm,
-        base: &OldAddress,
+        base: &Address,
         bytes: &OldMachineTerm,
     ) -> bool {
         if self.same_base_and_loadable_span_match(range_base, range_bytes, base, bytes) {
@@ -1745,7 +1736,7 @@ impl PureFactContext {
     pub(in crate::kernel) fn proves_access_from_memory_block(
         &self,
         memory: &SymbolicMemory,
-        pointer: &OldAddress,
+        pointer: &Address,
         byte_width: u32,
     ) -> bool {
         // The region proof compares 32-bit sizes.
@@ -1756,10 +1747,7 @@ impl PureFactContext {
         else {
             return false;
         };
-        let base = OldAddress {
-            base: pointer.base.clone(),
-            offset: AddressOffset::constant(0),
-        };
+        let base = pointer.with_offset(AddressOffset::constant(0));
         self.proves_loadable_cell_from_region(&base, bytes, pointer, byte_width)
     }
 
@@ -1768,9 +1756,9 @@ impl PureFactContext {
     /// potentially wrapped byte-offset sum.
     pub(in crate::kernel) fn proves_loadable_cell_from_region_elements(
         &self,
-        base: &OldAddress,
+        base: &Address,
         bytes: &OldMachineTerm,
-        pointer: &OldAddress,
+        pointer: &Address,
         byte_width: u32,
     ) -> bool {
         if crate::kernel::assumptions::reasoning_interrupted() {
@@ -1848,9 +1836,9 @@ impl PureFactContext {
     /// scalar rules do.
     fn proves_cell_within_strided_region(
         &self,
-        base: &OldAddress,
+        base: &Address,
         bytes: &OldMachineTerm,
-        pointer: &OldAddress,
+        pointer: &Address,
         byte_width: u32,
         holds: &dyn Fn(MachineOperandView<'_>, MachineOperandView<'_>, bool) -> bool,
     ) -> bool {
@@ -1917,14 +1905,8 @@ impl PureFactContext {
             .map(|(_, term)| (*term).clone())
             .reduce(AddressOffset::add)
             .unwrap_or(AddressOffset::constant(0));
-        let element = OldAddress {
-            base: base.base.clone(),
-            offset: AddressOffset::constant(0),
-        };
-        let within = OldAddress {
-            base: base.base.clone(),
-            offset: rest,
-        };
+        let element = base.with_offset(AddressOffset::constant(0));
+        let within = base.with_offset(rest);
         self.proves_loadable_cell_from_region(
             &element,
             &OldMachineTerm::constant(stride),
@@ -1935,9 +1917,9 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn proves_loadable_cell_from_region(
         &self,
-        base: &OldAddress,
+        base: &Address,
         bytes: &OldMachineTerm,
-        pointer: &OldAddress,
+        pointer: &Address,
         byte_width: u32,
     ) -> bool {
         if crate::kernel::assumptions::reasoning_interrupted() {
@@ -1985,7 +1967,7 @@ impl PureFactContext {
     /// every owned object in the function for each cell.
     pub(in crate::kernel) fn owned_store_footprint(
         &self,
-        write: &OldAddress,
+        write: &Address,
         bytes: impl Into<AccessExtent>,
     ) -> OwnedStoreFootprint<'_> {
         let bytes = bytes.into();
@@ -2012,7 +1994,7 @@ impl PureFactContext {
     fn store_members_in<'a>(
         &self,
         compositions: impl IntoIterator<Item = &'a ResourceContext>,
-        spellings: &[(OldAddress, OldAddress)],
+        spellings: &[(Address, Address)],
         bytes: AccessExtent,
     ) -> OwnedStoreMembers<'a> {
         let mut members = Vec::new();
@@ -2038,7 +2020,7 @@ impl PureFactContext {
     /// Only bases written in the access itself. Derive separation under a
     /// different spelling explicitly and transport the needed read across the
     /// store; automatic ownership lookup never enumerates pointer aliases.
-    fn written_base_spellings(&self, pointer: &OldAddress) -> Vec<(OldAddress, OldAddress)> {
+    fn written_base_spellings(&self, pointer: &Address) -> Vec<(Address, Address)> {
         additive_base_spellings(pointer)
             .into_iter()
             .map(|base| {
@@ -2052,9 +2034,9 @@ impl PureFactContext {
     /// and accesses needing facts stay on the ordinary store ladder.
     pub(in crate::kernel) fn parameter_store_partition(
         &self,
-        write: &OldAddress,
+        write: &Address,
         bytes: u32,
-    ) -> Option<(&ResourceContext, OldAddress)> {
+    ) -> Option<(&ResourceContext, Address)> {
         if self
             .equality_graph
             .offset_has_source_dependencies(&write.offset)
@@ -2085,10 +2067,10 @@ impl PureFactContext {
     /// a direct parameter spelling and the same whole element checked there.
     pub(in crate::kernel) fn checked_parameter_store_partition(
         &self,
-        write: &OldAddress,
+        write: &Address,
         bytes: u32,
         authorized: &MemoryRange,
-    ) -> Option<(&ResourceContext, OldAddress)> {
+    ) -> Option<(&ResourceContext, Address)> {
         let OffsetView::Add(anchor, displacement) = write.offset.view() else {
             return None;
         };
@@ -2115,7 +2097,7 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn parameter_store_numeric_connectivity(
         &self,
-        base: Option<&OldAddress>,
+        base: Option<&Address>,
     ) -> Option<&crate::kernel::equality_graph::NumericAddressConnectivity> {
         self.equality_graph
             .parameter_store_numeric_connectivity(base)
@@ -2126,8 +2108,8 @@ impl PureFactContext {
     /// block's entire class. Same-block and scalar alias premises fall back.
     pub(in crate::kernel) fn parameter_store_alias_bases(
         &self,
-        base: &OldAddress,
-    ) -> Option<BTreeSet<OldAddress>> {
+        base: &Address,
+    ) -> Option<BTreeSet<Address>> {
         self.equality_graph.parameter_store_alias_bases(base)
     }
 
@@ -2135,8 +2117,8 @@ impl PureFactContext {
     /// A connection requires a byte-level check before retaining a cached value.
     pub(in crate::kernel) fn addresses_numerically_connected(
         &self,
-        left: &OldAddress,
-        right: &OldAddress,
+        left: &Address,
+        right: &Address,
     ) -> bool {
         self.equality_graph
             .addresses_numerically_connected(left, right)
@@ -2145,9 +2127,9 @@ impl PureFactContext {
     pub(in crate::kernel) fn parameter_partition_cell_base(
         &self,
         resources: &ResourceContext,
-        pointer: &OldAddress,
+        pointer: &Address,
         bytes: u32,
-    ) -> Option<OldAddress> {
+    ) -> Option<Address> {
         additive_base_spellings(pointer)
             .iter()
             .find_map(|written_base| {
@@ -2178,8 +2160,8 @@ impl PureFactContext {
     pub(in crate::kernel) fn access_owned_apart_from_store<'a>(
         &'a self,
         footprint: &OwnedStoreFootprint<'a>,
-        write: &OldAddress,
-        pointer: &OldAddress,
+        write: &Address,
+        pointer: &Address,
         bytes: impl Into<AccessExtent>,
     ) -> bool {
         let bytes = bytes.into();
@@ -2257,7 +2239,7 @@ impl PureFactContext {
     /// covers `[access, access + sizeof(T))`, empty or not.
     pub(in crate::kernel) fn access_held_by_range(
         &self,
-        access: &OldAddress,
+        access: &Address,
         extent: AccessExtent,
         range: &MemoryRange,
     ) -> bool {
@@ -2286,7 +2268,7 @@ impl PureFactContext {
     pub(in crate::kernel) fn access_held_by_owned_member(
         &self,
         resources: &ResourceContext,
-        pointer: &OldAddress,
+        pointer: &Address,
         bytes: u32,
     ) -> bool {
         self.owned_member_holding_access(resources, pointer, bytes)
@@ -2299,7 +2281,7 @@ impl PureFactContext {
     pub(in crate::kernel) fn owned_member_holding_access<'a>(
         &self,
         resources: &'a ResourceContext,
-        pointer: &OldAddress,
+        pointer: &Address,
         bytes: u32,
     ) -> Option<&'a MemoryRange> {
         additive_base_spellings(pointer).iter().find_map(|base| {
@@ -2315,7 +2297,7 @@ impl PureFactContext {
     pub(in crate::kernel) fn readable_member_holding_access<'a>(
         &self,
         resources: &'a ResourceContext,
-        pointer: &OldAddress,
+        pointer: &Address,
         bytes: u32,
     ) -> Option<&'a MemoryRange> {
         additive_base_spellings(pointer).iter().find_map(|base| {
@@ -2337,7 +2319,7 @@ impl PureFactContext {
         &self,
         ranges: &'a ResourceContext,
         placement: impl FnOnce() -> Option<PureFactContext>,
-        pointer: &OldAddress,
+        pointer: &Address,
         bytes: u32,
     ) -> Option<&'a MemoryRange> {
         self.kept_memory_range_holding_access(ranges, placement, pointer, bytes, false)
@@ -2348,7 +2330,7 @@ impl PureFactContext {
         &self,
         ranges: &'a ResourceContext,
         placement: impl FnOnce() -> Option<PureFactContext>,
-        pointer: &OldAddress,
+        pointer: &Address,
         bytes: u32,
     ) -> Option<&'a MemoryRange> {
         self.kept_memory_range_holding_access(ranges, placement, pointer, bytes, true)
@@ -2358,7 +2340,7 @@ impl PureFactContext {
         &self,
         ranges: &'a ResourceContext,
         placement: impl FnOnce() -> Option<PureFactContext>,
-        pointer: &OldAddress,
+        pointer: &Address,
         bytes: u32,
         include_views: bool,
     ) -> Option<&'a MemoryRange> {
@@ -2400,10 +2382,7 @@ impl PureFactContext {
 
     /// Bounded raw keys for kept frame queries, including the storage and
     /// class representatives when the address does not name an opaque read.
-    pub(in crate::kernel) fn kept_frame_address_keys(
-        &self,
-        pointer: &OldAddress,
-    ) -> Vec<OldAddress> {
+    pub(in crate::kernel) fn kept_frame_address_keys(&self, pointer: &Address) -> Vec<Address> {
         let mut keys = Vec::new();
         for base in additive_base_spellings(pointer) {
             crate::instrumentation::record_deterministic_work(1);
@@ -2416,10 +2395,7 @@ impl PureFactContext {
                 if let Some(coordinate) = self.equality_graph.canonical_pointer(&base)
                     && let Some(offset) = coordinate.offset.to_offset_term()
                 {
-                    keys.push(OldAddress {
-                        base: coordinate.representative,
-                        offset,
-                    });
+                    keys.push(Address::new(coordinate.representative, offset));
                 }
             }
             if let Some(alias) = self.equality_graph.unique_exact_pointer_alias(&base) {
@@ -2435,7 +2411,7 @@ impl PureFactContext {
     pub(in crate::kernel) fn kept_range_holds_access(
         &self,
         range: &MemoryRange,
-        pointer: &OldAddress,
+        pointer: &Address,
         bytes: u32,
     ) -> bool {
         // A range with holes holds only its other fields, by the field rules.
@@ -2457,7 +2433,7 @@ impl PureFactContext {
         if range.wide_bounds().is_some() {
             return false;
         }
-        let contains = |pointer: &OldAddress| {
+        let contains = |pointer: &Address| {
             self.pointer_in_range_with_width(
                 pointer,
                 range.base(),
@@ -2513,7 +2489,7 @@ impl PureFactContext {
     /// decision to the caller's full ladder.
     fn access_within_memory_range(
         &self,
-        pointer: &OldAddress,
+        pointer: &Address,
         bytes: u32,
         range: &MemoryRange,
     ) -> bool {
@@ -2528,7 +2504,7 @@ impl PureFactContext {
         if width == 0 {
             return false;
         }
-        let contains = |pointer: &OldAddress| {
+        let contains = |pointer: &Address| {
             structural_element_index(pointer, range.base(), width, self).is_some_and(|index| {
                 self.proves_range_bound(index_comparison(
                     CompareRelation::LessEqual,
@@ -2551,13 +2527,13 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn pointers_proven_disjoint_by_shallow_explicit_range(
         &self,
-        left: &OldAddress,
-        right: &OldAddress,
+        left: &Address,
+        right: &Address,
     ) -> bool {
         if self.pointers_proven_equal_ignoring_memory_separation(left, right) {
             return false;
         }
-        let contains = |pointer: &OldAddress, range: &MemoryRange| {
+        let contains = |pointer: &Address, range: &MemoryRange| {
             // A wide range has its one membership rule.
             if range.wide_bounds().is_some() {
                 return self.pointer_access_in_wide_range(pointer, range.element_width(), range);
@@ -2610,8 +2586,8 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn pointer_in_range_by_shallow_fact_graph_with_width(
         &self,
-        pointer: &OldAddress,
-        base: &OldAddress,
+        pointer: &Address,
+        base: &Address,
         start: &OldMachineTerm,
         end: &OldMachineTerm,
         element_width: u32,
@@ -2675,7 +2651,7 @@ impl PureFactContext {
     /// it accepts only an exact base-offset alias and the two exact range
     /// bounds, so a named separation candidate does not need recursive
     /// memory resolution merely because its member index is symbolic.
-    fn pointer_in_range_by_exact_facts(&self, pointer: &OldAddress, range: &MemoryRange) -> bool {
+    fn pointer_in_range_by_exact_facts(&self, pointer: &Address, range: &MemoryRange) -> bool {
         if pointer_in_memory_range_shallow_with_facts(pointer, range, self) {
             return true;
         }
@@ -2722,8 +2698,8 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn pointers_proven_disjoint_by_explicit_range_for_memory_resolution(
         &self,
-        left: &OldAddress,
-        right: &OldAddress,
+        left: &Address,
+        right: &Address,
     ) -> bool {
         if self.pointers_proven_equal_ignoring_memory_separation(left, right) {
             return false;
@@ -2743,7 +2719,7 @@ impl PureFactContext {
         };
         // The same law asked of each held composition, with a phase's own
         // membership relation: two owned members, one holding each pointer.
-        let composition_candidate = |contains: &dyn Fn(&OldAddress, &MemoryRange) -> bool| {
+        let composition_candidate = |contains: &dyn Fn(&Address, &MemoryRange) -> bool| {
             let found = self.composition_separated_members(
                 left,
                 right,
@@ -3106,8 +3082,8 @@ impl PureFactContext {
 
     fn pointer_element_index_from_base_with_width(
         &self,
-        pointer: &OldAddress,
-        base: &OldAddress,
+        pointer: &Address,
+        base: &Address,
         byte_width: u32,
     ) -> Option<SharedMachineIntegerTerm> {
         let pointer = &self.pointer_in_block(pointer, &base.base)?;
@@ -3178,8 +3154,8 @@ impl PureFactContext {
 
     fn pointer_element_index_from_base_for_memory_resolution(
         &self,
-        pointer: &OldAddress,
-        base: &OldAddress,
+        pointer: &Address,
+        base: &Address,
         byte_width: u32,
     ) -> Option<SharedMachineIntegerTerm> {
         #[cfg(test)]
@@ -3251,8 +3227,8 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn pointer_in_range_with_width(
         &self,
-        pointer: &OldAddress,
-        base: &OldAddress,
+        pointer: &Address,
+        base: &Address,
         start: &OldMachineTerm,
         end: &OldMachineTerm,
         element_width: u32,
@@ -3447,13 +3423,13 @@ impl PureFactContext {
         false
     }
 
-    /// OldAddress equality from the path facts, intentionally before consulting
+    /// Address equality from the path facts, intentionally before consulting
     /// any resource-separation premise. A stale separation must not veto the
     /// equality that makes that same premise invalid.
     pub(in crate::kernel) fn pointers_proven_equal_ignoring_memory_separation(
         &self,
-        left: &OldAddress,
-        right: &OldAddress,
+        left: &Address,
+        right: &Address,
     ) -> bool {
         if left == right {
             return true;
@@ -3482,9 +3458,9 @@ impl PureFactContext {
     /// origin, ownership, or permission to either operand.
     pub(in crate::kernel) fn numeric_access_byte_overlap(
         &self,
-        left: &OldAddress,
+        left: &Address,
         left_bytes: u32,
-        right: &OldAddress,
+        right: &Address,
         right_bytes: u32,
     ) -> Option<crate::kernel::reasoning::AccessByteOverlap> {
         if !self.equality_graph.has_wide_pointer_sources() {
@@ -3580,7 +3556,7 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn pointer_overlaps_range_after_path_equality(
         &self,
-        pointer: &OldAddress,
+        pointer: &Address,
         range: &MemoryRange,
     ) -> bool {
         if pointer_in_memory_range_shallow_with_facts(pointer, range, self) {
@@ -3614,10 +3590,7 @@ impl PureFactContext {
             return false;
         }
         let element = displacement / width;
-        let object = OldAddress {
-            base: pointer.base.clone(),
-            offset: object.clone(),
-        };
+        let object = pointer.with_offset(object.clone());
         start <= element
             && element < end
             && self.pointers_proven_equal_ignoring_memory_separation(&object, range.base())
@@ -3642,12 +3615,12 @@ impl PureFactContext {
     /// their signed Click meaning and are widened before multiplying widths.
     pub(in crate::kernel) fn proves_stated_byte_separation(
         &self,
-        left: &OldAddress,
+        left: &Address,
         left_bytes: u32,
-        right: &OldAddress,
+        right: &Address,
         right_bytes: u32,
     ) -> bool {
-        let covers = |fact: &MemoryRange, base: &OldAddress, bytes: u32| {
+        let covers = |fact: &MemoryRange, base: &Address, bytes: u32| {
             let Some(delta) = fact
                 .base()
                 .exact_element_delta_from_base(base, 1, Some(self))
@@ -3789,7 +3762,7 @@ impl PureFactContext {
         }
         // Separation is a claim about bytes, so a range may be spelled at the
         // coordinate its base is proven equal to: the argument block or a
-        // storage block its class has, where held ranges are spelled. OldAddress
+        // storage block its class has, where held ranges are spelled. Address
         // equality decides bytes; it grants no access, which ownership
         // coverage checks separately.
         if let (Resource::Memory(left_range), Resource::Memory(right_range)) = (left, right) {
@@ -3820,10 +3793,10 @@ impl PureFactContext {
                 {
                     return None;
                 }
-                let base = OldAddress {
-                    base: coordinate.representative,
-                    offset: coordinate.offset.to_offset_term()?,
-                };
+                let base = Address::new(
+                    coordinate.representative,
+                    coordinate.offset.to_offset_term()?,
+                );
                 let (start, end) = range.bound_terms();
                 Some(range.with_bounds(base, start.clone(), end.clone()))
             };
@@ -4130,7 +4103,7 @@ impl PureFactContext {
                     add(range.base().base.clone());
                     for pointer in [range.base().clone(), range.start_pointer()] {
                         for (alias, _) in self.pointer_equality_component(&pointer) {
-                            add(alias.base);
+                            add(alias.base.clone());
                         }
                     }
                 };
@@ -4302,11 +4275,7 @@ impl PureFactContext {
             && self.bitvector_terms_equal_for_fact_transport(&left_length, &right_length)
     }
 
-    fn pointers_proven_equal_for_fact_transport(
-        &self,
-        left: &OldAddress,
-        right: &OldAddress,
-    ) -> bool {
+    fn pointers_proven_equal_for_fact_transport(&self, left: &Address, right: &Address) -> bool {
         if pointers_proven_equal_by_reasoning(left, right, self) {
             return true;
         }
@@ -4392,7 +4361,7 @@ impl PureFactContext {
         // `other`'s, each with its exact aliases, and those with a non-memory
         // side, which may contain `other` through a composite body: the
         // block-pair index and its residue.
-        let blocks = |base: &OldAddress| {
+        let blocks = |base: &Address| {
             let mut blocks = vec![base.base.clone()];
             for alias in self.exact_pointer_aliases(base) {
                 if !blocks.contains(&alias.base) {
@@ -4455,7 +4424,7 @@ impl PureFactContext {
     fn fact_range_interval_on_target(
         &self,
         target: &MemoryRange,
-        base: &OldAddress,
+        base: &Address,
         start: &OldMachineTerm,
         end: &OldMachineTerm,
     ) -> Option<(i64, i64)> {
@@ -4523,7 +4492,7 @@ impl PureFactContext {
 
     /// The unsigned 64-bit element index of an access at `pointer` from
     /// `base`. Beside the exact wide forms
-    /// ([`OldAddress::shared_wide_element_index_from_base`]), an offset already
+    /// ([`Address::shared_wide_element_index_from_base`]), an offset already
     /// rewritten to a signed 32-bit index is read back: `(int32)i` scaled,
     /// or `(int32)i + c`, is the offset of `i` or `i + c` when that 64-bit
     /// value is decided to be at most `INT_MAX`, since truncation commutes
@@ -4531,8 +4500,8 @@ impl PureFactContext {
     /// index is read as its sign extension.
     pub(in crate::kernel) fn shared_wide_element_index_of_access(
         &self,
-        pointer: &OldAddress,
-        base: &OldAddress,
+        pointer: &Address,
+        base: &Address,
         element_width: u32,
     ) -> Option<SharedMachineIntegerTerm> {
         let literal = |value| {
@@ -4663,7 +4632,7 @@ impl PureFactContext {
     /// spans remain non-wrapping; a low-word index supplies no separation.
     fn pointer_access_outside_wide_range(
         &self,
-        pointer: &OldAddress,
+        pointer: &Address,
         bytes: u32,
         range: &MemoryRange,
     ) -> bool {
@@ -4717,7 +4686,7 @@ impl PureFactContext {
     /// accesses, and fields of a struct-array byte range.
     pub(in crate::kernel) fn pointer_access_in_held_range(
         &self,
-        pointer: &OldAddress,
+        pointer: &Address,
         byte_width: u32,
         range: &MemoryRange,
     ) -> bool {
@@ -4758,7 +4727,7 @@ impl PureFactContext {
     /// [`wide_index_bound_conditions`]: crate::kernel::reasoning::wide_index_bound_conditions
     pub(in crate::kernel) fn field_access_in_wide_struct_array(
         &self,
-        pointer: &OldAddress,
+        pointer: &Address,
         byte_width: u32,
         range: &MemoryRange,
     ) -> bool {
@@ -4774,7 +4743,7 @@ impl PureFactContext {
     /// `i < m`. The bound `m <= i64::MAX / k` is decided as for an access.
     pub(in crate::kernel) fn position_in_wide_struct_array(
         &self,
-        pointer: &OldAddress,
+        pointer: &Address,
         range: &MemoryRange,
     ) -> bool {
         self.place_in_wide_struct_array(pointer, 0, range)
@@ -4784,7 +4753,7 @@ impl PureFactContext {
     /// position, inside one struct of a wide struct array.
     fn place_in_wide_struct_array(
         &self,
-        pointer: &OldAddress,
+        pointer: &Address,
         byte_width: u32,
         range: &MemoryRange,
     ) -> bool {
@@ -4857,7 +4826,7 @@ impl PureFactContext {
     /// bound takes part.
     pub(in crate::kernel) fn pointer_access_in_wide_range(
         &self,
-        pointer: &OldAddress,
+        pointer: &Address,
         byte_width: u32,
         range: &MemoryRange,
     ) -> bool {
@@ -4963,7 +4932,7 @@ impl PureFactContext {
     /// Check an access in the range's declared index domain.
     pub(in crate::kernel) fn pointer_access_in_memory_range(
         &self,
-        pointer: &OldAddress,
+        pointer: &Address,
         bytes: u32,
         range: &MemoryRange,
     ) -> bool {
@@ -4985,7 +4954,7 @@ impl PureFactContext {
     pub(in crate::kernel) fn opaque_pointer_covers(
         &self,
         value: &OldPointer,
-        position: &OldAddress,
+        position: &Address,
         bytes: u32,
     ) -> bool {
         let Some(origin) = value.bounds_owner() else {
@@ -4998,9 +4967,9 @@ impl PureFactContext {
     /// `bytes` at `position`, for a pointer at `address` in that domain.
     pub(in crate::kernel) fn opaque_domain_covers(
         &self,
-        origin: &OldAddress,
-        address: &OldAddress,
-        position: &OldAddress,
+        origin: &Address,
+        address: &Address,
+        position: &Address,
         bytes: u32,
     ) -> bool {
         self.equality_graph
@@ -5043,7 +5012,7 @@ impl PureFactContext {
                     contains(position) && (bytes == 0 || contains(&position.offset_by_bytes(bytes)))
                 } else {
                     SubobjectBounds::covered_range(fact).is_some_and(|(from, count, width)| {
-                        let contains = |position: &OldAddress, bytes| {
+                        let contains = |position: &Address, bytes| {
                             self.pointer_access_in_range(
                                 position,
                                 bytes,
@@ -5072,9 +5041,9 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn pointer_access_in_range(
         &self,
-        pointer: &OldAddress,
+        pointer: &Address,
         byte_width: u32,
-        base: &OldAddress,
+        base: &Address,
         start: &OldMachineTerm,
         end: &OldMachineTerm,
         element_width: u32,
@@ -5290,7 +5259,7 @@ impl PureFactContext {
     pub(in crate::kernel) fn ranges_proven_disjoint_from_pointer(
         &self,
         ranges: &[MemoryRange],
-        pointer: &OldAddress,
+        pointer: &Address,
     ) -> bool {
         // A range the pointer is decided to lie in is never separate from
         // it; find one before any range's separation search runs, since
@@ -5304,7 +5273,7 @@ impl PureFactContext {
     /// Whether the pointer is decided to lie inside one of `ranges` by the
     /// cheap overlap rules of [`Self::pointer_overlaps_range_after_path_equality`].
     /// Linear in the ranges, with no separation search.
-    fn pointer_overlaps_one_of_ranges(&self, ranges: &[MemoryRange], pointer: &OldAddress) -> bool {
+    fn pointer_overlaps_one_of_ranges(&self, ranges: &[MemoryRange], pointer: &Address) -> bool {
         ranges.iter().any(|range| {
             !range.base.blocks_proven_distinct(pointer)
                 && self.pointer_overlaps_range_after_path_equality(pointer, range)
@@ -5314,7 +5283,7 @@ impl PureFactContext {
     pub(in crate::kernel) fn ranges_directly_disjoint_from_pointer(
         &self,
         ranges: &[MemoryRange],
-        pointer: &OldAddress,
+        pointer: &Address,
     ) -> bool {
         self.ranges_directly_disjoint_from_access(
             ranges,
@@ -5330,7 +5299,7 @@ impl PureFactContext {
     pub(in crate::kernel) fn ranges_directly_disjoint_from_access(
         &self,
         ranges: &[MemoryRange],
-        pointer: &OldAddress,
+        pointer: &Address,
         byte_width: u32,
     ) -> bool {
         ranges.iter().all(|range| {
@@ -5483,8 +5452,8 @@ impl PureFactContext {
 
     fn direct_pointer_element_index_from_base_with_width(
         &self,
-        pointer: &OldAddress,
-        base: &OldAddress,
+        pointer: &Address,
+        base: &Address,
         element_width: u32,
     ) -> Option<SharedMachineIntegerTerm> {
         let pointer = &self.pointer_in_block(pointer, &base.base)?;
@@ -5514,8 +5483,8 @@ impl PureFactContext {
     /// [`crate::kernel::reasoning::ExactElementDelta`].
     fn direct_pointer_exact_element_delta_from_base_with_width(
         &self,
-        pointer: &OldAddress,
-        base: &OldAddress,
+        pointer: &Address,
+        base: &Address,
         element_width: u32,
     ) -> Option<ExactElementDelta> {
         let pointer = &self.pointer_in_block(pointer, &base.base)?;
@@ -5533,7 +5502,7 @@ impl PureFactContext {
         pointer.exact_element_delta_from_base(base, element_width, Some(self))
     }
 
-    fn pointer_directly_in_memory_range(&self, pointer: &OldAddress, range: &MemoryRange) -> bool {
+    fn pointer_directly_in_memory_range(&self, pointer: &Address, range: &MemoryRange) -> bool {
         // A wide range has its one membership rule.
         if range.wide_bounds().is_some() {
             return self.pointer_access_in_wide_range(pointer, range.element_width(), range);
@@ -5583,11 +5552,7 @@ impl PureFactContext {
     /// segments this answers for are the ones whose addresses do not depend
     /// on field values, and a body that needs a live state simply does
     /// not expand here.
-    fn range_proven_disjoint_from_pointer(
-        &self,
-        range: &MemoryRange,
-        pointer: &OldAddress,
-    ) -> bool {
+    fn range_proven_disjoint_from_pointer(&self, range: &MemoryRange, pointer: &Address) -> bool {
         if range.base.blocks_proven_distinct(pointer) {
             return true;
         }
@@ -5775,7 +5740,7 @@ impl PureFactContext {
     pub(in crate::kernel) fn range_covered_by_fact_range(
         &self,
         range: &MemoryRange,
-        base: &OldAddress,
+        base: &Address,
         start: &OldMachineTerm,
         end: &OldMachineTerm,
     ) -> bool {
@@ -5946,7 +5911,7 @@ pub(in crate::kernel) fn access_extent_of_type(
 pub(in crate::kernel) enum OwnedStoreFootprint<'a> {
     Members(OwnedStoreMembers<'a>),
     Indexed {
-        spellings: Vec<(OldAddress, OldAddress)>,
+        spellings: Vec<(Address, Address)>,
         bytes: AccessExtent,
         // Keys are storage identities; the borrowed context keeps all their
         // compositions alive, even cached misses with no member reference.
@@ -5956,7 +5921,7 @@ pub(in crate::kernel) enum OwnedStoreFootprint<'a> {
 
 type OwnedStoreMembers<'a> = Vec<(&'a ResourceContext, u64, &'a MemoryRange)>;
 
-pub(in crate::kernel) fn parameter_partition_variable(base: &OldAddress) -> Option<Variable> {
+pub(in crate::kernel) fn parameter_partition_variable(base: &Address) -> Option<Variable> {
     if base.base != crate::kernel::AddressBase::ExternalArgument {
         return None;
     }
@@ -5972,13 +5937,10 @@ pub(in crate::kernel) fn parameter_partition_variable(base: &OldAddress) -> Opti
         .then_some(variable)
 }
 
-pub(in crate::kernel) fn parameter_alias_bucket(pointer: &OldAddress) -> OldAddress {
+pub(in crate::kernel) fn parameter_alias_bucket(pointer: &Address) -> Address {
     let mut stem = &pointer.offset;
     if pointer.base != crate::kernel::AddressBase::ExternalArgument {
-        return OldAddress {
-            base: pointer.base.clone(),
-            offset: AddressOffset::constant(0),
-        };
+        return pointer.with_offset(AddressOffset::constant(0));
     }
     while let OffsetView::Add(left, right) = stem.view() {
         if right.as_const().is_none() {
@@ -5986,22 +5948,16 @@ pub(in crate::kernel) fn parameter_alias_bucket(pointer: &OldAddress) -> OldAddr
         }
         stem = left;
     }
-    OldAddress {
-        base: pointer.base.clone(),
-        offset: stem.clone(),
-    }
+    pointer.with_offset(stem.clone())
 }
 
-pub(in crate::kernel) fn parameter_partition_root(pointer: &OldAddress) -> Option<OldAddress> {
+pub(in crate::kernel) fn parameter_partition_root(pointer: &Address) -> Option<Address> {
     let mut stem = &pointer.offset;
     while let OffsetView::Add(left, right) = stem.view() {
         right.as_const()?;
         stem = left;
     }
-    let base = OldAddress {
-        base: pointer.base.clone(),
-        offset: stem.clone(),
-    };
+    let base = pointer.with_offset(stem.clone());
     parameter_partition_variable(&base)?;
     Some(base)
 }
@@ -6010,8 +5966,8 @@ pub(in crate::kernel) fn parameter_partition_root(pointer: &OldAddress) -> Optio
 /// itself or `base` plus one displacement: the syntactic branches of the
 /// proof-aware index, with no offset comparison that could fail slowly.
 fn structural_element_index(
-    pointer: &OldAddress,
-    base: &OldAddress,
+    pointer: &Address,
+    base: &Address,
     element_width: u32,
     assumptions: &PureFactContext,
 ) -> Option<SharedMachineIntegerTerm> {
@@ -6050,7 +6006,7 @@ fn structural_element_index(
 /// context's other instances.
 pub(in crate::kernel) fn owned_instances_naming_access_base<'a>(
     resources: &'a ResourceContext,
-    pointer: &OldAddress,
+    pointer: &Address,
     found: &mut BTreeMap<u64, &'a ResourceFact>,
 ) {
     for base in additive_base_spellings(pointer) {
@@ -6069,15 +6025,12 @@ pub(in crate::kernel) fn owned_instances_naming_access_base<'a>(
 /// through every one of them. A range stated over a base spelled some other
 /// way is simply not found here; the caller then asks its full ladder, so a
 /// miss costs time and never a decision. Linear in the offset's size.
-pub(in crate::kernel) fn additive_base_spellings(pointer: &OldAddress) -> Vec<OldAddress> {
+pub(in crate::kernel) fn additive_base_spellings(pointer: &Address) -> Vec<Address> {
     let mut spellings = vec![pointer.clone()];
     let mut offset = &pointer.offset;
     while let OffsetView::Add(left, _) = offset.view() {
         crate::instrumentation::record_deterministic_work(1);
-        spellings.push(OldAddress {
-            base: pointer.base.clone(),
-            offset: left.clone(),
-        });
+        spellings.push(pointer.with_offset(left.clone()));
         offset = left;
     }
     // Outside the shared parameter block, a pointer's block at offset zero is
@@ -6086,10 +6039,7 @@ pub(in crate::kernel) fn additive_base_spellings(pointer: &OldAddress) -> Vec<Ol
     if pointer.base != AddressBase::ExternalArgument
         && !matches!(offset.view(), OffsetView::Constant(0))
     {
-        spellings.push(OldAddress {
-            base: pointer.base.clone(),
-            offset: AddressOffset::constant(0),
-        });
+        spellings.push(pointer.with_offset(AddressOffset::constant(0)));
     }
     spellings
 }
@@ -6102,10 +6052,7 @@ mod seeded_interval_adjacency_tests {
     #[test]
     fn materialized_run_adjacency_rejects_signed_residue_as_unsigned_distance() {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = OldAddress {
-            base: "wide-run-adjacency".into(),
-            offset: AddressOffset::constant(0),
-        };
+        let base = Address::new("wide-run-adjacency".into(), AddressOffset::constant(0));
         let source = crate::kernel::intern_memory(SymbolicMemory::new());
         let run = CellRun::new(
             base.clone(),
@@ -6117,10 +6064,7 @@ mod seeded_interval_adjacency_tests {
         );
         let mut memory = SymbolicMemory::new();
         std::sync::Arc::make_mut(&mut memory.cells).add_run(run);
-        let wrong = OldAddress {
-            base: base.base.clone(),
-            offset: AddressOffset::constant(-0x8000_0000),
-        };
+        let wrong = base.with_offset(AddressOffset::constant(-0x8000_0000));
         let memory = memory.store(wrong, crate::kernel::uint8(7));
         let context = PureFactContext::new();
         assert!(
@@ -6203,7 +6147,7 @@ mod nonnegative_successor_tests {
 mod shallow_composition_separation_tests {
     use super::*;
 
-    fn owner_of(pointers: &[OldAddress]) -> Proposition {
+    fn owner_of(pointers: &[Address]) -> Proposition {
         Proposition::ResourceComposition(ResourceContext::new().unchecked_with_facts(
             pointers.iter().map(|pointer| {
                 ResourceFact::own_memory(MemoryRange::new_with_element_width(
@@ -6216,11 +6160,8 @@ mod shallow_composition_separation_tests {
         ))
     }
 
-    fn at(block: &str) -> OldAddress {
-        OldAddress {
-            base: block.into(),
-            offset: AddressOffset::constant(0),
-        }
+    fn at(block: &str) -> Address {
+        Address::new(block.into(), AddressOffset::constant(0))
     }
 
     /// Two pointers owned as distinct members of one composition are
@@ -6253,11 +6194,11 @@ mod shallow_composition_separation_tests {
         );
     }
     /// A pointer's own block, which may alias any other pointer's.
-    fn symbolic(variable: u64) -> OldAddress {
-        OldAddress {
-            base: AddressBase::Symbolic(crate::kernel::Variable(variable)),
-            offset: AddressOffset::constant(0),
-        }
+    fn symbolic(variable: u64) -> Address {
+        Address::new(
+            AddressBase::Symbolic(crate::kernel::Variable(variable)),
+            AddressOffset::constant(0),
+        )
     }
 
     fn cells(variable: u64) -> MemoryRange {
@@ -6548,7 +6489,7 @@ mod wide_separation_index_tests {
     #[test]
     fn wide_separation_context_preserves_authority() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = |id: u64| OldAddress::symbolic(Variable(9_993_000 + id));
+        let pointer = |id: u64| Address::symbolic(Variable(9_993_000 + id));
         let wide = |base| {
             MemoryRange::new_wide(
                 base,
@@ -6681,10 +6622,7 @@ mod shared_range_index_tests {
     fn retained_strided_fields_need_both_index_bounds_without_export() {
         let _session = VerificationSession::enter();
         let index = retained_index();
-        let base = OldAddress {
-            base: "retained_strided_fields".into(),
-            offset: AddressOffset::constant(0),
-        };
+        let base = Address::new("retained_strided_fields".into(), AddressOffset::constant(0));
         let pointer = base
             .offset_by_shared_elements(index.clone(), 16)
             .offset_by_bytes(4);
@@ -6731,10 +6669,7 @@ mod shared_range_index_tests {
     fn retained_range_indices_require_the_selected_bounds_without_exports() {
         let _session = VerificationSession::enter();
         let index = retained_index();
-        let base = OldAddress {
-            base: "shared_range".into(),
-            offset: AddressOffset::constant(0),
-        };
+        let base = Address::new("shared_range".into(), AddressOffset::constant(0));
         let pointer = base.offset_by_shared_elements(index.clone(), 4);
         let zero = OldMachineTerm::constant(0);
         let end = OldMachineTerm::constant(8);
@@ -6775,10 +6710,10 @@ mod shared_range_index_tests {
         let end = OldMachineTerm::Variable(Variable(1018321));
         let absolute =
             OldMachineTerm::add(start.clone(), OldMachineTerm::Variable(Variable(1018322)));
-        let base = OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(1018323)), 4),
-        };
+        let base = Address::new(
+            AddressBase::ExternalArgument,
+            AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(1018323)), 4),
+        );
         let pointer = base.offset_by_int32_elements(absolute.clone());
         let range = MemoryRange::new(base.clone(), start.clone(), end.clone());
         let lower = OldConditionTerm::signed_less_equal(start.clone(), absolute.clone());
@@ -6875,7 +6810,7 @@ mod shared_range_index_tests {
 mod separation_pointer_copy_tests {
     use super::*;
 
-    fn bytes(pointer: OldAddress, count: u32) -> Resource {
+    fn bytes(pointer: Address, count: u32) -> Resource {
         Resource::Memory(MemoryRange::new_with_element_width(
             pointer,
             0u32.into(),
@@ -6887,9 +6822,9 @@ mod separation_pointer_copy_tests {
     #[test]
     fn exact_separation_follows_pointer_copies_without_storage_anchors() {
         let _session = crate::kernel::VerificationSession::enter();
-        let p = OldAddress::symbolic(Variable(9_923_001));
-        let q = OldAddress::symbolic(Variable(9_923_002));
-        let copied = OldAddress::symbolic(Variable(9_923_003));
+        let p = Address::symbolic(Variable(9_923_001));
+        let q = Address::symbolic(Variable(9_923_002));
+        let copied = Address::symbolic(Variable(9_923_003));
         let stated = Proposition::ResourceSeparate {
             left: Box::new(bytes(p.clone(), 1)),
             right: Box::new(bytes(q.clone(), 4)),
@@ -6910,14 +6845,14 @@ mod separation_pointer_copy_tests {
     #[test]
     fn exact_separation_keeps_width_orientation_when_address_classes_merge() {
         let _session = crate::kernel::VerificationSession::enter();
-        let early = OldAddress::symbolic(Variable(9_924_001));
-        let p = OldAddress::symbolic(Variable(9_924_002));
-        let q = OldAddress::symbolic(Variable(9_924_003));
+        let early = Address::symbolic(Variable(9_924_001));
+        let p = Address::symbolic(Variable(9_924_002));
+        let q = Address::symbolic(Variable(9_924_003));
         let context = PureFactContext::new()
             .assume_condition(
                 OldConditionTerm::address_equal(
                     early.clone(),
-                    OldAddress::symbolic(Variable(9_924_004)),
+                    Address::symbolic(Variable(9_924_004)),
                 ),
                 true,
             )
@@ -6933,9 +6868,9 @@ mod separation_pointer_copy_tests {
     #[test]
     fn exact_separation_compares_bytes_and_never_overrides_an_overlap() {
         let _session = crate::kernel::VerificationSession::enter();
-        let p = OldAddress::symbolic(Variable(9_925_001));
-        let q = OldAddress::symbolic(Variable(9_925_002));
-        let copied = OldAddress::symbolic(Variable(9_925_003));
+        let p = Address::symbolic(Variable(9_925_001));
+        let q = Address::symbolic(Variable(9_925_002));
+        let copied = Address::symbolic(Variable(9_925_003));
         let context = PureFactContext::new()
             .assume_proposition(Proposition::ResourceSeparate {
                 left: Box::new(Resource::Memory(MemoryRange::new_with_element_width(

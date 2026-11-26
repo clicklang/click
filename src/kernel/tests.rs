@@ -7,7 +7,7 @@ mod one_byte_one_name_tests;
 fn checked_memory_load_equality(
     left: &SymbolicMemory,
     right: &SymbolicMemory,
-    pointer: &OldAddress,
+    pointer: &Address,
     assumptions: &PureFactContext,
 ) -> bool {
     checked_atomic_load_equality(
@@ -27,7 +27,7 @@ fn checked_memory_load_equality(
 
 /// Instantiate the explicit elements law and discharge its written premise.
 pub(in crate::kernel) fn explicit_signed_elements(
-    base: OldAddress,
+    base: Address,
     ty: ProgramType,
     i: OldMachineTerm,
     j: OldMachineTerm,
@@ -59,7 +59,7 @@ pub(in crate::kernel) fn explicit_signed_elements(
 pub(in crate::kernel) fn explicit_frame(
     before: &SymbolicMemory,
     after: &SymbolicMemory,
-    address: &OldAddress,
+    address: &Address,
     ty: ProgramType,
     effects: &[Proposition],
     facts: &PureFactContext,
@@ -264,7 +264,7 @@ fn kernel_source_reads_no_environment_variable() {
 }
 
 fn memory_range(
-    base: OldAddress,
+    base: Address,
     start: impl Into<OldMachineTerm>,
     end: impl Into<OldMachineTerm>,
 ) -> MemoryRange {
@@ -272,7 +272,7 @@ fn memory_range(
 }
 
 fn view_memory_fact(
-    base: OldAddress,
+    base: Address,
     start: impl Into<OldMachineTerm>,
     end: impl Into<OldMachineTerm>,
 ) -> ResourceFact {
@@ -280,7 +280,7 @@ fn view_memory_fact(
 }
 
 fn own_memory_fact(
-    base: OldAddress,
+    base: Address,
     start: impl Into<OldMachineTerm>,
     end: impl Into<OldMachineTerm>,
 ) -> ResourceFact {
@@ -288,7 +288,7 @@ fn own_memory_fact(
 }
 
 fn view_memory_context(
-    base: OldAddress,
+    base: Address,
     start: impl Into<OldMachineTerm>,
     end: impl Into<OldMachineTerm>,
 ) -> ResourceContext {
@@ -296,7 +296,7 @@ fn view_memory_context(
 }
 
 fn own_memory_context(
-    base: OldAddress,
+    base: Address,
     start: impl Into<OldMachineTerm>,
     end: impl Into<OldMachineTerm>,
 ) -> ResourceContext {
@@ -314,11 +314,8 @@ fn assert_checkable_derivation(assumptions: &PureFactContext, proposition: &Prop
     );
 }
 
-fn arc_pointer(offset: i64) -> OldAddress {
-    OldAddress {
-        base: "arg-memory".into(),
-        offset: AddressOffset::constant(offset),
-    }
+fn arc_pointer(offset: i64) -> Address {
+    Address::new("arg-memory".into(), AddressOffset::constant(offset))
 }
 
 mod external_array_tests;

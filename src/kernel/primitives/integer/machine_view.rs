@@ -717,14 +717,12 @@ impl<'a> MachineOperandView<'a> {
 
     /// Native compatibility view of a selected read. Shared addresses are adapted
     /// once at the read leaf; surrounding arithmetic is never exported.
-    pub(crate) fn read(self) -> Option<(&'a SharedMemory, &'a OldAddress, LoadKind)> {
+    pub(crate) fn read(self) -> Option<(&'a SharedMemory, &'a Address, LoadKind)> {
         let (point, address, kind) = self.read_point()?;
         Some((point.shared_memory(), address, kind))
     }
 
-    pub(in crate::kernel) fn read_point(
-        self,
-    ) -> Option<(&'a ProgramPoint, &'a OldAddress, LoadKind)> {
+    pub(in crate::kernel) fn read_point(self) -> Option<(&'a ProgramPoint, &'a Address, LoadKind)> {
         if let Some(value) = self.retained_native_input() {
             return Self::Old(value).read_point();
         }

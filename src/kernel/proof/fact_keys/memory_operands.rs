@@ -241,7 +241,9 @@ pub(super) fn operand(view: crate::kernel::MachineOperandView<'_>) -> MemoryEras
             // This is a candidate key. It forgets the read state and keeps
             // the exact address policy and load kind used by native keys.
             intern(Node::Load(
-                Box::new(memory_erased_address_key(address.exact_cell_key())),
+                Box::new(memory_erased_address_key(
+                    address.written().expect("retained read address"),
+                )),
                 *kind,
             ))
         } else if matches!(
@@ -401,7 +403,7 @@ mod tests {
     #[test]
     fn retained_read_candidate_keys_keep_kind_and_do_not_build_a_native_load() {
         let _session = crate::kernel::VerificationSession::enter();
-        let address = OldAddress::symbolic(Variable(998203));
+        let address = Address::symbolic(Variable(998203));
         let before = crate::kernel::intern_memory(crate::kernel::SymbolicMemory::new());
         let after = crate::kernel::intern_memory(before.memory().clone().store(
             address.clone(),
@@ -434,10 +436,10 @@ mod tests {
         let memory = crate::kernel::intern_memory(
             crate::kernel::SymbolicMemory::new().with_block("retained_state-comparison", 4),
         );
-        let pointer = OldAddress {
-            base: "retained_state-comparison".into(),
-            offset: AddressOffset::constant(0),
-        };
+        let pointer = Address::new(
+            "retained_state-comparison".into(),
+            AddressOffset::constant(0),
+        );
         let variable = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
             &pointer,
@@ -484,10 +486,7 @@ mod tests {
         let memory = crate::kernel::intern_memory(
             crate::kernel::SymbolicMemory::new().with_block("retained_state-key", 4),
         );
-        let pointer = OldAddress {
-            base: "retained_state-key".into(),
-            offset: AddressOffset::constant(0),
-        };
+        let pointer = Address::new("retained_state-key".into(), AddressOffset::constant(0));
         let variable = crate::kernel::load_variable_for_cell_with_origin(
             &memory,
             &pointer,

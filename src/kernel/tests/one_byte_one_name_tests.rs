@@ -5,11 +5,11 @@
 use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
-fn byte(offset: i64) -> OldAddress {
-    OldAddress {
-        base: AddressBase::from("global:bytes"),
-        offset: AddressOffset::constant(offset),
-    }
+fn byte(offset: i64) -> Address {
+    Address::new(
+        AddressBase::from("global:bytes"),
+        AddressOffset::constant(offset),
+    )
 }
 
 fn read(offset: i64, kind: LoadKind) -> OldMachineTerm {

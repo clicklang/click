@@ -49,7 +49,7 @@ pub(in crate::surface) fn construction_result_resource(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::surface) struct ConcreteMemoryRangeSeed {
-    pub(in crate::surface) base: OldAddress,
+    pub(in crate::surface) base: Address,
     pub(in crate::surface) bytes: u32,
     pub(in crate::surface) element_width: u32,
     /// `None` denotes a range whose logical elements are aggregates, such as
@@ -220,7 +220,7 @@ fn input_pointer_identity(pointer: &crate::kernel::OldPointer) -> Option<Variabl
 /// on the checked callee binding. Contract evaluation still needs that
 /// information after the callee frame has been popped.
 fn initial_pointer_argument(
-    pointer: OldAddress,
+    pointer: Address,
     parameter: &crate::languages::interface::ImportedParameter,
     index: usize,
     scope: u64,
@@ -249,13 +249,13 @@ fn input_arguments(
     for (index, parameter) in parameters.iter().enumerate() {
         if parameter.is_struct_value() {
             arguments.push(initial_pointer_argument(
-                OldAddress {
-                    base: AddressBase::ExternalArgument,
-                    offset: scale_int32_offset(
+                Address::new(
+                    AddressBase::ExternalArgument,
+                    scale_int32_offset(
                         OldMachineTerm::Variable(input_pointer_variable(scope, index)?),
                         1,
                     ),
-                },
+                ),
                 parameter,
                 index,
                 scope,
@@ -300,13 +300,13 @@ fn input_arguments(
             | InterfaceType::VoidPointerPointer
             | InterfaceType::Pointer => {
                 arguments.push(initial_pointer_argument(
-                    OldAddress {
-                        base: AddressBase::ExternalArgument,
-                        offset: scale_int32_offset(
+                    Address::new(
+                        AddressBase::ExternalArgument,
+                        scale_int32_offset(
                             OldMachineTerm::Variable(input_pointer_variable(scope, index)?),
                             1,
                         ),
-                    },
+                    ),
                     parameter,
                     index,
                     scope,
@@ -314,7 +314,7 @@ fn input_arguments(
             }
             InterfaceType::FunctionPointer(_) => {
                 arguments.push(initial_pointer_argument(
-                    OldAddress::symbolic_function(input_pointer_variable(scope, index)?),
+                    Address::symbolic_function(input_pointer_variable(scope, index)?),
                     parameter,
                     index,
                     scope,
@@ -338,13 +338,13 @@ fn input_arguments(
                     |_| 1,
                 );
                 arguments.push(initial_pointer_argument(
-                    OldAddress {
-                        base: AddressBase::ExternalArgument,
-                        offset: scale_int32_offset(
+                    Address::new(
+                        AddressBase::ExternalArgument,
+                        scale_int32_offset(
                             OldMachineTerm::Variable(input_pointer_variable(scope, index)?),
                             i64::from(element_width),
                         ),
-                    },
+                    ),
                     parameter,
                     index,
                     scope,
@@ -391,13 +391,13 @@ fn input_arguments(
                     },
                     |_| 1,
                 );
-                let pointer = OldAddress {
-                    base: AddressBase::ExternalArgument,
-                    offset: scale_int32_offset(
+                let pointer = Address::new(
+                    AddressBase::ExternalArgument,
+                    scale_int32_offset(
                         OldMachineTerm::Variable(input_pointer_variable(scope, index)?),
                         i64::from(element_width),
                     ),
-                };
+                );
                 arguments.push(initial_pointer_argument(pointer, parameter, index, scope));
             }
             InterfaceType::Int8 => {
@@ -439,7 +439,7 @@ fn input_arguments(
             InterfaceType::Int64(_) => {
                 arguments.push(ProgramExpression::Value(
                     ProgramValue::Int64(OldMachineTerm::Variable(Variable(arguments.len() as u64)))
-                        .complete_word(OldAddress::symbolic(input_pointer_variable(scope, index)?)),
+                        .complete_word(Address::symbolic(input_pointer_variable(scope, index)?)),
                 ));
             }
             InterfaceType::UInt64(_) => {
@@ -447,7 +447,7 @@ fn input_arguments(
                     ProgramValue::UInt64(OldMachineTerm::Variable(
                         Variable(arguments.len() as u64),
                     ))
-                    .complete_word(OldAddress::symbolic(input_pointer_variable(scope, index)?)),
+                    .complete_word(Address::symbolic(input_pointer_variable(scope, index)?)),
                 ));
             }
             InterfaceType::Float32 => {
@@ -537,7 +537,7 @@ pub(in crate::surface) fn initial_call_state(
             .return_aggregate_layout()
             .ok_or_else(|| ClickError::new("construction result has no layout"))?
             .clone();
-        let destination = OldAddress::symbolic(input_pointer_variable(scope, parameters.len())?);
+        let destination = Address::symbolic(input_pointer_variable(scope, parameters.len())?);
         crate::kernel::register_block_alignment(&destination.base, layout.alignment_bytes());
         let memory = state
             .memory()
@@ -567,7 +567,7 @@ pub(in crate::surface) fn initial_call_state(
         // Record the raw footprint before resource naming can seed typed cells.
         // The constructor can target a subobject, so do not fix its containing
         // allocation's size. Field liveness comes from the entry contract.
-        let destination = OldAddress::symbolic(input_pointer_variable(scope, index)?);
+        let destination = Address::symbolic(input_pointer_variable(scope, index)?);
         crate::kernel::register_block_alignment(&destination.base, layout.alignment_bytes());
         arguments[index] = initial_pointer_argument(destination.clone(), parameter, index, scope);
         let memory = state
@@ -818,7 +818,7 @@ fn reject_aggregate_parameter_storage_resource(
 fn entry_cell_source<'a>(
     entry: &'a crate::kernel::ProgramPoint,
     fallback: &'a crate::kernel::ProgramPoint,
-    pointer: &OldAddress,
+    pointer: &Address,
     ty: ProgramType,
 ) -> &'a crate::kernel::ProgramPoint {
     if entry.entry_cell_version(pointer, ty).is_some()
@@ -905,9 +905,9 @@ pub(in crate::surface) fn memory_with_symbolic_loadable_cells(
 
 pub(in crate::surface) fn visit_struct_field_cells(
     field: &crate::languages::interface::RecordField,
-    element_pointer: &OldAddress,
+    element_pointer: &Address,
     mut memory: SymbolicMemory,
-    mut visit: impl FnMut(SymbolicMemory, OldAddress, ProgramType) -> SymbolicMemory,
+    mut visit: impl FnMut(SymbolicMemory, Address, ProgramType) -> SymbolicMemory,
 ) -> SymbolicMemory {
     let field_pointer = element_pointer.offset_by_bytes(field.offset_bytes());
     let field_type = field.interface_type().to_kernel_type();
@@ -2833,7 +2833,7 @@ pub(in crate::surface) fn resource_argument_to_typed_program_expression(
 ) -> Result<ProgramExpression, ClickError> {
     if argument_is_null_pointer_constant(argument, parameter_type) {
         return Ok(crate::kernel::program_expression::typed_pointer_value(
-            OldAddress::null(),
+            Address::null(),
             parameter_type.to_kernel_type(),
         ));
     }
@@ -3552,7 +3552,7 @@ pub(in crate::surface) fn concrete_access_resource_blocks(
 pub(in crate::surface) fn loadable_base_and_bytes(
     requirement: &Requirement,
     parameter_binding: ParameterBinding<'_>,
-) -> Result<(OldAddress, OldMachineTerm, Vec<Proposition>), ClickError> {
+) -> Result<(Address, OldMachineTerm, Vec<Proposition>), ClickError> {
     match requirement {
         Requirement::LoadableSegment { segment } => {
             let state = ExecutionState::new();
@@ -3682,7 +3682,7 @@ pub(in crate::surface) fn object_segment_layout<'a>(
 /// One complete struct object as a memory range seed: a single element of
 /// the layout's size, materialized field by field.
 fn object_range_seed(
-    base: OldAddress,
+    base: Address,
     layout: &crate::languages::interface::RecordLayout,
 ) -> ConcreteMemoryRangeSeed {
     ConcreteMemoryRangeSeed {
@@ -4424,10 +4424,10 @@ mod entry_cell_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let entry = ExecutionState::new().begin_function_entry_memory();
         let source = entry.program_point();
-        let base = OldAddress {
-            base: crate::kernel::AddressBase::ExternalArgument,
-            offset: AddressOffset::constant(0),
-        };
+        let base = Address::new(
+            crate::kernel::AddressBase::ExternalArgument,
+            AddressOffset::constant(0),
+        );
         for ty in [ProgramType::Float32, ProgramType::Float64] {
             let width = ty.byte_width();
             let ranges = BTreeMap::from([(
@@ -4463,16 +4463,18 @@ mod entry_cell_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let entry = ExecutionState::new().begin_function_entry_memory();
         let source = entry.program_point();
-        let address = |variable| OldAddress {
-            base: crate::kernel::AddressBase::ExternalArgument,
-            offset: AddressOffset::variable(crate::kernel::Variable(variable)),
+        let address = |variable| {
+            Address::new(
+                crate::kernel::AddressBase::ExternalArgument,
+                AddressOffset::variable(crate::kernel::Variable(variable)),
+            )
         };
         let integer_base = address(1_009_104);
         let generic_base = address(1_009_105);
         let generic = ProgramType::Parameter(crate::kernel::TypeParameterName::intern("SeededT"));
         let mut work = Vec::new();
         for count in [4, 16, 64, 256] {
-            let typed_range = |base: &OldAddress, ty: ProgramType| ConcreteMemoryRangeSeed {
+            let typed_range = |base: &Address, ty: ProgramType| ConcreteMemoryRangeSeed {
                 base: base.clone(),
                 bytes: count * ty.byte_width(),
                 element_width: ty.byte_width(),
@@ -4512,16 +4514,13 @@ mod entry_cell_tests {
             assert_eq!(integer.read_version_id(), source.id());
             assert_eq!(generic.read_version_id(), source.id());
             let installed = entry.clone().with_function_entry_memory(memory);
-            let symbolic_element = OldAddress {
-                base: integer_base.base.clone(),
-                offset: crate::kernel::AddressOffset::add(
-                    integer_base.offset.clone(),
-                    crate::kernel::AddressOffset::scale_int32(
-                        OldMachineTerm::Variable(crate::kernel::Variable(1_009_106)),
-                        4,
-                    ),
+            let symbolic_element = integer_base.with_offset(crate::kernel::AddressOffset::add(
+                integer_base.offset.clone(),
+                crate::kernel::AddressOffset::scale_int32(
+                    OldMachineTerm::Variable(crate::kernel::Variable(1_009_106)),
+                    4,
                 ),
-            };
+            ));
             assert_eq!(
                 installed
                     .program_point()

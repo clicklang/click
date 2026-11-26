@@ -887,14 +887,11 @@ impl Printer<'_> {
                     // Without retained pointee types, do not claim two
                     // different named pointers form a well-typed source
                     // comparison.
-                    if left != right
-                        && **left != OldAddress::null()
-                        && **right != OldAddress::null()
-                    {
+                    if left != right && **left != Address::null() && **right != Address::null() {
                         return None;
                     }
-                    let pointer = |p: &OldAddress, labels: &MemoryStateLabels| {
-                        if p == &OldAddress::null() {
+                    let pointer = |p: &Address, labels: &MemoryStateLabels| {
+                        if p == &Address::null() {
                             Some("0".to_owned())
                         } else {
                             labels.pointer_sources.get(p).cloned()
@@ -907,7 +904,7 @@ impl Printer<'_> {
                         pointer(right, self.labels)?
                     )));
                 }
-                let address_only = **left != OldAddress::null() && **right != OldAddress::null();
+                let address_only = **left != Address::null() && **right != Address::null();
                 let left = self.pointer(left, depth)?;
                 let right = self.pointer(right, depth)?;
                 return Some(atom(format!(
@@ -1892,7 +1889,7 @@ impl Printer<'_> {
 
     /// The place `pointer` addresses, without a state qualifier: a source
     /// cell where the naming tables have one, else a dereference.
-    fn place_at(&mut self, pointer: &OldAddress, depth: usize) -> String {
+    fn place_at(&mut self, pointer: &Address, depth: usize) -> String {
         if let Some(referent) = self.reference_referent(pointer) {
             return referent;
         }
@@ -1914,7 +1911,7 @@ impl Printer<'_> {
     fn load(
         &mut self,
         memory: &SymbolicMemory,
-        pointer: &OldAddress,
+        pointer: &Address,
         kind: crate::kernel::LoadKind,
         depth: usize,
     ) -> Option<Spelled> {
@@ -1947,7 +1944,7 @@ impl Printer<'_> {
     fn load_place(
         &mut self,
         naming: &Option<std::sync::Arc<NamingTables>>,
-        pointer: &OldAddress,
+        pointer: &Address,
         kind: crate::kernel::LoadKind,
         depth: usize,
     ) -> Option<Spelled> {
@@ -2053,7 +2050,7 @@ impl Printer<'_> {
     /// that a `kind` read does not read.
     fn declared_element_differs(
         naming: &Option<std::sync::Arc<NamingTables>>,
-        pointer: &OldAddress,
+        pointer: &Address,
         kind: crate::kernel::LoadKind,
     ) -> bool {
         naming.as_deref().is_some_and(|naming| {
@@ -2111,8 +2108,8 @@ impl Printer<'_> {
     }
 
     /// An address in source terms.
-    fn pointer(&mut self, pointer: &OldAddress, depth: usize) -> Option<Spelled> {
-        if pointer == &OldAddress::null() {
+    fn pointer(&mut self, pointer: &Address, depth: usize) -> Option<Spelled> {
+        if pointer == &Address::null() {
             return Some(atom("0"));
         }
         if let Some(name) = self.labels.pointer_sources.get(pointer) {
@@ -2239,7 +2236,7 @@ impl Printer<'_> {
     fn pointer_cell(
         &mut self,
         memory: &SymbolicMemory,
-        address: &OldAddress,
+        address: &Address,
         depth: usize,
     ) -> Spelled {
         let tables = self.labels.naming.clone();
@@ -2269,7 +2266,7 @@ impl Printer<'_> {
     /// bytes otherwise.
     fn byte_range(
         &mut self,
-        base: &OldAddress,
+        base: &Address,
         bytes: &OldMachineTerm,
         wide: bool,
         depth: usize,
@@ -2357,7 +2354,7 @@ impl Printer<'_> {
     /// address it carries: `value` for `int32& value`, and the field at its
     /// start for a struct referent. The sidecar writes the referent, never
     /// the carrier.
-    fn reference_referent(&self, pointer: &OldAddress) -> Option<String> {
+    fn reference_referent(&self, pointer: &Address) -> Option<String> {
         let tables = self.labels.naming.as_deref()?;
         tables
             .0
@@ -2409,7 +2406,7 @@ impl Printer<'_> {
     /// parameter whose value is `pointer` less one added offset term.
     fn parameter_relative_pointer(
         &mut self,
-        pointer: &OldAddress,
+        pointer: &Address,
         depth: usize,
         tables: &NamingTables,
     ) -> Option<Spelled> {
@@ -2453,7 +2450,7 @@ impl Printer<'_> {
     }
 
     /// The element width of the pointer a naming table binds to `base`.
-    fn element_width(&self, base: &OldAddress) -> Option<i64> {
+    fn element_width(&self, base: &Address) -> Option<i64> {
         let tables = self.labels.naming.as_deref()?;
         tables
             .0
@@ -3581,7 +3578,7 @@ mod tests {
         use crate::surface::{ProgramPointSelector, RecordedStates};
 
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = OldAddress::symbolic(Variable(7));
+        let pointer = Address::symbolic(Variable(7));
         let pointer_value =
             ProgramValue::Pointer(OldPointer::new(pointer.clone(), ProgramType::Int32Pointer));
         let before = ExecutionState::new()
@@ -3622,10 +3619,10 @@ mod tests {
     #[test]
     fn predicate_array_arguments_keep_their_individual_states() {
         let pointer = ProgramValue::Pointer(OldPointer::new(
-            OldAddress {
-                base: AddressBase::Concrete("global:cells".into()),
-                offset: AddressOffset::constant(0),
-            },
+            Address::new(
+                AddressBase::Concrete("global:cells".into()),
+                AddressOffset::constant(0),
+            ),
             ProgramType::Int32Pointer,
         ));
         let before = ExecutionState::new()
@@ -3667,10 +3664,10 @@ mod tests {
     fn reserved_predicates_print_the_click_spelling_that_lowers_to_them() {
         let cell = |name: &str| {
             ProgramValue::Pointer(OldPointer::new(
-                OldAddress {
-                    base: AddressBase::Concrete(format!("global:{name}")),
-                    offset: AddressOffset::constant(0),
-                },
+                Address::new(
+                    AddressBase::Concrete(format!("global:{name}")),
+                    AddressOffset::constant(0),
+                ),
                 ProgramType::Int32Pointer,
             ))
         };
@@ -3733,10 +3730,10 @@ mod tests {
 
     #[test]
     fn historical_loads_use_their_own_state_names_and_keep_their_read_type() {
-        let pointer = OldAddress {
-            base: AddressBase::Concrete("global:cells".into()),
-            offset: AddressOffset::constant(0),
-        };
+        let pointer = Address::new(
+            AddressBase::Concrete("global:cells".into()),
+            AddressOffset::constant(0),
+        );
         let base =
             ProgramValue::Pointer(OldPointer::new(pointer.clone(), ProgramType::Int32Pointer));
         let before = ExecutionState::new()
@@ -3784,10 +3781,7 @@ mod tests {
     #[test]
     fn result_names_the_returned_value_only_where_result_exists() {
         let index = Variable(9);
-        let heap = OldAddress {
-            base: AddressBase::Heap(1),
-            offset: AddressOffset::constant(0),
-        };
+        let heap = Address::new(AddressBase::Heap(1), AddressOffset::constant(0));
         let before =
             ExecutionState::new().with_memory(SymbolicMemory::new().with_block("global:a", 4));
         let after =
@@ -3860,10 +3854,10 @@ mod resource_tests {
 
     #[test]
     fn resource_arguments_keep_the_same_read_states_as_proposition_operands() {
-        let pointer = OldAddress {
-            base: AddressBase::Concrete("global:cells".into()),
-            offset: AddressOffset::constant(0),
-        };
+        let pointer = Address::new(
+            AddressBase::Concrete("global:cells".into()),
+            AddressOffset::constant(0),
+        );
         let before = ExecutionState::new()
             .with_local(
                 "cells",

@@ -45,7 +45,7 @@ fn a_value_of_an_abstract_type_lives_in_an_allocation_of_its_size() {
             true,
         );
     let state = ExecutionState::new()
-        .with_local("p", ProgramValue::pointer(OldAddress::null()))
+        .with_local("p", ProgramValue::pointer(Address::null()))
         .with_local("n", ProgramValue::UInt64(size.clone()))
         .with_local("x", ProgramValue::Parameter(Box::new(value.clone())));
     let allocated = step(
@@ -64,7 +64,7 @@ fn a_value_of_an_abstract_type_lives_in_an_allocation_of_its_size() {
     let allocated = resolve_pending_heap_allocations(
         &allocated,
         &facts.clone().assume_proposition(Proposition::condition_is(
-            OldConditionTerm::address_equal(pending.address().clone(), OldAddress::null()),
+            OldConditionTerm::address_equal(pending.address().clone(), Address::null()),
             false,
         )),
     );

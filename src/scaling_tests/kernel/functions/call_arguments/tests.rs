@@ -41,7 +41,9 @@ fn retained_contract_result_storage_and_exit_memory_skip_expression_prefixes() {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         work.push(measured);
     }
-    assert_eq!(work, [0, 0, 0], "no expression traversal at these handoffs");
+    // The one charged unit is admitting the contract-result block, once per
+    // state, whatever the result's size and however often it is stored.
+    assert_eq!(work, [1, 1, 1], "no expression traversal at these handoffs");
 }
 
 #[test]
@@ -54,7 +56,7 @@ fn pointer_return_handoffs_retain_prepared_dags_without_export() {
         program_return(crate::kernel::program_expression::int32_literal(0)),
     );
     let payload = SharedPointer::import(&OldPointer::new(
-        OldAddress::symbolic(Variable(1027300)),
+        Address::symbolic(Variable(1027300)),
         ProgramType::Int32Pointer,
     ));
     for unrelated in [0, 128, 512] {
@@ -66,6 +68,19 @@ fn pointer_return_handoffs_retain_prepared_dags_without_export() {
                 ProgramType::Int32,
             );
         }
+        // The result and destination cells admit their blocks once per state.
+        let warm = StoredExecutionValue::from(ExecutionValue::Shared(
+            KernelTerm::shared_pointer_value(payload.clone()),
+        ));
+        set_function_result(&mut state, &function, warm.clone());
+        crate::kernel::loops::assign_call_result(
+            &mut state,
+            &("received").into(),
+            warm,
+            &mut Vec::new(),
+            &PureFactContext::new(),
+        )
+        .unwrap();
         let mut samples = Vec::new();
         for size in [16, 64, 256] {
             let mut argument =
@@ -201,7 +216,7 @@ fn prepared_argument_checks_lookup_only_the_live_destination_and_its_resources()
         state
             .locals
             .set_aggregate_object_at(name.clone(), layout.clone(), address.clone());
-        let token = |key: OldAddress, index: u32| {
+        let token = |key: Address, index: u32| {
             ResourceFact::own_token(
                 "logical_state".into(),
                 vec![
@@ -266,7 +281,7 @@ fn proof_input_rebinding_retains_storage_without_reusing_it_for_calls() {
         ResourceFieldType::Program(ProgramType::Int32),
     )])
     .unwrap();
-    let model = |id: u64, address: OldAddress| {
+    let model = |id: u64, address: Address| {
         ResourceFact::own(Resource::Instance(
             ResourceInstance::new(
                 InstanceId::from_variable(Variable(id)),
@@ -281,10 +296,8 @@ fn proof_input_rebinding_retains_storage_without_reusing_it_for_calls() {
     let mut samples = Vec::new();
     for count in [16u32, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let placeholder = ProgramValue::typed_pointer(
-            OldAddress::symbolic(Variable(1)),
-            ProgramType::UInt8Pointer,
-        );
+        let placeholder =
+            ProgramValue::typed_pointer(Address::symbolic(Variable(1)), ProgramType::UInt8Pointer);
         let mut caller = bind_program_function_arguments_with(
             &ExecutionState::new(),
             &function,

@@ -415,19 +415,21 @@ fn pointer_lowering_keeps_producers_and_complete_metadata() {
         crate::kernel::effective_type::CScalarClass::Int,
     );
     let source = OldPointer::new(
-        OldAddress::symbolic(Variable(999982)),
+        Address::symbolic(Variable(999982)),
         ProgramType::VoidPointer,
     )
-    .with_address(OldAddress::symbolic(Variable(999981)))
-    .with_bounds_owner(Some(Arc::new(OldAddress::symbolic(Variable(999983)))))
+    .with_address(Address::symbolic(Variable(999981)))
+    .with_bounds_owner(Some(Arc::new(Address::symbolic(Variable(999983)))))
     .with_bounds(Some(SubobjectBounds {
-        start: OldAddress::symbolic(Variable(999984)),
+        start: Address::symbolic(Variable(999984)),
         width: OldMachineTerm::Variable(Variable(999985)),
     }))
     .with_object_type_evidence(Some(ObjectTypeEvidence::parameter(class, 3, 999986, false)));
     let payload = SharedPointer::import(&source);
     let memory = intern_memory(SymbolicMemory::new());
-    let address = SharedAddress::import(&SymbolicMemory::global_pointer("pointer-slot"));
+    let address = (SymbolicMemory::global_pointer("pointer-slot"))
+        .shared()
+        .clone();
     let roots = [
         KernelTerm::shared_pointer_value(payload.clone()),
         KernelTerm::shared_pointer_call(
@@ -541,9 +543,9 @@ fn explicit_pointer_cast_lowering_keeps_native_bounds_rules() {
         (ProgramType::Int32Pointer, ProgramType::UInt8Pointer, false),
         (ProgramType::Int8Pointer, ProgramType::UInt8Pointer, true),
     ] {
-        let pointer = OldPointer::new(OldAddress::symbolic(Variable(999940)), source).with_bounds(
+        let pointer = OldPointer::new(Address::symbolic(Variable(999940)), source).with_bounds(
             Some(SubobjectBounds {
-                start: OldAddress::symbolic(Variable(999940)),
+                start: Address::symbolic(Variable(999940)),
                 width: OldMachineTerm::constant(4),
             }),
         );
@@ -723,7 +725,7 @@ fn mixed_call_assembly_preserves_typed_roots_without_exports() {
         node: AlgebraicTermNode::Variable(Variable(999960)),
     };
     let pointer = OldPointer::new(
-        OldAddress::symbolic(Variable(999961)),
+        Address::symbolic(Variable(999961)),
         ProgramType::Int32Pointer,
     );
     let arguments = vec![

@@ -172,7 +172,7 @@ fn region_footprint_refuses_unrecorded_memory_changes() {
     let _session = crate::kernel::VerificationSession::enter();
     let before = ExecutionState::new();
     let after = before.clone().with_memory(before.memory().clone().store(
-        crate::kernel::OldAddress::symbolic(Variable(8_390_200)),
+        crate::kernel::Address::symbolic(Variable(8_390_200)),
         ProgramValue::Int32(7u32.into()),
     ));
     let mut retained_states = RecordedStates::new();

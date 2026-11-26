@@ -189,7 +189,7 @@ fn check_range_initialization(
 /// `defined` by a fact such as a callee's `ensures defined(p[k])`.
 fn bytes_are_initialized(
     memory: &SymbolicMemory,
-    start: &OldAddress,
+    start: &Address,
     bytes: u32,
     width: u32,
     assumptions: &PureFactContext,
@@ -202,7 +202,7 @@ fn bytes_are_initialized(
 /// this address does: a cell is evidence its bytes were written.
 fn written(
     memory: &SymbolicMemory,
-    start: &OldAddress,
+    start: &Address,
     bytes: u32,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -216,7 +216,7 @@ fn written(
 /// `ensures defined(p[k])`.
 fn elements_are_initialized(
     memory: &SymbolicMemory,
-    start: &OldAddress,
+    start: &Address,
     bytes: u32,
     width: u32,
     assumptions: &PureFactContext,

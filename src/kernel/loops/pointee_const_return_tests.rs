@@ -3,10 +3,8 @@ use super::*;
 
 #[test]
 fn pointee_const_rebinding_keeps_the_destinations_declared_qualifier() {
-    let value = ProgramValue::typed_pointer(
-        OldAddress::symbolic(Variable(916)),
-        ProgramType::Int32Pointer,
-    );
+    let value =
+        ProgramValue::typed_pointer(Address::symbolic(Variable(916)), ProgramType::Int32Pointer);
     let mut state = ExecutionState::new().with_local("p", value.clone());
     state.locals.set_typed_with_all_qualifiers(
         "q",
@@ -48,10 +46,8 @@ fn pointee_const_return_inline_call_preserves_pointer_identity() {
     )
     .with_return_pointee_constant(true)
     .with_inline_body();
-    let value = ProgramValue::typed_pointer(
-        OldAddress::symbolic(Variable(917)),
-        ProgramType::Int32Pointer,
-    );
+    let value =
+        ProgramValue::typed_pointer(Address::symbolic(Variable(917)), ProgramType::Int32Pointer);
     let state = ExecutionState::new().with_local("p", value.clone());
     let environment = ExecutionEnvironment::new().with_function(function);
     let paths = call_then_assign_paths(
@@ -107,10 +103,10 @@ fn pointee_const_return_direct_and_callback_calls_preserve_const() {
     let state = ExecutionState::new().with_local(
         "callback",
         ProgramValue::typed_pointer(
-            OldAddress {
-                base: AddressBase::Function("text".to_string()),
-                offset: AddressOffset::constant(0),
-            },
+            Address::new(
+                AddressBase::Function("text".to_string()),
+                AddressOffset::constant(0),
+            ),
             function_type,
         ),
     );
@@ -135,10 +131,10 @@ fn pointee_const_return_direct_and_callback_calls_preserve_const() {
     let state = ExecutionState::new().with_local(
         "callback",
         ProgramValue::typed_pointer(
-            OldAddress {
-                base: AddressBase::Function("text".into()),
-                offset: AddressOffset::constant(0),
-            },
+            Address::new(
+                AddressBase::Function("text".into()),
+                AddressOffset::constant(0),
+            ),
             incompatible,
         ),
     );
@@ -165,7 +161,7 @@ fn pointee_const_return_assignment_preserves_destination_and_temporary_qualifier
         for destination_const in [false, true] {
             for immutable in [false, true] {
                 let value = ProgramValue::typed_pointer(
-                    OldAddress::symbolic(Variable(912)),
+                    Address::symbolic(Variable(912)),
                     ProgramType::UInt8Pointer,
                 );
                 let mut state = ExecutionState::new();
@@ -197,10 +193,8 @@ fn pointee_const_return_assignment_preserves_destination_and_temporary_qualifier
             }
         }
     }
-    let value = ProgramValue::typed_pointer(
-        OldAddress::symbolic(Variable(913)),
-        ProgramType::UInt8Pointer,
-    );
+    let value =
+        ProgramValue::typed_pointer(Address::symbolic(Variable(913)), ProgramType::UInt8Pointer);
     let mut state = ExecutionState::new();
     assert!(
         assign_call_result(
@@ -259,10 +253,10 @@ fn pointee_const_return_symbolic_callback_checks_signature_and_destination() {
         ProgramType::Int32Pointer,
         &[],
     ));
-    let pointer = OldAddress {
-        base: AddressBase::FunctionSymbolic(Variable(890)),
-        offset: AddressOffset::constant(0),
-    };
+    let pointer = Address::new(
+        AddressBase::FunctionSymbolic(Variable(890)),
+        AddressOffset::constant(0),
+    );
     let value = ProgramValue::typed_pointer(pointer.clone(), qualified);
     let assumptions = PureFactContext::new().assume_proposition(Proposition::Predicate {
         name: contract.predicate_name(),
@@ -286,7 +280,7 @@ fn pointee_const_return_symbolic_callback_checks_signature_and_destination() {
         if mutable_destination {
             state = state.with_local(
                 "temporary",
-                ProgramValue::typed_pointer(OldAddress::null(), ProgramType::Int32Pointer),
+                ProgramValue::typed_pointer(Address::null(), ProgramType::Int32Pointer),
             );
         }
         let paths = call_then_assign_paths(

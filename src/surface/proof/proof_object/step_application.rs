@@ -1339,7 +1339,7 @@ impl<'a> Proof<'a> {
                         // ambient facts.
                         let value = match (pointer, introduced_pointer) {
                             (true, Some(interface_type)) => {
-                                ProgramValue::typed_pointer(OldAddress::symbolic(variable), interface_type).with_pointer_object_class(object_class)
+                                ProgramValue::typed_pointer(Address::symbolic(variable), interface_type).with_pointer_object_class(object_class)
                             }
                             _ => match self.proposition_goal("`intro` requires a proposition goal").expect("intro checked its goal") {
                                 Proposition::ForAll { sort, .. } if sort.machine_integer_type().is_some() => sort.machine_integer_type().unwrap().symbolic_value(variable),
@@ -1960,7 +1960,7 @@ fn close_goal_from_added_fact(state: KernelProofHandle) -> KernelProofHandle {
 }
 
 /// Recover one load's presentation from its accepted statement theorem.
-/// OldAddress evaluation is confined to the selected expression and supplies no
+/// Address evaluation is confined to the selected expression and supplies no
 /// facts to checking. The produced value is read directly from the outcome.
 fn trace_function_pointer_load(
     conclusion: &Proposition,

@@ -9,8 +9,8 @@ fn unwritten_output_preserves_external_runs_without_expanding_their_slots() {
     let mut samples = Vec::new();
     for count in [8u32, 32, 128, 512, 65536] {
         let _session = crate::kernel::VerificationSession::enter();
-        let field = OldAddress::symbolic(Variable(924_050));
-        let output = OldAddress::symbolic(Variable(924_051));
+        let field = Address::symbolic(Variable(924_050));
+        let output = Address::symbolic(Variable(924_051));
         let before = SymbolicMemory::new()
             .with_seeded_cells(
                 field.clone(),
@@ -41,7 +41,8 @@ fn a_declared_object_makes_dropping_its_runs_one_query() {
     // costs the runs, not their slots, whatever the struct count.
     let mut works = Vec::new();
     for count in [1_000u32, 10_000, 100_000] {
-        let block = format!("local:record-declared-{count}");
+        // One name length: admitting a block charges its name's bytes.
+        let block = format!("local:record-declared-{count:06}");
         let memory =
             zero_runs(&block, count, 8).with_initialized_object(&element(&block, 0), count * 8);
         let (havoc, work) =
@@ -61,7 +62,8 @@ fn a_covering_query_scales_with_the_cells_it_crosses() {
     // a cached cell costs those two cells, whatever the array's size.
     let mut works = Vec::new();
     for count in [64i64, 512, 4096] {
-        let block = format!("local:record-cells-{count}");
+        // One name length: admitting a block charges its name's bytes.
+        let block = format!("local:record-cells-{count:06}");
         let mut memory =
             SymbolicMemory::new().with_block(block.as_str(), u32::try_from(4 * count).unwrap());
         for index in 0..count {
@@ -71,10 +73,10 @@ fn a_covering_query_scales_with_the_cells_it_crosses() {
             );
         }
         let index = OldMachineTerm::Variable(Variable(924_008));
-        let read = OldAddress {
-            base: AddressBase::from(block.as_str()),
-            offset: AddressOffset::scale_int32(index.clone(), 4),
-        };
+        let read = Address::new(
+            AddressBase::from(block.as_str()),
+            AddressOffset::scale_int32(index.clone(), 4),
+        );
         let assumptions = index_between(&index, 7, 8);
         let (covered, work) = crate::instrumentation::measure_deterministic_work(|| {
             memory.has_initialized_bytes_under(&read, 4, &assumptions)
@@ -93,17 +95,16 @@ fn forgotten_external_initialization_does_not_scan_unrelated_cached_cells() {
     let mut samples = Vec::new();
     for count in [16u32, 64, 256, 1024] {
         let _session = crate::kernel::VerificationSession::enter();
-        let field = OldAddress::symbolic(Variable(924_052));
-        let output = OldAddress {
-            base: AddressBase::Heap(924_053),
-            offset: AddressOffset::constant(0),
-        };
-        let background = |index| OldAddress {
-            base: AddressBase::Heap(925_000 + u64::from(index)),
-            offset: AddressOffset::constant(0),
+        let field = Address::symbolic(Variable(924_052));
+        let output = Address::new(AddressBase::Heap(924_053), AddressOffset::constant(0));
+        let background = |index| {
+            Address::new(
+                AddressBase::Heap(925_000 + u64::from(index)),
+                AddressOffset::constant(0),
+            )
         };
         let mut before =
-            SymbolicMemory::new().store(field.clone(), ProgramValue::pointer(OldAddress::null()));
+            SymbolicMemory::new().store(field.clone(), ProgramValue::pointer(Address::null()));
         for index in 0..count {
             before = before.store(
                 background(index),

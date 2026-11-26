@@ -428,7 +428,7 @@ fn overflowing_operation(condition: &OldConditionTerm) -> Option<OldMachineTerm>
 
 /// The cell read by the equation naming one memory read, when this condition
 /// is such an equation.
-fn load_definition_cell(condition: &Proposition) -> Option<&OldAddress> {
+fn load_definition_cell(condition: &Proposition) -> Option<&Address> {
     let Some((
         OldConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,

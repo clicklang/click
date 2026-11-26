@@ -6,7 +6,7 @@ fn common_fold_read_dependencies_visit_shared_bodies_once_and_recheck_states() {
     for size in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let current = SymbolicMemory::new();
-        let pointer = OldAddress::symbolic(Variable(972000));
+        let pointer = Address::symbolic(Variable(972000));
         let later = current.clone().store(
             pointer.clone(),
             ProgramValue::Int32(OldMachineTerm::constant(1)),
@@ -57,7 +57,7 @@ fn nested_machine_fold_dependencies_share_initial_and_body_subgraphs() {
     for size in [4, 8, 16] {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = SymbolicMemory::new();
-        let pointer = OldAddress::symbolic(Variable(972010));
+        let pointer = Address::symbolic(Variable(972010));
         let read = OldMachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
             Box::new(pointer.clone()),
@@ -118,7 +118,7 @@ fn nested_machine_fold_dependencies_share_initial_and_body_subgraphs() {
 fn imported_scalar_fold_dependencies_use_the_written_carrier_and_read_point() {
     let _session = crate::kernel::VerificationSession::enter();
     let current = SymbolicMemory::new();
-    let address = OldAddress::symbolic(Variable(972020));
+    let address = Address::symbolic(Variable(972020));
     let later = current.clone().store(
         address.clone(),
         ProgramValue::Int8(OldMachineTerm::Constant {

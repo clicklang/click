@@ -8,30 +8,24 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
     let mut wide_samples = Vec::new();
     for size in [4u64, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let field = OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::constant(128),
-        };
-        let possible_write = OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(9_880_301)), 4),
-        };
-        let stored = OldAddress::symbolic(Variable(9_880_302));
+        let field = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(128));
+        let possible_write = Address::new(
+            AddressBase::ExternalArgument,
+            AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(9_880_301)), 4),
+        );
+        let stored = Address::symbolic(Variable(9_880_302));
         let mut memory = SymbolicMemory::new();
         let mut context = PureFactContext::new();
         for index in 0..size {
             let block = format!("local:irrelevant-{index}");
             memory = memory.with_block(block.clone(), 4).store(
-                OldAddress {
-                    base: AddressBase::Concrete(block),
-                    offset: AddressOffset::constant(0),
-                },
+                Address::new(AddressBase::Concrete(block), AddressOffset::constant(0)),
                 ProgramValue::Int32(OldMachineTerm::constant(1)),
             );
             context = context.assume_condition(
                 OldConditionTerm::address_equal(
-                    OldAddress::symbolic(Variable(9_881_000 + 2 * index)),
-                    OldAddress::symbolic(Variable(9_881_001 + 2 * index)),
+                    Address::symbolic(Variable(9_881_000 + 2 * index)),
+                    Address::symbolic(Variable(9_881_001 + 2 * index)),
                 ),
                 true,
             );
@@ -43,7 +37,7 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
         memory =
             memory.without_possible_aliasing_cells(&possible_write, 4, &PureFactContext::new());
         let retained_state = intern_memory(memory);
-        let read = OldAddress::loaded_value(&retained_state, &field);
+        let read = Address::loaded_value(&retained_state, &field);
         context
             .equality_graph
             .register_pointer_read_definition(&read, &retained_state, &field);
@@ -54,16 +48,16 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
         assert!(work > 0);
         samples.push(work);
         let wide_address = field.offset_by_bytes(32);
-        let write_alias = OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(9_880_303)), 4),
-        };
+        let write_alias = Address::new(
+            AddressBase::ExternalArgument,
+            AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(9_880_303)), 4),
+        );
         context = context.assume_condition(
             OldConditionTerm::address_equal(write_alias.clone(), wide_address.clone()),
             true,
         );
-        let parent = OldAddress::symbolic(Variable(9_880_304));
-        let parent_alias = OldAddress::symbolic(Variable(9_880_305));
+        let parent = Address::symbolic(Variable(9_880_304));
+        let parent_alias = Address::symbolic(Variable(9_880_305));
         context = context.assume_condition(
             OldConditionTerm::address_equal(parent.clone(), parent_alias.clone()),
             true,
@@ -110,7 +104,7 @@ fn complete_read_domains_use_numeric_storage_classes_without_scanning_other_clas
     let costs = [4u64, 16, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
         let mut facts = PureFactContext::new();
-        let equal = |a: OldAddress, b: OldAddress| {
+        let equal = |a: Address, b: Address| {
             OldConditionTerm::uint64_equal(
                 OldMachineTerm::integer_address(a),
                 OldMachineTerm::integer_address(b),
@@ -119,18 +113,18 @@ fn complete_read_domains_use_numeric_storage_classes_without_scanning_other_clas
         for index in 0..size {
             facts = facts.assume_condition(
                 equal(
-                    OldAddress::symbolic(Variable(9_890_000 + index * 2)),
-                    OldAddress::symbolic(Variable(9_890_001 + index * 2)),
+                    Address::symbolic(Variable(9_890_000 + index * 2)),
+                    Address::symbolic(Variable(9_890_001 + index * 2)),
                 ),
                 true,
             );
         }
-        let a = OldAddress::symbolic(Variable(9_889_000));
-        let b = OldAddress::symbolic(Variable(9_889_001));
+        let a = Address::symbolic(Variable(9_889_000));
+        let b = Address::symbolic(Variable(9_889_001));
         facts = facts.assume_condition(equal(a.clone(), b.clone()), true);
         let memory = intern_memory(SymbolicMemory::new());
-        let left = OldAddress::loaded_value(&memory, &a);
-        let right = OldAddress::loaded_value(&memory, &b);
+        let left = Address::loaded_value(&memory, &a);
+        let right = Address::loaded_value(&memory, &b);
         let (holds, work) = crate::instrumentation::measure_deterministic_work(|| {
             pointer_read_provenance_equal(&left, &right, &facts)
                 && pointer_read_bounds_equal(&left, &right, &facts)
@@ -151,31 +145,30 @@ fn copied_pointer_frames_ignore_unrelated_separations() {
     let costs = [16u64, 64, 256, 1024].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
         let _reads = crate::kernel::TransportReadScope::enter();
-        let separation =
-            |a: OldAddress, a_words: u32, b: OldAddress| Proposition::ResourceSeparate {
-                left: Box::new(Resource::Memory(MemoryRange::new(
-                    a,
-                    0u32.into(),
-                    a_words.into(),
-                ))),
-                right: Box::new(Resource::Memory(MemoryRange::new(
-                    b,
-                    0u32.into(),
-                    8u32.into(),
-                ))),
-            };
+        let separation = |a: Address, a_words: u32, b: Address| Proposition::ResourceSeparate {
+            left: Box::new(Resource::Memory(MemoryRange::new(
+                a,
+                0u32.into(),
+                a_words.into(),
+            ))),
+            right: Box::new(Resource::Memory(MemoryRange::new(
+                b,
+                0u32.into(),
+                8u32.into(),
+            ))),
+        };
         let mut facts = PureFactContext::new();
         for index in 0..size {
             facts = facts.assume_proposition(separation(
-                OldAddress::symbolic(Variable(9_910_000 + index * 2)),
+                Address::symbolic(Variable(9_910_000 + index * 2)),
                 4,
-                OldAddress::symbolic(Variable(9_910_001 + index * 2)),
+                Address::symbolic(Variable(9_910_001 + index * 2)),
             ));
         }
-        let header = OldAddress::symbolic(Variable(9_909_000));
+        let header = Address::symbolic(Variable(9_909_000));
         let field = header.clone().offset_by_bytes(8);
-        let buffer = OldAddress::symbolic(Variable(9_909_001));
-        let target = OldAddress::symbolic(Variable(9_909_002));
+        let buffer = Address::symbolic(Variable(9_909_001));
+        let target = Address::symbolic(Variable(9_909_002));
         let stored = OldPointer::new(target.clone(), ProgramType::Int32Pointer).with_bounds(Some(
             SubobjectBounds {
                 start: target,
@@ -209,14 +202,14 @@ fn copied_pointer_frames_ignore_unrelated_separations() {
 fn sibling_pointer_reads_stop_before_unrelated_shared_history() {
     let costs = [16u64, 64, 256, 1024].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
-        let field = OldAddress::symbolic(Variable(9_920_000));
+        let field = Address::symbolic(Variable(9_920_000));
         let mut memory = SymbolicMemory::new().with_block("local:read-common-history", 4096);
         for index in 0..size {
             memory = memory.store(
-                OldAddress {
-                    base: "local:read-common-history".into(),
-                    offset: AddressOffset::constant(index as i64 * 4),
-                },
+                Address::new(
+                    "local:read-common-history".into(),
+                    AddressOffset::constant(index as i64 * 4),
+                ),
                 ProgramValue::Int32(0u32.into()),
             );
         }
@@ -231,19 +224,16 @@ fn sibling_pointer_reads_stop_before_unrelated_shared_history() {
         let producer = crate::kernel::equality_graph::EqualityGraph::default();
         for index in 0..size {
             producer.register_pointer_read_definition(
-                &OldAddress {
-                    base: field.base.clone(),
-                    offset: AddressOffset::scale_int32(
-                        OldMachineTerm::Variable(Variable(9_930_000 + index)),
-                        4,
-                    ),
-                },
+                &field.with_offset(AddressOffset::scale_int32(
+                    OldMachineTerm::Variable(Variable(9_930_000 + index)),
+                    4,
+                )),
                 &left,
                 &field.offset_by_bytes(32 + index as u32 * 8),
             );
         }
         let legacy = |memory: &SharedMemory| {
-            OldAddress::loaded(&OldMachineTerm::read_named(
+            Address::loaded(&OldMachineTerm::read_named(
                 ProgramPoint::at(memory),
                 Box::new(field.clone()),
                 LoadKind::Int32,
@@ -258,13 +248,13 @@ fn sibling_pointer_reads_stop_before_unrelated_shared_history() {
         let (holds, work) = crate::instrumentation::measure_deterministic_work(|| {
             complete_pointer_reads_equal_across_frame(&a, &b, &context)
                 && pointer_read_provenance_equal(
-                    &OldAddress::loaded_value(&left, &field),
-                    &OldAddress::loaded_value(&right, &field),
+                    &Address::loaded_value(&left, &field),
+                    &Address::loaded_value(&right, &field),
                     &context,
                 )
                 && pointer_read_bounds_equal(
-                    &OldAddress::loaded_value(&left, &field),
-                    &OldAddress::loaded_value(&right, &field),
+                    &Address::loaded_value(&left, &field),
+                    &Address::loaded_value(&right, &field),
                     &context,
                 )
         });
@@ -283,25 +273,19 @@ fn sibling_pointer_reads_stop_before_unrelated_shared_history() {
 fn packed_word_transport_visits_only_the_selected_word_and_delta() {
     let samples = [4u32, 16, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
-        let field = OldAddress {
-            base: "packed-scaling".into(),
-            offset: AddressOffset::constant(0),
-        };
+        let field = Address::new("packed-scaling".into(), AddressOffset::constant(0));
         let mut memory = SymbolicMemory::new().with_block("packed-scaling", 32);
         let mut context = PureFactContext::new();
         for index in 0..size {
             let name = format!("local:unrelated-packed-{index}");
             memory = memory.with_block(name.clone(), 4).store(
-                OldAddress {
-                    base: name.into(),
-                    offset: AddressOffset::constant(0),
-                },
+                Address::new(name.into(), AddressOffset::constant(0)),
                 ProgramValue::Int32(OldMachineTerm::constant(index)),
             );
             context = context.assume_condition(
                 OldConditionTerm::address_equal(
-                    OldAddress::symbolic(Variable(9_892_000 + 2 * u64::from(index))),
-                    OldAddress::symbolic(Variable(9_892_001 + 2 * u64::from(index))),
+                    Address::symbolic(Variable(9_892_000 + 2 * u64::from(index))),
+                    Address::symbolic(Variable(9_892_001 + 2 * u64::from(index))),
                 ),
                 true,
             );
@@ -313,13 +297,13 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
             LoadKind::Bits64,
         );
         let value = OldPointer::from_read(
-            OldAddress::from_integer_address(bits),
+            Address::from_integer_address(bits),
             ProgramType::VoidPointer,
             &before,
             &field,
         );
         let parent = OldPointer::new(
-            OldAddress::symbolic(Variable(9_891_000)),
+            Address::symbolic(Variable(9_891_000)),
             ProgramType::VoidPointer,
         );
         let source = Proposition::condition_is(
@@ -401,12 +385,12 @@ fn converted_narrow_read_value_uses_only_selected_terms_and_cells() {
     let mut samples = Vec::new();
     for size in [4u64, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = OldAddress::symbolic(Variable(9_889_000));
+        let pointer = Address::symbolic(Variable(9_889_000));
         let mut memory = SymbolicMemory::new();
         let mut facts = PureFactContext::new();
         for index in 0..size {
             memory = memory.store(
-                OldAddress::symbolic(Variable(9_890_000 + index)),
+                Address::symbolic(Variable(9_890_000 + index)),
                 crate::kernel::uint8(7),
             );
             facts = facts.assume_condition(
@@ -469,22 +453,19 @@ fn converted_narrow_read_value_uses_only_selected_terms_and_cells() {
 fn complete_word_record_at_bounded_stop_has_flat_lookup_work() {
     let samples = [4u64, 16, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
-        let field = OldAddress {
-            base: "global:word-carrier".into(),
-            offset: AddressOffset::constant(0),
-        };
+        let field = Address::new("global:word-carrier".into(), AddressOffset::constant(0));
         let context = PureFactContext::new();
         let mut memory = SymbolicMemory::new();
         for index in 0..size {
             memory = memory.store(
-                OldAddress {
-                    base: format!("local:carrier-noise-{index}").into(),
-                    offset: AddressOffset::constant(0),
-                },
+                Address::new(
+                    format!("local:carrier-noise-{index}").into(),
+                    AddressOffset::constant(0),
+                ),
                 ProgramValue::Int32(7u32.into()),
             );
         }
-        let target = OldAddress::symbolic(Variable(9_887_001));
+        let target = Address::symbolic(Variable(9_887_001));
         let value = ProgramValue::PointerInteger(PointerIntegerValue {
             numeric: Box::new(ProgramValue::UInt64(OldMachineTerm::integer_address(
                 target.clone(),
@@ -494,13 +475,9 @@ fn complete_word_record_at_bounded_stop_has_flat_lookup_work() {
         });
         let memory = memory
             .store(field.clone(), value.clone())
-            .without_possible_aliasing_cells(
-                &OldAddress::symbolic(Variable(9_887_002)),
-                8,
-                &context,
-            );
+            .without_possible_aliasing_cells(&Address::symbolic(Variable(9_887_002)), 8, &context);
         assert!(memory.known_value(&field).is_none());
-        let read = OldAddress::loaded_value(&intern_memory(memory), &field);
+        let read = Address::loaded_value(&intern_memory(memory), &field);
         let (recovered, work) = crate::instrumentation::measure_deterministic_work(|| {
             complete_pointer_carrier_read_value(&read, &context)
         });
@@ -518,8 +495,8 @@ fn complete_word_record_at_bounded_stop_has_flat_lookup_work() {
 fn complete_word_frame_reuses_named_versions_across_observations() {
     let costs = [4u32, 16, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
-        let field = OldAddress::symbolic(Variable(9_950_001));
-        let write = OldAddress::symbolic(Variable(9_950_002));
+        let field = Address::symbolic(Variable(9_950_001));
+        let write = Address::symbolic(Variable(9_950_002));
         let base = intern_memory(SymbolicMemory::new());
         let mut observed = base.memory().clone();
         for index in 0..size {
@@ -533,7 +510,7 @@ fn complete_word_frame_reuses_named_versions_across_observations() {
         // This is the actual read producer, not a warm-up of the query:
         // its provenance names the pre-observation version of the word.
         let value = OldPointer::from_read(
-            OldAddress::from_integer_address(OldMachineTerm::uint64_constant(8)),
+            Address::from_integer_address(OldMachineTerm::uint64_constant(8)),
             ProgramType::Int32Pointer,
             &before,
             &field,
@@ -543,7 +520,7 @@ fn complete_word_frame_reuses_named_versions_across_observations() {
             ProgramValue::UInt64(OldMachineTerm::uint64_constant(1)),
         ));
         let target = OldPointer::from_read(
-            OldAddress::from_integer_address(OldMachineTerm::uint64_constant(8)),
+            Address::from_integer_address(OldMachineTerm::uint64_constant(8)),
             ProgramType::Int32Pointer,
             &after,
             &field,
@@ -566,7 +543,7 @@ fn complete_word_frame_reuses_named_versions_across_observations() {
                 .clone()
                 .store(field.offset_by_bytes(4), ProgramValue::UInt32(0u32.into())),
         );
-        let changed = OldAddress::loaded_value(&overwritten, &field);
+        let changed = Address::loaded_value(&overwritten, &field);
         let (holds, work) = crate::instrumentation::measure_deterministic_work(|| {
             complete_pointer_reads_equal_across_frame(
                 value.provenance(),

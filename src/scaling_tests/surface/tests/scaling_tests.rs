@@ -2316,19 +2316,16 @@ fn loadable_candidate_selection_ignores_facts_about_other_objects() {
     use crate::kernel::OffsetTree;
     use crate::kernel::search::proposition_search::{candidate_visits, reset_candidate_visits};
     use crate::kernel::{
-        AddressOffset, OldAddress, OldMachineTerm, Proposition, PureFactContext, SymbolicMemory,
+        Address, AddressOffset, OldMachineTerm, Proposition, PureFactContext, SymbolicMemory,
         Variable,
     };
 
     let memory = SymbolicMemory::new();
     let at = |block: &str, element: u32| {
-        OldAddress {
-            base: block.into(),
-            offset: AddressOffset::variable(Variable(450_000)),
-        }
-        .offset_by_bytes(4 * element)
+        Address::new(block.into(), AddressOffset::variable(Variable(450_000)))
+            .offset_by_bytes(4 * element)
     };
-    let loadable = |base: OldAddress, bytes: u32| Proposition::MemoryLoadable {
+    let loadable = |base: Address, bytes: u32| Proposition::MemoryLoadable {
         point: Default::default(),
         memory: memory.clone(),
         base,
@@ -2438,22 +2435,24 @@ fn read_defined_and_separation_selection_try_indexed_sources_first() {
     use crate::kernel::OffsetTree;
     use crate::kernel::search::proposition_search::{candidate_visits, reset_candidate_visits};
     use crate::kernel::{
-        AddressOffset, MemoryRange, OldAddress, OldConditionTerm, OldMachineTerm, ProgramType,
+        Address, AddressOffset, MemoryRange, OldConditionTerm, OldMachineTerm, ProgramType,
         Proposition, PureFactContext, Resource, SymbolicMemory, Variable,
     };
 
     let memory = SymbolicMemory::new().with_block("goal", 64);
-    let read_defined = |pointer: OldAddress| Proposition::MemoryReadDefined {
+    let read_defined = |pointer: Address| Proposition::MemoryReadDefined {
         at: None,
         memory: memory.clone(),
         pointer,
         value_type: ProgramType::Int32,
     };
-    let at = |block: String, variable: u64| OldAddress {
-        base: block.as_str().into(),
-        offset: AddressOffset::variable(Variable(variable)),
+    let at = |block: String, variable: u64| {
+        Address::new(
+            block.as_str().into(),
+            AddressOffset::variable(Variable(variable)),
+        )
     };
-    let range = |base: OldAddress, start: u32, end: u32| {
+    let range = |base: Address, start: u32, end: u32| {
         Resource::Memory(MemoryRange::new(
             base,
             OldMachineTerm::constant(start),
@@ -2465,11 +2464,8 @@ fn read_defined_and_separation_selection_try_indexed_sources_first() {
             left: Box::new(range(at(block.clone(), variable), start, end)),
             right: Box::new(range(at(block, variable + 1), start, end)),
         };
-    let address = OldAddress {
-        base: "goal".into(),
-        offset: AddressOffset::constant(0),
-    };
-    let alias = OldAddress::symbolic(Variable(460_000));
+    let address = Address::new("goal".into(), AddressOffset::constant(0));
+    let alias = Address::symbolic(Variable(460_000));
     let cases: [(
         &str,
         Vec<Proposition>,
@@ -2487,10 +2483,10 @@ fn read_defined_and_separation_selection_try_indexed_sources_first() {
             ],
             read_defined(alias),
             &|index| {
-                read_defined(OldAddress {
-                    base: format!("other{index}").as_str().into(),
-                    offset: AddressOffset::constant(0),
-                })
+                read_defined(Address::new(
+                    format!("other{index}").as_str().into(),
+                    AddressOffset::constant(0),
+                ))
             },
         ),
         (
@@ -7095,17 +7091,19 @@ fn the_automatic_loop_closer_joins_c_branches_instead_of_walking_every_path() {
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn atomic_memory_evidence_cites_only_connected_conditions() {
     use crate::kernel::{
-        AddressOffset, OldAddress, OldConditionTerm, OldMachineTerm, Proposition, PureFactContext,
+        Address, AddressOffset, OldConditionTerm, OldMachineTerm, Proposition, PureFactContext,
         SymbolicMemory, Variable,
     };
 
     let memory = SymbolicMemory::new();
     // The address of element `variable` of the goal's array.
-    let at = |variable: u64| OldAddress {
-        base: "goal".into(),
-        offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(variable)), 4),
+    let at = |variable: u64| {
+        Address::new(
+            "goal".into(),
+            AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(variable)), 4),
+        )
     };
-    let loadable = |base: OldAddress, bytes: u32| Proposition::MemoryLoadable {
+    let loadable = |base: Address, bytes: u32| Proposition::MemoryLoadable {
         memory: memory.clone(),
         base,
         bytes: (OldMachineTerm::constant(bytes)).into(),
@@ -7133,19 +7131,16 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
         (
             "a non-null source without other non-null objects",
             vec![
-                loadable(OldAddress::symbolic(Variable(470_002)), 16),
+                loadable(Address::symbolic(Variable(470_002)), 16),
                 Proposition::condition_is(
                     OldConditionTerm::address_equal(
-                        OldAddress::symbolic(Variable(470_002)),
-                        OldAddress::null(),
+                        Address::symbolic(Variable(470_002)),
+                        Address::null(),
                     ),
                     false,
                 ),
             ],
-            loadable(
-                OldAddress::symbolic(Variable(470_002)).offset_by_bytes(4),
-                4,
-            ),
+            loadable(Address::symbolic(Variable(470_002)).offset_by_bytes(4), 4),
             Some(1),
         ),
         (
@@ -7171,17 +7166,17 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
                         .assume_proposition(equal(471_000 + 2 * index, 471_001 + 2 * index))
                         .assume_proposition(Proposition::condition_is(
                             OldConditionTerm::address_equal(
-                                OldAddress::symbolic(Variable(475_000 + index)),
-                                OldAddress::null(),
+                                Address::symbolic(Variable(475_000 + index)),
+                                Address::null(),
                             ),
                             false,
                         ))
                         .assume_proposition(Proposition::MemoryLoadable {
                             memory: memory.clone(),
-                            base: OldAddress {
-                                base: format!("other{index}").as_str().into(),
-                                offset: AddressOffset::constant(0),
-                            },
+                            base: Address::new(
+                                format!("other{index}").as_str().into(),
+                                AddressOffset::constant(0),
+                            ),
                             bytes: (OldMachineTerm::constant(16)).into(),
                             wide: false,
                         });
@@ -7255,14 +7250,11 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
 #[test]
 fn atomic_load_dependencies_ignore_other_state_cells() {
     use crate::kernel::{
-        AddressOffset, OldAddress, OldConditionTerm, OldMachineTerm, ProgramValue, Proposition,
+        Address, AddressOffset, OldConditionTerm, OldMachineTerm, ProgramValue, Proposition,
         PureFactContext, SymbolicMemory, Variable,
     };
 
-    let index_cell = OldAddress {
-        base: "selected-index".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let index_cell = Address::new("selected-index".into(), AddressOffset::constant(0));
     let index = OldMachineTerm::Variable(Variable(490_000));
     let equality = Proposition::condition_is(
         OldConditionTerm::Compare {
@@ -7281,10 +7273,10 @@ fn atomic_load_dependencies_ignore_other_state_cells() {
         for i in 0..size {
             let value = OldMachineTerm::Variable(Variable(491_000 + i as u64));
             memory = memory.store(
-                OldAddress {
-                    base: format!("other-cell-{i}").as_str().into(),
-                    offset: AddressOffset::constant(0),
-                },
+                Address::new(
+                    format!("other-cell-{i}").as_str().into(),
+                    AddressOffset::constant(0),
+                ),
                 ProgramValue::Int32(value.clone()),
             );
             context = context.assume_proposition(Proposition::condition_is(
@@ -7297,9 +7289,11 @@ fn atomic_load_dependencies_ignore_other_state_cells() {
                 true,
             ));
         }
-        let at = |value| OldAddress {
-            base: "selected-array".into(),
-            offset: AddressOffset::scaled_int32_node(value, 4),
+        let at = |value| {
+            Address::new(
+                "selected-array".into(),
+                AddressOffset::scaled_int32_node(value, 4),
+            )
         };
         let source = Proposition::MemoryLoadable {
             point: Default::default(),
@@ -7355,7 +7349,7 @@ fn atomic_load_dependencies_ignore_other_state_cells() {
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn atomic_evidence_without_one_source_cites_connected_facts() {
     use crate::kernel::{
-        AddressOffset, OldAddress, OldConditionTerm, OldMachineTerm, Proposition, PureFactContext,
+        Address, AddressOffset, OldConditionTerm, OldMachineTerm, Proposition, PureFactContext,
         Sort, SymbolicMemory, Variable,
     };
 
@@ -7363,10 +7357,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
     let load = |offset: AddressOffset| {
         OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
-            Box::new(OldAddress {
-                base: "data".into(),
-                offset: offset.into(),
-            }),
+            Box::new(Address::new("data".into(), offset.into())),
             crate::kernel::LoadKind::Int32,
         )
     };
@@ -7424,10 +7415,10 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
                 ))
                 .assume_proposition(Proposition::MemoryLoadable {
                     memory: memory.clone(),
-                    base: OldAddress {
-                        base: format!("other{index}").as_str().into(),
-                        offset: AddressOffset::scaled_int32_node(variable(482_000 + index), 4),
-                    },
+                    base: Address::new(
+                        format!("other{index}").as_str().into(),
+                        AddressOffset::scaled_int32_node(variable(482_000 + index), 4),
+                    ),
                     bytes: (OldMachineTerm::constant(16)).into(),
                     wide: false,
                 });
@@ -7503,10 +7494,10 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
                     ))
                     .assume_proposition(Proposition::MemoryLoadable {
                         memory: memory.clone(),
-                        base: OldAddress {
-                            base: format!("extension{step}").as_str().into(),
-                            offset: AddressOffset::constant(0),
-                        },
+                        base: Address::new(
+                            format!("extension{step}").as_str().into(),
+                            AddressOffset::constant(0),
+                        ),
                         bytes: (OldMachineTerm::constant(16)).into(),
                         wide: false,
                     });
@@ -8166,9 +8157,11 @@ fn recorded_value_names_index_only_the_locals_each_point_changes() {
         crate::kernel::ResourceFieldType::Program(ProgramType::Int32),
     )])
     .unwrap();
-    let block_pointer = |index: usize| crate::kernel::OldAddress {
-        base: crate::kernel::AddressBase::Symbolic(Variable(800_000 + index as u64)),
-        offset: AddressOffset::constant(0),
+    let block_pointer = |index: usize| {
+        Address::new(
+            crate::kernel::AddressBase::Symbolic(Variable(800_000 + index as u64)),
+            AddressOffset::constant(0),
+        )
     };
     for size in [16usize, 64, 256, 1024] {
         let mut retained_states = RecordedStates::new();
@@ -8214,10 +8207,10 @@ fn recorded_value_names_index_only_the_locals_each_point_changes() {
             state = state.with_resource_context(resources);
             // And one memory cell a new value.
             let memory = state.memory().clone().store(
-                crate::kernel::OldAddress {
-                    base: crate::kernel::AddressBase::Concrete("cells".into()),
-                    offset: AddressOffset::constant(4 * index as i64),
-                },
+                Address::new(
+                    crate::kernel::AddressBase::Concrete("cells".into()),
+                    AddressOffset::constant(4 * index as i64),
+                ),
                 ProgramValue::Int32(value(6 * size + index)),
             );
             state = state.with_memory(memory);
@@ -10416,12 +10409,12 @@ fn post_return_function_equations_scale_with_explicit_unfolds() {
 /// call's exit removes the spelling.
 #[test]
 fn recorded_pointer_call_results_scale_and_follow_replacement() {
-    use crate::kernel::{OldAddress, ProgramType, Variable};
+    use crate::kernel::{Address, ProgramType, Variable};
     for size in [16usize, 64, 256, 1024] {
         let mut retained_states = RecordedStates::new();
         let value = |index: u64| {
             ProgramValue::typed_pointer(
-                OldAddress::symbolic(Variable(710_000 + index)),
+                Address::symbolic(Variable(710_000 + index)),
                 ProgramType::Int32Pointer,
             )
         };
@@ -10431,7 +10424,7 @@ fn recorded_pointer_call_results_scale_and_follow_replacement() {
             });
             assert!(work <= 2, "{size}: insertion {work}");
         }
-        let first = OldAddress::symbolic(Variable(710_000));
+        let first = Address::symbolic(Variable(710_000));
         let (region, work) = crate::instrumentation::measure_deterministic_work(|| {
             retained_states.call_result_naming_pointer(&first)
         });

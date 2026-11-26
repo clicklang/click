@@ -3,10 +3,7 @@ use super::*;
 #[test]
 fn unindexed_boolean_loads_use_their_certified_observation_point() {
     let _session = crate::kernel::VerificationSession::enter();
-    let address = OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::constant(0),
-    };
+    let address = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0));
     let pointer = ProgramValue::typed_pointer(address.clone(), ProgramType::UInt8Pointer);
     let first = ExecutionState::new()
         .begin_function_entry_memory()
@@ -72,10 +69,7 @@ fn unindexed_boolean_loads_use_their_certified_observation_point() {
 #[test]
 fn caller_callback_reads_keep_the_entry_point() {
     let _session = crate::kernel::VerificationSession::enter();
-    let address = OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::constant(0),
-    };
+    let address = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0));
     let ty = ProgramType::FunctionPointer(ProgramType::function_pointer_signature(
         ProgramType::Int32,
         &[ProgramType::Int32],
@@ -180,10 +174,7 @@ fn caller_int128_reads_keep_the_entry_point() {
 
 fn assert_caller_integer_reads_keep_the_entry_point(value_types: &[ProgramType]) {
     let _session = crate::kernel::VerificationSession::enter();
-    let address = OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::constant(0),
-    };
+    let address = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0));
     let local = crate::kernel::SymbolicMemory::local_pointer("unrelated");
     for &ty in value_types {
         let pointer_type = ty.pointer_to().unwrap();
@@ -252,14 +243,8 @@ fn assert_caller_integer_reads_keep_the_entry_point(value_types: &[ProgramType])
 #[test]
 fn logical_pointer_field_uses_current_pointee_memory() {
     use crate::kernel::{AggregateField, AggregateLayout};
-    let slot = OldAddress {
-        base: "local:frame:0:input".into(),
-        offset: AddressOffset::constant(0),
-    };
-    let pointee = OldAddress {
-        base: "local:pointee".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let slot = Address::new("local:frame:0:input".into(), AddressOffset::constant(0));
+    let pointee = Address::new("local:pointee".into(), AddressOffset::constant(0));
     let mut entry = ExecutionState::new().with_memory(
         SymbolicMemory::new()
             .with_block(slot.base.clone(), 8)
@@ -334,10 +319,7 @@ mod scaling_tests {
 fn held_abstract_loads_keep_their_store_point_in_equality() {
     use crate::kernel::{AggregateLayout, TypeParameterName};
     let _session = crate::kernel::VerificationSession::enter();
-    let slot = OldAddress {
-        base: "local:abstract-slot".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let slot = Address::new("local:abstract-slot".into(), AddressOffset::constant(0));
     let parameter = TypeParameterName::intern("PointNamedLocal");
     let value_type = ProgramType::Parameter(parameter);
     let mut start = ExecutionState::new().with_memory(
@@ -380,10 +362,7 @@ fn held_abstract_loads_keep_their_store_point_in_equality() {
     };
     assert_eq!(point.read_version_id(), left.observation_point_id());
     let disjoint = left.clone().with_memory(left.memory().clone().store(
-        OldAddress {
-            base: "local:unrelated".into(),
-            offset: AddressOffset::constant(0),
-        },
+        Address::new("local:unrelated".into(), AddressOffset::constant(0)),
         int32(7),
     ));
     assert_eq!(read(&disjoint), first);

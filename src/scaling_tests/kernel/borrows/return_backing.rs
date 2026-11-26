@@ -1,7 +1,7 @@
 use super::*;
 #[test]
 fn selected_permissions_ignore_related_projection_history() {
-    let p = OldAddress::symbolic(Variable(8_911_000));
+    let p = Address::symbolic(Variable(8_911_000));
     let view = |start: u32| {
         ResourceFact::view_memory(MemoryRange::new(
             p.clone(),

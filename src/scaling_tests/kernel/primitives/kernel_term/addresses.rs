@@ -4,9 +4,9 @@ use super::*;
 fn address_construction_and_identity_do_not_walk_displacement_dags() {
     for unrelated in [0, 128, 512] {
         let _unrelated = (0..unrelated)
-            .map(|i| SharedAddressBase::import(&AddressBase::Heap(i)))
+            .map(|i| SharedAddressBase::new(AddressBase::Heap(i)))
             .collect::<Vec<_>>();
-        let block = SharedAddressBase::import(&AddressBase::Symbolic(Variable(999001)));
+        let block = SharedAddressBase::new(AddressBase::Symbolic(Variable(999001)));
         for size in [16, 64, 256] {
             let mut offset = KernelAddressOffset::Constant(0).into_shared().unwrap();
             for _ in 0..size {
@@ -20,7 +20,7 @@ fn address_construction_and_identity_do_not_walk_displacement_dags() {
                 assert_eq!(a, b);
                 let mut hash = std::collections::hash_map::DefaultHasher::new();
                 a.hash(&mut hash);
-                assert_eq!(a.node().offset, offset);
+                assert_eq!(a.offset(), &offset);
             });
             assert_eq!(work, 2, "size={size}, unrelated={unrelated}");
         }
@@ -28,25 +28,26 @@ fn address_construction_and_identity_do_not_walk_displacement_dags() {
 }
 
 #[test]
-fn block_import_charges_selected_bytes_not_unrelated_literal_bytes() {
+fn block_admission_charges_selected_bytes_not_unrelated_literal_bytes() {
     for size in [16, 64, 256] {
         let _unrelated = (0..size)
             .map(|i| {
-                SharedAddressBase::import(&AddressBase::StringLiteral {
+                SharedAddressBase::new(AddressBase::StringLiteral {
                     identity: StringLiteralId::new(format!("unrelated-{i}"), 0),
                     bytes: vec![0; size * 16],
                 })
             })
             .collect::<Vec<_>>();
-        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            SharedAddressBase::import(&AddressBase::Symbolic(Variable(999002)))
-        });
+        let symbolic = AddressBase::Symbolic(Variable(999002));
+        let (_, work) =
+            crate::instrumentation::measure_deterministic_work(|| SharedAddressBase::new(symbolic));
         // Identifier atoms bypass the variable-sized payload interner.
-        assert_eq!(work, 1);
-        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            SharedAddressBase::import(&AddressBase::Concrete("x".repeat(size)))
-        });
-        assert_eq!(work, 9 + size);
+        assert_eq!(work, 0);
+        let named = AddressBase::Concrete("x".repeat(size));
+        let (_, work) =
+            crate::instrumentation::measure_deterministic_work(|| SharedAddressBase::new(named));
+        // One read of the selected atom and its bytes.
+        assert_eq!(work, 1 + size);
     }
 }
 
@@ -56,13 +57,21 @@ fn named_pointer_admission_cost_is_independent_of_prior_imports() {
         let block = AddressBase::Concrete("n".repeat(size));
         let mut retained = Vec::new();
         for _ in 0..3 {
+            let source = block.clone();
             let (value, work) = crate::instrumentation::measure_deterministic_work(|| {
-                SharedAddressBase::import_with_upkeep(&block, true)
+                Address::new(source, AddressOffset::constant(0))
             });
-            assert_eq!(work, 9 + size);
+            // The first admission interns the block; later ones find it
+            // live and pay the same.
+            assert_eq!(work, 1 + size);
             retained.push(value);
         }
-        assert!(retained.windows(2).all(|pair| pair[0] == pair[1]));
+        assert!(
+            retained
+                .windows(2)
+                .all(|pair| pair[0] == pair[1]
+                    && pair[0].shared().same_exact_block(pair[1].shared()))
+        );
     }
 }
 
@@ -82,7 +91,7 @@ fn raw_pointer_conditions_keep_shared_displacements_through_rewrites_and_transpo
                 .unwrap();
         }
         let address = SharedAddress::new(
-            SharedAddressBase::import(&AddressBase::Symbolic(Variable(999700))),
+            SharedAddressBase::new(AddressBase::Symbolic(Variable(999700))),
             offset.clone(),
         );
         let source = KernelTerm::address_equal_raw([address.clone(), address]);
@@ -104,7 +113,7 @@ fn raw_pointer_conditions_keep_shared_displacements_through_rewrites_and_transpo
                     crate::kernel::reasoning::substitute_pointer_variable_in_common_condition(
                         &nested,
                         Variable(999700),
-                        &OldAddress::symbolic(Variable(999703)),
+                        &Address::symbolic(Variable(999703)),
                     )
                     .unwrap();
                 let transported = crate::kernel::memory_history::transport_framed_common_condition(
@@ -123,9 +132,9 @@ fn raw_pointer_conditions_keep_shared_displacements_through_rewrites_and_transpo
         let KernelTermNode::AddressEqual { arguments } = arguments[0].node() else {
             panic!("raw address equality")
         };
-        assert_eq!(arguments[0].node().offset, offset);
+        assert_eq!(arguments[0].offset(), &offset);
         assert_eq!(
-            arguments[0].node().base.native_atom(),
+            arguments[0].atom(),
             &AddressBase::Symbolic(Variable(999703))
         );
         assert_eq!(KernelTermExport::machine_export_count(), exports);
@@ -150,11 +159,11 @@ fn complete_pointer_conditions_keep_shared_domains_through_rewrites_and_observat
         }
         let values = [999802, 999803].map(|variable| {
             let source = SharedPointer::import(&OldPointer::new(
-                OldAddress::symbolic(Variable(variable)),
+                Address::symbolic(Variable(variable)),
                 ProgramType::Int32Pointer,
             ));
             let mut value = source.node().clone();
-            value.address = SharedAddress::new(value.address.node().base.clone(), offset.clone());
+            value.address = SharedAddress::new(value.address.block(), offset.clone());
             SharedPointer::new(value)
         });
         let root = KernelTerm::pointer_equal_raw(values.clone());
@@ -174,7 +183,7 @@ fn complete_pointer_conditions_keep_shared_domains_through_rewrites_and_observat
                 crate::kernel::reasoning::substitute_pointer_variable_in_common_condition(
                     &root,
                     Variable(999809),
-                    &OldAddress::null(),
+                    &Address::null(),
                 )
                 .unwrap();
             assert_eq!(
@@ -208,7 +217,7 @@ fn complete_pointer_conditions_keep_shared_domains_through_rewrites_and_observat
         let KernelTermNode::PointerEqual(pair) = pointers.node() else {
             panic!("complete pointer equality");
         };
-        assert_eq!(pair.arguments()[0].node().address.node().offset, offset);
+        assert_eq!(pair.arguments()[0].node().address.offset(), &offset);
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         assert!(work <= 500 * size + 5000, "size={size}, work={work}");
     }

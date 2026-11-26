@@ -3,10 +3,7 @@ use super::*;
 #[test]
 fn returned_borrows_keep_checked_entry_arguments_when_clauses_are_reordered() {
     let field = |name: &str| {
-        let address = OldAddress {
-            base: format!("parent:{name}").into(),
-            offset: AddressOffset::constant(0),
-        };
+        let address = Address::new(format!("parent:{name}").into(), AddressOffset::constant(0));
         ProgramExpression::TypedLoad {
             pointer: Box::new(ProgramExpression::Value(ProgramValue::pointer(address))),
             value_type: ProgramType::Int32Pointer,
@@ -35,10 +32,10 @@ fn returned_borrows_keep_checked_entry_arguments_when_clauses_are_reordered() {
     let children = ["child:left", "child:right"].map(|name| {
         ResourceFact::own_composite(
             "child_ref".into(),
-            vec![ProgramValue::pointer(OldAddress {
-                base: name.into(),
-                offset: AddressOffset::constant(0),
-            })],
+            vec![ProgramValue::pointer(Address::new(
+                name.into(),
+                AddressOffset::constant(0),
+            ))],
         )
     });
     let checked = children
@@ -83,7 +80,7 @@ fn composite_entry_and_return_publish_definedness_at_their_selected_points() {
     use crate::kernel::program_expression::{int32_literal, pointer_value, variable};
 
     let _session = crate::kernel::VerificationSession::enter();
-    let pointer = OldAddress::symbolic(Variable(8_806_000));
+    let pointer = Address::symbolic(Variable(8_806_000));
     let held = ResourceFact::own_composite(
         "initialized_cell".into(),
         vec![ProgramValue::typed_pointer(
@@ -259,7 +256,7 @@ fn run_mixed_call(
     produced_first: bool,
     overlap: bool,
 ) -> (ExecutionState, Vec<FunctionPath>) {
-    let pointer = OldAddress::symbolic(Variable(8_800_000));
+    let pointer = Address::symbolic(Variable(8_800_000));
     let held =
         ResourceFact::own_memory(MemoryRange::new(pointer.clone(), 0u32.into(), 1u32.into()));
     let state = ExecutionState::new()
@@ -354,7 +351,7 @@ fn mixed_produced_flat_memory_cannot_duplicate_a_restored_borrow() {
 #[test]
 fn return_roles_follow_skipped_guards_and_deferred_output_emission() {
     use crate::kernel::program_expression::{int32_literal, pointer_value, variable};
-    let at = |id: u64| OldAddress::symbolic(Variable(8_840_000 + id));
+    let at = |id: u64| Address::symbolic(Variable(8_840_000 + id));
     let segment = |base| MemorySegment::new(base, int32_literal(0), int32_literal(1));
     let borrowed = ResourceSpec::owned_memory(segment(variable("unmaterialized_entry_name")))
         .with_role(ResourceTransferRole::Borrow)
@@ -451,9 +448,9 @@ fn return_roles_follow_skipped_guards_and_deferred_output_emission() {
 #[test]
 fn borrowed_composite_bodies_still_check_post_memory_against_the_retained_frame() {
     use crate::kernel::program_expression::{int32_literal, variable};
-    let field = OldAddress::symbolic(Variable(8_850_000));
-    let old_child = OldAddress::symbolic(Variable(8_850_001));
-    let retained_child = OldAddress::symbolic(Variable(8_850_002));
+    let field = Address::symbolic(Variable(8_850_000));
+    let old_child = Address::symbolic(Variable(8_850_001));
+    let retained_child = Address::symbolic(Variable(8_850_002));
     let field_value = ProgramValue::typed_pointer(field.clone(), ProgramType::Int32PointerPointer);
     let borrowed = ResourceSpec::declared(
         ResourceFamily::Composite,
@@ -576,8 +573,8 @@ fn unmatched_entry_borrow_descriptions_do_not_authorize_restoration() {
         program_skip(),
     )
     .with_resource_summary(vec![], vec![borrowed, produced]);
-    let p = OldAddress::symbolic(Variable(8_860_000));
-    let q = OldAddress::symbolic(Variable(8_860_001));
+    let p = Address::symbolic(Variable(8_860_000));
+    let q = Address::symbolic(Variable(8_860_001));
     let facts = PureFactContext::new();
     let held = ResourceFact::own_memory(MemoryRange::new(p.clone(), 0u32.into(), 1u32.into()));
     let frame = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(held);
@@ -587,8 +584,8 @@ fn unmatched_entry_borrow_descriptions_do_not_authorize_restoration() {
         .with_local("q", ProgramValue::pointer(q.clone()))
         .with_memory(
             SymbolicMemory::new()
-                .with_block(p.base, 4)
-                .with_block(q.base, 4),
+                .with_block(p.base.clone(), 4)
+                .with_block(q.base.clone(), 4),
         );
     let evaluated = evaluate_contract_return_resource_context(
         function.contract_interface(),

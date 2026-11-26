@@ -2179,16 +2179,16 @@ mod tests {
     #[test]
     fn checked_spec_rewrite_reserves_integer_ids_hidden_in_registered_load_offsets() {
         let memory: SharedMemory = SymbolicMemory::new().into();
-        let pointer = OldAddress {
-            base: AddressBase::Symbolic(Variable(101)),
-            offset: AddressOffset::scaled_int32_node(
+        let pointer = Address::new(
+            AddressBase::Symbolic(Variable(101)),
+            AddressOffset::scaled_int32_node(
                 OldMachineTerm::IntegerToMachine {
                     value: IntegerTerm::var(Variable(0)).into(),
                     destination: MachineIntegerType::Int32,
                 },
                 4,
             ),
-        };
+        );
         // The visible program term contains only the registered load variable.  Its
         // pointer offset retains the free Integer ID 0, which must still be
         // reserved before a program-value binder is freshened.

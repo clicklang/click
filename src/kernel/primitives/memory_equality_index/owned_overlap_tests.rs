@@ -6,10 +6,10 @@ mod scaling_tests {
     );
 }
 
-fn at(id: u64) -> OldAddress {
-    OldAddress::symbolic(Variable(8_750_000 + id))
+fn at(id: u64) -> Address {
+    Address::symbolic(Variable(8_750_000 + id))
 }
-fn owner(base: OldAddress, start: u32, end: u32) -> ResourceFact {
+fn owner(base: Address, start: u32, end: u32) -> ResourceFact {
     ResourceFact::own_memory(MemoryRange::new_with_element_width(
         base,
         start.into(),
@@ -114,7 +114,7 @@ fn a_query_read_definition_is_registered_in_the_paired_namespace() {
         C_POINTER_BYTE_WIDTH,
         &retained_state,
     );
-    let read = OldAddress::loaded(&OldMachineTerm::Variable(variable)).unwrap();
+    let read = Address::loaded(&OldMachineTerm::Variable(variable)).unwrap();
     facts.register_pointer_read(&read, &retained_state, &field);
     let _operation = crate::kernel::search::FastOperationScope::enter(
         "ownership through a newly registered read",
@@ -153,12 +153,14 @@ fn incomplete_indexes_refuse_but_cold_maintained_coordinates_decide() {
 
 #[test]
 fn pooled_literal_ownership_keeps_the_existing_memory_algebra_policy() {
-    let literal = |identity| OldAddress {
-        base: AddressBase::StringLiteral {
-            identity: StringLiteralId::new(identity, 0),
-            bytes: b"ok\0".to_vec(),
-        },
-        offset: AddressOffset::constant(0),
+    let literal = |identity| {
+        Address::new(
+            AddressBase::StringLiteral {
+                identity: StringLiteralId::new(identity, 0),
+                bytes: b"ok\0".to_vec(),
+            },
+            AddressOffset::constant(0),
+        )
     };
     let left = literal("overlap:left");
     let right = literal("overlap:right");
@@ -183,10 +185,10 @@ fn pooled_literal_ownership_keeps_the_existing_memory_algebra_policy() {
 #[test]
 fn cold_ownership_uses_produced_intervals_without_preparing_a_graph() {
     let facts = PureFactContext::new();
-    let p = OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::variable(Variable(8_760_010)),
-    };
+    let p = Address::new(
+        AddressBase::ExternalArgument,
+        AddressOffset::variable(Variable(8_760_010)),
+    );
     let long = owner(p.clone(), 0, 100);
     // A nested old interval must not hide the long interval from a query.
     let parent = ResourceContext::new().unchecked_with_facts([long, owner(p.clone(), 2, 3)]);
@@ -271,10 +273,10 @@ fn symbolic_boundary_uses_direct_bounds_and_does_not_invent_an_overlap() {
 fn a_complete_empty_class_is_clear_even_at_a_symbolic_coordinate() {
     let _session = crate::kernel::VerificationSession::enter();
     let held = owner(at(90), 0, 4);
-    let pointer = OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::variable(Variable(8_918_000)),
-    };
+    let pointer = Address::new(
+        AddressBase::ExternalArgument,
+        AddressOffset::variable(Variable(8_918_000)),
+    );
     let query = owner(pointer.clone(), 0, 4);
     let facts = PureFactContext::new();
     let context = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(held.clone());
@@ -303,9 +305,11 @@ fn a_complete_empty_class_is_clear_even_at_a_symbolic_coordinate() {
 
 #[test]
 fn cold_automatic_partitions_use_the_storage_index_and_exclude_opaque_owners() {
-    let local = |name: &str| OldAddress {
-        base: AddressBase::Concrete(format!("local:{name}")),
-        offset: AddressOffset::constant(0),
+    let local = |name: &str| {
+        Address::new(
+            AddressBase::Concrete(format!("local:{name}")),
+            AddressOffset::constant(0),
+        )
     };
     let facts = PureFactContext::new();
     let context = ResourceContext::new()
@@ -368,18 +372,12 @@ fn hidden_local_coverage_is_invalidated_when_addressability_changes() {
     let facts = PureFactContext::new();
     let root = ResourceContext::new_with_equalities(&facts).unchecked_with_facts([
         owner(
-            OldAddress {
-                base: "local:hidden_a".into(),
-                offset: AddressOffset::constant(0),
-            },
+            Address::new("local:hidden_a".into(), AddressOffset::constant(0)),
             0,
             4,
         ),
         owner(
-            OldAddress {
-                base: "local:hidden_b".into(),
-                offset: AddressOffset::constant(0),
-            },
+            Address::new("local:hidden_b".into(), AddressOffset::constant(0)),
             0,
             4,
         ),
@@ -393,10 +391,7 @@ fn hidden_local_coverage_is_invalidated_when_addressability_changes() {
     let aliased = facts.assume_condition(
         OldConditionTerm::address_equal(
             at(100),
-            OldAddress {
-                base: "local:hidden_a".into(),
-                offset: AddressOffset::constant(0),
-            },
+            Address::new("local:hidden_a".into(), AddressOffset::constant(0)),
         ),
         true,
     );

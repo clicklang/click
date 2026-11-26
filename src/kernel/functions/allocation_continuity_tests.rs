@@ -3,9 +3,9 @@ use crate::kernel::{CompareRelation, MachineIntegerType, VerificationSession};
 
 /// [`allocation_continuity`] of two 32-bit sizes.
 fn int32_continuity(
-    input_base: &OldAddress,
+    input_base: &Address,
     input_bytes: &OldMachineTerm,
-    output_base: &OldAddress,
+    output_base: &Address,
     output_bytes: &OldMachineTerm,
     assumptions: &PureFactContext,
 ) -> AllocationContinuity {
@@ -24,14 +24,8 @@ fn int32_continuity(
 /// at 64 bits.
 #[test]
 fn continuity_refuses_allocation_sizes_of_different_formats() {
-    let base = OldAddress {
-        base: AddressBase::Heap(930_200),
-        offset: AddressOffset::constant(0),
-    };
-    let other = OldAddress {
-        base: AddressBase::Heap(930_201),
-        offset: AddressOffset::constant(0),
-    };
+    let base = Address::new(AddressBase::Heap(930_200), AddressOffset::constant(0));
+    let other = Address::new(AddressBase::Heap(930_201), AddressOffset::constant(0));
     let count = OldMachineTerm::Variable(Variable(930_202));
     let wide = AllocationSize::new(
         OldMachineTerm::uint64_multiply(count.clone(), OldMachineTerm::uint64_constant(4)),
@@ -113,10 +107,7 @@ fn preserved_fold_can_continue_an_allocation_loaded_from_another_block() {
         ],
         vec![],
     )]);
-    let heap = |id| OldAddress {
-        base: AddressBase::Heap(id),
-        offset: AddressOffset::constant(0),
-    };
+    let heap = |id| Address::new(AddressBase::Heap(id), AddressOffset::constant(0));
     let consumed = heap(934_000);
     let slot = heap(934_001);
     let bytes = OldMachineTerm::constant(4);
@@ -155,10 +146,7 @@ fn preserved_fold_can_continue_an_allocation_loaded_from_another_block() {
 
 #[test]
 fn contract_retirement_invalidates_creation_history_even_with_replacement() {
-    let base = OldAddress {
-        base: AddressBase::Heap(930_100),
-        offset: AddressOffset::constant(0),
-    };
+    let base = Address::new(AddressBase::Heap(930_100), AddressOffset::constant(0));
     let bytes = OldMachineTerm::constant(16);
     let input = ResourceContext::new()
         .unchecked_with_fact(ResourceFact::own_allocation(base.clone(), bytes.clone()));
@@ -232,11 +220,11 @@ fn contract_retirement_invalidates_creation_history_even_with_replacement() {
     }
 }
 
-fn external_pointer(variable: u64) -> OldAddress {
-    OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(variable)), 4),
-    }
+fn external_pointer(variable: u64) -> Address {
+    Address::new(
+        AddressBase::ExternalArgument,
+        AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(variable)), 4),
+    )
 }
 
 #[test]
@@ -264,7 +252,7 @@ fn contract_allocation_retirement_respects_initialized_mutex_storage() {
         let interface = FunctionContractInterface::new(ProgramType::Void, vec![]);
         for mutex in [
             base.offset_by_bytes(8),
-            OldAddress::symbolic(Variable(930_006)),
+            Address::symbolic(Variable(930_006)),
         ] {
             let symbolic = matches!(mutex.base, AddressBase::Symbolic(_));
             let state = super::super::mutexes::MutexContext::new(ExecutionState::new())
@@ -326,15 +314,9 @@ fn continuity_requires_both_the_allocation_base_and_size() {
     );
     assert_eq!(
         int32_continuity(
-            &OldAddress {
-                base: AddressBase::Heap(930_002),
-                offset: AddressOffset::constant(0),
-            },
+            &Address::new(AddressBase::Heap(930_002), AddressOffset::constant(0)),
             &OldMachineTerm::constant(4),
-            &OldAddress {
-                base: AddressBase::Heap(930_003),
-                offset: AddressOffset::constant(0),
-            },
+            &Address::new(AddressBase::Heap(930_003), AddressOffset::constant(0)),
             &OldMachineTerm::constant(4),
             &assumptions,
         ),
@@ -358,10 +340,7 @@ fn continuity_requires_both_the_allocation_base_and_size() {
 fn allocation_size_continuity_uses_graph_with_state_scope() {
     let _session = crate::kernel::VerificationSession::enter();
     let before = crate::kernel::intern_memory(SymbolicMemory::new().with_block("alloc-size", 8));
-    let pointer = |index| OldAddress {
-        base: "alloc-size".into(),
-        offset: AddressOffset::scale_int32(index, 4),
-    };
+    let pointer = |index| Address::new("alloc-size".into(), AddressOffset::scale_int32(index, 4));
     let load = |memory: &SharedMemory, index| {
         OldMachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
             memory,
@@ -419,11 +398,8 @@ fn allocation_size_continuity_uses_graph_with_state_scope() {
 }
 
 /// One allocation is lent to a helper beside storage the caller keeps.
-fn allocation_companion_call(unrelated: u64) -> (OldAddress, ExecutionState, ExecutionState) {
-    let base = OldAddress {
-        base: AddressBase::Heap(984_000),
-        offset: AddressOffset::constant(0),
-    };
+fn allocation_companion_call(unrelated: u64) -> (Address, ExecutionState, ExecutionState) {
+    let base = Address::new(AddressBase::Heap(984_000), AddressOffset::constant(0));
     let memory = SymbolicMemory::new()
         .with_heap_allocation_claim(base.clone(), AllocationSize::int32(4))
         .unwrap();
@@ -461,7 +437,7 @@ fn allocation_companion_call(unrelated: u64) -> (OldAddress, ExecutionState, Exe
 fn allocation_companion_returns_through_a_proven_alias_only() {
     let _session = VerificationSession::enter();
     let (base, caller, callee) = allocation_companion_call(0);
-    let alias = OldAddress::symbolic(Variable(984_001));
+    let alias = Address::symbolic(Variable(984_001));
     let output = ResourceFact::own_allocation(alias.clone(), 4);
     let missing = PureFactContext::new();
     let proven = missing
@@ -501,7 +477,7 @@ fn a_return_alias_does_not_recreate_a_retired_cleanup_anchor() {
     let _session = VerificationSession::enter();
     let (base, caller, mut callee) = allocation_companion_call(0);
     callee.retire_population_storage(&base.base).unwrap();
-    let alias = OldAddress::symbolic(Variable(984_002));
+    let alias = Address::symbolic(Variable(984_002));
     let output = ResourceFact::own_allocation(alias.clone(), 4);
     let facts = PureFactContext::new()
         .assume_condition(OldConditionTerm::address_equal(alias, base.clone()), true);

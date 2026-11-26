@@ -48,7 +48,7 @@ fn a_literal_span_is_checked_in_the_selected_memory() {
     assert!(facts.proves_memory_loadable(&memory, &pointer, &bytes));
     assert!(!facts.proves_memory_loadable(&SymbolicMemory::new(), &pointer, &bytes));
     assert!(!facts.proves_memory_loadable(&memory, &pointer.offset_by_bytes(3), &1u32.into()));
-    let alias = OldAddress::symbolic(Variable(92_002));
+    let alias = Address::symbolic(Variable(92_002));
     let facts = facts.assume_condition(
         OldConditionTerm::address_equal(alias.clone(), pointer.clone()),
         true,

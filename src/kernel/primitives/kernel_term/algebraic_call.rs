@@ -50,7 +50,7 @@ mod tests {
             OldMachineTerm::constant(1),
         );
         let pointer = OldPointer::new(
-            OldAddress::symbolic(Variable(999702)),
+            Address::symbolic(Variable(999702)),
             ProgramType::Int32Pointer,
         );
         let arguments = [
@@ -92,7 +92,7 @@ mod tests {
         let ty = native.algebraic_type.clone();
         let scrutinee = KernelTermImport::default().algebraic(&native);
         let pointer = OldPointer::new(
-            OldAddress::symbolic(Variable(999703)),
+            Address::symbolic(Variable(999703)),
             ProgramType::Int32Pointer,
         );
         native.node = AlgebraicTermNode::Constructor {
@@ -107,7 +107,7 @@ mod tests {
                     variant: "Arm".into(),
                     bindings: vec![KernelTermImport::default().argument(
                         &PureFunctionArgument::Value(ProgramValue::Pointer(OldPointer::new(
-                            OldAddress::symbolic(Variable(999704)),
+                            Address::symbolic(Variable(999704)),
                             ProgramType::Int32Pointer,
                         ))),
                     )],

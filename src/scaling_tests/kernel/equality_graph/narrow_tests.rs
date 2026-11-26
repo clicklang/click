@@ -143,10 +143,7 @@ fn narrow_store_equation_query_scaling(sizes: [u64; 4]) {
             let mut samples = Vec::new();
             for size in sizes {
                 let _session = crate::kernel::VerificationSession::enter();
-                let cell = |i| OldAddress {
-                    base: "narrow".into(),
-                    offset: AddressOffset::constant(i * 4),
-                };
+                let cell = |i| Address::new("narrow".into(), AddressOffset::constant(i * 4));
                 let stored = narrow_stored_value(format, 7);
                 let mut memory = SymbolicMemory::new().with_block("narrow", (size as u32 + 1) * 4);
                 let mut facts = PureFactContext::new();
@@ -154,14 +151,14 @@ fn narrow_store_equation_query_scaling(sizes: [u64; 4]) {
                     memory = memory.store(cell(i as i64), narrow_stored_value(format, 3));
                     facts = facts.assume_condition(
                         OldConditionTerm::address_equal(
-                            OldAddress::symbolic(Variable(995000 + i)),
+                            Address::symbolic(Variable(995000 + i)),
                             if related { cell(0) } else { cell(i as i64) },
                         ),
                         true,
                     );
                 }
                 memory = memory.store(cell(0), stored.clone());
-                let query = OldAddress::symbolic(Variable(999999));
+                let query = Address::symbolic(Variable(999999));
                 facts = facts.assume_condition(
                     OldConditionTerm::address_equal(query.clone(), cell(0)),
                     true,

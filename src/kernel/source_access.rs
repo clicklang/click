@@ -85,7 +85,7 @@ impl PartialOrd for StatementAssignSource {
 #[derive(Debug)]
 struct ReferenceBorrowObservation {
     source: Arc<ReferenceBorrowSourceId>,
-    pointer: OldAddress,
+    pointer: Address,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub(crate) enum ReferenceAccessKind {
@@ -141,14 +141,14 @@ impl PartialOrd for StatementStoreSource {
 #[derive(Debug)]
 pub(crate) struct ExecutedReferenceAccess<'a> {
     source: &'a ReferenceAccessSourceId,
-    pointer: &'a OldAddress,
+    pointer: &'a Address,
 }
 
 #[derive(Debug)]
 pub(crate) enum ExecutedReferenceBoundary<'a> {
     Borrow {
         source: &'a ReferenceBorrowSourceId,
-        pointer: &'a OldAddress,
+        pointer: &'a Address,
     },
     Store(ExecutedReferenceAccess<'a>),
 }
@@ -162,7 +162,7 @@ pub(crate) struct ReferenceObservationSource(Option<Arc<ReferenceObservation>>);
 enum ReferenceObservation {
     Read {
         source: Arc<ReferenceAccessSourceId>,
-        pointer: OldAddress,
+        pointer: Address,
         retained_state: MemoryStateIdentity,
         at: Option<super::program_point::ProgramPointId>,
         value_type: ProgramType,
@@ -172,7 +172,7 @@ enum ReferenceObservation {
 impl ReferenceObservationSource {
     pub(super) fn new(
         source: Arc<ReferenceAccessSourceId>,
-        pointer: OldAddress,
+        pointer: Address,
         memory: &SymbolicMemory,
         at: Option<super::program_point::ProgramPointId>,
         value_type: ProgramType,
@@ -224,7 +224,7 @@ impl ExecutedReferenceAccess<'_> {
     pub(crate) fn source(&self) -> &ReferenceAccessSourceId {
         self.source
     }
-    pub(crate) fn address(&self) -> &OldAddress {
+    pub(crate) fn address(&self) -> &Address {
         self.pointer
     }
 }
@@ -310,10 +310,7 @@ impl SymbolicExecution {
 mod tests {
     use super::*;
     fn borrow_fact() -> ExecutionPureFact {
-        let pointer = OldAddress {
-            base: "birth".into(),
-            offset: AddressOffset::constant(0),
-        };
+        let pointer = Address::new("birth".into(), AddressOffset::constant(0));
         let before = ExecutionState::new().with_local(
             "parent",
             ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer),
@@ -359,10 +356,7 @@ mod tests {
     }
     #[test]
     fn source_reference_birth_requires_the_completed_parent_pointer_and_type() {
-        let pointer = OldAddress {
-            base: "birth".into(),
-            offset: AddressOffset::constant(0),
-        };
+        let pointer = Address::new("birth".into(), AddressOffset::constant(0));
         let before = ExecutionState::new().with_local(
             "parent",
             ProgramValue::typed_pointer(pointer.clone(), ProgramType::Int32Pointer),
@@ -409,10 +403,7 @@ mod tests {
         );
     }
     fn read_fact() -> ExecutionPureFact {
-        let pointer = OldAddress {
-            base: "source-read".into(),
-            offset: AddressOffset::constant(0),
-        };
+        let pointer = Address::new("source-read".into(), AddressOffset::constant(0));
         let memory = SymbolicMemory::new()
             .with_block(pointer.base.clone(), 4)
             .store(pointer.clone(), int32(7));

@@ -26,9 +26,9 @@ pub(in crate::kernel) enum PointerDomainSource<'a> {
     Retained {
         bounds: Option<&'a SubobjectBounds>,
         known: bool,
-        opaque: Option<&'a OldAddress>,
+        opaque: Option<&'a Address>,
     },
-    BoundsOwner(&'a OldAddress),
+    BoundsOwner(&'a Address),
 }
 
 impl<'a> From<&'a OldPointer> for PointerDomainSource<'a> {
@@ -84,7 +84,7 @@ impl PureFactContext {
     /// whether this pointer may reach them are separate questions.
     fn access_provenance_matches_span(
         &self,
-        required: (&OldAddress, Option<&OldAddress>),
+        required: (&Address, Option<&Address>),
         available: &MemoryRange,
         fits: impl FnOnce(&SubobjectBounds) -> bool,
     ) -> bool {
@@ -115,8 +115,8 @@ impl PureFactContext {
     /// the bytes being accessed, not the width or carrier of the holding.
     pub(in crate::kernel) fn access_provenance_matches_bytes(
         &self,
-        required: (&OldAddress, Option<&OldAddress>),
-        pointer: &OldAddress,
+        required: (&Address, Option<&Address>),
+        pointer: &Address,
         bytes: u32,
         available: &MemoryRange,
     ) -> bool {
@@ -141,7 +141,7 @@ impl PureFactContext {
     /// Match a clause's complete requested range to a supplier.
     pub(in crate::kernel) fn access_provenance_matches_range(
         &self,
-        required: (&OldAddress, Option<&OldAddress>),
+        required: (&Address, Option<&Address>),
         range: &MemoryRange,
         available: &MemoryRange,
     ) -> bool {
@@ -192,7 +192,7 @@ impl PureFactContext {
     #[cfg(test)]
     pub(in crate::kernel) fn access_provenance_match(
         &self,
-        required: (&OldAddress, Option<&OldAddress>),
+        required: (&Address, Option<&Address>),
         range: &MemoryRange,
     ) -> bool {
         self.access_provenance_matches_range(required, range, range)
@@ -204,10 +204,7 @@ mod tests {
     use super::*;
 
     fn pointer(id: u64) -> OldPointer {
-        OldPointer::new(
-            OldAddress::symbolic(Variable(id)),
-            ProgramType::Int32Pointer,
-        )
+        OldPointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
     }
     fn equal(facts: PureFactContext, a: &OldPointer, b: &OldPointer) -> PureFactContext {
         facts.assume_condition(OldConditionTerm::pointer_equal(a.clone(), b.clone()), true)
@@ -295,12 +292,12 @@ mod tests {
     fn pointer_domain_reads_only_admitted_metadata_for_a_stored_pointer() {
         let _session = crate::kernel::VerificationSession::enter();
         let selected = member(&pointer(997_041));
-        let cell = OldAddress::symbolic(Variable(997_042));
+        let cell = Address::symbolic(Variable(997_042));
         let memory = crate::kernel::intern_memory(
             SymbolicMemory::new().store(cell.clone(), ProgramValue::Pointer(selected.clone())),
         );
         let read = OldPointer::from_read(
-            OldAddress::loaded_value(&memory, &cell),
+            Address::loaded_value(&memory, &cell),
             ProgramType::Int32Pointer,
             &memory,
             &cell,

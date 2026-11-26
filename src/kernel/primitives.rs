@@ -106,17 +106,18 @@ pub(crate) use kernel_term::{
 };
 // Prepared rewrite interface for the following scoped consumers.
 pub use kernel_term::{
-    AddressOffset, KernelCallArgument, KernelFloatType, KernelImportedScalar,
-    KernelIntegerOperator, KernelMachineLiteral, KernelNativeDescriptor, KernelObservedArgument,
-    KernelObservedPointer, KernelTerm, KernelTermNode, KernelType, KernelWrittenMachine,
+    Address, AddressOffset, AddressParts, KernelCallArgument, KernelFloatType,
+    KernelImportedScalar, KernelIntegerOperator, KernelMachineLiteral, KernelNativeDescriptor,
+    KernelObservedArgument, KernelObservedPointer, KernelTerm, KernelTermNode, KernelType,
+    KernelWrittenMachine,
+};
+#[allow(unused_imports)]
+pub(crate) use kernel_term::{
+    AddressBlock, KernelMemoryRead, PointerRewrite, PointerRewriteError, SharedAddressBase,
 };
 pub(crate) use kernel_term::{
     KernelAddressOffset, KernelArrayObject, KernelMatchArm, OffsetTree, OffsetView, SharedAddress,
     SharedAddressOffset, SharedPointer,
-};
-#[allow(unused_imports)]
-pub(crate) use kernel_term::{
-    KernelMemoryRead, PointerRewrite, PointerRewriteError, SharedAddressBase,
 };
 mod machine_integer;
 pub use machine_integer::{
@@ -776,7 +777,7 @@ impl Sort {
 /// Floating-point reads are kinds of their own.
 ///
 /// A pointer read is an `Int32` read: Click names a pointer value by the
-/// four-byte word at its address (`OldAddress::loaded` scales that word), which
+/// four-byte word at its address (`Address::loaded` scales that word), which
 /// is also how a materialized pointer field's cells hold it. The access is
 /// still eight bytes wide; framing takes the width recorded at the address,
 /// which a pointer read records, and never less than the kind's own.
@@ -1104,7 +1105,7 @@ pub enum OldMachineTerm {
     /// Checked tag identities can recover address bits, never pointer bounds.
     /// The annotation retains the source object class for a later cast and
     /// does not participate in equality, ordering, or hashing.
-    IntegerAddress(Box<OldAddress>, AddressObjectClass),
+    IntegerAddress(Box<Address>, AddressObjectClass),
     IntegerToMachine {
         value: SharedIntegerTerm,
         destination: MachineIntegerType,
@@ -1400,7 +1401,7 @@ pub enum OldConditionTerm {
     Float32(FloatCondition),
     Float64(FloatCondition),
     AddressOffsetEqual(Box<AddressOffset>, Box<AddressOffset>),
-    AddressEqual(Box<OldAddress>, Box<OldAddress>),
+    AddressEqual(Box<Address>, Box<Address>),
     /// Specification pointer equality includes the designated object and bounds.
     PointerEqual(Box<OldPointer>, Box<OldPointer>),
     IntegerLessThan(SharedIntegerTerm, SharedIntegerTerm),
@@ -1457,7 +1458,7 @@ enum ConditionIdentity<'a> {
     Float32(&'a FloatCondition),
     Float64(&'a FloatCondition),
     AddressOffsetEqual(&'a AddressOffset, &'a AddressOffset),
-    AddressEqual(&'a OldAddress, &'a OldAddress),
+    AddressEqual(&'a Address, &'a Address),
     PointerEqual(&'a OldPointer, &'a OldPointer),
     IntegerLessThan(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
     IntegerLessEqual(&'a SharedIntegerTerm, &'a SharedIntegerTerm),
@@ -2413,12 +2414,6 @@ macro_rules! unary_machine_term {
 }
 pub(crate) use unary_machine_term;
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct OldAddress {
-    pub base: AddressBase,
-    pub offset: AddressOffset,
-}
-
 /// Which decodings of one pointer cell's bytes are one pointer value
 /// (`design/loads.md`, "Pointers"). Every object-pointer type decodes the
 /// same bytes to the same pointer, so the pointee type is no part of a
@@ -2459,7 +2454,7 @@ pub(crate) struct LoadedPointerView {
     pub(crate) identity: Load,
     pub(crate) defining_memory: SharedMemory,
     pub(crate) point: ProgramPoint,
-    pub(crate) defining_address: OldAddress,
+    pub(crate) defining_address: Address,
     pub(crate) displacement: AddressOffset,
 }
 
@@ -2490,11 +2485,11 @@ pub(super) struct ObjectTypePremise {
 /// ignore it, as they ignore the declared object class and type evidence.
 #[derive(Clone, Debug)]
 pub struct OldPointer {
-    address: OldAddress,
-    /// The allocation designated when this value entered. OldAddress aliases
+    address: Address,
+    /// The allocation designated when this value entered. Address aliases
     /// never replace this component; only value transport or substitution
     /// maps it.
-    provenance: Arc<OldAddress>,
+    provenance: Arc<Address>,
     /// The array object within the allocation: C provenance's second part.
     array: ArrayObject,
     program_type: ProgramType,
@@ -2513,7 +2508,7 @@ pub(in crate::kernel) enum ArrayObject {
     /// parameter or a loaded pointer. It is named by where the pointer came
     /// from, and coverage facts about that name give its extent. A view that
     /// may not use the name's coverage has no name.
-    Opaque(Option<Arc<OldAddress>>),
+    Opaque(Option<Arc<Address>>),
     /// A member subobject of the allocation.
     Member(Arc<MemberArray>),
 }
@@ -2526,7 +2521,7 @@ pub(in crate::kernel) struct MemberArray {
     pub(in crate::kernel) bounds: Option<SubobjectBounds>,
     /// The opaque array object the member was selected from, whose coverage
     /// justified the selection.
-    pub(in crate::kernel) within: Option<Arc<OldAddress>>,
+    pub(in crate::kernel) within: Option<Arc<Address>>,
 }
 
 impl ArrayObject {
@@ -2536,7 +2531,7 @@ impl ArrayObject {
     pub(in crate::kernel) fn from_parts(
         known: bool,
         bounds: Option<SubobjectBounds>,
-        owner: Option<Arc<OldAddress>>,
+        owner: Option<Arc<Address>>,
     ) -> Self {
         if !known {
             debug_assert!(bounds.is_none(), "an opaque array object has no bounds");
@@ -2560,7 +2555,7 @@ impl ArrayObject {
     }
 
     /// The opaque array object this one is or was selected from.
-    pub(in crate::kernel) fn owner(&self) -> Option<&Arc<OldAddress>> {
+    pub(in crate::kernel) fn owner(&self) -> Option<&Arc<Address>> {
         match self {
             Self::Allocation => None,
             Self::Opaque(owner) => owner.as_ref(),
@@ -2575,11 +2570,11 @@ impl ArrayObject {
         Self::from_parts(true, bounds, self.owner().cloned())
     }
 
-    fn with_owner(&self, owner: Option<Arc<OldAddress>>) -> Self {
+    fn with_owner(&self, owner: Option<Arc<Address>>) -> Self {
         Self::from_parts(self.is_known(), self.bounds().cloned(), owner)
     }
 
-    fn map(&self, mut map: impl FnMut(&OldAddress) -> OldAddress) -> Self {
+    fn map(&self, mut map: impl FnMut(&Address) -> Address) -> Self {
         match self {
             Self::Allocation => Self::Allocation,
             Self::Opaque(owner) => Self::Opaque(owner.as_deref().map(|o| Arc::new(map(o)))),
@@ -2593,7 +2588,7 @@ impl ArrayObject {
         }
     }
 
-    fn try_map(&self, mut map: impl FnMut(&OldAddress) -> Option<OldAddress>) -> Option<Self> {
+    fn try_map(&self, mut map: impl FnMut(&Address) -> Option<Address>) -> Option<Self> {
         Some(match self {
             Self::Allocation => Self::Allocation,
             Self::Opaque(owner) => Self::Opaque(match owner {
@@ -2656,14 +2651,14 @@ pub(in crate::kernel) struct RetainedPointerMetadata<'a> {
 /// (`design/pointer-subobject-bounds.md`, Phase C).
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct SubobjectBounds {
-    pub(crate) start: OldAddress,
+    pub(crate) start: Address,
     pub(crate) width: OldMachineTerm,
 }
 
 impl SubobjectBounds {
     /// The fact that these opaque bounds cover `range`.
     pub(crate) fn coverage_fact(&self, range: &MemoryRange) -> Proposition {
-        let pointer = |pointer: OldAddress| {
+        let pointer = |pointer: Address| {
             Term::ProgramValue(
                 ProgramValue::Pointer(OldPointer::new(pointer, ProgramType::VoidPointer)).into(),
             )
@@ -2698,7 +2693,7 @@ impl SubobjectBounds {
     /// element count and its element width.
     pub(crate) fn covered_range(
         proposition: &Proposition,
-    ) -> Option<(OldAddress, OldMachineTerm, u32)> {
+    ) -> Option<(Address, OldMachineTerm, u32)> {
         let Proposition::Predicate { name, arguments } = proposition else {
             return None;
         };
@@ -2766,7 +2761,7 @@ impl SubobjectBounds {
     }
 
     /// The `width` bytes at `start`: a member's bounds.
-    pub(crate) fn constant(start: OldAddress, width: u32) -> Self {
+    pub(crate) fn constant(start: Address, width: u32) -> Self {
         Self {
             start,
             width: OldMachineTerm::constant(width),
@@ -2780,7 +2775,7 @@ impl SubobjectBounds {
 }
 
 impl OldPointer {
-    pub(crate) fn new(pointer: OldAddress, program_type: ProgramType) -> Self {
+    pub(crate) fn new(pointer: Address, program_type: ProgramType) -> Self {
         assert!(
             program_type.is_pointer(),
             "C pointer values require a pointer type"
@@ -2802,7 +2797,7 @@ impl OldPointer {
                     | AddressBase::Temporary(_)
             );
         let root = if is_function {
-            OldAddress::null()
+            Address::null()
         } else {
             pointer.object_identity()
         };
@@ -2822,23 +2817,23 @@ impl OldPointer {
     /// A complete pointer read owns an opaque domain independently of its
     /// numeric address. Both bounds and origin cover all eight bytes.
     pub(in crate::kernel) fn from_read(
-        pointer: OldAddress,
+        pointer: Address,
         program_type: ProgramType,
         memory: &SharedMemory,
-        cell: &OldAddress,
+        cell: &Address,
     ) -> Self {
         Self::from_read_at(pointer, program_type, memory, None, cell)
     }
 
     /// [`Self::from_read`] of a read made at `site`, when the caller has one:
     /// the domain's origin records it as its read site
-    /// (`OldAddress::loaded_value_read_at`). The value is the same.
+    /// (`Address::loaded_value_read_at`). The value is the same.
     pub(in crate::kernel) fn from_read_at(
-        pointer: OldAddress,
+        pointer: Address,
         program_type: ProgramType,
         memory: &SharedMemory,
         site: Option<&ProgramPoint>,
-        cell: &OldAddress,
+        cell: &Address,
     ) -> Self {
         let mut value = Self::new(pointer, program_type);
         if matches!(program_type, ProgramType::FunctionPointer(_))
@@ -2851,7 +2846,7 @@ impl OldPointer {
         // needs explicit evidence, not a search for an older cell version.
         crate::instrumentation::record_deterministic_work(1);
         let source = memory.unchanged_bytes_source();
-        let origin = Arc::new(OldAddress::loaded_value_read_at(&source, site, cell));
+        let origin = Arc::new(Address::loaded_value_read_at(&source, site, cell));
         value.array = ArrayObject::Opaque(Some(origin.clone()));
         value.with_provenance(origin)
     }
@@ -2861,10 +2856,10 @@ impl OldPointer {
     pub(in crate::kernel) fn from_point_read(
         point: ProgramPoint,
         program_type: ProgramType,
-        cell: &OldAddress,
+        cell: &Address,
     ) -> Self {
         if point.read_version_id().is_none() {
-            let address = OldAddress::loaded_source_value_at(&point, cell);
+            let address = Address::loaded_source_value_at(&point, cell);
             return Self::from_read_at(
                 address,
                 program_type,
@@ -2889,7 +2884,7 @@ impl OldPointer {
     /// The read that introduced this complete pointer's opaque domain when
     /// its numeric address alone names a different read version. This is
     /// the producing read, not an address-alias or preservation query.
-    pub(crate) fn complete_read_source(&self) -> Option<(SharedMemory, OldAddress)> {
+    pub(crate) fn complete_read_source(&self) -> Option<(SharedMemory, Address)> {
         if self.bounds_owner() != Some(self.provenance())
             || self.address.object_identity() == *self.provenance()
         {
@@ -2906,7 +2901,7 @@ impl OldPointer {
         Some((origin.defining_memory, origin.defining_address))
     }
 
-    pub(crate) fn provenance(&self) -> &OldAddress {
+    pub(crate) fn provenance(&self) -> &Address {
         &self.provenance
     }
 
@@ -2920,11 +2915,11 @@ impl OldPointer {
         self
     }
 
-    pub(in crate::kernel) fn bounds_owner(&self) -> Option<&OldAddress> {
+    pub(in crate::kernel) fn bounds_owner(&self) -> Option<&Address> {
         self.array.owner().map(|owner| &**owner)
     }
 
-    pub(in crate::kernel) fn with_bounds_owner(mut self, owner: Option<Arc<OldAddress>>) -> Self {
+    pub(in crate::kernel) fn with_bounds_owner(mut self, owner: Option<Arc<Address>>) -> Self {
         self.array = self.array.with_owner(owner);
         self
     }
@@ -2947,7 +2942,7 @@ impl OldPointer {
         )
     }
 
-    pub(in crate::kernel) fn access_provenance(&self) -> (&OldAddress, Option<&OldAddress>) {
+    pub(in crate::kernel) fn access_provenance(&self) -> (&Address, Option<&Address>) {
         (
             self.provenance(),
             if self.bounds_are_known() {
@@ -2958,16 +2953,16 @@ impl OldPointer {
         )
     }
 
-    pub(in crate::kernel) fn with_provenance(mut self, provenance: Arc<OldAddress>) -> Self {
+    pub(in crate::kernel) fn with_provenance(mut self, provenance: Arc<Address>) -> Self {
         self.provenance = provenance;
         self
     }
 
-    pub(crate) fn address(&self) -> &OldAddress {
+    pub(crate) fn address(&self) -> &Address {
         &self.address
     }
 
-    pub(crate) fn into_pointer(self) -> OldAddress {
+    pub(crate) fn into_pointer(self) -> Address {
         self.address
     }
 
@@ -2975,7 +2970,7 @@ impl OldPointer {
         self.program_type
     }
 
-    /// Exact retained qualifiers for syntax certification. OldAddress-bearing
+    /// Exact retained qualifiers for syntax certification. Address-bearing
     /// metadata is compared separately through its written term structure.
     pub(in crate::kernel) fn retained_nonaddress_metadata(&self) -> RetainedPointerMetadata<'_> {
         RetainedPointerMetadata {
@@ -2999,13 +2994,13 @@ impl OldPointer {
     /// Respells the address as a proven-equal alias. The bounds keep their
     /// own spelling: it names the same bytes either way, and the access
     /// check resolves the address against it as it resolves a held range.
-    pub(crate) fn replace_pointer(&mut self, pointer: OldAddress) {
+    pub(crate) fn replace_pointer(&mut self, pointer: Address) {
         self.address = pointer;
     }
 
     /// The same value at another address in the same subobject: the result
     /// of pointer arithmetic, which keeps the type, qualifiers and bounds.
-    pub(crate) fn with_address(mut self, pointer: OldAddress) -> Self {
+    pub(crate) fn with_address(mut self, pointer: Address) -> Self {
         self.address = pointer;
         self
     }
@@ -3090,7 +3085,7 @@ impl OldPointer {
     /// Applies a substitution to every address the value mentions: its own
     /// address and its bounds' start. Use it where the rewrite maps
     /// variables, not where it only respells the address.
-    pub(crate) fn map_pointers(&self, mut map: impl FnMut(&OldAddress) -> OldAddress) -> Self {
+    pub(crate) fn map_pointers(&self, mut map: impl FnMut(&Address) -> Address) -> Self {
         let mut result = self.clone();
         result.address = map(&self.address);
         let provenance = map(&self.provenance);
@@ -3103,7 +3098,7 @@ impl OldPointer {
 
     pub(in crate::kernel) fn try_map_pointers(
         &self,
-        mut map: impl FnMut(&OldAddress) -> Option<OldAddress>,
+        mut map: impl FnMut(&Address) -> Option<Address>,
     ) -> Option<Self> {
         let pointer = map(&self.address)?;
         let provenance = map(&self.provenance)?;
@@ -3117,10 +3112,7 @@ impl OldPointer {
     }
 
     /// Re-spell physical addresses without changing the value's origin.
-    pub(in crate::kernel) fn map_addresses(
-        &self,
-        map: impl FnMut(&OldAddress) -> OldAddress,
-    ) -> Self {
+    pub(in crate::kernel) fn map_addresses(&self, map: impl FnMut(&Address) -> Address) -> Self {
         let mapped = self.map_pointers(map);
         let array = mapped.array.with_owner(self.array.owner().cloned());
         mapped
@@ -3129,7 +3121,7 @@ impl OldPointer {
     }
 
     /// Every address the value mentions, for variable collection.
-    pub(crate) fn pointers(&self) -> impl Iterator<Item = &OldAddress> {
+    pub(crate) fn pointers(&self) -> impl Iterator<Item = &Address> {
         std::iter::once(&self.address)
             .chain(std::iter::once(self.provenance.as_ref()))
             .chain(self.bounds_owner())
@@ -3153,10 +3145,10 @@ impl OldPointer {
     fn identity(
         &self,
     ) -> (
-        &OldAddress,
-        &OldAddress,
+        &Address,
+        &Address,
         bool,
-        Option<&OldAddress>,
+        Option<&Address>,
         Option<&SubobjectBounds>,
     ) {
         (
@@ -3213,7 +3205,7 @@ impl Ord for OldPointer {
 }
 
 impl std::ops::Deref for OldPointer {
-    type Target = OldAddress;
+    type Target = Address;
 
     fn deref(&self) -> &Self::Target {
         &self.address
@@ -3544,7 +3536,7 @@ impl AddressBase {
 
     /// Whether no execution can make these two block identities name one
     /// object. This is the kernel's only structural separation rule for
-    /// blocks, and `OldAddress::blocks_proven_distinct` is its pointer-level
+    /// blocks, and `Address::blocks_proven_distinct` is its pointer-level
     /// form.
     ///
     /// Two identities that are merely spelled differently are not distinct.
@@ -4087,7 +4079,7 @@ pub struct LValue {
     /// The provenance of the pointer this memory lvalue was reached through:
     /// its allocation and array object. The access is checked against it,
     /// and `&lvalue` keeps it.
-    pub(super) provenance: Option<Arc<OldAddress>>,
+    pub(super) provenance: Option<Arc<Address>>,
     pub(super) array: Option<ArrayObject>,
     /// The class of the lvalue's type, which the access uses, when the
     /// frontend supplied one.
@@ -4100,7 +4092,7 @@ pub struct LValue {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub(super) enum LValueStorage {
     Local { name: BindingName },
-    Memory { pointer: OldAddress },
+    Memory { pointer: Address },
 }
 
 /// The language-specific integer rule at an explicit kernel cast boundary.
@@ -4582,7 +4574,7 @@ pub enum SpecExpression {
         requirement: Box<SpecProposition>,
         value: Box<SpecExpression>,
     },
-    /// OldAddress a C place whose base is evaluated by the specification's state.
+    /// Address a C place whose base is evaluated by the specification's state.
     /// No lexical binding or execution local is introduced.
     ObjectAddress(Box<SpecObjectAddress>),
 }
@@ -5162,7 +5154,7 @@ pub enum AlgebraicTermNode {
     /// [`OldMachineTerm::MemoryLoad`].
     MemoryLoad {
         point: ProgramPoint,
-        pointer: Box<OldAddress>,
+        pointer: Box<Address>,
     },
 }
 
@@ -5175,7 +5167,7 @@ impl AlgebraicTermNode {
     /// scalar read, and no fact about one names it.
     pub(crate) fn memory_load_carrier(
         point: &ProgramPoint,
-        pointer: &OldAddress,
+        pointer: &Address,
         algebraic_type: &AlgebraicType,
     ) -> OldMachineTerm {
         crate::kernel::OldMachineTerm::read_named(
@@ -5207,7 +5199,7 @@ impl AlgebraicTermNode {
     #[cfg(test)]
     pub(crate) fn parameter_load_unsited(
         memory: SharedMemory,
-        pointer: OldAddress,
+        pointer: Address,
         parameter: TypeParameterName,
     ) -> ProgramValue {
         let site = ProgramPoint::at(&memory);
@@ -5219,7 +5211,7 @@ impl AlgebraicTermNode {
     pub(crate) fn parameter_load(
         memory: SharedMemory,
         site: &ProgramPoint,
-        pointer: OldAddress,
+        pointer: Address,
         parameter: TypeParameterName,
     ) -> ProgramValue {
         // A value is named by the point its cell was last written, so a
@@ -5235,7 +5227,7 @@ impl AlgebraicTermNode {
     /// A checked cell observation uses the same typed version as a logical read.
     pub(crate) fn parameter_cell_load(
         source: &ProgramPoint,
-        pointer: OldAddress,
+        pointer: Address,
         parameter: TypeParameterName,
     ) -> ProgramValue {
         if let Some(version) =
@@ -5248,7 +5240,7 @@ impl AlgebraicTermNode {
 
     pub(crate) fn parameter_load_at(
         point: ProgramPoint,
-        pointer: OldAddress,
+        pointer: Address,
         parameter: TypeParameterName,
     ) -> ProgramValue {
         ProgramValue::Parameter(Box::new(AlgebraicTerm {
@@ -5269,7 +5261,7 @@ impl AlgebraicTermNode {
     /// bare would change their work accounting.
     pub(crate) fn memory_load_carrier_value(
         point: &ProgramPoint,
-        pointer: &OldAddress,
+        pointer: &Address,
         algebraic_type: &AlgebraicType,
     ) -> AlgebraicValue {
         AlgebraicValue::Program(ProgramValue::UInt64(Self::memory_load_carrier(
@@ -6425,9 +6417,9 @@ impl Ord for SegmentValueRuns {
 
 #[derive(Clone, Debug)]
 pub struct MemoryRange {
-    pub(super) base: OldAddress,
+    pub(super) base: Address,
     /// Origin of the value naming the range, independent of address aliases.
-    pub(super) provenance: Arc<OldAddress>,
+    pub(super) provenance: Arc<Address>,
     /// A typed clause also demands this carrier's provenance. Raw kernel
     /// intervals ask only about physical authority; both retain supplier
     /// provenances through resource algebra and subsequent C access checks.
@@ -6466,9 +6458,9 @@ impl MemoryRange {
     fn identity(
         &self,
     ) -> (
-        &OldAddress,
-        &OldAddress,
-        Option<&OldAddress>,
+        &Address,
+        &Address,
+        Option<&Address>,
         &StoredMachineTerm,
         &StoredMachineTerm,
         u32,
@@ -8001,8 +7993,8 @@ pub struct RepresentationCopyEffect {
 /// An exact byte span of a checked representation copy whose source may
 /// contain unwritten bytes.
 pub(super) struct RepresentationCopyRange {
-    pub(super) destination: OldAddress,
-    pub(super) source: OldAddress,
+    pub(super) destination: Address,
+    pub(super) source: Address,
     pub(super) bytes: u32,
 }
 
@@ -8531,7 +8523,7 @@ pub enum RuntimeError {
     /// holds: a 4-byte load of an 8-byte cell, or a pointer cell read as an
     /// integer. `stored` is the cell's value when the state knows it.
     LoadTypeMismatch {
-        pointer: OldAddress,
+        pointer: Address,
         value_type: ProgramType,
         stored: Option<Box<ProgramValue>>,
     },
@@ -8561,15 +8553,15 @@ pub enum RuntimeError {
     WideRangeRespellingMayWrap(Box<WideRangeNoWrap>),
     /// An operation requires the current initialization's lifecycle owner.
     MissingMutexLive {
-        mutex: OldAddress,
+        mutex: Address,
     },
     /// An operation requires a use borrow for this mutex initialization.
     MissingMutexUse {
-        mutex: OldAddress,
+        mutex: Address,
     },
     /// An operation requires an acquisition that is not available as owned authority.
     MissingMutexGuard {
-        mutex: OldAddress,
+        mutex: Address,
     },
     /// Unlock requires owned folded authority satisfying its protected assertion.
     /// The diagnostic witness's cached fields do not require historical values.
@@ -8624,14 +8616,14 @@ pub enum RuntimeError {
     /// Lock or destroy encountered no successful modeled initialization for
     /// this mutex on the current path.
     UninitializedMutex {
-        mutex: OldAddress,
+        mutex: Address,
     },
     /// The modeled runtime has no sound shared-mutex transition for workers.
     /// This is a verifier limitation, not a missing client proof premise.
     UnsupportedConcurrentMutex,
     MutexStorageInUse {
-        mutex: OldAddress,
-        allocation: OldAddress,
+        mutex: Address,
+        allocation: Address,
     },
     MutexStorageSeparationRequired {
         allocation: Box<MemoryRange>,
@@ -8642,7 +8634,7 @@ pub enum RuntimeError {
         storage: Box<MemoryRange>,
     },
     MissingMutexStorageAlignment {
-        mutex: OldAddress,
+        mutex: Address,
         alignment: u32,
     },
     UnsupportedMutexStorageRetirement,
@@ -8650,7 +8642,7 @@ pub enum RuntimeError {
     /// is known (or may be constrained) to lie in it.
     MutexStorageScopeEnd {
         local: String,
-        mutex: OldAddress,
+        mutex: Address,
         may_alias: bool,
     },
     InvalidFree(InvalidFree),
@@ -9159,10 +9151,10 @@ pub struct LocalEnvironment {
     /// Persistent, so binding one name copies one search path rather than
     /// every binding: a frame of N locals bound one at a time costs N log N.
     pub(super) bindings: crate::persistent::PersistentMap<BindingName, LocalBinding>,
-    pub(super) slots: crate::persistent::PersistentMap<OldAddress, BindingName>,
+    pub(super) slots: crate::persistent::PersistentMap<Address, BindingName>,
     /// The slots that can designate automatic storage. Value-only parameter
     /// pseudo-slots never have a block and do not participate in lifetime ends.
-    automatic_slots: crate::persistent::PersistentMap<OldAddress, ()>,
+    automatic_slots: crate::persistent::PersistentMap<Address, ()>,
     /// Each scalar object's name under a fingerprint of the integer term it
     /// holds, kept with `bindings`: naming a value looks up the objects that
     /// may hold it instead of comparing it with every binding.
@@ -9184,7 +9176,7 @@ pub(super) enum LocalBinding {
         storage_declared: bool,
         value: StoredExecutionValue,
         program_type: ProgramType,
-        slot: OldAddress,
+        slot: Address,
         volatile: bool,
         pointee_volatile: bool,
         constant: bool,
@@ -9192,7 +9184,7 @@ pub(super) enum LocalBinding {
     },
     UninitializedObject {
         program_type: ProgramType,
-        slot: OldAddress,
+        slot: Address,
         volatile: bool,
         pointee_volatile: bool,
         constant: bool,
@@ -9200,7 +9192,7 @@ pub(super) enum LocalBinding {
     },
     GlobalObject {
         program_type: ProgramType,
-        slot: OldAddress,
+        slot: Address,
         library_value: Option<StoredExecutionValue>,
         volatile: bool,
         pointee_volatile: bool,
@@ -9210,12 +9202,12 @@ pub(super) enum LocalBinding {
     ArrayObject {
         element_type: ProgramType,
         length: u32,
-        slot: OldAddress,
+        slot: Address,
         constant: bool,
     },
     AggregateObject {
         layout: AggregateLayout,
-        slot: OldAddress,
+        slot: Address,
         constant: bool,
         /// Set only on the parameter object materialized for a standalone proof.
         proof_input_for: Option<std::sync::Arc<str>>,
@@ -9328,8 +9320,7 @@ pub struct SymbolicMemory {
     /// keyed by its address and type rather than placed in `cells`, because
     /// two members at one address must remain independently readable after a
     /// by-value aggregate copy.
-    pub(super) union_cells:
-        std::sync::Arc<HashedOrdMap<(OldAddress, ProgramType), StoredMemoryValue>>,
+    pub(super) union_cells: std::sync::Arc<HashedOrdMap<(Address, ProgramType), StoredMemoryValue>>,
     pub(super) forgotten: std::sync::Arc<ForgottenKnowledge>,
     pub(super) heap: std::sync::Arc<HeapMemory>,
 }
@@ -9873,7 +9864,7 @@ impl AllocationSize {
     /// size's index kind; `count` is in the size's format.
     pub(crate) fn range(
         &self,
-        base: OldAddress,
+        base: Address,
         count: OldMachineTerm,
         element_width: u32,
     ) -> MemoryRange {
@@ -9913,14 +9904,14 @@ impl AllocationSize {
     }
 
     /// The block's complete byte range, `base[0..bytes]`.
-    pub(crate) fn byte_range(&self, base: OldAddress) -> MemoryRange {
+    pub(crate) fn byte_range(&self, base: Address) -> MemoryRange {
         self.range(base, self.bytes.old_form().clone(), 1)
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub(super) struct PendingReallocation {
-    pub(super) old_pointer: OldAddress,
+    pub(super) old_pointer: Address,
     pub(super) old_bytes: AllocationSize,
     /// Full old byte range separated from the active borrows at the call.
     pub(super) retirement_separation: Option<std::sync::Arc<Proposition>>,
@@ -9942,24 +9933,24 @@ pub(super) struct PendingReallocation {
 pub(super) struct HeapMemory {
     /// Live heap blocks are also present in `blocks`; this set distinguishes
     /// them from automatic storage and memory-havoc markers.
-    pub(super) live_allocations: HashedOrdMap<OldAddress, AllocationSize>,
+    pub(super) live_allocations: HashedOrdMap<Address, AllocationSize>,
     /// Heap identities are never reused within a proof. These are semantic
     /// tombstones for double-free and stale-pointer diagnostics, not
     /// resources or surviving allocation authority.
-    pub(super) deallocated_allocations: HashedOrdMap<OldAddress, AllocationSize>,
+    pub(super) deallocated_allocations: HashedOrdMap<Address, AllocationSize>,
     /// A malloc result whose null/success outcome has not yet been refined by
     /// control flow or direct return. Pending allocations carry no authority
     /// until resolved.
-    pub(super) pending_allocations: HashedOrdMap<OldAddress, AllocationSize>,
+    pub(super) pending_allocations: HashedOrdMap<Address, AllocationSize>,
     /// Object classes established by a fresh allocation's checked typed binding.
     pub(super) pending_object_classes:
-        HashedOrdMap<OldAddress, crate::kernel::effective_type::CAccessClass>,
+        HashedOrdMap<Address, crate::kernel::effective_type::CAccessClass>,
     /// Successful malloc storage remains uninitialized until individual
     /// cells are written. Contract-imported allocations are not placed here.
-    pub(super) uninitialized_allocations: HashedOrdSet<OldAddress>,
+    pub(super) uninitialized_allocations: HashedOrdSet<Address>,
     /// Explicit proof-entry objects whose bytes start unwritten. Unlike heap
     /// allocations these carry neither freshness nor deallocation authority.
-    pub(super) uninitialized_objects: HashedOrdMap<OldAddress, u32>,
+    pub(super) uninitialized_objects: HashedOrdMap<Address, u32>,
     /// Bytes of storage with an initialization history — fresh heap
     /// allocations and automatic (`local:`) objects — that a C store has
     /// initialized, whether or not their cached value survives. A store the
@@ -9973,17 +9964,17 @@ pub(super) struct HeapMemory {
     /// Successful calloc storage reads as zero until individual cells are
     /// written. The set is separate from `uninitialized_allocations` so the
     /// same heap-lifetime machinery can represent both APIs.
-    pub(super) zeroed_allocations: HashedOrdSet<OldAddress>,
+    pub(super) zeroed_allocations: HashedOrdSet<Address>,
     /// Successful reallocations of zeroed storage may preserve only a prefix
     /// of the old block. The remainder of a grown block is uninitialized.
-    pub(super) zeroed_prefix_allocations: HashedOrdMap<OldAddress, OldMachineTerm>,
+    pub(super) zeroed_prefix_allocations: HashedOrdMap<Address, OldMachineTerm>,
     /// Pending calloc results whose null/success outcome has not yet been
     /// refined.
-    pub(super) zeroed_pending_allocations: HashedOrdSet<OldAddress>,
+    pub(super) zeroed_pending_allocations: HashedOrdSet<Address>,
     /// Pending reallocations retain the old live block until their result is
     /// refined. Success then retires it and installs the copied prefix;
     /// failure simply resolves the new result to null.
-    pub(super) pending_reallocations: HashedOrdMap<OldAddress, PendingReallocation>,
+    pub(super) pending_reallocations: HashedOrdMap<Address, PendingReallocation>,
     /// The effective types C stores gave heap cells
     /// (`design/effective-types.md`); see [`HeapEffectiveTypes`].
     pub(super) effective_types: HeapEffectiveTypes,
@@ -10285,7 +10276,7 @@ impl SharedMemory {
     /// An intersecting call is selected for the ordinary edge check.
     pub(in crate::kernel) fn indexed_static_cell_version(
         &self,
-        pointer: &OldAddress,
+        pointer: &Address,
         bytes: u32,
     ) -> Option<StaticCellVersion> {
         let span = static_cell_byte_span(pointer, bytes)?;
@@ -10321,7 +10312,7 @@ impl SharedMemory {
     /// SymbolicMemory state identity for definedness of a direct automatic object.
     /// A producer updates only the local it stores; every other transition
     /// starts a fresh identity unless it merely forgets cached values.
-    pub(crate) fn local_read_definedness_identity(&self, pointer: &OldAddress) -> (u32, u32) {
+    pub(crate) fn local_read_definedness_identity(&self, pointer: &Address) -> (u32, u32) {
         if !pointer.base.is_local_block() {
             return self.arena_id();
         }
@@ -10608,7 +10599,7 @@ pub enum MemoryDerivation {
     /// assumptions.
     Store {
         base: SharedMemory,
-        pointer: OldAddress,
+        pointer: Address,
         value: StoredMemoryValue,
     },
     /// A write to the physical bytes of a bit-field representation. The
@@ -10616,7 +10607,7 @@ pub enum MemoryDerivation {
     /// load of the entire written byte.
     RepresentationWrite {
         base: SharedMemory,
-        pointer: OldAddress,
+        pointer: Address,
         bytes: u32,
     },
     /// `base` with one block declared; no cell changes, so every load reads
@@ -10641,7 +10632,7 @@ pub enum MemoryDerivation {
     /// is preserved across this edge.
     HeapAllocationPending {
         base: SharedMemory,
-        allocation_base: OldAddress,
+        allocation_base: Address,
         bytes: OldMachineTerm,
     },
     /// `base` with a failed pending allocation removed. No storage was
@@ -10658,7 +10649,7 @@ pub enum MemoryDerivation {
     /// edge even though no definite C `free` is asserted.
     ContractAllocationRetired {
         base: SharedMemory,
-        allocation_base: OldAddress,
+        allocation_base: Address,
         bytes: OldMachineTerm,
     },
     /// `base` with one complete heap allocation lifetime ended.
@@ -10669,7 +10660,7 @@ pub enum MemoryDerivation {
     /// deallocate unrelated objects.
     HeapFreed {
         base: SharedMemory,
-        allocation_base: OldAddress,
+        allocation_base: Address,
         bytes: OldMachineTerm,
     },
     /// `base` with only the initialized-byte record extended. The writes
@@ -10677,7 +10668,7 @@ pub enum MemoryDerivation {
     /// metadata changes no stored value and must not disconnect that history.
     ObjectInitializationRecorded {
         base: SharedMemory,
-        pointer: OldAddress,
+        pointer: Address,
         bytes: u32,
         /// The kind of complete integer cell initialized by a checked
         /// call output whose value is unknown.
@@ -10758,7 +10749,7 @@ pub enum MemoryDerivation {
 impl MemoryDerivation {
     /// The physical destination of a single checked write. A representation
     /// write names a footprint without supplying a whole-byte value.
-    pub(in crate::kernel) fn single_write(&self) -> Option<(&OldAddress, u32)> {
+    pub(in crate::kernel) fn single_write(&self) -> Option<(&Address, u32)> {
         match self {
             Self::Store { pointer, value, .. } => Some((pointer, value.byte_width())),
             Self::RepresentationWrite { pointer, bytes, .. } => Some((pointer, *bytes)),
@@ -10768,7 +10759,7 @@ impl MemoryDerivation {
 
     /// [`Self::single_write`] with the write's extent: a stored value of an
     /// abstract type reaches its whole object, `sizeof(T)` bytes.
-    pub(in crate::kernel) fn single_write_extent(&self) -> Option<(&OldAddress, AccessExtent)> {
+    pub(in crate::kernel) fn single_write_extent(&self) -> Option<(&Address, AccessExtent)> {
         match self {
             Self::Store { pointer, value, .. }
                 if let ProgramValue::Parameter(term) = value.native() =>
@@ -10784,7 +10775,7 @@ impl MemoryDerivation {
     /// The stores a `CellsSeeded` edge stands for, newest first: the order a
     /// walk from the produced state meets them in. `None` for every other
     /// edge kind.
-    pub(crate) fn seeded_stores(&self) -> Option<Vec<(OldAddress, ProgramValue)>> {
+    pub(crate) fn seeded_stores(&self) -> Option<Vec<(Address, ProgramValue)>> {
         let Self::CellsSeeded { run, .. } = self else {
             return None;
         };
@@ -11012,7 +11003,7 @@ fn static_call_range(range: &MemoryRange) -> Option<(std::ops::Range<u32>, usize
     ))
 }
 
-fn static_cell_byte_span(pointer: &OldAddress, bytes: u32) -> Option<std::ops::Range<i64>> {
+fn static_cell_byte_span(pointer: &Address, bytes: u32) -> Option<std::ops::Range<i64>> {
     let OffsetView::Constant(start) = pointer.offset.view() else {
         return None;
     };
@@ -11603,7 +11594,7 @@ pub enum AggregateReturnMode {
 /// Call metadata only. Selecting it grants neither storage nor ownership.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub(super) struct AggregateDestination {
-    pub(super) pointer: OldAddress,
+    pub(super) pointer: Address,
     pub(super) layout: AggregateLayout,
 }
 
@@ -11689,7 +11680,7 @@ pub struct ExecutionState {
     /// every statement boundary.
     pub(crate) step_results: Option<Arc<PersistentMap<u32, StoredExecutionValue>>>,
     /// Anonymous aggregate storage created by expression steps, keyed by producer.
-    pub(crate) aggregate_step_objects: crate::persistent::PersistentMap<u32, OldAddress>,
+    pub(crate) aggregate_step_objects: crate::persistent::PersistentMap<u32, Address>,
     /// Literal values of this frame. Objects themselves have static storage duration.
     pub(crate) literal_values: Arc<PersistentMap<StringLiteralId, StoredExecutionValue>>,
 }
@@ -12440,7 +12431,7 @@ pub(super) struct ResourceContextIndex {
     /// question costs the instances whose arguments spell that base, never
     /// the other instances of the context
     /// (`functions::store_opened_instance_composition`).
-    pub(super) owned_instances_by_pointer_argument: PersistentMap<OldAddress, ResourceEntryIds>,
+    pub(super) owned_instances_by_pointer_argument: PersistentMap<Address, ResourceEntryIds>,
     /// Logical resource occurrences whose pointer arguments name a C++
     /// prepared argument object. Its lifetime end queries only this block.
     pub(super) prepared_argument_resources: PersistentMap<AddressBase, ResourceEntryIds>,
@@ -12449,7 +12440,7 @@ pub(super) struct ResourceContextIndex {
     /// about one address from the composites whose arguments can spell it,
     /// never the context's other composites
     /// (`memory_state::CallKeptRanges::range_holding`).
-    pub(super) owned_composites_by_pointer_argument: PersistentMap<OldAddress, ResourceEntryIds>,
+    pub(super) owned_composites_by_pointer_argument: PersistentMap<Address, ResourceEntryIds>,
     pub(super) owned_composites_by_argument_block: PersistentMap<AddressBase, ResourceEntryIds>,
     pub(super) viewed_composites_by_argument_block: PersistentMap<AddressBase, ResourceEntryIds>,
     /// Owned unit heads with exactly one argument, a nominal heap pointer.
@@ -12469,7 +12460,7 @@ pub(super) struct ResourceContextIndex {
     /// reads one exact key rather than enumerating separately retained units.
     /// u128 covers every u64 entry ID times a positive signed-32 quantity.
     pub(super) numeric_owned_units: PersistentMap<Resource, (u128, usize)>,
-    pub(super) mutex_authorities: PersistentMap<(ResourceFamily, OldAddress), ResourceEntryIds>,
+    pub(super) mutex_authorities: PersistentMap<(ResourceFamily, Address), ResourceEntryIds>,
     /// Subscriber rights an acquire load has read through, awaiting the C
     /// branch that tests the value (`publication::resolve_observed_publications`).
     pub(super) observed_publications: PersistentMap<(), ResourceEntryIds>,
@@ -12493,10 +12484,10 @@ pub(super) struct ResourceContextIndex {
     /// SymbolicMemory facts keyed by their exact base spelling. Direct pointer
     /// equalities can then find only the facts whose bases they identify,
     /// without scanning every resource in an aliased block.
-    pub(super) memory_by_base: PersistentMap<OldAddress, ResourceEntryIds>,
+    pub(super) memory_by_base: PersistentMap<Address, ResourceEntryIds>,
     /// Ownership-only exact-base buckets. Validity checks must not filter
     /// read observations out of the general memory bucket.
-    pub(super) owned_memory_by_base: PersistentMap<OldAddress, ResourceEntryIds>,
+    pub(super) owned_memory_by_base: PersistentMap<Address, ResourceEntryIds>,
     /// Raw address anchors maintained during resource publication, for queries
     /// before a proof boundary has paired the input with an equality graph.
     /// Structural candidates maintained at resource publication, independent
@@ -12523,10 +12514,10 @@ pub(super) struct ResourceContextIndex {
     /// pairwise scan with, so it is an ordering question wearing a key's
     /// clothes: read as `u32`, a range starting below its base sorted past
     /// every range there is and its overlapping neighbour was never probed.
-    pub(super) concrete_memory: PersistentMap<(OldAddress, bool, i128, i128), ResourceEntryIds>,
+    pub(super) concrete_memory: PersistentMap<(Address, bool, i128, i128), ResourceEntryIds>,
     constant_owned_intervals: memory_equality_index::ConstantOwnershipIntervals,
     /// All constant ranges, including known-empty ones, represented at this origin.
-    pub(super) concrete_memory_by_base: PersistentMap<(OldAddress, bool), usize>,
+    pub(super) concrete_memory_by_base: PersistentMap<(Address, bool), usize>,
     /// Owned memory ranges keyed by their base's root: the block and the
     /// first symbolic atom of the base offset, in canonical form (absent for
     /// a wholly constant offset). Two owned ranges whose bases share no
@@ -12942,7 +12933,7 @@ impl PublicationSide {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct PublicationRight {
     pub(in crate::kernel) side: PublicationSide,
-    pub(in crate::kernel) flag: OldAddress,
+    pub(in crate::kernel) flag: Address,
     pub(in crate::kernel) payload: super::ResourceDescription,
     /// A subscriber right an acquire load has read `observed` through, until
     /// a C branch decides whether that value is zero.
@@ -12952,7 +12943,7 @@ pub struct PublicationRight {
 impl PublicationRight {
     pub(crate) fn new(
         side: PublicationSide,
-        flag: OldAddress,
+        flag: Address,
         payload: super::ResourceDescription,
     ) -> Self {
         Self {
@@ -12968,7 +12959,7 @@ impl PublicationRight {
     pub(crate) fn side(&self) -> PublicationSide {
         self.side
     }
-    pub(crate) fn flag(&self) -> &OldAddress {
+    pub(crate) fn flag(&self) -> &Address {
         &self.flag
     }
     pub(crate) fn payload(&self) -> &super::ResourceDescription {
@@ -12986,7 +12977,7 @@ pub struct MutexIdentity {
     pub(in crate::kernel) epoch: Option<u64>,
     /// Bound addresses are immutable diagnostic metadata; only an
     /// unbound description's address participates in substitution.
-    pub(in crate::kernel) mutex: OldAddress,
+    pub(in crate::kernel) mutex: Address,
 }
 
 /// A loop-owned occurrence. Protocol metadata and the condition never create
@@ -13000,7 +12991,7 @@ pub struct ConditionalMutexGuard {
 }
 
 impl ConditionalMutexGuard {
-    pub(crate) fn mutex(&self) -> &OldAddress {
+    pub(crate) fn mutex(&self) -> &Address {
         self.guard.mutex()
     }
     pub(crate) fn condition(&self) -> &OldConditionTerm {
@@ -13016,20 +13007,20 @@ pub struct MutexUseIdentity {
     pub(in crate::kernel) protected: Option<super::ResourceDescription>,
     pub(in crate::kernel) binding: Option<super::borrows::MutexUseBinding>,
     pub(in crate::kernel) initialization: Option<u64>,
-    pub(in crate::kernel) mutex: OldAddress,
+    pub(in crate::kernel) mutex: Address,
 }
 
 impl MutexUseIdentity {
     pub(crate) fn protected_type(&self) -> Option<&super::ResourceDescription> {
         self.protected.as_ref()
     }
-    pub(crate) fn mutex(&self) -> &OldAddress {
+    pub(crate) fn mutex(&self) -> &Address {
         &self.mutex
     }
 }
 
 impl MutexIdentity {
-    pub(crate) fn mutex(&self) -> &OldAddress {
+    pub(crate) fn mutex(&self) -> &Address {
         &self.mutex
     }
 }
@@ -14553,7 +14544,7 @@ mod named_mutex_authority_spec_tests {
     #[test]
     fn raw_mutex_authority_bindings_are_typed_and_retained() {
         let mutex = Box::new(ProgramExpression::Value(ProgramValue::pointer(
-            OldAddress::symbolic(Variable(700)),
+            Address::symbolic(Variable(700)),
         )));
         for term in [
             ResourceTerm::MutexLive {
@@ -14634,7 +14625,7 @@ mod named_mutex_authority_spec_tests {
                 .is_err()
         );
         let mutex = Box::new(ProgramExpression::Value(ProgramValue::pointer(
-            OldAddress::symbolic(Variable(701)),
+            Address::symbolic(Variable(701)),
         )));
         let viewed = ResourceSpec::new(
             ResourceTerm::MutexGuard {
@@ -14837,13 +14828,13 @@ mod term_payload_view_tests {
                     AddressOffset::variable(Variable(991300 + index)),
                 );
             }
-            let value = ProgramValue::pointer(OldAddress {
-                base: AddressBase::PureFunctionApplication(SharedPureApplication::intern(
+            let value = ProgramValue::pointer(Address::new(
+                AddressBase::PureFunctionApplication(SharedPureApplication::intern(
                     "owned_native_pointer_result".into(),
                     Vec::new(),
                 )),
-                offset: offset,
-            });
+                offset,
+            ));
             let ProgramValue::Pointer(pointer) = &value else {
                 unreachable!()
             };
@@ -14989,7 +14980,7 @@ pub enum VolatileAccessKind {
 pub struct VolatileAccess {
     pub(crate) id: VolatileEventId,
     pub(crate) kind: VolatileAccessKind,
-    pub(crate) pointer: OldAddress,
+    pub(crate) pointer: Address,
     pub(crate) value_type: ProgramType,
     pub(crate) value: StoredProgramValue,
 }
@@ -15045,7 +15036,7 @@ pub enum KernelProposition {
         /// The point `memory` is the state at; not part of the fact's
         /// equality ([`program_point::PathLink`]).
         point: program_point::PathLink,
-        pointer: OldAddress,
+        pointer: Address,
         outcome: ExpressionOutcome<StoredProgramValue>,
     },
     MemoryCanStore {
@@ -15053,7 +15044,7 @@ pub enum KernelProposition {
         /// The point `memory` is the state at; not part of the fact's
         /// equality ([`program_point::PathLink`]).
         point: program_point::PathLink,
-        pointer: OldAddress,
+        pointer: Address,
         byte_width: u32,
     },
     /// `bytes` bytes at `base` are live in `memory`. The count is a 32-bit
@@ -15064,7 +15055,7 @@ pub enum KernelProposition {
         /// The point `memory` is the state at; not part of the fact's
         /// equality ([`program_point::PathLink`]).
         point: program_point::PathLink,
-        base: OldAddress,
+        base: Address,
         bytes: StoredMachineTerm,
         wide: bool,
     },
@@ -15075,7 +15066,7 @@ pub enum KernelProposition {
     MemoryReadDefined {
         at: Option<program_point::ProgramPointId>,
         memory: SymbolicMemory,
-        pointer: OldAddress,
+        pointer: Address,
         value_type: ProgramType,
     },
     ResourceSeparate {
@@ -15109,7 +15100,7 @@ pub enum KernelProposition {
         after: SymbolicMemory,
         /// The point `after` is the state at.
         after_point: program_point::PathLink,
-        writes: Vec<(OldAddress, AccessExtent)>,
+        writes: Vec<(Address, AccessExtent)>,
     },
     /// Internal write bound expressed as [`MemoryRange`] descriptors, including
     /// symbolic spans. Like [`Self::MemoryMutatesOnly`], this bounds possible
@@ -15134,7 +15125,7 @@ pub enum KernelProposition {
         after: SymbolicMemory,
         /// The point `after` is the state at.
         after_point: program_point::PathLink,
-        allocation_base: OldAddress,
+        allocation_base: Address,
         bytes: AllocationSize,
     },
     And(Box<KernelProposition>, Box<KernelProposition>),
@@ -16006,8 +15997,8 @@ pub(crate) struct IndexedSignedOrderBoundEvidence {
 /// offsets. The original variables remain distinct context-free names.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct LoadAddressCongruenceEvidence {
-    pub(super) left_pointer: OldAddress,
-    pub(super) right_pointer: OldAddress,
+    pub(super) left_pointer: Address,
+    pub(super) right_pointer: Address,
     pub(super) offset: PointerOffsetCongruenceEvidence,
 }
 
@@ -16501,7 +16492,7 @@ pub struct PureFactContext {
     /// blocks differ. Such a separation distinguishes complete pointers,
     /// but says nothing about their offsets alone.
     pub(super) separated_anchor_pointers: crate::persistent::PersistentMap<
-        (OldAddress, OldAddress),
+        (Address, Address),
         crate::persistent::PersistentSet<Proposition>,
     >,
     /// Scoped separation authority selected through checked address classes.
@@ -16616,7 +16607,7 @@ pub struct PureFactContext {
     /// Memory-view keys for validity checking, with the original point-bound
     /// propositions retained as sources for explicit proof construction.
     pub(super) memory_read_defined_facts: crate::persistent::PersistentMap<
-        (OldAddress, ProgramType),
+        (Address, ProgramType),
         crate::persistent::PersistentMap<
             Proposition,
             crate::persistent::PersistentSet<Proposition>,
@@ -16631,7 +16622,7 @@ pub struct PureFactContext {
     /// scanning every external-argument fact, whose physical block is shared
     /// by all pointer parameters.
     pub(super) memory_loadable_object_facts:
-        crate::persistent::PersistentMap<OldAddress, crate::persistent::PersistentSet<Proposition>>,
+        crate::persistent::PersistentMap<Address, crate::persistent::PersistentSet<Proposition>>,
     /// Loadability facts by base block, then by the base's state-blind
     /// fingerprint. Updated with `memory_loadable_facts`, so a fork copies
     /// only the path to the shape it changes.
@@ -16841,7 +16832,7 @@ pub struct ExecutionPureFact {
     /// state, since the producer's state and pointer are the authority.
     pub(super) generated_load_binding: Option<Box<GeneratedLoadBinding>>,
     /// Checked callback-read evidence, independent of scalar-variable naming.
-    pub(super) checked_pointer_read: Option<Box<(OldAddress, SharedMemory, OldAddress)>>,
+    pub(super) checked_pointer_read: Option<Box<(Address, SharedMemory, Address)>>,
     pub(super) generated_load_source_events: GeneratedLoadSourceEvents,
     pub(super) reference_observation: super::source_access::ReferenceObservationSource,
 }
@@ -16899,14 +16890,14 @@ pub(crate) enum GeneratedLoadBinding {
     Exact {
         variable: Variable,
         retained_state: MemoryStateIdentity,
-        pointer: OldAddress,
+        pointer: Address,
         load: OldMachineTerm,
         /// The C value produced by a completed, nonvolatile pointer read.
         /// Scalar and volatile reads have no pointer bridge.
-        typed_pointer_value: Option<OldAddress>,
+        typed_pointer_value: Option<Address>,
         /// The current cell read by a checked resource-index expression.
         /// Its cached value can retain an older defining load.
-        observed_pointer_read: Option<(SharedMemory, OldAddress)>,
+        observed_pointer_read: Option<(SharedMemory, Address)>,
     },
     Ambiguous {
         variable: Variable,
@@ -16988,13 +16979,13 @@ pub(super) struct CertifiedMemoryStore {
     pub(super) after: SymbolicMemory,
     /// `after`, named by its memory and placed at the store's point.
     pub(super) after_point: ProgramPoint,
-    pub(super) pointer: OldAddress,
+    pub(super) pointer: Address,
     pub(super) value: ProgramValue,
     pub(super) authorized_range: Option<MemoryRange>,
     pub(super) source: super::StatementStoreSource,
     pub(super) value_equation: Option<Arc<Proposition>>,
     /// Evaluated lvalue coordinates, before ownership may rebase the write.
-    pub(super) source_address: Option<OldAddress>,
+    pub(super) source_address: Option<Address>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -143,7 +143,7 @@ mod tests {
 
     #[test]
     fn inventory_fact_kinds_show_operands_instead_of_opaque_counts() {
-        let p = OldAddress::symbolic(Variable(986_700));
+        let p = Address::symbolic(Variable(986_700));
         let memory = SymbolicMemory::new();
         let word = OldMachineTerm::read_named(
             crate::kernel::ProgramPoint::at(&(crate::kernel::intern_memory_ref(&memory))),
@@ -206,10 +206,7 @@ mod tests {
             ),
             (
                 Proposition::condition_is(
-                    OldConditionTerm::AddressEqual(
-                        Box::new(p.clone()),
-                        Box::new(OldAddress::null()),
-                    ),
+                    OldConditionTerm::AddressEqual(Box::new(p.clone()), Box::new(Address::null())),
                     false,
                 ),
                 "is false",
@@ -253,7 +250,7 @@ mod tests {
                 Proposition::VolatileAccess(std::sync::Arc::new(crate::kernel::VolatileAccess {
                     id: crate::kernel::VolatileEventId(123),
                     kind: crate::kernel::VolatileAccessKind::Write,
-                    pointer: OldAddress::symbolic(Variable(986_703)),
+                    pointer: Address::symbolic(Variable(986_703)),
                     value_type: crate::kernel::ProgramType::UInt64,
                     value: ProgramValue::UInt64(OldMachineTerm::uint64_constant(1)).into(),
                 })),
@@ -274,7 +271,7 @@ mod tests {
 
     #[test]
     fn trace_reads_preserve_state_and_load_kind_without_current_pointer_names() {
-        let address = OldAddress::symbolic(Variable(986_702));
+        let address = Address::symbolic(Variable(986_702));
         let first = crate::kernel::intern_memory(SymbolicMemory::new());
         let second =
             crate::kernel::intern_memory(SymbolicMemory::new().with_block("trace_changed", 4));

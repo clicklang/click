@@ -401,7 +401,7 @@ pub(super) fn common_variables(
                         .load_kind();
                     collect_machine_read_variables(
                         point,
-                        address.exact_cell_key(),
+                        address.written().expect("retained read address"),
                         kind,
                         &mut leaf_variables,
                     );
@@ -426,7 +426,7 @@ pub(super) fn common_variables(
                     // origins for havoc framing at the read's own decoding.
                     collect_machine_read_variables(
                         point,
-                        address.exact_cell_key(),
+                        address.written().expect("retained read address"),
                         LoadKind::of_algebraic(algebraic_type),
                         &mut leaf_variables,
                     );
@@ -689,10 +689,10 @@ mod tests {
         let coordinate = Variable(999942);
         let stored = Variable(999943);
         let unrelated = Variable(999944);
-        let address = OldAddress {
-            base: AddressBase::Symbolic(base),
-            offset: AddressOffset::variable(coordinate),
-        };
+        let address = Address::new(
+            AddressBase::Symbolic(base),
+            AddressOffset::variable(coordinate),
+        );
         let memory = intern_memory(
             SymbolicMemory::new()
                 .store(
@@ -700,7 +700,7 @@ mod tests {
                     ProgramValue::Bool(OldMachineTerm::Variable(stored)),
                 )
                 .store(
-                    OldAddress::symbolic(base),
+                    Address::symbolic(base),
                     ProgramValue::Bool(OldMachineTerm::Variable(unrelated)),
                 ),
         );
@@ -740,13 +740,13 @@ mod tests {
         let stored_connection = Variable(999958);
         let frame_base = Variable(999954);
         let frame_index = Variable(999955);
-        let pointer = OldAddress {
-            base: AddressBase::Symbolic(base),
-            offset: AddressOffset::raw_add(
+        let pointer = Address::new(
+            AddressBase::Symbolic(base),
+            AddressOffset::raw_add(
                 AddressOffset::scaled_int32_node(OldMachineTerm::Variable(index), 4),
                 AddressOffset::variable(connection),
             ),
-        };
+        );
         let memory = intern_memory(
             SymbolicMemory::new()
                 .store(
@@ -759,7 +759,7 @@ mod tests {
                 ),
         );
         let writes = crate::kernel::MemoryRange::new(
-            OldAddress::symbolic(frame_base),
+            Address::symbolic(frame_base),
             OldMachineTerm::Variable(frame_index),
             OldMachineTerm::Binary {
                 format: crate::kernel::MachineIntegerType::Int32,
@@ -896,10 +896,10 @@ mod tests {
                     ProgramValue::Int32(OldMachineTerm::Variable(Variable(999811))),
                 ),
         );
-        let pointer = OldAddress {
-            base: AddressBase::Symbolic(Variable(999812)),
-            offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(999813)), 4),
-        };
+        let pointer = Address::new(
+            AddressBase::Symbolic(Variable(999812)),
+            AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(999813)), 4),
+        );
         for format in [
             crate::kernel::KernelFloatType::Float32,
             crate::kernel::KernelFloatType::Float64,
@@ -940,7 +940,7 @@ mod tests {
             let left = Box::new(OldMachineTerm::Variable(Variable(999933)));
             let right = Box::new(OldMachineTerm::read_named(
                 ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
-                Box::new(OldAddress::symbolic(Variable(999934))),
+                Box::new(Address::symbolic(Variable(999934))),
                 format.load_kind(),
             ));
             let native = match format {
@@ -989,7 +989,7 @@ mod tests {
             let left = Box::new(OldMachineTerm::Variable(Variable(999933)));
             let right = Box::new(OldMachineTerm::read_named(
                 ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
-                Box::new(OldAddress::symbolic(Variable(999934))),
+                Box::new(Address::symbolic(Variable(999934))),
                 format.load_kind(),
             ));
             let native = match format {
@@ -1207,13 +1207,10 @@ mod tests {
                             ProgramValue::UInt64(OldMachineTerm::Variable(Variable(999741))),
                         ),
                 )),
-                pointer: Box::new(OldAddress {
-                    base: AddressBase::Symbolic(Variable(999742)),
-                    offset: AddressOffset::scaled_int32_node(
-                        OldMachineTerm::Variable(Variable(999743)),
-                        4,
-                    ),
-                }),
+                pointer: Box::new(Address::new(
+                    AddressBase::Symbolic(Variable(999742)),
+                    AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(999743)), 4),
+                )),
             },
         };
         for native in [native, conditional, read] {
@@ -1277,7 +1274,7 @@ mod tests {
                 crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory(
                     SymbolicMemory::new(),
                 )),
-                OldAddress::symbolic(Variable(999563)),
+                Address::symbolic(Variable(999563)),
             )),
         });
         let application = SharedPureApplication::intern(
@@ -1328,13 +1325,13 @@ mod tests {
                             ProgramValue::Int32(OldMachineTerm::Variable(Variable(970_030))),
                         ),
                 )),
-                OldAddress {
-                    base: AddressBase::Symbolic(Variable(970_031)),
-                    offset: AddressOffset::scaled_int32_node(
+                Address::new(
+                    AddressBase::Symbolic(Variable(970_031)),
+                    AddressOffset::scaled_int32_node(
                         OldMachineTerm::Variable(Variable(970_032)),
                         4,
                     ),
-                },
+                ),
             ),
             OldConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
@@ -1348,18 +1345,15 @@ mod tests {
             OldConditionTerm::PointerEqual(
                 Box::new(
                     OldPointer::new(
-                        OldAddress::symbolic(Variable(970_010)),
+                        Address::symbolic(Variable(970_010)),
                         ProgramType::Int32Pointer,
                     )
                     .with_bounds(Some(SubobjectBounds {
-                        start: OldAddress::symbolic(Variable(970_011)),
+                        start: Address::symbolic(Variable(970_011)),
                         width: OldMachineTerm::Variable(Variable(970_012)),
                     })),
                 ),
-                Box::new(OldPointer::new(
-                    OldAddress::null(),
-                    ProgramType::Int32Pointer,
-                )),
+                Box::new(OldPointer::new(Address::null(), ProgramType::Int32Pointer)),
             ),
             OldConditionTerm::AddressOffsetEqual(
                 Box::new(AddressOffset::raw_add(
@@ -1379,26 +1373,26 @@ mod tests {
                 )),
             ),
             OldConditionTerm::AddressEqual(
-                Box::new(OldAddress {
-                    base: AddressBase::PureFunctionApplication(SharedPureApplication::intern(
+                Box::new(Address::new(
+                    AddressBase::PureFunctionApplication(SharedPureApplication::intern(
                         "raw_pointer_dependency".into(),
                         vec![PureFunctionArgument::Integer(
                             IntegerTerm::Variable(Variable(970_008)).into(),
                         )],
                     )),
-                    offset: AddressOffset::scaled_int32_node(
+                    AddressOffset::scaled_int32_node(
                         OldMachineTerm::Variable(Variable(970_009)),
                         4,
                     ),
-                }),
-                Box::new(OldAddress {
-                    base: AddressBase::ExternalObject(Variable(970_010)),
-                    offset: AddressOffset::scaled_int64_node(
+                )),
+                Box::new(Address::new(
+                    AddressBase::ExternalObject(Variable(970_010)),
+                    AddressOffset::scaled_int64_node(
                         OldMachineTerm::Variable(Variable(970_011)),
                         8,
                         false,
                     ),
-                }),
+                )),
             ),
             comparison.clone(),
             OldConditionTerm::BoolIf {
@@ -1777,7 +1771,7 @@ mod mixed_argument_tests {
             },
         };
         let pointer = ProgramValue::Pointer(OldPointer::new(
-            OldAddress::symbolic(Variable(1008512)),
+            Address::symbolic(Variable(1008512)),
             ProgramType::Int32Pointer,
         ));
         let arguments = [

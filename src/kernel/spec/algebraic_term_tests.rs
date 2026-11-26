@@ -56,7 +56,7 @@ fn logical_enum_read_uses_the_recorded_local_store() {
     let extra = SymbolicMemory::local_pointer("unrelated");
     let state = stored
         .clone()
-        .with_memory(stored.memory().clone().with_block(extra.base, 2));
+        .with_memory(stored.memory().clone().with_block(extra.base.clone(), 2));
     let expected = state.held_local_value("value").expect("held enum");
     let ProgramValue::Parameter(held) = &expected else {
         panic!("held enum value");
@@ -472,8 +472,8 @@ fn cached_pointer_read_equations_do_not_escape_symbolic_match_arms() {
             value_type, variants,
         )]))),
     };
-    let address = OldAddress::symbolic(Variable(71_040));
-    let value = OldAddress::symbolic(Variable(71_041));
+    let address = Address::symbolic(Variable(71_040));
+    let value = Address::symbolic(Variable(71_041));
     let memory = SymbolicMemory::new().store(
         address.clone(),
         ProgramValue::typed_pointer(value, ProgramType::Int64Pointer),
@@ -999,11 +999,9 @@ fn nominal_pointer_constructor_matches_preserve_the_checked_payload() {
         None,
     ] {
         let valid = actual_class.as_ref() == Some(&class);
-        let payload = ProgramValue::typed_pointer(
-            OldAddress::symbolic(Variable(44)),
-            ProgramType::Int32Pointer,
-        )
-        .with_pointer_object_class(actual_class);
+        let payload =
+            ProgramValue::typed_pointer(Address::symbolic(Variable(44)), ProgramType::Int32Pointer)
+                .with_pointer_object_class(actual_class);
         let constructor = SpecAlgebraicExpression {
             algebraic_type: ty.clone(),
             node: SpecAlgebraicExpressionNode::Constructor {
@@ -1243,7 +1241,7 @@ fn algebraic_read_result_preserves_native_state_and_type() {
         algebraic_type: ty.clone(),
         node: AlgebraicTermNode::MemoryLoad {
             point: crate::kernel::ProgramPoint::at(&intern_memory(SymbolicMemory::new())),
-            pointer: Box::new(OldAddress::symbolic(Variable(999749))),
+            pointer: Box::new(Address::symbolic(Variable(999749))),
         },
     };
     let expression = SpecAlgebraicExpression {

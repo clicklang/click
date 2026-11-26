@@ -7,10 +7,7 @@ use super::*;
 #[test]
 fn materialized_run_adjacency_preserves_holes_and_scales() {
     let _session = crate::kernel::VerificationSession::enter();
-    let base = OldAddress {
-        base: "run-adjacency".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let base = Address::new("run-adjacency".into(), AddressOffset::constant(0));
     let source = crate::kernel::intern_memory(SymbolicMemory::new());
     let context = PureFactContext::new();
     let mut costs = Vec::new();

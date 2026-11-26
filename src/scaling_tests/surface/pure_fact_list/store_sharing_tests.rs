@@ -66,13 +66,14 @@ fn statement_store_views_only_index_their_delta() {
 #[test]
 fn restricted_facts_keep_ambient_memory_reservations() {
     use crate::kernel::{
-        AddressBase, AddressOffset, OldAddress, OldMachineTerm, ProgramValue, SymbolicMemory,
-        Variable,
+        Address, AddressBase, AddressOffset, OldMachineTerm, ProgramValue, SymbolicMemory, Variable,
     };
     for size in [32, 128, 512] {
-        let pointer = |index| OldAddress {
-            base: AddressBase::ExternalObject(Variable(9_100_000 + index)),
-            offset: AddressOffset::constant(0),
+        let pointer = |index| {
+            Address::new(
+                AddressBase::ExternalObject(Variable(9_100_000 + index)),
+                AddressOffset::constant(0),
+            )
         };
         let memory = (0..size).fold(SymbolicMemory::new(), |memory, index| {
             memory.store(

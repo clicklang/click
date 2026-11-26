@@ -28,10 +28,10 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let second = intern_memory(SymbolicMemory::new());
         let ty = TypeParameterName::intern("RetainedReadT").algebraic_type();
-        let pointer = OldAddress {
-            base: AddressBase::Symbolic(Variable(999744)),
-            offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(999745)), 4),
-        };
+        let pointer = Address::new(
+            AddressBase::Symbolic(Variable(999744)),
+            AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(999745)), 4),
+        );
         let sources = [first, second].map(|memory| AlgebraicTerm {
             algebraic_type: ty.clone(),
             node: AlgebraicTermNode::MemoryLoad {
@@ -47,7 +47,7 @@ mod tests {
         let other_type = KernelTerm::algebraic_read(
             TypeParameterName::intern("OtherReadT").algebraic_type(),
             crate::kernel::ProgramPoint::at(&intern_memory(SymbolicMemory::new())),
-            SharedAddress::import(&pointer),
+            pointer.shared().clone(),
         );
         assert!(!roots[0].algebraic_syntax_equal(&other_type));
         let changed_memory = KernelTerm::algebraic_read(
@@ -55,13 +55,13 @@ mod tests {
             crate::kernel::ProgramPoint::at(&intern_memory(
                 SymbolicMemory::new().with_block("changed-read-retained_state", 8),
             )),
-            SharedAddress::import(&pointer),
+            pointer.shared().clone(),
         );
         assert!(!roots[0].algebraic_syntax_equal(&changed_memory));
         let changed_address = KernelTerm::algebraic_read(
             ty.clone(),
             crate::kernel::ProgramPoint::at(&intern_memory(SymbolicMemory::new())),
-            SharedAddress::import(&OldAddress::symbolic(Variable(999750))),
+            Address::symbolic(Variable(999750)).shared().clone(),
         );
         assert!(!roots[0].algebraic_syntax_equal(&changed_address));
         let format = MachineIntegerType::Int32;

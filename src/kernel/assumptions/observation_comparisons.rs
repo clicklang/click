@@ -955,7 +955,7 @@ impl PureFactContext {
 #[cfg(test)]
 mod resource_relation_tests {
     use super::*;
-    use crate::kernel::{LoadKind, OldAddress, OldPointer, ProgramType, Variable};
+    use crate::kernel::{Address, LoadKind, OldPointer, ProgramType, Variable};
 
     fn relation(term: OldMachineTerm, pointer: OldPointer, separate: bool) -> Proposition {
         let left = Resource::Composite {
@@ -994,7 +994,7 @@ mod resource_relation_tests {
     #[test]
     fn resource_relation_keys_match_read_names_without_erasing_their_identity() {
         let _session = crate::kernel::VerificationSession::enter();
-        let address = OldAddress::symbolic(Variable(3_219_300));
+        let address = Address::symbolic(Variable(3_219_300));
         let memory = crate::kernel::intern_memory(SymbolicMemory::new());
         let other_memory = crate::kernel::intern_memory(
             SymbolicMemory::new().store(address.clone(), ProgramValue::Int32(9u32.into())),

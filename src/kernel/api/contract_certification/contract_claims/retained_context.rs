@@ -593,10 +593,7 @@ mod tests {
         )
         .unwrap();
         let memory = prepared.caller_state.memory().clone();
-        let address = OldAddress {
-            base: "global:counter".into(),
-            offset: AddressOffset::constant(0),
-        };
+        let address = Address::new("global:counter".into(), AddressOffset::constant(0));
         let extent = crate::kernel::AccessExtent::Bytes(4);
         let range = MemoryRange::of_access(&address, extent);
         prepared.effect_facts = vec![crate::kernel::ExecutionPureFact::certified(

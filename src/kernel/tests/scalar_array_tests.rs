@@ -1,11 +1,8 @@
 //! Compact scalar arrays keep checked authority independent of logical length.
 use super::*;
 
-fn pointer(block: &str, offset: i64) -> OldAddress {
-    OldAddress {
-        base: block.into(),
-        offset: AddressOffset::constant(offset),
-    }
+fn pointer(block: &str, offset: i64) -> Address {
+    Address::new(block.into(), AddressOffset::constant(offset))
 }
 fn fresh(count: u32) -> SymbolicMemory {
     SymbolicMemory::new()

@@ -194,12 +194,9 @@ fn check_narrow_store_equation(format: Ty) {
     use crate::kernel::{KernelTermImport, MachineOperandView as V, VerificationSession};
     let _session = VerificationSession::enter();
     for aliased in [false, true] {
-        let pointer = OldAddress {
-            base: "narrow".into(),
-            offset: AddressOffset::constant(0),
-        };
+        let pointer = Address::new("narrow".into(), AddressOffset::constant(0));
         let query = if aliased {
-            OldAddress::symbolic(Variable(993201))
+            Address::symbolic(Variable(993201))
         } else {
             pointer.clone()
         };

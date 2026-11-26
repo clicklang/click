@@ -957,7 +957,7 @@ fn condition_carrier(condition: &OldConditionTerm) -> AlgebraicValue {
 /// load at them: a walker reaches them as it reaches a scalar load's.
 fn load_carrier(
     point: &crate::kernel::ProgramPoint,
-    pointer: &crate::kernel::OldAddress,
+    pointer: &crate::kernel::Address,
     algebraic_type: &crate::kernel::AlgebraicType,
 ) -> AlgebraicValue {
     AlgebraicTermNode::memory_load_carrier_value(
@@ -2298,7 +2298,7 @@ pub(in crate::kernel) fn collect_memory_range_bitvector_variables(
 
 pub(crate) fn resource_context_has_read(
     resources: &ResourceContext,
-    pointer: &OldAddress,
+    pointer: &Address,
     byte_width: u32,
     assumptions: &PureFactContext,
 ) -> bool {
@@ -2739,7 +2739,7 @@ fn collect_bitvector_integer_variables_seen(
 }
 
 fn collect_pointer_integer_variables(
-    pointer: &OldAddress,
+    pointer: &Address,
     variables: &mut BTreeSet<Variable>,
     seen: &mut SeenTerms,
 ) {
@@ -3458,7 +3458,7 @@ fn collect_shared_integer_variables(
 
 fn collect_stored_load_connection_variables(
     memory: &SharedMemory,
-    pointer: &OldAddress,
+    pointer: &Address,
     variables: &mut BTreeSet<Variable>,
 ) {
     if collecting_connection_variables() {
@@ -3484,7 +3484,7 @@ fn collect_stored_load_connection_variables(
 
 fn collect_machine_read_variables(
     point: &crate::kernel::ProgramPoint,
-    pointer: &OldAddress,
+    pointer: &Address,
     kind: LoadKind,
     variables: &mut BTreeSet<Variable>,
 ) {
@@ -3891,7 +3891,7 @@ fn collect_pointer_offset_capture_variables(
 }
 
 fn collect_pointer_capture_variables(
-    pointer: &OldAddress,
+    pointer: &Address,
     variables: &mut BTreeSet<Variable>,
     integer_seen: &mut SeenTerms,
 ) {
@@ -4842,7 +4842,7 @@ fn collect_bitvector_scope_summary(
 }
 
 fn collect_pointer_scope_summary(
-    pointer: &OldAddress,
+    pointer: &Address,
     summaries: &mut std::collections::HashMap<u64, IntegerScopeSummary>,
 ) -> IntegerScopeSummary {
     if checked_collection_checkpoint() {
@@ -5733,7 +5733,7 @@ fn collect_pointer_offset_binder_variables(
 }
 
 fn collect_pointer_binder_variables(
-    pointer: &OldAddress,
+    pointer: &Address,
     integer_variables: &mut BTreeSet<Variable>,
     bitvector_variables: &mut BTreeSet<Variable>,
     integer_seen: &mut SeenTerms,
@@ -6040,7 +6040,7 @@ pub(in crate::kernel) fn collect_pointer_offset_bitvector_variables(
 }
 
 pub(in crate::kernel) fn collect_pointer_bitvector_variables(
-    pointer: &OldAddress,
+    pointer: &Address,
     variables: &mut BTreeSet<Variable>,
 ) {
     collect_address_base_bitvector_variables(&pointer.base, variables);
@@ -6789,16 +6789,13 @@ fn block_variables(block: &AddressBase, contents: &MemoryBlock) -> BTreeSet<Vari
     variables
 }
 
-fn object_address_variables(pointer: &OldAddress) -> BTreeSet<Variable> {
+fn object_address_variables(pointer: &Address) -> BTreeSet<Variable> {
     let mut variables = BTreeSet::new();
     collect_pointer_bitvector_variables(pointer, &mut variables);
     variables
 }
 
-fn partial_byte_variables(
-    pointer: &OldAddress,
-    value: Option<&ProgramValue>,
-) -> BTreeSet<Variable> {
+fn partial_byte_variables(pointer: &Address, value: Option<&ProgramValue>) -> BTreeSet<Variable> {
     match value {
         Some(value) => cell_variables(pointer, value),
         None => object_address_variables(pointer),
@@ -6832,7 +6829,7 @@ fn add_partial_byte_changes(
     }
 }
 
-fn cell_variables(pointer: &OldAddress, value: &ProgramValue) -> BTreeSet<Variable> {
+fn cell_variables(pointer: &Address, value: &ProgramValue) -> BTreeSet<Variable> {
     #[cfg(test)]
     CELLS_COLLECTED.with(|visited| visited.set(visited.get() + 1));
     let mut variables = BTreeSet::new();
@@ -7317,15 +7314,15 @@ mod shared_read_walker_tests {
     #[test]
     fn shared_read_integer_carriers_remain_visible_inside_pointer_calls() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = OldAddress {
-            base: AddressBase::PureFunctionApplication(SharedPureApplication::intern(
+        let pointer = Address::new(
+            AddressBase::PureFunctionApplication(SharedPureApplication::intern(
                 "read_address".into(),
                 vec![PureFunctionArgument::Integer(
                     IntegerTerm::Variable(Variable(994120)).into(),
                 )],
             )),
-            offset: AddressOffset::constant(0),
-        };
+            AddressOffset::constant(0),
+        );
         let native = OldMachineTerm::read_named(
             ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
             Box::new(pointer),
@@ -7347,10 +7344,10 @@ mod shared_read_walker_tests {
     #[test]
     fn shared_read_carriers_match_native_addresses_without_export_or_registry() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = OldAddress {
-            base: AddressBase::Symbolic(Variable(994100)),
-            offset: AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(994101)), 4),
-        };
+        let pointer = Address::new(
+            AddressBase::Symbolic(Variable(994100)),
+            AddressOffset::scaled_int32_node(OldMachineTerm::Variable(Variable(994101)), 4),
+        );
         let raw = OldMachineTerm::read_named(
             ProgramPoint::at(&(intern_memory(SymbolicMemory::new()))),
             Box::new(pointer),

@@ -69,20 +69,14 @@ fn balanced_unit_sum_domain_uses_only_indexed_related_bounds() {
 
 #[test]
 fn named_cell_check_rejects_removals_and_ignores_unchanged_cells() {
-    use crate::kernel::{AddressBase, AddressOffset, OldAddress, SymbolicMemory};
-    let target = OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::constant(0),
-    };
+    use crate::kernel::{Address, AddressBase, AddressOffset, SymbolicMemory};
+    let target = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0));
     let mut samples = Vec::new();
     for count in [8, 32, 128, 512] {
         let mut before = SymbolicMemory::new();
         for index in 0..count {
             before = before.store(
-                OldAddress {
-                    base: AddressBase::Heap(index),
-                    offset: AddressOffset::constant(0),
-                },
+                Address::new(AddressBase::Heap(index), AddressOffset::constant(0)),
                 ProgramValue::Int32(OldMachineTerm::constant(7)),
             );
         }
@@ -112,8 +106,8 @@ fn named_cell_check_rejects_removals_and_ignores_unchanged_cells() {
 #[test]
 fn constructor_partition_transports_pointer_payloads_without_scanning_ambient_facts() {
     let (core, mut value) = constructor_partition_fixture_with_type(2, ProgramType::Int32Pointer);
-    let payload = OldAddress::symbolic(Variable(7_000_000));
-    let program = OldAddress::symbolic(Variable(1_000_001));
+    let payload = Address::symbolic(Variable(7_000_000));
+    let program = Address::symbolic(Variable(1_000_001));
     value.node = crate::kernel::AlgebraicTermNode::Constructor {
         variant: "C0".into(),
         fields: vec![crate::kernel::AlgebraicValue::Program(
@@ -139,7 +133,7 @@ fn constructor_partition_transports_pointer_payloads_without_scanning_ambient_fa
                 core.algebraic_case_partition(&facts, &value, &env, &[], None, 0)
                     .unwrap()
             });
-        let witness = OldAddress::symbolic(fields[0][0].0);
+        let witness = Address::symbolic(fields[0][0].0);
         let transported = Proposition::condition_is(
             crate::kernel::OldConditionTerm::address_equal(program.clone(), witness),
             true,
@@ -264,10 +258,10 @@ fn concrete_constructor_payload_spelling_is_checked_and_indexed() {
 fn cached_body_loadability_work_is_linear_in_cache_delta_and_selected_facts() {
     let before = (0..2048).fold(SymbolicMemory::new(), |memory, index| {
         memory.store(
-            OldAddress {
-                base: "ambient".into(),
-                offset: AddressOffset::constant(i64::from(index) * 4),
-            },
+            Address::new(
+                "ambient".into(),
+                AddressOffset::constant(i64::from(index) * 4),
+            ),
             int32(index),
         )
     });
@@ -275,10 +269,7 @@ fn cached_body_loadability_work_is_linear_in_cache_delta_and_selected_facts() {
         let cached = (0..size).fold(before.clone(), |memory, index| {
             let source = crate::kernel::intern_memory_ref(&memory);
             memory.with_seeded_cells(
-                OldAddress {
-                    base: format!("cache-{index}").into(),
-                    offset: AddressOffset::constant(0),
-                },
+                Address::new(format!("cache-{index}").into(), AddressOffset::constant(0)),
                 4,
                 crate::kernel::ProgramType::Int32,
                 0,
@@ -289,10 +280,7 @@ fn cached_body_loadability_work_is_linear_in_cache_delta_and_selected_facts() {
         let view = |memory, index| Proposition::MemoryLoadable {
             point: Default::default(),
             memory,
-            base: OldAddress {
-                base: "body".into(),
-                offset: AddressOffset::constant(i64::from(index) * 4),
-            },
+            base: Address::new("body".into(), AddressOffset::constant(i64::from(index) * 4)),
             bytes: (OldMachineTerm::constant(4)).into(),
             wide: false,
         };
@@ -320,9 +308,7 @@ fn cached_body_loadability_work_is_linear_in_cache_delta_and_selected_facts() {
 fn return_materialized_reads_scale_with_the_selected_cells() {
     let samples = [16, 32, 64, 128].map(|size| {
         let mut memory = SymbolicMemory::new();
-        let pointers: Vec<_> = (0..size)
-            .map(|i| OldAddress::symbolic(Variable(i)))
-            .collect();
+        let pointers: Vec<_> = (0..size).map(|i| Address::symbolic(Variable(i))).collect();
         for pointer in &pointers {
             memory = memory.store(pointer.clone(), int32(7));
         }
@@ -430,7 +416,7 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
                 uninitialized: false,
                 value_runs: Default::default(),
                 base: ProgramExpression::Value(ProgramValue::pointer(
-                    crate::kernel::OldAddress::symbolic(Variable(100)),
+                    crate::kernel::Address::symbolic(Variable(100)),
                 )),
                 start: ProgramExpression::Value(int32(0)),
                 end: ProgramExpression::Value(int32(1)),
@@ -805,10 +791,10 @@ fn interface_abstraction_work_scales_with_unrelated_locals_and_memory() {
             then_state = then_state.with_local(name.clone(), value.clone());
             stable_locals.insert(name, value);
             memory = memory.store(
-                OldAddress {
-                    base: AddressBase::ExternalArgument,
-                    offset: AddressOffset::constant(i64::from(index * 4)),
-                },
+                Address::new(
+                    AddressBase::ExternalArgument,
+                    AddressOffset::constant(i64::from(index * 4)),
+                ),
                 int32(index),
             );
         }
@@ -908,8 +894,8 @@ fn branch_fact_availability_is_exact_and_independent_of_ambient_history() {
 fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
     use crate::kernel::{OldConditionTerm, OldPointer, SpecPoint};
     let _session = crate::kernel::VerificationSession::enter();
-    let owner = OldAddress::symbolic(Variable(951_000));
-    let alias = OldAddress::symbolic(Variable(951_001));
+    let owner = Address::symbolic(Variable(951_000));
+    let alias = Address::symbolic(Variable(951_001));
     let value = OldMachineTerm::uint64_constant(0x1234_5678_9abc_def0);
     let load = SpecExpression::MemoryLoad {
         point: SpecPoint::Current,
@@ -991,15 +977,12 @@ fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
 
 #[test]
 fn interface_read_premises_are_indexed_and_check_the_exact_range() {
-    use crate::kernel::{OldAddress, SymbolicMemory};
+    use crate::kernel::{Address, SymbolicMemory};
     let memory = SymbolicMemory::new();
     let readable = |memory: SymbolicMemory, block: String, width| Proposition::MemoryLoadable {
         point: Default::default(),
         memory,
-        base: OldAddress {
-            base: block.into(),
-            offset: AddressOffset::constant(0),
-        },
+        base: Address::new(block.into(), AddressOffset::constant(0)),
         bytes: (OldMachineTerm::constant(width)).into(),
         wide: false,
     };
@@ -1172,10 +1155,7 @@ fn an_interface_owned_export_normalizes_only_its_neighbors() {
     for count in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = ProgramExpression::Value(ProgramValue::typed_pointer(
-            OldAddress {
-                base: AddressBase::ExternalArgument,
-                offset: AddressOffset::constant(0),
-            },
+            Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0)),
             ProgramType::Int32Pointer,
         ));
         let spec_at = |start, end| {
@@ -1244,10 +1224,7 @@ fn an_interface_view_check_ignores_unrelated_owned_ranges() {
     for count in [16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = ProgramExpression::Value(ProgramValue::typed_pointer(
-            OldAddress {
-                base: AddressBase::ExternalArgument,
-                offset: AddressOffset::constant(0),
-            },
+            Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0)),
             ProgramType::Int32Pointer,
         ));
         let segment = |start, end| {
@@ -1314,10 +1291,7 @@ fn a_checked_interface_join_does_not_reconstruct_a_calls_havoc() {
     let mut samples = Vec::new();
     for count in [4u32, 8, 16, 32] {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::constant(0),
-        };
+        let base = Address::new(AddressBase::ExternalArgument, AddressOffset::constant(0));
         let mut memory = SymbolicMemory::new();
         for index in 0..count {
             memory = memory.store(base.offset_by_bytes(index * 4), int32(index));
@@ -1448,7 +1422,7 @@ fn constructed_composite_observation_preserves_the_owner_beside_growing_frames()
             let _session = crate::kernel::VerificationSession::enter();
             let mut frame = ResourceContext::new().unchecked_with_fact(selected.clone());
             for index in 0..count {
-                let base = crate::kernel::OldAddress::symbolic(Variable(
+                let base = crate::kernel::Address::symbolic(Variable(
                     9_832_000 + if related { 0 } else { u64::from(index) },
                 ));
                 frame = frame.unchecked_with_fact(ResourceFact::own_memory(

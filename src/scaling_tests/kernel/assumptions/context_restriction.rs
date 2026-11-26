@@ -11,10 +11,10 @@ fn selected_context_does_not_withdraw_ambient_pointer_facts() {
                 name: "pointer_fact".into(),
                 arguments: vec![Term::ProgramValue(
                     (ProgramValue::Pointer(OldPointer::new(
-                        OldAddress {
-                            base: format!("ambient_{index}").into(),
-                            offset: AddressOffset::constant(0),
-                        },
+                        Address::new(
+                            format!("ambient_{index}").into(),
+                            AddressOffset::constant(0),
+                        ),
                         ProgramType::Int32Pointer,
                     )))
                     .into(),
@@ -45,9 +45,11 @@ fn memory_view_miss_does_not_scan_other_bases_in_one_block() {
     for size in [8u64, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = SymbolicMemory::new();
-        let pointer = |id| OldAddress {
-            base: AddressBase::ExternalArgument,
-            offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 4),
+        let pointer = |id| {
+            Address::new(
+                AddressBase::ExternalArgument,
+                AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(id)), 4),
+            )
         };
         let mut context = PureFactContext::new();
         for index in 0..size {
@@ -113,10 +115,7 @@ fn adjacent_view_looks_up_its_suffix_beside_unrelated_cells_and_ranges() {
     let mut samples = Vec::new();
     for size in [8u64, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = OldAddress {
-            base: "adjacent".into(),
-            offset: AddressOffset::constant(0),
-        };
+        let base = Address::new("adjacent".into(), AddressOffset::constant(0));
         let prefix = Proposition::MemoryLoadable {
             point: Default::default(),
             memory: SymbolicMemory::new(),
@@ -174,7 +173,7 @@ fn exact_view_candidate_does_not_prepare_its_alias_class() {
     let mut samples = Vec::new();
     for size in [8u64, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let base = OldAddress::symbolic(Variable(770_000));
+        let base = Address::symbolic(Variable(770_000));
         let fact = Proposition::MemoryLoadable {
             point: Default::default(),
             memory: SymbolicMemory::new(),
@@ -186,7 +185,7 @@ fn exact_view_candidate_does_not_prepare_its_alias_class() {
         for index in 0..size {
             context
                 .equality_graph
-                .add_equality(&base, &OldAddress::symbolic(Variable(770_001 + index)));
+                .add_equality(&base, &Address::symbolic(Variable(770_001 + index)));
         }
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..4 {
@@ -211,7 +210,7 @@ fn memory_view_miss_does_not_scan_same_address_spans() {
     for size in [8u32, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = SymbolicMemory::new();
-        let base = OldAddress::symbolic(Variable(780_000));
+        let base = Address::symbolic(Variable(780_000));
         let mut context = PureFactContext::new();
         for span in 1..=size {
             context = context.assume_proposition(Proposition::MemoryLoadable {
@@ -247,7 +246,7 @@ fn ambiguous_view_buckets_keep_exact_and_selected_evidence() {
             for size in [8u32, 32, 128] {
                 let _session = crate::kernel::VerificationSession::enter();
                 let memory = SymbolicMemory::new();
-                let base = OldAddress::symbolic(Variable(790_000));
+                let base = Address::symbolic(Variable(790_000));
                 let span = |n: u32| {
                     if wide {
                         OldMachineTerm::uint64_constant(u64::from(n))
@@ -260,7 +259,7 @@ fn ambiguous_view_buckets_keep_exact_and_selected_evidence() {
                 for index in 1..=size {
                     let source = if retained_states {
                         memory.clone().store(
-                            OldAddress::symbolic(Variable(790_001 + u64::from(index))),
+                            Address::symbolic(Variable(790_001 + u64::from(index))),
                             ProgramValue::Int32(7.into()),
                         )
                     } else {
@@ -346,7 +345,7 @@ fn atomic_view_miss_cannot_reopen_coverage_bucket_scans() {
         for size in [8u32, 32, 128] {
             let _session = crate::kernel::VerificationSession::enter();
             let memory = SymbolicMemory::new();
-            let base = OldAddress::symbolic(Variable(796_000));
+            let base = Address::symbolic(Variable(796_000));
             let mut context = PureFactContext::new();
             for index in 1..=size {
                 context = context.assume_proposition(Proposition::MemoryLoadable {

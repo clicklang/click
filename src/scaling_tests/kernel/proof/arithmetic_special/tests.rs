@@ -73,11 +73,11 @@ fn arithmetic_read_atoms_keep_state_identity_without_scanning_storage() {
     let mut samples = Vec::new();
     for size in [8, 64, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let address = OldAddress::symbolic(Variable(894_000));
+        let address = Address::symbolic(Variable(894_000));
         let mut memory = SymbolicMemory::new();
         for index in 0..size {
             memory = memory.store(
-                OldAddress::symbolic(Variable(895_000 + index)),
+                Address::symbolic(Variable(895_000 + index)),
                 ProgramValue::Int32(OldMachineTerm::constant(7)),
             );
         }
@@ -185,10 +185,7 @@ fn intrinsic_alignment_known_work_ignores_other_blocks_and_related_facts() {
             for related in [block.clone(), other] {
                 context = context.assume_proposition(Proposition::condition_is(
                     OldConditionTerm::pointer_aligned(
-                        OldAddress {
-                            base: related,
-                            offset: AddressOffset::constant(i * 8),
-                        },
+                        Address::new(related, AddressOffset::constant(i * 8)),
                         8,
                     ),
                     true,
@@ -199,10 +196,7 @@ fn intrinsic_alignment_known_work_ignores_other_blocks_and_related_facts() {
             [(0, 8, true), (4, 8, false), (0, 16, true)].map(|(offset, alignment, truth)| {
                 Proposition::condition_is(
                     OldConditionTerm::pointer_aligned(
-                        OldAddress {
-                            base: block.clone(),
-                            offset: AddressOffset::constant(offset),
-                        },
+                        Address::new(block.clone(), AddressOffset::constant(offset)),
                         alignment,
                     ),
                     truth,
@@ -231,7 +225,7 @@ fn symbolic_alignment_known_work_ignores_other_recorded_alignments() {
     let base: AddressBase = "symbolic-alignment-target".into();
     let at = |base, offset, alignment| {
         Proposition::condition_is(
-            OldConditionTerm::pointer_aligned(OldAddress { base, offset }, alignment),
+            OldConditionTerm::pointer_aligned(Address::new(base, offset), alignment),
             true,
         )
     };

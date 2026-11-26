@@ -41,14 +41,14 @@ fn memory_resolution_graph_offset_queries_scale_without_legacy_fact_index() {
 #[cfg(test)]
 #[test]
 fn stored_load_alias_lookup_ignores_unrelated_cells() {
-    let target = OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(8_991_001)), 4),
-    };
-    let alias = OldAddress {
-        base: AddressBase::ExternalArgument,
-        offset: AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(8_991_002)), 4),
-    };
+    let target = Address::new(
+        AddressBase::ExternalArgument,
+        AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(8_991_001)), 4),
+    );
+    let alias = Address::new(
+        AddressBase::ExternalArgument,
+        AddressOffset::scale_int32(OldMachineTerm::Variable(Variable(8_991_002)), 4),
+    );
     let assumptions = PureFactContext::new().assume_condition(
         OldConditionTerm::address_offset_equal(target.offset.clone(), alias.offset.clone()),
         true,
@@ -58,10 +58,10 @@ fn stored_load_alias_lookup_ignores_unrelated_cells() {
         let mut memory = SymbolicMemory::new();
         for index in 0..count {
             memory = memory.store(
-                OldAddress {
-                    base: AddressBase::ExternalArgument,
-                    offset: AddressOffset::constant(index * 4),
-                },
+                Address::new(
+                    AddressBase::ExternalArgument,
+                    AddressOffset::constant(index * 4),
+                ),
                 ProgramValue::Int32(OldMachineTerm::constant(0)),
             );
         }
@@ -91,18 +91,15 @@ fn stored_load_alias_lookup_ignores_unrelated_cells() {
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn interior_base_alias_frames_only_distinct_objects_and_is_indexed() {
-    let base = OldAddress {
-        base: AddressBase::Heap(920_000),
-        offset: AddressOffset::constant(0),
-    };
-    let alias = OldAddress {
-        base: AddressBase::Symbolic(Variable(920_001)),
-        offset: AddressOffset::constant(0),
-    };
-    let local = OldAddress {
-        base: "local:interior-alias-store".into(),
-        offset: AddressOffset::constant(0),
-    };
+    let base = Address::new(AddressBase::Heap(920_000), AddressOffset::constant(0));
+    let alias = Address::new(
+        AddressBase::Symbolic(Variable(920_001)),
+        AddressOffset::constant(0),
+    );
+    let local = Address::new(
+        "local:interior-alias-store".into(),
+        AddressOffset::constant(0),
+    );
     let equality = OldConditionTerm::address_equal(alias.clone(), base.clone());
     let mut samples = Vec::new();
     for size in [16u64, 64, 256, 1024] {
@@ -110,14 +107,14 @@ fn interior_base_alias_frames_only_distinct_objects_and_is_indexed() {
         for index in 0..size {
             facts = facts.assume_condition(
                 OldConditionTerm::address_equal(
-                    OldAddress {
-                        base: AddressBase::Symbolic(Variable(930_000 + index)),
-                        offset: AddressOffset::constant(0),
-                    },
-                    OldAddress {
-                        base: AddressBase::Heap(940_000 + index),
-                        offset: AddressOffset::constant(0),
-                    },
+                    Address::new(
+                        AddressBase::Symbolic(Variable(930_000 + index)),
+                        AddressOffset::constant(0),
+                    ),
+                    Address::new(
+                        AddressBase::Heap(940_000 + index),
+                        AddressOffset::constant(0),
+                    ),
                 ),
                 true,
             );
@@ -126,10 +123,7 @@ fn interior_base_alias_frames_only_distinct_objects_and_is_indexed() {
         facts = facts.assume_condition(equality.clone(), true);
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for offset in [-1i64, 0, 1, 2, 3, 16] {
-                let read = OldAddress {
-                    offset: AddressOffset::constant(offset),
-                    ..alias.clone()
-                };
+                let read = alias.with_offset(AddressOffset::constant(offset));
                 assert!(pointers_proven_distinct_for_memory_resolution(
                     &local, &read, &facts
                 ));
@@ -141,10 +135,7 @@ fn interior_base_alias_frames_only_distinct_objects_and_is_indexed() {
             }
         });
         samples.push((size, work));
-        let interior = OldAddress {
-            offset: AddressOffset::constant(1),
-            ..alias.clone()
-        };
+        let interior = alias.with_offset(AddressOffset::constant(1));
         assert!(!pointers_proven_distinct_for_memory_resolution(
             &local, &interior, &absent
         ));
@@ -224,11 +215,13 @@ fn unresolved_load_projection_ignores_earlier_objects_and_hidden_slots() {
                 .map(Into::into)
                 .collect(),
         );
-        let slot = |index: usize| OldAddress {
-            base: AddressBase::Concrete(format!("local:hidden{index}")),
-            offset: AddressOffset::constant(0),
+        let slot = |index: usize| {
+            Address::new(
+                AddressBase::Concrete(format!("local:hidden{index}")),
+                AddressOffset::constant(0),
+            )
         };
-        let object = |index: usize| OldAddress::symbolic(Variable(98_700 + index as u64));
+        let object = |index: usize| Address::symbolic(Variable(98_700 + index as u64));
         let value = |index: usize| ProgramValue::Int32((index as u32).into());
         let mut memory = SymbolicMemory::new();
         let mut last = 0;
@@ -322,10 +315,7 @@ fn run_access_retains_cold_shared_index_dags() {
                 );
             }
             let retained = MachineOperandView::Shared(&term).retain(ty);
-            let base = OldAddress {
-                base: "retained_run".into(),
-                offset: AddressOffset::constant(0),
-            };
+            let base = Address::new("retained_run".into(), AddressOffset::constant(0));
             let run = CellRun::new(
                 base.clone(),
                 4,
@@ -339,10 +329,7 @@ fn run_access_retains_cold_shared_index_dags() {
             } else {
                 AddressOffset::int64_scaled(retained.clone(), 4, true)
             };
-            let pointer = OldAddress {
-                base: base.base,
-                offset: offset,
-            };
+            let pointer = base.with_offset(offset);
             let exports = KernelTermExport::machine_export_count();
             let (access, work) =
                 crate::instrumentation::measure_deterministic_work(|| run_access(&run, &pointer));
