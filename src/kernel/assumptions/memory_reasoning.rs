@@ -4955,7 +4955,7 @@ impl PureFactContext {
     /// classes select candidates; only full bounds identity admits evidence.
     pub(in crate::kernel) fn opaque_pointer_covers(
         &self,
-        value: &OldPointer,
+        value: &Pointer,
         position: &Address,
         bytes: u32,
     ) -> bool {
@@ -6408,7 +6408,7 @@ mod shallow_composition_separation_tests {
         let boxed = |variable: u64| Resource::Composite {
             name: "boxed".into(),
             arguments: vec![crate::kernel::AlgebraicValue::Program(
-                crate::kernel::ProgramValue::Pointer(crate::kernel::OldPointer::new(
+                crate::kernel::ProgramValue::Pointer(crate::kernel::Pointer::new(
                     symbolic(variable),
                     crate::kernel::ProgramType::Int32Pointer,
                 )),

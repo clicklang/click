@@ -4610,8 +4610,8 @@ mod held_separation_tests {
         };
         Resource::Memory(
             range
-                .with_provenance(Arc::new(origin.base().clone()))
-                .with_bounds_owner(Some(Arc::new(origin.base().clone())), false)
+                .with_provenance(origin.base().clone())
+                .with_bounds_owner(Some(origin.base().clone()), false)
                 .with_typed_carrier(),
         )
     }

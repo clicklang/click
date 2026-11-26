@@ -951,7 +951,7 @@ fn check_executed_refinement_shape(return_type: ProgramType, alter_result: bool)
         arguments: vec![
             Term::ExecutionState(Box::new(ExecutionState::new())),
             Term::ProgramValue(
-                (ProgramValue::Pointer(OldPointer::new(
+                (ProgramValue::Pointer(Pointer::new(
                     Address::new(
                         AddressBase::FunctionSymbolic(Variable(0)),
                         AddressOffset::constant(0),

@@ -636,36 +636,29 @@ mod tests {
     #[test]
     fn shared_pointer_certification_preserves_complete_metadata_and_bounds_admission() {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
-        use crate::kernel::{
-            Address, IntegerTerm, ObjectTypeEvidence, OldPointer, SharedPointer, SubobjectBounds,
-        };
+        use crate::kernel::{Address, IntegerTerm, ObjectTypeEvidence, Pointer, SubobjectBounds};
         let _session = VerificationSession::enter();
-        let base = OldPointer::new(
+        let base = Pointer::new(
             Address::symbolic(Variable(999980)),
             ProgramType::Int32Pointer,
         );
         let class = CAccessClass::Scalar(CScalarClass::Int);
-        let bounds = SubobjectBounds {
-            start: base.address().clone(),
-            width: OldMachineTerm::constant(4),
-        };
+        let bounds = SubobjectBounds::new(base.address().clone(), OldMachineTerm::constant(4));
         let values = vec![
             base.clone(),
             base.clone().with_type(ProgramType::VoidPointer),
             base.clone()
-                .with_provenance(std::sync::Arc::new(Address::symbolic(Variable(999979)))),
+                .with_provenance(Address::symbolic(Variable(999979))),
             base.clone()
-                .with_bounds_owner(Some(std::sync::Arc::new(Address::symbolic(Variable(
-                    999978,
-                ))))),
+                .with_bounds_owner(Some(Address::symbolic(Variable(999978)))),
             base.clone().with_bounds(Some(bounds)),
-            base.clone().with_bounds(Some(SubobjectBounds {
-                start: base.address().clone(),
-                width: OldMachineTerm::IntegerToMachine {
+            base.clone().with_bounds(Some(SubobjectBounds::new(
+                base.address().clone(),
+                OldMachineTerm::IntegerToMachine {
                     destination: MachineIntegerType::Int32,
                     value: IntegerTerm::Variable(Variable(999977)).into(),
                 },
-            })),
+            ))),
             base.clone()
                 .with_object_type_evidence(Some(ObjectTypeEvidence::parameter(
                     class.clone(),
@@ -683,8 +676,8 @@ mod tests {
             for b in &values {
                 let expected = Comparison::default().pointer_value(a, b);
                 let (ar, br) = (
-                    KernelTerm::shared_pointer_value(SharedPointer::import(a)),
-                    KernelTerm::shared_pointer_value(SharedPointer::import(b)),
+                    KernelTerm::shared_pointer_value(a.shared().clone()),
+                    KernelTerm::shared_pointer_value(b.shared().clone()),
                 );
                 let (an, bn) = (
                     A::Value(ProgramValue::Pointer(a.clone())),
@@ -705,18 +698,18 @@ mod tests {
 
     #[test]
     fn shared_captured_pointer_certification_preserves_memory_state() {
-        use crate::kernel::{Address, OldPointer, SharedPointer, SymbolicMemory};
+        use crate::kernel::{Address, Pointer, SymbolicMemory};
         let _session = VerificationSession::enter();
         let memory = SymbolicMemory::new();
         let changed = memory.clone().store(
             Address::null(),
             ProgramValue::Int32(OldMachineTerm::constant(1)),
         );
-        let pointer = OldPointer::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(999976)),
             ProgramType::Int32Pointer,
         );
-        let root = KernelTerm::shared_pointer_value(SharedPointer::import(&pointer));
+        let root = KernelTerm::shared_pointer_value(pointer.shared().clone());
         let shared = |memory: &SymbolicMemory| {
             KernelTerm::shared_array_reference(
                 crate::kernel::ProgramPoint::at(&crate::kernel::intern_memory_ref(memory)),
@@ -793,7 +786,7 @@ mod tests {
     #[test]
     fn shared_pointer_opaque_indices_keep_the_native_refusal() {
         use crate::kernel::{
-            Address, IntegerTerm, KernelAddressOffset, OldPointer, SharedAddress, SharedPointer,
+            Address, IntegerTerm, KernelAddressOffset, Pointer, SharedAddress, SharedPointer,
         };
         let _session = VerificationSession::enter();
         let native = OldMachineTerm::PureFunctionApplication {
@@ -805,8 +798,7 @@ mod tests {
         };
         let index = KernelTerm::retained_native_machine_operand(MachineIntegerType::Int32, &native);
         assert!(matches!(index.node(), N::WrittenMachine(_)));
-        let base =
-            SharedPointer::import(&OldPointer::new(Address::null(), ProgramType::Int32Pointer));
+        let base = Pointer::new(Address::null(), ProgramType::Int32Pointer).into_shared();
         let mut value = base.node().clone();
         value.address = SharedAddress::new(
             value.address.block(),
@@ -1134,7 +1126,7 @@ mod tests {
             !Comparison::default()
                 .machine(Operand::Old(&read(&memory)), Operand::Old(&read(&changed)))
         );
-        let pointer = crate::kernel::OldPointer::new(
+        let pointer = crate::kernel::Pointer::new(
             crate::kernel::Address::null(),
             crate::kernel::ProgramType::Int32Pointer,
         );
@@ -1212,7 +1204,7 @@ mod tests {
     #[test]
     fn retained_syntax_preserves_captured_and_pointer_index_states() {
         use crate::kernel::{
-            Address, AddressOffset, LoadKind, OldPointer, ProgramType, SymbolicMemory, Variable,
+            Address, AddressOffset, LoadKind, Pointer, ProgramType, SymbolicMemory, Variable,
         };
         let _session = VerificationSession::enter();
         let memory = SymbolicMemory::new();
@@ -1221,7 +1213,7 @@ mod tests {
             ProgramValue::Int32(OldMachineTerm::constant(5)),
         );
         let pointer = |retained_state: &SymbolicMemory| {
-            OldPointer::new(
+            Pointer::new(
                 Address::new(
                     "indexed".into(),
                     AddressOffset::int32_scaled(
@@ -1255,9 +1247,9 @@ mod tests {
     #[test]
     fn retained_syntax_preserves_unchecked_evidence_and_hidden_declaration_class() {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
-        use crate::kernel::{Address, ObjectTypeEvidence, OldPointer, ProgramType};
+        use crate::kernel::{Address, ObjectTypeEvidence, Pointer, ProgramType};
         let _session = VerificationSession::enter();
-        let base = OldPointer::new(Address::null(), ProgramType::Int32Pointer);
+        let base = Pointer::new(Address::null(), ProgramType::Int32Pointer);
         let class = CAccessClass::Scalar(CScalarClass::Int);
         let evidence = |fingerprint| ObjectTypeEvidence {
             class: class.clone(),

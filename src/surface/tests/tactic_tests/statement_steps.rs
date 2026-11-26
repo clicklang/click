@@ -1114,8 +1114,8 @@ fn synthesizes_loaded_pointer_equality_as_pointer_comparison() {
     let read = Address::loaded_value(&crate::kernel::intern_memory(SymbolicMemory::new()), &owner);
     let proposition = Proposition::condition_is(
         OldConditionTerm::pointer_equal(
-            crate::kernel::OldPointer::new(read, ProgramType::Int32Pointer),
-            crate::kernel::OldPointer::new(data.clone(), ProgramType::Int32Pointer),
+            crate::kernel::Pointer::new(read, ProgramType::Int32Pointer),
+            crate::kernel::Pointer::new(data.clone(), ProgramType::Int32Pointer),
         ),
         true,
     );
@@ -1172,8 +1172,8 @@ fn synthesizes_a_reassigned_pointer_parameter_at_entry() {
     let current = Address::symbolic(Variable(44));
     let proposition = Proposition::condition_is(
         OldConditionTerm::pointer_equal(
-            crate::kernel::OldPointer::new(passed.clone(), ProgramType::Int32Pointer),
-            crate::kernel::OldPointer::new(current.clone(), ProgramType::Int32Pointer),
+            crate::kernel::Pointer::new(passed.clone(), ProgramType::Int32Pointer),
+            crate::kernel::Pointer::new(current.clone(), ProgramType::Int32Pointer),
         ),
         true,
     );

@@ -178,10 +178,10 @@ impl<'a, R: PointerRewrite> Rewrite<'a, R> {
         let mut bounds = source.array.bounds().cloned();
         if let Some(selected) = source.array.bounds() {
             let start = self.address(&selected.start)?;
-            let width = self.numeric(&selected.width)?;
-            if start != selected.start || width != selected.width {
+            let width = self.numeric(selected.width())?;
+            if start != selected.start || width != *selected.width() {
                 array_changed = true;
-                bounds = Some(KernelSubobjectBounds { start, width });
+                bounds = Some(KernelSubobjectBounds::new(start, width));
             }
         }
         if address == source.address && provenance == source.provenance && !array_changed {
@@ -226,12 +226,12 @@ mod tests {
     }
     #[test]
     fn unchanged_rewrite_preserves_exact_complete_payload_handle() {
-        let source = SharedPointer::import(&super::super::tests::complete_source());
+        let source = super::super::tests::complete_source().into_shared();
         assert_eq!(source.try_rewrite(&mut Identity).unwrap(), source);
     }
     #[test]
     fn selected_address_replacements_are_simultaneous_and_keep_metadata() {
-        let source = SharedPointer::import(&super::super::tests::complete_source());
+        let source = super::super::tests::complete_source().into_shared();
         let replacement = Address::symbolic(Variable(1004000)).shared().clone();
         struct Selected {
             from: SharedAddress,
@@ -325,7 +325,7 @@ mod tests {
     }
     #[test]
     fn callback_refusal_and_wrong_numeric_carrier_leave_source_unchanged() {
-        let source = SharedPointer::import(&super::super::tests::complete_source());
+        let source = super::super::tests::complete_source().into_shared();
         struct Refuse(bool);
         impl PointerRewrite for Refuse {
             type Error = &'static str;
@@ -346,7 +346,7 @@ mod tests {
             Err(PointerRewriteError::IndexType)
         );
         assert_eq!(
-            source.node().array.bounds().unwrap().width.ty(),
+            source.node().array.bounds().unwrap().width().ty(),
             &KernelType::Program(ProgramType::Int32)
         );
     }

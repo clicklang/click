@@ -26,11 +26,14 @@ fn common_algebraic_equality_visits_shared_constructor_pairs_once() {
                 [(key, variants)],
             ))),
         };
-        let pointer = OldPointer::new(
-            Address::symbolic(Variable(999674)),
-            ProgramType::Int32Pointer,
-        );
-        let mut roots = [pointer.clone(), pointer].map(|pointer| {
+        // Two producers of one logical pointer: distinct handles.
+        let pointer = || {
+            Pointer::new(
+                Address::symbolic(Variable(999674)),
+                ProgramType::Int32Pointer,
+            )
+        };
+        let mut roots = [pointer(), pointer()].map(|pointer| {
             KernelTermImport::default().algebraic(&AlgebraicTerm {
                 algebraic_type: ty.clone(),
                 node: AlgebraicTermNode::Constructor {

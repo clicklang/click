@@ -217,7 +217,7 @@ fn algebraic_closure_pointer_payloads_require_full_value_equality() {
             &ty,
             "Node",
             vec![AlgebraicValue::Program(ProgramValue::Pointer(
-                OldPointer::new(p, ProgramType::Int32Pointer),
+                Pointer::new(p, ProgramType::Int32Pointer),
             ))],
         )
     };
@@ -225,8 +225,8 @@ fn algebraic_closure_pointer_payloads_require_full_value_equality() {
     graph.add_equality(&pointer("a"), &pointer("b"));
     assert!(!graph.are_algebraic_equal(&node(pointer("a")), &node(pointer("b"))));
     graph.add_pointer_equality(
-        &OldPointer::new(pointer("a"), ProgramType::Int32Pointer),
-        &OldPointer::new(pointer("b"), ProgramType::Int32Pointer),
+        &Pointer::new(pointer("a"), ProgramType::Int32Pointer),
+        &Pointer::new(pointer("b"), ProgramType::Int32Pointer),
     );
     assert!(graph.are_algebraic_equal(&node(pointer("a")), &node(pointer("b"))));
 }
@@ -509,7 +509,7 @@ fn constructor_injectivity_splits_pointer_fields() {
             &ty,
             "Node",
             vec![AlgebraicValue::Program(ProgramValue::Pointer(
-                OldPointer::new(address.clone(), ProgramType::Int32Pointer),
+                Pointer::new(address.clone(), ProgramType::Int32Pointer),
             ))],
         )
     };

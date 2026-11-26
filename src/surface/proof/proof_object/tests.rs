@@ -15250,7 +15250,7 @@ fn proof_binding_names_keep_typed_scopes_when_a_generic_alias_leaves() {
 fn generated_pointer_requirement_retains_lexical_binder_without_capturing_a_shadow() {
     let variable = Variable(981_020);
     let pointer =
-        crate::kernel::OldPointer::new(Address::symbolic(variable), ProgramType::Int32Pointer);
+        crate::kernel::Pointer::new(Address::symbolic(variable), ProgramType::Int32Pointer);
     let expression = SyntaxTerm::ProgramExpression(ProgramExpression::Value(
         ProgramValue::Pointer(pointer.clone()),
     ));

@@ -277,7 +277,7 @@ fn retained_machine_rewrite_admission_reads_only_comparison_roots() {
 fn rewrite_history_keys_share_call_carriers_and_keep_state_authority() {
     use super::search::RewriteGoalKey;
     use crate::kernel::{
-        KernelTermImport, OldPointer, PureFunctionArgument, SharedMachineIntegerTerm,
+        KernelTermImport, Pointer, PureFunctionArgument, SharedMachineIntegerTerm,
         SharedPureApplication,
     };
     let mut samples = Vec::new();
@@ -293,7 +293,7 @@ fn rewrite_history_keys_share_call_carriers_and_keep_state_authority() {
                 "read_length".into(),
                 vec![PureFunctionArgument::ArrayRef {
                     point: crate::kernel::ProgramPoint::of_memory(&memory),
-                    pointer: ProgramValue::Pointer(OldPointer::new(
+                    pointer: ProgramValue::Pointer(Pointer::new(
                         pointer.clone(),
                         ProgramType::Int32Pointer,
                     )),

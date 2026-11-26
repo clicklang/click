@@ -49,7 +49,7 @@ impl PointerStorageKey {
             fingerprint: hash.finish(),
         }))
     }
-    pub(in crate::kernel) fn native(value: &OldPointer) -> Self {
+    pub(in crate::kernel) fn native(value: &Pointer) -> Self {
         Self::new(PointerIdentity {
             address: AddressKey::native(value.address()),
             provenance: AddressKey::native(value.provenance()),
@@ -59,8 +59,8 @@ impl PointerStorageKey {
                 .flatten(),
             bounds: value.bounds().map(|e| {
                 (
-                    AddressKey::native(&e.start),
-                    ScalarStorageKey::native(&e.width),
+                    AddressKey::native(&e.start()),
+                    ScalarStorageKey::native(&e.width()),
                 )
             }),
         })
@@ -75,7 +75,7 @@ impl PointerStorageKey {
             bounds: value
                 .array
                 .bounds()
-                .map(|e| (AddressKey::shared(&e.start), e.width.scalar_storage_key())),
+                .map(|e| (AddressKey::shared(&e.start), e.width().scalar_storage_key())),
         })
     }
 }

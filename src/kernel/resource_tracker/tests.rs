@@ -1668,8 +1668,8 @@ fn complete_pointer_conditions_keep_read_order() {
     let mut right = Address::loaded_value(&memory, &at(block("local:f:pointer_right"), 0));
     right.set_offset(offset("local:f:i"));
     let source = OldConditionTerm::PointerEqual(
-        Box::new(OldPointer::new(left, ProgramType::Int32Pointer)),
-        Box::new(OldPointer::new(right, ProgramType::Int32Pointer)),
+        Box::new(Pointer::new(left, ProgramType::Int32Pointer)),
+        Box::new(Pointer::new(right, ProgramType::Int32Pointer)),
     );
     let root = KernelTermImport::default().condition(&source);
     let mut expected = Vec::new();

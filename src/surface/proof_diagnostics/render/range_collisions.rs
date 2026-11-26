@@ -134,11 +134,11 @@ impl MemoryStateLabels {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{AddressBase, OldPointer, ProgramType};
+    use crate::kernel::{AddressBase, Pointer, ProgramType};
 
     fn range(origin: u64) -> MemoryRange {
         let base = Address::symbolic(Variable(987_800));
-        let value = OldPointer::new(
+        let value = Pointer::new(
             Address::symbolic(Variable(origin)),
             ProgramType::Int32Pointer,
         )
@@ -206,7 +206,7 @@ mod tests {
             assert!(labels.range_collisions.is_none());
         }
         // Keep a concrete object in the metadata coverage too.
-        let value = OldPointer::new(
+        let value = Pointer::new(
             Address::new(
                 AddressBase::Concrete("global:table".into()),
                 AddressOffset::constant(0),

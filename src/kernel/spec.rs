@@ -8308,12 +8308,10 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 let ProgramValue::Pointer(value) = path.value.into_native() else {
                     return None;
                 };
-                path.value =
-                    ProgramValue::Pointer(value.clone().with_bounds(Some(SubobjectBounds {
-                        start: value.address().clone(),
-                        width: (*width).into(),
-                    })))
-                    .into();
+                path.value = ProgramValue::Pointer(value.clone().with_bounds(Some(
+                    SubobjectBounds::new(value.address().clone(), (*width).into()),
+                )))
+                .into();
                 Some(path)
             })
             .collect()
@@ -8627,7 +8625,7 @@ fn evaluate_spec_pure_function_application_paths_in(
                 .collect();
             let application = (!all_null)
                 .then(|| SharedPureApplication::intern(name.to_owned(), call_arguments(arguments)));
-            let value = OldPointer::new(
+            let value = Pointer::new(
                 if all_null {
                     Address::null()
                 } else {
@@ -8644,7 +8642,7 @@ fn evaluate_spec_pure_function_application_paths_in(
                 SpecValue::Native(ProgramValue::Pointer(value))
             } else if let Some(application) = application {
                 KernelTermImport::default()
-                    .pointer_call(&application, retained, SharedPointer::import(&value))
+                    .pointer_call(&application, retained, value.shared().clone())
                     .into()
             } else {
                 SpecValue::retain_formed_pointer(ProgramValue::Pointer(value))
@@ -8829,7 +8827,7 @@ fn refine_object_pointer_argument_with_null(
     {
         return true;
     }
-    let names_declared_object = |value: &OldPointer| {
+    let names_declared_object = |value: &Pointer| {
         [value.address(), value.provenance()]
             .into_iter()
             .any(|object| {
@@ -11497,7 +11495,7 @@ mod pointer_integer_observation_tests {
     #[test]
     fn integer_specifications_observe_bits_without_a_pointer_record() {
         let context = PureFactContext::new();
-        let pointer = OldPointer::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(994_001)),
             ProgramType::Int32Pointer,
         );

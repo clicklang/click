@@ -1,5 +1,5 @@
 //! Value-origin equality. Address congruence must never enter this index.
-use super::OldPointer;
+use super::Pointer;
 use crate::persistent::{PersistentComponents, PersistentMap, PersistentSet};
 
 /// Persistent union by size. Insertion touches two root paths; a branch
@@ -86,7 +86,7 @@ impl<K: Ord + Clone> ValueClasses<K> {
     }
 }
 
-pub(super) fn prefer_pointer(left: &OldPointer, right: &OldPointer) -> OldPointer {
+pub(super) fn prefer_pointer(left: &Pointer, right: &Pointer) -> Pointer {
     // A contract supplies the provenance of an opaque incoming value. Its
     // explicit subobject boundary takes precedence over unknown bounds.
     if !left.bounds_are_known() && right.bounds_are_known()
@@ -125,10 +125,10 @@ mod tests {
         assert!(!sibling.equal(&100, &500));
     }
 
-    fn value(id: u64) -> OldPointer {
-        OldPointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
+    fn value(id: u64) -> Pointer {
+        Pointer::new(Address::symbolic(Variable(id)), ProgramType::Int32Pointer)
     }
-    fn equality(a: &OldPointer, b: &OldPointer) -> Proposition {
+    fn equality(a: &Pointer, b: &Pointer) -> Proposition {
         Proposition::condition_is(
             OldConditionTerm::PointerEqual(Box::new(a.clone()), Box::new(b.clone())),
             true,
@@ -139,7 +139,7 @@ mod tests {
         let a = OldMachineTerm::Variable(Variable(809_998));
         let b = OldMachineTerm::Variable(Variable(809_999));
         let pointer = |index| {
-            OldPointer::new(
+            Pointer::new(
                 Address::new(
                     AddressBase::ExternalArgument,
                     AddressOffset::scale_int32(index, 4),
@@ -160,7 +160,7 @@ mod tests {
     #[test]
     fn a_proven_null_address_denotes_the_unique_null_value() {
         let pointer = value(810_000);
-        let null = OldPointer::new(Address::null(), ProgramType::Int32Pointer);
+        let null = Pointer::new(Address::null(), ProgramType::Int32Pointer);
         let empty = PureFactContext::new();
         assert!(!empty.pointer_provenance_match(&pointer, &null));
         let context = empty.assume_condition(
@@ -261,10 +261,10 @@ mod tests {
             4,
             &context
         ));
-        let selected = byte_view.with_bounds(Some(SubobjectBounds {
-            start: input.address().clone(),
-            width: 4u32.into(),
-        }));
+        let selected = byte_view.with_bounds(Some(SubobjectBounds::new(
+            input.address().clone(),
+            4u32.into(),
+        )));
         let selected_resources =
             ResourceContext::new().unchecked_with_fact(ResourceFact::own_memory(
                 MemoryRange::from_pointer_value(&selected, 0u32.into(), 1u32.into(), 4),
@@ -297,14 +297,14 @@ mod tests {
     #[test]
     fn a_narrowed_read_does_not_narrow_its_enclosing_pointer() {
         let parent = value(824_001);
-        let member = parent.clone().with_bounds(Some(SubobjectBounds {
-            start: parent.address().clone(),
-            width: 4u32.into(),
-        }));
+        let member = parent.clone().with_bounds(Some(SubobjectBounds::new(
+            parent.address().clone(),
+            4u32.into(),
+        )));
         let retained_state = crate::kernel::intern_memory(SymbolicMemory::new());
         let cell = Address::symbolic(Variable(824_002));
         let read_address = Address::symbolic(Variable(824_003));
-        let read = OldPointer::from_read(
+        let read = Pointer::from_read(
             read_address,
             ProgramType::Int32Pointer,
             &retained_state,
@@ -325,13 +325,13 @@ mod tests {
         let a = value(825_001);
         let b = value(825_002);
         let retained_state = crate::kernel::intern_memory(SymbolicMemory::new());
-        let x = OldPointer::from_read(
+        let x = Pointer::from_read(
             Address::symbolic(Variable(825_003)),
             ProgramType::Int32Pointer,
             &retained_state,
             a.address(),
         );
-        let y = OldPointer::from_read(
+        let y = Pointer::from_read(
             Address::symbolic(Variable(825_004)),
             ProgramType::Int32Pointer,
             &retained_state,

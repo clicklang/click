@@ -3360,7 +3360,7 @@ mod checked_proposition_index_tests {
         let context = PureFactContext::new().assume_proposition(route.clone());
         let pointer = Address::symbolic(Variable(71_031));
         let equation = ExecutionPureFact::logical_read_equation(
-            OldPointer::new(pointer.clone(), ProgramType::Int32Pointer),
+            Pointer::new(pointer.clone(), ProgramType::Int32Pointer),
             Address::loaded_value(&intern_memory(SymbolicMemory::new()), &pointer),
         );
         let mut paths = vec![
@@ -3882,7 +3882,7 @@ mod retained_contract_input_tests {
     use super::*;
     use crate::kernel::{
         AlgebraicType, ExecutionValue, KernelTermExport, KernelTermImport, KernelType,
-        LocalBinding, SharedPointer, StoredExecutionValue,
+        LocalBinding, StoredExecutionValue,
     };
 
     fn prepared_input(value: StoredExecutionValue) -> StoredExecutionValue {
@@ -3924,7 +3924,7 @@ mod retained_contract_input_tests {
     #[test]
     fn contract_input_preparation_preserves_roots_and_native_binding_rules() {
         let _session = crate::kernel::VerificationSession::enter();
-        let pointer = OldPointer::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(996801)),
             ProgramType::Int32Pointer,
         );
@@ -3936,8 +3936,8 @@ mod retained_contract_input_tests {
                 KernelType::Algebraic(AlgebraicType::parameter("T".into())),
                 Variable(996805),
             ),
-            KernelTerm::shared_pointer_value(SharedPointer::import(&pointer)),
-            KernelTerm::shared_pointer_value(SharedPointer::import(&pointer)),
+            KernelTerm::shared_pointer_value(pointer.shared().clone()),
+            KernelTerm::shared_pointer_value(pointer.shared().clone()),
         ];
         for root in roots {
             let input = StoredExecutionValue::from(ExecutionValue::Shared(root.clone()));
@@ -3963,7 +3963,7 @@ mod retained_contract_input_tests {
                         .unwrap()
                         .pointer_payload()
                         .unwrap()
-                        .same_source_payload(&SharedPointer::import(pointer))
+                        .same_source_payload(pointer.shared())
                 );
             } else {
                 assert_eq!(actual.shared(), Some(&root));

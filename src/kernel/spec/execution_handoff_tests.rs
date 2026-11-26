@@ -409,23 +409,22 @@ fn algebraic_lowering_retains_program_envelopes_and_handoff_roots() {
 
 #[test]
 fn pointer_lowering_keeps_producers_and_complete_metadata() {
-    use std::sync::Arc;
     let _session = crate::kernel::VerificationSession::enter();
     let class = crate::kernel::effective_type::CAccessClass::Scalar(
         crate::kernel::effective_type::CScalarClass::Int,
     );
-    let source = OldPointer::new(
+    let source = Pointer::new(
         Address::symbolic(Variable(999982)),
         ProgramType::VoidPointer,
     )
     .with_address(Address::symbolic(Variable(999981)))
-    .with_bounds_owner(Some(Arc::new(Address::symbolic(Variable(999983)))))
-    .with_bounds(Some(SubobjectBounds {
-        start: Address::symbolic(Variable(999984)),
-        width: OldMachineTerm::Variable(Variable(999985)),
-    }))
+    .with_bounds_owner(Some(Address::symbolic(Variable(999983))))
+    .with_bounds(Some(SubobjectBounds::new(
+        Address::symbolic(Variable(999984)),
+        OldMachineTerm::Variable(Variable(999985)),
+    )))
     .with_object_type_evidence(Some(ObjectTypeEvidence::parameter(class, 3, 999986, false)));
-    let payload = SharedPointer::import(&source);
+    let payload = source.shared().clone();
     let memory = intern_memory(SymbolicMemory::new());
     let address = (SymbolicMemory::global_pointer("pointer-slot"))
         .shared()
@@ -449,7 +448,7 @@ fn pointer_lowering_keeps_producers_and_complete_metadata() {
     for root in roots {
         let field =
             AlgebraicFieldResult::from_program(SpecValue::Shared(root.clone())).into_kernel();
-        let expected = SharedPointer::import(&source.clone());
+        let expected = source.clone().into_shared();
         assert!(
             field
                 .pointer_payload()
@@ -543,12 +542,12 @@ fn explicit_pointer_cast_lowering_keeps_native_bounds_rules() {
         (ProgramType::Int32Pointer, ProgramType::UInt8Pointer, false),
         (ProgramType::Int8Pointer, ProgramType::UInt8Pointer, true),
     ] {
-        let pointer = OldPointer::new(Address::symbolic(Variable(999940)), source).with_bounds(
-            Some(SubobjectBounds {
-                start: Address::symbolic(Variable(999940)),
-                width: OldMachineTerm::constant(4),
-            }),
-        );
+        let pointer = Pointer::new(Address::symbolic(Variable(999940)), source).with_bounds(Some(
+            SubobjectBounds::new(
+                Address::symbolic(Variable(999940)),
+                OldMachineTerm::constant(4),
+            ),
+        ));
         let expression = SpecExpression::Cast(
             Box::new(SpecExpression::Value(ProgramValue::Pointer(pointer))),
             target,
@@ -581,7 +580,7 @@ fn explicit_pointer_cast_lowering_keeps_native_bounds_rules() {
                 .unwrap()
                 .pointer_payload()
                 .unwrap()
-                .same_source_payload(&SharedPointer::import(&expected))
+                .same_source_payload(expected.shared())
         );
         assert_eq!(actual.facts, old.facts);
         assert_eq!(actual.obligations, old.obligations);
@@ -724,7 +723,7 @@ fn mixed_call_assembly_preserves_typed_roots_without_exports() {
         algebraic_type: algebraic_type.clone(),
         node: AlgebraicTermNode::Variable(Variable(999960)),
     };
-    let pointer = OldPointer::new(
+    let pointer = Pointer::new(
         Address::symbolic(Variable(999961)),
         ProgramType::Int32Pointer,
     );
@@ -805,7 +804,7 @@ fn mixed_call_assembly_preserves_typed_roots_without_exports() {
             arguments[6]
                 .pointer_payload()
                 .unwrap()
-                .same_source_payload(&SharedPointer::import(&pointer))
+                .same_source_payload(pointer.shared())
         );
         let old = evaluate(true);
         assert_eq!(actual.facts, old.facts);

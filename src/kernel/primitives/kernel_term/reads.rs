@@ -79,7 +79,7 @@ impl KernelTermImport {
 impl KernelTerm {
     /// Retain a pointer result only when its producer already retained a read
     /// definition. This reads term metadata, never hypotheses or stored values.
-    pub(crate) fn retained_pointer_read(value: &OldPointer) -> Option<Self> {
+    pub(crate) fn retained_pointer_read(value: &Pointer) -> Option<Self> {
         // Later arithmetic and ordinary pointer values belong to their own
         // producer slices. Do not clone or hash a growing displacement merely
         // to ask whether it is an undisplaced read atom.
@@ -97,7 +97,7 @@ impl KernelTerm {
             return None;
         };
         Some(Self::shared_pointer_read(
-            SharedPointer::import(value),
+            value.shared().clone(),
             point.into(),
             address.address().shared().clone(),
         ))
@@ -225,7 +225,7 @@ mod tests {
                 panic!("pointer producer");
             };
             let pointer = pointer;
-            let expected = SharedPointer::import(&pointer);
+            let expected = pointer.shared().clone();
             let native = ProgramValue::Pointer(pointer);
             let result = crate::kernel::ExecutionValue::retain_native(native.clone());
             let root = result.shared().expect("retained pointer read");
@@ -243,13 +243,13 @@ mod tests {
                 retained_state.arena_id(),
                 intern_memory(memory.clone()).arena_id()
             );
-            assert_eq!(cell, &address.shared().clone());
+            assert_eq!(cell, address.shared());
             assert!(value.same_source_payload(&expected));
             assert!(root.0.argument_leaf.get().is_none());
             let ProgramValue::Pointer(restored) = result.native_payload().unwrap() else {
                 panic!("compatibility value");
             };
-            assert!(SharedPointer::import(restored).same_source_payload(&expected));
+            assert!(restored.shared().clone().same_source_payload(&expected));
             assert_eq!(result.clone().into_native(), native);
             // Locals retain their existing compatibility policy until their slice.
             assert_eq!(
@@ -279,7 +279,7 @@ mod tests {
         };
         let retained_state = retained_point.shared_memory();
         assert_eq!(retained_state.arena_id(), intern_memory(memory).arena_id());
-        assert_eq!(cell, &address.shared().clone());
+        assert_eq!(cell, address.shared());
         assert!(matches!(
             root.old_pointer_value(),
             Some(ProgramValue::Pointer(_))
@@ -312,7 +312,7 @@ mod tests {
             );
             let term = KernelTermImport::default().machine(format, &native);
             assert!(
-                matches!(term.node(), KernelTermNode::MemoryLoad { point: m, address: p, kind: k } if m.shared_memory() == &memory && p == &address.shared().clone() && *k == kind)
+                matches!(term.node(), KernelTermNode::MemoryLoad { point: m, address: p, kind: k } if m.shared_memory() == &memory && p == address.shared() && *k == kind)
             );
             assert!(term.is_shared_machine_operand());
             crate::kernel::eval::clear_load_variable_registry();
@@ -331,7 +331,7 @@ mod tests {
     fn shared_read_addresses_preserve_call_payloads_ignored_by_logical_identity() {
         let _session = VerificationSession::enter();
         let memory = intern_memory(SymbolicMemory::new());
-        let pointer = OldPointer::new(
+        let pointer = Pointer::new(
             Address::symbolic(Variable(1017200)),
             ProgramType::Int32Pointer,
         );
@@ -659,7 +659,7 @@ mod tests {
         else {
             panic!("outer read")
         };
-        assert_eq!(actual, &address.shared().clone());
+        assert_eq!(actual, address.shared());
         let KernelAddressOffset::Int32Scaled { value, .. } = actual.offset().node() else {
             panic!("index read retained")
         };

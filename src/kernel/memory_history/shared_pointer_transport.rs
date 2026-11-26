@@ -179,7 +179,6 @@ pub(crate) fn transport_pointer(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
     pub(super) fn fixture() -> (SharedMemory, Address, Address) {
         (
             intern_memory(
@@ -326,19 +325,15 @@ mod tests {
             .memory()
             .clone()
             .store(other, ProgramValue::Int32(OldMachineTerm::constant(3)));
-        let source = OldPointer::new(
+        let source = Pointer::new(
             Address::symbolic(Variable(1007010)),
             ProgramType::VoidPointer,
         )
-        .with_bounds(Some(SubobjectBounds {
-            start: field.clone(),
-            width: OldMachineTerm::read_named(
-                ProgramPoint::at(&before),
-                Box::new(field),
-                LoadKind::Int32,
-            ),
-        }));
-        let shared = SharedPointer::import(&source);
+        .with_bounds(Some(SubobjectBounds::new(
+            field.clone(),
+            OldMachineTerm::read_named(ProgramPoint::at(&before), Box::new(field), LoadKind::Int32),
+        )));
+        let shared = source.shared().clone();
         let output = transport_pointer(
             &shared,
             &crate::kernel::ProgramPoint::of_memory(&after),
@@ -365,7 +360,7 @@ mod tests {
             .memory()
             .clone()
             .store(other, ProgramValue::Int32(OldMachineTerm::constant(3)));
-        let loaded = Arc::new(Address::loaded_value(&before, &field));
+        let loaded = Address::loaded_value(&before, &field);
         let base = Address::from_integer_address(OldMachineTerm::read_named(
             ProgramPoint::at(&before),
             Box::new(field),
@@ -375,11 +370,11 @@ mod tests {
             AddressOffset::constant(4),
             AddressOffset::raw_add(AddressOffset::constant(0), AddressOffset::constant(0)),
         ] {
-            let source = OldPointer::new(base.with_offset(offset), ProgramType::VoidPointer)
+            let source = Pointer::new(base.with_offset(offset), ProgramType::VoidPointer)
                 .with_provenance(loaded.clone())
                 .with_bounds_owner(Some(loaded.clone()));
             assert!(source.address().integer_address_bits().is_none());
-            let shared = SharedPointer::import(&source);
+            let shared = source.shared().clone();
             let expected = transport_framed_atomic_pointer_value(
                 &source,
                 &crate::kernel::ProgramPoint::of_memory(&after),
@@ -405,8 +400,8 @@ mod tests {
             .memory()
             .clone()
             .store(other, ProgramValue::Int32(OldMachineTerm::constant(3)));
-        let loaded = Arc::new(Address::loaded_value(&before, &field));
-        let source = OldPointer::new(
+        let loaded = Address::loaded_value(&before, &field);
+        let source = Pointer::new(
             Address::from_integer_address(OldMachineTerm::read_named(
                 ProgramPoint::at(&before),
                 Box::new(field.clone()),
@@ -416,7 +411,7 @@ mod tests {
         )
         .with_provenance(loaded.clone())
         .with_bounds_owner(Some(loaded));
-        let shared = SharedPointer::import(&source);
+        let shared = source.shared().clone();
         let context = PureFactContext::new();
         let expected = transport_framed_atomic_pointer_value(
             &source,

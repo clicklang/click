@@ -4023,13 +4023,13 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn pointer_provenance_match(
         &self,
-        left: &OldPointer,
-        right: &OldPointer,
+        left: &Pointer,
+        right: &Pointer,
     ) -> bool {
         // A complete read can carry a pointer copied from a different cell.
         // Compare the producer's entire stored value once; scalar address
         // aliases and partial stores cannot supply its provenance or bounds.
-        let stored_value = |value: &OldPointer| {
+        let stored_value = |value: &Pointer| {
             // A cast or member selection has already chosen its own view.
             // Recover only the untouched opaque value of a complete read.
             if value.bounds_are_known()
@@ -4050,8 +4050,8 @@ impl PureFactContext {
 
     fn pointer_provenance_match_without_stored_values(
         &self,
-        left: &OldPointer,
-        right: &OldPointer,
+        left: &Pointer,
+        right: &Pointer,
     ) -> bool {
         // Null is one pointer value, with no allocation or selected object.
         // Establishing its zero address therefore does not transfer authority.
@@ -4105,12 +4105,8 @@ impl PureFactContext {
 
     /// `same_allocation(p, q)` holds: both pointers are not null and their
     /// provenances are one allocation.
-    pub(in crate::kernel) fn knows_same_allocation(
-        &self,
-        left: &OldPointer,
-        right: &OldPointer,
-    ) -> bool {
-        let nonnull = |pointer: &OldPointer| {
+    pub(in crate::kernel) fn knows_same_allocation(&self, left: &Pointer, right: &Pointer) -> bool {
+        let nonnull = |pointer: &Pointer| {
             self.allocation_known_nonnull(pointer.provenance())
                 || self.decide(&crate::kernel::eval::pointer_object_is_null_condition(
                     pointer.address(),
@@ -4453,7 +4449,7 @@ impl PureFactContext {
         for spelling in self.equality_graph.pointer_spellings(address) {
             if let Some(ProgramValue::Pointer(value)) = start.known_value(&spelling) {
                 self.equality_graph.add_checked_pointer_equality(
-                    &OldPointer::new(
+                    &Pointer::new(
                         Address::loaded_value_read_at(memory, site, address),
                         value.program_type(),
                     ),
@@ -11079,13 +11075,13 @@ impl ExecutionPureFact {
         }
     }
 
-    pub(in crate::kernel) fn logical_read_equation(value: OldPointer, read: Address) -> Self {
-        let read = OldPointer::new(read, value.program_type());
+    pub(in crate::kernel) fn logical_read_equation(value: Pointer, read: Address) -> Self {
+        let read = Pointer::new(read, value.program_type());
         Self::logical_pointer_value_equation(value, read)
     }
 
     pub(in crate::kernel) fn checked_pointer_read_equation(
-        value: OldPointer,
+        value: Pointer,
         observed: Address,
     ) -> Self {
         let evidence = value.address().as_loaded_value().map(|read| {
@@ -11105,10 +11101,7 @@ impl ExecutionPureFact {
         self.checked_pointer_read.is_some()
     }
 
-    pub(in crate::kernel) fn logical_pointer_value_equation(
-        left: OldPointer,
-        right: OldPointer,
-    ) -> Self {
+    pub(in crate::kernel) fn logical_pointer_value_equation(left: Pointer, right: Pointer) -> Self {
         Self {
             logical_read_equation: true,
             ..Self::certified(Proposition::condition_is(
@@ -13407,8 +13400,8 @@ mod annotated_numeric_pointer_condition_tests {
             let context = PureFactContext::new().assume_condition(source.clone(), value);
             assert_eq!(context.fast_leaf_decision(&target, &[]), Some(value));
             assert!(!context.pointer_provenance_match(
-                &OldPointer::new(p.clone(), ProgramType::Int32Pointer),
-                &OldPointer::new(q.clone(), ProgramType::Int32Pointer)
+                &Pointer::new(p.clone(), ProgramType::Int32Pointer),
+                &Pointer::new(q.clone(), ProgramType::Int32Pointer)
             ));
             assert_eq!(
                 PureFactContext::new().fast_leaf_decision(&target, &[]),
@@ -14905,7 +14898,7 @@ fn affine_bitvector_difference_atom_views(
 /// The two pointers of a `same_allocation(p, q)` fact.
 pub(in crate::kernel) fn same_allocation_pointers(
     proposition: &Proposition,
-) -> Option<(&OldPointer, &OldPointer)> {
+) -> Option<(&Pointer, &Pointer)> {
     let Proposition::Predicate { name, arguments } = proposition else {
         return None;
     };

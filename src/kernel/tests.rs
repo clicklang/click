@@ -34,7 +34,7 @@ pub(in crate::kernel) fn explicit_signed_elements(
     facts: PureFactContext,
 ) -> PureFactContext {
     let law = crate::kernel::prove_separation_elements(
-        OldPointer::new(base, ty.pointer_to().unwrap()),
+        Pointer::new(base, ty.pointer_to().unwrap()),
         ty.byte_width(),
         MachineIntegerType::Int32,
         i,

@@ -1331,10 +1331,7 @@ fn refused_parameter_separation_ignores_unrelated_owned_objects() {
             let Some(range) = fact.memory_own_range() else {
                 continue;
             };
-            let bounds = SubobjectBounds {
-                start: range.base().clone(),
-                width: 8u32.into(),
-            };
+            let bounds = SubobjectBounds::new(range.base().clone(), 8u32.into());
             assumptions = assumptions.assume_proposition(bounds.coverage_fact(range));
         }
         let range = |id| {
@@ -1647,7 +1644,7 @@ fn external_descriptor(identity: u64) -> Address {
 /// The pointer a load of `cell` reads in `source`, as execution materializes
 /// it: the value named by that read.
 fn materialized_pointer(source: &SymbolicMemory, cell: &Address) -> ProgramValue {
-    ProgramValue::Pointer(OldPointer::from_read(
+    ProgramValue::Pointer(Pointer::from_read(
         Address::loaded(&OldMachineTerm::read_named(
             ProgramPoint::at(&(crate::kernel::intern_memory_ref(source))),
             Box::new(cell.clone()),

@@ -67,8 +67,8 @@ fn integer_address_coordinates_join_word_classes_and_follow_scoped_equalities() 
     );
     assert!(!base.contains_known(&goal));
     assert!(!child.restricted_to_facts(&[], &[]).contains_known(&goal));
-    let left = OldPointer::new(decoded.clone(), ProgramType::Int32Pointer);
-    let right = OldPointer::new(pointer.clone(), ProgramType::Int32Pointer);
+    let left = Pointer::new(decoded.clone(), ProgramType::Int32Pointer);
+    let right = Pointer::new(pointer.clone(), ProgramType::Int32Pointer);
     // A cast that already carries the exact original domain can compare its
     // numeric coordinates. A bare address name cannot manufacture that domain.
     let original_domain = right.clone().with_address(decoded.clone());
@@ -135,8 +135,8 @@ fn equal_integer_address_words_do_not_merge_pointer_names_or_domains() {
             .are_uint64_equal(&raw_address(&p), &raw_address(&q))
     );
     assert!(!context.equality_graph.are_equal(&p, &q));
-    let p = OldPointer::new(p, ProgramType::Int32Pointer);
-    let q = OldPointer::new(q, ProgramType::Int32Pointer);
+    let p = Pointer::new(p, ProgramType::Int32Pointer);
+    let q = Pointer::new(q, ProgramType::Int32Pointer);
     assert!(!context.pointer_provenance_match(&p, &q));
     assert!(!context.contains_known(&Proposition::condition_is(
         OldConditionTerm::pointer_equal(p, q),
