@@ -15099,7 +15099,12 @@ pub enum KernelProposition {
     /// writes rather than claiming that every listed cell changed.
     MemoryEffectSummary {
         before: SymbolicMemory,
+        /// The point `before` is the state at. Not part of the fact's
+        /// equality, hashing or order ([`program_point::PathLink`]).
+        before_point: program_point::PathLink,
         after: SymbolicMemory,
+        /// The point `after` is the state at.
+        after_point: program_point::PathLink,
         mutable_ranges: Vec<MemoryRange>,
     },
     /// A free of the block at `allocation_base` with size `bytes`, which
@@ -15370,6 +15375,7 @@ fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
             before,
             after,
             mutable_ranges,
+            ..
         } => {
             before.hash(state);
             after.hash(state);
@@ -15659,9 +15665,13 @@ fn clone_atomic_proposition(proposition: &Proposition) -> Proposition {
             before,
             after,
             mutable_ranges,
+            before_point,
+            after_point,
         } => Proposition::MemoryEffectSummary {
             before: before.clone(),
+            before_point: before_point.clone(),
             after: after.clone(),
+            after_point: after_point.clone(),
             mutable_ranges: mutable_ranges.clone(),
         },
         Proposition::HeapAllocationFreed {

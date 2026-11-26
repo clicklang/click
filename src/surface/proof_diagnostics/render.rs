@@ -1791,6 +1791,7 @@ impl Renderer<'_> {
                 before,
                 after,
                 mutable_ranges,
+                ..
             } => {
                 self.push("memory-effects(");
                 self.memory(before);

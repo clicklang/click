@@ -853,7 +853,9 @@ fn execute_modeled_pthread_mutex_paths(
                             budget,
                         )?;
                         let before = state.memory.clone();
+                        let before_point = state.path_link().clone();
                         let after = fresh.memory.clone();
+                        let after_point = fresh.path_link().clone();
                         let acquired = super::mutexes::MutexContext::new(fresh)
                             .acquire_current(mutex.address(), &current)
                             .map_err(|error| error.into_runtime_error(mutex.address()))?;
@@ -861,7 +863,9 @@ fn execute_modeled_pthread_mutex_paths(
                             path.facts.push(
                                 ExecutionPureFact::internal(Proposition::MemoryEffectSummary {
                                     before,
+                                    before_point,
                                     after,
+                                    after_point,
                                     mutable_ranges: ranges,
                                 })
                                 .into_certified(),
@@ -920,7 +924,9 @@ fn execute_modeled_pthread_mutex_paths(
                     path.facts.push(
                         ExecutionPureFact::internal(Proposition::MemoryEffectSummary {
                             before: next.memory.clone(),
+                            before_point: next.path_link().clone(),
                             after: fresh.memory.clone(),
+                            after_point: fresh.path_link().clone(),
                             mutable_ranges: ranges,
                         })
                         .into_certified(),
@@ -6072,7 +6078,9 @@ pub(super) fn collect_whole_loop_effect_summaries(
         .iter()
         .map(|ranges| Proposition::MemoryEffectSummary {
             before: before_state.memory().clone(),
+            before_point: before_state.path_link().clone(),
             after: after_state.memory().clone(),
+            after_point: after_state.path_link().clone(),
             mutable_ranges: ranges.clone(),
         })
         .collect()

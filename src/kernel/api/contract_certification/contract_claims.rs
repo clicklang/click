@@ -2250,6 +2250,7 @@ fn check_effect_on_prepared_path(
                 before,
                 after,
                 mutable_ranges: nested_ranges,
+                ..
             } => {
                 let repeats_transition =
                     seen_transitions.iter().any(|(seen_before, seen_after)| {

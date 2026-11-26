@@ -1333,6 +1333,8 @@ fn a_checked_interface_join_does_not_reconstruct_a_calls_havoc() {
         let parent =
             ExecutionProofCore::at_entry(before_state.clone(), ExecutionFrontier::default());
         let effect = ExecutionPureFact::internal(Proposition::MemoryEffectSummary {
+            before_point: Default::default(),
+            after_point: Default::default(),
             before: memory.clone(),
             after: after.clone(),
             mutable_ranges: vec![range.clone()],

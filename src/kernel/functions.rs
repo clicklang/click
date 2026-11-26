@@ -3885,21 +3885,13 @@ fn execute_verified_function_applications_with_suspension(
         }
         // Construction initialization is part of this checked call effect,
         // so its endpoint must include the initialized value fields.
-        if !worker_effects.is_empty() {
-            let mut effect = ExecutionPureFact::internal(Proposition::MemoryEffectSummary {
-                before: entry_state.memory.clone(),
-                after: post_state.memory.clone(),
-                mutable_ranges: worker_effects.clone(),
-            })
-            .into_certified();
-            if mutex_storage_effects.is_empty()
-                && interface.aggregate_return_mode() != AggregateReturnMode::Construction
-                && interface.construction_parameter().is_none()
-            {
-                effect.resource_effect_bound = transfer.resource_effect_bound.clone().map(Arc::new);
-            }
-            facts.push(effect);
-        }
+        // The call's effect summary is built once its effect point exists;
+        // whether it also bounds the call's resource effects is decided here.
+        let summary_effect_bound = (mutex_storage_effects.is_empty()
+            && interface.aggregate_return_mode() != AggregateReturnMode::Construction
+            && interface.construction_parameter().is_none())
+        .then(|| transfer.resource_effect_bound.clone().map(Arc::new))
+        .flatten();
         // Protocol effects remain in the caller scope. The ordinary summary
         // partition below is recovered before this checked successor is
         // published, so no call-local hold can escape or be discarded.
@@ -3942,17 +3934,7 @@ fn execute_verified_function_applications_with_suspension(
                 },
             ) {
                 Ok((successor, evidence, ranges)) => {
-                    if !ranges.is_empty() {
-                        worker_effects.extend(ranges.iter().cloned());
-                        facts.push(
-                            ExecutionPureFact::internal(Proposition::MemoryEffectSummary {
-                                before: post_state.memory.clone(),
-                                after: successor.memory.clone(),
-                                mutable_ranges: ranges,
-                            })
-                            .into_certified(),
-                        );
-                    }
+                    worker_effects.extend(ranges.iter().cloned());
                     // The helper's successor made this memory: stand where it stands.
                     post_state.keep_memory_of(&successor);
                     post_state.mutex_ledger = successor.mutex_ledger.clone();
@@ -3996,7 +3978,6 @@ fn execute_verified_function_applications_with_suspension(
                     ));
                     break;
                 };
-                let before = post_state.memory.clone();
                 match super::mutexes::MutexLedger::havoc_protected_for_call(
                     &post_state,
                     &usage.mutex,
@@ -4009,17 +3990,7 @@ fn execute_verified_function_applications_with_suspension(
                     },
                 ) {
                     Ok((fresh, ranges)) => {
-                        if !ranges.is_empty() {
-                            worker_effects.extend(ranges.iter().cloned());
-                            facts.push(
-                                ExecutionPureFact::internal(Proposition::MemoryEffectSummary {
-                                    before,
-                                    after: fresh.memory.clone(),
-                                    mutable_ranges: ranges,
-                                })
-                                .into_certified(),
-                            );
-                        }
+                        worker_effects.extend(ranges);
                         post_state = fresh;
                     }
                     Err(error) => {
@@ -4043,6 +4014,20 @@ fn execute_verified_function_applications_with_suspension(
         // Every value the call writes is in place: the call's effect point,
         // at which everything it reads before its exit is read.
         post_state.complete_staged_memory_as_call_effect();
+        // The call's writes, its own and its mutex protocol steps', bound
+        // between its entry and its effect point: one summary for the region.
+        if !worker_effects.is_empty() {
+            let mut effect = ExecutionPureFact::internal(Proposition::MemoryEffectSummary {
+                before: entry_state.memory.clone(),
+                before_point: entry_state.path_link().clone(),
+                after: post_state.memory.clone(),
+                after_point: post_state.path_link().clone(),
+                mutable_ranges: worker_effects.clone(),
+            })
+            .into_certified();
+            effect.resource_effect_bound = summary_effect_bound;
+            facts.push(effect);
+        }
         // A `produces` binder owns nothing at entry: the call creates the
         // instance under the identity the caller's `let` introduced. It is
         // built once, here, so the population transition and the returned
@@ -5617,7 +5602,9 @@ fn exceptional_direct_function_path(
         facts.push(
             ExecutionPureFact::internal(Proposition::MemoryEffectSummary {
                 before: entry_state.memory.clone(),
+                before_point: entry_state.path_link().clone(),
                 after: memory.clone(),
+                after_point: post_state.path_link().clone(),
                 mutable_ranges: transfer.memory_effects.clone(),
             })
             .into_certified(),

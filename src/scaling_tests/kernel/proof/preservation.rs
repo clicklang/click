@@ -367,6 +367,8 @@ fn selected_footprint_separations_are_linear_with_one_shared_address_bucket() {
         });
         let effects = vec![ExecutionPureFact::certified(
             Proposition::MemoryEffectSummary {
+                before_point: Default::default(),
+                after_point: Default::default(),
                 before: state.memory().clone(),
                 after: state.memory().clone(),
                 mutable_ranges: ranges,
@@ -410,6 +412,8 @@ fn two_footprints_do_not_expand_into_a_cartesian_product() {
         ));
         let effects = vec![ExecutionPureFact::certified(
             Proposition::MemoryEffectSummary {
+                before_point: Default::default(),
+                after_point: Default::default(),
                 before: state.memory().clone(),
                 after: state.memory().clone(),
                 mutable_ranges: (0..count)

@@ -10,6 +10,8 @@ fn outside(owned: Vec<MemoryRange>, required: MemoryRange) -> Vec<StorageWriteOu
     let memory = SymbolicMemory::new();
     let facts = [
         ExecutionPureFact::internal(Proposition::MemoryEffectSummary {
+            before_point: Default::default(),
+            after_point: Default::default(),
             before: memory.clone(),
             after: memory,
             mutable_ranges: vec![required],

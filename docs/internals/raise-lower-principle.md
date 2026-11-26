@@ -101,7 +101,19 @@ A call's mutex protocol steps, a
 helper's exchange and each typed use's forgetting, are steps of the call
 (`mutexes::ProtocolSite::InCall`): they read at the call's entry, where the
 callee's effects leave the protected footprint as it was, and stage their
-memory into the effect point.
+memory into the effect point. Their write bounds join the call's own in the
+call's one `MemoryEffectSummary`, from its entry to its effect point, built
+once that point exists.
+
+A fact that quotes a memory state also carries the point that memory is the
+state at, so it can be named by the point rather than by searching for its
+memory. `MemoryEffectSummary` carries `before_point` and `after_point`; the
+point is not part of the fact's equality, so adding it changes no reasoning.
+Each is the point of the state the memory was taken from. That state's memory
+can still differ from its point's: a verified proof-only view names more
+cells of the same state, but some states hold memory no point holds, and
+those must be named where they are made before a fact can drop its memory for
+its point.
 
 Review frontend and lowering changes against these checks.
 

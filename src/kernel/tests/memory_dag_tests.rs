@@ -1763,6 +1763,8 @@ fn conditions_equal_modulo_proven_states_needs_frame_evidence() {
     // With an effect summary whose mutable range misses the loaded pointer,
     // the two states provably agree there and the forms match.
     let effect = Proposition::MemoryEffectSummary {
+        before_point: Default::default(),
+        after_point: Default::default(),
         before: before.clone(),
         after: after.clone(),
         mutable_ranges: vec![MemoryRange::new(
@@ -4116,6 +4118,8 @@ fn full_pointer_read_survives_a_join_of_stores_to_its_sibling() {
     // The explicit join summary names the common write footprint of both arms.
     // Comparing the distant states alone no longer searches their histories.
     let effect = Proposition::MemoryEffectSummary {
+        before_point: Default::default(),
+        after_point: Default::default(),
         before: before.memory().clone(),
         after: joined.memory().clone(),
         mutable_ranges: vec![MemoryRange::new(beside, 0u32.into(), 1u32.into())],
@@ -4708,6 +4712,8 @@ fn an_abstract_value_fact_carries_across_states_only_with_frame_evidence() {
     );
 
     let effect = Proposition::MemoryEffectSummary {
+        before_point: Default::default(),
+        after_point: Default::default(),
         before: before.clone(),
         after: after.clone(),
         mutable_ranges: vec![MemoryRange::new(

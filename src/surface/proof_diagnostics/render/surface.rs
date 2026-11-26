@@ -742,6 +742,7 @@ impl Printer<'_> {
                 before,
                 after,
                 mutable_ranges,
+                ..
             } => {
                 let before = self.state_phrase(before);
                 let after = self.state_phrase(after);

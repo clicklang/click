@@ -2532,6 +2532,8 @@ fn covering_disjoint_fact_handles_shifted_mutable_range() {
             ))),
         })
         .assume_proposition(Proposition::MemoryEffectSummary {
+            before_point: Default::default(),
+            after_point: Default::default(),
             before: before_memory.clone(),
             after: after_memory.clone(),
             mutable_ranges: vec![MemoryRange::new(
@@ -2587,6 +2589,8 @@ fn atomic_condition_fact_transport_does_not_plan_from_an_effect_summary() {
         true,
     );
     let assumptions = PureFactContext::new().assume_proposition(Proposition::MemoryEffectSummary {
+        before_point: Default::default(),
+        after_point: Default::default(),
         before: before.clone(),
         after: after.clone(),
         mutable_ranges: vec![MemoryRange::new(
@@ -2724,6 +2728,8 @@ fn pointer_offset_fact_transport_does_not_plan_from_an_effect_summary() {
         true,
     );
     let assumptions = PureFactContext::new().assume_proposition(Proposition::MemoryEffectSummary {
+        before_point: Default::default(),
+        after_point: Default::default(),
         before,
         after: after.clone(),
         mutable_ranges: vec![MemoryRange::new(
@@ -3008,6 +3014,8 @@ fn atomic_condition_fact_transport_does_not_plan_from_a_separate_range() {
             ))),
         })
         .assume_proposition(Proposition::MemoryEffectSummary {
+            before_point: Default::default(),
+            after_point: Default::default(),
             before,
             after: after.clone(),
             mutable_ranges: vec![MemoryRange::new(
@@ -3077,6 +3085,8 @@ fn direct_condition_transport_uses_relative_separate_range() {
         true,
     );
     let effect = Proposition::MemoryEffectSummary {
+        before_point: Default::default(),
+        after_point: Default::default(),
         before,
         after: after.clone(),
         mutable_ranges: vec![MemoryRange::new(
@@ -3170,6 +3180,8 @@ fn direct_condition_transport_uses_indexed_relative_separate_range() {
         true,
     );
     let effect = Proposition::MemoryEffectSummary {
+        before_point: Default::default(),
+        after_point: Default::default(),
         before,
         after: after.clone(),
         mutable_ranges: vec![MemoryRange::new(
@@ -8400,6 +8412,8 @@ fn state_equality_ignores_unrelated_propositions() {
     let after = before.clone().with_block("call-havoc:1", 0);
     // The call may write the target itself, so the summary shows nothing.
     let summary = Proposition::MemoryEffectSummary {
+        before_point: Default::default(),
+        after_point: Default::default(),
         before: before.clone(),
         after: after.clone(),
         mutable_ranges: vec![memory_range(target.clone(), 0, 1)],

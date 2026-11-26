@@ -2307,6 +2307,8 @@ fn checked_interface_effects_require_memory_diff_coverage() {
     );
 
     let summary = ExecutionPureFact::certified(Proposition::MemoryEffectSummary {
+        before_point: Default::default(),
+        after_point: Default::default(),
         before: before.memory().clone(),
         after: after.memory().clone(),
         mutable_ranges: vec![MemoryRange::new(
@@ -2340,6 +2342,8 @@ fn checked_interface_effects_require_memory_diff_coverage() {
     let erased_parent =
         ExecutionProofCore::at_entry(erased_before.clone(), ExecutionFrontier::default());
     let erased_summary = ExecutionPureFact::certified(Proposition::MemoryEffectSummary {
+        before_point: Default::default(),
+        after_point: Default::default(),
         before: erased_before.memory().clone(),
         after: erased_after.memory().clone(),
         mutable_ranges: vec![MemoryRange::new(

@@ -2201,6 +2201,8 @@ fn hashing_a_memory_fact_is_constant_in_the_memory_size() {
         let _session = crate::kernel::VerificationSession::enter();
         let after = memory_with_unrelated_allocations(size);
         let fact = Proposition::MemoryEffectSummary {
+            before_point: Default::default(),
+            after_point: Default::default(),
             before: SymbolicMemory::new(),
             after,
             mutable_ranges: Vec::new(),

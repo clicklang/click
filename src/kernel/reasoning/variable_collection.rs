@@ -846,6 +846,7 @@ fn collect_proposition_bitvector_variables_one(
             before,
             after,
             mutable_ranges,
+            ..
         } => {
             collect_memory_bitvector_variables(before, variables);
             collect_memory_bitvector_variables(after, variables);

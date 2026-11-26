@@ -244,6 +244,7 @@ impl PureFactContext {
                     before,
                     after,
                     mutable_ranges,
+                    ..
                 } => {
                     // Endpoint matching filters candidate effect facts inside a
                     // prop-facts scan, so it must stay bounded: the general

@@ -52,6 +52,8 @@ fn wide_loop_frames_cover_native_accesses_and_refuse_cross_width_ranges() {
         .is_empty()
     );
     let summary = Proposition::MemoryEffectSummary {
+        before_point: Default::default(),
+        after_point: Default::default(),
         before: state.memory().clone(),
         after: state.memory().clone(),
         mutable_ranges: vec![wide],
