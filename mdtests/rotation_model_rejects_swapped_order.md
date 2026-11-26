@@ -93,7 +93,7 @@ struct tree_node* rotate_left(struct tree_node* root) {
             have heap_right(t.model) == right_model by {
                 rewrite(t.model, HeapTree::Node(node, value, left_model, right_model));
                 unfold(heap_right(HeapTree::Node(node, value, left_model, right_model)));
-                normalize();
+                close() using {};
             }
             have right_model != HeapTree::Empty by {
                 rewrite(right_model, heap_right(t.model));
@@ -107,21 +107,21 @@ struct tree_node* rotate_left(struct tree_node* root) {
                     step_until(function.exit);
                     have separate(memory(root->left), memory(root->right)) by { close(); }
                     have separate(statement(6).footprint, memory(root->left)) by {
-                        normalize() using { separate(memory(root->left), memory(root->right)); };
+                        close() using { separate(memory(root->left), memory(root->right)); };
                     }
                     have at(statement(6).exit, root->left) == at(statement(6).entry, root->left) by {
                         preserve(memory(root->left), statement(6));
                     }
                     have separate(memory(root->left), memory(result->left)) by { close(); }
                     have separate(statement(7).footprint, memory(root->left)) by {
-                        normalize() using { separate(memory(root->left), memory(result->left)); };
+                        close() using { separate(memory(root->left), memory(result->left)); };
                     }
                     have at(statement(7).exit, root->left) == at(statement(7).entry, root->left) by {
                         preserve(memory(root->left), statement(7));
                     }
                     have separate(memory(root->left), memory(result->right)) by { close(); }
                     have separate(statement(8).footprint, memory(root->left)) by {
-                        normalize() using { separate(memory(root->left), memory(result->right)); };
+                        close() using { separate(memory(root->left), memory(result->right)); };
                     }
                     have at(statement(8).exit, root->left) == at(statement(8).entry, root->left) by {
                         preserve(memory(root->left), statement(8));
@@ -135,14 +135,14 @@ struct tree_node* rotate_left(struct tree_node* root) {
                     have at(statement(6).exit, root->right) == old(root->right->left) by { close(); }
                     have separate(memory(root->right), memory(result->left)) by { close(); }
                     have separate(statement(7).footprint, memory(root->right)) by {
-                        normalize() using { separate(memory(root->right), memory(result->left)); };
+                        close() using { separate(memory(root->right), memory(result->left)); };
                     }
                     have at(statement(7).exit, root->right) == at(statement(7).entry, root->right) by {
                         preserve(memory(root->right), statement(7));
                     }
                     have separate(memory(root->right), memory(result->right)) by { close(); }
                     have separate(statement(8).footprint, memory(root->right)) by {
-                        normalize() using { separate(memory(root->right), memory(result->right)); };
+                        close() using { separate(memory(root->right), memory(result->right)); };
                     }
                     have at(statement(8).exit, root->right) == at(statement(8).entry, root->right) by {
                         preserve(memory(root->right), statement(8));
@@ -166,7 +166,7 @@ struct tree_node* rotate_left(struct tree_node* root) {
                         rewrite(right_model, HeapTree::Node(pivot_node, pivot_value, middle_model, far_right_model));
                         unfold(heap_rotate_left(HeapTree::Node(node, value, left_model,
                             HeapTree::Node(pivot_node, pivot_value, middle_model, far_right_model))));
-                        normalize();
+                        close() using {};
                     }
                     close();
                 },
@@ -177,5 +177,5 @@ struct tree_node* rotate_left(struct tree_node* root) {
 ```
 
 ```expect
-fail: `normalize` goal did not normalize to true
+fail: `close() using` could not prove the current goal from only its listed premises
 ```
