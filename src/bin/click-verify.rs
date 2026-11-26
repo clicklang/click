@@ -3043,7 +3043,7 @@ int32 read_first(int32 m) {
             r#"verifying "program.c";
                int32 f(int32 x) { ensures result == x; } by {
                    step();
-                   close();
+                   close() using { result == x; };
                }
             "#,
         );
@@ -3061,14 +3061,14 @@ int32 read_first(int32 m) {
                     entry_with(arguments)
                 },
             )
-            .expect_err("the written solve has no work allowance")
+            .expect_err("the selected-premise closer has no work allowance")
         };
         let error = verify(&[]);
         let trace = verify(&["--trace-proof", "f"]);
         fs::remove_dir_all(&root).unwrap();
         assert!(error.starts_with("unsuccessful search"), "{error}");
         assert!(
-            error.contains("tactic `solve`") && error.contains("smart work budget"),
+            error.contains("tactic `close`") && error.contains("smart work budget"),
             "{error}"
         );
         assert!(error.contains("goal: result == x"), "{error}");

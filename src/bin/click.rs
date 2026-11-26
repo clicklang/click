@@ -1463,25 +1463,12 @@ int32 check(struct link* node) {
         let source = SHARED_POPULATION_FIXTURE;
         fs::write(&fixture, source).unwrap();
         entry(["verify".to_string(), fixture.display().to_string()]).unwrap();
-        let click_start = source.find("```click\n").unwrap();
-        let release_start =
-            click_start + source[click_start..].find("void child_release(").unwrap();
-        let release_end =
-            release_start + source[release_start..].find("void parent_attach(").unwrap();
-        let final_release = "        close();\n    } else {";
-        let final_closer = release_start
-            + source[release_start..release_end]
-                .find(final_release)
-                .unwrap();
-        let line = source[..final_closer]
-            .bytes()
-            .filter(|byte| *byte == b'\n')
-            .count()
-            + 1;
         entry([
             "expand".to_string(),
+            "--claim".to_string(),
+            "child_release.contract".to_string(),
             "--in-place".to_string(),
-            format!("{}:{line}:9", fixture.display()),
+            fixture.display().to_string(),
         ])
         .unwrap();
         let expanded = fs::read_to_string(&fixture).unwrap();
