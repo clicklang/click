@@ -3464,7 +3464,7 @@ fn assert_outcome_operations_do_not_reimport_ambient_facts(
             let body = (0..operations)
                 .map(|i| {
                     format!(
-                        "have {} == {} by {{ normalize(); }} unfold(marker(x)); fold(marker(x));",
+                        "have {} == {} by {{ close(); }} unfold(marker(x)); fold(marker(x));",
                         1000 + i,
                         1000 + i,
                     )
