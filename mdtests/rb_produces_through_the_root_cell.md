@@ -114,7 +114,11 @@ void rb_set_root(struct rb_node* node, struct rb_root* root) {
                 left: l, right: r
             }) {
                 requires (address(root->rb_node) & 7u64) == 0u64 by {
-                    normalize() using { at(function.entry, aligned(node, 8)); };
+                    have (address(node) & 7u64) == 0u64 by {
+                        close() using { at(function.entry, aligned(node, 8)); };
+                    }
+                    rewrite(root->rb_node, node);
+                    close();
                 }
             }
             close();
