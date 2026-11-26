@@ -3058,14 +3058,15 @@ mod tests {
         };
         let equal = equality(conditional(13, 13));
         let different_capture = equality(conditional(13, 12));
-        // Initialize the shared goal representation before comparing fact-set sizes.
+        // Check the empty context and initialize the shared goal representation.
         assert!(
             known_computation_proof(equal.clone(), PureFactStore::default())
                 .apply_known(PropositionKnownContext::Pure)
                 .is_ok()
         );
         let mut baseline = None;
-        for size in [0, 32, 256] {
+        // Compare populated stores, since an empty store can skip index probes.
+        for size in [1, 32, 256] {
             let mut facts = PureFactStore::default();
             for n in 0..size {
                 for left in [guard, Variable(1_000 + n)] {
