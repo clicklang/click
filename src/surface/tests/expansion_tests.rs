@@ -981,16 +981,20 @@ fn ranked_search_applies_point_update_with_a_saved_array() {
         mdtest_sources("mdtests/preserve_apply_names_its_missing_viewable.md");
     check_ranked_search_without_transport(&source, &c_sources);
 
-    // Removing the observation makes the application prove the saved range's
-    // current viewability from ownership, as in the original fixture.
     let without_observation = source.replace("observe(at(iter, visited)[0..n]);", "");
     assert_ne!(without_observation, source);
     let (name, c) = &c_sources[0];
-    verify_c_sources(
+    let error = verify_c_sources(
         &inline_unmarked_count_lemmas(&without_observation),
         &[(name, c)],
     )
-    .unwrap_or_else(|error| panic!("{}", error.report()));
+    .expect_err("the saved range needs its own viewability premise");
+    let report = error.report();
+    assert!(
+        report.contains("theorem `unmarked_point_update` has an unproved obligation")
+            && report.contains("viewable(memory(at(iter, visited)[0..n]))"),
+        "{report}"
+    );
 }
 
 fn inline_unmarked_count_lemmas(source: &str) -> String {
