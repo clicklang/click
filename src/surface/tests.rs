@@ -2808,6 +2808,7 @@ fn fold_read_summaries_are_checked_from_the_lowered_declarations() {
     .unwrap();
     let environment = ClickFunctionEnvironment::new(file.click_function_definitions());
     let _session = crate::kernel::VerificationSession::enter();
+    crate::kernel::clear_fold_read_summaries();
     register_kernel_fold_read_definitions(
         SpecDefinitions::new(&PredicateEnvironment::new(&[]), &environment),
         &BTreeMap::new(),

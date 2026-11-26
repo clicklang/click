@@ -1090,8 +1090,9 @@ complexity argument: enumerating a large bucket, equality class or chain is
 still ambient search, and amortized claims need a total-work argument across
 repeated steps, persistent forks and cold misses. The frozen
 [dependency inventory](https://github.com/clicklang/click/blob/master/build_support/proof_search_edges.tsv)
-and the [caller audit](https://github.com/clicklang/click/blob/master/design/proof-boundary-classification.md)
-record operation/search edges; no operation-to-driver records remain.
+records the enforced operation/search edges. The
+[historical caller audit](https://github.com/clicklang/click/blob/master/design/proof-boundary-classification.md)
+explains the classification at its recorded revision.
 
 Paths are relative to `src/`; test paths to `src/scaling_tests/`.
 [`step_shape_scaling_tests.rs`](https://github.com/clicklang/click/blob/master/src/scaling_tests/surface/tests/step_shape_scaling_tests.rs)
