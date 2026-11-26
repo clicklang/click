@@ -155,8 +155,10 @@ theorem zlib_full_concat_bound(total: uint64, middle: uint64, remaining: uint64)
   };
 
   have to_integer(0) <= to_integer(zlib_prefix_count(middle, remaining));
-  have zlib_prefix_count(middle, remaining) <= 2147483647 by normalize();
-  have to_integer(zlib_prefix_count(middle, remaining)) <= to_integer(2147483647);
+  have to_integer(zlib_prefix_count(middle, remaining)) <= to_integer(2147483647) by {
+   rewrite(to_integer(zlib_prefix_count(middle, remaining)), to_integer(middle - remaining));
+   close();
+  }
   have to_integer(2147483647) - to_integer(zlib_prefix_count(middle, remaining)) >= -2147483648 by close() using { to_integer(zlib_prefix_count(middle, remaining)) <= to_integer(2147483647); };
   have to_integer(2147483647) - to_integer(zlib_prefix_count(middle, remaining)) <= 2147483647 by close() using { to_integer(0) <= to_integer(zlib_prefix_count(middle, remaining)); };
   have defined(2147483647 - zlib_prefix_count(middle, remaining));
