@@ -1759,6 +1759,7 @@ for exact lookup.
 A full-width unsigned index agrees with its signed low word when both use
 the same base and stride and the full-width index is at most `INT32_MAX`.
 `close()` checks this bound on the full-width index itself. See
+[`uint64_int32_exact_index_alias.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_int32_exact_index_alias.md) for the address proofs and
 [`uint64_int32_owned_index_alias.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_int32_owned_index_alias.md) for a store through the full-width index and a read through the signed index.
 A written machine `+`, `-`, or `*` observation equals its exact Integer expression when
 both exact-result range bounds are available. An integral cast or `to_T(z)`
@@ -2167,7 +2168,7 @@ Expansion retains the normalization step and cited evidence; checking
 reconstructs the graph from the surrounding checked proof context. Work
 follows the selected expression and premises.
 
-**Checked examples:** [`normalize_using_decides_conditions_without_substituting.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_decides_conditions_without_substituting.md), [`uint64_int32_exact_index_alias.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_int32_exact_index_alias.md), [`uint64_int32_low_word_is_not_address_equality.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_int32_low_word_is_not_address_equality.md)
+**Checked examples:** [`normalize_using_decides_conditions_without_substituting.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_decides_conditions_without_substituting.md), [`uint64_int32_low_word_is_not_address_equality.md`](https://github.com/clicklang/click/blob/master/mdtests/uint64_int32_low_word_is_not_address_equality.md)
 
 ### Arithmetic search
 

@@ -164,8 +164,8 @@ needle = "normalize();"
 
 [[form]]
 id = "normalize-using"
-path = "mdtests/uint64_int32_exact_index_alias.md"
-needle = "normalize() using { to_integer(wide) == to_integer(index); };"
+path = "mdtests/normalize_using_decides_conditions_without_substituting.md"
+needle = "normalize() using { x == 7; };"
 
 [[form]]
 id = "intro"
