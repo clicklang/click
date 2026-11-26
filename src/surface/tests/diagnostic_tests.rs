@@ -2403,7 +2403,7 @@ fn pure_theorem_tactics_emit_claims_and_nested_written_source_paths() {
             have x <= 1000 by { close() using { x <= 100; } }
             close();
         }
-        ensures x == x by { normalize(); }
+        ensures x == x by { close(); }
     }"#;
     let (result, events) = collect(|| verify_click_theorems(source));
     assert_eq!(result.unwrap().len(), 2);
@@ -2491,13 +2491,13 @@ fn pure_theorem_generic_and_structural_induction_emit_written_tactics() {
     use crate::instrumentation::{VerificationEvent, collect};
     let source = r#"
     spec enum TestList<T> { Nil, Cons(T, TestList<T>), }
-    theorem reflexive<T>(x: T) { ensures x == x by { normalize(); } }
+    theorem reflexive<T>(x: T) { ensures x == x by { close(); } }
     theorem induction_shape(xs: TestList<int32>) {
         ensures xs == xs by {
             let ih = induct(xs);
             match xs {
-                TestList::Nil => { normalize(); }
-                TestList::Cons(head, tail) => { apply(ih(tail)); normalize(); }
+                TestList::Nil => { close(); }
+                TestList::Cons(head, tail) => { apply(ih(tail)); close(); }
             }
         }
     }"#;

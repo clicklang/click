@@ -1431,7 +1431,7 @@ fn target_with_unrelated_theorems(theorem_count: usize) -> String {
         ));
     }
     click_source.push_str(
-        "int32 scaling_target(int32 x) {\n    ensures result == x;\n} by {\n    step();\n    normalize();\n}\n",
+        "int32 scaling_target(int32 x) {\n    ensures result == x;\n} by {\n    step();\n    close();\n}\n",
     );
     click_source
 }
@@ -9920,7 +9920,7 @@ fn branch_checking_ignores_unused_parameters_and_premises() {
 #[ignore = "nightly: 0.7s in the parallel gate"]
 fn mixed_width_owned_entry_work_is_independent_of_segment_length() {
     let program = "void entry(unsigned long *word, unsigned char *bytes) {}";
-    verify_c_sources("theorem warm() { ensures true by normalize(); }", &[]).unwrap();
+    verify_c_sources("theorem warm() { ensures true by close(); }", &[]).unwrap();
     let mut baseline = None;
     for length in [32, 1_024, 65_536, 2_147_483_647] {
         let source = format!(
