@@ -40,7 +40,7 @@ theorem zlib_general_raw_seeded_batch_concat(bytes: uint8[], prefix: int32, leng
   apply(zlib_seeded_reduced_components(bytes + prefix, length, a, b, a0, b0));
   apply(integer::uint64_remainder_to_integer(a0, 65521u64)); apply(integer::uint64_remainder_to_integer(b0, 65521u64));
   apply(adler_weighted_nonnegative(bytes + prefix, length));
-  have length <= 2147483647 by normalize();
+  have length <= 2147483647 by close();
   have to_integer(a0) <= 549755879424 by close() using { to_integer(a0) <= 1500000; };
   have 0 <= to_integer(length) by close() using { to_integer(0) <= to_integer(length); };
   have to_integer(length) <= 2147483647 by close() using { to_integer(length) <= to_integer(2147483647); };
@@ -174,7 +174,7 @@ theorem zlib_general_raw_seeded_batch_concat_u64(bytes: uint8[], prefix: uint64,
   apply(zlib_seeded_reduced_components(bytes + prefix, length, a, b, a0, b0));
   apply(integer::uint64_remainder_to_integer(a0, 65521u64)); apply(integer::uint64_remainder_to_integer(b0, 65521u64));
   apply(adler_weighted_nonnegative(bytes + prefix, length));
-  have length <= 2147483647 by normalize();
+  have length <= 2147483647 by close();
   have to_integer(a0) <= 549755879424 by close() using { to_integer(a0) <= 1500000; };
   have 0 <= to_integer(length) by close() using { to_integer(0) <= to_integer(length); };
   have to_integer(length) <= 2147483647 by close() using { to_integer(length) <= to_integer(2147483647); };
@@ -288,13 +288,13 @@ theorem zlib_one_seeded_components(bytes: uint8[], initial_a: Integer, initial_b
   have (initial_a + zlib_byte_integer(bytes[0])) + initial_b == initial_b + initial_a + zlib_byte_integer(bytes[0]) by close() using {};
   have truncating_remainder(initial_a + zlib_byte_integer(bytes[0]), 65521) + initial_b == initial_b + to_integer(a) by { rewrite(truncating_remainder(initial_a + zlib_byte_integer(bytes[0]), 65521), to_integer(a)); close() using {}; }
   have adler_spec_a(bytes, 1, initial_a) == to_integer(a) by {
-   unfold(adler_spec_a(bytes, 1, initial_a)); rewrite(adler_byte_sum(bytes, 1), zlib_byte_integer(bytes[0])); rewrite(to_integer(a), truncating_remainder(initial_a + zlib_byte_integer(bytes[0]), 65521)); normalize();
+   unfold(adler_spec_a(bytes, 1, initial_a)); rewrite(adler_byte_sum(bytes, 1), zlib_byte_integer(bytes[0])); rewrite(to_integer(a), truncating_remainder(initial_a + zlib_byte_integer(bytes[0]), 65521)); close();
   }
   have adler_spec_b(bytes, 1, initial_a, initial_b) == to_integer(b) by {
    unfold(adler_spec_b(bytes, 1, initial_a, initial_b)); rewrite(adler_weighted_sum(bytes, 1, 1), zlib_byte_integer(bytes[0]));
    rewrite(initial_b + to_integer(1) * initial_a + zlib_byte_integer(bytes[0]), (initial_a + zlib_byte_integer(bytes[0])) + initial_b);
    rewrite(truncating_remainder((initial_a + zlib_byte_integer(bytes[0])) + initial_b, 65521), truncating_remainder(truncating_remainder(initial_a + zlib_byte_integer(bytes[0]), 65521) + initial_b, 65521));
-   rewrite(truncating_remainder(initial_a + zlib_byte_integer(bytes[0]), 65521) + initial_b, initial_b + to_integer(a)); rewrite(to_integer(b), truncating_remainder(initial_b + to_integer(a), 65521)); normalize();
+   rewrite(truncating_remainder(initial_a + zlib_byte_integer(bytes[0]), 65521) + initial_b, initial_b + to_integer(a)); rewrite(to_integer(b), truncating_remainder(initial_b + to_integer(a), 65521)); close();
   }
   have a <= 65535u64 by close() using { a <= 65520u64; };
   have b <= 65535u64 by close() using { b <= 65520u64; };
