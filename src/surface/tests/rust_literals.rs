@@ -145,7 +145,7 @@ fn rust_shift_contracts_wrap_bits_and_preserve_the_operand_width() {
         "(-128i8 >> 7u32) == -1i8",
     ] {
         prove(&format!(
-            "theorem shift() {{ ensures {claim} by {{ normalize(); }} }}"
+            "theorem shift() {{ ensures {claim} by {{ close(); }} }}"
         ))
         .unwrap_or_else(|error| panic!("{claim}: {error:?}"));
     }
@@ -160,10 +160,22 @@ fn rust_shift_contracts_wrap_bits_and_preserve_the_operand_width() {
         "1i32 << 4294967296u64",
         "1i64 >> -1i32",
     ] {
-        assert!(prove(&format!("theorem invalid() {{ ensures ({expression}) == ({expression}) by {{ normalize(); }} }}")).is_err(), "{expression}");
+        assert!(
+            prove(&format!(
+                "theorem invalid() {{ ensures ({expression}) == ({expression}) by {{ close(); }} }}"
+            ))
+            .is_err(),
+            "{expression}"
+        );
     }
     for expression in ["-1 << 1", "1073741824 << 1"] {
-        assert!(verify_click_theorems(&format!("theorem c_shift() {{ ensures ({expression}) == ({expression}) by {{ normalize(); }} }}")).is_err(), "C signed shift domain: {expression}");
+        assert!(
+            verify_click_theorems(&format!(
+                "theorem c_shift() {{ ensures ({expression}) == ({expression}) by {{ close(); }} }}"
+            ))
+            .is_err(),
+            "C signed shift domain: {expression}"
+        );
     }
 }
 
@@ -171,7 +183,7 @@ fn rust_shift_contracts_wrap_bits_and_preserve_the_operand_width() {
 fn rust_shift_spelling_survives_expansion_and_rechecking() {
     let source = r#"verifying "literals.rs";
         theorem rust_shift(x: i8) {
-            ensures (x << 1u32) == (x << 1u32) by { normalize(); }
+            ensures (x << 1u32) == (x << 1u32) by { close(); }
         }
     "#;
     let sources = [("literals.rs", "")];
