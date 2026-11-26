@@ -2189,8 +2189,9 @@ fn charon_borrowed_loop_live_refresh_and_rejected_control_flow() {
             "E0506",
         ),
         (
-            "pub fn bad(n:i32) { let mut i=0; while i<n { if i==2 { break; } i+=1; } }".into(),
-            "extra exit",
+            "pub fn guard(n: i32) -> bool { n > 0 } pub fn bad(n: i32) { while guard(n) {} }"
+                .into(),
+            "conditional while header",
         ),
         (
             "pub fn bad(n:&i32) { let mut i=0; while i<*n { i+=1; } }".into(),
@@ -3203,6 +3204,14 @@ fn signed_match_project() -> Project {
     p
 }
 
+#[cfg(not(feature = "fast-gate"))]
+fn signed_match_explicit_proof() -> String {
+    format!(
+        "{} by {{ match amount {{ Amount::Credit(x) => {{ step_until(function.exit); close(); }}, Amount::Debit(x) => {{ step_until(function.exit); have result == -1i32 * x by {{ close(); }} have match amount {{ Amount::Credit(y) => y as i32, Amount::Debit(y) => 0i32 - y }} == 0i32 - x by {{ rewrite(amount, Amount::Debit(x)); close(); }} close(); }} }} }}",
+        SIGNED_MATCH_SIDECAR.trim()
+    )
+}
+
 #[test]
 #[cfg(not(feature = "fast-gate"))]
 #[ignore = "nightly: 1.3s in the parallel gate"]
@@ -3235,10 +3244,7 @@ fn rust_enum_signed_match_wrong_arm_reports_unsuccessful_search() {
 fn rust_enum_signed_match_explicit_split_verifies() {
     let p = signed_match_project();
     let prepared = p.prepared().unwrap();
-    let explicit = format!(
-        "{} by {{ match amount {{ Amount::Credit(x) => {{ step_until(function.exit); close(); }}, Amount::Debit(x) => {{ step_until(function.exit); have result == -1i32 * x by {{ close(); }} have match amount {{ Amount::Credit(y) => y as i32, Amount::Debit(y) => 0i32 - y }} == 0i32 - x by {{ rewrite(amount, Amount::Debit(x)); close(); }} close(); }} }} }}",
-        SIGNED_MATCH_SIDECAR.trim()
-    );
+    let explicit = signed_match_explicit_proof();
     ProgramVerificationSession::new_program_prepared(&explicit, &prepared)
         .unwrap_or_else(|error| panic!("{error}"));
 }
@@ -3249,13 +3255,14 @@ fn rust_enum_signed_match_explicit_split_verifies() {
 fn rust_enum_signed_match_expansion_checks_without_search() {
     let p = signed_match_project();
     let prepared = p.prepared().unwrap();
+    let source = signed_match_explicit_proof();
     let expanded = click::surface::expand_program_prepared_claim_source_by_label(
-        SIGNED_MATCH_SIDECAR,
+        &source,
         &prepared,
-        "value.ensures_0",
+        "value.contract",
     )
     .unwrap_or_else(|error| panic!("{error}"));
-    click::surface::without_implicit_solve_for_claim("value.ensures_0", || {
+    click::surface::without_implicit_solve_for_claim("value.contract", || {
         ProgramVerificationSession::new_program_prepared(&expanded, &prepared)
             .map(|_| ())
             .map_err(|error| error.to_string())

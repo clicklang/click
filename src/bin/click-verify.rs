@@ -1918,7 +1918,8 @@ mod tests {
             "oversized_{}",
             "n".repeat(click::surface::DEFAULT_DIAGNOSTIC_BYTE_LIMIT)
         );
-        let source = format!("theorem {name}(x: Integer) {{ ensures x == 0 by {{ close(); }} }}");
+        let source =
+            format!("theorem {name}(x: Integer) {{ ensures x == 0 by {{ rewrite(x, 0); }} }}");
         let (_root, path) = temporary_project("ordinary-byte-limit", "void f() {}", &source);
         let report = entry_with([path.display().to_string()]).expect_err("false theorem");
         assert!(report.len() <= click::surface::DEFAULT_DIAGNOSTIC_BYTE_LIMIT);

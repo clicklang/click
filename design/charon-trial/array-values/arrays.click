@@ -21,6 +21,21 @@ fn next(value: &mut u32) -> u32 {
     owns value[0..1];
     ensures result == old(*value);
     ensures *value == old(*value) + 1u32;
+} by {
+    step_until(function.exit);
+    have 0 <= old(to_integer(*value)) + 1;
+    have old(to_integer(*value)) < 255;
+    have old(to_integer(*value)) + 1 <= 255 by {
+        apply(click::integer::lt_step_le(old(to_integer(*value)), 255));
+    }
+    have to_integer(*value) == old(to_integer(*value)) + 1 by {
+        have old(to_integer(*value)) + 1 <= 4294967295;
+        apply(click::integer::uint32_add_to_integer(old(*value), 1u32));
+        have *value == old(*value) + 1u32 by close();
+        rewrite(*value, old(*value) + 1u32);
+        close();
+    }
+    close();
 }
 fn repeat_call(value: &mut u32) -> u32 {
     requires *value == 4u32;
